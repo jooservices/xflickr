@@ -3,7 +3,7 @@
 web/src/shared/design/tokens.json is the single source of design token values
 for USER and ADMIN themes. Application CSS and components consume values from
 this JSON through derived CSS variables; they must not define a second palette.
-This contract specifies the file for JOOXF-79 to implement. Approved values and
+This contract specifies the file for T01.3.3 to implement. Approved values and
 accessibility constraints are in [design-system.md](design-system.md).
 
 ## Shape
@@ -57,14 +57,9 @@ and system-preference behavior.
 
 ## POC coverage check
 
-ui-spec-check must compare the required token names in this contract with the
-custom properties declared in every POC root/theme block. It fails if a token
-is missing from the design-system tables or machine-readable contract, and
-reports unclassified POC properties for addition or explicit classification as
-layout/runtime-only. Coverage includes bg, surface, sunken, raise, line, line2,
-ink, muted, faint, accent, accent-ink, accent-soft, ok, warn, bad, info, fav,
-s1, s2, s3, shade, overlay, f-disp, f-body, f-mono, radius, btn-r, and row-h.
-The dynamic --r property is classified as per-photo aspect-ratio runtime data,
-not a design token. The check also confirms that the documented icon inventory
-includes every entry in the POC ICONS object. The POC is read-only reference
-input.
+ui-spec-check compares the custom property names in the POC root/theme blocks
+with the token tables for all four themes in design-system.md. It fails when a
+POC property is absent from any theme table and confirms that the icon inventory
+documents every entry in the POC ICONS object. The dynamic --r property is
+excluded because it is per-photo aspect-ratio runtime data, not a design token.
+The POC is read-only reference input.

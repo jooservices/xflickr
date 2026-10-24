@@ -20,39 +20,53 @@ ADMIN typography and geometry remain role-specific in its light theme.
 
 ## Color tokens
 
-Hex values below come from the POC. Some light-theme POC colors fail the
-contrast requirements in this specification. In those cells the accessible
-value is the implementation value, a deliberate correction to the reference.
-Measure foreground contrast against its actual background. Normal text needs
-4.5:1; large text and meaningful non-text UI graphics need 3:1. Do not use faint
-for information-bearing text.
+Color values come from the POC except where Required value records an
+accessibility correction. Normal text needs 4.5:1 and meaningful UI graphics,
+including control boundaries, need 3:1 against adjacent surfaces. The following
+tables list the measured contrast of text and status/chart colors against each
+of the four surfaces in that theme. Values are rounded to two decimals and the
+lowest listed value governs. `faint` is decorative only. `fav` is restricted to
+icons and badges, where it must meet 3:1; never use it for text. Status colors
+may be used as text only where all four ratios are at least 4.5:1. Series colors
+are chart graphics and must meet 3:1; provide labels or markers as well.
 
 ### USER light gallery
 
-| Token | POC | Required value | Meaning |
+| Token | Value | Token | Value |
 | --- | --- | --- | --- |
-| bg | #f6f7fa | #f6f7fa | Page canvas |
-| surface | #ffffff | #ffffff | Cards, menus, panels |
-| sunken | #eef0f5 | #eef0f5 | Inputs and recessed areas |
-| raise | #e7eaf1 | #e7eaf1 | Raised/hover surface |
-| line | #e2e5ec | #e2e5ec | Decorative separators only |
-| line2 | #cfd4de | #cfd4de | Stronger boundaries |
-| ink | #161a22 | #161a22 | Primary text |
-| muted | #5d6574 | #5d6574 | Secondary text (5.48:1 on bg) |
-| faint | #8a92a1 | #8a92a1 | Decorative, text-free detail only |
-| accent | #2457d6 | #2457d6 | Links, focus, primary action (5.75:1 on bg) |
-| accent-ink | #ffffff | #ffffff | Text on accent (6.16:1) |
-| accent-soft | #e6edfd | #e6edfd | Accent tint/background |
-| ok | #1d8a52 | #187244 | Success state |
-| warn | #a86500 | #875300 | Warning state |
-| bad | #c9302c | #c9302c | Error state |
-| info | #5a52c9 | #5a52c9 | Informational state |
-| fav | #d93c74 | #d93c74 | Favorite and notification badge |
-| s1 | #2a78d6 | #1f66b4 | First chart series |
-| s2 | #eb6834 | #b8481e | Second chart series |
-| s3 | #1baf7a | #08774f | Third chart series |
-| shade | rgba(18,22,30,.10) | same | Surface shadow |
-| overlay | #0c0e12 | same | Modal/lightbox backdrop |
+| bg | #f6f7fa | surface | #ffffff |
+| sunken | #eef0f5 | raise | #e7eaf1 |
+| line | #e2e5ec | line2 | #747b88 (corrected control boundary) |
+| ink | #161a22 | muted | #5d6574 |
+| faint | #8a92a1 | accent | #2457d6 |
+| accent-ink | #ffffff | accent-soft | #e6edfd |
+| ok | #187244 | warn | #875300 |
+| bad | #c12824 | info | #5a52c9 |
+| fav | #d93c74 | s1 | #1f66b4 |
+| s2 | #b4431a | s3 | #08774f |
+| shade | rgba(18,22,30,.10) | overlay | #0c0e12 |
+| f-disp | "Bricolage Grotesque","Figtree",system-ui,sans-serif | f-body | "Figtree",system-ui,-apple-system,"Segoe UI",sans-serif |
+| f-mono | "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace | radius | 14px |
+| btn-r | 999px | row-h | 190px |
+
+Text and graphic contrast ratios (foreground over bg, surface, sunken, raise):
+
+| Foreground | bg | surface | sunken | raise |
+| --- | ---: | ---: | ---: | ---: |
+| ink | 16.27 | 17.43 | 15.28 | 14.47 |
+| muted | 5.48 | 5.87 | 5.15 | 4.87 |
+| accent | 5.75 | 6.16 | 5.40 | 5.11 |
+| ok | 5.55 | 5.95 | 5.22 | 4.94 |
+| warn | 6.00 | 6.43 | 5.64 | 5.34 |
+| bad | 5.45 | 5.84 | 5.12 | 4.85 |
+| info | 5.62 | 6.03 | 5.28 | 5.00 |
+| fav (icon/badge only) | 4.04 | 4.33 | 3.80 | 3.60 |
+| s1 (chart) | 5.42 | 5.80 | 5.09 | 4.82 |
+| s2 (chart) | 4.64 | 4.97 | 4.36 | 4.13 |
+| s3 (chart) | 5.21 | 5.58 | 4.90 | 4.64 |
+| line2 (control boundary) | 3.98 | 4.26 | 3.73 | 3.54 |
+
+Text on accent (`accent-ink` over `accent`): 6.16:1.
 
 ### USER dark gallery
 
@@ -60,7 +74,7 @@ for information-bearing text.
 | --- | --- | --- | --- |
 | bg | #0f1116 | surface | #171a21 |
 | sunken | #1e222b | raise | #252a35 |
-| line | #2a2f3a | line2 | #3a4150 |
+| line | #2a2f3a | line2 | #778396 (corrected control boundary) |
 | ink | #e8eaf0 | muted | #a0a7b4 |
 | faint | #747c8a | accent | #7d9cff |
 | accent-ink | #0d1220 | accent-soft | #1f2a47 |
@@ -69,6 +83,28 @@ for information-bearing text.
 | fav | #ff6f9f | s1 | #3987e5 |
 | s2 | #d95926 | s3 | #199e70 |
 | shade | rgba(0,0,0,.4) | overlay | #0c0e12 |
+| f-disp | "Bricolage Grotesque","Figtree",system-ui,sans-serif | f-body | "Figtree",system-ui,-apple-system,"Segoe UI",sans-serif |
+| f-mono | "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace | radius | 14px |
+| btn-r | 999px | row-h | 190px |
+
+Text and graphic contrast ratios (foreground over bg, surface, sunken, raise):
+
+| Foreground | bg | surface | sunken | raise |
+| --- | ---: | ---: | ---: | ---: |
+| ink | 15.70 | 14.47 | 13.24 | 11.95 |
+| muted | 7.81 | 7.20 | 6.58 | 5.94 |
+| accent | 7.26 | 6.69 | 6.12 | 5.52 |
+| ok | 8.94 | 8.24 | 7.54 | 6.81 |
+| warn | 9.90 | 9.13 | 8.35 | 7.54 |
+| bad | 7.49 | 6.90 | 6.31 | 5.70 |
+| info | 7.95 | 7.33 | 6.70 | 6.05 |
+| fav (icon/badge only) | 7.22 | 6.65 | 6.09 | 5.49 |
+| s1 (chart) | 5.19 | 4.78 | 4.38 | 3.95 |
+| s2 (chart) | 4.86 | 4.48 | 4.10 | 3.70 |
+| s3 (chart) | 5.54 | 5.11 | 4.68 | 4.22 |
+| line2 (control boundary) | 4.92 | 4.54 | 4.15 | 3.74 |
+
+Text on accent (`accent-ink` over `accent`): 7.18:1.
 
 ### ADMIN dark control room
 
@@ -76,42 +112,75 @@ for information-bearing text.
 | --- | --- | --- | --- |
 | bg | #0b0f15 | surface | #11171f |
 | sunken | #161e28 | raise | #1c2632 |
-| line | #222c3a | line2 | #2e3a4c |
+| line | #222c3a | line2 | #7a8798 (corrected control boundary) |
 | ink | #d6dee8 | muted | #8190a4 |
 | faint | #5d6b82 | accent | #4cb4d8 |
 | accent-ink | #04131a | accent-soft | #12303d |
 | ok | #3cb87c | warn | #e2ae3d |
-| bad | #ea5a4e | info | #9590ee |
+| bad | #f2766b | info | #9590ee |
 | fav | #ee5d98 | s1 | #3987e5 |
 | s2 | #d95926 | s3 | #199e70 |
 | shade | rgba(0,0,0,.45) | overlay | #0c0e12 |
+| f-disp | "Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif | f-body | "Barlow",system-ui,-apple-system,"Segoe UI",sans-serif |
+| f-mono | "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace | radius | 9px |
+| btn-r | 7px | row-h | 190px |
+
+Text and graphic contrast ratios (foreground over bg, surface, sunken, raise):
+
+| Foreground | bg | surface | sunken | raise |
+| --- | ---: | ---: | ---: | ---: |
+| ink | 14.15 | 13.27 | 12.37 | 11.27 |
+| muted | 5.91 | 5.54 | 5.17 | 4.71 |
+| accent | 8.07 | 7.57 | 7.06 | 6.43 |
+| ok | 7.63 | 7.15 | 6.67 | 6.08 |
+| warn | 9.47 | 8.88 | 8.28 | 7.54 |
+| bad | 7.02 | 6.57 | 6.13 | 5.59 |
+| info | 6.86 | 6.43 | 6.00 | 5.47 |
+| fav (icon/badge only) | 6.09 | 5.71 | 5.32 | 4.85 |
+| s1 (chart) | 5.28 | 4.95 | 4.62 | 4.20 |
+| s2 (chart) | 4.95 | 4.64 | 4.32 | 3.94 |
+| s3 (chart) | 5.64 | 5.29 | 4.93 | 4.49 |
+| line2 (control boundary) | 5.26 | 4.93 | 4.60 | 4.19 |
+
+Text on accent (`accent-ink` over `accent`): 7.93:1.
 
 ### ADMIN light control room
 
-| Token | POC | Required value | Meaning |
+| Token | Value | Token | Value |
 | --- | --- | --- | --- |
-| bg | #eef1f5 | #eef1f5 | Page canvas |
-| surface | #ffffff | #ffffff | Cards and panels |
-| sunken | #f5f7fa | #f5f7fa | Inputs and recessed areas |
-| raise | #e9edf3 | #e9edf3 | Raised/hover surface |
-| line | #dce2ea | #dce2ea | Decorative separators only |
-| line2 | #c9d2de | #c9d2de | Stronger boundaries |
-| ink | #16202c | #16202c | Primary text |
-| muted | #56657a | #56657a | Secondary text (5.24:1 on bg) |
-| faint | #7d8a9c | #7d8a9c | Decorative, text-free detail only |
-| accent | #0c7da3 | #006482 | Links, focus, primary action |
-| accent-ink | #ffffff | #ffffff | Text on accent |
-| accent-soft | #dcf0f7 | #dcf0f7 | Accent tint/background |
-| ok | #1c8752 | #176d42 | Success state |
-| warn | #9c6a00 | #815800 | Warning state |
-| bad | #c5372c | #c5372c | Error state |
-| info | #5a52c9 | #5a52c9 | Informational state |
-| fav | #c7366f | #c7366f | Favorite and notification badge |
-| s1 | #2a78d6 | #1f66b4 | First chart series |
-| s2 | #eb6834 | #b8481e | Second chart series |
-| s3 | #1baf7a | #08774f | Third chart series |
-| shade | rgba(20,32,48,.14) | same | Surface shadow |
-| overlay | #0c0e12 | same | Modal/lightbox backdrop |
+| bg | #eef1f5 | surface | #ffffff |
+| sunken | #f5f7fa | raise | #e9edf3 |
+| line | #dce2ea | line2 | #737f90 (corrected control boundary) |
+| ink | #16202c | muted | #56657a |
+| faint | #7d8a9c | accent | #006482 (corrected) |
+| accent-ink | #ffffff | accent-soft | #dcf0f7 |
+| ok | #176d42 | warn | #815800 |
+| bad | #c5372c | info | #5a52c9 |
+| fav | #c7366f | s1 | #1f66b4 |
+| s2 | #b8481e | s3 | #08774f |
+| shade | rgba(20,32,48,.14) | overlay | #0c0e12 |
+| f-disp | "Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif | f-body | "Barlow",system-ui,-apple-system,"Segoe UI",sans-serif |
+| f-mono | "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace | radius | 9px |
+| btn-r | 7px | row-h | 190px |
+
+Text and graphic contrast ratios (foreground over bg, surface, sunken, raise):
+
+| Foreground | bg | surface | sunken | raise |
+| --- | ---: | ---: | ---: | ---: |
+| ink | 14.51 | 16.44 | 15.32 | 13.99 |
+| muted | 5.24 | 5.94 | 5.53 | 5.05 |
+| accent | 7.22 | 8.18 | 7.62 | 6.96 |
+| ok | 6.36 | 7.20 | 6.71 | 6.13 |
+| warn | 6.38 | 7.22 | 6.73 | 6.15 |
+| bad | 4.68 | 5.31 | 4.95 | 4.52 |
+| info | 5.32 | 6.03 | 5.61 | 5.13 |
+| fav (icon/badge only) | 4.43 | 5.02 | 4.67 | 4.27 |
+| s1 (chart) | 5.12 | 5.80 | 5.41 | 4.94 |
+| s2 (chart) | 4.65 | 5.27 | 4.91 | 4.49 |
+| s3 (chart) | 4.93 | 5.58 | 5.20 | 4.75 |
+| line2 (control boundary) | 3.59 | 4.06 | 3.79 | 3.46 |
+
+Text on accent (`accent-ink` over `accent`): 6.68:1.
 
 Pair status colors with text, icons, labels, or chart markers; color alone never
 communicates state. Line is a low-contrast decorative divider. Interactive
