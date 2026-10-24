@@ -29,6 +29,7 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 
 | id | role | route | title | spec | mockup | build ticket | E2E spec |
 |---|---|---|---|---|---|---|---|
+| `user-shell` | user | all user routes | App shell, navigation and global states | [spec](views/user-shell.md) | [mockup](mockups/user-shell.html) | JOOXF-79, JOOXF-166 | `web/e2e/user-shell.spec.ts` |
 | `user-home` | user | `/` | Home | pending | pending | TBD | `web/e2e/user-home.spec.ts` |
 | `user-library` | user | `/library` | Library | pending | pending | TBD | `web/e2e/user-library.spec.ts` |
 | `user-search` | user | `/search` | Search | pending | pending | TBD | `web/e2e/user-search.spec.ts` |
