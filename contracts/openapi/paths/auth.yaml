@@ -1,0 +1,65 @@
+register:
+  post:
+    operationId: Register
+    summary: Register a user
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/auth.yaml#/AuthRequest
+    responses:
+      '201':
+        description: User created
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/auth.yaml#/User
+      '400':
+        description: Invalid request
+      '409':
+        description: Email already registered or registration closed
+
+login:
+  post:
+    operationId: Login
+    summary: Log in with email and password
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/auth.yaml#/AuthRequest
+    responses:
+      '200':
+        description: Authenticated user
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/auth.yaml#/User
+      '401':
+        description: Invalid email or password
+      '429':
+        description: Too many login attempts
+
+logout:
+  post:
+    operationId: Logout
+    summary: Log out
+    responses:
+      '204':
+        description: Logged out
+
+me:
+  get:
+    operationId: GetMe
+    summary: Get the authenticated user
+    responses:
+      '200':
+        description: Authenticated user
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/auth.yaml#/User
+      '401':
+        description: Authentication required

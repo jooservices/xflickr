@@ -5,3 +5,4 @@ export type { HTTPStatusCode4xx } from './common/common';
 export type { HTTPStatusCode5xx } from './common/common';
 export type { HTTPStatusCodes } from './common/common';
 export * from './common/common';
+export * from './default/default';

@@ -1,0 +1,31 @@
+AuthRequest:
+  type: object
+  additionalProperties: false
+  required: [email, password]
+  properties:
+    email:
+      type: string
+      format: email
+    password:
+      type: string
+      minLength: 1
+      writeOnly: true
+User:
+  type: object
+  additionalProperties: false
+  required: [id, email, role, locale, created_at]
+  properties:
+    id:
+      type: integer
+      format: int64
+    email:
+      type: string
+      format: email
+    role:
+      type: string
+      enum: [admin, user]
+    locale:
+      type: string
+    created_at:
+      type: string
+      format: date-time

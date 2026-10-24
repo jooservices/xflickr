@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.0.0
  */
 
+export * from './authRequest';
 export * from './error';
 export * from './errorDetails';
 export * from './health';
+export * from './user';
+export * from './userRole';

@@ -17,14 +17,15 @@ import (
 // Values are loaded from the process environment, with an optional .env file
 // for local development.
 type Config struct {
-	DB     DBConfig
-	Redis  RedisConfig
-	Search SearchConfig
-	Blob   BlobConfig
-	AI     AIConfig
-	Obs    ObsConfig
-	Node   NodeConfig
-	Crypto CryptoConfig
+	DB       DBConfig
+	Redis    RedisConfig
+	Search   SearchConfig
+	Blob     BlobConfig
+	AI       AIConfig
+	Obs      ObsConfig
+	Node     NodeConfig
+	Crypto   CryptoConfig
+	Identity IdentityConfig
 
 	HTTPPort int
 	LogLevel string
@@ -104,6 +105,15 @@ type NodeConfig struct {
 type CryptoConfig struct {
 	MasterKeys        string `env:"XFLICKR_MASTER_KEYS"`
 	ActiveMasterKeyID string `env:"XFLICKR_MASTER_KEY_ACTIVE"`
+}
+
+// IdentityConfig contains password hashing parameters.
+type IdentityConfig struct {
+	Argon2Memory      uint32 `env:"ARGON2ID_MEMORY" envDefault:"65536"`
+	Argon2Iterations  uint32 `env:"ARGON2ID_ITERATIONS" envDefault:"3"`
+	Argon2Parallelism uint8  `env:"ARGON2ID_PARALLELISM" envDefault:"2"`
+	Argon2SaltLength  uint32 `env:"ARGON2ID_SALT_LENGTH" envDefault:"16"`
+	Argon2KeyLength   uint32 `env:"ARGON2ID_KEY_LENGTH" envDefault:"32"`
 }
 
 var requiredEnvironment = []string{
@@ -209,6 +219,7 @@ func LoadFromEnv(values map[string]string) (Config, error) {
 		&cfg.Obs,
 		&cfg.Node,
 		&cfg.Crypto,
+		&cfg.Identity,
 		&runtime,
 	} {
 		if err := env.ParseWithOptions(target, env.Options{Environment: values}); err != nil {
@@ -290,6 +301,9 @@ func (cfg DBConfig) Validate() error {
 }
 
 func (cfg *Config) validate() error {
+	if cfg.Identity.Argon2Memory < 8*uint32(cfg.Identity.Argon2Parallelism) || cfg.Identity.Argon2Iterations == 0 || cfg.Identity.Argon2Parallelism == 0 || cfg.Identity.Argon2SaltLength < 8 || cfg.Identity.Argon2KeyLength < 16 {
+		return fmt.Errorf("ARGON2ID parameters are invalid")
+	}
 	if cfg.HTTPPort < 1 || cfg.HTTPPort > 65535 {
 		return fmt.Errorf("HTTP_PORT must be between 1 and 65535")
 	}

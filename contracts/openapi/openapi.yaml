@@ -6,9 +6,21 @@ info:
 paths:
   /healthz:
     $ref: ./paths/common.yaml#/healthz
+  /auth/register:
+    $ref: ./paths/auth.yaml#/register
+  /auth/login:
+    $ref: ./paths/auth.yaml#/login
+  /auth/logout:
+    $ref: ./paths/auth.yaml#/logout
+  /me:
+    $ref: ./paths/auth.yaml#/me
 components:
   schemas:
     Error:
       $ref: ./schemas/common.yaml#/Error
     Health:
       $ref: ./schemas/common.yaml#/Health
+    AuthRequest:
+      $ref: ./schemas/auth.yaml#/AuthRequest
+    User:
+      $ref: ./schemas/auth.yaml#/User
