@@ -32,6 +32,9 @@ func TestLoadFromEnvAppliesDefaults(t *testing.T) {
 	if cfg.Obs.URL != "http://127.0.0.1:15080" || cfg.Obs.Org != "default" || cfg.Obs.Stream != "xflickr" {
 		t.Errorf("Obs defaults = %#v", cfg.Obs)
 	}
+	if cfg.Flickr.CallbackURL != "http://127.0.0.1:8080/flickr-accounts/callback" {
+		t.Errorf("Flickr callback default = %q", cfg.Flickr.CallbackURL)
+	}
 	if cfg.HTTPPort != 8080 || cfg.LogLevel != "info" {
 		t.Errorf("runtime defaults = port %d, level %q", cfg.HTTPPort, cfg.LogLevel)
 	}
@@ -327,5 +330,21 @@ func clearConfigEnvironment(t *testing.T) {
 		if err := os.Unsetenv(name); err != nil {
 			t.Fatalf("unset %s: %v", name, err)
 		}
+	}
+}
+
+func TestLoadFromEnvValidatesTheFlickrCallbackURL(t *testing.T) {
+	for _, bad := range []string{"/flickr-accounts/callback", "ftp://example.com/cb", "not a url", "http://"} {
+		values := requiredEnv()
+		values["FLICKR_OAUTH_CALLBACK_URL"] = bad
+		if _, err := LoadFromEnv(values); err == nil || !strings.Contains(err.Error(), "FLICKR_OAUTH_CALLBACK_URL") {
+			t.Errorf("callback %q error = %v", bad, err)
+		}
+	}
+	values := requiredEnv()
+	values["FLICKR_OAUTH_CALLBACK_URL"] = " https://xflickr.example/flickr-accounts/callback "
+	cfg, err := LoadFromEnv(values)
+	if err != nil || cfg.Flickr.CallbackURL != "https://xflickr.example/flickr-accounts/callback" {
+		t.Fatalf("callback = %q %v", cfg.Flickr.CallbackURL, err)
 	}
 }

@@ -142,6 +142,15 @@ func (f *Flow) RequestToken(ctx context.Context, callbackURL string) (token, sec
 	return token, secret, nil
 }
 
+// ResumeRequest restores a request token issued earlier, possibly by another
+// process, so AccessToken can complete the authorization.
+func (f *Flow) ResumeRequest(token, secret string) {
+	if f != nil {
+		f.requestToken = token
+		f.requestSecret = secret
+	}
+}
+
 // AuthorizeURL is the Flickr page the member opens to grant perms.
 // An empty perms value means read. write and delete are the other Flickr values.
 func (f *Flow) AuthorizeURL(token, perms string) (string, error) {

@@ -325,3 +325,26 @@ type errorReadCloser struct{}
 
 func (errorReadCloser) Read([]byte) (int, error) { return 0, errors.New("read broke") }
 func (errorReadCloser) Close() error             { return nil }
+
+func TestFlowResumeRequestAllowsAccessTokenInAnotherProcess(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("oauth_token") != "request-token" {
+			t.Errorf("oauth_token = %q", r.URL.Query().Get("oauth_token"))
+		}
+		assertQuerySignature(t, r, "consumer secret", "request-secret")
+		_, _ = io.WriteString(w, "oauth_token=access-token&oauth_token_secret=access-secret&user_nsid=1%40N01&username=jamal")
+	}))
+	defer server.Close()
+
+	flow := NewFlow("consumer-key", "consumer secret", server.Client())
+	flow.SetEndpoints("", "", server.URL+"/access_token")
+	flow.SetClock(func() time.Time { return time.Unix(1305586162, 0) })
+	flow.SetNonceGenerator(func() (string, error) { return "nonce-1", nil })
+	flow.ResumeRequest("request-token", "request-secret")
+	token, secret, nsid, username, err := flow.AccessToken(t.Context(), "verifier-1")
+	if err != nil || token != "access-token" || secret != "access-secret" || nsid != "1@N01" || username != "jamal" {
+		t.Fatalf("access = %q %q %q %q %v", token, secret, nsid, username, err)
+	}
+	(*Flow)(nil).ResumeRequest("a", "b")
+}

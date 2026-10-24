@@ -34,3 +34,13 @@ func (StrictHandler) GetKey(context.Context, gen.GetKeyRequestObject) (gen.GetKe
 func (StrictHandler) UpdateKey(context.Context, gen.UpdateKeyRequestObject) (gen.UpdateKeyResponseObject, error) {
 	return nil, errAPIKeysServedByAccounts
 }
+
+var errFlickrAccountsServedByAccounts = errors.New("identity: flickr accounts are served by the accounts module")
+
+func (StrictHandler) ConnectFlickrAccount(context.Context, gen.ConnectFlickrAccountRequestObject) (gen.ConnectFlickrAccountResponseObject, error) {
+	return nil, errFlickrAccountsServedByAccounts
+}
+
+func (StrictHandler) FlickrAccountCallback(context.Context, gen.FlickrAccountCallbackRequestObject) (gen.FlickrAccountCallbackResponseObject, error) {
+	return nil, errFlickrAccountsServedByAccounts
+}

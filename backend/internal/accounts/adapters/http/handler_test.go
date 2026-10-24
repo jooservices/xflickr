@@ -151,7 +151,7 @@ func TestUpdateKeyChangesLabelAndKeepsTheSecretOutOfTheResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	updated, ok := response.(gen.UpdateKey200JSONResponse)
-	if !ok || updated.Label != "Archive" || updated.Status != gen.Invalid || updated.PerHourLimit != 3600 {
+	if !ok || updated.Label != "Archive" || updated.Status != gen.APIKeyStatusInvalid || updated.PerHourLimit != 3600 {
 		t.Fatalf("response = %#v", response)
 	}
 	assertMasked(t, gen.APIKey(updated))
@@ -212,7 +212,7 @@ func TestGetListAndDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	keys, ok := listed.(gen.ListKeys200JSONResponse)
-	if !ok || len(keys) != 2 || keys[1].Status != gen.Revoked || keys[1].KeyPublic != "•••••" {
+	if !ok || len(keys) != 2 || keys[1].Status != gen.APIKeyStatusRevoked || keys[1].KeyPublic != "•••••" {
 		t.Fatalf("list = %#v", listed)
 	}
 	if strings.Contains(encoded(t, listed), publicKey) {

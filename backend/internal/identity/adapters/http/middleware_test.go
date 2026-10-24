@@ -272,6 +272,14 @@ func TestProtectRoutesLeavesPublicRequestsOpen(t *testing.T) {
 			t.Fatalf("%s status = %d", target, keysResponse.Code)
 		}
 	}
+	for _, target := range []string{"/flickr-accounts/connect", "/flickr-accounts/callback"} {
+		account := httptest.NewRequest(http.MethodGet, target, nil)
+		accountResponse := httptest.NewRecorder()
+		router.ServeHTTP(accountResponse, account)
+		if accountResponse.Code != http.StatusUnauthorized {
+			t.Fatalf("%s status = %d", target, accountResponse.Code)
+		}
+	}
 	if !authenticatedRequest(http.MethodPost, "/keys") || !authenticatedRequest(http.MethodDelete, "/keys/9") {
 		t.Fatal("key mutations were left public")
 	}

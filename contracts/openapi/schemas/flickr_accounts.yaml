@@ -1,0 +1,47 @@
+ConnectFlickrAccountRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - key_id
+  properties:
+    key_id:
+      type: integer
+      format: int64
+      description: The stored API key the Flickr account authorizes. The token belongs to this key.
+ConnectFlickrAccountResponse:
+  type: object
+  additionalProperties: false
+  required:
+    - authorize_url
+  properties:
+    authorize_url:
+      type: string
+      description: Flickr page the member opens to grant access. The request token expires after 10 minutes.
+FlickrAccount:
+  type: object
+  additionalProperties: false
+  description: A connected Flickr account. Tokens are never included.
+  required:
+    - id
+    - key_id
+    - nsid
+    - username
+    - status
+    - created_at
+  properties:
+    id:
+      type: integer
+      format: int64
+    key_id:
+      type: integer
+      format: int64
+    nsid:
+      type: string
+    username:
+      type: string
+    status:
+      type: string
+      enum: [ok, reconnect_required, revoked]
+    created_at:
+      type: string
+      format: date-time

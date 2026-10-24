@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ type Config struct {
 	Node     NodeConfig
 	Crypto   CryptoConfig
 	Identity IdentityConfig
+	Flickr   FlickrConfig
 
 	HTTPPort int
 	LogLevel string
@@ -114,6 +116,12 @@ type IdentityConfig struct {
 	Argon2Parallelism uint8  `env:"ARGON2ID_PARALLELISM" envDefault:"2"`
 	Argon2SaltLength  uint32 `env:"ARGON2ID_SALT_LENGTH" envDefault:"16"`
 	Argon2KeyLength   uint32 `env:"ARGON2ID_KEY_LENGTH" envDefault:"32"`
+}
+
+// FlickrConfig contains the Flickr OAuth callback. The API key and secret are
+// entered in the application UI and never configured here.
+type FlickrConfig struct {
+	CallbackURL string `env:"FLICKR_OAUTH_CALLBACK_URL" envDefault:"http://127.0.0.1:8080/flickr-accounts/callback"`
 }
 
 var requiredEnvironment = []string{
@@ -220,6 +228,7 @@ func LoadFromEnv(values map[string]string) (Config, error) {
 		&cfg.Node,
 		&cfg.Crypto,
 		&cfg.Identity,
+		&cfg.Flickr,
 		&runtime,
 	} {
 		if err := env.ParseWithOptions(target, env.Options{Environment: values}); err != nil {
@@ -304,6 +313,11 @@ func (cfg *Config) validate() error {
 	if cfg.Identity.Argon2Memory < 8*uint32(cfg.Identity.Argon2Parallelism) || cfg.Identity.Argon2Iterations == 0 || cfg.Identity.Argon2Parallelism == 0 || cfg.Identity.Argon2SaltLength < 8 || cfg.Identity.Argon2KeyLength < 16 {
 		return fmt.Errorf("ARGON2ID parameters are invalid")
 	}
+	callback, err := url.Parse(strings.TrimSpace(cfg.Flickr.CallbackURL))
+	if err != nil || callback.Host == "" || (callback.Scheme != "http" && callback.Scheme != "https") {
+		return fmt.Errorf("FLICKR_OAUTH_CALLBACK_URL must be an absolute http or https URL")
+	}
+	cfg.Flickr.CallbackURL = callback.String()
 	if cfg.HTTPPort < 1 || cfg.HTTPPort > 65535 {
 		return fmt.Errorf("HTTP_PORT must be between 1 and 65535")
 	}

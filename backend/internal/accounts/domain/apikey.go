@@ -31,12 +31,6 @@ const (
 	// or invalid again.
 	StatusRevoked Status = "revoked"
 
-	// AccountStatusConnected is a Flickr account that can call with its key.
-	AccountStatusConnected = "connected"
-	// AccountStatusReconnectRequired is set when the key secret changes.
-	// The account must authorize again before its token can be used.
-	AccountStatusReconnectRequired = "reconnect_required"
-
 	// DeletedTopic is the transactional outbox topic published when a key is deleted.
 	// Consumers stop queued work for that key.
 	DeletedTopic = "key.deleted"

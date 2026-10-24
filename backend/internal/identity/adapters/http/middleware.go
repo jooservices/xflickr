@@ -223,7 +223,7 @@ func authenticatedRequest(method, path string) bool {
 	if _, ok := authenticatedRoutes[method+" "+path]; ok {
 		return true
 	}
-	if path != "/keys" && !strings.HasPrefix(path, "/keys/") {
+	if path != "/keys" && !strings.HasPrefix(path, "/keys/") && !strings.HasPrefix(path, "/flickr-accounts/") {
 		return false
 	}
 	switch method {

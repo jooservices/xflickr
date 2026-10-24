@@ -20,6 +20,10 @@ paths:
     $ref: ./paths/keys.yaml#/collection
   /keys/{id}:
     $ref: ./paths/keys.yaml#/item
+  /flickr-accounts/connect:
+    $ref: ./paths/flickr_accounts.yaml#/connect
+  /flickr-accounts/callback:
+    $ref: ./paths/flickr_accounts.yaml#/callback
 components:
   schemas:
     Error:
@@ -36,3 +40,9 @@ components:
       $ref: ./schemas/keys.yaml#/CreateKeyRequest
     UpdateKeyRequest:
       $ref: ./schemas/keys.yaml#/UpdateKeyRequest
+    ConnectFlickrAccountRequest:
+      $ref: ./schemas/flickr_accounts.yaml#/ConnectFlickrAccountRequest
+    ConnectFlickrAccountResponse:
+      $ref: ./schemas/flickr_accounts.yaml#/ConnectFlickrAccountResponse
+    FlickrAccount:
+      $ref: ./schemas/flickr_accounts.yaml#/FlickrAccount

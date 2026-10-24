@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -24,19 +25,40 @@ import (
 
 // Defines values for APIKeyStatus.
 const (
-	Invalid APIKeyStatus = "invalid"
-	Revoked APIKeyStatus = "revoked"
-	Valid   APIKeyStatus = "valid"
+	APIKeyStatusInvalid APIKeyStatus = "invalid"
+	APIKeyStatusRevoked APIKeyStatus = "revoked"
+	APIKeyStatusValid   APIKeyStatus = "valid"
 )
 
 // Valid indicates whether the value is a known member of the APIKeyStatus enum.
 func (e APIKeyStatus) Valid() bool {
 	switch e {
-	case Invalid:
+	case APIKeyStatusInvalid:
 		return true
-	case Revoked:
+	case APIKeyStatusRevoked:
 		return true
-	case Valid:
+	case APIKeyStatusValid:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlickrAccountStatus.
+const (
+	FlickrAccountStatusOk                FlickrAccountStatus = "ok"
+	FlickrAccountStatusReconnectRequired FlickrAccountStatus = "reconnect_required"
+	FlickrAccountStatusRevoked           FlickrAccountStatus = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the FlickrAccountStatus enum.
+func (e FlickrAccountStatus) Valid() bool {
+	switch e {
+	case FlickrAccountStatusOk:
+		return true
+	case FlickrAccountStatusReconnectRequired:
+		return true
+	case FlickrAccountStatusRevoked:
 		return true
 	default:
 		return false
@@ -86,6 +108,18 @@ type AuthRequest struct {
 	Password *string             `json:"password,omitempty"`
 }
 
+// ConnectFlickrAccountRequest defines model for ConnectFlickrAccountRequest.
+type ConnectFlickrAccountRequest struct {
+	// KeyID The stored API key the Flickr account authorizes. The token belongs to this key.
+	KeyID int64 `json:"key_id"`
+}
+
+// ConnectFlickrAccountResponse defines model for ConnectFlickrAccountResponse.
+type ConnectFlickrAccountResponse struct {
+	// AuthorizeURL Flickr page the member opens to grant access. The request token expires after 10 minutes.
+	AuthorizeURL string `json:"authorize_url"`
+}
+
 // CreateKeyRequest defines model for CreateKeyRequest.
 type CreateKeyRequest struct {
 	// Burst Short burst size. Omitted values use the administrator cap.
@@ -117,6 +151,19 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// FlickrAccount A connected Flickr account. Tokens are never included.
+type FlickrAccount struct {
+	CreatedAt time.Time           `json:"created_at"`
+	ID        int64               `json:"id"`
+	KeyID     int64               `json:"key_id"`
+	Nsid      string              `json:"nsid"`
+	Status    FlickrAccountStatus `json:"status"`
+	Username  string              `json:"username"`
+}
+
+// FlickrAccountStatus defines model for FlickrAccount.Status.
+type FlickrAccountStatus string
+
 // Health Process health reported by GET /healthz.
 type Health struct {
 	// Status Health status. Healthy processes report ok.
@@ -147,11 +194,23 @@ type User struct {
 // UserRole defines model for User.Role.
 type UserRole string
 
+// FlickrAccountCallbackParams defines parameters for FlickrAccountCallback.
+type FlickrAccountCallbackParams struct {
+	State      string `form:"state" json:"state"`
+	OauthToken string `form:"oauth_token" json:"oauth_token"`
+
+	// OauthVerifier Absent when the member declined access.
+	OauthVerifier *string `form:"oauth_verifier,omitempty" json:"oauth_verifier,omitempty"`
+}
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = AuthRequest
 
 // RegisterJSONRequestBody defines body for Register for application/json ContentType.
 type RegisterJSONRequestBody = AuthRequest
+
+// ConnectFlickrAccountJSONRequestBody defines body for ConnectFlickrAccount for application/json ContentType.
+type ConnectFlickrAccountJSONRequestBody = ConnectFlickrAccountRequest
 
 // CreateKeyJSONRequestBody defines body for CreateKey for application/json ContentType.
 type CreateKeyJSONRequestBody = CreateKeyRequest
@@ -173,6 +232,12 @@ type ServerInterface interface {
 	// RevokeOtherSessions Revoke every session except the current one
 	// (DELETE /auth/sessions)
 	RevokeOtherSessions(w http.ResponseWriter, r *http.Request)
+	// FlickrAccountCallback Complete connecting a Flickr account
+	// (GET /flickr-accounts/callback)
+	FlickrAccountCallback(w http.ResponseWriter, r *http.Request, params FlickrAccountCallbackParams)
+	// ConnectFlickrAccount Start connecting a Flickr account
+	// (POST /flickr-accounts/connect)
+	ConnectFlickrAccount(w http.ResponseWriter, r *http.Request)
 	// GetHealth Report process health.
 	// (GET /healthz)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -221,6 +286,18 @@ func (_ Unimplemented) Register(w http.ResponseWriter, r *http.Request) {
 // RevokeOtherSessions Revoke every session except the current one
 // (DELETE /auth/sessions)
 func (_ Unimplemented) RevokeOtherSessions(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// FlickrAccountCallback Complete connecting a Flickr account
+// (GET /flickr-accounts/callback)
+func (_ Unimplemented) FlickrAccountCallback(w http.ResponseWriter, r *http.Request, params FlickrAccountCallbackParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ConnectFlickrAccount Start connecting a Flickr account
+// (POST /flickr-accounts/connect)
+func (_ Unimplemented) ConnectFlickrAccount(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -322,6 +399,79 @@ func (siw *ServerInterfaceWrapper) RevokeOtherSessions(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RevokeOtherSessions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// FlickrAccountCallback operation middleware
+func (siw *ServerInterfaceWrapper) FlickrAccountCallback(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params FlickrAccountCallbackParams
+
+	// ------------- Required query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "oauth_token" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "oauth_token", r.URL.Query(), &params.OauthToken, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "oauth_token"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "oauth_token", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "oauth_verifier" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "oauth_verifier", r.URL.Query(), &params.OauthVerifier, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "oauth_verifier"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "oauth_verifier", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FlickrAccountCallback(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectFlickrAccount operation middleware
+func (siw *ServerInterfaceWrapper) ConnectFlickrAccount(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectFlickrAccount(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -611,6 +761,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/keys/{id}", wrapper.UpdateKey)
 	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/flickr-accounts/connect", wrapper.ConnectFlickrAccount)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/flickr-accounts/callback", wrapper.FlickrAccountCallback)
+	})
 
 	return r
 }
@@ -735,6 +891,204 @@ type RevokeOtherSessions403Response struct {
 func (response RevokeOtherSessions403Response) VisitRevokeOtherSessionsResponse(w http.ResponseWriter) error {
 	w.WriteHeader(403)
 	return nil
+}
+
+type FlickrAccountCallbackRequestObject struct {
+	Params FlickrAccountCallbackParams
+}
+
+type FlickrAccountCallbackResponseObject interface {
+	VisitFlickrAccountCallbackResponse(w http.ResponseWriter) error
+}
+
+type FlickrAccountCallback200JSONResponse FlickrAccount
+
+func (response FlickrAccountCallback200JSONResponse) VisitFlickrAccountCallbackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FlickrAccountCallback400JSONResponse Error
+
+func (response FlickrAccountCallback400JSONResponse) VisitFlickrAccountCallbackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FlickrAccountCallback401JSONResponse Error
+
+func (response FlickrAccountCallback401JSONResponse) VisitFlickrAccountCallbackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FlickrAccountCallback409JSONResponse Error
+
+func (response FlickrAccountCallback409JSONResponse) VisitFlickrAccountCallbackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FlickrAccountCallback422JSONResponse Error
+
+func (response FlickrAccountCallback422JSONResponse) VisitFlickrAccountCallbackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FlickrAccountCallback503JSONResponse Error
+
+func (response FlickrAccountCallback503JSONResponse) VisitFlickrAccountCallbackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConnectFlickrAccountRequestObject struct {
+	Body *ConnectFlickrAccountJSONRequestBody
+}
+
+type ConnectFlickrAccountResponseObject interface {
+	VisitConnectFlickrAccountResponse(w http.ResponseWriter) error
+}
+
+type ConnectFlickrAccount200JSONResponse ConnectFlickrAccountResponse
+
+func (response ConnectFlickrAccount200JSONResponse) VisitConnectFlickrAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConnectFlickrAccount400JSONResponse Error
+
+func (response ConnectFlickrAccount400JSONResponse) VisitConnectFlickrAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConnectFlickrAccount401JSONResponse Error
+
+func (response ConnectFlickrAccount401JSONResponse) VisitConnectFlickrAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConnectFlickrAccount404JSONResponse Error
+
+func (response ConnectFlickrAccount404JSONResponse) VisitConnectFlickrAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConnectFlickrAccount409JSONResponse Error
+
+func (response ConnectFlickrAccount409JSONResponse) VisitConnectFlickrAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConnectFlickrAccount422JSONResponse Error
+
+func (response ConnectFlickrAccount422JSONResponse) VisitConnectFlickrAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConnectFlickrAccount503JSONResponse Error
+
+func (response ConnectFlickrAccount503JSONResponse) VisitConnectFlickrAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type GetHealthRequestObject struct {
@@ -1132,6 +1486,12 @@ type StrictServerInterface interface {
 	// RevokeOtherSessions Revoke every session except the current one
 	// (DELETE /auth/sessions)
 	RevokeOtherSessions(ctx context.Context, request RevokeOtherSessionsRequestObject) (RevokeOtherSessionsResponseObject, error)
+	// FlickrAccountCallback Complete connecting a Flickr account
+	// (GET /flickr-accounts/callback)
+	FlickrAccountCallback(ctx context.Context, request FlickrAccountCallbackRequestObject) (FlickrAccountCallbackResponseObject, error)
+	// ConnectFlickrAccount Start connecting a Flickr account
+	// (POST /flickr-accounts/connect)
+	ConnectFlickrAccount(ctx context.Context, request ConnectFlickrAccountRequestObject) (ConnectFlickrAccountResponseObject, error)
 	// GetHealth Report process health.
 	// (GET /healthz)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
@@ -1297,6 +1657,63 @@ func (sh *strictHandler) RevokeOtherSessions(w http.ResponseWriter, r *http.Requ
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RevokeOtherSessionsResponseObject); ok {
 		if err := validResponse.VisitRevokeOtherSessionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// FlickrAccountCallback operation middleware
+func (sh *strictHandler) FlickrAccountCallback(w http.ResponseWriter, r *http.Request, params FlickrAccountCallbackParams) {
+	var request FlickrAccountCallbackRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.FlickrAccountCallback(ctx, request.(FlickrAccountCallbackRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "FlickrAccountCallback")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(FlickrAccountCallbackResponseObject); ok {
+		if err := validResponse.VisitFlickrAccountCallbackResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ConnectFlickrAccount operation middleware
+func (sh *strictHandler) ConnectFlickrAccount(w http.ResponseWriter, r *http.Request) {
+	var request ConnectFlickrAccountRequestObject
+
+	var body ConnectFlickrAccountJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ConnectFlickrAccount(ctx, request.(ConnectFlickrAccountRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ConnectFlickrAccount")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ConnectFlickrAccountResponseObject); ok {
+		if err := validResponse.VisitConnectFlickrAccountResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -1497,43 +1914,53 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"03B3k4+//d8A",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

@@ -24,3 +24,13 @@ func TestStrictHandlerLeavesAPIKeysToAccounts(t *testing.T) {
 		t.Fatalf("update error = %v", err)
 	}
 }
+
+func TestStrictHandlerLeavesFlickrAccountsToAccounts(t *testing.T) {
+	handler := StrictHandler{}
+	if _, err := handler.ConnectFlickrAccount(t.Context(), gen.ConnectFlickrAccountRequestObject{}); err != errFlickrAccountsServedByAccounts {
+		t.Fatalf("connect error = %v", err)
+	}
+	if _, err := handler.FlickrAccountCallback(t.Context(), gen.FlickrAccountCallbackRequestObject{}); err != errFlickrAccountsServedByAccounts {
+		t.Fatalf("callback error = %v", err)
+	}
+}

@@ -48,11 +48,12 @@ DELETE FROM api_keys
 WHERE id = $1 AND user_id = $2`
 )
 
-// markSQL uses the domain status constant so the stored value cannot drift.
+// markSQL uses the domain status constants so the stored values cannot drift.
+// A revoked account stays revoked: only an ok account needs to reconnect.
 var markSQL = `
-UPDATE connected_accounts
-SET status = '` + domain.AccountStatusReconnectRequired + `'
-WHERE api_key_id = $1 AND status IS DISTINCT FROM '` + domain.AccountStatusReconnectRequired + `'`
+UPDATE flickr_accounts
+SET status = '` + string(domain.AccountReconnectRequired) + `'
+WHERE key_id = $1 AND status = '` + string(domain.AccountOK) + `'`
 
 // Repository persists API keys. Read queries do not select secret_sealed.
 type Repository struct {

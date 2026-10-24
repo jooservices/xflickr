@@ -52,7 +52,7 @@ func TestQueriesDoNotReadSecrets(t *testing.T) {
 			t.Fatalf("read query selects a secret: %s", query)
 		}
 	}
-	if !strings.Contains(markSQL, domain.AccountStatusReconnectRequired) {
+	if !strings.Contains(markSQL, string(domain.AccountReconnectRequired)) {
 		t.Fatalf("mark SQL = %s", markSQL)
 	}
 }
@@ -117,7 +117,7 @@ func TestRepositoryUpdateMarksAccountsOnlyWhenSecretChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	database.accounts[created.ID] = domain.AccountStatusConnected
+	database.accounts[created.ID] = string(domain.AccountOK)
 	updated, err := repository.Update(t.Context(), 7, created.ID, func(current domain.APIKey) (domain.APIKey, *crypto.Sealed, error) {
 		current.Label = "Renamed"
 		current.PerHourLimit = 50
@@ -131,7 +131,7 @@ func TestRepositoryUpdateMarksAccountsOnlyWhenSecretChanges(t *testing.T) {
 	if updated.Label != "Renamed" || updated.PerHourLimit != 50 || updated.PublicKey != "public-key-one" || updated.Status != domain.StatusValid {
 		t.Fatalf("label update = %+v", updated)
 	}
-	if database.accounts[created.ID] != domain.AccountStatusConnected {
+	if database.accounts[created.ID] != string(domain.AccountOK) {
 		t.Fatalf("status after label update = %s", database.accounts[created.ID])
 	}
 	replacement := mustSeal("secret-two")
@@ -141,7 +141,7 @@ func TestRepositoryUpdateMarksAccountsOnlyWhenSecretChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if database.accounts[created.ID] != domain.AccountStatusReconnectRequired {
+	if database.accounts[created.ID] != string(domain.AccountReconnectRequired) {
 		t.Fatalf("status after secret update = %s", database.accounts[created.ID])
 	}
 	if database.keys[created.ID].sealed.KeyID != replacement.KeyID {
@@ -167,7 +167,7 @@ func TestRepositoryDeletePublishesEventWithoutSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	database.accounts[created.ID] = domain.AccountStatusConnected
+	database.accounts[created.ID] = string(domain.AccountOK)
 	if err := repository.Delete(t.Context(), 4, created.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -453,10 +453,10 @@ func (tx *memoryTx) Exec(_ context.Context, sql string, args ...any) (pgconn.Com
 		}
 		tx.keys[id] = stored
 		return pgconn.NewCommandTag("UPDATE 1"), nil
-	case strings.Contains(sql, "UPDATE connected_accounts"):
+	case strings.Contains(sql, "UPDATE flickr_accounts"):
 		id := args[0].(int64)
-		if status, ok := tx.accounts[id]; ok && status != domain.AccountStatusReconnectRequired {
-			tx.accounts[id] = domain.AccountStatusReconnectRequired
+		if status, ok := tx.accounts[id]; ok && status == string(domain.AccountOK) {
+			tx.accounts[id] = string(domain.AccountReconnectRequired)
 		}
 		return pgconn.NewCommandTag("UPDATE 1"), nil
 	case strings.Contains(sql, "DELETE FROM api_keys"):

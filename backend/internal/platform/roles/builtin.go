@@ -14,6 +14,7 @@ import (
 	accountsflickr "github.com/jooservices/xflickr/internal/accounts/adapters/flickr"
 	accountshttp "github.com/jooservices/xflickr/internal/accounts/adapters/http"
 	accountspostgres "github.com/jooservices/xflickr/internal/accounts/adapters/postgres"
+	accountsredis "github.com/jooservices/xflickr/internal/accounts/adapters/redis"
 	accountsettings "github.com/jooservices/xflickr/internal/accounts/adapters/settings"
 	accountsapp "github.com/jooservices/xflickr/internal/accounts/app"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
@@ -105,7 +106,11 @@ func (r APIRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return r.runServer(ctx, newAPIRouter(identity, keys))
+	connect, err := buildConnectHandler(pool, redisClient, cfg)
+	if err != nil {
+		return err
+	}
+	return r.runServer(ctx, newAPIRouter(identity, keys, connect))
 }
 
 // apiServer composes identity and API key handlers. The two types expose
@@ -113,16 +118,17 @@ func (r APIRole) Run(ctx context.Context) error {
 type apiServer struct {
 	identityhttp.Handler
 	accountshttp.KeyHandler
+	accountshttp.ConnectHandler
 }
 
 var _ gen.StrictServerInterface = apiServer{}
 
-func newAPIRouter(identity identityhttp.Handler, keys accountshttp.KeyHandler) http.Handler {
+func newAPIRouter(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler) http.Handler {
 	router := chi.NewRouter()
 	router.Use(identityhttp.RequestBodyLimit)
 	router.Use(identityhttp.CSRF)
 	router.Use(identityhttp.ProtectRoutes(identity.Sessions))
-	return gen.HandlerFromMux(gen.NewStrictHandler(apiServer{Handler: identity, KeyHandler: keys}, []gen.StrictMiddlewareFunc{
+	return gen.HandlerFromMux(gen.NewStrictHandler(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect}, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		identityhttp.MaintainSessionCookies(identity.Sessions),
 	}), router)
@@ -150,6 +156,30 @@ func buildKeyHandler(pool *pgxpool.Pool, cfg config.Config) (accountshttp.KeyHan
 			Probe:      accountsflickr.NewProbe("", nil),
 			Sealer:     ring,
 			Settings:   accountsettings.Reader{Settings: settingsapp.New(settingsRepository)},
+		},
+		Principal: userIDFromPrincipal,
+	}, nil
+}
+
+func buildConnectHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config) (accountshttp.ConnectHandler, error) {
+	if pool == nil {
+		return accountshttp.ConnectHandler{}, errors.New("accounts: postgres database is required")
+	}
+	ring, err := keyringFromConfig(cfg)
+	if err != nil {
+		return accountshttp.ConnectHandler{}, err
+	}
+	repository, err := accountspostgres.New(pool)
+	if err != nil {
+		return accountshttp.ConnectHandler{}, err
+	}
+	return accountshttp.ConnectHandler{
+		Accounts: accountsapp.Connect{
+			Repository:  repository,
+			Authorizer:  accountsflickr.NewAuthorizer(nil, accountsflickr.Endpoints{}),
+			States:      accountsredis.States{Client: redisClient, Prefix: cfg.Redis.Prefix},
+			Cipher:      ring,
+			CallbackURL: cfg.Flickr.CallbackURL,
 		},
 		Principal: userIDFromPrincipal,
 	}, nil

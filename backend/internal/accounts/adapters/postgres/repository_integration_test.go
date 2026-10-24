@@ -133,7 +133,7 @@ func TestAddValidAndInvalidKeysThroughFakeFlickr(t *testing.T) {
 		t.Fatal("sealed column contains the plaintext secret")
 	}
 
-	if _, err := pool.Exec(ctx, `INSERT INTO connected_accounts (user_id, api_key_id, status) VALUES ($1, $2, $3)`, userID, created.ID, domain.AccountStatusConnected); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts (user_id, key_id, nsid, username, token_sealed, secret_sealed, status) VALUES ($1, $2, 'nsid-keys-test', 'tester', $3, $3, $4)`, userID, created.ID, sealed, string(domain.AccountOK)); err != nil {
 		t.Fatal(err)
 	}
 	renamed, err := keys.Update(ctx, userID, created.ID, app.UpdateInput{Label: strPtr("Archive"), PerHourLimit: intPtr(120)})
@@ -143,12 +143,12 @@ func TestAddValidAndInvalidKeysThroughFakeFlickr(t *testing.T) {
 	if renamed.Label != "Archive" || renamed.PerHourLimit != 120 || renamed.PublicKey != validFlickrKey {
 		t.Fatalf("renamed = %+v", renamed)
 	}
-	assertAccountStatus(t, ctx, pool, created.ID, domain.AccountStatusConnected)
+	assertAccountStatus(t, ctx, pool, created.ID, string(domain.AccountOK))
 
 	if _, err := keys.Update(ctx, userID, created.ID, app.UpdateInput{Secret: strPtr(rotatedSecret)}); err != nil {
 		t.Fatal(err)
 	}
-	assertAccountStatus(t, ctx, pool, created.ID, domain.AccountStatusReconnectRequired)
+	assertAccountStatus(t, ctx, pool, created.ID, string(domain.AccountReconnectRequired))
 	if err := pool.QueryRow(ctx, `SELECT secret_sealed FROM api_keys WHERE id = $1`, created.ID).Scan(&sealed); err != nil {
 		t.Fatal(err)
 	}
@@ -170,11 +170,11 @@ func TestAddValidAndInvalidKeysThroughFakeFlickr(t *testing.T) {
 		t.Fatalf("deleted get error = %v", err)
 	}
 	var accounts int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM connected_accounts WHERE api_key_id = $1`, created.ID).Scan(&accounts); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM flickr_accounts WHERE key_id = $1`, created.ID).Scan(&accounts); err != nil {
 		t.Fatal(err)
 	}
 	if accounts != 0 {
-		t.Fatalf("connected accounts remaining = %d", accounts)
+		t.Fatalf("flickr accounts remaining = %d", accounts)
 	}
 	var payload string
 	if err := pool.QueryRow(ctx, `SELECT payload::text FROM outbox_events WHERE topic = $1 AND key = $2`, domain.DeletedTopic, fmt.Sprintf("%d", created.ID)).Scan(&payload); err != nil {
@@ -215,7 +215,7 @@ func testKeyring(t *testing.T) *crypto.Keyring {
 func assertAccountStatus(t *testing.T, ctx context.Context, pool *pgxpool.Pool, keyID int64, want string) {
 	t.Helper()
 	var status string
-	if err := pool.QueryRow(ctx, `SELECT status FROM connected_accounts WHERE api_key_id = $1`, keyID).Scan(&status); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT status FROM flickr_accounts WHERE key_id = $1`, keyID).Scan(&status); err != nil {
 		t.Fatal(err)
 	}
 	if status != want {

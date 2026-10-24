@@ -20,7 +20,7 @@ ceiling. Zero means the daily budget is unlimited.
 `PUT /keys/{id}` can change the label, the limits, and the secret. It cannot
 change the public key. A secret change seals a new value with the same
 associated data and sets connected accounts for that key to
-`reconnect_required`.
+`reconnect_required` (see [Flickr accounts](flickr-accounts.md)).
 
 `DELETE /keys/{id}` removes the key and publishes `key.deleted` in the same
 transaction. The event carries the key id and user id. Consumers use it to

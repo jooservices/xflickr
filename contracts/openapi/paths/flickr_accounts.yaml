@@ -1,0 +1,115 @@
+connect:
+  post:
+    operationId: ConnectFlickrAccount
+    tags: [flickr-accounts]
+    summary: Start connecting a Flickr account
+    description: Requests a Flickr request token for the chosen API key, stores it for 10 minutes, and returns the Flickr authorize URL. The callback is the URL set in configuration and carries the state that the callback checks.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/flickr_accounts.yaml#/ConnectFlickrAccountRequest
+    responses:
+      '200':
+        description: Authorize URL
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/flickr_accounts.yaml#/ConnectFlickrAccountResponse
+      '400':
+        description: Request is invalid
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '404':
+        description: Key not found for the current user
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '409':
+        description: The key is not valid and cannot authorize accounts
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '422':
+        description: Flickr rejected the authorization request
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '503':
+        description: Flickr could not be reached
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+callback:
+  get:
+    operationId: FlickrAccountCallback
+    tags: [flickr-accounts]
+    summary: Complete connecting a Flickr account
+    description: Flickr redirects the browser here. The state must match a pending authorization of the signed-in user and is single use. On success the account is stored with sealed tokens and registered as a depth 0 person interest.
+    parameters:
+      - name: state
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: oauth_token
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: oauth_verifier
+        in: query
+        required: false
+        description: Absent when the member declined access.
+        schema:
+          type: string
+    responses:
+      '200':
+        description: Connected account
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/flickr_accounts.yaml#/FlickrAccount
+      '400':
+        description: State is unknown, expired, or already used, or the member declined access
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '409':
+        description: The key was deleted or is no longer valid
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '422':
+        description: Flickr rejected the verifier
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '503':
+        description: Flickr could not be reached
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error

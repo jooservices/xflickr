@@ -400,7 +400,7 @@ func TestBuildKeyHandlerWiresEncryptionAndPrincipal(t *testing.T) {
 }
 
 func TestAPIRouterRequiresSessionAndCSRF(t *testing.T) {
-	router := newAPIRouter(identityhttp.Handler{Version: "router-test", Sessions: stubSessions{}}, accountshttp.KeyHandler{})
+	router := newAPIRouter(identityhttp.Handler{Version: "router-test", Sessions: stubSessions{}}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{})
 	health := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	healthResponse := httptest.NewRecorder()
 	router.ServeHTTP(healthResponse, health)
@@ -469,4 +469,38 @@ func roleNames(roles []Role) []string {
 		names[index] = role.Name()
 	}
 	return names
+}
+
+func TestBuildConnectHandlerRejectsInvalidConfiguration(t *testing.T) {
+	if _, err := buildConnectHandler(&pgxpool.Pool{}, nil, config.Config{}); err == nil || !strings.Contains(err.Error(), "master key") {
+		t.Fatalf("empty config error = %v", err)
+	}
+	encoded := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))
+	if _, err := buildConnectHandler(nil, nil, config.Config{Crypto: config.CryptoConfig{MasterKeys: "test:" + encoded, ActiveMasterKeyID: "test"}}); err == nil || strings.Contains(err.Error(), encoded) {
+		t.Fatalf("nil database error = %v", err)
+	}
+}
+
+func TestBuildConnectHandlerWiresTheFlowAndPrincipal(t *testing.T) {
+	encoded := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))
+	cfg := config.Config{
+		Crypto: config.CryptoConfig{MasterKeys: "test:" + encoded, ActiveMasterKeyID: "test"},
+		Redis:  config.RedisConfig{Prefix: "xflickr_wt98:"},
+		Flickr: config.FlickrConfig{CallbackURL: "http://127.0.0.1:8080/flickr-accounts/callback"},
+	}
+	handler, err := buildConnectHandler(&pgxpool.Pool{}, redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:0"}), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, ok := handler.Accounts.(accountsapp.Connect)
+	if !ok || service.Repository == nil || service.Authorizer == nil || service.States == nil || service.Cipher == nil {
+		t.Fatal("connect service is incomplete")
+	}
+	if service.CallbackURL != cfg.Flickr.CallbackURL {
+		t.Fatalf("callback = %q", service.CallbackURL)
+	}
+	ctx := identityhttp.WithPrincipal(t.Context(), identityhttp.Principal{User: domain.User{ID: 4}})
+	if id, ok := handler.Principal(ctx); !ok || id != 4 {
+		t.Fatalf("principal = %d %v", id, ok)
+	}
 }
