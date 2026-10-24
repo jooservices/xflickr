@@ -60,8 +60,7 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 | `admin-defaults` | admin | `/admin/defaults` | Defaults | pending | pending | TBD | `web/e2e/admin-defaults.spec.ts` |
 | `admin-sharing` | admin | `/admin/sharing` | Sharing | pending | pending | TBD | `web/e2e/admin-sharing.spec.ts` |
 | `admin-log` | admin | `/admin/log` | API call log | pending | pending | TBD | `web/e2e/admin-log.spec.ts` |
-| `public-login` | public | `/login` | Sign in | pending | pending | TBD | `web/e2e/public-login.spec.ts` |
-| `public-register` | public | `/register` | Create account | pending | pending | TBD | `web/e2e/public-register.spec.ts` |
+| `user-auth` | user | `/login`, `/register`, `/login?reason=expired` | Login, register and session expired | [spec](views/user-auth.md) | [mockup](mockups/user-auth.html) | JOOXF-166 | `web/e2e/user-auth.spec.ts` |
 | `public-setup` | public | `/setup` | Setup wizard | pending | pending | TBD | `web/e2e/public-setup.spec.ts` |
 | `public-not-found` | public | `*` | Page not found | pending | pending | TBD | `web/e2e/public-not-found.spec.ts` |
 | `public-forbidden` | public | `/forbidden` | Access denied | pending | pending | TBD | `web/e2e/public-forbidden.spec.ts` |
