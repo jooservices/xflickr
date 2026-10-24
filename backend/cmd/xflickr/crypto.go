@@ -12,12 +12,17 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/db"
 )
 
-type rotationRunner func(context.Context, []crypto.Target, int, io.Writer) error
-type rotationPool interface {
-	Close()
-}
-type rotationStoreOpener func(context.Context) (rotationPool, crypto.RotationDB, error)
-type rotationExecutor func(context.Context, crypto.RotationDB, *crypto.Keyring, []crypto.Target, int) (int64, error)
+type (
+	rotationRunner func(context.Context, []crypto.Target, int, io.Writer) error
+	rotationPool   interface {
+		Close()
+	}
+)
+
+type (
+	rotationStoreOpener func(context.Context) (rotationPool, crypto.RotationDB, error)
+	rotationExecutor    func(context.Context, crypto.RotationDB, *crypto.Keyring, []crypto.Target, int) (int64, error)
+)
 
 type targetFlag []crypto.Target
 

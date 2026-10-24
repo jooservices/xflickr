@@ -87,6 +87,8 @@ func (c *Client) SetNonceGenerator(fn func() (string, error)) {
 // Call invokes a Flickr REST method using form encoded parameters. Flickr's
 // JSON response is returned intact on success. Calls that carry an OAuth
 // token are signed with HMAC-SHA1.
+//
+//nolint:cyclop // single Flickr call pipeline (sign, send, decode, classify); tracked for a refactor
 func (c *Client) Call(ctx context.Context, creds Credentials, method string, params map[string]string) (payload json.RawMessage, meta CallMeta, callErr error) {
 	started := time.Now()
 	defer func() {

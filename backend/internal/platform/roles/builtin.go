@@ -11,6 +11,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	redisv9 "github.com/redis/go-redis/v9"
+
 	accountsflickr "github.com/jooservices/xflickr/internal/accounts/adapters/flickr"
 	accountshttp "github.com/jooservices/xflickr/internal/accounts/adapters/http"
 	accountspostgres "github.com/jooservices/xflickr/internal/accounts/adapters/postgres"
@@ -29,7 +31,6 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/httpx"
 	settingspostgres "github.com/jooservices/xflickr/internal/settings/adapters/postgres"
 	settingsapp "github.com/jooservices/xflickr/internal/settings/app"
-	redisv9 "github.com/redis/go-redis/v9"
 )
 
 const apiAddress = ":8080"
@@ -230,7 +231,7 @@ func (r APIRole) runServer(ctx context.Context, handler http.Handler) error {
 	if err != nil {
 		return err
 	}
-	server := &http.Server{Handler: handler}
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.Serve(listener) }()
 
@@ -244,7 +245,7 @@ func (r APIRole) runServer(ctx context.Context, handler http.Handler) error {
 		}
 		return nil
 	case err := <-serveErr:
-		if err == http.ErrServerClosed {
+		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return err

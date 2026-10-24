@@ -9,9 +9,11 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/db"
 )
 
-type migrationRunner func(context.Context, string, io.Writer) error
-type databaseConfigLoader func() (config.DBConfig, error)
-type configuredMigration func(context.Context, config.DBConfig, string, io.Writer) error
+type (
+	migrationRunner      func(context.Context, string, io.Writer) error
+	databaseConfigLoader func() (config.DBConfig, error)
+	configuredMigration  func(context.Context, config.DBConfig, string, io.Writer) error
+)
 
 func runMigrate(ctx context.Context, args []string, stdout, stderr io.Writer, run migrationRunner) int {
 	if len(args) != 1 {

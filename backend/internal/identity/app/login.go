@@ -8,9 +8,11 @@ import (
 	"github.com/jooservices/xflickr/internal/identity/domain"
 )
 
-var ErrInvalidCredentials = errors.New("invalid email or password")
-var ErrRateLimited = errors.New("identity: too many login attempts")
-var ErrUserNotFound = errors.New("identity: user not found")
+var (
+	ErrInvalidCredentials = errors.New("invalid email or password")
+	ErrRateLimited        = errors.New("identity: too many login attempts")
+	ErrUserNotFound       = errors.New("identity: user not found")
+)
 
 const (
 	MinPasswordBytes = 8

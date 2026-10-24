@@ -6,10 +6,11 @@ import (
 	"net"
 	"net/http"
 
+	openapi_types "github.com/oapi-codegen/runtime/types"
+
 	"github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
-	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 type contextKey struct{}
@@ -48,6 +49,7 @@ func (h Handler) Register(ctx context.Context, request gen.RegisterRequestObject
 	}
 	return gen.Register201JSONResponse(apiUser(u)), nil
 }
+
 func (h Handler) Login(ctx context.Context, request gen.LoginRequestObject) (gen.LoginResponseObject, error) {
 	if request.Body == nil {
 		return gen.Login401Response{}, nil
@@ -71,6 +73,7 @@ func (h Handler) Login(ctx context.Context, request gen.LoginRequestObject) (gen
 	}
 	return gen.Login200JSONResponse(apiUser(u)), nil
 }
+
 func (h Handler) Logout(context.Context, gen.LogoutRequestObject) (gen.LogoutResponseObject, error) {
 	return gen.Logout204Response{}, nil
 }
@@ -91,9 +94,11 @@ func (h Handler) RevokeOtherSessions(ctx context.Context, _ gen.RevokeOtherSessi
 	}
 	return gen.RevokeOtherSessions204Response{}, nil
 }
+
 func (h Handler) GetHealth(context.Context, gen.GetHealthRequestObject) (gen.GetHealthResponseObject, error) {
 	return gen.GetHealth200JSONResponse{Status: "ok", Version: h.Version}, nil
 }
+
 func (h Handler) GetMe(ctx context.Context, _ gen.GetMeRequestObject) (gen.GetMeResponseObject, error) {
 	id, ok := ctx.Value(contextKey{}).(int64)
 	if !ok || id == 0 || h.Users == nil {
@@ -112,11 +117,13 @@ type remoteAddressKey struct{}
 func WithRemoteAddress(ctx context.Context, address string) context.Context {
 	return context.WithValue(ctx, remoteAddressKey{}, address)
 }
+
 func requestIP(ctx context.Context) string {
 	value, _ := ctx.Value(remoteAddressKey{}).(string)
 	return value
 }
-func Middleware(next gen.StrictHandlerFunc, operationID string) gen.StrictHandlerFunc {
+
+func Middleware(next gen.StrictHandlerFunc, _ string) gen.StrictHandlerFunc {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		ctx = WithRemoteAddress(ctx, r.RemoteAddr)
 		return next(ctx, w, r, request)

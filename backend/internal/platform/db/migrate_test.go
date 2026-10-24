@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/pressly/goose/v3"
+
+	"github.com/jooservices/xflickr/internal/platform/config"
 )
 
 func TestMigrateRejectsUnknownActionBeforeConnecting(t *testing.T) {

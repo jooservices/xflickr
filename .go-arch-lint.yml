@@ -1,0 +1,65 @@
+# go-arch-lint v1 config. Rules: domain <- app <- adapters; modules talk only
+# through another module's `app` package. Third-party imports are governed by
+# depguard in .golangci.yml.
+version: 3
+
+allow:
+  depOnAnyVendor: true
+
+excludeFiles:
+  - "^.*_test\\.go$"
+  - "^.*/gen/.*$"
+
+components:
+  identity-domain:   { in: internal/identity/domain/** }
+  identity-app:      { in: internal/identity/app/** }
+  identity-adapters: { in: internal/identity/adapters/** }
+  settings-domain:   { in: internal/settings/domain/** }
+  settings-app:      { in: internal/settings/app/** }
+  settings-adapters: { in: internal/settings/adapters/** }
+  platform:
+    in:
+      - internal/platform/adapters/**
+      - internal/platform/api/**
+      - internal/platform/config/**
+      - internal/platform/crypto/**
+      - internal/platform/db/**
+      - internal/platform/httpx/**
+      - internal/platform/outbox/**
+  # Composition root: wires module adapters into runnable roles.
+  wiring:            { in: internal/platform/roles/** }
+  pkg:               { in: pkg/** }
+  migrations:        { in: migrations }
+  cmd:               { in: cmd/** }
+
+deps:
+  identity-app:
+    mayDependOn: [identity-domain, platform, pkg, settings-app]
+  identity-adapters:
+    mayDependOn: [identity-domain, identity-app, platform, pkg, settings-app]
+  settings-app:
+    mayDependOn: [settings-domain, platform, pkg, identity-app]
+  settings-adapters:
+    mayDependOn: [settings-domain, settings-app, platform, pkg, identity-app]
+  platform:
+    mayDependOn: [platform, pkg, migrations]
+  wiring:
+    mayDependOn:
+      - identity-domain
+      - identity-app
+      - identity-adapters
+      - settings-domain
+      - settings-app
+      - settings-adapters
+      - platform
+      - pkg
+  pkg:
+    mayDependOn: [pkg]
+  cmd:
+    mayDependOn:
+      - identity-app
+      - settings-app
+      - platform
+      - wiring
+      - pkg
+      - migrations

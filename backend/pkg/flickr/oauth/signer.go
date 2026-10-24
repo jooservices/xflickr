@@ -5,7 +5,7 @@ package oauth
 import (
 	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // OAuth 1.0a HMAC-SHA1 signing is mandated by the Flickr API
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -145,7 +145,7 @@ func baseStringURI(raw string) (string, error) {
 		host = "[" + host + "]"
 	}
 	if port := parsed.Port(); port != "" {
-		if !((scheme == "http" && port == "80") || (scheme == "https" && port == "443")) {
+		if (scheme != "http" || port != "80") && (scheme != "https" || port != "443") {
 			host += ":" + port
 		}
 	}

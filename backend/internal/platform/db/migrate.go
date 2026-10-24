@@ -7,10 +7,11 @@ import (
 	"io/fs"
 
 	"github.com/jackc/pgx/v5/stdlib"
-	"github.com/jooservices/xflickr/internal/platform/config"
-	"github.com/jooservices/xflickr/migrations"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
+
+	"github.com/jooservices/xflickr/internal/platform/config"
+	"github.com/jooservices/xflickr/migrations"
 )
 
 const (

@@ -8,9 +8,11 @@ import (
 	"github.com/jooservices/xflickr/internal/identity/domain"
 )
 
-var ErrRegistrationClosed = errors.New("identity: registration is closed")
-var ErrEmailExists = errors.New("identity: email already registered")
-var ErrInvalidInput = errors.New("identity: email or password length is invalid")
+var (
+	ErrRegistrationClosed = errors.New("identity: registration is closed")
+	ErrEmailExists        = errors.New("identity: email already registered")
+	ErrInvalidInput       = errors.New("identity: email or password length is invalid")
+)
 
 type RegisterRepository interface {
 	Register(context.Context, domain.User, bool) (domain.User, error)

@@ -53,6 +53,7 @@ func HashPassword(password string, params Argon2Params) (string, error) {
 	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s", params.Memory, params.Iterations, params.Parallelism, enc.EncodeToString(salt), enc.EncodeToString(hash)), nil
 }
 
+//nolint:cyclop // linear sequence of format checks; splitting would obscure the parse order
 func VerifyPassword(encoded, password string) bool {
 	parts := strings.Split(encoded, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" || parts[2] != "v=19" {
@@ -72,6 +73,6 @@ func VerifyPassword(encoded, password string) bool {
 	if err != nil || len(want) < 16 || len(want) > 128 {
 		return false
 	}
-	got := argon2.IDKey([]byte(password), salt, iterations, memory, parallelism, uint32(len(want)))
+	got := argon2.IDKey([]byte(password), salt, iterations, memory, parallelism, uint32(len(want))) //nolint:gosec // length is bounded to 16..128 above
 	return subtle.ConstantTimeCompare(got, want) == 1
 }

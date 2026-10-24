@@ -56,7 +56,8 @@ type pgxBeginner interface {
 // NewPGXRotationDB adapts a pgx pool to the rotation database interface.
 func NewPGXRotationDB(pool interface {
 	Begin(context.Context) (pgx.Tx, error)
-}) RotationDB {
+},
+) RotationDB {
 	return pgxRotationDB{pool: pool}
 }
 

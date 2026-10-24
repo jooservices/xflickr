@@ -181,10 +181,10 @@ func validateSealed(sealed Sealed) error {
 // opening a value. Length-prefixing prevents delimiter ambiguity.
 func RowAAD(table, rowID string) []byte {
 	aad := make([]byte, 8+len(table)+len(rowID))
-	binary.BigEndian.PutUint32(aad[:4], uint32(len(table)))
+	binary.BigEndian.PutUint32(aad[:4], uint32(len(table))) //nolint:gosec // lengths are bounded by the caller-validated row identifiers
 	copy(aad[4:], table)
 	rowOffset := 4 + len(table)
-	binary.BigEndian.PutUint32(aad[rowOffset:rowOffset+4], uint32(len(rowID)))
+	binary.BigEndian.PutUint32(aad[rowOffset:rowOffset+4], uint32(len(rowID))) //nolint:gosec // lengths are bounded by the caller-validated row identifiers
 	copy(aad[rowOffset+4:], rowID)
 	return aad
 }

@@ -13,11 +13,11 @@ import (
 
 const (
 	// DefaultRequestTokenURL is Flickr's temporary-credential endpoint.
-	DefaultRequestTokenURL = "https://www.flickr.com/services/oauth/request_token"
+	DefaultRequestTokenURL = "https://www.flickr.com/services/oauth/request_token" //nolint:gosec // public endpoint URL, not a credential
 	// DefaultAuthorizeURL is the browser page where the member grants access.
-	DefaultAuthorizeURL = "https://www.flickr.com/services/oauth/authorize"
+	DefaultAuthorizeURL = "https://www.flickr.com/services/oauth/authorize" //nolint:gosec // public endpoint URL, not a credential
 	// DefaultAccessTokenURL exchanges a verified request token for an access token.
-	DefaultAccessTokenURL = "https://www.flickr.com/services/oauth/access_token"
+	DefaultAccessTokenURL = "https://www.flickr.com/services/oauth/access_token" //nolint:gosec // public endpoint URL, not a credential
 )
 
 const defaultPermission = "read"

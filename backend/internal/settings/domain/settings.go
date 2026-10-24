@@ -334,6 +334,8 @@ func integralToken(number json.Number) bool {
 // default is used for that key. This keeps a read working after an
 // administrator tightens a cap while older rows remain. A write still rejects
 // those values through CheckUserOverride.
+//
+//nolint:cyclop // per-setting merge rules; tracked for a table-driven refactor
 func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
 	if len(snapshot.Settings) != len(schemas) {
 		return Effective{}, nil, fmt.Errorf("settings: got %d application settings, want %d", len(snapshot.Settings), len(schemas))

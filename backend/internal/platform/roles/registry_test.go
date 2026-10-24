@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	redisv9 "github.com/redis/go-redis/v9"
+
 	accountshttp "github.com/jooservices/xflickr/internal/accounts/adapters/http"
 	accountsettings "github.com/jooservices/xflickr/internal/accounts/adapters/settings"
 	accountsapp "github.com/jooservices/xflickr/internal/accounts/app"
@@ -22,7 +24,6 @@ import (
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/config"
-	redisv9 "github.com/redis/go-redis/v9"
 )
 
 func TestBuildIdentityHandlerWiresSettingsAndDummyHash(t *testing.T) {

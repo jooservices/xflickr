@@ -10,10 +10,11 @@ import (
 	"testing"
 	"time"
 
+	openapi_types "github.com/oapi-codegen/runtime/types"
+
 	"github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
-	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 type repo struct {
@@ -32,6 +33,7 @@ func (r repo) Register(_ context.Context, u domain.User, _ bool) (domain.User, e
 	u.CreatedAt = time.Now()
 	return u, nil
 }
+
 func (r repo) UsersExist(context.Context) (bool, error)                 { return r.usersExist, r.existErr }
 func (r repo) FindByEmail(context.Context, string) (domain.User, error) { return r.user, r.err }
 func (r repo) FindByID(context.Context, int64) (domain.User, error)     { return r.user, r.err }

@@ -309,6 +309,7 @@ func (cfg DBConfig) Validate() error {
 	return nil
 }
 
+//nolint:cyclop // flat list of independent config invariants
 func (cfg *Config) validate() error {
 	if cfg.Identity.Argon2Memory < 8*uint32(cfg.Identity.Argon2Parallelism) || cfg.Identity.Argon2Iterations == 0 || cfg.Identity.Argon2Parallelism == 0 || cfg.Identity.Argon2SaltLength < 8 || cfg.Identity.Argon2KeyLength < 16 {
 		return fmt.Errorf("ARGON2ID parameters are invalid")

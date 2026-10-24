@@ -78,7 +78,7 @@ func TestUnitOfWorkRetriesCommitSerializationFailure(t *testing.T) {
 func TestUnitOfWorkReturnsNonSerializationErrorWithoutRetry(t *testing.T) {
 	wantErr := errors.New("callback failed")
 	tx := &fakeUnitOfWorkTx{}
-	database := &fakeUnitOfWorkDB{transactions: []*fakeUnitOfWorkTx{tx, &fakeUnitOfWorkTx{}}}
+	database := &fakeUnitOfWorkDB{transactions: []*fakeUnitOfWorkTx{tx, {}}}
 	err := NewUnitOfWork(database).Do(t.Context(), func(Tx) error { return wantErr })
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Do() error = %v, want callback error", err)
@@ -134,7 +134,7 @@ func TestUnitOfWorkValidationAndCanceledRetry(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	tx := &fakeUnitOfWorkTx{}
-	database := &fakeUnitOfWorkDB{transactions: []*fakeUnitOfWorkTx{tx, &fakeUnitOfWorkTx{}}}
+	database := &fakeUnitOfWorkDB{transactions: []*fakeUnitOfWorkTx{tx, {}}}
 	err := NewUnitOfWork(database).Do(ctx, func(Tx) error {
 		cancel()
 		return &pgconn.PgError{Code: "40001"}
@@ -150,7 +150,7 @@ func TestUnitOfWorkValidationAndCanceledRetry(t *testing.T) {
 func TestUnitOfWorkPanicRollsBackAndRepanics(t *testing.T) {
 	const panicValue = "unit of work callback panicked"
 	tx := &fakeUnitOfWorkTx{}
-	database := &fakeUnitOfWorkDB{transactions: []*fakeUnitOfWorkTx{tx, &fakeUnitOfWorkTx{}}}
+	database := &fakeUnitOfWorkDB{transactions: []*fakeUnitOfWorkTx{tx, {}}}
 
 	defer func() {
 		recovered := recover()

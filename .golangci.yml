@@ -1,0 +1,122 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - gocritic
+    - revive
+    - gosec
+    - cyclop
+    - wrapcheck
+    - errorlint
+    - depguard
+    - misspell
+  settings:
+    cyclop:
+      max-complexity: 15
+    depguard:
+      rules:
+        # Cross-cutting boundaries are also enforced by .go-arch-lint.yml.
+        domain:
+          files:
+            - "**/internal/*/domain/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: domain must not depend on infrastructure
+            - pkg: github.com/redis/go-redis
+              desc: domain must not depend on infrastructure
+            - pkg: net/http
+              desc: domain must not depend on infrastructure
+            - pkg: database/sql
+              desc: domain must not depend on infrastructure
+        app:
+          files:
+            - "**/internal/*/app/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: app must reach storage through ports
+            - pkg: github.com/redis/go-redis
+              desc: app must reach caches through ports
+            - pkg: net/http
+              desc: app must not depend on HTTP adapters
+            - pkg: database/sql
+              desc: app must reach storage through ports
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+          disabled: true
+        - name: error-return
+        - name: error-naming
+        - name: error-strings
+        - name: if-return
+        - name: increment-decrement
+        - name: var-naming
+        - name: indent-error-flow
+        - name: errorf
+        - name: blank-imports
+        - name: context-as-argument
+          arguments:
+            - allowTypesBefore: "*testing.T"
+        - name: dot-imports
+        - name: unreachable-code
+        - name: unused-parameter
+    wrapcheck:
+      ignore-package-globs:
+        - github.com/jooservices/xflickr/*
+        # Standard-library errors already carry operation context.
+        - context
+        - encoding/*
+        - strconv
+        - fmt
+        - net
+        - net/*
+        - crypto/*
+        - golang.org/x/sync/errgroup
+        # Storage drivers: adapters surface driver errors (pgx.ErrNoRows etc.) unchanged.
+        - github.com/jackc/pgx/*
+        - github.com/redis/go-redis/*
+      ignore-sigs:
+        - .Errorf(
+        - errors.New(
+        - errors.Join(
+        - (context.Context).Err()
+        - .Wrap(
+        - .Wrapf(
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - cyclop
+          - wrapcheck
+          - gosec
+          - errcheck
+      # Tests deliberately pass a nil context to cover the "context is required" guards.
+      - path: _test\.go
+        text: "SA1012"
+        linters:
+          - staticcheck
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/jooservices/xflickr
+  exclusions:
+    generated: lax

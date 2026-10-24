@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db"
 )
@@ -46,8 +47,10 @@ func openMigrated(t testing.TB, cfg config.DBConfig, createPool poolFactory, mig
 	return pool
 }
 
-type poolFactory func(context.Context, config.DBConfig) (*pgxpool.Pool, error)
-type migrationFunc func(context.Context, config.DBConfig) error
+type (
+	poolFactory   func(context.Context, config.DBConfig) (*pgxpool.Pool, error)
+	migrationFunc func(context.Context, config.DBConfig) error
+)
 
 func openPool(ctx context.Context, cfg config.DBConfig, createPool poolFactory, migrate migrationFunc) (*pgxpool.Pool, error) {
 	if err := ValidateDatabaseName(cfg.Name); err != nil {
@@ -107,8 +110,10 @@ type databaseAdmin interface {
 	Close()
 }
 
-type adminOpener func(context.Context, config.DBConfig) (databaseAdmin, error)
-type databaseNamer func(excluded string) (string, error)
+type (
+	adminOpener   func(context.Context, config.DBConfig) (databaseAdmin, error)
+	databaseNamer func(excluded string) (string, error)
+)
 
 func openDatabaseAdmin(ctx context.Context, cfg config.DBConfig) (databaseAdmin, error) {
 	pool, err := db.NewPool(ctx, cfg)
