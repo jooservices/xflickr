@@ -264,6 +264,20 @@ func TestProtectRoutesLeavesPublicRequestsOpen(t *testing.T) {
 	if revokeResponse.Code != http.StatusUnauthorized {
 		t.Fatalf("delete status = %d", revokeResponse.Code)
 	}
+	for _, target := range []string{"/keys", "/keys/15"} {
+		keys := httptest.NewRequest(http.MethodGet, target, nil)
+		keysResponse := httptest.NewRecorder()
+		router.ServeHTTP(keysResponse, keys)
+		if keysResponse.Code != http.StatusUnauthorized {
+			t.Fatalf("%s status = %d", target, keysResponse.Code)
+		}
+	}
+	if !authenticatedRequest(http.MethodPost, "/keys") || !authenticatedRequest(http.MethodDelete, "/keys/9") {
+		t.Fatal("key mutations were left public")
+	}
+	if authenticatedRequest(http.MethodHead, "/keys") || authenticatedRequest(http.MethodGet, "/keysomething") {
+		t.Fatal("unrelated paths were treated as API keys")
+	}
 }
 
 func TestLoginAndLogoutMaintainSessionCookies(t *testing.T) {
@@ -282,7 +296,7 @@ func TestLoginAndLogoutMaintainSessionCookies(t *testing.T) {
 		LoginUseCase: app.Login{Repository: repo{user: domain.User{ID: 4, Email: "u@example.com", PasswordHash: hash, Role: domain.RoleUser, CreatedAt: time.Now().UTC()}}, Limiter: rateLimit{allowed: true}, DummyPasswordHash: hash},
 		Sessions:     fake,
 	}
-	server := gen.NewStrictHandler(handler, []gen.StrictMiddlewareFunc{MaintainSessionCookies(handler.Sessions)})
+	server := gen.NewStrictHandler(StrictHandler{Handler: handler}, []gen.StrictMiddlewareFunc{MaintainSessionCookies(handler.Sessions)})
 	login := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"email":"u@example.com","password":"secret12"}`))
 	login.Header.Set("Content-Type", "application/json")
 	login = login.WithContext(WithRemoteAddress(login.Context(), "127.0.0.1:9"))
@@ -341,7 +355,7 @@ func TestMaintainSessionCookiesReportsFailures(t *testing.T) {
 		LoginUseCase: app.Login{Repository: repo{user: domain.User{ID: 4, PasswordHash: hash, CreatedAt: time.Now().UTC()}}, Limiter: rateLimit{allowed: true}, DummyPasswordHash: hash},
 		Sessions:     fake,
 	}
-	server := gen.NewStrictHandler(handler, []gen.StrictMiddlewareFunc{MaintainSessionCookies(handler.Sessions)})
+	server := gen.NewStrictHandler(StrictHandler{Handler: handler}, []gen.StrictMiddlewareFunc{MaintainSessionCookies(handler.Sessions)})
 	loginRequest := func() *http.Request {
 		request := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"email":"u@example.com","password":"secret12"}`))
 		request.Header.Set("Content-Type", "application/json")
@@ -354,7 +368,7 @@ func TestMaintainSessionCookiesReportsFailures(t *testing.T) {
 	}
 
 	logoutHandler := Handler{Sessions: &fakeSessions{revokeErr: io.EOF}}
-	logoutServer := gen.NewStrictHandler(logoutHandler, []gen.StrictMiddlewareFunc{MaintainSessionCookies(logoutHandler.Sessions)})
+	logoutServer := gen.NewStrictHandler(StrictHandler{Handler: logoutHandler}, []gen.StrictMiddlewareFunc{MaintainSessionCookies(logoutHandler.Sessions)})
 	logout := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
 	logout.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "opaque-session"})
 	logoutResponse := httptest.NewRecorder()
@@ -365,13 +379,13 @@ func TestMaintainSessionCookiesReportsFailures(t *testing.T) {
 
 	bare := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
 	bareResponse := httptest.NewRecorder()
-	logoutServer = gen.NewStrictHandler(Handler{}, []gen.StrictMiddlewareFunc{MaintainSessionCookies(&fakeSessions{})})
+	logoutServer = gen.NewStrictHandler(StrictHandler{}, []gen.StrictMiddlewareFunc{MaintainSessionCookies(&fakeSessions{})})
 	logoutServer.Logout(bareResponse, bare)
 	if bareResponse.Code != http.StatusNoContent {
 		t.Fatalf("bare logout status = %d", bareResponse.Code)
 	}
 
-	missingService := gen.NewStrictHandler(handler, []gen.StrictMiddlewareFunc{MaintainSessionCookies(nil)})
+	missingService := gen.NewStrictHandler(StrictHandler{Handler: handler}, []gen.StrictMiddlewareFunc{MaintainSessionCookies(nil)})
 	missingResponse := httptest.NewRecorder()
 	missingService.Login(missingResponse, loginRequest())
 	if missingResponse.Code != http.StatusInternalServerError {

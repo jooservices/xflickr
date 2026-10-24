@@ -1,0 +1,170 @@
+collection:
+  get:
+    operationId: ListKeys
+    tags: [keys]
+    summary: List the current user's API keys
+    description: Returns every API key owned by the signed-in user. Secrets are never included.
+    responses:
+      '200':
+        description: API keys stored for the current user
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: ../schemas/keys.yaml#/ApiKey
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+  post:
+    operationId: CreateKey
+    tags: [keys]
+    summary: Add a Flickr API key
+    description: Checks the key with one flickr.test.echo call and stores it only when Flickr accepts the key. A rejected key returns code key_invalid and stores nothing.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/keys.yaml#/CreateKeyRequest
+    responses:
+      '201':
+        description: Key stored. The response masks the public key and omits the secret.
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/keys.yaml#/ApiKey
+      '400':
+        description: Label or request is invalid
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '409':
+        description: This user already stored this public key
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '422':
+        description: Flickr rejected the key, or a limit exceeds an administrator cap
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '503':
+        description: The Flickr key check could not be completed. Nothing was stored.
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+item:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      description: API key id
+      schema:
+        type: integer
+        format: int64
+  get:
+    operationId: GetKey
+    tags: [keys]
+    summary: Get one API key
+    description: Returns one API key owned by the signed-in user. The secret is never included.
+    responses:
+      '200':
+        description: API key
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/keys.yaml#/ApiKey
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '404':
+        description: Key not found for the current user
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+  put:
+    operationId: UpdateKey
+    tags: [keys]
+    summary: Change a key's label, limits, or secret
+    description: Label and limits stay within administrator caps from settings. Changing the secret marks connected accounts reconnect_required. The secret is never returned.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/keys.yaml#/UpdateKeyRequest
+    responses:
+      '200':
+        description: Updated key. The response masks the public key and omits the secret.
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/keys.yaml#/ApiKey
+      '400':
+        description: Label or request is invalid
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '404':
+        description: Key not found for the current user
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '409':
+        description: The key is revoked and cannot be changed
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '422':
+        description: The secret was rejected, or a limit exceeds an administrator cap
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+  delete:
+    operationId: DeleteKey
+    tags: [keys]
+    summary: Delete an API key
+    description: Deletes the key and publishes key.deleted so queued work for that key stops.
+    responses:
+      '204':
+        description: Key deleted
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '404':
+        description: Key not found for the current user
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error

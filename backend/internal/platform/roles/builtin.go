@@ -2,13 +2,20 @@ package roles
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	accountsflickr "github.com/jooservices/xflickr/internal/accounts/adapters/flickr"
+	accountshttp "github.com/jooservices/xflickr/internal/accounts/adapters/http"
+	accountspostgres "github.com/jooservices/xflickr/internal/accounts/adapters/postgres"
+	accountsettings "github.com/jooservices/xflickr/internal/accounts/adapters/settings"
+	accountsapp "github.com/jooservices/xflickr/internal/accounts/app"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identitypostgres "github.com/jooservices/xflickr/internal/identity/adapters/postgres"
 	identityredis "github.com/jooservices/xflickr/internal/identity/adapters/redis"
@@ -16,6 +23,7 @@ import (
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
 	"github.com/jooservices/xflickr/internal/platform/config"
+	"github.com/jooservices/xflickr/internal/platform/crypto"
 	"github.com/jooservices/xflickr/internal/platform/db"
 	"github.com/jooservices/xflickr/internal/platform/httpx"
 	settingspostgres "github.com/jooservices/xflickr/internal/settings/adapters/postgres"
@@ -93,18 +101,77 @@ func (r APIRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return r.runServer(ctx, newAPIRouter(identity))
+	keys, err := buildKeyHandler(pool, cfg)
+	if err != nil {
+		return err
+	}
+	return r.runServer(ctx, newAPIRouter(identity, keys))
 }
 
-func newAPIRouter(identity identityhttp.Handler) http.Handler {
+// apiServer composes identity and API key handlers. The two types expose
+// different methods, so both promote onto the generated server interface.
+type apiServer struct {
+	identityhttp.Handler
+	accountshttp.KeyHandler
+}
+
+var _ gen.StrictServerInterface = apiServer{}
+
+func newAPIRouter(identity identityhttp.Handler, keys accountshttp.KeyHandler) http.Handler {
 	router := chi.NewRouter()
 	router.Use(identityhttp.RequestBodyLimit)
 	router.Use(identityhttp.CSRF)
 	router.Use(identityhttp.ProtectRoutes(identity.Sessions))
-	return gen.HandlerFromMux(gen.NewStrictHandler(identity, []gen.StrictMiddlewareFunc{
+	return gen.HandlerFromMux(gen.NewStrictHandler(apiServer{Handler: identity, KeyHandler: keys}, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		identityhttp.MaintainSessionCookies(identity.Sessions),
 	}), router)
+}
+
+func buildKeyHandler(pool *pgxpool.Pool, cfg config.Config) (accountshttp.KeyHandler, error) {
+	if pool == nil {
+		return accountshttp.KeyHandler{}, errors.New("accounts: postgres database is required")
+	}
+	ring, err := keyringFromConfig(cfg)
+	if err != nil {
+		return accountshttp.KeyHandler{}, err
+	}
+	repository, err := accountspostgres.New(pool)
+	if err != nil {
+		return accountshttp.KeyHandler{}, err
+	}
+	settingsRepository, err := settingspostgres.New(pool)
+	if err != nil {
+		return accountshttp.KeyHandler{}, err
+	}
+	return accountshttp.KeyHandler{
+		Keys: accountsapp.Keys{
+			Repository: repository,
+			Probe:      accountsflickr.NewProbe("", nil),
+			Sealer:     ring,
+			Settings:   accountsettings.Reader{Settings: settingsapp.New(settingsRepository)},
+		},
+		Principal: userIDFromPrincipal,
+	}, nil
+}
+
+func keyringFromConfig(cfg config.Config) (*crypto.Keyring, error) {
+	if strings.TrimSpace(cfg.Crypto.MasterKeys) == "" || strings.TrimSpace(cfg.Crypto.ActiveMasterKeyID) == "" {
+		return nil, errors.New("accounts: master key configuration is required")
+	}
+	keys, err := crypto.ParseMasterKeys(cfg.Crypto.MasterKeys)
+	if err != nil {
+		return nil, err
+	}
+	return crypto.NewKeyring(keys, strings.TrimSpace(cfg.Crypto.ActiveMasterKeyID))
+}
+
+func userIDFromPrincipal(ctx context.Context) (int64, bool) {
+	principal, ok := identityhttp.PrincipalFrom(ctx)
+	if !ok || principal.User.ID == 0 {
+		return 0, false
+	}
+	return principal.User.ID, true
 }
 
 func buildIdentityHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, version string) (identityhttp.Handler, error) {

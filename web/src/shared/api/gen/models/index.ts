@@ -6,9 +6,13 @@
  * OpenAPI spec version: 0.0.0
  */
 
+export * from './apiKey';
+export * from './apiKeyStatus';
 export * from './authRequest';
+export * from './createKeyRequest';
 export * from './error';
 export * from './errorDetails';
 export * from './health';
+export * from './updateKeyRequest';
 export * from './user';
 export * from './userRole';

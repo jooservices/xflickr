@@ -16,6 +16,10 @@ paths:
     $ref: ./paths/auth.yaml#/sessions
   /me:
     $ref: ./paths/auth.yaml#/me
+  /keys:
+    $ref: ./paths/keys.yaml#/collection
+  /keys/{id}:
+    $ref: ./paths/keys.yaml#/item
 components:
   schemas:
     Error:
@@ -26,3 +30,9 @@ components:
       $ref: ./schemas/auth.yaml#/AuthRequest
     User:
       $ref: ./schemas/auth.yaml#/User
+    ApiKey:
+      $ref: ./schemas/keys.yaml#/ApiKey
+    CreateKeyRequest:
+      $ref: ./schemas/keys.yaml#/CreateKeyRequest
+    UpdateKeyRequest:
+      $ref: ./schemas/keys.yaml#/UpdateKeyRequest

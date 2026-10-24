@@ -1,7 +1,9 @@
 package roles
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net"
@@ -12,6 +14,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	accountshttp "github.com/jooservices/xflickr/internal/accounts/adapters/http"
+	accountsettings "github.com/jooservices/xflickr/internal/accounts/adapters/settings"
+	accountsapp "github.com/jooservices/xflickr/internal/accounts/app"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identityredis "github.com/jooservices/xflickr/internal/identity/adapters/redis"
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
@@ -351,8 +356,51 @@ func (stubSessions) Revoke(context.Context, string) error { return nil }
 
 func (stubSessions) RevokeOthers(context.Context, int64, []byte) error { return nil }
 
+func TestBuildKeyHandlerRejectsInvalidConfiguration(t *testing.T) {
+	if _, err := buildKeyHandler(&pgxpool.Pool{}, config.Config{}); err == nil || !strings.Contains(err.Error(), "master key") {
+		t.Fatalf("empty config error = %v", err)
+	}
+	if _, err := buildKeyHandler(&pgxpool.Pool{}, config.Config{Crypto: config.CryptoConfig{MasterKeys: "active:not-base64", ActiveMasterKeyID: "active"}}); err == nil {
+		t.Fatal("invalid master key was accepted")
+	}
+	encoded := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))
+	cfg := config.Config{Crypto: config.CryptoConfig{MasterKeys: "test:" + encoded, ActiveMasterKeyID: "other"}}
+	if _, err := buildKeyHandler(&pgxpool.Pool{}, cfg); err == nil || strings.Contains(err.Error(), encoded) {
+		t.Fatalf("active key error = %v", err)
+	}
+	if _, err := buildKeyHandler(nil, config.Config{Crypto: config.CryptoConfig{MasterKeys: "test:" + encoded, ActiveMasterKeyID: "test"}}); err == nil || strings.Contains(err.Error(), encoded) {
+		t.Fatalf("nil database error = %v", err)
+	}
+}
+
+func TestBuildKeyHandlerWiresEncryptionAndPrincipal(t *testing.T) {
+	encoded := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))
+	handler, err := buildKeyHandler(&pgxpool.Pool{}, config.Config{Crypto: config.CryptoConfig{MasterKeys: "test:" + encoded, ActiveMasterKeyID: "test"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, ok := handler.Keys.(accountsapp.Keys)
+	if !ok || service.Repository == nil || service.Probe == nil || service.Sealer == nil {
+		t.Fatal("key service is incomplete")
+	}
+	reader, ok := service.Settings.(accountsettings.Reader)
+	if !ok || reader.Settings == nil {
+		t.Fatal("administrator caps are not wired")
+	}
+	ctx := identityhttp.WithPrincipal(t.Context(), identityhttp.Principal{User: domain.User{ID: 4}})
+	if id, ok := handler.Principal(ctx); !ok || id != 4 {
+		t.Fatalf("principal = %d %v", id, ok)
+	}
+	if _, ok := handler.Principal(t.Context()); ok {
+		t.Fatal("missing principal was accepted")
+	}
+	if _, ok := handler.Principal(identityhttp.WithPrincipal(t.Context(), identityhttp.Principal{})); ok {
+		t.Fatal("zero user was accepted")
+	}
+}
+
 func TestAPIRouterRequiresSessionAndCSRF(t *testing.T) {
-	router := newAPIRouter(identityhttp.Handler{Version: "router-test", Sessions: stubSessions{}})
+	router := newAPIRouter(identityhttp.Handler{Version: "router-test", Sessions: stubSessions{}}, accountshttp.KeyHandler{})
 	health := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	healthResponse := httptest.NewRecorder()
 	router.ServeHTTP(healthResponse, health)
@@ -386,6 +434,21 @@ func TestAPIRouterRequiresSessionAndCSRF(t *testing.T) {
 	router.ServeHTTP(revokeResponse, revoke)
 	if revokeResponse.Code != http.StatusUnauthorized {
 		t.Fatalf("delete status = %d body = %s", revokeResponse.Code, revokeResponse.Body.String())
+	}
+
+	keys := httptest.NewRequest(http.MethodGet, "/keys", nil)
+	keysResponse := httptest.NewRecorder()
+	router.ServeHTTP(keysResponse, keys)
+	if keysResponse.Code != http.StatusUnauthorized || !strings.Contains(keysResponse.Body.String(), `"code":"unauthenticated"`) {
+		t.Fatalf("keys status = %d body = %s", keysResponse.Code, keysResponse.Body.String())
+	}
+
+	create := httptest.NewRequest(http.MethodPost, "/keys", strings.NewReader(`{"label":"Personal","key":"0123456789abcdef0123456789abcdef","secret":"not-logged"}`))
+	create.Header.Set("Content-Type", "application/json")
+	createResponse := httptest.NewRecorder()
+	router.ServeHTTP(createResponse, create)
+	if createResponse.Code != http.StatusForbidden || !strings.Contains(createResponse.Body.String(), `"code":"csrf_rejected"`) || strings.Contains(createResponse.Body.String(), "not-logged") {
+		t.Fatalf("create status = %d body = %s", createResponse.Code, createResponse.Body.String())
 	}
 }
 

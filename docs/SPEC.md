@@ -10,6 +10,20 @@ guide feature implementation; operational environment rules live in
   supplies their own Flickr API key and secret in the application UI.
 - Store API credentials encrypted. They are never shared with other users and
   must not be accepted through the CLI or environment configuration.
+- Adding a key checks it with one `flickr.test.echo` call before saving. A
+  rejected key returns `key_invalid` and is not stored.
+- The public key is stored in plaintext for Flickr calls. API responses show
+  the first 6 characters and mask the rest. The secret is sealed with
+  associated data `api_keys:<id>`. No endpoint returns the secret, and logs
+  do not record it.
+- A key stores an hourly limit, a per-second limit, and a burst. Those limits
+  stay within the administrator settings: `per_second_rate`, `burst`, and an
+  hourly ceiling of 3,600. A positive `daily_call_limit` below 3,600 tightens
+  the hourly ceiling to that budget.
+- Changing a key secret marks that key's connected accounts
+  `reconnect_required`.
+- Deleting a key publishes `key.deleted` so queued work for that key stops.
+- Key status is `valid`, `invalid`, or `revoked`. `revoked` is terminal.
 - Flickr calls consume quota belonging to the API key that made each call. Track
   and enforce quota per key, including its hourly limit and call rate. Reserve
   capacity for user-started actions when the configured quota policy requires

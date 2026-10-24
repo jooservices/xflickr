@@ -22,6 +22,27 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for APIKeyStatus.
+const (
+	Invalid APIKeyStatus = "invalid"
+	Revoked APIKeyStatus = "revoked"
+	Valid   APIKeyStatus = "valid"
+)
+
+// Valid indicates whether the value is a known member of the APIKeyStatus enum.
+func (e APIKeyStatus) Valid() bool {
+	switch e {
+	case Invalid:
+		return true
+	case Revoked:
+		return true
+	case Valid:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UserRole.
 const (
 	UserRoleAdmin UserRole = "admin"
@@ -40,10 +61,48 @@ func (e UserRole) Valid() bool {
 	}
 }
 
+// APIKey A stored Flickr API key. The secret is never included.
+type APIKey struct {
+	Burst     int       `json:"burst"`
+	CreatedAt time.Time `json:"created_at"`
+	ID        int64     `json:"id"`
+
+	// KeyPublic Public key masked for display. The first 6 characters are visible and the rest are masked.
+	//
+	// Examples: 012345••••••••••••••••••••••
+	KeyPublic      string       `json:"key_public"`
+	Label          string       `json:"label"`
+	PerHourLimit   int          `json:"per_hour_limit"`
+	PerSecondLimit int          `json:"per_second_limit"`
+	Status         APIKeyStatus `json:"status"`
+}
+
+// APIKeyStatus defines model for APIKey.Status.
+type APIKeyStatus string
+
 // AuthRequest defines model for AuthRequest.
 type AuthRequest struct {
 	Email    openapi_types.Email `json:"email"`
 	Password *string             `json:"password,omitempty"`
+}
+
+// CreateKeyRequest defines model for CreateKeyRequest.
+type CreateKeyRequest struct {
+	// Burst Short burst size. Omitted values use the administrator cap.
+	Burst *int `json:"burst,omitempty"`
+
+	// Key Flickr API key. It is checked with flickr.test.echo before it is stored.
+	Key   string `json:"key"`
+	Label string `json:"label"`
+
+	// PerHourLimit Calls allowed each hour. Omitted values use the administrator cap.
+	PerHourLimit *int `json:"per_hour_limit,omitempty"`
+
+	// PerSecondLimit Sustained calls per second. Omitted values use the administrator cap.
+	PerSecondLimit *int `json:"per_second_limit,omitempty"`
+
+	// Secret Flickr API secret. It is sealed before storage and is never returned.
+	Secret *string `json:"secret,omitempty"`
 }
 
 // Error Shared error body returned by the API.
@@ -67,6 +126,15 @@ type Health struct {
 	Version string `json:"version"`
 }
 
+// UpdateKeyRequest Partial update. The public key cannot be changed. A secret change marks connected accounts reconnect_required.
+type UpdateKeyRequest struct {
+	Burst          *int    `json:"burst,omitempty"`
+	Label          *string `json:"label,omitempty"`
+	PerHourLimit   *int    `json:"per_hour_limit,omitempty"`
+	PerSecondLimit *int    `json:"per_second_limit,omitempty"`
+	Secret         *string `json:"secret,omitempty"`
+}
+
 // User defines model for User.
 type User struct {
 	CreatedAt time.Time           `json:"created_at"`
@@ -85,6 +153,12 @@ type LoginJSONRequestBody = AuthRequest
 // RegisterJSONRequestBody defines body for Register for application/json ContentType.
 type RegisterJSONRequestBody = AuthRequest
 
+// CreateKeyJSONRequestBody defines body for CreateKey for application/json ContentType.
+type CreateKeyJSONRequestBody = CreateKeyRequest
+
+// UpdateKeyJSONRequestBody defines body for UpdateKey for application/json ContentType.
+type UpdateKeyJSONRequestBody = UpdateKeyRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// Login Log in with email and password
@@ -102,6 +176,21 @@ type ServerInterface interface {
 	// GetHealth Report process health.
 	// (GET /healthz)
 	GetHealth(w http.ResponseWriter, r *http.Request)
+	// ListKeys List the current user's API keys
+	// (GET /keys)
+	ListKeys(w http.ResponseWriter, r *http.Request)
+	// CreateKey Add a Flickr API key
+	// (POST /keys)
+	CreateKey(w http.ResponseWriter, r *http.Request)
+	// DeleteKey Delete an API key
+	// (DELETE /keys/{id})
+	DeleteKey(w http.ResponseWriter, r *http.Request, id int64)
+	// GetKey Get one API key
+	// (GET /keys/{id})
+	GetKey(w http.ResponseWriter, r *http.Request, id int64)
+	// UpdateKey Change a key's label, limits, or secret
+	// (PUT /keys/{id})
+	UpdateKey(w http.ResponseWriter, r *http.Request, id int64)
 	// GetMe Get the authenticated user
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
@@ -138,6 +227,36 @@ func (_ Unimplemented) RevokeOtherSessions(w http.ResponseWriter, r *http.Reques
 // GetHealth Report process health.
 // (GET /healthz)
 func (_ Unimplemented) GetHealth(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListKeys List the current user's API keys
+// (GET /keys)
+func (_ Unimplemented) ListKeys(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateKey Add a Flickr API key
+// (POST /keys)
+func (_ Unimplemented) CreateKey(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteKey Delete an API key
+// (DELETE /keys/{id})
+func (_ Unimplemented) DeleteKey(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetKey Get one API key
+// (GET /keys/{id})
+func (_ Unimplemented) GetKey(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UpdateKey Change a key's label, limits, or secret
+// (PUT /keys/{id})
+func (_ Unimplemented) UpdateKey(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -217,6 +336,112 @@ func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetHealth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListKeys operation middleware
+func (siw *ServerInterfaceWrapper) ListKeys(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListKeys(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateKey operation middleware
+func (siw *ServerInterfaceWrapper) CreateKey(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateKey(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteKey operation middleware
+func (siw *ServerInterfaceWrapper) DeleteKey(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteKey(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetKey operation middleware
+func (siw *ServerInterfaceWrapper) GetKey(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetKey(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateKey operation middleware
+func (siw *ServerInterfaceWrapper) UpdateKey(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateKey(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -370,6 +595,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/me", wrapper.GetMe)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/keys", wrapper.ListKeys)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/keys", wrapper.CreateKey)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/keys/{id}", wrapper.DeleteKey)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/keys/{id}", wrapper.GetKey)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/keys/{id}", wrapper.UpdateKey)
 	})
 
 	return r
@@ -535,6 +775,320 @@ func (response GetHealthdefaultJSONResponse) VisitGetHealthResponse(w http.Respo
 	return err
 }
 
+type ListKeysRequestObject struct {
+}
+
+type ListKeysResponseObject interface {
+	VisitListKeysResponse(w http.ResponseWriter) error
+}
+
+type ListKeys200JSONResponse []APIKey
+
+func (response ListKeys200JSONResponse) VisitListKeysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListKeys401JSONResponse Error
+
+func (response ListKeys401JSONResponse) VisitListKeysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateKeyRequestObject struct {
+	Body *CreateKeyJSONRequestBody
+}
+
+type CreateKeyResponseObject interface {
+	VisitCreateKeyResponse(w http.ResponseWriter) error
+}
+
+type CreateKey201JSONResponse APIKey
+
+func (response CreateKey201JSONResponse) VisitCreateKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateKey400JSONResponse Error
+
+func (response CreateKey400JSONResponse) VisitCreateKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateKey401JSONResponse Error
+
+func (response CreateKey401JSONResponse) VisitCreateKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateKey409JSONResponse Error
+
+func (response CreateKey409JSONResponse) VisitCreateKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateKey422JSONResponse Error
+
+func (response CreateKey422JSONResponse) VisitCreateKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateKey503JSONResponse Error
+
+func (response CreateKey503JSONResponse) VisitCreateKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteKeyRequestObject struct {
+	ID int64 `json:"id"`
+}
+
+type DeleteKeyResponseObject interface {
+	VisitDeleteKeyResponse(w http.ResponseWriter) error
+}
+
+type DeleteKey204Response struct {
+}
+
+func (response DeleteKey204Response) VisitDeleteKeyResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteKey401JSONResponse Error
+
+func (response DeleteKey401JSONResponse) VisitDeleteKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteKey404JSONResponse Error
+
+func (response DeleteKey404JSONResponse) VisitDeleteKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetKeyRequestObject struct {
+	ID int64 `json:"id"`
+}
+
+type GetKeyResponseObject interface {
+	VisitGetKeyResponse(w http.ResponseWriter) error
+}
+
+type GetKey200JSONResponse APIKey
+
+func (response GetKey200JSONResponse) VisitGetKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetKey401JSONResponse Error
+
+func (response GetKey401JSONResponse) VisitGetKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetKey404JSONResponse Error
+
+func (response GetKey404JSONResponse) VisitGetKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateKeyRequestObject struct {
+	ID   int64 `json:"id"`
+	Body *UpdateKeyJSONRequestBody
+}
+
+type UpdateKeyResponseObject interface {
+	VisitUpdateKeyResponse(w http.ResponseWriter) error
+}
+
+type UpdateKey200JSONResponse APIKey
+
+func (response UpdateKey200JSONResponse) VisitUpdateKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateKey400JSONResponse Error
+
+func (response UpdateKey400JSONResponse) VisitUpdateKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateKey401JSONResponse Error
+
+func (response UpdateKey401JSONResponse) VisitUpdateKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateKey404JSONResponse Error
+
+func (response UpdateKey404JSONResponse) VisitUpdateKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateKey409JSONResponse Error
+
+func (response UpdateKey409JSONResponse) VisitUpdateKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateKey422JSONResponse Error
+
+func (response UpdateKey422JSONResponse) VisitUpdateKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetMeRequestObject struct {
 }
 
@@ -581,6 +1135,21 @@ type StrictServerInterface interface {
 	// GetHealth Report process health.
 	// (GET /healthz)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
+	// ListKeys List the current user's API keys
+	// (GET /keys)
+	ListKeys(ctx context.Context, request ListKeysRequestObject) (ListKeysResponseObject, error)
+	// CreateKey Add a Flickr API key
+	// (POST /keys)
+	CreateKey(ctx context.Context, request CreateKeyRequestObject) (CreateKeyResponseObject, error)
+	// DeleteKey Delete an API key
+	// (DELETE /keys/{id})
+	DeleteKey(ctx context.Context, request DeleteKeyRequestObject) (DeleteKeyResponseObject, error)
+	// GetKey Get one API key
+	// (GET /keys/{id})
+	GetKey(ctx context.Context, request GetKeyRequestObject) (GetKeyResponseObject, error)
+	// UpdateKey Change a key's label, limits, or secret
+	// (PUT /keys/{id})
+	UpdateKey(ctx context.Context, request UpdateKeyRequestObject) (UpdateKeyResponseObject, error)
 	// GetMe Get the authenticated user
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
@@ -759,6 +1328,146 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ListKeys operation middleware
+func (sh *strictHandler) ListKeys(w http.ResponseWriter, r *http.Request) {
+	var request ListKeysRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListKeys(ctx, request.(ListKeysRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListKeys")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListKeysResponseObject); ok {
+		if err := validResponse.VisitListKeysResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateKey operation middleware
+func (sh *strictHandler) CreateKey(w http.ResponseWriter, r *http.Request) {
+	var request CreateKeyRequestObject
+
+	var body CreateKeyJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateKey(ctx, request.(CreateKeyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateKey")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateKeyResponseObject); ok {
+		if err := validResponse.VisitCreateKeyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteKey operation middleware
+func (sh *strictHandler) DeleteKey(w http.ResponseWriter, r *http.Request, id int64) {
+	var request DeleteKeyRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteKey(ctx, request.(DeleteKeyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteKey")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteKeyResponseObject); ok {
+		if err := validResponse.VisitDeleteKeyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetKey operation middleware
+func (sh *strictHandler) GetKey(w http.ResponseWriter, r *http.Request, id int64) {
+	var request GetKeyRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetKey(ctx, request.(GetKeyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetKey")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetKeyResponseObject); ok {
+		if err := validResponse.VisitGetKeyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateKey operation middleware
+func (sh *strictHandler) UpdateKey(w http.ResponseWriter, r *http.Request, id int64) {
+	var request UpdateKeyRequestObject
+
+	request.ID = id
+
+	var body UpdateKeyJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateKey(ctx, request.(UpdateKeyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateKey")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateKeyResponseObject); ok {
+		if err := validResponse.VisitUpdateKeyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetMe operation middleware
 func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	var request GetMeRequestObject
@@ -788,25 +1497,43 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"zFbfb9s2EP5XDtweVdtJs6HTW7ulaYAMCZIMGDAUBS2eJdYSqR5PSbzA//tAUpJlS142oAX6ZIs83o/v",
-	"+3i8Z5HZqrYGDTuRPguXFVjJ8Pdtw8UtfmnQsf+USmnW1sjyhmyNxBqdSFeydJiIerD0LLCSuvR/VpYq",
-	"ySJtVxJRyacrNDkXIj396SwRvKlRpMIxaZOLbSJq6dyjJeVPD4xPTt8kotKm+35zeDQRj6QZr025ESlT",
-	"g9ttIgi/NJpQifSvPoM+wMfehV1+xox99HMiSy8Wq9BlpGu/L1JxV0hCBeiPwtKqDRByQwYVLDfABcLb",
-	"m8uZOMQoswr974EzlssSoZJZoQ2+IpQqLETv/sxM9HnvUFPIUpfueOYekcPEr+toB46pybjxVWTWMD4x",
-	"rCyF1EPcmZiAqkLnZD5RwoemkmaQ+VNdSiP9JtjVpNOujgPGAkK7QFN8fUBZcnG87EnCbshm6BwU4TAQ",
-	"1pY4snVxfg/zuP73mDLHkhs3UXF0FLdnED83UMc46NoQYNeT5D0gueDo0O+7RpcK2u0OPGqM0SbvvL8M",
-	"Y5v1Ls4UkH84pP95yTNCyag+Sd676UoyvmJd4VSpxxvDyFSrPTtt+OeznZ02jDmSNyxtJsugw5EPsnED",
-	"TVN5KKSqtBGJaHy1H18CTiuR9PkFV32wZFj9GE/vSZuVnZDK/f2N7wfgYtdoO8Sf70udrQmWMlujUSCN",
-	"gkdcQlZqNBw41uxrEZ3l25vLAaWpWMwWs4Wv2dZoZK1FKl7PTmaL0PG4CIzNZcPFvLS5DmKrbWzsntRw",
-	"Py+VSMVV2I5IoON3Vm1iuzKMJtjLui51Fk7MPztrds+G//cj4Uqk4of57l2Zx103H74o2324Q8v2C662",
-	"xkWFnS4WXy10EHiIuU+ITwkNe6eoIAhjm4izxcmYu0vzIEutIEgCLEH/lPgTp7+MT9xbC5U0GwiYg2TG",
-	"qmYXlOaaqpK0iYiDNvCouWh9e/p3zrfJjjnb8L9S5/dHKJ6NM7uyeY4KvPk4GdtwUGXWEKFhcOiCynaZ",
-	"EObaMdLxXG47i+9ESSffXEl+Hdq2EDW0OK4h6nL3dhPKOY86KP0z6geKCKZnjNqviDVkpXWoDkjswAfZ",
-	"KronrqWyfcRK5IkH/Lew7gAfkDbgkB6QXjmtsBNCPx3I0eUBfMqwjvLprGtCh4Z33e5p9anby6xd6zDT",
-	"HMrnwa7xmgukuy7l/6LrcKKL7OARCYGCL3X0Xg9agE+pV1Kwfz22//Xu9j2wXaMB7aDSzvn32BLoSO6I",
-	"DB++RzPWPYCpu2XWYCSqnT984Bx5HP82jJcuHG6ngHb2CI1jOZwaxsheILdT0zfstm2EiVtyP0hadzPY",
-	"ZhaH2JVsSv5qScRh/oUcMmmM5W5Ci+nMRgyGzXpvbgyPssxdnFSryg9Wgb4KB8yNsP8dxff9yh29DXuQ",
-	"XCAf6QA+/PafAQA=",
+	"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",
+	"03B3k4+//d8A",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jooservices/xflickr/internal/identity/app"
@@ -218,12 +219,27 @@ var authenticatedRoutes = map[string]struct{}{
 	http.MethodDelete + " /auth/sessions": {},
 }
 
+func authenticatedRequest(method, path string) bool {
+	if _, ok := authenticatedRoutes[method+" "+path]; ok {
+		return true
+	}
+	if path != "/keys" && !strings.HasPrefix(path, "/keys/") {
+		return false
+	}
+	switch method {
+	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
+}
+
 // ProtectRoutes applies RequireUser to routes that need an authenticated principal.
 func ProtectRoutes(sessions SessionService) func(http.Handler) http.Handler {
 	requireUser := RequireUser(sessions)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if _, ok := authenticatedRoutes[r.Method+" "+r.URL.Path]; ok {
+			if authenticatedRequest(r.Method, r.URL.Path) {
 				requireUser(next).ServeHTTP(w, r)
 				return
 			}

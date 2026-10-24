@@ -22,6 +22,6 @@ on the request. A missing, unknown, expired, or disabled session responds with
 401 and code `unauthenticated`. `RequireAdmin` uses the same check, then
 responds with 403 and code `forbidden` when the role is not `admin`.
 
-`GET /me` and `DELETE /auth/sessions` require a user. The delete removes every
+`GET /me`, `DELETE /auth/sessions`, and `/keys` require a user. The delete removes every
 other session for that user and leaves the calling session in place. Logout
 revokes the calling session and clears both cookies.

@@ -1,0 +1,94 @@
+ApiKey:
+  type: object
+  additionalProperties: false
+  description: A stored Flickr API key. The secret is never included.
+  required:
+    - id
+    - label
+    - key_public
+    - per_hour_limit
+    - per_second_limit
+    - burst
+    - status
+    - created_at
+  properties:
+    id:
+      type: integer
+      format: int64
+    label:
+      type: string
+    key_public:
+      type: string
+      description: Public key masked for display. The first 6 characters are visible and the rest are masked.
+      examples:
+        - 012345••••••••••••••••••••••
+    per_hour_limit:
+      type: integer
+      minimum: 1
+    per_second_limit:
+      type: integer
+      minimum: 1
+    burst:
+      type: integer
+      minimum: 1
+    status:
+      type: string
+      enum: [valid, invalid, revoked]
+    created_at:
+      type: string
+      format: date-time
+CreateKeyRequest:
+  type: object
+  additionalProperties: false
+  required: [label, key, secret]
+  properties:
+    label:
+      type: string
+      minLength: 1
+      maxLength: 80
+    key:
+      type: string
+      minLength: 1
+      maxLength: 255
+      description: Flickr API key. It is checked with flickr.test.echo before it is stored.
+    secret:
+      type: string
+      writeOnly: true
+      minLength: 1
+      maxLength: 255
+      description: Flickr API secret. It is sealed before storage and is never returned.
+    per_hour_limit:
+      type: integer
+      minimum: 1
+      description: Calls allowed each hour. Omitted values use the administrator cap.
+    per_second_limit:
+      type: integer
+      minimum: 1
+      description: Sustained calls per second. Omitted values use the administrator cap.
+    burst:
+      type: integer
+      minimum: 1
+      description: Short burst size. Omitted values use the administrator cap.
+UpdateKeyRequest:
+  type: object
+  additionalProperties: false
+  description: Partial update. The public key cannot be changed. A secret change marks connected accounts reconnect_required.
+  properties:
+    label:
+      type: string
+      minLength: 1
+      maxLength: 80
+    secret:
+      type: string
+      writeOnly: true
+      minLength: 1
+      maxLength: 255
+    per_hour_limit:
+      type: integer
+      minimum: 1
+    per_second_limit:
+      type: integer
+      minimum: 1
+    burst:
+      type: integer
+      minimum: 1

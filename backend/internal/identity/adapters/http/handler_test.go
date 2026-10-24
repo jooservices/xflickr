@@ -104,7 +104,7 @@ func TestRegisterInfrastructureErrorsAreServerErrors(t *testing.T) {
 		{"user lookup", Handler{RegisterUseCase: app.Register{Repository: repo{existErr: errors.New("database unavailable")}, Policy: openRegistration(false), Params: params}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			server := gen.NewStrictHandler(tc.handler, nil)
+			server := gen.NewStrictHandler(StrictHandler{Handler: tc.handler}, nil)
 			request := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body))
 			request.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
