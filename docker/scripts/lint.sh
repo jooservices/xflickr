@@ -9,3 +9,10 @@ ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd -P)"
 	cd "$ROOT/backend"
 	"$SCRIPT_DIR/run.sh" go go vet ./...
 )
+
+if [[ -f "$ROOT/web/package.json" ]]; then
+	(
+		cd "$ROOT/web"
+		"$SCRIPT_DIR/run.sh" node npm run lint
+	)
+fi

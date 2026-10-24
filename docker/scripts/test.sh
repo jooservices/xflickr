@@ -15,3 +15,10 @@ trap 'rm -f "$coverage_file"' EXIT
 )
 
 "$SCRIPT_DIR/coverage-gate.sh" "$coverage_file"
+
+if [[ -f "$ROOT/web/package.json" ]]; then
+	(
+		cd "$ROOT/web"
+		"$SCRIPT_DIR/run.sh" node npm run test
+	)
+fi
