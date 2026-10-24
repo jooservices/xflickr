@@ -13,14 +13,19 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jooservices/xflickr/pkg/flickr/oauth"
 )
 
 const DefaultBaseURL = "https://www.flickr.com/services/rest"
 
-// Credentials contains the Flickr API key used for REST calls. OAuth tokens
-// and signing are handled by a separate layer.
+// Credentials identifies the Flickr application and, once the member has
+// authorized it, the OAuth token used to sign calls to private data.
 type Credentials struct {
-	APIKey string
+	APIKey      string
+	APISecret   string
+	Token       string
+	TokenSecret string
 }
 
 // EventObserver receives transport events without coupling this library to an
@@ -43,6 +48,8 @@ type Client struct {
 	baseURL    string
 	httpClient *http.Client
 	observer   EventObserver
+	now        func() time.Time
+	newNonce   func() (string, error)
 }
 
 // NewClient creates a client that targets baseURL and uses httpClient. Empty
@@ -62,8 +69,24 @@ func NewClient(baseURL string, httpClient *http.Client, observers ...EventObserv
 	return client
 }
 
+// SetClock overrides the clock used when a call is signed. Nil restores time.Now.
+func (c *Client) SetClock(now func() time.Time) {
+	if c != nil {
+		c.now = now
+	}
+}
+
+// SetNonceGenerator overrides nonce generation for signed calls. Nil restores
+// a cryptographic nonce.
+func (c *Client) SetNonceGenerator(fn func() (string, error)) {
+	if c != nil {
+		c.newNonce = fn
+	}
+}
+
 // Call invokes a Flickr REST method using form encoded parameters. Flickr's
-// JSON response is returned intact on success.
+// JSON response is returned intact on success. Calls that carry an OAuth
+// token are signed with HMAC-SHA1.
 func (c *Client) Call(ctx context.Context, creds Credentials, method string, params map[string]string) (payload json.RawMessage, meta CallMeta, callErr error) {
 	started := time.Now()
 	defer func() {
@@ -91,6 +114,10 @@ func (c *Client) Call(ctx context.Context, creds Credentials, method string, par
 	form.Set("api_key", creds.APIKey)
 	form.Set("format", "json")
 	form.Set("nojsoncallback", "1")
+	form, err = c.signForm(endpoint.String(), creds, form)
+	if err != nil {
+		return nil, meta, err
+	}
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), strings.NewReader(form.Encode()))
 	if err != nil {
@@ -155,6 +182,27 @@ func (c *Client) Call(ctx context.Context, creds Credentials, method string, par
 		return nil, meta, &CallError{Kind: ErrHTTPStatus, Code: meta.ErrorCode, Status: response.StatusCode, Message: responseMessage(envelope, http.StatusText(response.StatusCode))}
 	}
 	return append(json.RawMessage(nil), body...), meta, nil
+}
+
+func (c *Client) signForm(endpoint string, creds Credentials, form url.Values) (url.Values, error) {
+	if strings.TrimSpace(creds.Token) == "" {
+		return form, nil
+	}
+	if strings.TrimSpace(creds.APISecret) == "" {
+		return nil, &CallError{Message: "API secret is required when an OAuth token is set"}
+	}
+	signed, err := (oauth.Signer{
+		ConsumerKey:    creds.APIKey,
+		ConsumerSecret: creds.APISecret,
+		Token:          creds.Token,
+		TokenSecret:    creds.TokenSecret,
+		Now:            c.now,
+		NewNonce:       c.newNonce,
+	}).Sign(http.MethodPost, endpoint, form)
+	if err != nil {
+		return nil, &CallError{Cause: err}
+	}
+	return signed, nil
 }
 
 func (c *Client) emitCallEvent(method string, meta CallMeta) {

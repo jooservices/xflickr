@@ -269,6 +269,123 @@ func TestDecodeResponseAcceptsNumericAndStringCodes(t *testing.T) {
 	}
 }
 
+func TestCallSignsWhenTokenIsPresent(t *testing.T) {
+	t.Parallel()
+	const (
+		apiKey      = "653e7a6ecc1d528c516cc8f92cf98611"
+		apiSecret   = "consumer secret"
+		token       = "token-1"
+		tokenSecret = "token~secret"
+		wantSign    = "YLg/VnHsOg+kN8s+hIWaEjCbVOU="
+	)
+	var saw oauthFields
+	client := NewClient("https://www.flickr.com/services/rest", &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("ParseForm() error = %v", err)
+		}
+		saw = oauthFields{
+			signature: r.Form.Get("oauth_signature"),
+			token:     r.Form.Get("oauth_token"),
+			key:       r.Form.Get("oauth_consumer_key"),
+			nonce:     r.Form.Get("oauth_nonce"),
+			stamp:     r.Form.Get("oauth_timestamp"),
+			version:   r.Form.Get("oauth_version"),
+			method:    r.Form.Get("oauth_signature_method"),
+			text:      r.Form.Get("text"),
+			title:     r.Form.Get("title"),
+			apiKey:    r.Form.Get("api_key"),
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"stat":"ok"}`)),
+		}, nil
+	})}, EventObserverFunc(func(string, map[string]any) {}))
+	client.SetClock(func() time.Time { return time.Unix(1305583871, 0) })
+	client.SetNonceGenerator(func() (string, error) { return "84354935", nil })
+
+	_, _, err := client.Call(context.Background(), Credentials{
+		APIKey:      apiKey,
+		APISecret:   apiSecret,
+		Token:       token,
+		TokenSecret: tokenSecret,
+	}, "flickr.test.login", map[string]string{"text": "hello world", "title": "café~x"})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if saw.signature != wantSign || saw.token != token || saw.key != apiKey || saw.nonce != "84354935" || saw.stamp != "1305583871" || saw.version != "1.0" || saw.method != "HMAC-SHA1" {
+		t.Fatalf("signed form = %+v", saw)
+	}
+	if saw.text != "hello world" || saw.title != "café~x" || saw.apiKey != apiKey {
+		t.Fatalf("request fields = %+v", saw)
+	}
+}
+
+func TestCallSignatureRequiresSecret(t *testing.T) {
+	t.Parallel()
+	called := false
+	client := NewClient(DefaultBaseURL, &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		called = true
+		return nil, errors.New("should not send")
+	})}, EventObserverFunc(func(string, map[string]any) {}))
+	_, _, err := client.Call(context.Background(), Credentials{APIKey: "key", Token: "token"}, "flickr.test.login", nil)
+	if err == nil || !strings.Contains(err.Error(), "API secret is required") {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if called {
+		t.Fatal("request was sent without a secret")
+	}
+
+	client.SetNonceGenerator(func() (string, error) { return "", errors.New("entropy unavailable") })
+	_, _, err = client.Call(context.Background(), Credentials{APIKey: "key", APISecret: "secret", Token: "token", TokenSecret: "token-secret"}, "flickr.test.login", nil)
+	if err == nil || !strings.Contains(err.Error(), "entropy unavailable") {
+		t.Fatalf("nonce error = %v", err)
+	}
+
+	client.SetNonceGenerator(nil)
+	client.SetClock(nil)
+	unsigned := NewClient(DefaultBaseURL, &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("ParseForm() error = %v", err)
+		}
+		if r.Form.Get("oauth_signature") != "" {
+			t.Errorf("unsigned call was signed")
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"stat":"ok"}`))}, nil
+	})}, EventObserverFunc(func(string, map[string]any) {}))
+	if _, _, err := unsigned.Call(context.Background(), Credentials{APIKey: "key", APISecret: "secret"}, "flickr.test.login", nil); err != nil {
+		t.Fatalf("unsigned Call() error = %v", err)
+	}
+
+	revoked := NewClient(DefaultBaseURL, &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"stat":"fail","code":98,"message":"Invalid auth token"}`)),
+		}, nil
+	})}, EventObserverFunc(func(string, map[string]any) {}))
+	revoked.SetNonceGenerator(func() (string, error) { return "n", nil })
+	_, _, err = revoked.Call(context.Background(), Credentials{APIKey: "key", APISecret: "secret", Token: "token", TokenSecret: "token-secret"}, "flickr.test.login", nil)
+	if !errors.Is(err, ErrTokenRevoked) {
+		t.Fatalf("signed Flickr error = %v", err)
+	}
+	(*Client)(nil).SetClock(time.Now)
+	(*Client)(nil).SetNonceGenerator(func() (string, error) { return "n", nil })
+}
+
+type oauthFields struct {
+	signature string
+	token     string
+	key       string
+	nonce     string
+	stamp     string
+	version   string
+	method    string
+	text      string
+	title     string
+	apiKey    string
+}
+
 func TestNewClientDefaults(t *testing.T) {
 	t.Parallel()
 	client := NewClient(" ", nil)
