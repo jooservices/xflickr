@@ -16,6 +16,12 @@ type Repository struct{ pool *pgxpool.Pool }
 
 func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
+func (repo *Repository) UsersExist(ctx context.Context) (bool, error) {
+	var exists bool
+	err := repo.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users)`).Scan(&exists)
+	return exists, err
+}
+
 func (repo *Repository) Register(ctx context.Context, user domain.User, registrationOpen bool) (domain.User, error) {
 	tx, err := repo.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {

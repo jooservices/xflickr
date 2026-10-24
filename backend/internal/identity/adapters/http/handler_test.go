@@ -17,8 +17,10 @@ import (
 )
 
 type repo struct {
-	user domain.User
-	err  error
+	user       domain.User
+	err        error
+	usersExist bool
+	existErr   error
 }
 
 func (r repo) Register(_ context.Context, u domain.User, _ bool) (domain.User, error) {
@@ -30,6 +32,7 @@ func (r repo) Register(_ context.Context, u domain.User, _ bool) (domain.User, e
 	u.CreatedAt = time.Now()
 	return u, nil
 }
+func (r repo) UsersExist(context.Context) (bool, error)                 { return r.usersExist, r.existErr }
 func (r repo) FindByEmail(context.Context, string) (domain.User, error) { return r.user, r.err }
 func (r repo) FindByID(context.Context, int64) (domain.User, error)     { return r.user, r.err }
 
@@ -42,6 +45,12 @@ type openRegistration bool
 
 func (p openRegistration) RegistrationOpen(context.Context) (bool, error) { return bool(p), nil }
 
+type registrationFailure struct{ err error }
+
+func (p registrationFailure) RegistrationOpen(context.Context) (bool, error) {
+	return false, p.err
+}
+
 func (r rateLimit) Allow(context.Context, string, string) (bool, error) { return r.allowed, r.err }
 
 func TestRegisterResponses(t *testing.T) {
@@ -49,14 +58,18 @@ func TestRegisterResponses(t *testing.T) {
 	good := Handler{RegisterUseCase: app.Register{Repository: repo{}, Policy: openRegistration(true), Params: params}}
 	email := openapi_types.Email("user@example.com")
 	password := "secret12"
+	short := "short"
 	for _, tc := range []struct {
 		name string
 		body *gen.RegisterJSONRequestBody
 		want any
-	}{{"created", &gen.AuthRequest{Email: email, Password: &password}, gen.Register201JSONResponse{}}, {"missing body", nil, gen.Register400Response{}}, {"missing password", &gen.AuthRequest{Email: email}, gen.Register400Response{}}, {"closed", &gen.AuthRequest{Email: email, Password: &password}, gen.Register409Response{}}} {
+	}{{"created", &gen.AuthRequest{Email: email, Password: &password}, gen.Register201JSONResponse{}}, {"missing body", nil, gen.Register400Response{}}, {"missing password", &gen.AuthRequest{Email: email}, gen.Register400Response{}}, {"invalid input", &gen.AuthRequest{Email: email, Password: &short}, gen.Register400Response{}}, {"closed", &gen.AuthRequest{Email: email, Password: &password}, gen.Register409Response{}}, {"duplicate", &gen.AuthRequest{Email: email, Password: &password}, gen.Register409Response{}}} {
 		h := good
 		if tc.name == "closed" {
 			h.RegisterUseCase.Repository = repo{err: app.ErrRegistrationClosed}
+		}
+		if tc.name == "duplicate" {
+			h.RegisterUseCase.Repository = repo{err: app.ErrEmailExists}
 		}
 		got, err := h.Register(context.Background(), gen.RegisterRequestObject{Body: tc.body})
 		if err != nil {
@@ -76,6 +89,30 @@ func TestRegisterResponses(t *testing.T) {
 				t.Fatalf("%s response %T", tc.name, got)
 			}
 		}
+	}
+}
+
+func TestRegisterInfrastructureErrorsAreServerErrors(t *testing.T) {
+	params := domain.Argon2Params{Memory: 32 * 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
+	body := `{"email":"user@example.com","password":"secret12"}`
+	for _, tc := range []struct {
+		name    string
+		handler Handler
+	}{
+		{"repository", Handler{RegisterUseCase: app.Register{Repository: repo{err: errors.New("database unavailable")}, Policy: openRegistration(true), Params: params}}},
+		{"policy", Handler{RegisterUseCase: app.Register{Repository: repo{}, Policy: registrationFailure{err: errors.New("settings unavailable")}, Params: params}}},
+		{"user lookup", Handler{RegisterUseCase: app.Register{Repository: repo{existErr: errors.New("database unavailable")}, Policy: openRegistration(false), Params: params}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := gen.NewStrictHandler(tc.handler, nil)
+			request := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			server.Register(response, request)
+			if response.Code < 500 || response.Code > 599 {
+				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+			}
+		})
 	}
 }
 

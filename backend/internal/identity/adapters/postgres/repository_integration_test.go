@@ -30,6 +30,12 @@ func (integrationRegistrationPolicy) RegistrationOpen(context.Context) (bool, er
 	return true, nil
 }
 
+type closedRegistrationPolicy struct{}
+
+func (closedRegistrationPolicy) RegistrationOpen(context.Context) (bool, error) {
+	return false, nil
+}
+
 func TestRepositoryRegistrationAndLookup(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use the shared worktree database")
@@ -54,6 +60,13 @@ func TestRepositoryRegistrationAndLookup(t *testing.T) {
 	var total int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&total); err != nil {
 		t.Fatal(err)
+	}
+	exists, err := repository.UsersExist(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists != (total > 0) {
+		t.Fatalf("UsersExist() = %v, count = %d", exists, total)
 	}
 	email := fmt.Sprintf("jooxf93-%d@example.invalid", time.Now().UnixNano())
 	t.Cleanup(func() {
@@ -120,6 +133,12 @@ func TestRepositoryRegistrationAndLookup(t *testing.T) {
 	if _, err := repository.Register(ctx, domain.User{Email: email + "-closed", PasswordHash: "hash", Locale: "en"}, false); !errors.Is(err, app.ErrRegistrationClosed) {
 		t.Fatalf("closed registration error = %v", err)
 	}
+	// Iterations 0 is rejected by HashPassword. Closed registration must fail
+	// before hashing once an account exists.
+	closed := app.Register{Repository: repository, Policy: closedRegistrationPolicy{}, Params: domain.Argon2Params{Memory: 8, Iterations: 0, Parallelism: 1, SaltLength: 8, KeyLength: 16}}
+	if _, err := closed.Execute(ctx, email+"-later@example.invalid", "password12", ""); !errors.Is(err, app.ErrRegistrationClosed) {
+		t.Fatalf("closed registration before hashing error = %v", err)
+	}
 	canceled, stop := context.WithCancel(ctx)
 	stop()
 	if _, err := repository.Register(canceled, domain.User{}, false); err == nil {
@@ -130,5 +149,8 @@ func TestRepositoryRegistrationAndLookup(t *testing.T) {
 	}
 	if _, err := repository.FindByID(canceled, user.ID); err == nil {
 		t.Fatal("FindByID() succeeded with canceled context")
+	}
+	if _, err := repository.UsersExist(canceled); err == nil {
+		t.Fatal("UsersExist() succeeded with canceled context")
 	}
 }

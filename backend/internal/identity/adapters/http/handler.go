@@ -37,10 +37,13 @@ func (h Handler) Register(ctx context.Context, request gen.RegisterRequestObject
 	}
 	u, err := h.RegisterUseCase.Execute(ctx, string(request.Body.Email), *request.Body.Password, "")
 	if err != nil {
+		if errors.Is(err, app.ErrInvalidInput) {
+			return gen.Register400Response{}, nil
+		}
 		if errors.Is(err, app.ErrRegistrationClosed) || errors.Is(err, app.ErrEmailExists) {
 			return gen.Register409Response{}, nil
 		}
-		return gen.Register400Response{}, nil
+		return nil, err
 	}
 	return gen.Register201JSONResponse(apiUser(u)), nil
 }

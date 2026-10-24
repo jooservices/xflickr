@@ -10,24 +10,38 @@ import (
 )
 
 type registerRepo struct {
-	got    domain.User
-	result domain.User
-	err    error
+	got        domain.User
+	result     domain.User
+	err        error
+	usersExist bool
+	existErr   error
+	open       bool
+	called     bool
+}
+
+func (r *registerRepo) UsersExist(context.Context) (bool, error) {
+	return r.usersExist, r.existErr
 }
 
 func (r *registerRepo) Register(_ context.Context, u domain.User, open bool) (domain.User, error) {
 	r.got = u
-	if !open && r.result.Role != domain.RoleAdmin {
-		return domain.User{}, ErrRegistrationClosed
-	}
+	r.open = open
+	r.called = true
 	if r.err != nil {
 		return domain.User{}, r.err
+	}
+	if !open && r.usersExist {
+		return domain.User{}, ErrRegistrationClosed
 	}
 	if r.result.Role != "" {
 		return r.result, nil
 	}
 	u.ID = 1
-	u.Role = domain.RoleAdmin
+	if r.usersExist {
+		u.Role = domain.RoleUser
+	} else {
+		u.Role = domain.RoleAdmin
+	}
 	return u, nil
 }
 
@@ -47,18 +61,58 @@ func TestRegisterFirstUser(t *testing.T) {
 	}
 }
 
-func TestRegisterPropagatesClosedRegistration(t *testing.T) {
-	repo := &registerRepo{err: ErrRegistrationClosed}
-	_, err := (Register{Repository: repo, Policy: registrationPolicy(false)}).Execute(context.Background(), "a@example.com", "password", "")
+func TestRegisterRejectsClosedRegistrationBeforeHashing(t *testing.T) {
+	repo := &registerRepo{usersExist: true}
+	// HashPassword rejects these parameters, and Memory is non-zero so Execute
+	// does not replace them with the expensive defaults.
+	params := domain.Argon2Params{Memory: 8, Iterations: 0, Parallelism: 1, SaltLength: 8, KeyLength: 16}
+	_, err := (Register{Repository: repo, Policy: registrationPolicy(false), Params: params}).Execute(context.Background(), "a@example.com", "password", "")
 	if !errors.Is(err, ErrRegistrationClosed) {
 		t.Fatalf("error = %v", err)
+	}
+	if repo.called {
+		t.Fatal("repository Register was called")
+	}
+}
+
+func TestRegisterFirstUserWhenRegistrationIsClosed(t *testing.T) {
+	repo := &registerRepo{}
+	params := domain.Argon2Params{Memory: 32 * 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
+	user, err := (Register{Repository: repo, Policy: registrationPolicy(false), Params: params}).Execute(context.Background(), "first@example.com", "password", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !repo.called || repo.open || user.Role != domain.RoleAdmin || !domain.VerifyPassword(repo.got.PasswordHash, "password") {
+		t.Fatalf("user %#v stored %#v open %v called %v", user, repo.got, repo.open, repo.called)
+	}
+}
+
+type failingPolicy struct{ err error }
+
+func (p failingPolicy) RegistrationOpen(context.Context) (bool, error) { return false, p.err }
+
+func TestRegisterReturnsPolicyAndLookupErrorsBeforeHashing(t *testing.T) {
+	params := domain.Argon2Params{Memory: 8, Iterations: 0, Parallelism: 1, SaltLength: 8, KeyLength: 16}
+	policyErr := errors.New("settings unavailable")
+	repo := &registerRepo{usersExist: true}
+	_, err := (Register{Repository: repo, Policy: failingPolicy{err: policyErr}, Params: params}).Execute(context.Background(), "a@example.com", "password12", "")
+	if !errors.Is(err, policyErr) || repo.called {
+		t.Fatalf("policy error = %v called %v", err, repo.called)
+	}
+	lookupErr := errors.New("database unavailable")
+	repo = &registerRepo{existErr: lookupErr}
+	_, err = (Register{Repository: repo, Policy: registrationPolicy(false), Params: params}).Execute(context.Background(), "a@example.com", "password12", "")
+	if !errors.Is(err, lookupErr) || repo.called {
+		t.Fatalf("lookup error = %v called %v", err, repo.called)
 	}
 }
 
 func TestRegisterRejectsMissingFields(t *testing.T) {
 	for _, values := range [][2]string{{"", "password12"}, {"a@example.com", ""}, {"a@example.com", "short"}, {"a@example.com", string(make([]byte, MaxPasswordBytes+1))}, {string(make([]byte, MaxEmailBytes+1)), "password12"}} {
-		if _, err := (Register{Repository: &registerRepo{}, Policy: registrationPolicy(true)}).Execute(context.Background(), values[0], values[1], ""); err == nil {
-			t.Fatalf("Execute(%q, %q) succeeded", values[0], values[1])
+		repo := &registerRepo{}
+		_, err := (Register{Repository: repo, Policy: registrationPolicy(true)}).Execute(context.Background(), values[0], values[1], "")
+		if !errors.Is(err, ErrInvalidInput) || repo.called {
+			t.Fatalf("Execute(%q, %q) error = %v called %v", values[0], values[1], err, repo.called)
 		}
 	}
 }
