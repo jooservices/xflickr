@@ -9,6 +9,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/migrations"
 	"github.com/pressly/goose/v3"
+	"github.com/pressly/goose/v3/lock"
 )
 
 const (
@@ -21,6 +22,9 @@ const (
 )
 
 // Migrate runs the requested goose action using the embedded migration files.
+// A PostgreSQL session advisory lock stops concurrent migrate commands from
+// applying one version twice. Missing timestamp versions older than the newest
+// applied version are applied instead of rejected.
 func Migrate(ctx context.Context, cfg config.DBConfig, action string, output io.Writer) error {
 	if action != MigrateUp && action != MigrateDown && action != MigrateStatus {
 		return fmt.Errorf("unsupported migration action %q; expected up, down, or status", action)
@@ -29,15 +33,28 @@ func Migrate(ctx context.Context, cfg config.DBConfig, action string, output io.
 		output = io.Discard
 	}
 
+	sessionLocker, err := lock.NewPostgresSessionLocker()
+	if err != nil {
+		return fmt.Errorf("create PostgreSQL migration session locker: %w", err)
+	}
+
 	connectionConfig, err := parseConnectionConfig(cfg)
 	if err != nil {
 		return err
 	}
 	database := stdlib.OpenDB(*connectionConfig)
+	// SQL migrations run on the locked session. One connection keeps that
+	// session from being checked out twice while the advisory lock is held.
 	database.SetMaxOpenConns(1)
 	database.SetMaxIdleConns(1)
 
-	provider, err := goose.NewProvider(goose.DialectPostgres, database, migrations.Files)
+	provider, err := goose.NewProvider(
+		goose.DialectPostgres,
+		database,
+		migrations.Files,
+		goose.WithSessionLocker(sessionLocker),
+		goose.WithAllowOutofOrder(true),
+	)
 	if err != nil {
 		_ = database.Close()
 		return fmt.Errorf("create PostgreSQL migration provider: %w", err)
