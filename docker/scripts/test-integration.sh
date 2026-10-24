@@ -10,5 +10,5 @@ ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd -P)"
 	XFLICKR_INTEGRATION_TEST=1 \
 	XFLICKR_DBTEST_INTEGRATION_TEST=1 \
 	RUNTIME_PASS_ENV='XFLICKR_INTEGRATION_TEST XFLICKR_DBTEST_INTEGRATION_TEST' \
-	"$SCRIPT_DIR/run.sh" go go test -count=1 ./...
+	"$SCRIPT_DIR/run.sh" go go test -count=1 -p 1 ./...
 )
