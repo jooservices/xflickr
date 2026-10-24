@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help lint arch-lint test test-integration e2e gen check dev-up dev-down
+.PHONY: help lint arch-lint test test-integration e2e gen gen-stale check dev-up dev-down
 
 help:
 	@./docker/scripts/help.sh
@@ -22,6 +22,9 @@ e2e:
 
 gen:
 	@./docker/scripts/gen.sh
+
+gen-stale:
+	@./docker/scripts/gen-stale.sh
 
 check:
 	@./docker/scripts/check.sh

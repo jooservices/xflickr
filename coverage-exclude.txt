@@ -1,0 +1,4 @@
+# Repository-relative prefixes excluded from coverage.
+# Go profiles match these with or without the leading backend/ directory.
+backend/internal/platform/api/gen/
+web/src/shared/api/gen/

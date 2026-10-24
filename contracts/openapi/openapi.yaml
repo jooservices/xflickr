@@ -1,0 +1,14 @@
+openapi: 3.1.0
+info:
+  title: XFlickr API
+  version: 0.0.0
+  description: HTTP API shared by the XFlickr backend and web client.
+paths:
+  /healthz:
+    $ref: ./paths/common.yaml#/healthz
+components:
+  schemas:
+    Error:
+      $ref: ./schemas/common.yaml#/Error
+    Health:
+      $ref: ./schemas/common.yaml#/Health

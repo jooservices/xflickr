@@ -9,7 +9,8 @@ XFlickr developer commands:
   make test             Run Go and web unit tests, then the Go coverage gate.
   make test-integration Run tests against the configured worktree database.
   make e2e              Run the Playwright smoke suite when the web app is present.
-  make gen              Run Go code generators.
+  make gen              Bundle the OpenAPI contract and generate the Go server and TypeScript client.
+  make gen-stale        Fail when make gen has changed any file.
   make check            Run all release verification steps.
   make dev-up           Check shared service health and worktree databases.
   make dev-down         Stop XFlickr-owned development services, if any.

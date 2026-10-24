@@ -23,6 +23,7 @@ export default defineConfig({
         'src/main.tsx',
         'src/**/__boundary_fixtures__/**',
         'src/vite-env.d.ts',
+        'src/shared/api/gen/**',
       ],
       thresholds: {
         lines: 85,

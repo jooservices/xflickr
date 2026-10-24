@@ -27,6 +27,7 @@ export default tseslint.config(
       'test-results/**',
       'blob-report/**',
       'src/shared/__boundary_fixtures__/**',
+      'src/shared/api/gen/**',
     ],
   },
   {
