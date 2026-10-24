@@ -5,6 +5,19 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Check the UI view catalogue
+        run: ./docker/scripts/ui-spec-check.sh
+
+      - name: Test the UI view catalogue gate
+        run: ./docker/scripts/ui-spec-check.test.sh
+
   stale-check:
     name: stale-check
     runs-on: ubuntu-latest

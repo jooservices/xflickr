@@ -10,6 +10,7 @@
 - [Flickr accounts](flickr-accounts.md) — OAuth connect flow, sealed tokens,
   account status, and events.
 - [Architecture decision records](adr/README.md) — durable architecture choices.
+- [UI view catalogue](ui/README.md) — all views, overlays, and the spec gate.
 - [User interface proof of concept](ui/poc/README.md) — static design prototype.
 - [UI design system](ui/design-system.md) — themes, typography, iconography, and
   accessibility rules.
