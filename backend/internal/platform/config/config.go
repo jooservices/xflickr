@@ -100,9 +100,10 @@ type NodeConfig struct {
 	ID string `env:"NODE_ID"`
 }
 
-// CryptoConfig contains the key used to encrypt application secrets.
+// CryptoConfig contains the versioned master keys used to encrypt application secrets.
 type CryptoConfig struct {
-	MasterEncryptionKey string `env:"MASTER_ENCRYPTION_KEY"`
+	MasterKeys        string `env:"XFLICKR_MASTER_KEYS"`
+	ActiveMasterKeyID string `env:"XFLICKR_MASTER_KEY_ACTIVE"`
 }
 
 var requiredEnvironment = []string{
@@ -112,7 +113,8 @@ var requiredEnvironment = []string{
 	"REDIS_PREFIX",
 	"OPENSEARCH_INDEX_PREFIX",
 	"NODE_ID",
-	"MASTER_ENCRYPTION_KEY",
+	"XFLICKR_MASTER_KEYS",
+	"XFLICKR_MASTER_KEY_ACTIVE",
 }
 
 // Load reads .env when it exists, then overlays the process environment and
@@ -337,7 +339,7 @@ func (cfg *Config) validate() error {
 // URL user information and query parameters may also contain secrets.
 func (cfg Config) String() string {
 	return fmt.Sprintf(
-		"Config{DB:{host:%q port:%d name:%q user:%q password:%s}, Redis:{host:%q port:%d db:%d prefix:%q password:%s}, Search:{endpoint_configured:%t username:%q password:%s index_prefix:%q}, Blob:{driver:%q local_dir:%q s3_endpoint_configured:%t s3_region:%q s3_bucket:%q s3_access_key:%s s3_secret_key:%s}, AI:{endpoint_configured:%t caption_model:%q embedding_model:%q}, Obs:{endpoint_configured:%t org:%q stream:%q username:%q password:%s}, Node:{id:%q}, Crypto:{master_encryption_key:%s}, HTTPPort:%d LogLevel:%q}",
+		"Config{DB:{host:%q port:%d name:%q user:%q password:%s}, Redis:{host:%q port:%d db:%d prefix:%q password:%s}, Search:{endpoint_configured:%t username:%q password:%s index_prefix:%q}, Blob:{driver:%q local_dir:%q s3_endpoint_configured:%t s3_region:%q s3_bucket:%q s3_access_key:%s s3_secret_key:%s}, AI:{endpoint_configured:%t caption_model:%q embedding_model:%q}, Obs:{endpoint_configured:%t org:%q stream:%q username:%q password:%s}, Node:{id:%q}, Crypto:{master_keys:%s active_master_key_id:%s}, HTTPPort:%d LogLevel:%q}",
 		cfg.DB.Host, cfg.DB.Port, cfg.DB.Name, cfg.DB.User, mask(cfg.DB.Password),
 		cfg.Redis.Host, cfg.Redis.Port, cfg.Redis.DB, cfg.Redis.Prefix, mask(cfg.Redis.Password),
 		cfg.Search.URL != "", cfg.Search.Username, mask(cfg.Search.Password), cfg.Search.IndexPrefix,
@@ -345,7 +347,7 @@ func (cfg Config) String() string {
 		mask(cfg.Blob.S3AccessKey), mask(cfg.Blob.S3SecretKey),
 		cfg.AI.URL != "", cfg.AI.CaptionModel, cfg.AI.EmbeddingModel,
 		cfg.Obs.URL != "", cfg.Obs.Org, cfg.Obs.Stream, cfg.Obs.Username, mask(cfg.Obs.Password),
-		cfg.Node.ID, mask(cfg.Crypto.MasterEncryptionKey), cfg.HTTPPort, cfg.LogLevel,
+		cfg.Node.ID, mask(cfg.Crypto.MasterKeys), mask(cfg.Crypto.ActiveMasterKeyID), cfg.HTTPPort, cfg.LogLevel,
 	)
 }
 

@@ -25,12 +25,19 @@ func mainExit() int {
 }
 
 func execute(ctx context.Context, args []string, envRoles string, registry *roles.Registry, stderr io.Writer) int {
-	return executeWithMigration(ctx, args, envRoles, registry, os.Stdout, stderr, runConfiguredMigrations)
+	return executeWithCommands(ctx, args, envRoles, registry, os.Stdout, stderr, runConfiguredMigrations, runConfiguredRotation)
 }
 
 func executeWithMigration(ctx context.Context, args []string, envRoles string, registry *roles.Registry, stdout, stderr io.Writer, run migrationRunner) int {
+	return executeWithCommands(ctx, args, envRoles, registry, stdout, stderr, run, runConfiguredRotation)
+}
+
+func executeWithCommands(ctx context.Context, args []string, envRoles string, registry *roles.Registry, stdout, stderr io.Writer, runMigrations migrationRunner, runRotation rotationRunner) int {
 	if len(args) > 0 && args[0] == "migrate" {
-		return runMigrate(ctx, args[1:], stdout, stderr, run)
+		return runMigrate(ctx, args[1:], stdout, stderr, runMigrations)
+	}
+	if len(args) > 0 && args[0] == "crypto" {
+		return runCrypto(ctx, args[1:], stdout, stderr, runRotation)
 	}
 
 	selected, err := parseRoles(args, envRoles, registry)

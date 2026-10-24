@@ -10,6 +10,8 @@ import (
 )
 
 type migrationRunner func(context.Context, string, io.Writer) error
+type databaseConfigLoader func() (config.DBConfig, error)
+type configuredMigration func(context.Context, config.DBConfig, string, io.Writer) error
 
 func runMigrate(ctx context.Context, args []string, stdout, stderr io.Writer, run migrationRunner) int {
 	if len(args) != 1 {
@@ -28,9 +30,19 @@ func runMigrate(ctx context.Context, args []string, stdout, stderr io.Writer, ru
 }
 
 func runConfiguredMigrations(ctx context.Context, action string, stdout io.Writer) error {
-	dbConfig, err := config.LoadDatabase()
+	return runConfiguredMigrationsWith(ctx, action, stdout, config.LoadDatabase, db.Migrate)
+}
+
+func runConfiguredMigrationsWith(ctx context.Context, action string, stdout io.Writer, load databaseConfigLoader, migrate configuredMigration) error {
+	if load == nil {
+		load = config.LoadDatabase
+	}
+	dbConfig, err := load()
 	if err != nil {
 		return err
 	}
-	return db.Migrate(ctx, dbConfig, action, stdout)
+	if migrate == nil {
+		migrate = db.Migrate
+	}
+	return migrate(ctx, dbConfig, action, stdout)
 }

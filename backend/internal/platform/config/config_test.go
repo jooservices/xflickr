@@ -40,46 +40,47 @@ func TestLoadFromEnvAppliesDefaults(t *testing.T) {
 func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 	values := requiredEnv()
 	for key, value := range map[string]string{
-		"DB_HOST":                 "db.internal",
-		"DB_PORT":                 "5544",
-		"DB_NAME":                 "worktree_db",
-		"DB_USER":                 "worker",
-		"DB_PASSWORD":             "db-pass",
-		"DB_SSLMODE":              "require",
-		"DB_MAX_CONNS":            "35",
-		"DB_MIN_CONNS":            "4",
-		"DB_MAX_CONN_LIFETIME":    "45m",
-		"DB_MAX_CONN_IDLE_TIME":   "12m",
-		"DB_HEALTH_CHECK_PERIOD":  "30s",
-		"REDIS_HOST":              "redis.internal",
-		"REDIS_PORT":              "16383",
-		"REDIS_DB":                "9",
-		"REDIS_PASSWORD":          "redis-pass",
-		"REDIS_PREFIX":            "xflickr_wt68:",
-		"SEARCH_URL":              "http://search.internal:9200",
-		"SEARCH_USERNAME":         "search-user",
-		"SEARCH_PASSWORD":         "search-pass",
-		"OPENSEARCH_INDEX_PREFIX": "xflickr_wt68_",
-		"BLOB_DRIVER":             "s3",
-		"BLOB_LOCAL_DIR":          "/tmp/blobs",
-		"S3_ENDPOINT":             "https://objects.internal",
-		"S3_REGION":               "ap-southeast-1",
-		"S3_BUCKET":               "xflickr-worktree",
-		"S3_ACCESS_KEY":           "s3-access",
-		"S3_SECRET_KEY":           "s3-secret",
-		"S3_USE_PATH_STYLE":       "true",
-		"OLLAMA_URL":              "http://ollama.internal:11434",
-		"OLLAMA_CAPTION_MODEL":    "caption-model",
-		"OLLAMA_EMBEDDING_MODEL":  "embedding-model",
-		"OPENOBSERVE_URL":         "https://observe.internal",
-		"OPENOBSERVE_USERNAME":    "observe-user",
-		"OPENOBSERVE_PASSWORD":    "observe-pass",
-		"OPENOBSERVE_ORG":         "xflickr-org",
-		"OPENOBSERVE_STREAM":      "worktree-logs",
-		"NODE_ID":                 "node-worktree-68",
-		"MASTER_ENCRYPTION_KEY":   "master-key-value",
-		"HTTP_PORT":               "9080",
-		"LOG_LEVEL":               "DEBUG",
+		"DB_HOST":                   "db.internal",
+		"DB_PORT":                   "5544",
+		"DB_NAME":                   "worktree_db",
+		"DB_USER":                   "worker",
+		"DB_PASSWORD":               "db-pass",
+		"DB_SSLMODE":                "require",
+		"DB_MAX_CONNS":              "35",
+		"DB_MIN_CONNS":              "4",
+		"DB_MAX_CONN_LIFETIME":      "45m",
+		"DB_MAX_CONN_IDLE_TIME":     "12m",
+		"DB_HEALTH_CHECK_PERIOD":    "30s",
+		"REDIS_HOST":                "redis.internal",
+		"REDIS_PORT":                "16383",
+		"REDIS_DB":                  "9",
+		"REDIS_PASSWORD":            "redis-pass",
+		"REDIS_PREFIX":              "xflickr_wt68:",
+		"SEARCH_URL":                "http://search.internal:9200",
+		"SEARCH_USERNAME":           "search-user",
+		"SEARCH_PASSWORD":           "search-pass",
+		"OPENSEARCH_INDEX_PREFIX":   "xflickr_wt68_",
+		"BLOB_DRIVER":               "s3",
+		"BLOB_LOCAL_DIR":            "/tmp/blobs",
+		"S3_ENDPOINT":               "https://objects.internal",
+		"S3_REGION":                 "ap-southeast-1",
+		"S3_BUCKET":                 "xflickr-worktree",
+		"S3_ACCESS_KEY":             "s3-access",
+		"S3_SECRET_KEY":             "s3-secret",
+		"S3_USE_PATH_STYLE":         "true",
+		"OLLAMA_URL":                "http://ollama.internal:11434",
+		"OLLAMA_CAPTION_MODEL":      "caption-model",
+		"OLLAMA_EMBEDDING_MODEL":    "embedding-model",
+		"OPENOBSERVE_URL":           "https://observe.internal",
+		"OPENOBSERVE_USERNAME":      "observe-user",
+		"OPENOBSERVE_PASSWORD":      "observe-pass",
+		"OPENOBSERVE_ORG":           "xflickr-org",
+		"OPENOBSERVE_STREAM":        "worktree-logs",
+		"NODE_ID":                   "node-worktree-68",
+		"XFLICKR_MASTER_KEYS":       "test-v1:AA==",
+		"XFLICKR_MASTER_KEY_ACTIVE": "test-v1",
+		"HTTP_PORT":                 "9080",
+		"LOG_LEVEL":                 "DEBUG",
 	} {
 		values[key] = value
 	}
@@ -109,7 +110,7 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 	if cfg.Obs.URL != "https://observe.internal" || cfg.Obs.Username != "observe-user" || cfg.Obs.Password != "observe-pass" || cfg.Obs.Org != "xflickr-org" || cfg.Obs.Stream != "worktree-logs" {
 		t.Errorf("Obs values not loaded: %#v", cfg.Obs)
 	}
-	if cfg.Node.ID != "node-worktree-68" || cfg.Crypto.MasterEncryptionKey != "master-key-value" || cfg.HTTPPort != 9080 || cfg.LogLevel != "debug" {
+	if cfg.Node.ID != "node-worktree-68" || cfg.Crypto.MasterKeys != "test-v1:AA==" || cfg.Crypto.ActiveMasterKeyID != "test-v1" || cfg.HTTPPort != 9080 || cfg.LogLevel != "debug" {
 		t.Errorf("identity/runtime values not loaded: node %#v crypto %#v port %d level %q", cfg.Node, cfg.Crypto, cfg.HTTPPort, cfg.LogLevel)
 	}
 }
@@ -175,7 +176,8 @@ func TestLoadWithDotEnvOptionalFileAndProcessPrecedence(t *testing.T) {
 		"REDIS_PREFIX=xflickr_dotenv:",
 		"OPENSEARCH_INDEX_PREFIX=xflickr_dotenv_",
 		"NODE_ID=dotenv-node",
-		"MASTER_ENCRYPTION_KEY=dotenv-key",
+		"XFLICKR_MASTER_KEYS=dotenv-v1:AA==",
+		"XFLICKR_MASTER_KEY_ACTIVE=dotenv-v1",
 		"LOG_LEVEL=debug",
 	}, "\n")
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
@@ -268,7 +270,8 @@ func TestConfigStringRedactsSecrets(t *testing.T) {
 	values["S3_ACCESS_KEY"] = "secret-s3-access"
 	values["S3_SECRET_KEY"] = "secret-s3-secret"
 	values["OPENOBSERVE_PASSWORD"] = "secret-observe-password"
-	values["MASTER_ENCRYPTION_KEY"] = "secret-master-key"
+	values["XFLICKR_MASTER_KEYS"] = "secret-master-key-list"
+	values["XFLICKR_MASTER_KEY_ACTIVE"] = "secret-active-id"
 	values["SEARCH_URL"] = "https://url-user:url-password@search.internal/?token=url-token"
 	values["S3_ENDPOINT"] = "https://access:secret@objects.internal/?token=s3-token"
 	values["OPENOBSERVE_URL"] = "https://observe.internal/?token=observe-token"
@@ -281,7 +284,7 @@ func TestConfigStringRedactsSecrets(t *testing.T) {
 	for _, secret := range []string{
 		"secret-db-password", "secret-redis-password", "secret-search-password",
 		"secret-s3-access", "secret-s3-secret", "secret-observe-password",
-		"secret-master-key", "url-user", "url-password", "url-token", "s3-token", "observe-token",
+		"secret-master-key-list", "secret-active-id", "url-user", "url-password", "url-token", "s3-token", "observe-token",
 	} {
 		if strings.Contains(result, secret) {
 			t.Errorf("Config.String() exposed %q: %s", secret, result)
@@ -297,13 +300,14 @@ func TestConfigStringRedactsSecrets(t *testing.T) {
 
 func requiredEnv() map[string]string {
 	return map[string]string{
-		"DB_HOST":                 "127.0.0.1",
-		"DB_NAME":                 "xflickr_test",
-		"DB_USER":                 "postgres",
-		"REDIS_PREFIX":            "xflickr_test:",
-		"OPENSEARCH_INDEX_PREFIX": "xflickr_test_",
-		"NODE_ID":                 "xflickr-test",
-		"MASTER_ENCRYPTION_KEY":   "test-master-key",
+		"DB_HOST":                   "127.0.0.1",
+		"DB_NAME":                   "xflickr_test",
+		"DB_USER":                   "postgres",
+		"REDIS_PREFIX":              "xflickr_test:",
+		"OPENSEARCH_INDEX_PREFIX":   "xflickr_test_",
+		"NODE_ID":                   "xflickr-test",
+		"XFLICKR_MASTER_KEYS":       "test-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+		"XFLICKR_MASTER_KEY_ACTIVE": "test-v1",
 	}
 }
 
@@ -317,7 +321,7 @@ func clearConfigEnvironment(t *testing.T) {
 		"BLOB_DRIVER", "BLOB_LOCAL_DIR", "S3_ENDPOINT", "S3_REGION", "S3_BUCKET", "S3_ACCESS_KEY", "S3_SECRET_KEY", "S3_USE_PATH_STYLE",
 		"OLLAMA_URL", "OLLAMA_CAPTION_MODEL", "OLLAMA_EMBEDDING_MODEL",
 		"OPENOBSERVE_URL", "OPENOBSERVE_USERNAME", "OPENOBSERVE_PASSWORD", "OPENOBSERVE_ORG", "OPENOBSERVE_STREAM",
-		"NODE_ID", "MASTER_ENCRYPTION_KEY", "HTTP_PORT", "LOG_LEVEL",
+		"NODE_ID", "XFLICKR_MASTER_KEYS", "XFLICKR_MASTER_KEY_ACTIVE", "HTTP_PORT", "LOG_LEVEL",
 	} {
 		t.Setenv(name, "")
 		if err := os.Unsetenv(name); err != nil {
