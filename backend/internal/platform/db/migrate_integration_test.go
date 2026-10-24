@@ -10,13 +10,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db"
@@ -94,54 +95,79 @@ func TestMigrateUpFromSeveralGoroutinesAppliesEachVersionOnce(t *testing.T) {
 	assertEachEmbeddedVersionOnce(t, ctx, pool, sources)
 }
 
-func TestMigrateUpAppliesLowerVersionAfterHigherVersion(t *testing.T) {
-	ctx, cfg, pool := prepareMigrationTest(t)
-	sources := embeddedMigrations(t)
-	lower, higher := outOfOrderPair(t, sources)
-	assertEachEmbeddedVersionOnce(t, ctx, pool, sources)
-	higherAppliedAt := versionAppliedAt(t, ctx, pool, higher.version)
+func TestMigrateAppliesLowerVersionAfterHigherVersion(t *testing.T) {
+	ctx, cfg, pool := prepareEmptyMigrationTest(t)
+	const (
+		lowerVersion  int64 = 20261025000100
+		higherVersion int64 = 20261025000200
+		lowerFile           = "20261025000100_lower.sql"
+		higherFile          = "20261025000200_higher.sql"
+	)
+	lowerSQL := "-- +goose Up\nCREATE TABLE lower_applied (id integer PRIMARY KEY);\n-- +goose Down\nDROP TABLE lower_applied;\n"
+	higherSQL := "-- +goose Up\nCREATE TABLE higher_applied (id integer PRIMARY KEY);\n-- +goose Down\nDROP TABLE higher_applied;\n"
+	higherOnly := fstest.MapFS{
+		higherFile: {Data: []byte(higherSQL), Mode: 0o644},
+	}
+	if err := db.MigrateFiles(ctx, cfg, db.MigrateUp, io.Discard, higherOnly); err != nil {
+		t.Fatalf("migrate higher version: %v", err)
+	}
+	assertAppliedVersions(t, ctx, pool, []int64{higherVersion})
+	assertRelation(t, ctx, pool, "public.higher_applied", true)
+	assertRelation(t, ctx, pool, "public.lower_applied", false)
 
-	tag, err := pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s WHERE version_id = $1`, goose.DefaultTablename), lower.version)
-	if err != nil {
-		t.Fatalf("remove applied version %d: %v", lower.version, err)
+	both := fstest.MapFS{
+		lowerFile:  {Data: []byte(lowerSQL), Mode: 0o644},
+		higherFile: {Data: []byte(higherSQL), Mode: 0o644},
 	}
-	if tag.RowsAffected() != 1 {
-		t.Fatalf("remove applied version %d affected %d rows", lower.version, tag.RowsAffected())
-	}
-	if _, err := versionAppliedAtOptional(ctx, pool, lower.version); !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatalf("version %d after delete error = %v, want no rows", lower.version, err)
-	}
-
 	var up bytes.Buffer
-	if err := db.Migrate(ctx, cfg, db.MigrateUp, &up); err != nil {
-		t.Fatalf("migrate up with a missing lower version: %v", err)
+	if err := db.MigrateFiles(ctx, cfg, db.MigrateUp, &up, both); err != nil {
+		t.Fatalf("migrate missing lower version: %v", err)
 	}
-	if !strings.Contains(up.String(), lower.name) {
-		t.Fatalf("migrate up output = %q, want reapplied %s", up.String(), lower.name)
+	if !strings.Contains(up.String(), lowerFile) {
+		t.Fatalf("migrate up output = %q, want reapplied %s", up.String(), lowerFile)
 	}
-
-	lowerAppliedAt := versionAppliedAt(t, ctx, pool, lower.version)
-	if !lowerAppliedAt.After(higherAppliedAt) {
-		t.Fatalf(
-			"version %d applied at %s, want after higher version %d applied at %s",
-			lower.version, lowerAppliedAt, higher.version, higherAppliedAt,
-		)
-	}
-	assertEachEmbeddedVersionOnce(t, ctx, pool, sources)
+	// id order records application order. tstamp is too coarse for that check.
+	assertAppliedVersions(t, ctx, pool, []int64{higherVersion, lowerVersion})
+	assertRelation(t, ctx, pool, "public.lower_applied", true)
+	assertRelation(t, ctx, pool, "public.higher_applied", true)
 }
 
 func prepareMigrationTest(t *testing.T) (context.Context, config.DBConfig, *pgxpool.Pool) {
 	t.Helper()
-	cfg := worktreeDatabaseConfig(t)
+	ctx, cfg := prepareIsolatedDatabase(t)
+	pool := dbtest.Open(t, cfg)
+	assertCurrentDatabase(t, ctx, pool, cfg.Name)
+	return ctx, cfg, pool
+}
+
+func prepareEmptyMigrationTest(t *testing.T) (context.Context, config.DBConfig, *pgxpool.Pool) {
+	t.Helper()
+	ctx, cfg := prepareIsolatedDatabase(t)
+	pool, err := db.NewPool(ctx, cfg)
+	if err != nil {
+		t.Fatalf("open isolated database: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	assertCurrentDatabase(t, ctx, pool, cfg.Name)
+	return ctx, cfg, pool
+}
+
+func prepareIsolatedDatabase(t *testing.T) (context.Context, config.DBConfig) {
+	t.Helper()
+	base := worktreeDatabaseConfig(t)
+	hadOutbox := relationExists(t, base, "public.outbox_events")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	t.Cleanup(cancel)
+	cfg := dbtest.EmptyDatabase(t, base)
+	if cfg.Name == base.Name {
+		t.Fatal("isolated database reused the worktree database")
+	}
 	t.Cleanup(func() {
-		if err := db.Migrate(ctx, cfg, db.MigrateUp, io.Discard); err != nil {
-			t.Errorf("restore PostgreSQL migrations: %v", err)
+		if hadOutbox && !relationExists(t, base, "public.outbox_events") {
+			t.Error("worktree outbox_events table was dropped")
 		}
 	})
-	pool := dbtest.Open(t, cfg)
-	return ctx, cfg, pool
+	return ctx, cfg
 }
 
 func worktreeDatabaseConfig(t *testing.T) config.DBConfig {
@@ -165,10 +191,26 @@ func worktreeDatabaseConfig(t *testing.T) config.DBConfig {
 	return dbConfig
 }
 
+func relationExists(t *testing.T, cfg config.DBConfig, relation string) bool {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	pool, err := db.NewPool(ctx, cfg)
+	if err != nil {
+		t.Fatalf("open worktree database: %v", err)
+	}
+	defer pool.Close()
+
+	var name *string
+	if err := pool.QueryRow(ctx, `SELECT to_regclass($1)`, relation).Scan(&name); err != nil {
+		t.Fatalf("lookup relation %s: %v", relation, err)
+	}
+	return name != nil
+}
+
 type embeddedMigration struct {
 	version int64
 	name    string
-	upSQL   string
 }
 
 func embeddedMigrations(t *testing.T) []embeddedMigration {
@@ -186,56 +228,13 @@ func embeddedMigrations(t *testing.T) []embeddedMigration {
 		if err != nil {
 			t.Fatalf("parse migration version from %s: %v", entry.Name(), err)
 		}
-		body, err := fs.ReadFile(migrations.Files, entry.Name())
-		if err != nil {
-			t.Fatalf("read embedded migration %s: %v", entry.Name(), err)
-		}
-		sources = append(sources, embeddedMigration{
-			version: version,
-			name:    entry.Name(),
-			upSQL:   migrationUpSQL(string(body)),
-		})
+		sources = append(sources, embeddedMigration{version: version, name: entry.Name()})
 	}
 	sort.Slice(sources, func(i, j int) bool { return sources[i].version < sources[j].version })
 	if len(sources) < 2 {
 		t.Fatal("expected at least two embedded migrations")
 	}
 	return sources
-}
-
-func outOfOrderPair(t *testing.T, sources []embeddedMigration) (embeddedMigration, embeddedMigration) {
-	t.Helper()
-	lower := sources[0]
-	higher := sources[len(sources)-1]
-	if lower.version >= higher.version {
-		t.Fatalf("embedded versions are not ordered: %d then %d", lower.version, higher.version)
-	}
-	// Reapplying the version row is safe only when the Up section has no SQL.
-	// The initial migration is that anchor; later migrations build real tables.
-	if strings.TrimSpace(lower.upSQL) != "" {
-		t.Fatalf("lowest embedded migration %s is not empty and cannot be reapplied", lower.name)
-	}
-	return lower, higher
-}
-
-func migrationUpSQL(content string) string {
-	const upMarker = "-- +goose Up"
-	const downMarker = "-- +goose Down"
-	_, afterUp, ok := strings.Cut(content, upMarker)
-	if !ok {
-		return strings.TrimSpace(content)
-	}
-	up, _, _ := strings.Cut(afterUp, downMarker)
-	var statements strings.Builder
-	for _, line := range strings.Split(up, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
-			continue
-		}
-		statements.WriteString(trimmed)
-		statements.WriteByte('\n')
-	}
-	return strings.TrimSpace(statements.String())
 }
 
 func migrateDownToZero(t *testing.T, ctx context.Context, cfg config.DBConfig, migrations int) string {
@@ -292,6 +291,55 @@ func assertEachEmbeddedVersionOnce(t *testing.T, ctx context.Context, pool *pgxp
 	}
 }
 
+func assertAppliedVersions(t *testing.T, ctx context.Context, pool *pgxpool.Pool, want []int64) {
+	t.Helper()
+	rows, err := pool.Query(ctx, fmt.Sprintf(
+		`SELECT version_id FROM %s WHERE version_id > 0 AND is_applied ORDER BY id`,
+		goose.DefaultTablename,
+	))
+	if err != nil {
+		t.Fatalf("read applied migration versions: %v", err)
+	}
+	defer rows.Close()
+
+	var got []int64
+	for rows.Next() {
+		var version int64
+		if err := rows.Scan(&version); err != nil {
+			t.Fatalf("scan applied migration version: %v", err)
+		}
+		got = append(got, version)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read applied migration versions: %v", err)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("applied versions in id order = %v, want %v", got, want)
+	}
+}
+
+func assertRelation(t *testing.T, ctx context.Context, pool *pgxpool.Pool, relation string, want bool) {
+	t.Helper()
+	var name *string
+	if err := pool.QueryRow(ctx, `SELECT to_regclass($1)`, relation).Scan(&name); err != nil {
+		t.Fatalf("lookup relation %s: %v", relation, err)
+	}
+	if got := name != nil; got != want {
+		t.Fatalf("relation %s exists = %t, want %t", relation, got, want)
+	}
+}
+
+func assertCurrentDatabase(t *testing.T, ctx context.Context, pool *pgxpool.Pool, want string) {
+	t.Helper()
+	var current string
+	if err := pool.QueryRow(ctx, "SELECT current_database()").Scan(&current); err != nil {
+		t.Fatalf("read current database: %v", err)
+	}
+	if current != want {
+		t.Fatal("connected database does not match the isolated test database")
+	}
+}
+
 func versionCounts(t *testing.T, ctx context.Context, pool *pgxpool.Pool) map[int64]int {
 	t.Helper()
 	rows, err := pool.Query(ctx, fmt.Sprintf(`SELECT version_id, count(*) FROM %s GROUP BY version_id`, goose.DefaultTablename))
@@ -313,19 +361,4 @@ func versionCounts(t *testing.T, ctx context.Context, pool *pgxpool.Pool) map[in
 		t.Fatalf("read migration version counts: %v", err)
 	}
 	return counts
-}
-
-func versionAppliedAt(t *testing.T, ctx context.Context, pool *pgxpool.Pool, version int64) time.Time {
-	t.Helper()
-	appliedAt, err := versionAppliedAtOptional(ctx, pool, version)
-	if err != nil {
-		t.Fatalf("read applied time for version %d: %v", version, err)
-	}
-	return appliedAt
-}
-
-func versionAppliedAtOptional(ctx context.Context, pool *pgxpool.Pool, version int64) (time.Time, error) {
-	var appliedAt time.Time
-	err := pool.QueryRow(ctx, fmt.Sprintf(`SELECT tstamp FROM %s WHERE version_id = $1 ORDER BY id DESC LIMIT 1`, goose.DefaultTablename), version).Scan(&appliedAt)
-	return appliedAt, err
 }

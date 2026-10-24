@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/jooservices/xflickr/internal/platform/config"
@@ -26,6 +27,13 @@ const (
 // applying one version twice. Missing timestamp versions older than the newest
 // applied version are applied instead of rejected.
 func Migrate(ctx context.Context, cfg config.DBConfig, action string, output io.Writer) error {
+	return MigrateFiles(ctx, cfg, action, output, migrations.Files)
+}
+
+// MigrateFiles runs action against files with the same PostgreSQL session lock
+// and out-of-order policy as Migrate. Tests pass a fixture filesystem so a
+// lower version can be applied after a higher one.
+func MigrateFiles(ctx context.Context, cfg config.DBConfig, action string, output io.Writer, files fs.FS) error {
 	if action != MigrateUp && action != MigrateDown && action != MigrateStatus {
 		return fmt.Errorf("unsupported migration action %q; expected up, down, or status", action)
 	}
@@ -51,7 +59,7 @@ func Migrate(ctx context.Context, cfg config.DBConfig, action string, output io.
 	provider, err := goose.NewProvider(
 		goose.DialectPostgres,
 		database,
-		migrations.Files,
+		files,
 		goose.WithSessionLocker(sessionLocker),
 		goose.WithAllowOutofOrder(true),
 	)
