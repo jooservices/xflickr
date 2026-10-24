@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadFromEnvAppliesDefaults(t *testing.T) {
@@ -45,6 +46,11 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 		"DB_USER":                 "worker",
 		"DB_PASSWORD":             "db-pass",
 		"DB_SSLMODE":              "require",
+		"DB_MAX_CONNS":            "35",
+		"DB_MIN_CONNS":            "4",
+		"DB_MAX_CONN_LIFETIME":    "45m",
+		"DB_MAX_CONN_IDLE_TIME":   "12m",
+		"DB_HEALTH_CHECK_PERIOD":  "30s",
 		"REDIS_HOST":              "redis.internal",
 		"REDIS_PORT":              "16383",
 		"REDIS_DB":                "9",
@@ -84,6 +90,9 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 	}
 	if cfg.DB.Host != "db.internal" || cfg.DB.Port != 5544 || cfg.DB.Name != "worktree_db" || cfg.DB.User != "worker" || cfg.DB.Password != "db-pass" || cfg.DB.SSLMode != "require" {
 		t.Errorf("DB values not loaded: %#v", cfg.DB)
+	}
+	if cfg.DB.MaxConns != 35 || cfg.DB.MinConns != 4 || cfg.DB.MaxConnLifetime != 45*time.Minute || cfg.DB.MaxConnIdleTime != 12*time.Minute || cfg.DB.HealthCheckPeriod != 30*time.Second {
+		t.Errorf("DB pool values not loaded: %#v", cfg.DB)
 	}
 	if cfg.Redis.Host != "redis.internal" || cfg.Redis.Port != 16383 || cfg.Redis.DB != 9 || cfg.Redis.Password != "redis-pass" || cfg.Redis.Prefix != "xflickr_wt68:" {
 		t.Errorf("Redis values not loaded: %#v", cfg.Redis)
@@ -130,6 +139,9 @@ func TestLoadFromEnvValidatesSettings(t *testing.T) {
 	}{
 		{name: "http port low", key: "HTTP_PORT", value: "0", want: "HTTP_PORT"},
 		{name: "database port high", key: "DB_PORT", value: "65536", want: "DB_PORT"},
+		{name: "database pool minimum exceeds maximum", key: "DB_MIN_CONNS", value: "21", want: "DB_MIN_CONNS"},
+		{name: "database pool maximum is zero", key: "DB_MAX_CONNS", value: "0", want: "DB_MAX_CONNS"},
+		{name: "database pool lifetime is invalid", key: "DB_MAX_CONN_LIFETIME", value: "0s", want: "DB_MAX_CONN_LIFETIME"},
 		{name: "redis port invalid", key: "REDIS_PORT", value: "not-a-port", want: "parse environment"},
 		{name: "log level", key: "LOG_LEVEL", value: "trace", want: "LOG_LEVEL"},
 		{name: "blob driver", key: "BLOB_DRIVER", value: "garage", want: "BLOB_DRIVER"},
@@ -194,6 +206,49 @@ func TestLoadWithDotEnvIgnoresMissingOptionalFile(t *testing.T) {
 	}
 }
 
+func TestLoadDatabaseFromEnvSupportsGeneratedWorktreeNames(t *testing.T) {
+	cfg, err := LoadDatabaseFromEnv(map[string]string{
+		"DB_HOST":     "127.0.0.1",
+		"DB_PORT":     "15435",
+		"DB_DATABASE": "xflickr_wtk80",
+		"DB_USERNAME": "shared-user",
+		"DB_PASSWORD": "shared-password",
+	})
+	if err != nil {
+		t.Fatalf("LoadDatabaseFromEnv() error = %v", err)
+	}
+	if cfg.Name != "xflickr_wtk80" || cfg.User != "shared-user" || cfg.Port != 15435 || cfg.SSLMode != "disable" {
+		t.Errorf("database settings = %#v", cfg)
+	}
+	if cfg.MaxConns != 20 || cfg.MinConns != 2 || cfg.MaxConnLifetime != time.Hour || cfg.MaxConnIdleTime != 30*time.Minute || cfg.HealthCheckPeriod != time.Minute {
+		t.Errorf("database pool defaults = %#v", cfg)
+	}
+}
+
+func TestLoadDatabaseWithDotEnvAppliesProcessOverrides(t *testing.T) {
+	clearConfigEnvironment(t)
+	path := filepath.Join(t.TempDir(), ".env")
+	contents := strings.Join([]string{
+		"DB_HOST=dotenv-db",
+		"DB_DATABASE=dotenv-database",
+		"DB_USERNAME=dotenv-user",
+		"DB_MAX_CONNS=12",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("write dotenv file: %v", err)
+	}
+	t.Setenv("DB_HOST", "process-db")
+	t.Setenv("DB_DATABASE", "process-database")
+
+	cfg, err := LoadDatabaseWithDotEnv(path)
+	if err != nil {
+		t.Fatalf("LoadDatabaseWithDotEnv() error = %v", err)
+	}
+	if cfg.Host != "process-db" || cfg.Name != "process-database" || cfg.User != "dotenv-user" || cfg.MaxConns != 12 {
+		t.Errorf("database dotenv/process values = %#v", cfg)
+	}
+}
+
 func TestLoadWithDotEnvReportsMalformedFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".env")
 	if err := os.WriteFile(path, []byte("not a valid dotenv assignment\n"), 0o600); err != nil {
@@ -255,7 +310,8 @@ func requiredEnv() map[string]string {
 func clearConfigEnvironment(t *testing.T) {
 	t.Helper()
 	for _, name := range []string{
-		"DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_SSLMODE",
+		"DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_DATABASE", "DB_USERNAME", "DB_PASSWORD", "DB_SSLMODE",
+		"DB_MAX_CONNS", "DB_MIN_CONNS", "DB_MAX_CONN_LIFETIME", "DB_MAX_CONN_IDLE_TIME", "DB_HEALTH_CHECK_PERIOD",
 		"REDIS_HOST", "REDIS_PORT", "REDIS_DB", "REDIS_PASSWORD", "REDIS_PREFIX",
 		"SEARCH_URL", "SEARCH_USERNAME", "SEARCH_PASSWORD", "OPENSEARCH_INDEX_PREFIX",
 		"BLOB_DRIVER", "BLOB_LOCAL_DIR", "S3_ENDPOINT", "S3_REGION", "S3_BUCKET", "S3_ACCESS_KEY", "S3_SECRET_KEY", "S3_USE_PATH_STYLE",

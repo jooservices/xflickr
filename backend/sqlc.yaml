@@ -1,0 +1,13 @@
+version: "2"
+sql:
+  # Keep query files with their owning module and add one mapping per module.
+  - name: platform
+    engine: postgresql
+    schema: migrations
+    queries: internal/platform/adapters/postgres/queries
+    gen:
+      go:
+        package: gen
+        out: internal/platform/adapters/postgres/gen
+        sql_package: pgx/v5
+        emit_interface: true

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
@@ -36,12 +37,17 @@ type runtimeConfig struct {
 
 // DBConfig contains PostgreSQL connection settings.
 type DBConfig struct {
-	Host     string `env:"DB_HOST"`
-	Port     int    `env:"DB_PORT" envDefault:"5432"`
-	Name     string `env:"DB_NAME"`
-	User     string `env:"DB_USER"`
-	Password string `env:"DB_PASSWORD"`
-	SSLMode  string `env:"DB_SSLMODE" envDefault:"disable"`
+	Host              string        `env:"DB_HOST"`
+	Port              int           `env:"DB_PORT" envDefault:"5432"`
+	Name              string        `env:"DB_NAME"`
+	User              string        `env:"DB_USER"`
+	Password          string        `env:"DB_PASSWORD"`
+	SSLMode           string        `env:"DB_SSLMODE" envDefault:"disable"`
+	MaxConns          int32         `env:"DB_MAX_CONNS" envDefault:"20"`
+	MinConns          int32         `env:"DB_MIN_CONNS" envDefault:"2"`
+	MaxConnLifetime   time.Duration `env:"DB_MAX_CONN_LIFETIME" envDefault:"1h"`
+	MaxConnIdleTime   time.Duration `env:"DB_MAX_CONN_IDLE_TIME" envDefault:"30m"`
+	HealthCheckPeriod time.Duration `env:"DB_HEALTH_CHECK_PERIOD" envDefault:"1m"`
 }
 
 // RedisConfig contains Redis connection and namespace settings.
@@ -118,11 +124,54 @@ func Load() (Config, error) {
 // LoadWithDotEnv reads an optional dotenv file, overlays the process
 // environment, and loads the resulting settings.
 func LoadWithDotEnv(path string) (Config, error) {
+	values, err := environmentValues(path)
+	if err != nil {
+		return Config{}, err
+	}
+	return LoadFromEnv(values)
+}
+
+// LoadDatabase reads only PostgreSQL settings from process environment and an
+// optional .env file. This keeps database tooling usable with the generated
+// worktree environment, which intentionally contains no application secrets.
+func LoadDatabase() (DBConfig, error) {
+	return LoadDatabaseWithDotEnv(".env")
+}
+
+// LoadDatabaseWithDotEnv reads PostgreSQL settings from an optional dotenv
+// file, then overlays the process environment.
+func LoadDatabaseWithDotEnv(path string) (DBConfig, error) {
+	values, err := environmentValues(path)
+	if err != nil {
+		return DBConfig{}, err
+	}
+	return LoadDatabaseFromEnv(values)
+}
+
+// LoadDatabaseFromEnv parses and validates only PostgreSQL settings.
+func LoadDatabaseFromEnv(values map[string]string) (DBConfig, error) {
+	values = normalizeDatabaseEnvironment(values)
+	missing := missingDatabaseRequired(values)
+	if len(missing) > 0 {
+		return DBConfig{}, fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
+	}
+
+	var cfg DBConfig
+	if err := env.ParseWithOptions(&cfg, env.Options{Environment: values}); err != nil {
+		return DBConfig{}, fmt.Errorf("parse environment: %w", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		return DBConfig{}, err
+	}
+	return cfg, nil
+}
+
+func environmentValues(path string) (map[string]string, error) {
 	values := make(map[string]string)
 	if path != "" {
 		fileValues, err := godotenv.Read(path)
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return Config{}, fmt.Errorf("read dotenv file: %w", err)
+			return nil, fmt.Errorf("read dotenv file: %w", err)
 		}
 		for key, value := range fileValues {
 			values[key] = value
@@ -135,13 +184,13 @@ func LoadWithDotEnv(path string) (Config, error) {
 			values[key] = value
 		}
 	}
-
-	return LoadFromEnv(values)
+	return values, nil
 }
 
 // LoadFromEnv parses settings from the supplied environment map. It is also
 // useful to callers that already manage environment loading themselves.
 func LoadFromEnv(values map[string]string) (Config, error) {
+	values = normalizeDatabaseEnvironment(values)
 	missing := missingRequired(values)
 	if len(missing) > 0 {
 		return Config{}, fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
@@ -182,12 +231,68 @@ func missingRequired(values map[string]string) []string {
 	return missing
 }
 
+func missingDatabaseRequired(values map[string]string) []string {
+	missing := make([]string, 0, 3)
+	for _, name := range []string{"DB_HOST", "DB_NAME", "DB_USER"} {
+		if strings.TrimSpace(values[name]) == "" {
+			missing = append(missing, name)
+		}
+	}
+	return missing
+}
+
+func normalizeDatabaseEnvironment(values map[string]string) map[string]string {
+	normalized := make(map[string]string, len(values)+2)
+	for key, value := range values {
+		normalized[key] = value
+	}
+	if value := strings.TrimSpace(normalized["DB_DATABASE"]); value != "" {
+		normalized["DB_NAME"] = value
+	}
+	if value := strings.TrimSpace(normalized["DB_USERNAME"]); value != "" {
+		normalized["DB_USER"] = value
+	}
+	return normalized
+}
+
+// Validate checks PostgreSQL connection and pool settings before use.
+func (cfg DBConfig) Validate() error {
+	if strings.TrimSpace(cfg.Host) == "" {
+		return fmt.Errorf("DB_HOST is required")
+	}
+	if strings.TrimSpace(cfg.Name) == "" {
+		return fmt.Errorf("DB_NAME is required")
+	}
+	if strings.TrimSpace(cfg.User) == "" {
+		return fmt.Errorf("DB_USER is required")
+	}
+	if cfg.Port < 1 || cfg.Port > 65535 {
+		return fmt.Errorf("DB_PORT must be between 1 and 65535")
+	}
+	if cfg.MaxConns < 1 {
+		return fmt.Errorf("DB_MAX_CONNS must be at least 1")
+	}
+	if cfg.MinConns < 0 || cfg.MinConns > cfg.MaxConns {
+		return fmt.Errorf("DB_MIN_CONNS must be between 0 and DB_MAX_CONNS")
+	}
+	if cfg.MaxConnLifetime <= 0 {
+		return fmt.Errorf("DB_MAX_CONN_LIFETIME must be greater than 0")
+	}
+	if cfg.MaxConnIdleTime <= 0 {
+		return fmt.Errorf("DB_MAX_CONN_IDLE_TIME must be greater than 0")
+	}
+	if cfg.HealthCheckPeriod <= 0 {
+		return fmt.Errorf("DB_HEALTH_CHECK_PERIOD must be greater than 0")
+	}
+	return nil
+}
+
 func (cfg *Config) validate() error {
 	if cfg.HTTPPort < 1 || cfg.HTTPPort > 65535 {
 		return fmt.Errorf("HTTP_PORT must be between 1 and 65535")
 	}
-	if cfg.DB.Port < 1 || cfg.DB.Port > 65535 {
-		return fmt.Errorf("DB_PORT must be between 1 and 65535")
+	if err := cfg.DB.Validate(); err != nil {
+		return err
 	}
 	if cfg.Redis.Port < 1 || cfg.Redis.Port > 65535 {
 		return fmt.Errorf("REDIS_PORT must be between 1 and 65535")

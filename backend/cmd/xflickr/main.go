@@ -25,6 +25,14 @@ func mainExit() int {
 }
 
 func execute(ctx context.Context, args []string, envRoles string, registry *roles.Registry, stderr io.Writer) int {
+	return executeWithMigration(ctx, args, envRoles, registry, os.Stdout, stderr, runConfiguredMigrations)
+}
+
+func executeWithMigration(ctx context.Context, args []string, envRoles string, registry *roles.Registry, stdout, stderr io.Writer, run migrationRunner) int {
+	if len(args) > 0 && args[0] == "migrate" {
+		return runMigrate(ctx, args[1:], stdout, stderr, run)
+	}
+
 	selected, err := parseRoles(args, envRoles, registry)
 	if err != nil {
 		fmt.Fprintf(stderr, "xflickr: %v\n", err)

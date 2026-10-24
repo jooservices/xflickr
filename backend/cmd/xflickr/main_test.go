@@ -65,6 +65,22 @@ func TestExecuteUnknownRoleReturnsTwoAndListsValidRoles(t *testing.T) {
 	}
 }
 
+func TestExecuteWithMigrationDispatchesSubcommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	called := false
+	registry := roles.NewBuiltinRegistry("test")
+	code := executeWithMigration(context.Background(), []string{"migrate", "status"}, "", registry, &stdout, &stderr, func(_ context.Context, action string, output io.Writer) error {
+		called = true
+		if action != "status" || output != &stdout {
+			t.Fatalf("migration runner got (%q, %T), want (status, stdout)", action, output)
+		}
+		return nil
+	})
+	if code != 0 || !called || stderr.Len() != 0 {
+		t.Fatalf("executeWithMigration() = (%d, called=%t, stderr=%q)", code, called, stderr.String())
+	}
+}
+
 func TestExecuteRoleFlagAndEnvironmentSelection(t *testing.T) {
 	for _, test := range []struct {
 		name string
