@@ -7,6 +7,7 @@ import (
 	"github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
+
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 

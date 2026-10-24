@@ -54,7 +54,7 @@ func (repo *Repository) UpdateUser(ctx context.Context, id int64, decide func(do
 	if err != nil {
 		return domain.User{}, domain.User{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, adminChangeLockKey); err != nil {
 		return domain.User{}, domain.User{}, err
 	}

@@ -117,7 +117,7 @@ func typeName(v any) string { return fmt.Sprintf("%T", v) }
 
 func TestProtectRoutesRequiresAdminUnderAdmin(t *testing.T) {
 	user := &fakeSessions{auth: app.Authenticated{User: domain.User{ID: 2, Role: domain.RoleUser}}}
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	for _, method := range []string{http.MethodGet, http.MethodPatch} {
 		req := httptest.NewRequest(method, "/admin/users/3", nil)
 		req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "present"})
