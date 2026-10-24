@@ -45,10 +45,6 @@ deps:
     mayDependOn: [identity-domain, platform, pkg, settings-app]
   identity-adapters:
     mayDependOn: [identity-domain, identity-app, platform, pkg, settings-app]
-  accounts-app:
-    mayDependOn: [accounts-domain, platform, pkg]
-  accounts-adapters:
-    mayDependOn: [accounts-domain, accounts-app, platform, pkg, settings-domain]
   settings-app:
     mayDependOn: [settings-domain, platform, pkg, identity-app]
   settings-adapters:
@@ -63,9 +59,6 @@ deps:
       - identity-domain
       - identity-app
       - identity-adapters
-      - accounts-domain
-      - accounts-app
-      - accounts-adapters
       - settings-domain
       - settings-app
       - settings-adapters
