@@ -7,9 +7,12 @@ const [poc, design] = await Promise.all([
 ]);
 const result = validateUiSpec(poc, design);
 
-if (result.missingTokens.length || result.missingIcons.length) {
+if (result.missingTokens.length || result.missingIcons.length || result.missingMediaOverrides.length) {
   if (result.missingTokens.length) {
     console.error('Missing POC tokens in design-system theme tables: ' + result.missingTokens.join(', '));
+  }
+  if (result.missingMediaOverrides.length) {
+    console.error('Missing POC media-query root token overrides: ' + result.missingMediaOverrides.join(', '));
   }
   if (result.missingIcons.length) {
     console.error('Missing POC icons in design-system inventory: ' + result.missingIcons.join(', '));
@@ -17,6 +20,12 @@ if (result.missingTokens.length || result.missingIcons.length) {
   process.exitCode = 1;
 } else {
   console.log(
-    'UI spec check passed: ' + result.pocTokenCount + ' POC tokens and ' + result.pocIcons.length + ' icons are documented in all four theme tables.',
+    'UI spec check passed: ' +
+      result.pocTokenCount +
+      ' POC tokens, ' +
+      result.mediaOverrideCount +
+      ' media-query root overrides, and ' +
+      result.pocIcons.length +
+      ' icons are documented in all four theme tables.',
   );
 }

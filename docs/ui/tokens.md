@@ -69,9 +69,20 @@ as strings.
 ADMIN (`700` / `600`, `-0.01em` / `0.01em`).
 
 `spacing` is the spacing list in the Spacing section. Each theme stores
-`radius`, `btnRadius`, and `rowHeight` from its `radius`, `btn-r`, and `row-h`
-rows. `focus.width` is `2px`, `focus.offset` is `2px`, and `focus.color` is
-`accent`.
+`radius` and `btnRadius` from its `radius` and `btn-r` rows. `rowHeight` is an
+object, not one length:
+
+    rowHeight: {default: "190px", "max-720": "120px"}
+
+In the JSON file the keys are quoted:
+
+    "rowHeight": {"default": "190px", "max-720": "120px"}
+
+`default` is that theme's `row-h` row (`190px`). Each `row-h@<key>` row in the
+theme table adds a key. `max-720` applies at `max-width: 720px`, where the POC
+sets `:root { --row-h: 120px }` for every theme. Do not store a single
+`rowHeight` string; a phone layout needs the `120px` value. `focus.width` is
+`2px`, `focus.offset` is `2px`, and `focus.color` is `accent`.
 
 `elevation` keys are the Elevation table: elevation.resting, elevation.raised,
 elevation.hover, elevation.popover, elevation.overlay, elevation.modal,
@@ -105,11 +116,19 @@ and system-preference behavior.
 
 `make ui-spec-check` compares the custom property names in the POC root/theme
 blocks with the token tables for all four themes in design-system.md. It fails
-when a POC property is absent from any theme table and confirms that the icon
-inventory documents every entry in the POC ICONS object. The target also runs
+when a POC property is absent from any theme table, when a `@media` rule sets
+a `:root` custom property that the tables do not record, and when the icon
+inventory misses a POC `ICONS` entry. A single `max-width` or `min-width`
+override needs a `<token>@max-<px>` or `<token>@min-<px>` row in every theme,
+with both value cells equal to the override (`row-h@max-720` is `120px`). A
+single `prefers-color-scheme` override must match the POC value cell of the
+theme that query selects. Any other `:root` override inside `@media` needs a
+`<token>@<query-slug>` row in every theme; the slug is the query in lowercase
+with non-alphanumeric runs replaced by hyphens. The target also runs
 `node --test "scripts/**/*.test.mjs"`, including a check that the real
-design-system document reports no missing tokens or icons and that the type
-scale, elevation, and motion tables keep the required keys. `make check` runs
-this target. The dynamic --r property is excluded because it is per-photo
-aspect-ratio runtime data, not a design token. The POC is read-only reference
-input.
+design-system document reports no missing tokens, media overrides, or icons
+and that the type scale, elevation, and motion tables keep the required keys.
+`make check` runs this target. The dynamic --r property is excluded because it
+is per-photo aspect-ratio runtime data, not a design token. Custom properties
+set on a component, including a grid's own `--row-h`, are not root tokens. The
+POC is read-only reference input.

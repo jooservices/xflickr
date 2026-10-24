@@ -11,7 +11,7 @@ XFlickr developer commands:
   make e2e              Run the Playwright smoke suite when the web app is present.
   make gen              Bundle the OpenAPI contract and generate the Go server and TypeScript client.
   make gen-stale        Fail when make gen has changed any file.
-  make ui-spec-check    Verify POC tokens and icons in the design-system tables.
+  make ui-spec-check    Verify POC tokens, root media overrides, and icons.
   make check            Run all release verification steps.
   make dev-up           Check shared service health and worktree databases.
   make dev-down         Stop XFlickr-owned development services, if any.

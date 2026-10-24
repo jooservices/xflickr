@@ -40,9 +40,10 @@ test('accepts the design-system token tables and icon inventory', async () => {
     readFile('docs/ui/poc/xflickr-poc.html', 'utf8'),
     readFile('docs/ui/design-system.md', 'utf8'),
   ]);
-  const { missingTokens, missingIcons } = validateUiSpec(poc, design);
+  const { missingTokens, missingIcons, missingMediaOverrides } = validateUiSpec(poc, design);
   assert.deepEqual(missingTokens, []);
   assert.deepEqual(missingIcons, []);
+  assert.deepEqual(missingMediaOverrides, []);
 });
 
 test('marks every corrected color with its POC value', async () => {
@@ -299,4 +300,109 @@ search
   assert.ok(result.missingTokens.includes('ADMIN light control room: bg'));
   assert.ok(result.missingTokens.includes('ADMIN light control room: theme table'));
   assert.equal(result.missingTokens.some((item) => item.startsWith('USER light gallery')), false);
+  assert.deepEqual(result.missingMediaOverrides, []);
+});
+
+function specWith(themeRows) {
+  return (
+    themeHeadings.map((heading) => `### ${heading}\n${themeRows}\n`).join('\n') +
+    '\n## Iconography\nsearch\n## Photos, avatars, and localization\n'
+  );
+}
+
+function pocWith(css) {
+  return `:root{--bg:#fff}\n${css}\n*{box-sizing:border-box}\nconst ICONS = {\n  search: '<path/>',\n};\n`;
+}
+
+test('fails when a POC viewport override of a root token is undocumented', async () => {
+  const [poc, design, tokens] = await Promise.all([
+    readFile('docs/ui/poc/xflickr-poc.html', 'utf8'),
+    readFile('docs/ui/design-system.md', 'utf8'),
+    readFile('docs/ui/tokens.md', 'utf8'),
+  ]);
+  for (const heading of themeHeadings) {
+    assert.deepEqual(tokenRow(themeSection(design, heading), 'row-h'), ['row-h', '190px', '190px']);
+    assert.deepEqual(tokenRow(themeSection(design, heading), 'row-h@max-720'), ['row-h@max-720', '120px', '120px']);
+  }
+  assert.match(tokens, /rowHeight: \{default: "190px", "max-720": "120px"\}/);
+  assert.match(design, /"rowHeight": \{"default": "190px", "max-720": "120px"\}/);
+
+  const stripped = design.replaceAll('| row-h@max-720 | 120px | 120px |\n', '');
+  const { missingMediaOverrides } = validateUiSpec(poc, stripped);
+  assert.deepEqual(
+    missingMediaOverrides,
+    themeHeadings.map((heading) => `${heading}: row-h@max-720 = 120px`),
+  );
+});
+
+test('records min-width and max-width root overrides and ignores component tokens', () => {
+  const poc = pocWith('@media (min-width:900px){:root{--radius:18px}}\n@media (max-width:720px){.hero .jgrid{--row-h:110px}}');
+  const missing = validateUiSpec(poc, specWith('| bg | #fff | #fff |'));
+  assert.deepEqual(
+    missing.missingMediaOverrides,
+    themeHeadings.map((heading) => `${heading}: radius@min-900 = 18px`),
+  );
+  const documented = validateUiSpec(poc, specWith('| bg | #fff | #fff |\n| radius@min-900 | 18px | 18px |'));
+  assert.deepEqual(documented.missingMediaOverrides, []);
+  assert.equal(documented.mediaOverrideCount, 1);
+});
+
+test('requires the POC value of a prefers-color-scheme root override', () => {
+  const dark = pocWith('@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --bg:#111 } }');
+  const wrong = validateUiSpec(dark, specWith('| bg | #fff | #fff |'));
+  assert.deepEqual(wrong.missingMediaOverrides, ['USER dark gallery: bg @prefers-color-scheme dark = #111']);
+  const corrected = specWith('| bg | #fff | #fff |').replace(
+    '### USER dark gallery\n| bg | #fff | #fff |',
+    '### USER dark gallery\n| bg | #222 (corrected) | #111 |',
+  );
+  assert.deepEqual(validateUiSpec(dark, corrected).missingMediaOverrides, []);
+
+  const adminLight = pocWith(
+    '@media (prefers-color-scheme: light){ :root[data-role="admin"]:not([data-theme="dark"]){ --accent:#0c7da3 } }',
+  );
+  assert.deepEqual(validateUiSpec(adminLight, specWith('| accent | #006482 (corrected) | #006482 |')).missingMediaOverrides, [
+    'ADMIN light control room: accent @prefers-color-scheme light = #0c7da3',
+  ]);
+  const adminDark = pocWith('@media (prefers-color-scheme: dark){:root[data-role="admin"]{--bg:#010101}}');
+  assert.deepEqual(validateUiSpec(adminDark, specWith('| bg | #fff | #fff |')).missingMediaOverrides, [
+    'ADMIN dark control room: bg @prefers-color-scheme dark = #010101',
+  ]);
+  const userLight = pocWith('@media (prefers-color-scheme: light){:root{--ink:#123456}}');
+  assert.deepEqual(validateUiSpec(userLight, specWith('| ink | #000 | #000 |')).missingMediaOverrides, [
+    'USER light gallery: ink @prefers-color-scheme light = #123456',
+  ]);
+});
+
+test('documents a combined media query with its query slug', () => {
+  const poc = pocWith('@media (max-width:720px) and (orientation: landscape){:root{--row-h:100px}}');
+  const missing = validateUiSpec(poc, specWith('| row-h | 190px | 190px |'));
+  assert.deepEqual(
+    missing.missingMediaOverrides,
+    themeHeadings.map((heading) => `${heading}: row-h@max-width-720px-and-orientation-landscape = 100px`),
+  );
+  const documented = validateUiSpec(
+    poc,
+    specWith('| row-h | 190px | 190px |\n| row-h@max-width-720px-and-orientation-landscape | 100px | 100px |'),
+  );
+  assert.deepEqual(documented.missingMediaOverrides, []);
+});
+
+test('rejects an unclosed POC media query', () => {
+  const design = specWith('| bg | #fff |');
+  assert.throws(() => validateUiSpec(pocWith('@media (max-width:720px){:root{--row-h:120px}'), design), /Unbalanced brace/);
+  assert.throws(() => validateUiSpec(pocWith('@media (max-width:720px){:root}'), design), /Unbalanced brace/);
+  const noBlock = `:root{--bg:#fff}\n*{box-sizing:border-box}\nconst ICONS = {\n  search: '<path/>',\n};\n@media (max-width:720px)`;
+  assert.throws(() => validateUiSpec(noBlock, design), /Unbalanced brace/);
+});
+
+test('reads a grouped :root selector and ignores a :root suffix', () => {
+  const grouped = pocWith('@media (max-width:720px){button, :root{--row-h:120px}}');
+  assert.deepEqual(
+    validateUiSpec(grouped, specWith('| bg | #fff | #fff |')).missingMediaOverrides,
+    themeHeadings.map((heading) => `${heading}: row-h@max-720 = 120px`),
+  );
+  const suffix = pocWith('@media (max-width:720px){div:root{--row-h:120px}}');
+  const ignored = validateUiSpec(suffix, specWith('| bg | #fff | #fff |'));
+  assert.deepEqual(ignored.missingMediaOverrides, []);
+  assert.equal(ignored.mediaOverrideCount, 0);
 });

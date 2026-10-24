@@ -26,7 +26,10 @@ override for that theme. A Required value marked (corrected) is an
 accessibility change so normal text meets 4.5:1 and meaningful UI graphics,
 including control boundaries and chart series, meet 3:1 against adjacent
 surfaces. USER light and ADMIN light correct series colors separately, so
-their required `s2` values differ. The following tables list the measured
+their required `s2` values differ. A viewport `@media` rule that changes a
+root custom property is an extra row in every theme table. `--row-h` is
+`190px` until `max-width: 720px`, where the POC sets it to `120px`
+(`row-h@max-720`). The following tables list the measured
 contrast of text and status/chart colors against each of the four surfaces in
 that theme. Ratios use WCAG 2 relative luminance, are rounded to two decimals,
 and the lowest listed value governs. `faint` is decorative only. Readable text
@@ -67,6 +70,7 @@ graphics and must meet 3:1; provide labels or markers as well.
 | radius | 14px | 14px |
 | btn-r | 999px | 999px |
 | row-h | 190px | 190px |
+| row-h@max-720 | 120px | 120px |
 
 Text and graphic contrast ratios (foreground over bg, surface, sunken, raise):
 
@@ -119,6 +123,7 @@ Text on accent (`accent-ink` over `accent`): 6.16:1.
 | radius | 14px | 14px |
 | btn-r | 999px | 999px |
 | row-h | 190px | 190px |
+| row-h@max-720 | 120px | 120px |
 
 Text and graphic contrast ratios (foreground over bg, surface, sunken, raise):
 
@@ -171,6 +176,7 @@ Text on accent (`accent-ink` over `accent`): 7.18:1.
 | radius | 9px | 9px |
 | btn-r | 7px | 7px |
 | row-h | 190px | 190px |
+| row-h@max-720 | 120px | 120px |
 
 Text and graphic contrast ratios (foreground over bg, surface, sunken, raise):
 
@@ -223,6 +229,7 @@ Text on accent (`accent-ink` over `accent`): 7.93:1.
 | radius | 9px | 9px |
 | btn-r | 7px | 7px |
 | row-h | 190px | 190px |
+| row-h@max-720 | 120px | 120px |
 
 Text and graphic contrast ratios (foreground over bg, surface, sunken, raise):
 
@@ -296,10 +303,18 @@ h3, h4, hero, and panelTitle.
 
 `spacing` is 4px, 6px, 8px, 10px, 12px, 14px, 16px, 18px, 20px, 24px, 32px,
 40px. Preserve existing shell gaps and padding specified in the POC. Each theme
-stores `radius`, `btnRadius`, and `rowHeight` from that theme's `radius`,
-`btn-r`, and `row-h` rows. USER cards use 14px radius and pill buttons (999px);
-ADMIN cards use 9px and compact 7px buttons. Inputs, badges, and small labels
-may use local 4–8px radii as in the POC.
+stores `radius` and `btnRadius` from that theme's `radius` and `btn-r` rows.
+`rowHeight` keeps every root `--row-h` value:
+
+    "rowHeight": {"default": "190px", "max-720": "120px"}
+
+`default` is the `row-h` row (`190px`). `max-720` is the `row-h@max-720` row
+(`120px`), copied from `@media (max-width: 720px) { :root { --row-h: 120px } }`.
+The breakpoint applies to every theme. A grid that sets `--row-h` on itself
+(hero art 120px, onboarding art 110px) is local layout, not this token. USER
+cards use 14px radius and pill buttons (999px); ADMIN cards use 9px and compact
+7px buttons. Inputs, badges, and small labels may use local 4–8px radii as in
+the POC.
 
 ### Elevation
 
