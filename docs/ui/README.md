@@ -42,8 +42,8 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 | `user-downloads` | user | `/downloads` | Downloads | pending | pending | TBD | `web/e2e/user-downloads.spec.ts` |
 | `user-sync` | user | `/sync` | Cloud sync | pending | pending | TBD | `web/e2e/user-sync.spec.ts` |
 | `user-sharing` | user | `/sharing` | Sharing | pending | pending | TBD | `web/e2e/user-sharing.spec.ts` |
-| `user-profile` | user | `/profile` | Profile | pending | pending | TBD | `web/e2e/user-profile.spec.ts` |
 | `user-wizard` | user | `/onboarding` | Setup wizard: API key, Flickr connection, more accounts | [spec](views/user-wizard.md) | [mockup](mockups/user-wizard.html) | JOOXF-167 | `web/e2e/user-wizard.spec.ts` |
+| `user-profile` | user | `/profile` | Profile | [spec](views/user-profile.md) | [mockup](mockups/user-profile.html) | JOOXF-166 | `web/e2e/user-profile.spec.ts` |
 | `admin-shell` | admin | `/admin/*` (layout) | Admin shell, rail and navigation | [spec](views/admin-shell.md) | [mockup](mockups/admin-shell.html) | JOOXF-79 | `web/e2e/admin-shell.spec.ts` |
 | `admin-overview` | admin | `/admin` | Overview | pending | pending | TBD | `web/e2e/admin-overview.spec.ts` |
 | `admin-nodes` | admin | `/admin/nodes` | Cluster nodes | pending | pending | TBD | `web/e2e/admin-nodes.spec.ts` |
