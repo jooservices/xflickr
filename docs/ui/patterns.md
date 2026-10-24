@@ -219,10 +219,11 @@ SSE reconnect backoff is 1 s, 2 s, 4 s, 8 s, then 15 s, with 20% jitter.
 - Position: bottom center above the safe area and any bottom control (64px
   offset). Stack up to 3 with an 8px gap; the oldest is dropped when a fourth
   arrives.
-- Duration: 2.6 s for confirmations (POC), 6 s for errors, and errors stay
-  while hovered or focused. Never auto-dismiss a toast that carries an action;
-  such a toast closes on action or on `Esc`.
-- Toasts that offer `Undo` last 8 s.
+- Duration by type: confirmation 2.6 s (POC), error 6 s, toast with `Undo`
+  8 s, toast with any other action no timeout (it closes on the action or on
+  `Esc`).
+- The timer pauses while the toast is hovered or focused and restarts in full
+  when the pointer leaves or focus moves away. This applies to every timed type.
 - Container is `aria-live="polite"`. Error toasts use `role="alert"`.
 - Entrance uses the `entrance` token (translateY 8px to 0, opacity 0 to 1).
 - Never use a toast for blocking errors, validation, or information the user
@@ -237,7 +238,7 @@ is designed for 1100 and up, then degrades. All values are px of viewport width.
 | --- | --- |
 | ≥ 1101 | Full layout. ADMIN fixed left rail (250px) and content. Four-column stat grids (`g4`), three-column grids (`g3`). Lightbox is photo plus a side panel of 380px or more. USER main is max 1440px wide. |
 | ≤ 1100 | `g4` and `g3` become two columns. Lightbox side panel narrows to 340px. |
-| ≤ 900 | ADMIN rail becomes an off-canvas drawer (250px) opened by a menu button, with a scrim. Two-column grids (`g2`, `g21`, hero, onboarding) become one column. Library filters move above the content as a wrapping row. Lightbox stacks photo above panel and scrolls. Depth columns become two. |
+| ≤ 900 | ADMIN rail becomes an off-canvas drawer (250px) opened by a menu button, with a scrim. Two-column grids (`g2`, `g21`, hero, onboarding) and `g3` become one column. Library filters move above the content as a wrapping row. Lightbox stacks photo above panel and scrolls. Depth columns become two. |
 | ≤ 720 | Top bar wraps; search takes its own full-width row (40px high). Elements marked `hide-sm` are hidden. `g4` becomes one column. Event rows drop the source column. The row-height token `--row-h` goes from 190px to 120px (see design-system). Tables reflow to labelled cards or scroll horizontally inside their container. |
 
 Rules at every width:
