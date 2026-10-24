@@ -33,6 +33,7 @@ check:
 ui-spec-check:
 	@./docker/scripts/run.sh node node scripts/ui-spec-check.mjs
 	@./docker/scripts/run.sh node node --test "scripts/**/*.test.mjs"
+	@./docker/scripts/run.sh node npx --yes markdownlint-cli@0.44.0 --config docs/ui/.markdownlint.yaml docs/ui/components.md
 
 dev-up:
 	@./docker/scripts/dev.sh up

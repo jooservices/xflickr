@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { validateUiSpec } from './ui-spec-check-lib.mjs';
+import {
+  COMPONENT_NAMES,
+  COMPONENT_STATES,
+  validateComponentGallery,
+  validateComponentSpec,
+  validateUiSpec,
+} from './ui-spec-check-lib.mjs';
 
 const themeHeadings = [
   'USER light gallery',
@@ -395,6 +401,171 @@ test('rejects an unclosed POC media query', () => {
   assert.throws(() => validateUiSpec(noBlock, design), /Unbalanced brace/);
 });
 
+function componentSection(name, states = COMPONENT_STATES) {
+  return `## ${name}
+
+Slice: \`web/src/shared/ui/${name}\`.
+
+### Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| label | string | — | Visible name |
+
+### Variants
+
+| Variant | Meaning |
+| --- | --- |
+| neutral | Resting treatment |
+
+### States
+
+| State | Appearance | Behaviour |
+| --- | --- | --- |
+${states.map((state) => `| ${state} | Shown | Ready |`).join('\n')}
+
+### Keyboard
+
+- Tab moves focus.
+
+### ARIA
+
+- Native control.
+`;
+}
+
+function fullComponentSpec(replaceName, replacement) {
+  return (
+    '# Component library\n\n' +
+    COMPONENT_NAMES.map((name) => (name === replaceName ? replacement : componentSection(name))).join('\n') +
+    '\n'
+  );
+}
+
+function galleryFrame(role, theme, components) {
+  const body = components
+    .map(
+      ([name, states]) =>
+        `<article data-component="${name}">${states
+          .map((state) => `<div data-state="${state}"></div>`)
+          .join('')}</article>`,
+    )
+    .join('');
+  return `<section data-theme="${theme}" data-role="${role}">${body}</section>`;
+}
+
+function fullGallery() {
+  return ['user', 'admin']
+    .flatMap((role) => ['light', 'dark'].map((theme) => galleryFrame(role, theme, COMPONENT_NAMES.map((name) => [name, COMPONENT_STATES]))))
+    .join('');
+}
+
+test('accepts a catalogue where every slice has a state table and gallery cell', () => {
+  assert.deepEqual(validateComponentSpec(fullComponentSpec()).missing, []);
+  assert.deepEqual(validateComponentGallery(fullGallery()).missing, []);
+});
+
+test('requires the slice path, subsections, and a real state table', () => {
+  const missingSection = validateComponentSpec(fullComponentSpec('chip', '')).missing;
+  assert.ok(missingSection.includes('chip: section'));
+  assert.equal(missingSection.some((item) => item.startsWith('chip:')), true);
+  assert.equal(missingSection.includes('button: section'), false);
+
+  const missingSlice = validateComponentSpec(
+    fullComponentSpec('chip', componentSection('chip').replace('web/src/shared/ui/chip', 'web/src/shared/ui/other')),
+  ).missing;
+  assert.deepEqual(missingSlice, ['chip: slice']);
+
+  const missingStates = validateComponentSpec(
+    fullComponentSpec('button', componentSection('button').replace(/### States[\s\S]*?### Keyboard/, '### Keyboard')),
+  ).missing;
+  assert.ok(missingStates.includes('button: States'));
+  assert.equal(missingStates.includes('button: state default'), false);
+
+  const emptyKeyboard = validateComponentSpec(
+    fullComponentSpec('button', componentSection('button').replace('- Tab moves focus.\n\n', '\n')),
+  ).missing;
+  assert.deepEqual(emptyKeyboard, ['button: Keyboard text']);
+
+  const emptyProps = validateComponentSpec(
+    fullComponentSpec(
+      'button',
+      componentSection('button').replace('| label | string | — | Visible name |\n', ''),
+    ),
+  ).missing;
+  assert.deepEqual(emptyProps, ['button: Props table']);
+});
+
+test('counts only the first state table and ignores headings that are not the slice', () => {
+  const prose = componentSection(
+    'button',
+    COMPONENT_STATES.filter((state) => state !== 'hover'),
+  ).replace(
+    '| error | Shown | Ready |\n',
+    '| error | Shown | Ready |\n\nHover is mentioned in prose.\n\n| State | Appearance | Behaviour |\n| :---: | :---: | :---: |\n| hover | Late | Late |\n',
+  );
+  const missing = validateComponentSpec(fullComponentSpec('button', prose)).missing;
+  assert.deepEqual(missing, ['button: state hover']);
+
+  const headerIsNotAState = componentSection('button', COMPONENT_STATES.filter((state) => state !== 'default')).replace(
+    '| State | Appearance | Behaviour |\n| --- | --- | --- |\n',
+    '| default | Appearance | Behaviour |\n| --- | --- | --- |\n|\n',
+  );
+  assert.ok(validateComponentSpec(fullComponentSpec('button', headerIsNotAState)).missing.includes('button: state default'));
+
+  const renamed = validateComponentSpec(fullComponentSpec().replace('## button\n', '## button extra\n')).missing;
+  assert.ok(renamed.includes('button: section'));
+
+  const laterWins = validateComponentSpec(`${fullComponentSpec()}\n## button\n\nIncomplete.\n`).missing;
+  assert.ok(laterWins.includes('button: slice'));
+  assert.ok(laterWins.includes('button: States'));
+  assert.equal(laterWins.includes('chip: section'), false);
+});
+
+test('reads gallery frames, forced states, comments, and void tags', () => {
+  const swapped = validateComponentGallery(
+    '<section data-theme="dark" DATA-ROLE="admin"><article DATA-COMPONENT="toast" data-state="default"></article></section>',
+  ).missing;
+  assert.equal(swapped.includes('admin/dark: frame'), false);
+  assert.equal(swapped.includes('admin/dark: toast default'), false);
+  assert.ok(swapped.includes('admin/dark: toast hover'));
+  assert.ok(swapped.includes('user/light: frame'));
+
+  const commented = validateComponentGallery(
+    '<!-- <div data-role="user" data-theme="light"><div data-component="button" data-state="hover"></div></div> -->\n' +
+      '<div data-role="user" data-theme="light"><div data-component="button" data-state="default"></div></div>',
+  ).missing;
+  assert.equal(commented.includes('user/light: button default'), false);
+  assert.ok(commented.includes('user/light: button hover'));
+
+  const voids = validateComponentGallery(
+    '<div data-role=user data-theme=light hidden><div data-component="text-field"><input data-state="error"><div data-state="focus"></div></div></div>',
+  ).missing;
+  assert.equal(voids.includes('user/light: text-field error'), false);
+  assert.equal(voids.includes('user/light: text-field focus'), false);
+
+  const selfClosed = validateComponentGallery(
+    '<div data-role="user" data-theme="light"></ghost><span data-component="badge" data-state="loading" /></div>',
+  ).missing;
+  assert.equal(selfClosed.includes('user/light: badge loading'), false);
+
+  const union = validateComponentGallery(
+    '<div data-role="admin" data-theme="light"><div data-component="tree" data-state="default"></div><div data-component="tree"><i data-state="error"></i></div></div>' +
+      '<section data-role="admin" data-theme="light"><div data-component="tree" data-state="active"></div></section>',
+  ).missing;
+  assert.equal(union.includes('admin/light: tree default'), false);
+  assert.equal(union.includes('admin/light: tree error'), false);
+  assert.equal(union.includes('admin/light: tree active'), false);
+  assert.ok(union.includes('admin/light: tree hover'));
+
+  const loose = validateComponentGallery(
+    '<div data-component="button" data-state="default"></div><div data-role="user"><div data-state="hover"></div></div><div data-role="user" data-theme="dark"><div data-component="card"></div></div>',
+  ).missing;
+  assert.ok(loose.includes('user/light: frame'));
+  assert.ok(loose.includes('user/dark: card'));
+  assert.equal(loose.includes('user/dark: card default'), false);
+});
+
 test('reads a grouped :root selector and ignores a :root suffix', () => {
   const grouped = pocWith('@media (max-width:720px){button, :root{--row-h:120px}}');
   assert.deepEqual(
@@ -405,4 +576,75 @@ test('reads a grouped :root selector and ignores a :root suffix', () => {
   const ignored = validateUiSpec(suffix, specWith('| bg | #fff | #fff |'));
   assert.deepEqual(ignored.missingMediaOverrides, []);
   assert.equal(ignored.mediaOverrideCount, 0);
+});
+
+function componentBody(markdown, name) {
+  const marker = `\n## ${name}\n`;
+  const start = markdown.indexOf(marker);
+  assert.ok(start >= 0, name);
+  const from = start + marker.length;
+  const next = markdown.indexOf('\n## ', from);
+  return markdown.slice(from, next < 0 ? undefined : next);
+}
+
+test('documents every shared component and shows it in every theme', async () => {
+  const [spec, gallery] = await Promise.all([
+    readFile('docs/ui/components.md', 'utf8'),
+    readFile('docs/ui/mockups/components.html', 'utf8'),
+  ]);
+  assert.deepEqual(validateComponentSpec(spec).missing, []);
+  assert.deepEqual(validateComponentGallery(gallery).missing, []);
+  assert.deepEqual(COMPONENT_NAMES.length, 33);
+
+  const phrases = {
+    button: ['| primary |', '| danger |', '| ghost |', '| sm |'],
+    chip: ['aria-pressed'],
+    pill: ['| ok |', '| warn |', '| bad |', '| info |'],
+    badge: ['mono'],
+    tag: ['search'],
+    'text-field': ['aria-invalid'],
+    select: ['aria-invalid'],
+    switch: ['switch'],
+    checkbox: ['aria-invalid'],
+    table: ['caption'],
+    card: ['interactive'],
+    panel: ['header'],
+    'stat-strip': ['tabular'],
+    banner: ['| info |', '| warn |', '| bad |'],
+    'progress-bar': ['progressbar'],
+    ring: ['aria-label'],
+    sparkline: ['polyline'],
+    chart: ['line', 'area', 'bar', 'legend', 'tooltip'],
+    'photo-grid': ['justified'],
+    'contact-card': ['avatar'],
+    'album-card': ['stack'],
+    lightbox: ['Escape'],
+    modal: ['dialog'],
+    drawer: ['dialog'],
+    toast: ['polite'],
+    tabs: ['subtab'],
+    breadcrumb: ['Breadcrumb'],
+    'empty-block': ['call to action'],
+    skeleton: ['shimmer'],
+    'node-card': ['drain'],
+    'resource-bar': ['CPU'],
+    tree: ['aria-expanded'],
+    'event-feed': ['severity'],
+  };
+  assert.deepEqual(Object.keys(phrases), COMPONENT_NAMES);
+  for (const [name, needles] of Object.entries(phrases)) {
+    const body = componentBody(spec, name);
+    for (const needle of needles) assert.ok(body.includes(needle), `${name} missing ${needle}`);
+    assert.ok(body.includes(`web/src/shared/ui/${name}`), name);
+  }
+
+  for (const token of ['#747b88', '#778396', '#7a8798', '#f2766b', '#737f90', '#006482', '#b4431a', '#b8481e']) {
+    assert.ok(gallery.includes(token), token);
+  }
+  for (const role of ['user', 'admin']) {
+    for (const theme of ['light', 'dark']) {
+      assert.ok(gallery.includes(`data-role="${role}"`), role);
+      assert.ok(gallery.includes(`data-theme="${theme}"`), theme);
+    }
+  }
 });

@@ -187,3 +187,218 @@ function hasViewportRow(section, token, key, value) {
 function hasPocValue(section, token, value) {
   return tableRows(section).some((cells) => cells[0] === token && cells[2] === value);
 }
+
+// Feature-sliced slices under web/src/shared/ui. Names are the directory under
+// that layer. Order matches the component catalogue in docs/ui/components.md.
+export const COMPONENT_NAMES = [
+  'button',
+  'chip',
+  'pill',
+  'badge',
+  'tag',
+  'text-field',
+  'select',
+  'switch',
+  'checkbox',
+  'table',
+  'card',
+  'panel',
+  'stat-strip',
+  'banner',
+  'progress-bar',
+  'ring',
+  'sparkline',
+  'chart',
+  'photo-grid',
+  'contact-card',
+  'album-card',
+  'lightbox',
+  'modal',
+  'drawer',
+  'toast',
+  'tabs',
+  'breadcrumb',
+  'empty-block',
+  'skeleton',
+  'node-card',
+  'resource-bar',
+  'tree',
+  'event-feed',
+];
+
+export const COMPONENT_STATES = ['default', 'hover', 'focus', 'active', 'disabled', 'loading', 'error'];
+
+export const GALLERY_ROLES = ['user', 'admin'];
+export const GALLERY_THEMES = ['light', 'dark'];
+
+const COMPONENT_PARTS = ['Props', 'Variants', 'States', 'Keyboard', 'ARIA'];
+const TABLE_PARTS = new Set(['Props', 'Variants', 'States']);
+
+const VOID_TAGS = new Set([
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'path',
+  'circle',
+  'ellipse',
+  'line',
+  'polyline',
+  'polygon',
+  'rect',
+  'use',
+  'stop',
+  'source',
+  'track',
+  'wbr',
+]);
+
+export function validateComponentSpec(markdown) {
+  const sections = headingSections(markdown, 2);
+  const missing = [];
+  for (const name of COMPONENT_NAMES) {
+    const body = sections.get(name);
+    if (body === undefined) {
+      missing.push(`${name}: section`);
+      continue;
+    }
+    if (!body.includes(`web/src/shared/ui/${name}`)) missing.push(`${name}: slice`);
+    const parts = headingSections(body, 3);
+    for (const heading of COMPONENT_PARTS) {
+      const part = parts.get(heading);
+      if (part === undefined) {
+        missing.push(`${name}: ${heading}`);
+        continue;
+      }
+      if (TABLE_PARTS.has(heading) && tableDataRows(part).length === 0) {
+        missing.push(`${name}: ${heading} table`);
+      } else if (!TABLE_PARTS.has(heading) && part.trim() === '') {
+        missing.push(`${name}: ${heading} text`);
+      }
+      if (heading === 'States') {
+        const found = new Set(tableDataRows(part).map((row) => row[0]));
+        for (const state of COMPONENT_STATES) {
+          if (!found.has(state)) missing.push(`${name}: state ${state}`);
+        }
+      }
+    }
+  }
+  return { missing };
+}
+
+export function validateComponentGallery(html) {
+  const frames = indexGallery(html);
+  const missing = [];
+  for (const role of GALLERY_ROLES) {
+    for (const theme of GALLERY_THEMES) {
+      const key = `${role}/${theme}`;
+      const components = frames.get(key);
+      if (!components) {
+        missing.push(`${key}: frame`);
+        continue;
+      }
+      for (const name of COMPONENT_NAMES) {
+        const states = components.get(name);
+        // A framed component with no data-state is one gap. Listing every state
+        // would hide that the specimen was never marked.
+        if (!states || states.size === 0) {
+          missing.push(`${key}: ${name}`);
+          continue;
+        }
+        for (const state of COMPONENT_STATES) {
+          if (!states.has(state)) missing.push(`${key}: ${name} ${state}`);
+        }
+      }
+    }
+  }
+  return { missing };
+}
+
+function headingSections(markdown, level) {
+  const map = new Map();
+  const marks = [...markdown.matchAll(new RegExp(`^#{${level}} (?!#)(.*)\\n`, 'gm'))];
+  for (let index = 0; index < marks.length; index += 1) {
+    const title = marks[index][1].trim();
+    const start = marks[index].index + marks[index][0].length;
+    const end = index + 1 < marks.length ? marks[index + 1].index : markdown.length;
+    map.set(title, markdown.slice(start, end));
+  }
+  return map;
+}
+
+function tableDataRows(section) {
+  const rows = [];
+  let seen = false;
+  for (const line of section.split('\n')) {
+    if (!line.startsWith('|')) {
+      if (seen) break;
+      continue;
+    }
+    seen = true;
+    const cells = line
+      .split('|')
+      .slice(1, -1)
+      .map((cell) => cell.trim());
+    if (cells.length === 0 || cells.every((cell) => /^:?-{3,}:?$/.test(cell))) continue;
+    rows.push(cells);
+  }
+  return rows.slice(1);
+}
+
+function indexGallery(html) {
+  const frames = new Map();
+  const stack = [];
+  const tagRe = /<!--[\s\S]*?-->|<\/([a-zA-Z0-9]+)\s*>|<([a-zA-Z0-9]+)([^>]*?)(\/?)>/g;
+  for (let match = tagRe.exec(html); match; match = tagRe.exec(html)) {
+    if (match[0].startsWith('<!--')) continue;
+    if (match[1]) {
+      const name = match[1].toLowerCase();
+      for (let index = stack.length - 1; index >= 0; index -= 1) {
+        if (stack[index].tag === name) {
+          stack.length = index;
+          break;
+        }
+      }
+      continue;
+    }
+    const tag = match[2].toLowerCase();
+    const node = { tag, attrs: parseAttrs(match[3]) };
+    const selfClosing = match[4] === '/' || VOID_TAGS.has(tag);
+    if (!selfClosing) stack.push(node);
+    recordGalleryNode(frames, selfClosing ? [...stack, node] : stack);
+  }
+  return frames;
+}
+
+function recordGalleryNode(frames, stack) {
+  let frameKey = '';
+  let component = '';
+  const states = [];
+  for (const node of stack) {
+    const role = node.attrs['data-role'];
+    const theme = node.attrs['data-theme'];
+    if (role && theme) frameKey = `${role}/${theme}`;
+    if (node.attrs['data-component']) component = node.attrs['data-component'];
+    if (node.attrs['data-state']) states.push(node.attrs['data-state']);
+  }
+  if (!frameKey || !component) return;
+  if (!frames.has(frameKey)) frames.set(frameKey, new Map());
+  const components = frames.get(frameKey);
+  if (!components.has(component)) components.set(component, new Set());
+  const found = components.get(component);
+  for (const state of states) found.add(state);
+}
+
+function parseAttrs(raw) {
+  const attrs = {};
+  for (const match of raw.matchAll(/([^\s=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+)))?/g)) {
+    attrs[match[1].toLowerCase()] = match[2] ?? match[3] ?? match[4] ?? '';
+  }
+  return attrs;
+}

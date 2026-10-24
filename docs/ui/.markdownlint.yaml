@@ -1,0 +1,5 @@
+# Tables name props and states, so they run past 80 columns.
+MD013: false
+# Props, Variants, States, Keyboard, and ARIA repeat under every slice.
+MD024:
+  siblings_only: true

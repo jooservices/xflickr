@@ -13,5 +13,7 @@
 - [User interface proof of concept](ui/poc/README.md) — static design prototype.
 - [UI design system](ui/design-system.md) — themes, typography, iconography, and
   accessibility rules.
+- [UI component library](ui/components.md) — shared component props, states,
+  keyboard behaviour, and the gallery mockup.
 - [UI token source contract](ui/tokens.md) — machine-readable token schema and
   POC coverage requirements.

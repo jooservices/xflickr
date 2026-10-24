@@ -4,7 +4,8 @@ This document records the shared visual language for both roles. The approved
 reference is the root block and role/theme overrides in
 [the POC](poc/xflickr-poc.html). The POC is a visual baseline; the token
 contract in [tokens.md](tokens.md) is the canonical implementation source.
-Component and view behavior belongs in their respective specifications.
+Component behavior is specified in [components.md](components.md). View
+behavior belongs in the view specifications.
 
 ## Roles and themes
 

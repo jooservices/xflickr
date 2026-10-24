@@ -128,7 +128,13 @@ with non-alphanumeric runs replaced by hyphens. The target also runs
 `node --test "scripts/**/*.test.mjs"`, including a check that the real
 design-system document reports no missing tokens, media overrides, or icons
 and that the type scale, elevation, and motion tables keep the required keys.
-`make check` runs this target. The dynamic --r property is excluded because it
+`make check` runs this target. The same target reads
+[components.md](components.md) and [the component gallery](mockups/components.html).
+Every shared slice under `web/src/shared/ui` needs a state table for default,
+hover, focus, active, disabled, loading, and error, and the gallery shows each
+of those states in USER and ADMIN light and dark frames. The target also
+lints components.md with markdownlint. The dynamic --r
+property is excluded because it
 is per-photo aspect-ratio runtime data, not a design token. Custom properties
 set on a component, including a grid's own `--row-h`, are not root tokens. The
 POC is read-only reference input.
