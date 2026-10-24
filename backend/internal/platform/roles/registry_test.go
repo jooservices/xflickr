@@ -6,12 +6,15 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identityredis "github.com/jooservices/xflickr/internal/identity/adapters/redis"
+	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	redisv9 "github.com/redis/go-redis/v9"
@@ -25,7 +28,7 @@ func TestBuildIdentityHandlerWiresSettingsAndDummyHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if handler.RegisterUseCase.Policy == nil || handler.Users == nil || handler.Version != "test-version" {
+	if handler.RegisterUseCase.Policy == nil || handler.Users == nil || handler.Sessions == nil || handler.Version != "test-version" {
 		t.Fatalf("handler wiring is incomplete: %#v", handler)
 	}
 	if handler.LoginUseCase.DummyPasswordHash == "" || !domain.VerifyPassword(handler.LoginUseCase.DummyPasswordHash, "xflickr-invalid-login-dummy") {
@@ -331,6 +334,58 @@ func TestAPIRoleServesHealthAndStops(t *testing.T) {
 func TestAPIRoleReturnsListenError(t *testing.T) {
 	if err := NewAPIRole("missing-port", "test").Run(context.Background()); err == nil {
 		t.Fatal("Run() error = nil, want invalid listen address error")
+	}
+}
+
+type stubSessions struct{}
+
+func (stubSessions) Issue(context.Context, int64) (string, domain.Session, string, error) {
+	return "", domain.Session{}, "", errors.New("sessions are not available")
+}
+
+func (stubSessions) Authenticate(context.Context, string) (identityapp.Authenticated, error) {
+	return identityapp.Authenticated{}, identityapp.ErrUnauthenticated
+}
+
+func (stubSessions) Revoke(context.Context, string) error { return nil }
+
+func (stubSessions) RevokeOthers(context.Context, int64, []byte) error { return nil }
+
+func TestAPIRouterRequiresSessionAndCSRF(t *testing.T) {
+	router := newAPIRouter(identityhttp.Handler{Version: "router-test", Sessions: stubSessions{}})
+	health := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	healthResponse := httptest.NewRecorder()
+	router.ServeHTTP(healthResponse, health)
+	if healthResponse.Code != http.StatusOK || !strings.Contains(healthResponse.Body.String(), `"version":"router-test"`) {
+		t.Fatalf("health status=%d body=%s", healthResponse.Code, healthResponse.Body.String())
+	}
+
+	me := httptest.NewRequest(http.MethodGet, "/me", nil)
+	meResponse := httptest.NewRecorder()
+	router.ServeHTTP(meResponse, me)
+	if meResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("me status = %d", meResponse.Code)
+	}
+
+	login := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"email":"u@example.com","password":"secret12"}`))
+	login.Header.Set("Content-Type", "application/json")
+	loginResponse := httptest.NewRecorder()
+	router.ServeHTTP(loginResponse, login)
+	if loginResponse.Code != http.StatusForbidden {
+		t.Fatalf("login status = %d body = %s", loginResponse.Code, loginResponse.Body.String())
+	}
+
+	token, err := domain.NewOpaqueToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	revoke := httptest.NewRequest(http.MethodDelete, "/auth/sessions", nil)
+	revoke.AddCookie(&http.Cookie{Name: identityhttp.CSRFCookieName, Value: token})
+	revoke.Header.Set(identityhttp.CSRFHeaderName, token)
+	revokeResponse := httptest.NewRecorder()
+	router.ServeHTTP(revokeResponse, revoke)
+	if revokeResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("delete status = %d body = %s", revokeResponse.Code, revokeResponse.Body.String())
 	}
 }
 

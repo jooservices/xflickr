@@ -12,6 +12,8 @@ paths:
     $ref: ./paths/auth.yaml#/login
   /auth/logout:
     $ref: ./paths/auth.yaml#/logout
+  /auth/sessions:
+    $ref: ./paths/auth.yaml#/sessions
   /me:
     $ref: ./paths/auth.yaml#/me
 components:

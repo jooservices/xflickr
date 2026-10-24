@@ -310,7 +310,7 @@ export const getLogoutUrl = () => {
 };
 
 /**
- * @summary Log out
+ * @summary Log out the current session
  */
 export const logout = async (options?: RequestInit): Promise<logoutResponse> => {
   const res = await fetch(getLogoutUrl(), {
@@ -349,7 +349,7 @@ export type LogoutMutationResult = NonNullable<Awaited<ReturnType<typeof logout>
 export type LogoutMutationError = unknown;
 
 /**
- * @summary Log out
+ * @summary Log out the current session
  */
 export const useLogout = <TError = unknown, TContext = unknown>(
   options?: {
@@ -359,6 +359,106 @@ export const useLogout = <TError = unknown, TContext = unknown>(
   queryClient?: QueryClient,
 ): UseMutationResult<Awaited<ReturnType<typeof logout>>, TError, void, TContext> => {
   return useMutation(getLogoutMutationOptions(options), queryClient);
+};
+export type revokeOtherSessionsResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type revokeOtherSessionsResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type revokeOtherSessionsResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type revokeOtherSessionsResponseSuccess = revokeOtherSessionsResponse204 & {
+  headers: Headers;
+};
+export type revokeOtherSessionsResponseError = (
+  revokeOtherSessionsResponse401 | revokeOtherSessionsResponse403
+) & {
+  headers: Headers;
+};
+
+export type revokeOtherSessionsResponse =
+  revokeOtherSessionsResponseSuccess | revokeOtherSessionsResponseError;
+
+export const getRevokeOtherSessionsUrl = () => {
+  return `/auth/sessions`;
+};
+
+/**
+ * Deletes every server-side session for the authenticated user except the session presented by the xf_session cookie.
+ * @summary Revoke every session except the current one
+ */
+export const revokeOtherSessions = async (
+  options?: RequestInit,
+): Promise<revokeOtherSessionsResponse> => {
+  const res = await fetch(getRevokeOtherSessionsUrl(), {
+    ...options,
+    method: 'DELETE',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: revokeOtherSessionsResponse['data'] = body ? JSON.parse(body) : undefined;
+  return { data, status: res.status, headers: res.headers } as revokeOtherSessionsResponse;
+};
+
+export const getRevokeOtherSessionsMutationKey = () => ['revokeOtherSessions'] as const;
+
+export const getRevokeOtherSessionsMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revokeOtherSessions>>,
+    TError,
+    void,
+    TContext
+  >;
+  fetch?: RequestInit;
+}): UseMutationOptions<Awaited<ReturnType<typeof revokeOtherSessions>>, TError, void, TContext> => {
+  const mutationKey = getRevokeOtherSessionsMutationKey();
+  const { mutation: mutationOptions, fetch: fetchOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, fetch: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof revokeOtherSessions>>,
+    void
+  > = () => {
+    return revokeOtherSessions(fetchOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RevokeOtherSessionsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof revokeOtherSessions>>
+>;
+
+export type RevokeOtherSessionsMutationError = void;
+
+/**
+ * @summary Revoke every session except the current one
+ */
+export const useRevokeOtherSessions = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof revokeOtherSessions>>,
+      TError,
+      void,
+      TContext
+    >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<Awaited<ReturnType<typeof revokeOtherSessions>>, TError, void, TContext> => {
+  return useMutation(getRevokeOtherSessionsMutationOptions(options), queryClient);
 };
 export type getMeResponse200 = {
   data: User;

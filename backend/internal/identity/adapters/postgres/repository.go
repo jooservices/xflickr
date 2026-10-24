@@ -76,6 +76,9 @@ func (repo *Repository) FindByID(ctx context.Context, id int64) (domain.User, er
 	var disabledAt *string
 	err := repo.pool.QueryRow(ctx, `SELECT id,email,password_hash,role,locale,created_at,disabled_at::text FROM users WHERE id=$1`, id).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Role, &user.Locale, &user.CreatedAt, &disabledAt)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.User{}, app.ErrUserNotFound
+		}
 		return domain.User{}, err
 	}
 	user.Disabled = disabledAt != nil

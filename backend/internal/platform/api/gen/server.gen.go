@@ -90,12 +90,15 @@ type ServerInterface interface {
 	// Login Log in with email and password
 	// (POST /auth/login)
 	Login(w http.ResponseWriter, r *http.Request)
-	// Logout Log out
+	// Logout Log out the current session
 	// (POST /auth/logout)
 	Logout(w http.ResponseWriter, r *http.Request)
 	// Register Register a user
 	// (POST /auth/register)
 	Register(w http.ResponseWriter, r *http.Request)
+	// RevokeOtherSessions Revoke every session except the current one
+	// (DELETE /auth/sessions)
+	RevokeOtherSessions(w http.ResponseWriter, r *http.Request)
 	// GetHealth Report process health.
 	// (GET /healthz)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -114,7 +117,7 @@ func (_ Unimplemented) Login(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Logout Log out
+// Logout Log out the current session
 // (POST /auth/logout)
 func (_ Unimplemented) Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -123,6 +126,12 @@ func (_ Unimplemented) Logout(w http.ResponseWriter, r *http.Request) {
 // Register Register a user
 // (POST /auth/register)
 func (_ Unimplemented) Register(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RevokeOtherSessions Revoke every session except the current one
+// (DELETE /auth/sessions)
+func (_ Unimplemented) RevokeOtherSessions(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -180,6 +189,20 @@ func (siw *ServerInterfaceWrapper) Register(w http.ResponseWriter, r *http.Reque
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.Register(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeOtherSessions operation middleware
+func (siw *ServerInterfaceWrapper) RevokeOtherSessions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeOtherSessions(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -343,6 +366,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/auth/logout", wrapper.Logout)
 	})
 	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/auth/sessions", wrapper.RevokeOtherSessions)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/me", wrapper.GetMe)
 	})
 
@@ -440,6 +466,37 @@ func (response Register409Response) VisitRegisterResponse(w http.ResponseWriter)
 	return nil
 }
 
+type RevokeOtherSessionsRequestObject struct {
+}
+
+type RevokeOtherSessionsResponseObject interface {
+	VisitRevokeOtherSessionsResponse(w http.ResponseWriter) error
+}
+
+type RevokeOtherSessions204Response struct {
+}
+
+func (response RevokeOtherSessions204Response) VisitRevokeOtherSessionsResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RevokeOtherSessions401Response struct {
+}
+
+func (response RevokeOtherSessions401Response) VisitRevokeOtherSessionsResponse(w http.ResponseWriter) error {
+	w.WriteHeader(401)
+	return nil
+}
+
+type RevokeOtherSessions403Response struct {
+}
+
+func (response RevokeOtherSessions403Response) VisitRevokeOtherSessionsResponse(w http.ResponseWriter) error {
+	w.WriteHeader(403)
+	return nil
+}
+
 type GetHealthRequestObject struct {
 }
 
@@ -512,12 +569,15 @@ type StrictServerInterface interface {
 	// Login Log in with email and password
 	// (POST /auth/login)
 	Login(ctx context.Context, request LoginRequestObject) (LoginResponseObject, error)
-	// Logout Log out
+	// Logout Log out the current session
 	// (POST /auth/logout)
 	Logout(ctx context.Context, request LogoutRequestObject) (LogoutResponseObject, error)
 	// Register Register a user
 	// (POST /auth/register)
 	Register(ctx context.Context, request RegisterRequestObject) (RegisterResponseObject, error)
+	// RevokeOtherSessions Revoke every session except the current one
+	// (DELETE /auth/sessions)
+	RevokeOtherSessions(ctx context.Context, request RevokeOtherSessionsRequestObject) (RevokeOtherSessionsResponseObject, error)
 	// GetHealth Report process health.
 	// (GET /healthz)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
@@ -651,6 +711,30 @@ func (sh *strictHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// RevokeOtherSessions operation middleware
+func (sh *strictHandler) RevokeOtherSessions(w http.ResponseWriter, r *http.Request) {
+	var request RevokeOtherSessionsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RevokeOtherSessions(ctx, request.(RevokeOtherSessionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevokeOtherSessions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RevokeOtherSessionsResponseObject); ok {
+		if err := validResponse.VisitRevokeOtherSessionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetHealth operation middleware
 func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	var request GetHealthRequestObject
@@ -704,22 +788,25 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"XCAf6QA+/PafAQA=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

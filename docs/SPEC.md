@@ -15,6 +15,25 @@ guide feature implementation; operational environment rules live in
   capacity for user-started actions when the configured quota policy requires
   it.
 
+## Sessions and access
+
+- A successful login sets the `xf_session` cookie. The cookie is HttpOnly,
+  Secure, and SameSite=Lax. Its value is an opaque id. The database stores the
+  SHA-256 hash of that id, with a sliding expiry of 14 days.
+- Each use of a valid session can slide the expiry forward. The stored expiry
+  is updated at most once per minute.
+- Unsafe methods (POST, PUT, PATCH, and DELETE) require a double-submit CSRF
+  token. The `xf_csrf` cookie and the `X-CSRF-Token` header must match. A
+  missing or mismatched token is rejected with 403. Safe responses issue the
+  CSRF cookie when the browser does not already have one.
+- `RequireUser` allows a request only when the session resolves to an active
+  user. A missing or expired session responds with 401. `RequireAdmin` applies
+  that same check, then responds with 403 when the signed-in user is not an
+  administrator.
+- `DELETE /auth/sessions` revokes every session belonging to the current user
+  except the session that sent the request. Logout revokes the current session
+  and clears the session cookie.
+
 ## Crawl depth
 
 - Depth is configured per XFlickr user, with an administrator-defined default

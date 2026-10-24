@@ -25,6 +25,7 @@ type Handler struct {
 	RegisterUseCase app.Register
 	LoginUseCase    app.Login
 	Users           UserLookup
+	Sessions        SessionService
 	Version         string
 }
 
@@ -72,6 +73,23 @@ func (h Handler) Login(ctx context.Context, request gen.LoginRequestObject) (gen
 }
 func (h Handler) Logout(context.Context, gen.LogoutRequestObject) (gen.LogoutResponseObject, error) {
 	return gen.Logout204Response{}, nil
+}
+
+func (h Handler) RevokeOtherSessions(ctx context.Context, _ gen.RevokeOtherSessionsRequestObject) (gen.RevokeOtherSessionsResponseObject, error) {
+	principal, ok := PrincipalFrom(ctx)
+	if !ok || principal.User.ID == 0 || len(principal.TokenHash) == 0 {
+		return gen.RevokeOtherSessions401Response{}, nil
+	}
+	if h.Sessions == nil {
+		return nil, errors.New("identity: session service is required")
+	}
+	if err := h.Sessions.RevokeOthers(ctx, principal.User.ID, principal.TokenHash); err != nil {
+		if errors.Is(err, app.ErrUnauthenticated) {
+			return gen.RevokeOtherSessions401Response{}, nil
+		}
+		return nil, err
+	}
+	return gen.RevokeOtherSessions204Response{}, nil
 }
 func (h Handler) GetHealth(context.Context, gen.GetHealthRequestObject) (gen.GetHealthResponseObject, error) {
 	return gen.GetHealth200JSONResponse{Status: "ok", Version: h.Version}, nil

@@ -45,10 +45,23 @@ login:
 logout:
   post:
     operationId: Logout
-    summary: Log out
+    summary: Log out the current session
     responses:
       '204':
         description: Logged out
+
+sessions:
+  delete:
+    operationId: RevokeOtherSessions
+    summary: Revoke every session except the current one
+    description: Deletes every server-side session for the authenticated user except the session presented by the xf_session cookie.
+    responses:
+      '204':
+        description: Other sessions were revoked
+      '401':
+        description: Authentication required
+      '403':
+        description: CSRF token is missing or invalid
 
 me:
   get:

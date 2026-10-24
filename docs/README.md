@@ -3,5 +3,7 @@
 - [Environment and shared services](ENVIRONMENT.md) — workstation, runtime, and
   database rules.
 - [Business specification](SPEC.md) — product rules and definition of done.
+- [Sessions, CSRF, and roles](sessions.md) — session cookie, double-submit
+  CSRF, and role checks.
 - [Architecture decision records](adr/README.md) — durable architecture choices.
 - [User interface proof of concept](ui/poc/README.md) — static design prototype.

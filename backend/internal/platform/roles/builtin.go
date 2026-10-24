@@ -93,10 +93,18 @@ func (r APIRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	return r.runServer(ctx, newAPIRouter(identity))
+}
+
+func newAPIRouter(identity identityhttp.Handler) http.Handler {
 	router := chi.NewRouter()
 	router.Use(identityhttp.RequestBodyLimit)
-	serverHandler := gen.HandlerFromMux(gen.NewStrictHandler(identity, []gen.StrictMiddlewareFunc{identityhttp.Middleware}), router)
-	return r.runServer(ctx, serverHandler)
+	router.Use(identityhttp.CSRF)
+	router.Use(identityhttp.ProtectRoutes(identity.Sessions))
+	return gen.HandlerFromMux(gen.NewStrictHandler(identity, []gen.StrictMiddlewareFunc{
+		identityhttp.Middleware,
+		identityhttp.MaintainSessionCookies(identity.Sessions),
+	}), router)
 }
 
 func buildIdentityHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, version string) (identityhttp.Handler, error) {
@@ -115,6 +123,7 @@ func buildIdentityHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClien
 		RegisterUseCase: identityapp.Register{Repository: users, Policy: settings, Params: params},
 		LoginUseCase:    identityapp.Login{Repository: users, Limiter: identityredis.Limiter{Client: redisClient, Prefix: cfg.Redis.Prefix}, DummyPasswordHash: dummyHash},
 		Users:           users,
+		Sessions:        identityapp.Sessions{Repository: users, Users: users},
 		Version:         version,
 	}, nil
 }
