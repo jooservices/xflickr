@@ -7,3 +7,7 @@
   CSRF, and role checks.
 - [Architecture decision records](adr/README.md) — durable architecture choices.
 - [User interface proof of concept](ui/poc/README.md) — static design prototype.
+- [UI design system](ui/design-system.md) — themes, typography, iconography, and
+  accessibility rules.
+- [UI token source contract](ui/tokens.md) — machine-readable token schema and
+  POC coverage requirements.
