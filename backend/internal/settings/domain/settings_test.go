@@ -21,9 +21,12 @@ func TestMergeSeededDefaults(t *testing.T) {
 		t.Fatalf("max_depth default = %+v", depth)
 	}
 
-	got, err := Merge(DefaultSnapshot())
+	got, dropped, err := Merge(DefaultSnapshot())
 	if err != nil {
 		t.Fatalf("Merge(defaults) error = %v", err)
+	}
+	if len(dropped) != 0 {
+		t.Fatalf("dropped defaults = %+v", dropped)
 	}
 	want := Effective{
 		MaxDepth:            2,
@@ -237,52 +240,126 @@ func TestMergeAppliesOverridesInsideCaps(t *testing.T) {
 		GroupPoolsEnabled: json.RawMessage("true"),
 		PersonLaneShare:   json.RawMessage("0"),
 	}
-	got, err := Merge(snapshot)
+	got, dropped, err := Merge(snapshot)
 	if err != nil {
 		t.Fatalf("Merge() error = %v", err)
+	}
+	if len(dropped) != 0 {
+		t.Fatalf("dropped = %+v", dropped)
 	}
 	if got.MaxDepth != 4 || !got.GroupPoolsEnabled || got.PersonLaneShare != 0 || got.QuotaReserve != 100 || got.ChangeCheckInterval != 24*time.Hour {
 		t.Fatalf("merged = %+v", got)
 	}
 }
 
-func TestMergeRejectsInvalidOverridesAndSnapshots(t *testing.T) {
-	t.Run("above cap", func(t *testing.T) {
+func TestCheckUserOverride(t *testing.T) {
+	depth := definition(t, MaxDepth)
+	if err := CheckUserOverride(MaxDepth, depth, true, json.RawMessage("4")); err != nil {
+		t.Fatalf("CheckUserOverride(inside cap) error = %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		key     Key
+		setting Definition
+		found   bool
+		raw     string
+		want    string
+		wantCap string
+	}{
+		{name: "unknown key", key: "nope", raw: "1", want: "not a registered setting key"},
+		{name: "missing row", key: MaxDepth, raw: "2", want: "is not configured"},
+		{name: "row key mismatch", key: Burst, setting: depth, found: true, raw: "2", want: "is not configured"},
+		{name: "not overridable", key: MaxDepth, setting: Definition{Key: MaxDepth, UserOverridable: false, Value: json.RawMessage("2"), Min: floatPointer(1), Max: floatPointer(4)}, found: true, raw: "3", want: "not user-overridable"},
+		{name: "above cap", key: MaxDepth, setting: depth, found: true, raw: "5", want: "exceeds cap 4", wantCap: "4"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := CheckUserOverride(test.key, test.setting, test.found, json.RawMessage(test.raw))
+			var validation *ValidationError
+			if !errors.As(err, &validation) || validation.Key != test.key || validation.Cap != test.wantCap || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("CheckUserOverride() error = %v, want key %s cap %q and %q", err, test.key, test.wantCap, test.want)
+			}
+		})
+	}
+}
+
+func TestMergeDropsStaleOverrides(t *testing.T) {
+	t.Run("cap tightened", func(t *testing.T) {
 		snapshot := DefaultSnapshot()
-		snapshot.Overrides = map[Key]json.RawMessage{MaxDepth: json.RawMessage("5")}
-		_, err := Merge(snapshot)
-		var validation *ValidationError
-		if !errors.As(err, &validation) || validation.Key != MaxDepth || validation.Cap != "4" {
+		setting := snapshot.Settings[MaxDepth]
+		maximum := 3.0
+		setting.Max = &maximum
+		snapshot.Settings[MaxDepth] = setting
+		snapshot.Overrides = map[Key]json.RawMessage{
+			MaxDepth: json.RawMessage("4"),
+			Burst:    json.RawMessage("3"),
+		}
+		got, dropped, err := Merge(snapshot)
+		if err != nil {
 			t.Fatalf("Merge() error = %v", err)
 		}
-		if !strings.Contains(err.Error(), "max_depth") || !strings.Contains(err.Error(), "4") {
-			t.Fatalf("error = %q", err)
+		if got.MaxDepth != 2 || got.Burst != 3 {
+			t.Fatalf("merged = %+v, want default depth and the burst override", got)
+		}
+		if len(dropped) != 1 || dropped[0].Key != MaxDepth || !strings.Contains(dropped[0].Reason, "exceeds cap 3") {
+			t.Fatalf("dropped = %+v", dropped)
 		}
 	})
 
-	t.Run("not overridable", func(t *testing.T) {
+	t.Run("overridable flipped", func(t *testing.T) {
 		snapshot := DefaultSnapshot()
 		setting := snapshot.Settings[GroupPoolsEnabled]
 		setting.UserOverridable = false
 		snapshot.Settings[GroupPoolsEnabled] = setting
 		snapshot.Overrides = map[Key]json.RawMessage{GroupPoolsEnabled: json.RawMessage("true")}
-		_, err := Merge(snapshot)
-		if err == nil || !strings.Contains(err.Error(), "group_pools_enabled") || !strings.Contains(err.Error(), "not user-overridable") {
+		got, dropped, err := Merge(snapshot)
+		if err != nil {
 			t.Fatalf("Merge() error = %v", err)
+		}
+		if got.GroupPoolsEnabled {
+			t.Fatalf("merged = %+v, want the application default", got)
+		}
+		if len(dropped) != 1 || dropped[0].Key != GroupPoolsEnabled || dropped[0].Reason != "is not user-overridable" {
+			t.Fatalf("dropped = %+v", dropped)
 		}
 	})
 
+	t.Run("reports every stale override in key order", func(t *testing.T) {
+		snapshot := DefaultSnapshot()
+		depth := snapshot.Settings[MaxDepth]
+		maximum := 3.0
+		depth.Max = &maximum
+		snapshot.Settings[MaxDepth] = depth
+		pools := snapshot.Settings[GroupPoolsEnabled]
+		pools.UserOverridable = false
+		snapshot.Settings[GroupPoolsEnabled] = pools
+		snapshot.Overrides = map[Key]json.RawMessage{
+			MaxDepth:          json.RawMessage("4"),
+			GroupPoolsEnabled: json.RawMessage("true"),
+		}
+		_, dropped, err := Merge(snapshot)
+		if err != nil {
+			t.Fatalf("Merge() error = %v", err)
+		}
+		if len(dropped) != 2 || dropped[0].Key != GroupPoolsEnabled || dropped[1].Key != MaxDepth {
+			t.Fatalf("dropped = %+v", dropped)
+		}
+	})
+}
+
+func TestMergeRejectsInvalidOverridesAndSnapshots(t *testing.T) {
 	t.Run("unknown override", func(t *testing.T) {
 		snapshot := DefaultSnapshot()
 		snapshot.Overrides = map[Key]json.RawMessage{"extra": json.RawMessage("1")}
-		_, err := Merge(snapshot)
+		_, _, err := Merge(snapshot)
 		if err == nil || !strings.Contains(err.Error(), "extra") || !strings.Contains(err.Error(), "not a registered setting key") {
 			t.Fatalf("Merge() error = %v", err)
 		}
 	})
 
 	t.Run("missing settings", func(t *testing.T) {
-		_, err := Merge(Snapshot{})
+		_, _, err := Merge(Snapshot{})
 		if err == nil || !strings.Contains(err.Error(), "got 0 application settings") {
 			t.Fatalf("Merge() error = %v", err)
 		}
@@ -293,8 +370,19 @@ func TestMergeRejectsInvalidOverridesAndSnapshots(t *testing.T) {
 		setting := snapshot.Settings[MaxDepth]
 		setting.Key = Burst
 		snapshot.Settings[MaxDepth] = setting
-		_, err := Merge(snapshot)
+		_, _, err := Merge(snapshot)
 		if err == nil || !strings.Contains(err.Error(), "does not match") {
+			t.Fatalf("Merge() error = %v", err)
+		}
+	})
+
+	t.Run("invalid stored default", func(t *testing.T) {
+		snapshot := DefaultSnapshot()
+		setting := snapshot.Settings[MaxDepth]
+		setting.Value = json.RawMessage("true")
+		snapshot.Settings[MaxDepth] = setting
+		_, _, err := Merge(snapshot)
+		if err == nil || !strings.Contains(err.Error(), "max_depth") {
 			t.Fatalf("Merge() error = %v", err)
 		}
 	})
@@ -340,6 +428,9 @@ func TestStoredValueParsers(t *testing.T) {
 	}
 	if _, err := decimal([]byte("true")); err == nil {
 		t.Fatal("decimal() accepted a boolean")
+	}
+	if got := dropReason(&ValidationError{Key: MaxDepth, Cap: "4"}); !strings.Contains(got, "max_depth") || !strings.Contains(got, "4") {
+		t.Fatalf("dropReason() = %q", got)
 	}
 	if _, err := decodeJSON([]byte("1 2")); err == nil {
 		t.Fatal("decodeJSON() accepted two values")

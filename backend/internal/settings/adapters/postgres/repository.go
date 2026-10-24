@@ -27,6 +27,12 @@ FROM user_settings
 WHERE user_id = $1
 ORDER BY key`
 
+	loadApplicationSettingForShareSQL = `
+SELECT key, value, user_overridable, min, max
+FROM app_settings
+WHERE key = $1
+FOR SHARE`
+
 	upsertUserSettingSQL = `
 INSERT INTO user_settings (user_id, key, value)
 VALUES ($1, $2, $3::jsonb)
@@ -80,7 +86,10 @@ func (repository *Repository) Load(ctx context.Context, userID int64) (domain.Sn
 	return snapshot, nil
 }
 
-// SetUserOverride upserts one user value and publishes settings.changed.
+// SetUserOverride checks one override against the application row and upserts
+// it in the same serializable transaction. The application row is locked
+// FOR SHARE, so a concurrent cap change waits or conflicts instead of letting
+// an out-of-cap value commit. The write publishes settings.changed.
 func (repository *Repository) SetUserOverride(ctx context.Context, userID int64, key domain.Key, value json.RawMessage) error {
 	if err := repository.ready(ctx); err != nil {
 		return err
@@ -92,6 +101,13 @@ func (repository *Repository) SetUserOverride(ctx context.Context, userID int64,
 		return fmt.Errorf("settings: value for %s is required", key)
 	}
 	return repository.unitOfWork.Do(ctx, func(tx db.Tx) error {
+		setting, found, err := loadApplicationSettingForShare(ctx, tx, key)
+		if err != nil {
+			return err
+		}
+		if err := domain.CheckUserOverride(key, setting, found, value); err != nil {
+			return err
+		}
 		return setUserOverride(ctx, tx, userID, key, value)
 	})
 }
@@ -143,26 +159,60 @@ func loadApplicationSettings(ctx context.Context, tx db.Tx) (map[domain.Key]doma
 
 	settings := make(map[domain.Key]domain.Definition)
 	for rows.Next() {
-		var key string
-		var value []byte
-		var overridable bool
-		var minimum, maximum *float64
-		if err := rows.Scan(&key, &value, &overridable, &minimum, &maximum); err != nil {
+		setting, err := scanApplicationSetting(rows)
+		if err != nil {
 			return nil, fmt.Errorf("settings: read application setting: %w", err)
 		}
-		typed := domain.Key(key)
-		settings[typed] = domain.Definition{
-			Key:             typed,
-			Value:           bytes.Clone(value),
-			UserOverridable: overridable,
-			Min:             minimum,
-			Max:             maximum,
-		}
+		settings[setting.Key] = setting
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("settings: iterate application settings: %w", err)
 	}
 	return settings, nil
+}
+
+func loadApplicationSettingForShare(ctx context.Context, tx db.Tx, key domain.Key) (domain.Definition, bool, error) {
+	rows, err := tx.Query(ctx, loadApplicationSettingForShareSQL, string(key))
+	if err != nil {
+		return domain.Definition{}, false, fmt.Errorf("settings: load application setting %s: %w", key, err)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return domain.Definition{}, false, fmt.Errorf("settings: iterate application setting %s: %w", key, err)
+		}
+		return domain.Definition{}, false, nil
+	}
+	setting, err := scanApplicationSetting(rows)
+	if err != nil {
+		return domain.Definition{}, false, fmt.Errorf("settings: read application setting %s: %w", key, err)
+	}
+	if rows.Next() {
+		return domain.Definition{}, false, fmt.Errorf("settings: application setting %s returned more than one row", key)
+	}
+	if err := rows.Err(); err != nil {
+		return domain.Definition{}, false, fmt.Errorf("settings: iterate application setting %s: %w", key, err)
+	}
+	return setting, true, nil
+}
+
+func scanApplicationSetting(rows interface{ Scan(...any) error }) (domain.Definition, error) {
+	var key string
+	var value []byte
+	var overridable bool
+	var minimum, maximum *float64
+	if err := rows.Scan(&key, &value, &overridable, &minimum, &maximum); err != nil {
+		return domain.Definition{}, err
+	}
+	typed := domain.Key(key)
+	return domain.Definition{
+		Key:             typed,
+		Value:           bytes.Clone(value),
+		UserOverridable: overridable,
+		Min:             minimum,
+		Max:             maximum,
+	}, nil
 }
 
 func loadUserSettings(ctx context.Context, tx db.Tx, userID int64) (map[domain.Key]json.RawMessage, error) {

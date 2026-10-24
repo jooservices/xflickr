@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -21,7 +22,8 @@ var (
 
 // Repository provides the atomic settings snapshot and persists changes.
 // Write methods publish domain.ChangedTopic in the same transaction as the
-// changed row.
+// changed row. SetUserOverride also validates the override against the
+// application definition inside that transaction.
 type Repository interface {
 	Load(context.Context, int64) (domain.Snapshot, error)
 	SetUserOverride(context.Context, int64, domain.Key, json.RawMessage) error
@@ -98,9 +100,16 @@ func (service *Service) Effective(ctx context.Context, userID int64) (domain.Eff
 	if err := ctx.Err(); err != nil {
 		return domain.Effective{}, err
 	}
-	effective, err := domain.Merge(snapshot)
+	effective, dropped, err := domain.Merge(snapshot)
 	if err != nil {
 		return domain.Effective{}, err
+	}
+	for _, drop := range dropped {
+		slog.WarnContext(ctx, "settings: dropped stale user override",
+			slog.Int64("user_id", userID),
+			slog.String("key", string(drop.Key)),
+			slog.String("reason", drop.Reason),
+		)
 	}
 
 	service.mu.Lock()
@@ -116,8 +125,10 @@ func (service *Service) Effective(ctx context.Context, userID int64) (domain.Eff
 	return effective, nil
 }
 
-// SetUser validates and persists one user override. Successful writes evict
-// the local user's cached effective settings immediately.
+// SetUser persists one user override. The repository checks the application
+// cap and writes the row in one serializable transaction, so a concurrent
+// cap change cannot land between the check and the upsert. Successful writes
+// evict the local user's cached effective settings immediately.
 func (service *Service) SetUser(ctx context.Context, userID int64, key domain.Key, value json.RawMessage) error {
 	if service == nil || service.repository == nil {
 		return ErrRepositoryRequired
@@ -128,24 +139,11 @@ func (service *Service) SetUser(ctx context.Context, userID int64, key domain.Ke
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	snapshot, err := service.repository.Load(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("settings: load application caps for %s: %w", key, err)
-	}
-	if _, known := domain.SchemaFor(key); !known {
-		return &domain.ValidationError{Key: key, Cause: "is not a registered setting key"}
-	}
-	setting, ok := snapshot.Settings[key]
-	if !ok {
-		return &domain.ValidationError{Key: key, Cause: "is not configured"}
-	}
-	if !setting.UserOverridable {
-		return &domain.ValidationError{Key: key, Cause: "is not user-overridable"}
-	}
-	if err := domain.ValidateValue(key, value, setting.Min, setting.Max); err != nil {
-		return err
-	}
 	if err := service.repository.SetUserOverride(ctx, userID, key, value); err != nil {
+		var validation *domain.ValidationError
+		if errors.As(err, &validation) {
+			return err
+		}
 		return fmt.Errorf("settings: persist user override %s for user %d: %w", key, userID, err)
 	}
 	service.evict(userID)
@@ -154,6 +152,8 @@ func (service *Service) SetUser(ctx context.Context, userID int64, key domain.Ke
 
 // SetApplicationSetting validates and persists an application default and its
 // caps. This operation is intended for an administrator-facing caller.
+// Existing user overrides that fall outside the new policy stay stored and
+// are ignored by Effective until they fit again.
 func (service *Service) SetApplicationSetting(ctx context.Context, setting domain.Definition) error {
 	if service == nil || service.repository == nil {
 		return ErrRepositoryRequired

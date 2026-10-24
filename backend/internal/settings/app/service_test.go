@@ -1,9 +1,11 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -435,8 +437,8 @@ func TestSetUserNamesTheKeyAndCapWhenRejectingAnOverride(t *testing.T) {
 				if _, err := service.Effective(t.Context(), 1); err != nil {
 					t.Fatalf("Effective() error = %v", err)
 				}
-				if repository.loadCount() != 2 {
-					t.Fatalf("loads = %d, want the initial read and the validation read", repository.loadCount())
+				if repository.loadCount() != 1 {
+					t.Fatalf("loads = %d, want the rejected override to leave the cached read in place", repository.loadCount())
 				}
 			}
 		})
@@ -447,7 +449,7 @@ func TestSetUserReportsDependencyFailures(t *testing.T) {
 	repository := &fakeRepository{snapshot: domain.DefaultSnapshot(), loadErr: errors.New("database unavailable")}
 	service, _ := newService(t, repository, MaxCacheAge)
 	err := service.SetUser(t.Context(), 1, domain.MaxDepth, json.RawMessage("3"))
-	if err == nil || !errors.Is(err, repository.loadErr) || !containsAll(err.Error(), "load application caps") {
+	if err == nil || !errors.Is(err, repository.loadErr) || !containsAll(err.Error(), "persist user override") {
 		t.Fatalf("SetUser() error = %v", err)
 	}
 
@@ -460,11 +462,11 @@ func TestSetUserReportsDependencyFailures(t *testing.T) {
 	if err == nil || !errors.Is(err, repository.saveUserErr) || !containsAll(err.Error(), "persist user override") {
 		t.Fatalf("SetUser() error = %v", err)
 	}
-	if repository.loadCount() != 3 {
+	if repository.loadCount() != 1 {
 		t.Fatalf("loads = %d, want the failed write to leave the cache in place", repository.loadCount())
 	}
 	cached, err := service.Effective(t.Context(), 1)
-	if err != nil || cached.MaxDepth != 2 || repository.loadCount() != 3 {
+	if err != nil || cached.MaxDepth != 2 || repository.loadCount() != 1 {
 		t.Fatalf("cached depth/loads/error = %d/%d/%v", cached.MaxDepth, repository.loadCount(), err)
 	}
 
@@ -573,6 +575,74 @@ func TestSetApplicationSettingRejectsInvalidDefinitions(t *testing.T) {
 	}
 }
 
+func TestEffectiveDropsStaleOverrides(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(domain.Snapshot)
+		key     domain.Key
+		raw     string
+		want    string
+		assert  func(*testing.T, domain.Effective)
+	}{
+		{
+			name: "cap tightened",
+			prepare: func(snapshot domain.Snapshot) {
+				setting := snapshot.Settings[domain.MaxDepth]
+				maximum := 3.0
+				setting.Max = &maximum
+				snapshot.Settings[domain.MaxDepth] = setting
+			},
+			key:  domain.MaxDepth,
+			raw:  "4",
+			want: "exceeds cap 3",
+			assert: func(t *testing.T, got domain.Effective) {
+				t.Helper()
+				if got.MaxDepth != 2 {
+					t.Fatalf("depth = %d, want the application default", got.MaxDepth)
+				}
+			},
+		},
+		{
+			name: "overridable flipped",
+			prepare: func(snapshot domain.Snapshot) {
+				setting := snapshot.Settings[domain.GroupPoolsEnabled]
+				setting.UserOverridable = false
+				snapshot.Settings[domain.GroupPoolsEnabled] = setting
+			},
+			key:  domain.GroupPoolsEnabled,
+			raw:  "true",
+			want: "not user-overridable",
+			assert: func(t *testing.T, got domain.Effective) {
+				t.Helper()
+				if got.GroupPoolsEnabled {
+					t.Fatal("group pools stayed enabled after overriding was turned off")
+				}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &fakeRepository{snapshot: domain.DefaultSnapshot()}
+			test.prepare(repository.snapshot)
+			repository.putOverride(9, test.key, json.RawMessage(test.raw))
+			var logs bytes.Buffer
+			previous := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+			t.Cleanup(func() { slog.SetDefault(previous) })
+
+			service, _ := newService(t, repository, MaxCacheAge)
+			got, err := service.Effective(t.Context(), 9)
+			if err != nil {
+				t.Fatalf("Effective() error = %v", err)
+			}
+			test.assert(t, got)
+			if !containsAll(logs.String(), "dropped stale user override", string(test.key), test.want, "user_id=9") {
+				t.Fatalf("log = %q", logs.String())
+			}
+		})
+	}
+}
+
 func newService(t *testing.T, repository *fakeRepository, age time.Duration) (*Service, *clock) {
 	t.Helper()
 	service := NewWithCacheAge(repository, age)
@@ -667,6 +737,13 @@ func (repository *fakeRepository) Load(_ context.Context, userID int64) (domain.
 func (repository *fakeRepository) SetUserOverride(_ context.Context, userID int64, key domain.Key, value json.RawMessage) error {
 	repository.mu.Lock()
 	defer repository.mu.Unlock()
+	if repository.loadErr != nil {
+		return repository.loadErr
+	}
+	setting, found := repository.snapshot.Settings[key]
+	if err := domain.CheckUserOverride(key, setting, found, value); err != nil {
+		return err
+	}
 	if repository.saveUserErr != nil {
 		return repository.saveUserErr
 	}

@@ -160,8 +160,113 @@ func TestUserOverridePersistsAndPublishesChange(t *testing.T) {
 		t.Fatalf("change = %+v", change)
 	}
 	write := database.txs[0]
-	if write.commits != 1 || len(write.statements) != 2 || !strings.Contains(write.statements[0], "INSERT INTO user_settings") || !strings.Contains(write.statements[1], "INSERT INTO outbox_events") {
+	if write.commits != 1 || len(write.statements) != 3 || !strings.Contains(write.statements[0], "FOR SHARE") || !strings.Contains(write.statements[1], "INSERT INTO user_settings") || !strings.Contains(write.statements[2], "INSERT INTO outbox_events") {
 		t.Fatalf("write statements = %+v", write)
+	}
+	if database.begins < 1 || database.options[0].IsoLevel != pgx.Serializable {
+		t.Fatalf("write isolation = %+v", database.options)
+	}
+}
+
+func TestUserOverrideValidatesAgainstTheLockedApplicationSetting(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(*memoryDB)
+		key     domain.Key
+		raw     string
+		want    string
+		wantCap string
+	}{
+		{
+			name: "above cap",
+			prepare: func(database *memoryDB) {
+				setting := database.settings[domain.MaxDepth]
+				maximum := 3.0
+				setting.Max = &maximum
+				database.settings[domain.MaxDepth] = setting
+			},
+			key:     domain.MaxDepth,
+			raw:     "4",
+			want:    "exceeds cap 3",
+			wantCap: "3",
+		},
+		{
+			name: "not overridable",
+			prepare: func(database *memoryDB) {
+				setting := database.settings[domain.GroupPoolsEnabled]
+				setting.UserOverridable = false
+				database.settings[domain.GroupPoolsEnabled] = setting
+			},
+			key:  domain.GroupPoolsEnabled,
+			raw:  "true",
+			want: "not user-overridable",
+		},
+		{name: "missing setting", prepare: func(database *memoryDB) { delete(database.settings, domain.Burst) }, key: domain.Burst, raw: "2", want: "is not configured"},
+		{name: "unknown key", key: "nope", raw: "1", want: "not a registered setting key"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			database := newMemoryDB(domain.Defaults())
+			if test.prepare != nil {
+				test.prepare(database)
+			}
+			repository, err := New(database)
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			err = repository.SetUserOverride(t.Context(), 7, test.key, json.RawMessage(test.raw))
+			var validation *domain.ValidationError
+			if !errors.As(err, &validation) || validation.Key != test.key || validation.Cap != test.wantCap || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("SetUserOverride() error = %v, want key %s cap %q and %q", err, test.key, test.wantCap, test.want)
+			}
+			if len(database.users[7]) != 0 || len(database.events) != 0 {
+				t.Fatalf("rejected override users/events = %v/%d", database.users[7], len(database.events))
+			}
+			if len(database.txs) != 1 || database.txs[0].commits != 0 || database.txs[0].rollbacks != 1 {
+				t.Fatalf("transaction = %+v", database.txs)
+			}
+			if len(database.txs[0].statements) != 1 || !strings.Contains(database.txs[0].statements[0], "FOR SHARE") {
+				t.Fatalf("statements = %v", database.txs[0].statements)
+			}
+		})
+	}
+}
+
+func TestUserOverrideReportsLockedReadErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(*memoryDB)
+		want    string
+	}{
+		{name: "query", prepare: func(database *memoryDB) { database.queryErr = "share" }, want: "load application setting"},
+		{name: "scan", prepare: func(database *memoryDB) { database.scanErr = "share" }, want: "read application setting"},
+		{name: "rows", prepare: func(database *memoryDB) { database.rowsErr = "share" }, want: "iterate application setting"},
+		{
+			name: "rows before data",
+			prepare: func(database *memoryDB) {
+				delete(database.settings, domain.MaxDepth)
+				database.rowsErr = "share"
+			},
+			want: "iterate application setting",
+		},
+		{name: "duplicate row", prepare: func(database *memoryDB) { database.shareCopies = 2 }, want: "more than one row"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			database := newMemoryDB(domain.Defaults())
+			test.prepare(database)
+			repository, err := New(database)
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			err = repository.SetUserOverride(t.Context(), 7, domain.MaxDepth, json.RawMessage("3"))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("SetUserOverride() error = %v, want %q", err, test.want)
+			}
+			if len(database.users[7]) != 0 || len(database.events) != 0 {
+				t.Fatalf("failed read users/events = %v/%d", database.users[7], len(database.events))
+			}
+		})
 	}
 }
 
@@ -249,19 +354,20 @@ func TestWriteRollsBackWhenSaveOrPublishFails(t *testing.T) {
 }
 
 type memoryDB struct {
-	settings  map[domain.Key]domain.Definition
-	users     map[int64]map[domain.Key]json.RawMessage
-	events    []recordedEvent
-	beginErr  error
-	queryErr  string
-	scanErr   string
-	rowsErr   string
-	failExec  int
-	execErr   error
-	commitErr error
-	begins    int
-	options   []pgx.TxOptions
-	txs       []*memoryTx
+	settings    map[domain.Key]domain.Definition
+	users       map[int64]map[domain.Key]json.RawMessage
+	events      []recordedEvent
+	beginErr    error
+	queryErr    string
+	scanErr     string
+	rowsErr     string
+	shareCopies int
+	failExec    int
+	execErr     error
+	commitErr   error
+	begins      int
+	options     []pgx.TxOptions
+	txs         []*memoryTx
 }
 
 type recordedEvent struct {
@@ -318,6 +424,18 @@ type userWrite struct {
 func (tx *memoryTx) Query(_ context.Context, sql string, args ...any) (pgx.Rows, error) {
 	tx.statements = append(tx.statements, sql)
 	switch {
+	case strings.Contains(sql, "FOR SHARE"):
+		if tx.database.queryErr == "share" {
+			return nil, errors.New("share query failed")
+		}
+		if len(args) != 1 {
+			return nil, errors.New("locked setting query requires the key")
+		}
+		key, ok := args[0].(string)
+		if !ok {
+			return nil, errors.New("locked setting key has the wrong type")
+		}
+		return tx.lockedSettingRows(domain.Key(key)), nil
 	case strings.Contains(sql, "FROM app_settings"):
 		if tx.database.queryErr == "app" {
 			return nil, errors.New("app query failed")
@@ -399,6 +517,33 @@ func (tx *memoryTx) stage(sql string, args []any) error {
 		return errors.New("unexpected settings exec")
 	}
 	return nil
+}
+
+func (tx *memoryTx) lockedSettingRows(key domain.Key) pgx.Rows {
+	setting, found := tx.database.settings[key]
+	copies := 0
+	if found {
+		copies = 1
+		if tx.database.shareCopies > 0 {
+			copies = tx.database.shareCopies
+		}
+	}
+	scans := make([]func(...any) error, 0, copies)
+	for range copies {
+		stored := setting
+		scans = append(scans, func(dest ...any) error {
+			if len(dest) != 5 {
+				return errors.New("application scan destination count")
+			}
+			*dest[0].(*string) = string(stored.Key)
+			*dest[1].(*[]byte) = stored.Value
+			*dest[2].(*bool) = stored.UserOverridable
+			*dest[3].(**float64) = cloneFloat(stored.Min)
+			*dest[4].(**float64) = cloneFloat(stored.Max)
+			return nil
+		})
+	}
+	return &memoryRows{scans: scans, scanErr: errFor("share", tx.database.scanErr), rowsErr: errFor("share", tx.database.rowsErr)}
 }
 
 func (tx *memoryTx) applicationRows() pgx.Rows {

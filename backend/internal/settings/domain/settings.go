@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"strconv"
 	"time"
 )
@@ -62,6 +63,14 @@ type Definition struct {
 type Snapshot struct {
 	Settings  map[Key]Definition
 	Overrides map[Key]json.RawMessage
+}
+
+// DroppedOverride is a stored user override that a read ignored. The override
+// no longer matches the application policy, so the application default is used
+// for that key. Writers still reject a new value that violates the policy.
+type DroppedOverride struct {
+	Key    Key
+	Reason string
 }
 
 const (
@@ -195,6 +204,22 @@ func ValidateDefinition(setting Definition) error {
 	return ValidateValue(setting.Key, setting.Value, setting.Min, setting.Max)
 }
 
+// CheckUserOverride validates a user override against the application
+// definition loaded for the write. found is false when that key has no
+// application row. The key and the violated cap are named on failure.
+func CheckUserOverride(key Key, setting Definition, found bool, raw json.RawMessage) error {
+	if _, known := SchemaFor(key); !known {
+		return &ValidationError{Key: key, Cause: "is not a registered setting key"}
+	}
+	if !found || setting.Key != key {
+		return &ValidationError{Key: key, Cause: "is not configured"}
+	}
+	if !setting.UserOverridable {
+		return &ValidationError{Key: key, Cause: "is not user-overridable"}
+	}
+	return ValidateValue(key, raw, setting.Min, setting.Max)
+}
+
 // ValidateValue checks a JSON value against its key's schema and optional
 // application-level minimum and maximum caps. Application caps are reported
 // before schema caps so the admin cap is the one named when both apply.
@@ -299,27 +324,27 @@ func integralToken(number json.Number) bool {
 	return true
 }
 
-// Merge validates and combines the application defaults and user overrides.
-func Merge(snapshot Snapshot) (Effective, error) {
+// Merge combines application defaults with one user's overrides.
+// An override is dropped and reported when overriding was turned off, or when
+// the stored value is outside the current cap or schema. The application
+// default is used for that key. This keeps a read working after an
+// administrator tightens a cap while older rows remain. A write still rejects
+// those values through CheckUserOverride.
+func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
 	if len(snapshot.Settings) != len(schemas) {
-		return Effective{}, fmt.Errorf("settings: got %d application settings, want %d", len(snapshot.Settings), len(schemas))
+		return Effective{}, nil, fmt.Errorf("settings: got %d application settings, want %d", len(snapshot.Settings), len(schemas))
 	}
 	for key, setting := range snapshot.Settings {
 		if setting.Key != key {
-			return Effective{}, fmt.Errorf("settings: application setting map key %q does not match row key %q", key, setting.Key)
+			return Effective{}, nil, fmt.Errorf("settings: application setting map key %q does not match row key %q", key, setting.Key)
 		}
 		if err := ValidateDefinition(setting); err != nil {
-			return Effective{}, err
+			return Effective{}, nil, err
 		}
 	}
 	for key := range schemas {
 		if _, ok := snapshot.Settings[key]; !ok {
-			return Effective{}, fmt.Errorf("settings: missing application setting %q", key)
-		}
-	}
-	for key := range snapshot.Overrides {
-		if _, ok := schemas[key]; !ok {
-			return Effective{}, &ValidationError{Key: key, Cause: "is not a registered setting key"}
+			return Effective{}, nil, fmt.Errorf("settings: missing application setting %q", key)
 		}
 	}
 
@@ -327,56 +352,76 @@ func Merge(snapshot Snapshot) (Effective, error) {
 	for key, setting := range snapshot.Settings {
 		values[key] = setting.Value
 	}
-	for key, override := range snapshot.Overrides {
+	overrideKeys := make([]Key, 0, len(snapshot.Overrides))
+	for key := range snapshot.Overrides {
+		overrideKeys = append(overrideKeys, key)
+	}
+	slices.Sort(overrideKeys)
+
+	var dropped []DroppedOverride
+	for _, key := range overrideKeys {
+		if _, ok := schemas[key]; !ok {
+			return Effective{}, nil, &ValidationError{Key: key, Cause: "is not a registered setting key"}
+		}
 		setting := snapshot.Settings[key]
 		if !setting.UserOverridable {
-			return Effective{}, &ValidationError{Key: key, Cause: "is not user-overridable"}
+			dropped = append(dropped, DroppedOverride{Key: key, Reason: "is not user-overridable"})
+			continue
 		}
-		if err := ValidateValue(key, override, setting.Min, setting.Max); err != nil {
-			return Effective{}, err
+		if err := ValidateValue(key, snapshot.Overrides[key], setting.Min, setting.Max); err != nil {
+			dropped = append(dropped, DroppedOverride{Key: key, Reason: dropReason(err)})
+			continue
 		}
-		values[key] = override
+		values[key] = snapshot.Overrides[key]
 	}
 
 	var result Effective
 	var err error
 	if result.MaxDepth, err = integer(values[MaxDepth]); err != nil {
-		return Effective{}, invalidStored(MaxDepth, err)
+		return Effective{}, nil, invalidStored(MaxDepth, err)
 	}
 	if result.ChangeCheckInterval, err = duration(values[ChangeCheckInterval]); err != nil {
-		return Effective{}, invalidStored(ChangeCheckInterval, err)
+		return Effective{}, nil, invalidStored(ChangeCheckInterval, err)
 	}
 	if result.DailyCallLimit, err = integer64(values[DailyCallLimit]); err != nil {
-		return Effective{}, invalidStored(DailyCallLimit, err)
+		return Effective{}, nil, invalidStored(DailyCallLimit, err)
 	}
 	if result.QuotaReserve, err = integer64(values[QuotaReserve]); err != nil {
-		return Effective{}, invalidStored(QuotaReserve, err)
+		return Effective{}, nil, invalidStored(QuotaReserve, err)
 	}
 	if result.PerSecondRate, err = integer(values[PerSecondRate]); err != nil {
-		return Effective{}, invalidStored(PerSecondRate, err)
+		return Effective{}, nil, invalidStored(PerSecondRate, err)
 	}
 	if result.Burst, err = integer(values[Burst]); err != nil {
-		return Effective{}, invalidStored(Burst, err)
+		return Effective{}, nil, invalidStored(Burst, err)
 	}
 	if result.PersonLaneShare, err = decimal(values[PersonLaneShare]); err != nil {
-		return Effective{}, invalidStored(PersonLaneShare, err)
+		return Effective{}, nil, invalidStored(PersonLaneShare, err)
 	}
 	if result.ZipTTL, err = duration(values[ZipTTL]); err != nil {
-		return Effective{}, invalidStored(ZipTTL, err)
+		return Effective{}, nil, invalidStored(ZipTTL, err)
 	}
 	if result.RetryMax, err = integer(values[RetryMax]); err != nil {
-		return Effective{}, invalidStored(RetryMax, err)
+		return Effective{}, nil, invalidStored(RetryMax, err)
 	}
 	if result.RetryBackoff, err = duration(values[RetryBackoff]); err != nil {
-		return Effective{}, invalidStored(RetryBackoff, err)
+		return Effective{}, nil, invalidStored(RetryBackoff, err)
 	}
 	if result.NodeCooldown, err = duration(values[NodeCooldown]); err != nil {
-		return Effective{}, invalidStored(NodeCooldown, err)
+		return Effective{}, nil, invalidStored(NodeCooldown, err)
 	}
 	if result.GroupPoolsEnabled, err = boolean(values[GroupPoolsEnabled]); err != nil {
-		return Effective{}, invalidStored(GroupPoolsEnabled, err)
+		return Effective{}, nil, invalidStored(GroupPoolsEnabled, err)
 	}
-	return result, nil
+	return result, dropped, nil
+}
+
+func dropReason(err error) string {
+	var validation *ValidationError
+	if errors.As(err, &validation) && validation.Cause != "" {
+		return validation.Cause
+	}
+	return err.Error()
 }
 
 func decodeJSON(raw []byte) (any, error) {

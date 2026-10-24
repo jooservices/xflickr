@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jooservices/xflickr/internal/platform/config"
@@ -29,7 +30,7 @@ const (
 
 func TestSettingsTablesSeedPersistenceAndChangeEvent(t *testing.T) {
 	pool := integrationPool(t)
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
 
 	deleteUsers(t, pool)
@@ -134,11 +135,20 @@ func TestSettingsTablesSeedPersistenceAndChangeEvent(t *testing.T) {
 		repository := newRepository(t, pool)
 		before := eventCount(t, pool, startID)
 		err := repository.SetUserOverride(ctx, integrationUserB, domain.MaxDepth, json.RawMessage("not-json"))
+		var validation *domain.ValidationError
+		if !errors.As(err, &validation) || validation.Key != domain.MaxDepth || !containsAll(err.Error(), "valid JSON") {
+			t.Fatalf("invalid JSON error = %v, want a validation error", err)
+		}
+		_, err = pool.Exec(ctx, `INSERT INTO user_settings (user_id, key, value) VALUES ($1, 'max_depth', 'not-json'::jsonb)`, integrationUserB)
 		var pgErr *pgconn.PgError
 		if !errors.As(err, &pgErr) || pgErr.Code != "22P02" {
 			t.Fatalf("invalid JSON error = %v, want SQLSTATE 22P02", err)
 		}
 		err = repository.SetUserOverride(ctx, integrationUserB, "not_a_setting", json.RawMessage("1"))
+		if !errors.As(err, &validation) || validation.Key != "not_a_setting" || !containsAll(err.Error(), "not a registered setting key") {
+			t.Fatalf("unknown key error = %v, want a validation error", err)
+		}
+		_, err = pool.Exec(ctx, `INSERT INTO user_settings (user_id, key, value) VALUES ($1, 'not_a_setting', '1'::jsonb)`, integrationUserB)
 		if !errors.As(err, &pgErr) || pgErr.Code != "23503" {
 			t.Fatalf("unknown key error = %v, want SQLSTATE 23503", err)
 		}
@@ -224,6 +234,116 @@ func TestSettingsTablesSeedPersistenceAndChangeEvent(t *testing.T) {
 			t.Fatalf("locked override rows = %d", rows)
 		}
 	})
+
+	t.Run("stale override after a tighter cap", func(t *testing.T) {
+		repository := newRepository(t, pool)
+		service := app.New(repository)
+		if err := service.SetUser(ctx, integrationUserA, domain.MaxDepth, json.RawMessage("4")); err != nil {
+			t.Fatalf("SetUser(4) error = %v", err)
+		}
+		loaded, err := repository.Load(ctx, integrationUserA)
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		setting := loaded.Settings[domain.MaxDepth]
+		maximum := 3.0
+		setting.Max = &maximum
+		setting.Value = json.RawMessage("2")
+		if err := service.SetApplicationSetting(ctx, setting); err != nil {
+			t.Fatalf("SetApplicationSetting() error = %v", err)
+		}
+		t.Cleanup(func() { restoreApplicationSettings(t, pool) })
+
+		assertUserValue(t, pool, integrationUserA, domain.MaxDepth, "4")
+		got, err := app.New(repository).Effective(ctx, integrationUserA)
+		if err != nil {
+			t.Fatalf("Effective() error = %v, want the application default for a stale override", err)
+		}
+		if got.MaxDepth != 2 {
+			t.Fatalf("depth = %d, want the application default after the cap dropped below the override", got.MaxDepth)
+		}
+		err = service.SetUser(ctx, integrationUserA, domain.MaxDepth, json.RawMessage("4"))
+		var validation *domain.ValidationError
+		if !errors.As(err, &validation) || validation.Key != domain.MaxDepth || validation.Cap != "3" {
+			t.Fatalf("SetUser() error = %v, want max_depth cap 3", err)
+		}
+		assertUserValue(t, pool, integrationUserA, domain.MaxDepth, "4")
+	})
+
+	t.Run("concurrent cap change cannot persist an override outside the cap", func(t *testing.T) {
+		restoreApplicationSettings(t, pool)
+		repository := newRepository(t, pool)
+		service := app.New(repository)
+		lockCtx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
+		defer cancel()
+
+		conn, err := pgx.ConnectConfig(lockCtx, pool.Config().ConnConfig.Copy())
+		if err != nil {
+			t.Fatalf("open lock connection: %v", err)
+		}
+		defer conn.Close(context.Background())
+		tx, err := conn.Begin(lockCtx)
+		if err != nil {
+			t.Fatalf("begin lock: %v", err)
+		}
+		defer tx.Rollback(lockCtx)
+		if _, err := tx.Exec(lockCtx, `SELECT key FROM app_settings WHERE key = $1 FOR UPDATE`, string(domain.MaxDepth)); err != nil {
+			t.Fatalf("lock max_depth: %v", err)
+		}
+
+		done := make(chan error, 1)
+		go func() {
+			done <- service.SetUser(lockCtx, integrationUserB, domain.MaxDepth, json.RawMessage("4"))
+		}()
+		if !waitForAppSettingLock(t, pool) {
+			cancel()
+			<-done
+			t.Fatal("user override write did not wait on the application setting row")
+		}
+		if _, err := tx.Exec(lockCtx, `UPDATE app_settings SET value = '2'::jsonb, max = 3 WHERE key = $1`, string(domain.MaxDepth)); err != nil {
+			t.Fatalf("tighten cap: %v", err)
+		}
+		if err := tx.Commit(lockCtx); err != nil {
+			t.Fatalf("commit cap: %v", err)
+		}
+
+		err = <-done
+		var validation *domain.ValidationError
+		if !errors.As(err, &validation) || validation.Key != domain.MaxDepth || validation.Cap != "3" {
+			t.Fatalf("SetUser() error = %v, want max_depth cap 3", err)
+		}
+		assertUserRows(t, pool, integrationUserB, 0)
+		restoreApplicationSettings(t, pool)
+	})
+}
+
+func waitForAppSettingLock(t *testing.T, pool *pgxpool.Pool) bool {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		var waiting int
+		err := pool.QueryRow(t.Context(), `
+			SELECT count(*) FROM (
+				SELECT l.pid
+				FROM pg_locks l
+				WHERE l.relation = 'public.app_settings'::regclass
+				  AND NOT l.granted
+				UNION
+				SELECT a.pid
+				FROM pg_stat_activity a
+				WHERE a.wait_event_type = 'Lock'
+				  AND a.query LIKE '%FOR SHARE%'
+				  AND a.pid <> pg_backend_pid()
+			) waits`).Scan(&waiting)
+		if err != nil {
+			t.Fatalf("read lock waits: %v", err)
+		}
+		if waiting > 0 {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
 }
 
 func integrationPool(t *testing.T) *pgxpool.Pool {
