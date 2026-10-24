@@ -3,8 +3,10 @@ package http
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,7 +21,7 @@ type repo struct {
 	err  error
 }
 
-func (r repo) Register(_ context.Context, u domain.User) (domain.User, error) {
+func (r repo) Register(_ context.Context, u domain.User, _ bool) (domain.User, error) {
 	if r.err != nil {
 		return domain.User{}, r.err
 	}
@@ -36,13 +38,17 @@ type rateLimit struct {
 	err     error
 }
 
+type openRegistration bool
+
+func (p openRegistration) RegistrationOpen(context.Context) (bool, error) { return bool(p), nil }
+
 func (r rateLimit) Allow(context.Context, string, string) (bool, error) { return r.allowed, r.err }
 
 func TestRegisterResponses(t *testing.T) {
 	params := domain.Argon2Params{Memory: 32 * 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
-	good := Handler{RegisterUseCase: app.Register{Repository: repo{}, Params: params}}
+	good := Handler{RegisterUseCase: app.Register{Repository: repo{}, Policy: openRegistration(true), Params: params}}
 	email := openapi_types.Email("user@example.com")
-	password := "secret"
+	password := "secret12"
 	for _, tc := range []struct {
 		name string
 		body *gen.RegisterJSONRequestBody
@@ -75,8 +81,9 @@ func TestRegisterResponses(t *testing.T) {
 
 func TestLoginResponses(t *testing.T) {
 	params := domain.Argon2Params{Memory: 32 * 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
-	hash, _ := domain.HashPassword("secret", params)
-	password := "secret"
+	hash, _ := domain.HashPassword("secret12", params)
+	dummy, _ := domain.HashPassword("dummy12", params)
+	password := "secret12"
 	request := gen.LoginRequestObject{Body: &gen.AuthRequest{Email: openapi_types.Email("u@example.com"), Password: &password}}
 	for _, tc := range []struct {
 		name    string
@@ -84,12 +91,18 @@ func TestLoginResponses(t *testing.T) {
 		limiter rateLimit
 		body    *gen.LoginJSONRequestBody
 		want    string
-	}{{"success", repo{user: domain.User{ID: 1, PasswordHash: hash, CreatedAt: time.Now()}}, rateLimit{allowed: true}, request.Body, "ok"}, {"bad password", repo{user: domain.User{PasswordHash: hash}}, rateLimit{allowed: true}, func() *gen.AuthRequest { p := "bad"; return &gen.AuthRequest{Password: &p} }(), "unauthorized"}, {"missing body", repo{}, rateLimit{}, nil, "unauthorized"}, {"limited", repo{}, rateLimit{allowed: false}, request.Body, "limited"}, {"limiter error", repo{}, rateLimit{err: errors.New("redis")}, request.Body, "unauthorized"}} {
-		h := Handler{LoginUseCase: app.Login{Repository: tc.repo, Limiter: tc.limiter}}
+	}{{"success", repo{user: domain.User{ID: 1, PasswordHash: hash, CreatedAt: time.Now()}}, rateLimit{allowed: true}, request.Body, "ok"}, {"bad password", repo{user: domain.User{PasswordHash: hash}}, rateLimit{allowed: true}, func() *gen.AuthRequest { p := "badpass1"; return &gen.AuthRequest{Password: &p} }(), "unauthorized"}, {"missing body", repo{}, rateLimit{}, nil, "unauthorized"}, {"limited", repo{}, rateLimit{allowed: false}, request.Body, "limited"}, {"limiter error", repo{}, rateLimit{err: errors.New("redis")}, request.Body, "error"}} {
+		h := Handler{LoginUseCase: app.Login{Repository: tc.repo, Limiter: tc.limiter, DummyPasswordHash: dummy}}
 		req := request
 		req.Body = tc.body
 		ctx := WithRemoteAddress(context.Background(), "127.0.0.1:1234")
 		got, err := h.Login(ctx, req)
+		if tc.want == "error" {
+			if err == nil {
+				t.Fatal("expected infrastructure error")
+			}
+			continue
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -135,4 +148,21 @@ func TestLogoutGetMeHealthAndMiddleware(t *testing.T) {
 		return nil, nil
 	}, "test")
 	_, _ = wrapped(context.Background(), httptest.NewRecorder(), request, nil)
+}
+
+func TestRequestBodyLimitRejectsOversizedBodyBeforeDecode(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(strings.Repeat("x", 16*1024+1)))
+	response := httptest.NewRecorder()
+	handler := RequestBodyLimit(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized body status = %d, want %d", response.Code, http.StatusRequestEntityTooLarge)
+	}
 }

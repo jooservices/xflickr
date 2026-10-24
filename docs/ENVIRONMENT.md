@@ -26,3 +26,19 @@ Connection values come from `scripts/docker/shared env-project xflickr --mode li
 8. Deployment to the owner's other servers is out of scope.
 9. Toolchains (Go, Node) are not installed on the WSL host; they run in the shared containers through `/home/joos/Workspaces/scripts/docker/runtime go go ...` and `... runtime node npm ...` (the first word selects the container, the rest is the command) (run it from inside the repository or worktree). Every helper in `docker/scripts/` must call `docker/scripts/run.sh <tool> <args>`, which uses that wrapper when the environment variable `WORKSPACES_RUNTIME` points to it and the native tool otherwise (GitHub Actions). `make check` must therefore work in both places.
 10. Work is done in a git worktree per ticket with its own database `xflickr_wt<id>` (the generated `.env` names it). Only a passing ticket is merged into `develop`.
+
+## Password hashing
+
+The API uses Argon2id for account passwords. The hash cost is configurable with
+these environment variables (defaults are also listed in `.env.example`):
+
+| Variable | Default | Meaning |
+|---|---:|---|
+| `ARGON2ID_MEMORY` | `65536` | Memory in KiB (64 MiB). |
+| `ARGON2ID_ITERATIONS` | `3` | Number of Argon2id passes. |
+| `ARGON2ID_PARALLELISM` | `2` | Number of lanes/threads. |
+| `ARGON2ID_SALT_LENGTH` | `16` | Random salt length in bytes. |
+| `ARGON2ID_KEY_LENGTH` | `32` | Derived hash length in bytes. |
+
+Keep these values consistent across API instances. Increasing them raises the
+CPU or memory cost of registration and login.

@@ -29,6 +29,7 @@ const (
 	RetryBackoff        Key = "retry_backoff"
 	NodeCooldown        Key = "node_cooldown"
 	GroupPoolsEnabled   Key = "group_pools_enabled"
+	RegistrationOpen    Key = "registration_open"
 )
 
 // Effective contains the merged, validated settings for one user. Durations
@@ -140,6 +141,7 @@ var schemas = map[Key]JSONSchema{
 	RetryBackoff:        {Type: "integer", Minimum: minZero, Maximum: maxDuration},
 	NodeCooldown:        {Type: "integer", Minimum: minZero, Maximum: maxDuration},
 	GroupPoolsEnabled:   {Type: "boolean"},
+	RegistrationOpen:    {Type: "boolean"},
 }
 
 // SchemaFor returns the JSON schema associated with a typed key.
@@ -163,6 +165,7 @@ func Keys() []Key {
 		RetryBackoff,
 		NodeCooldown,
 		GroupPoolsEnabled,
+		RegistrationOpen,
 	}
 }
 
@@ -181,6 +184,7 @@ func Defaults() []Definition {
 		{Key: RetryBackoff, Value: json.RawMessage("30"), UserOverridable: true},
 		{Key: NodeCooldown, Value: json.RawMessage("2700"), UserOverridable: true},
 		{Key: GroupPoolsEnabled, Value: json.RawMessage("false"), UserOverridable: true},
+		{Key: RegistrationOpen, Value: json.RawMessage("false"), UserOverridable: false},
 	}
 }
 

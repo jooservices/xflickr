@@ -21,6 +21,30 @@ func TestMaxCacheAgeIsThirtySeconds(t *testing.T) {
 	}
 }
 
+func TestRegistrationOpenReadsApplicationSetting(t *testing.T) {
+	snapshot := domain.DefaultSnapshot()
+	snapshot.Settings[domain.RegistrationOpen] = domain.Definition{Key: domain.RegistrationOpen, Value: json.RawMessage("true")}
+	repository := &fakeRepository{snapshot: snapshot}
+	open, err := New(repository).RegistrationOpen(t.Context())
+	if err != nil || !open {
+		t.Fatalf("RegistrationOpen() = %v, %v", open, err)
+	}
+	if repository.loadCount() != 1 {
+		t.Fatalf("settings loads = %d, want 1", repository.loadCount())
+	}
+}
+
+func TestRegistrationOpenRejectsMissingOrInvalidSetting(t *testing.T) {
+	for _, snapshot := range []domain.Snapshot{
+		{Settings: map[domain.Key]domain.Definition{}},
+		{Settings: map[domain.Key]domain.Definition{domain.RegistrationOpen: {Key: domain.RegistrationOpen, Value: json.RawMessage(`"yes"`)}}},
+	} {
+		if _, err := New(&fakeRepository{snapshot: snapshot}).RegistrationOpen(t.Context()); err == nil {
+			t.Fatal("RegistrationOpen() succeeded with invalid configuration")
+		}
+	}
+}
+
 func TestNewWithCacheAgeClampsToThirtySeconds(t *testing.T) {
 	repository := &fakeRepository{snapshot: domain.DefaultSnapshot()}
 	tests := []struct {

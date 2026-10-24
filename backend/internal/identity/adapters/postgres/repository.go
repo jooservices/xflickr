@@ -16,7 +16,7 @@ type Repository struct{ pool *pgxpool.Pool }
 
 func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
-func (repo *Repository) Register(ctx context.Context, user domain.User) (domain.User, error) {
+func (repo *Repository) Register(ctx context.Context, user domain.User, registrationOpen bool) (domain.User, error) {
 	tx, err := repo.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return domain.User{}, err
@@ -30,11 +30,7 @@ func (repo *Repository) Register(ctx context.Context, user domain.User) (domain.
 		return domain.User{}, err
 	}
 	if count > 0 {
-		var open bool
-		if err = tx.QueryRow(ctx, `SELECT value FROM auth_settings WHERE key='registration_open'`).Scan(&open); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return domain.User{}, err
-		}
-		if !open {
+		if !registrationOpen {
 			return domain.User{}, app.ErrRegistrationClosed
 		}
 		user.Role = domain.RoleUser
@@ -60,6 +56,9 @@ func (repo *Repository) FindByEmail(ctx context.Context, email string) (domain.U
 	var disabledAt *string
 	err := repo.pool.QueryRow(ctx, `SELECT id,email,password_hash,role,locale,created_at,disabled_at::text FROM users WHERE email=$1`, email).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Role, &user.Locale, &user.CreatedAt, &disabledAt)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.User{}, app.ErrUserNotFound
+		}
 		return domain.User{}, err
 	}
 	user.Disabled = disabledAt != nil

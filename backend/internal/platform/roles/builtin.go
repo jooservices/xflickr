@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identitypostgres "github.com/jooservices/xflickr/internal/identity/adapters/postgres"
 	identityredis "github.com/jooservices/xflickr/internal/identity/adapters/redis"
@@ -17,6 +18,8 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db"
 	"github.com/jooservices/xflickr/internal/platform/httpx"
+	settingspostgres "github.com/jooservices/xflickr/internal/settings/adapters/postgres"
+	settingsapp "github.com/jooservices/xflickr/internal/settings/app"
 	redisv9 "github.com/redis/go-redis/v9"
 )
 
@@ -86,12 +89,34 @@ func (r APIRole) Run(ctx context.Context) error {
 	defer pool.Close()
 	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	defer redisClient.Close()
-	users := identitypostgres.New(pool)
-	params := domain.Argon2Params{Memory: cfg.Identity.Argon2Memory, Iterations: cfg.Identity.Argon2Iterations, Parallelism: cfg.Identity.Argon2Parallelism, SaltLength: cfg.Identity.Argon2SaltLength, KeyLength: cfg.Identity.Argon2KeyLength}
-	identity := identityhttp.Handler{RegisterUseCase: identityapp.Register{Repository: users, Params: params}, LoginUseCase: identityapp.Login{Repository: users, Limiter: identityredis.Limiter{Client: redisClient, Prefix: cfg.Redis.Prefix}}, Users: users, Version: r.version}
+	identity, err := buildIdentityHandler(pool, redisClient, cfg, r.version)
+	if err != nil {
+		return err
+	}
 	router := chi.NewRouter()
+	router.Use(identityhttp.RequestBodyLimit)
 	serverHandler := gen.HandlerFromMux(gen.NewStrictHandler(identity, []gen.StrictMiddlewareFunc{identityhttp.Middleware}), router)
 	return r.runServer(ctx, serverHandler)
+}
+
+func buildIdentityHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, version string) (identityhttp.Handler, error) {
+	users := identitypostgres.New(pool)
+	params := domain.Argon2Params{Memory: cfg.Identity.Argon2Memory, Iterations: cfg.Identity.Argon2Iterations, Parallelism: cfg.Identity.Argon2Parallelism, SaltLength: cfg.Identity.Argon2SaltLength, KeyLength: cfg.Identity.Argon2KeyLength}
+	dummyHash, err := domain.HashPassword("xflickr-invalid-login-dummy", params)
+	if err != nil {
+		return identityhttp.Handler{}, err
+	}
+	settingsRepository, err := settingspostgres.New(pool)
+	if err != nil {
+		return identityhttp.Handler{}, err
+	}
+	settings := settingsapp.New(settingsRepository)
+	return identityhttp.Handler{
+		RegisterUseCase: identityapp.Register{Repository: users, Policy: settings, Params: params},
+		LoginUseCase:    identityapp.Login{Repository: users, Limiter: identityredis.Limiter{Client: redisClient, Prefix: cfg.Redis.Prefix}, DummyPasswordHash: dummyHash},
+		Users:           users,
+		Version:         version,
+	}, nil
 }
 
 func (r APIRole) runServer(ctx context.Context, handler http.Handler) error {

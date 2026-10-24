@@ -7,7 +7,11 @@
  */
 
 export interface AuthRequest {
+  /** @maxLength 254 */
   email: string;
-  /** @minLength 1 */
+  /**
+   * @minLength 8
+   * @maxLength 128
+   */
   password: string;
 }

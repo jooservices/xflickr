@@ -9,7 +9,78 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	identityredis "github.com/jooservices/xflickr/internal/identity/adapters/redis"
+	"github.com/jooservices/xflickr/internal/identity/domain"
+	"github.com/jooservices/xflickr/internal/platform/config"
+	redisv9 "github.com/redis/go-redis/v9"
 )
+
+func TestBuildIdentityHandlerWiresSettingsAndDummyHash(t *testing.T) {
+	client := redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:1"})
+	defer client.Close()
+	cfg := config.Config{Identity: config.IdentityConfig{Argon2Memory: 32 * 1024, Argon2Iterations: 1, Argon2Parallelism: 1, Argon2SaltLength: 16, Argon2KeyLength: 32}, Redis: config.RedisConfig{Prefix: "test:"}}
+	handler, err := buildIdentityHandler(&pgxpool.Pool{}, client, cfg, "test-version")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if handler.RegisterUseCase.Policy == nil || handler.Users == nil || handler.Version != "test-version" {
+		t.Fatalf("handler wiring is incomplete: %#v", handler)
+	}
+	if handler.LoginUseCase.DummyPasswordHash == "" || !domain.VerifyPassword(handler.LoginUseCase.DummyPasswordHash, "xflickr-invalid-login-dummy") {
+		t.Fatal("login dummy hash is missing or invalid")
+	}
+	limiter, ok := handler.LoginUseCase.Limiter.(identityredis.Limiter)
+	if !ok || limiter.Prefix != "test:" {
+		t.Fatal("login limiter is not configured with the Redis prefix")
+	}
+}
+
+func TestBuildIdentityHandlerRejectsInvalidArgonConfiguration(t *testing.T) {
+	cfg := config.Config{Identity: config.IdentityConfig{Argon2Parallelism: 1}}
+	if _, err := buildIdentityHandler(&pgxpool.Pool{}, redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:1"}), cfg, "test"); err == nil {
+		t.Fatal("buildIdentityHandler() succeeded with invalid Argon2 configuration")
+	}
+}
+
+func TestConfiguredAPIRoleReturnsDatabaseConnectionError(t *testing.T) {
+	for key, value := range map[string]string{
+		"DB_HOST":                   "127.0.0.1",
+		"DB_PORT":                   "1",
+		"DB_NAME":                   "xflickr_test",
+		"DB_USER":                   "postgres",
+		"DB_PASSWORD":               "",
+		"REDIS_PREFIX":              "roles_test:",
+		"OPENSEARCH_INDEX_PREFIX":   "roles_test_",
+		"NODE_ID":                   "roles-test",
+		"XFLICKR_MASTER_KEYS":       "active:YmFzZTY0",
+		"XFLICKR_MASTER_KEY_ACTIVE": "active",
+	} {
+		t.Setenv(key, value)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := newConfiguredAPIRole(":0", "test").Run(ctx); err == nil {
+		t.Fatal("configured API role started without a database")
+	}
+}
+
+func TestRegisterBuiltinPanicsOnInvalidRole(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("registerBuiltin() did not panic for an invalid role")
+		}
+	}()
+	registerBuiltin(NewRegistry(), testRole{})
+}
+
+func TestConfiguredAPIRoleReturnsConfigurationError(t *testing.T) {
+	t.Setenv("DB_HOST", "")
+	if err := newConfiguredAPIRole(":0", "test").Run(context.Background()); err == nil {
+		t.Fatal("configured API role started with missing database configuration")
+	}
+}
 
 type testRole struct {
 	name string

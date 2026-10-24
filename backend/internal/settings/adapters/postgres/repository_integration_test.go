@@ -496,13 +496,15 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		"retry_backoff":         {value: "30"},
 		"node_cooldown":         {value: "2700"},
 		"group_pools_enabled":   {value: "false"},
+		"registration_open":     {value: "false"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("seeded settings = %d, want %d", len(got), len(want))
 	}
 	for key, expected := range want {
 		item, ok := got[key]
-		if !ok || !item.overridable || !jsonEqual(item.value, expected.value) || !floatPtrEqual(item.minimum, expected.min) || !floatPtrEqual(item.maximum, expected.max) {
+		wantOverridable := key != "registration_open"
+		if !ok || item.overridable != wantOverridable || !jsonEqual(item.value, expected.value) || !floatPtrEqual(item.minimum, expected.min) || !floatPtrEqual(item.maximum, expected.max) {
 			t.Fatalf("seed %s = value %s overridable %v min %v max %v", key, item.value, item.overridable, item.minimum, item.maximum)
 		}
 	}

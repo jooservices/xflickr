@@ -6,9 +6,11 @@ AuthRequest:
     email:
       type: string
       format: email
+      maxLength: 254
     password:
       type: string
-      minLength: 1
+      minLength: 8
+      maxLength: 128
       writeOnly: true
 User:
   type: object

@@ -125,6 +125,31 @@ func (service *Service) Effective(ctx context.Context, userID int64) (domain.Eff
 	return effective, nil
 }
 
+// RegistrationOpen reads the application registration policy through the
+// settings repository. Identity consumes this narrow application port rather
+// than querying the settings tables directly.
+func (service *Service) RegistrationOpen(ctx context.Context) (bool, error) {
+	if service == nil || service.repository == nil {
+		return false, ErrRepositoryRequired
+	}
+	if ctx == nil {
+		return false, ErrContextRequired
+	}
+	snapshot, err := service.repository.Load(ctx, 0)
+	if err != nil {
+		return false, fmt.Errorf("settings: load registration policy: %w", err)
+	}
+	setting, found := snapshot.Settings[domain.RegistrationOpen]
+	if !found {
+		return false, fmt.Errorf("settings: %s is not configured", domain.RegistrationOpen)
+	}
+	var open bool
+	if err := json.Unmarshal(setting.Value, &open); err != nil {
+		return false, fmt.Errorf("settings: decode %s: %w", domain.RegistrationOpen, err)
+	}
+	return open, nil
+}
+
 // SetUser persists one user override. The repository checks the application
 // cap and writes the row in one serializable transaction, so a concurrent
 // cap change cannot land between the check and the upsert. Successful writes

@@ -59,8 +59,11 @@ func (h Handler) Login(ctx context.Context, request gen.LoginRequestObject) (gen
 	if errors.Is(err, app.ErrRateLimited) {
 		return gen.Login429Response{}, nil
 	}
-	if err != nil {
+	if errors.Is(err, app.ErrInvalidCredentials) {
 		return gen.Login401Response{}, nil
+	}
+	if err != nil {
+		return nil, err
 	}
 	return gen.Login200JSONResponse(apiUser(u)), nil
 }
@@ -97,6 +100,15 @@ func Middleware(next gen.StrictHandlerFunc, operationID string) gen.StrictHandle
 		ctx = WithRemoteAddress(ctx, r.RemoteAddr)
 		return next(ctx, w, r, request)
 	}
+}
+
+// RequestBodyLimit caps JSON request bodies before the generated handler
+// decodes them, preventing oversized credentials from reaching Argon2.
+func RequestBodyLimit(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
+		next.ServeHTTP(w, r)
+	})
 }
 
 func apiUser(u domain.User) gen.User {
