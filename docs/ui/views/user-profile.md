@@ -16,13 +16,11 @@ JOOXF-166. Parent: JOOXF-64.
 Let a signed-in user see and change their own details, keep their sign-in safe
 (change the password, manage passkeys, end sessions on other devices), manage
 which Flickr accounts are connected, and leave or delete the account. It owns no
-photo data. `/accounts` and `/sessions` (catalogue) are full-page deep links to
-the Flickr accounts and Sessions cards of this view: they scroll to the card
-and focus its heading (no separate screens in this release).
+photo data. This view links to the Flickr accounts and Sessions cards.
 
 ## Route and access
 
-- `/profile` (also `/profile#security`, `/accounts`, `/sessions` as above).
+- `/profile` (also `/profile#security`).
   Opens inside the user shell, Profile tab active, document title
   `Profile · XFlickr`.
 - Access: `xf_session`. 401 is handled by the shell (expired modal). `role =
