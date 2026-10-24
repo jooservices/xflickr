@@ -44,6 +44,7 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 | `user-sharing` | user | `/sharing` | Sharing | pending | pending | TBD | `web/e2e/user-sharing.spec.ts` |
 | `user-profile` | user | `/profile` | Profile | pending | pending | TBD | `web/e2e/user-profile.spec.ts` |
 | `user-onboarding` | user | `/onboarding` | Onboarding | pending | pending | TBD | `web/e2e/user-onboarding.spec.ts` |
+| `admin-shell` | admin | `/admin/*` (layout) | Admin shell, rail and navigation | [spec](views/admin-shell.md) | [mockup](mockups/admin-shell.html) | JOOXF-79 | `web/e2e/admin-shell.spec.ts` |
 | `admin-overview` | admin | `/admin` | Overview | pending | pending | TBD | `web/e2e/admin-overview.spec.ts` |
 | `admin-nodes` | admin | `/admin/nodes` | Cluster nodes | pending | pending | TBD | `web/e2e/admin-nodes.spec.ts` |
 | `admin-node` | admin | `/admin/nodes/:id` | Cluster node | pending | pending | TBD | `web/e2e/admin-node.spec.ts` |
