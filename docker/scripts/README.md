@@ -1,1 +1,1 @@
-This directory contains Docker-related helper scripts for building and running XFlickr application images.
+This directory contains the shell helpers used by XFlickr's Makefile targets. Go, Node, and Python commands go through `run.sh`, which uses the shared runtime named by `WORKSPACES_RUNTIME` or the native tool when it is unset.
