@@ -20,34 +20,52 @@ ADMIN typography and geometry remain role-specific in its light theme.
 
 ## Color tokens
 
-Color values come from the POC except where Required value records an
-accessibility correction. Normal text needs 4.5:1 and meaningful UI graphics,
-including control boundaries, need 3:1 against adjacent surfaces. The following
-tables list the measured contrast of text and status/chart colors against each
-of the four surfaces in that theme. Values are rounded to two decimals and the
-lowest listed value governs. `faint` is decorative only. `fav` is restricted to
-icons and badges, where it must meet 3:1; never use it for text. Status colors
-may be used as text only where all four ratios are at least 4.5:1. Series colors
-are chart graphics and must meet 3:1; provide labels or markers as well.
+Each theme table copies the POC. Required value is the value an implementation
+must use. POC value is the original custom property from the POC root or role
+override for that theme. A Required value marked (corrected) is an
+accessibility change so normal text meets 4.5:1 and meaningful UI graphics,
+including control boundaries and chart series, meet 3:1 against adjacent
+surfaces. USER light and ADMIN light correct series colors separately, so
+their required `s2` values differ. The following tables list the measured
+contrast of text and status/chart colors against each of the four surfaces in
+that theme. Values are rounded to two decimals and the lowest listed value
+governs. `faint` is decorative only. `fav` is restricted to icons and badges,
+where it must meet 3:1; never use it for text. Status colors may be used as
+text only where all four ratios are at least 4.5:1. Series colors are chart
+graphics and must meet 3:1; provide labels or markers as well.
 
 ### USER light gallery
 
-| Token | Value | Token | Value |
-| --- | --- | --- | --- |
-| bg | #f6f7fa | surface | #ffffff |
-| sunken | #eef0f5 | raise | #e7eaf1 |
-| line | #e2e5ec | line2 | #747b88 (corrected control boundary) |
-| ink | #161a22 | muted | #5d6574 |
-| faint | #8a92a1 | accent | #2457d6 |
-| accent-ink | #ffffff | accent-soft | #e6edfd |
-| ok | #187244 | warn | #875300 |
-| bad | #c12824 | info | #5a52c9 |
-| fav | #d93c74 | s1 | #1f66b4 |
-| s2 | #b4431a | s3 | #08774f |
-| shade | rgba(18,22,30,.10) | overlay | #0c0e12 |
-| f-disp | "Bricolage Grotesque","Figtree",system-ui,sans-serif | f-body | "Figtree",system-ui,-apple-system,"Segoe UI",sans-serif |
-| f-mono | "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace | radius | 14px |
-| btn-r | 999px | row-h | 190px |
+| Token | Required value | POC value |
+| --- | --- | --- |
+| bg | #f6f7fa | #f6f7fa |
+| surface | #ffffff | #ffffff |
+| sunken | #eef0f5 | #eef0f5 |
+| raise | #e7eaf1 | #e7eaf1 |
+| line | #e2e5ec | #e2e5ec |
+| line2 | #747b88 (corrected) | #cfd4de |
+| ink | #161a22 | #161a22 |
+| muted | #5d6574 | #5d6574 |
+| faint | #8a92a1 | #8a92a1 |
+| accent | #2457d6 | #2457d6 |
+| accent-ink | #ffffff | #ffffff |
+| accent-soft | #e6edfd | #e6edfd |
+| ok | #187244 (corrected) | #1d8a52 |
+| warn | #875300 (corrected) | #a86500 |
+| bad | #c12824 (corrected) | #c9302c |
+| info | #5a52c9 | #5a52c9 |
+| fav | #d93c74 | #d93c74 |
+| s1 | #1f66b4 (corrected) | #2a78d6 |
+| s2 | #b4431a (corrected) | #eb6834 |
+| s3 | #08774f (corrected) | #1baf7a |
+| shade | rgba(18,22,30,.10) | rgba(18,22,30,.10) |
+| overlay | #0c0e12 | #0c0e12 |
+| f-disp | "Bricolage Grotesque","Figtree",system-ui,sans-serif | "Bricolage Grotesque","Figtree",system-ui,sans-serif |
+| f-body | "Figtree",system-ui,-apple-system,"Segoe UI",sans-serif | "Figtree",system-ui,-apple-system,"Segoe UI",sans-serif |
+| f-mono | "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace | "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace |
+| radius | 14px | 14px |
+| btn-r | 999px | 999px |
+| row-h | 190px | 190px |
 
 Text and graphic contrast ratios (foreground over bg, surface, sunken, raise):
 
@@ -70,22 +88,36 @@ Text on accent (`accent-ink` over `accent`): 6.16:1.
 
 ### USER dark gallery
 
-| Token | Value | Token | Value |
-| --- | --- | --- | --- |
-| bg | #0f1116 | surface | #171a21 |
-| sunken | #1e222b | raise | #252a35 |
-| line | #2a2f3a | line2 | #778396 (corrected control boundary) |
-| ink | #e8eaf0 | muted | #a0a7b4 |
-| faint | #747c8a | accent | #7d9cff |
-| accent-ink | #0d1220 | accent-soft | #1f2a47 |
-| ok | #4fc887 | warn | #f0b04a |
-| bad | #ff7b72 | info | #a59ff2 |
-| fav | #ff6f9f | s1 | #3987e5 |
-| s2 | #d95926 | s3 | #199e70 |
-| shade | rgba(0,0,0,.4) | overlay | #0c0e12 |
-| f-disp | "Bricolage Grotesque","Figtree",system-ui,sans-serif | f-body | "Figtree",system-ui,-apple-system,"Segoe UI",sans-serif |
-| f-mono | "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace | radius | 14px |
-| btn-r | 999px | row-h | 190px |
+| Token | Required value | POC value |
+| --- | --- | --- |
+| bg | #0f1116 | #0f1116 |
+| surface | #171a21 | #171a21 |
+| sunken | #1e222b | #1e222b |
+| raise | #252a35 | #252a35 |
+| line | #2a2f3a | #2a2f3a |
+| line2 | #778396 (corrected) | #3a4150 |
+| ink | #e8eaf0 | #e8eaf0 |
+| muted | #a0a7b4 | #a0a7b4 |
+| faint | #747c8a | #747c8a |
+| accent | #7d9cff | #7d9cff |
+| accent-ink | #0d1220 | #0d1220 |
+| accent-soft | #1f2a47 | #1f2a47 |
+| ok | #4fc887 | #4fc887 |
+| warn | #f0b04a | #f0b04a |
+| bad | #ff7b72 | #ff7b72 |
+| info | #a59ff2 | #a59ff2 |
+| fav | #ff6f9f | #ff6f9f |
+| s1 | #3987e5 | #3987e5 |
+| s2 | #d95926 | #d95926 |
+| s3 | #199e70 | #199e70 |
+| shade | rgba(0,0,0,.4) | rgba(0,0,0,.4) |
+| overlay | #0c0e12 | #0c0e12 |
+| f-disp | "Bricolage Grotesque","Figtree",system-ui,sans-serif | "Bricolage Grotesque","Figtree",system-ui,sans-serif |
+| f-body | "Figtree",system-ui,-apple-system,"Segoe UI",sans-serif | "Figtree",system-ui,-apple-system,"Segoe UI",sans-serif |
+| f-mono | "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace | "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace |
+| radius | 14px | 14px |
+| btn-r | 999px | 999px |
+| row-h | 190px | 190px |
 
 Text and graphic contrast ratios (foreground over bg, surface, sunken, raise):
 
@@ -108,22 +140,36 @@ Text on accent (`accent-ink` over `accent`): 7.18:1.
 
 ### ADMIN dark control room
 
-| Token | Value | Token | Value |
-| --- | --- | --- | --- |
-| bg | #0b0f15 | surface | #11171f |
-| sunken | #161e28 | raise | #1c2632 |
-| line | #222c3a | line2 | #7a8798 (corrected control boundary) |
-| ink | #d6dee8 | muted | #8190a4 |
-| faint | #5d6b82 | accent | #4cb4d8 |
-| accent-ink | #04131a | accent-soft | #12303d |
-| ok | #3cb87c | warn | #e2ae3d |
-| bad | #f2766b | info | #9590ee |
-| fav | #ee5d98 | s1 | #3987e5 |
-| s2 | #d95926 | s3 | #199e70 |
-| shade | rgba(0,0,0,.45) | overlay | #0c0e12 |
-| f-disp | "Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif | f-body | "Barlow",system-ui,-apple-system,"Segoe UI",sans-serif |
-| f-mono | "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace | radius | 9px |
-| btn-r | 7px | row-h | 190px |
+| Token | Required value | POC value |
+| --- | --- | --- |
+| bg | #0b0f15 | #0b0f15 |
+| surface | #11171f | #11171f |
+| sunken | #161e28 | #161e28 |
+| raise | #1c2632 | #1c2632 |
+| line | #222c3a | #222c3a |
+| line2 | #7a8798 (corrected) | #2e3a4c |
+| ink | #d6dee8 | #d6dee8 |
+| muted | #8190a4 | #8190a4 |
+| faint | #5d6b82 | #5d6b82 |
+| accent | #4cb4d8 | #4cb4d8 |
+| accent-ink | #04131a | #04131a |
+| accent-soft | #12303d | #12303d |
+| ok | #3cb87c | #3cb87c |
+| warn | #e2ae3d | #e2ae3d |
+| bad | #f2766b (corrected) | #ea5a4e |
+| info | #9590ee | #9590ee |
+| fav | #ee5d98 | #ee5d98 |
+| s1 | #3987e5 | #3987e5 |
+| s2 | #d95926 | #d95926 |
+| s3 | #199e70 | #199e70 |
+| shade | rgba(0,0,0,.45) | rgba(0,0,0,.45) |
+| overlay | #0c0e12 | #0c0e12 |
+| f-disp | "Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif | "Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif |
+| f-body | "Barlow",system-ui,-apple-system,"Segoe UI",sans-serif | "Barlow",system-ui,-apple-system,"Segoe UI",sans-serif |
+| f-mono | "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace | "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace |
+| radius | 9px | 9px |
+| btn-r | 7px | 7px |
+| row-h | 190px | 190px |
 
 Text and graphic contrast ratios (foreground over bg, surface, sunken, raise):
 
@@ -146,22 +192,36 @@ Text on accent (`accent-ink` over `accent`): 7.93:1.
 
 ### ADMIN light control room
 
-| Token | Value | Token | Value |
-| --- | --- | --- | --- |
-| bg | #eef1f5 | surface | #ffffff |
-| sunken | #f5f7fa | raise | #e9edf3 |
-| line | #dce2ea | line2 | #737f90 (corrected control boundary) |
-| ink | #16202c | muted | #56657a |
-| faint | #7d8a9c | accent | #006482 (corrected) |
-| accent-ink | #ffffff | accent-soft | #dcf0f7 |
-| ok | #176d42 | warn | #815800 |
-| bad | #c5372c | info | #5a52c9 |
-| fav | #c7366f | s1 | #1f66b4 |
-| s2 | #b8481e | s3 | #08774f |
-| shade | rgba(20,32,48,.14) | overlay | #0c0e12 |
-| f-disp | "Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif | f-body | "Barlow",system-ui,-apple-system,"Segoe UI",sans-serif |
-| f-mono | "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace | radius | 9px |
-| btn-r | 7px | row-h | 190px |
+| Token | Required value | POC value |
+| --- | --- | --- |
+| bg | #eef1f5 | #eef1f5 |
+| surface | #ffffff | #ffffff |
+| sunken | #f5f7fa | #f5f7fa |
+| raise | #e9edf3 | #e9edf3 |
+| line | #dce2ea | #dce2ea |
+| line2 | #737f90 (corrected) | #c9d2de |
+| ink | #16202c | #16202c |
+| muted | #56657a | #56657a |
+| faint | #7d8a9c | #7d8a9c |
+| accent | #006482 (corrected) | #0c7da3 |
+| accent-ink | #ffffff | #ffffff |
+| accent-soft | #dcf0f7 | #dcf0f7 |
+| ok | #176d42 (corrected) | #1c8752 |
+| warn | #815800 (corrected) | #9c6a00 |
+| bad | #c5372c | #c5372c |
+| info | #5a52c9 | #5a52c9 |
+| fav | #c7366f | #c7366f |
+| s1 | #1f66b4 (corrected) | #2a78d6 |
+| s2 | #b8481e (corrected) | #eb6834 |
+| s3 | #08774f (corrected) | #1baf7a |
+| shade | rgba(20,32,48,.14) | rgba(20,32,48,.14) |
+| overlay | #0c0e12 | #0c0e12 |
+| f-disp | "Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif | "Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif |
+| f-body | "Barlow",system-ui,-apple-system,"Segoe UI",sans-serif | "Barlow",system-ui,-apple-system,"Segoe UI",sans-serif |
+| f-mono | "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace | "JetBrains Mono",ui-monospace,Menlo,Consolas,monospace |
+| radius | 9px | 9px |
+| btn-r | 7px | 7px |
+| row-h | 190px | 190px |
 
 Text and graphic contrast ratios (foreground over bg, surface, sunken, raise):
 

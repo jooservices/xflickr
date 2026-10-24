@@ -26,7 +26,7 @@ semantic token appears in each role/theme, even when values are shared.
                 "surface": "#ffffff",
                 "ink": "#161a22",
                 "accent": "#2457d6",
-                "series": {"s1": "#1f66b4", "s2": "#b8481e", "s3": "#08774f"}
+                "series": {"s1": "#1f66b4", "s2": "#b4431a", "s3": "#08774f"}
               }
             }
           }
@@ -47,7 +47,8 @@ typography.display, typography.body, typography.mono, typography.weights, and
 the shared typeScale. Shared dimensions include the spacing scale, role card
 and button radii, rowHeight, and elevation values. Motion includes standard
 feedback duration and reduced-motion behavior (none). See design-system.md for
-required values and behavior.
+required values and behavior. Store each Required value from design-system.md.
+A value marked (corrected) replaces the POC value in this file.
 
 Use camelCase keys in JSON; map them to POC CSS names (accentInk to
 --accent-ink, series.s1 to --s1, etc.). CSS variables are a derived runtime
@@ -57,9 +58,12 @@ and system-preference behavior.
 
 ## POC coverage check
 
-ui-spec-check compares the custom property names in the POC root/theme blocks
-with the token tables for all four themes in design-system.md. It fails when a
-POC property is absent from any theme table and confirms that the icon inventory
-documents every entry in the POC ICONS object. The dynamic --r property is
-excluded because it is per-photo aspect-ratio runtime data, not a design token.
-The POC is read-only reference input.
+`make ui-spec-check` compares the custom property names in the POC root/theme
+blocks with the token tables for all four themes in design-system.md. It fails
+when a POC property is absent from any theme table and confirms that the icon
+inventory documents every entry in the POC ICONS object. The target also runs
+`node --test "scripts/**/*.test.mjs"`, including a check that the real
+design-system document reports no missing tokens or icons. `make check` runs
+this target. The dynamic --r property is excluded because it is per-photo
+aspect-ratio runtime data, not a design token. The POC is read-only reference
+input.

@@ -29,8 +29,10 @@ gen-stale:
 check:
 	@./docker/scripts/check.sh
 
+# Node 24 loads a directory argument as a module. The glob runs the tests under scripts/.
 ui-spec-check:
 	@./docker/scripts/run.sh node node scripts/ui-spec-check.mjs
+	@./docker/scripts/run.sh node node --test "scripts/**/*.test.mjs"
 
 dev-up:
 	@./docker/scripts/dev.sh up
