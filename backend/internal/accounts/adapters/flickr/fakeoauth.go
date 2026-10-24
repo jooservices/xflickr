@@ -10,7 +10,9 @@ import (
 	"sync"
 )
 
-// Paths served by FakeOAuth.
+// Paths served by FakeOAuth. They are URL paths, not credentials.
+//
+//nolint:gosec // G101 false positive on "token" in URL paths
 const (
 	FakeRequestTokenPath = "/services/oauth/request_token" //nolint:gosec // URL path, not a credential
 	FakeAuthorizePath    = "/services/oauth/authorize"

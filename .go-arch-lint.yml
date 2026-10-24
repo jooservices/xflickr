@@ -24,6 +24,7 @@ components:
     in:
       - internal/platform/adapters/**
       - internal/platform/api/**
+      - internal/platform/audit/**
       - internal/platform/config/**
       - internal/platform/crypto/**
       - internal/platform/db/**
@@ -36,6 +37,10 @@ components:
   cmd:               { in: cmd/** }
 
 deps:
+  accounts-app:
+    mayDependOn: [accounts-domain, platform, pkg, settings-domain]
+  accounts-adapters:
+    mayDependOn: [accounts-domain, accounts-app, platform, pkg, settings-domain]
   identity-app:
     mayDependOn: [identity-domain, platform, pkg, settings-app]
   identity-adapters:
@@ -52,6 +57,9 @@ deps:
     mayDependOn: [platform, pkg, migrations]
   wiring:
     mayDependOn:
+      - accounts-domain
+      - accounts-app
+      - accounts-adapters
       - identity-domain
       - identity-app
       - identity-adapters

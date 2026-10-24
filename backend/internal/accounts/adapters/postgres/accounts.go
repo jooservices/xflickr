@@ -15,6 +15,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/outbox"
 )
 
+//nolint:gosec // G101 false positive: SQL text naming credential columns
 const (
 	//nolint:gosec // SQL column list, not a credential
 	apiKeyRowSQL = `
