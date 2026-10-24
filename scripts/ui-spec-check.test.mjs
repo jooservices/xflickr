@@ -83,3 +83,124 @@ test('marks every corrected color with its POC value', async () => {
     assert.deepEqual(tokenRow(sections[heading], token), [token, value, value]);
   }
 });
+
+function channel(value) {
+  const srgb = value / 255;
+  return srgb <= 0.03928 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+}
+
+function contrast(foreground, background) {
+  const luminance = (hex) => {
+    const rgb = Number.parseInt(hex.slice(1), 16);
+    return (
+      0.2126 * channel((rgb >> 16) & 255) +
+      0.7152 * channel((rgb >> 8) & 255) +
+      0.0722 * channel(rgb & 255)
+    );
+  };
+  const lighter = Math.max(luminance(foreground), luminance(background));
+  const darker = Math.min(luminance(foreground), luminance(background));
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function round2(value) {
+  return Math.round(value * 100) / 100;
+}
+
+function themeTokens(section) {
+  const tokens = {};
+  let inTable = false;
+  for (const line of section.split('\n')) {
+    if (line.startsWith('| Token |')) {
+      inTable = true;
+      continue;
+    }
+    if (line.startsWith('| Foreground |')) break;
+    if (!inTable || !line.startsWith('|')) continue;
+    const cells = line.split('|').slice(1, -1).map((cell) => cell.trim());
+    const value = cells[1]?.replace(' (corrected)', '');
+    if (value?.startsWith('#')) tokens[cells[0]] = value;
+  }
+  return tokens;
+}
+
+function contrastRows(section) {
+  const rows = [];
+  let inTable = false;
+  for (const line of section.split('\n')) {
+    if (line.startsWith('| Foreground |')) {
+      inTable = true;
+      continue;
+    }
+    if (!inTable) continue;
+    if (!line.startsWith('|')) break;
+    const cells = line.split('|').slice(1, -1).map((cell) => cell.trim());
+    if (!/^[a-z0-9]/.test(cells[0])) continue;
+    rows.push({ name: cells[0].split(' ')[0], ratios: cells.slice(1, 5).map(Number) });
+  }
+  return rows;
+}
+
+test('records WCAG contrast for every text and graphic color', async () => {
+  const design = await readFile('docs/ui/design-system.md', 'utf8');
+  const surfaces = ['bg', 'surface', 'sunken', 'raise'];
+  const textColors = new Set(['ink', 'muted', 'accent', 'ok', 'warn', 'bad', 'info']);
+  const graphicColors = new Set(['fav', 's1', 's2', 's3', 'line2']);
+  for (const heading of themeHeadings) {
+    const section = themeSection(design, heading);
+    const tokens = themeTokens(section);
+    const rows = Object.fromEntries(contrastRows(section).map((row) => [row.name, row.ratios]));
+    for (const name of [...textColors, ...graphicColors]) {
+      const ratios = surfaces.map((surface) => contrast(tokens[name], tokens[surface]));
+      assert.deepEqual(rows[name], ratios.map(round2), `${heading} ${name}`);
+      const minimum = textColors.has(name) ? 4.5 : 3;
+      assert.ok(Math.min(...ratios) >= minimum, `${heading} ${name} ${Math.min(...ratios)}`);
+    }
+    const onAccent = contrast(tokens['accent-ink'], tokens.accent);
+    const documented = section.match(/Text on accent \(`accent-ink` over `accent`\): ([0-9.]+):1/);
+    assert.equal(Number(documented[1]), round2(onAccent), heading);
+    assert.ok(onAccent >= 4.5, heading);
+  }
+});
+
+test('rejects a POC that has no token block', () => {
+  assert.throws(() => validateUiSpec('<html></html>', ''), /root token blocks/);
+  assert.throws(() => validateUiSpec(':root{--bg:#fff}', ''), /root token blocks/);
+});
+
+test('rejects a POC that has no icon inventory', () => {
+  const poc = ':root{--bg:#fff}*{box-sizing:border-box}';
+  assert.throws(() => validateUiSpec(poc, ''), /icon inventory/);
+  assert.throws(() => validateUiSpec(`${poc}\nconst ICONS = {`, ''), /icon inventory/);
+});
+
+test('ignores per-photo ratio data and reports missing themes and icons', () => {
+  const poc = `:root{--bg:#fff; --r:1.5}
+*{box-sizing:border-box}
+const ICONS = {
+  search: '<path/>',
+  left: '<path/>', right: '<path/>',
+  bell: '<path/>',
+};
+`;
+  const design = `### USER light gallery
+| bg | #fff | #fff |
+
+### USER dark gallery
+| bg | #000 | #000 |
+
+### ADMIN dark control room
+| bg | #111 | #111 |
+
+## Iconography
+search
+## Photos, avatars, and localization
+`;
+  const result = validateUiSpec(poc, design);
+  assert.equal(result.pocTokenCount, 1);
+  assert.deepEqual(result.pocIcons, ['search', 'left', 'right', 'bell']);
+  assert.deepEqual(result.missingIcons, ['left', 'right', 'bell']);
+  assert.ok(result.missingTokens.includes('ADMIN light control room: bg'));
+  assert.ok(result.missingTokens.includes('ADMIN light control room: theme table'));
+  assert.equal(result.missingTokens.some((item) => item.startsWith('USER light gallery')), false);
+});

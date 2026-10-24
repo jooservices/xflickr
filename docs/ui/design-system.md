@@ -28,9 +28,10 @@ including control boundaries and chart series, meet 3:1 against adjacent
 surfaces. USER light and ADMIN light correct series colors separately, so
 their required `s2` values differ. The following tables list the measured
 contrast of text and status/chart colors against each of the four surfaces in
-that theme. Values are rounded to two decimals and the lowest listed value
-governs. `faint` is decorative only. `fav` is restricted to icons and badges,
-where it must meet 3:1; never use it for text. Status colors may be used as
+that theme. Ratios use WCAG 2 relative luminance, are rounded to two decimals,
+and the lowest listed value governs. `faint` is decorative only. Readable text
+uses `ink` or `muted`. `fav` marks icons and non-text badges and must meet 3:1.
+Counts and other text use a pair that meets 4.5:1. Status colors may be used as
 text only where all four ratios are at least 4.5:1. Series colors are chart
 graphics and must meet 3:1; provide labels or markers as well.
 
@@ -80,7 +81,7 @@ Text and graphic contrast ratios (foreground over bg, surface, sunken, raise):
 | info | 5.62 | 6.03 | 5.28 | 5.00 |
 | fav (icon/badge only) | 4.04 | 4.33 | 3.80 | 3.60 |
 | s1 (chart) | 5.42 | 5.80 | 5.09 | 4.82 |
-| s2 (chart) | 4.64 | 4.97 | 4.36 | 4.13 |
+| s2 (chart) | 5.22 | 5.59 | 4.90 | 4.64 |
 | s3 (chart) | 5.21 | 5.58 | 4.90 | 4.64 |
 | line2 (control boundary) | 3.98 | 4.26 | 3.73 | 3.54 |
 
@@ -180,7 +181,7 @@ Text and graphic contrast ratios (foreground over bg, surface, sunken, raise):
 | accent | 8.07 | 7.57 | 7.06 | 6.43 |
 | ok | 7.63 | 7.15 | 6.67 | 6.08 |
 | warn | 9.47 | 8.88 | 8.28 | 7.54 |
-| bad | 7.02 | 6.57 | 6.13 | 5.59 |
+| bad | 6.93 | 6.50 | 6.06 | 5.52 |
 | info | 6.86 | 6.43 | 6.00 | 5.47 |
 | fav (icon/badge only) | 6.09 | 5.71 | 5.32 | 4.85 |
 | s1 (chart) | 5.28 | 4.95 | 4.62 | 4.20 |
@@ -229,9 +230,9 @@ Text and graphic contrast ratios (foreground over bg, surface, sunken, raise):
 | --- | ---: | ---: | ---: | ---: |
 | ink | 14.51 | 16.44 | 15.32 | 13.99 |
 | muted | 5.24 | 5.94 | 5.53 | 5.05 |
-| accent | 7.22 | 8.18 | 7.62 | 6.96 |
-| ok | 6.36 | 7.20 | 6.71 | 6.13 |
-| warn | 6.38 | 7.22 | 6.73 | 6.15 |
+| accent | 5.89 | 6.68 | 6.22 | 5.68 |
+| ok | 5.61 | 6.36 | 5.92 | 5.41 |
+| warn | 5.57 | 6.31 | 5.88 | 5.37 |
 | bad | 4.68 | 5.31 | 4.95 | 4.52 |
 | info | 5.32 | 6.03 | 5.61 | 5.13 |
 | fav (icon/badge only) | 4.43 | 5.02 | 4.67 | 4.27 |

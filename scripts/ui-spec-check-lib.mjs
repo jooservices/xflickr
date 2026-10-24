@@ -44,7 +44,7 @@ export function validateUiSpec(poc, design) {
     throw new Error('Could not locate POC icon inventory');
   }
   const pocIcons = [
-    ...poc.slice(iconStart, iconEnd).matchAll(/^\s{2}([a-zA-Z][\w]*):/gm),
+    ...poc.slice(iconStart, iconEnd).matchAll(/(?:^|,)\s*([a-zA-Z][\w]*)\s*:/gm),
   ].map((match) => match[1]);
   const iconStartInDesign = design.indexOf('## Iconography');
   const iconEndInDesign = design.indexOf('## Photos, avatars, and localization');
