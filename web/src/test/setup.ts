@@ -1,17 +1,17 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
-import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll } from 'vitest';
-import { handlers } from './handlers';
-
-const server = setupServer(...handlers);
+import { server } from './server';
 
 beforeAll(() => {
+  window.scrollTo = () => undefined;
   server.listen({ onUnhandledFrame: 'error' });
 });
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
+  document.documentElement.lang = '';
   server.resetHandlers();
 });
 

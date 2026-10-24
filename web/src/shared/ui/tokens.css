@@ -1,0 +1,249 @@
+/*
+ * Design tokens for the two looks: USER (light gallery) and ADMIN (dark control
+ * room), each with a light and a dark theme. Values follow docs/ui/design-system.md
+ * ("Required value" column, including the accessibility corrections).
+ * Select a look with data-role and data-theme on the shell root.
+ */
+
+:root {
+  --f-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 10px;
+  --space-5: 12px;
+  --space-6: 14px;
+  --space-7: 16px;
+  --space-8: 18px;
+  --space-9: 20px;
+  --space-10: 24px;
+  --space-11: 32px;
+  --space-12: 40px;
+
+  --row-h: 190px;
+
+  --elev-resting: 0 1px 3px rgba(0, 0, 0, 0.25);
+  --elev-raised: 0 2px 8px var(--shade);
+  --elev-hover: 0 6px 20px var(--shade);
+  --elev-popover: 0 8px 24px var(--shade);
+  --elev-overlay: 0 10px 30px var(--shade);
+  --elev-modal: 0 20px 50px var(--shade);
+  --elev-hero: 0 20px 60px rgba(0, 0, 0, 0.5);
+  --elev-drawer: 0 0 40px var(--shade);
+  --elev-sheet: 0 30px 60px var(--shade);
+
+  --motion-feedback: 0.15s ease;
+  --motion-state: 0.2s ease;
+  --motion-emphasis: 0.35s ease;
+  --motion-entrance: 0.2s ease;
+  --motion-loading: 1.2s ease infinite;
+  --motion-spin: 0.8s linear infinite;
+  --motion-progress: 0.6s ease;
+
+  --focus-width: 2px;
+  --focus-offset: 2px;
+}
+
+@media (max-width: 720px) {
+  :root {
+    --row-h: 120px;
+  }
+}
+
+/* Role geometry and typography */
+[data-role='user'] {
+  --f-disp: 'Bricolage Grotesque', 'Figtree', system-ui, sans-serif;
+  --f-body: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --radius: 14px;
+  --btn-r: 999px;
+  --body-size: 15px;
+  --body-line: 1.5;
+  --heading-weight: 700;
+  --heading-tracking: -0.01em;
+  --h1-size: clamp(24px, 3vw, 32px);
+}
+
+[data-role='admin'] {
+  --f-disp: 'Barlow Semi Condensed', 'Arial Narrow', system-ui, sans-serif;
+  --f-body: 'Barlow', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --radius: 9px;
+  --btn-r: 7px;
+  --body-size: 14px;
+  --body-line: 1.45;
+  --heading-weight: 600;
+  --heading-tracking: 0.01em;
+  --h1-size: 1.55rem;
+}
+
+/* USER light gallery */
+[data-role='user'][data-theme='light'] {
+  color-scheme: light;
+  --bg: #f6f7fa;
+  --surface: #ffffff;
+  --sunken: #eef0f5;
+  --raise: #e7eaf1;
+  --line: #e2e5ec;
+  --line2: #747b88;
+  --ink: #161a22;
+  --muted: #5d6574;
+  --faint: #8a92a1;
+  --accent: #2457d6;
+  --accent-ink: #ffffff;
+  --accent-soft: #e6edfd;
+  --ok: #187244;
+  --warn: #875300;
+  --bad: #c12824;
+  --info: #5a52c9;
+  --fav: #d93c74;
+  --s1: #1f66b4;
+  --s2: #b4431a;
+  --s3: #08774f;
+  --shade: rgba(18, 22, 30, 0.1);
+  --overlay: #0c0e12;
+}
+
+/* USER dark gallery */
+[data-role='user'][data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0f1116;
+  --surface: #171a21;
+  --sunken: #1e222b;
+  --raise: #252a35;
+  --line: #2a2f3a;
+  --line2: #778396;
+  --ink: #e8eaf0;
+  --muted: #a0a7b4;
+  --faint: #747c8a;
+  --accent: #7d9cff;
+  --accent-ink: #0d1220;
+  --accent-soft: #1f2a47;
+  --ok: #4fc887;
+  --warn: #f0b04a;
+  --bad: #ff7b72;
+  --info: #a59ff2;
+  --fav: #ff6f9f;
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --shade: rgba(0, 0, 0, 0.4);
+  --overlay: #0c0e12;
+}
+
+/* ADMIN dark control room */
+[data-role='admin'][data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0b0f15;
+  --surface: #11171f;
+  --sunken: #161e28;
+  --raise: #1c2632;
+  --line: #222c3a;
+  --line2: #7a8798;
+  --ink: #d6dee8;
+  --muted: #8190a4;
+  --faint: #5d6b82;
+  --accent: #4cb4d8;
+  --accent-ink: #04131a;
+  --accent-soft: #12303d;
+  --ok: #3cb87c;
+  --warn: #e2ae3d;
+  --bad: #f2766b;
+  --info: #9590ee;
+  --fav: #ee5d98;
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --shade: rgba(0, 0, 0, 0.45);
+  --overlay: #0c0e12;
+}
+
+/* ADMIN light control room */
+[data-role='admin'][data-theme='light'] {
+  color-scheme: light;
+  --bg: #eef1f5;
+  --surface: #ffffff;
+  --sunken: #f5f7fa;
+  --raise: #e9edf3;
+  --line: #dce2ea;
+  --line2: #737f90;
+  --ink: #16202c;
+  --muted: #56657a;
+  --faint: #7d8a9c;
+  --accent: #006482;
+  --accent-ink: #ffffff;
+  --accent-soft: #dcf0f7;
+  --ok: #176d42;
+  --warn: #815800;
+  --bad: #c5372c;
+  --info: #5a52c9;
+  --fav: #c7366f;
+  --s1: #1f66b4;
+  --s2: #b8481e;
+  --s3: #08774f;
+  --shade: rgba(20, 32, 48, 0.14);
+  --overlay: #0c0e12;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+html {
+  scroll-padding-top: 64px;
+}
+
+body {
+  margin: 0;
+  background: #f6f7fa;
+  color: #161a22;
+  font:
+    15px/1.5 'Figtree',
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+[data-role] {
+  background: var(--bg);
+  color: var(--ink);
+  font: var(--body-size) / var(--body-line) var(--f-body);
+}
+
+[data-role] h1,
+[data-role] h2,
+[data-role] h3,
+[data-role] h4 {
+  font-family: var(--f-disp);
+  font-weight: var(--heading-weight);
+  letter-spacing: var(--heading-tracking);
+  text-wrap: balance;
+}
+
+[data-role] h1 {
+  font-size: var(--h1-size);
+  line-height: 1.15;
+}
+
+:focus-visible {
+  outline: var(--focus-width) solid var(--accent, #2457d6);
+  outline-offset: var(--focus-offset);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app';
-import './shared/styles/tokens.css';
+import './shared/ui/tokens.css';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
