@@ -74,8 +74,9 @@ falling back to `‹ Albums`. A full trail is not used, so mobile never wraps.
 
 The tray button opens a popover (drawer from the bottom on 390 px): list of
 photos collected for download with thumbnail, title, owner and a remove
-button; footer shows count, estimated size and the primary `Download` button
-(opens the new-download modal with scope tray) and `Clear tray`. Maximum 500
+button; footer shows `shell.tray.summary` (count, estimated size) and the
+primary `Download` button (opens the new-download modal with scope tray) and
+`Clear tray`. Maximum 500
 photos; adding the 501st shows toast `shell.tray.full`. Items are added from
 photo tiles and the lightbox (`+` button, POC `tray-btn`). The count badge
 updates at once.
@@ -125,7 +126,7 @@ requested: the search box has no autocomplete in this release.
 | Toggle theme | click | Switch light/dark at once, `PATCH /me {theme}` |
 | Open tray | click | Popover with `GET /tray` |
 | Download from tray | button | Opens the new-download modal (scope tray). The tray is cleared when the job is created |
-| Remove / clear tray | button | `DELETE` item or tray; toast with `Undo` (8 s) |
+| Remove / clear tray | button | `DELETE` item or tray; toast with `shell.tray.undo` (8 s) |
 | Open notifications | click bell | Drawer (POC `vNotifs`), lists `GET /notifications`; opening does not mark read |
 | Mark all read | button in drawer | `POST /notifications/read {all:true}`, badge clears |
 | Open avatar menu | click | Menu (above) |
@@ -180,13 +181,13 @@ needed, and a toast is not shown; the next poll retries.
 ### Partial and stale
 
 - Tray or notification list failed: the popover or drawer shows an inline
-  compact error with `Retry`; the rest works.
-- Live channel down: indicator `Paused`, title with the reason, `Stale` marker
-  with age on badges (title attribute plus text in the drawer header).
+  compact error (`shell.tray.error`, `shell.notifications.error`) with `Retry`; the rest works.
+- Live channel down: indicator `Paused`, title with the reason, `shell.stale` marker
+  with `shell.stale.age` on badges (title attribute plus drawer header text).
 
 ### Forbidden
 
-403 page inside the shell: lock icon, `shell.forbidden.*`, CTA `Go to home`.
+403 page inside the shell: lock icon, `shell.forbidden.*`, CTA `shell.forbidden.home`.
 Document title `Access denied`. Does not reveal whether the resource exists.
 
 ### Not found
@@ -201,7 +202,7 @@ another user also shows this page.
 | --- | --- | --- |
 | Session expired | any API call returns 401 | All polling and SSE stop. Modal `shell.session.*` (focus inside, assertive announce), button `Sign in` goes to `/login?return_to=<current path + query>`. `return_to` is a same-origin path only. Unsaved form input is kept in memory and restored after sign-in; never auto-submitted. A 403 `csrf_rejected` refreshes the CSRF token once instead |
 | Maintenance | `GET /healthz` is not 200, or API answers 503 with code `database_unavailable`, 3 times in a row | Full page without tabs: wrench icon, `shell.maintenance.*`, auto retry every 15 s with backoff to 60 s, `Retry now` button, status text "Last checked HH:mm". SSE and writes stop. Returns to the previous route when healthy |
-| Offline | `navigator.onLine` false or network error | Persistent info banner `shell.offline.banner`, no dismiss. Live shows `Paused` with title "Offline". Writes disabled with title `shell.offline.needs-connection`. SSE falls back to polling per patterns (3 failed reconnects, backoff 1 s to 15 s, jitter 20 %), polling 2 s / 5 s / 10 s by data type. On return: toast `shell.offline.back`, one refetch, banner clears |
+| Offline | `navigator.onLine` false or network error | Persistent info banner `shell.offline.banner`, no dismiss. Live shows `Paused` with title `shell.offline.title`. Writes disabled with title `shell.offline.needs-connection`. SSE falls back to polling per patterns (3 failed reconnects, backoff 1 s to 15 s, jitter 20 %), polling 2 s / 5 s / 10 s by data type. On return: toast `shell.offline.back`, one refetch, banner clears |
 | SSE to polling | SSE blocked, error or 3 failed reconnects while online | No banner. Indicator stays `Live` while polling works; the title reads "Polling every 10 s". If polling also fails, state becomes Offline-like with `Paused` and the Stale marker |
 | Key revoked | summary `attention` has `key_revoked` (`GET /keys` status `revoked`) | Warning banner at the top of main on every view: `shell.banner.key-revoked` with the key label and `Reconnect`, which goes to `/keys` to add a replacement key. Dismiss hides it for the tab session; it returns on reload while true |
 | Token expired | Flickr account `reconnect_required` or `revoked` (`attention` `token_expired`), or cloud `cloud_expired` | Warning banner: `shell.banner.token-expired` with the account name and `Reconnect`. Flickr: starts OAuth connect. Cloud: `/sync`. One banner per item, at most 2 shown plus "N more" link to `/accounts` |
@@ -248,8 +249,8 @@ scroll at 320 CSS px or 200 % zoom.
   Esc closes and returns focus to the opener.
 - Session modal uses `role="alertdialog"`; offline banner `role="status"`;
   key/token banners `role="alert"` on first render only.
-- One polite region announces Live changes, "You are offline" and "Back
-  online" (a11y.md). Colour is never the only signal: states have a word.
+- One polite region announces Live changes, `shell.a11y.offline` and `shell.a11y.online`
+  (a11y.md). Colour is never the only signal: states have a word.
 - Contrast and motion follow the design system; skeleton shimmer is static
   under reduced motion.
 
@@ -281,24 +282,33 @@ Flickr are not translated. Nav labels reuse the POC glossary.
 | `shell.live.paused` | Paused | Tạm dừng |
 | `shell.live.paused-toast` | Live data paused | Đã tạm dừng dữ liệu trực tiếp |
 | `shell.live.resumed-toast` | Live data resumed | Đã tiếp tục dữ liệu trực tiếp |
+| `shell.live.reason` | Paused: {reason} | Tạm dừng: {reason} |
+| `shell.stale` | Stale | Chưa mới |
+| `shell.stale.age` | Last updated {time} ago | Cập nhật lần cuối {time} trước |
 | `shell.live.polling` | Polling every {seconds} s | Đang cập nhật mỗi {seconds} giây |
 | `shell.lang.switch` | Switch to Tiếng Việt | Chuyển sang English |
 | `shell.theme.toggle` | Switch between light and dark | Chuyển giữa sáng và tối |
 | `shell.notifications.button` | {count, plural, =0 {Notifications} one {Notifications, # unread} other {Notifications, # unread}} | {count, plural, =0 {Thông báo} other {Thông báo, # chưa đọc}} |
 | `shell.notifications.title` | Notifications | Thông báo |
 | `shell.notifications.mark-all` | Mark all read | Đánh dấu đã đọc tất cả |
+| `shell.notifications.error` | Could not load notifications. | Không thể tải thông báo. |
 | `shell.notifications.empty.title` | No notifications | Chưa có thông báo |
 | `shell.notifications.empty.text` | Updates about your downloads, keys and accounts show up here. | Cập nhật về tải xuống, khóa và tài khoản của bạn sẽ hiện ở đây. |
 | `shell.tray.button` | {count, plural, =0 {Download tray} one {Download tray, # photo} other {Download tray, # photos}} | {count, plural, =0 {Khay tải xuống} other {Khay tải xuống, # ảnh}} |
 | `shell.tray.title` | Download tray | Khay tải xuống |
 | `shell.tray.download` | Download | Tải xuống |
 | `shell.tray.clear` | Clear tray | Xóa khay |
+| `shell.tray.undo` | Undo | Hoàn tác |
+| `shell.tray.summary` | {count, plural, one {# photo} other {# photos}} · about {size} | {count, plural, other {# ảnh}} · khoảng {size} |
+| `shell.tray.error` | Could not load the tray. | Không thể tải khay. |
 | `shell.tray.remove` | Remove from tray | Bỏ khỏi khay |
 | `shell.tray.removed-toast` | Removed from tray | Đã bỏ khỏi khay |
 | `shell.tray.full` | The tray holds up to 500 photos | Khay chứa tối đa 500 ảnh |
 | `shell.tray.empty.title` | Your tray is empty | Khay của bạn đang trống |
 | `shell.tray.empty.text` | Use the plus button on a photo to collect it for download. | Dùng nút dấu cộng trên ảnh để gom ảnh cần tải. |
 | `shell.avatar.button` | Account menu | Menu tài khoản |
+| `shell.avatar.header` | Signed in as {name} ({email}) | Đăng nhập với {name} ({email}) |
+| `shell.avatar.profile` | Profile | Hồ sơ |
 | `shell.avatar.accounts` | Flickr accounts | Tài khoản Flickr |
 | `shell.avatar.sessions` | Sessions | Phiên đăng nhập |
 | `shell.avatar.shortcuts` | Keyboard shortcuts | Phím tắt |
@@ -313,6 +323,7 @@ Flickr are not translated. Nav labels reuse the POC glossary.
 | `shell.home.empty.cta` | Connect account | Kết nối tài khoản |
 | `shell.forbidden.title` | You do not have access to this page | Bạn không có quyền truy cập trang này |
 | `shell.forbidden.text` | This page is for administrators. Your account has the User role. | Trang này dành cho quản trị viên. Tài khoản của bạn có vai trò Người dùng. |
+| `shell.forbidden.home` | Go to home | Về trang chủ |
 | `shell.notfound.title` | We could not find that page | Chúng tôi không tìm thấy trang đó |
 | `shell.notfound.text` | The link may be old, or the item was removed. | Liên kết có thể đã cũ, hoặc mục này đã bị xóa. |
 | `shell.notfound.home` | Go to home | Về trang chủ |
@@ -325,6 +336,9 @@ Flickr are not translated. Nav labels reuse the POC glossary.
 | `shell.maintenance.checked` | Last checked {time} | Kiểm tra lần cuối {time} |
 | `shell.maintenance.retry` | Retry now | Thử lại ngay |
 | `shell.offline.banner` | You are offline. Showing the last data we have. | Bạn đang ngoại tuyến. Đang hiển thị dữ liệu gần nhất. |
+| `shell.offline.title` | Offline | Ngoại tuyến |
+| `shell.a11y.offline` | You are offline | Bạn đang ngoại tuyến |
+| `shell.a11y.online` | Back online | Đã kết nối lại |
 | `shell.offline.needs-connection` | Needs a connection | Cần có kết nối |
 | `shell.offline.back` | Back online | Đã kết nối lại |
 | `shell.banner.key-revoked` | Flickr revoked the API key {label}. Add a new key to keep crawling. | Flickr đã thu hồi khóa API {label}. Hãy thêm khóa mới để tiếp tục thu thập. |
@@ -350,15 +364,16 @@ Names follow patterns.md. Repeated items use the stable id as suffix.
 - Breadcrumb: `shell-crumb`.
 - Tray: `shell-tray`, `shell-tray-item-<photoId>`,
   `shell-tray-item-<photoId>-remove`, `shell-tray-download`,
-  `shell-tray-clear`, `shell-tray-empty`.
+  `shell-tray-clear`, `shell-tray-empty`, `shell-tray-error`,
+  `shell-tray-summary`, `shell-tray-undo`.
 - Notifications: `shell-notifications`, `shell-notifications-item-<id>`,
   `shell-notifications-mark-all`, `shell-notifications-empty`,
   `shell-notifications-error`.
-- Avatar menu: `shell-avatar-menu`, `shell-avatar-profile`,
+- Avatar menu: `shell-avatar-menu`, `shell-avatar-header`, `shell-avatar-profile`,
   `shell-avatar-accounts`, `shell-avatar-sessions`, `shell-avatar-shortcuts`,
   `shell-avatar-sign-out`.
 - States: `shell-skeleton`, `shell-empty`, `shell-error`, `shell-error-retry`,
-  `shell-toast`.
+  `shell-stale`, `shell-toast`.
 - Global: `shell-offline-banner`, `shell-key-revoked-banner-<keyId>`,
   `shell-token-expired-banner-<accountId>`, `shell-banner-reconnect-<id>`,
   `shell-banner-dismiss-<id>`, `shell-session-modal`,
@@ -369,9 +384,8 @@ Names follow patterns.md. Repeated items use the stable id as suffix.
 ## Test hooks
 
 The `data-testid` list above is the contract for `web/e2e/user-shell.spec.ts`.
-Tests select by role first and by test id when text is language dependent;
-they never select by translated text. The dev-only preview control has
-`shell-preview-<state>` and is absent from production builds.
+Tests select by role, or by test id when text depends on language. The dev-only
+preview control `shell-preview-<state>` is absent from production builds.
 
 ## Out of scope
 
