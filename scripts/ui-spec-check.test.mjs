@@ -174,6 +174,102 @@ test('rejects a POC that has no icon inventory', () => {
   assert.throws(() => validateUiSpec(`${poc}\nconst ICONS = {`, ''), /icon inventory/);
 });
 
+function sectionTable(design, heading) {
+  const start = design.indexOf(heading);
+  assert.ok(start >= 0, heading);
+  const from = start + heading.length;
+  const ends = ['\n## ', '\n### ']
+    .map((mark) => design.indexOf(mark, from))
+    .filter((index) => index >= 0);
+  const section = design.slice(start, ends.length === 0 ? undefined : Math.min(...ends));
+  const rows = {};
+  let inTable = false;
+  for (const line of section.split('\n')) {
+    if (line.startsWith('| Key |')) {
+      inTable = true;
+      continue;
+    }
+    if (!inTable) continue;
+    if (!line.startsWith('|')) break;
+    const cells = line.split('|').slice(1, -1).map((cell) => cell.trim());
+    if (cells[0].includes('---')) continue;
+    rows[cells[0]] = cells.slice(1);
+  }
+  return rows;
+}
+
+test('records exact type scale, elevation, and motion tokens', async () => {
+  const [design, tokens] = await Promise.all([
+    readFile('docs/ui/design-system.md', 'utf8'),
+    readFile('docs/ui/tokens.md', 'utf8'),
+  ]);
+  const typeScale = sectionTable(design, '### Type scale');
+  assert.equal(typeScale['body.user'][0], '15px');
+  assert.equal(typeScale['body.user'][1], '1.5');
+  assert.equal(typeScale['body.admin'][0], '14px');
+  assert.equal(typeScale['body.admin'][1], '1.45');
+  assert.equal(typeScale['h1.user'][0], 'clamp(24px, 3vw, 32px)');
+  assert.equal(typeScale['h1.user'][1], '1.15');
+  assert.equal(typeScale['h1.admin'][0], '1.55rem');
+  assert.equal(typeScale['h1.admin'][1], '1.15');
+  assert.equal(typeScale['h2'][0], '19px');
+  assert.equal(typeScale['h2'][1], '1.25');
+  assert.equal(typeScale['h3'][0], '15.5px');
+  assert.equal(typeScale['h3'][1], '1.3');
+  assert.equal(typeScale['h4'][0], '1em');
+  assert.equal(typeScale.hero[0], 'clamp(28px, 4vw, 44px)');
+  assert.equal(typeScale.hero[1], '1.15');
+  assert.equal(typeScale.small[0], '0.86em');
+  assert.equal(typeScale.helper[0], '12px');
+  assert.equal(typeScale.eyebrow[0], '0.74rem');
+  assert.equal(typeScale.eyebrow[2], '600');
+  assert.equal(typeScale.eyebrow[3], '0.08em');
+  assert.equal(typeScale.mono[0], '0.85em');
+  assert.equal(typeScale.panelTitle[0], '0.86rem');
+  assert.match(typeScale.numeric[5], /tabular-nums/);
+
+  const elevation = sectionTable(design, '### Elevation');
+  assert.equal(elevation.resting[0], '0 1px 3px rgba(0,0,0,.25)');
+  assert.equal(elevation.raised[0], '0 2px 8px var(--shade)');
+  assert.equal(elevation.hover[0], '0 6px 20px var(--shade)');
+  assert.equal(elevation.popover[0], '0 8px 24px var(--shade)');
+  assert.equal(elevation.overlay[0], '0 10px 30px var(--shade)');
+  assert.equal(elevation.modal[0], '0 20px 50px var(--shade)');
+  assert.equal(elevation.hero[0], '0 20px 60px rgba(0,0,0,.5)');
+  assert.equal(elevation.drawer[0], '0 0 40px var(--shade)');
+  assert.equal(elevation.sheet[0], '0 30px 60px var(--shade)');
+
+  const motion = sectionTable(design, '### Motion');
+  assert.deepEqual(motion.feedback.slice(0, 2), ['.15s', 'ease']);
+  assert.deepEqual(motion.stateChange.slice(0, 2), ['.2s', 'ease']);
+  assert.deepEqual(motion.emphasis.slice(0, 2), ['.35s', 'ease']);
+  assert.deepEqual(motion.entrance.slice(0, 2), ['.2s', 'ease']);
+  assert.match(motion.entrance[3], /8px/);
+  assert.deepEqual(motion.fresh.slice(0, 2), ['1.6s', 'ease-out']);
+  assert.deepEqual(motion.loading.slice(0, 3), ['1.2s', 'ease', 'infinite']);
+  assert.deepEqual(motion.spin.slice(0, 3), ['.8s', 'linear', 'infinite']);
+  assert.deepEqual(motion.progress.slice(0, 2), ['.6s', 'ease']);
+  assert.match(design, /motion\.reducedMotion` is `none`/);
+
+  for (const key of [
+    'typeScale.h1.user',
+    'typeScale.helper',
+    'elevation.resting',
+    'elevation.hover',
+    'elevation.popover',
+    'elevation.modal',
+    'elevation.hero',
+    'motion.feedback',
+    'motion.stateChange',
+    'motion.entrance',
+    'motion.loading',
+    'motion.progress',
+    'motion.reducedMotion',
+  ]) {
+    assert.ok(tokens.includes(key), key);
+  }
+});
+
 test('ignores per-photo ratio data and reports missing themes and icons', () => {
   const poc = `:root{--bg:#fff; --r:1.5}
 *{box-sizing:border-box}

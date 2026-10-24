@@ -257,26 +257,96 @@ contrast against adjacent surfaces. Check text against its actual surface
 | ADMIN | Barlow Semi Condensed; Arial Narrow, system UI, sans-serif | Barlow; system UI, -apple-system, Segoe UI, sans-serif | JetBrains Mono; ui-monospace, Menlo, Consolas, monospace |
 
 Load weights: Bricolage 500/700, Figtree 400/500/600/700, Barlow 400/500/600,
-Barlow Semi Condensed 500/600/700, JetBrains Mono 400/500. USER body is 15px at
-1.5 line height; ADMIN body is 14px at 1.45. H1 is responsive 24–32px (ADMIN
-1.55rem), H2 19px, H3 15.5px. Small helper text is about 0.86em. Eyebrows are
-0.74rem, 600 weight, uppercase, with 0.08em tracking. IDs and machine values use
-monospace; numeric data uses tabular figures. Never shrink body text to fit a
-translation.
+Barlow Semi Condensed 500/600/700, JetBrains Mono 400/500. Body rendering uses
+antialiased font smoothing (`typography.smoothing`: `antialiased`,
+`-webkit-font-smoothing: antialiased`). The root
+font size stays the browser default of 16px, so `rem` resolves against 16px.
+`em` resolves against the parent font size. IDs and machine values use the
+mono family. Never shrink body text to fit a translation.
+
+### Type scale
+
+`typeScale` is shared. The key is the JSON path under `typeScale`. A weight or
+tracking cell with two values is USER, then ADMIN. A dash means that property
+stays inherited and is omitted from JSON. Line heights are unitless. Family is
+`display`, `body`, or `mono` (the role stack in the table above).
+`heading.user.wrap` and `heading.admin.wrap` are `balance` and apply to h1, h2,
+h3, h4, hero, and panelTitle.
+
+| Key | Size | Line height | Weight | Tracking | Family | Extra |
+| --- | --- | --- | --- | --- | --- | --- |
+| heading.user | — | — | 700 | -0.01em | display | text-wrap: balance. POC tracking `-.01em` |
+| heading.admin | — | — | 600 | 0.01em | display | text-wrap: balance. POC tracking `.01em` |
+| body.user | 15px | 1.5 | 400 | normal | body | — |
+| body.admin | 14px | 1.45 | 400 | normal | body | — |
+| h1.user | clamp(24px, 3vw, 32px) | 1.15 | 700 | -0.01em | display | POC `clamp(24px,3vw,32px)` |
+| h1.admin | 1.55rem | 1.15 | 600 | 0.01em | display | 24.8px at the 16px root |
+| h2 | 19px | 1.25 | 700 / 600 | -0.01em / 0.01em | display | — |
+| h3 | 15.5px | 1.3 | 700 / 600 | -0.01em / 0.01em | display | — |
+| h4 | 1em | — | 700 / 600 | -0.01em / 0.01em | display | 1em equals the role body size |
+| hero | clamp(28px, 4vw, 44px) | 1.15 | 700 / 600 | -0.01em / 0.01em | display | POC `clamp(28px,4vw,44px)` |
+| panelTitle | 0.86rem | 1.25 | 600 | 0.08em | display | uppercase; color muted; 13.76px at the 16px root |
+| small | 0.86em | — | — | — | — | 0.86em of the parent font size |
+| helper | 12px | — | — | — | — | color muted |
+| eyebrow | 0.74rem | — | 600 | 0.08em | display | uppercase; color muted; 11.84px at the 16px root |
+| mono | 0.85em | — | — | — | mono | Loaded weights are 400 and 500 |
+| numeric | — | — | — | — | — | font-variant-numeric: tabular-nums |
 
 ## Spacing, shape, elevation, and motion
 
-Use a 4px rhythm: 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 32, 40px. Preserve
-existing shell gaps/padding specified in the POC. USER cards use 14px radius and
-pill buttons (999px); ADMIN cards use 9px and compact 7px buttons. Inputs,
-badges, and small labels may use local 4–8px radii as in the POC.
+`spacing` is 4px, 6px, 8px, 10px, 12px, 14px, 16px, 18px, 20px, 24px, 32px,
+40px. Preserve existing shell gaps and padding specified in the POC. Each theme
+stores `radius`, `btnRadius`, and `rowHeight` from that theme's `radius`,
+`btn-r`, and `row-h` rows. USER cards use 14px radius and pill buttons (999px);
+ADMIN cards use 9px and compact 7px buttons. Inputs, badges, and small labels
+may use local 4–8px radii as in the POC.
 
-Use low-contrast shade shadows for resting surfaces and stronger shadows only
-for hover or overlays. Do not use elevation alone to show focus, selection, or
-hierarchy; retain borders and focus rings. Focus uses a 2px accent outline with
-2px offset. Motion is brief and limited to feedback or state changes. Under
-prefers-reduced-motion: reduce, remove transitions and animations, including
-loading motion; preserve the state and provide non-motion feedback.
+### Elevation
+
+Each key is the JSON path under `elevation`. The value is the CSS `box-shadow`.
+`var(--shade)` is the active theme's `shade` color. Resting levels are the
+small control shadow and the stacked-media shadow. Stronger levels are hover,
+overlays, and the lightbox. Borders stay on elevated surfaces. Focus, selection,
+and hierarchy keep their borders. Focus uses a 2px accent outline with a 2px
+offset (`focus.width` 2px, `focus.offset` 2px, `focus.color` accent).
+
+| Key | Shadow | Use |
+| --- | --- | --- |
+| resting | 0 1px 3px rgba(0,0,0,.25) | Switch thumb at rest. Fixed color |
+| raised | 0 2px 8px var(--shade) | Album stack at rest |
+| hover | 0 6px 20px var(--shade) | Dense card hover and prototype chrome |
+| popover | 0 8px 24px var(--shade) | Tooltip |
+| overlay | 0 10px 30px var(--shade) | Stronger card hover and toast |
+| modal | 0 20px 50px var(--shade) | Dialog |
+| hero | 0 20px 60px rgba(0,0,0,.5) | Lightbox photo. Fixed color |
+| drawer | 0 0 40px var(--shade) | Drawer and off-canvas rail |
+| sheet | 0 30px 60px var(--shade) | Onboarding panel |
+
+Halo shadows sit outside this scale: search focus `0 0 0 4px var(--accent-soft)`,
+input focus `0 0 0 3px var(--accent-soft)`, chart point `0 0 0 2px var(--surface)`,
+and the live-status glow `0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent)`.
+
+### Motion
+
+Each key is the JSON path under `motion`. Duration and easing are the required
+token strings. Where the POC sets a duration and omits a timing function, easing
+is `ease` (the CSS initial value). `fresh` and `spin` set easing in the POC.
+Store iteration when it is `infinite`. `motion.reducedMotion` is `none`.
+
+| Key | Duration | Easing | Iteration | Parameters |
+| --- | --- | --- | --- | --- |
+| feedback | .15s | ease | 1 | Feedback for the switch background and thumb transform. Standard feedback duration |
+| stateChange | .2s | ease | 1 | State change for caption opacity, tray opacity, and off-canvas rail transform |
+| emphasis | .35s | ease | 1 | State change for the photo hover transform |
+| entrance | .2s | ease | 1 | Entrance for the toast. offset 8px, fromOpacity 0 (`translateY(8px)`) |
+| fresh | 1.6s | ease-out | 1 | Entrance for a new row. from `var(--accent-soft)` to the resting background |
+| loading | 1.2s | ease | infinite | Loading skeleton shimmer. to background-position -200% |
+| spin | .8s | linear | infinite | Loading spinner. to `rotate(1turn)` |
+| progress | .6s | ease | 1 | Progress bar width and ring `stroke-dasharray` |
+
+Under `prefers-reduced-motion: reduce`, transitions and animations are `none`,
+including loading and progress. The end state stays visible. Feedback uses color,
+text, or icons.
 
 ## Iconography
 
