@@ -59,7 +59,7 @@ func (uow *UnitOfWork) Do(ctx context.Context, fn func(Tx) error) error {
 			return fmt.Errorf("db: begin unit of work: %w", err)
 		}
 
-		lastErr = fn(tx)
+		lastErr = runCallback(tx, fn)
 		if lastErr == nil {
 			lastErr = tx.Commit(ctx)
 		} else {
@@ -80,6 +80,21 @@ func (uow *UnitOfWork) Do(ctx context.Context, fn func(Tx) error) error {
 		}
 	}
 	return lastErr
+}
+
+// runCallback runs fn. A panic rolls the transaction back with a detached
+// context, which releases the pooled connection, then re-panics with the
+// original value.
+func runCallback(tx Tx, fn func(Tx) error) error {
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			return
+		}
+		_ = tx.Rollback(context.Background())
+		panic(recovered)
+	}()
+	return fn(tx)
 }
 
 func isSerializationFailure(err error) bool {

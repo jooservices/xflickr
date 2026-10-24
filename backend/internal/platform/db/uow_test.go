@@ -147,6 +147,30 @@ func TestUnitOfWorkValidationAndCanceledRetry(t *testing.T) {
 	}
 }
 
+func TestUnitOfWorkPanicRollsBackAndRepanics(t *testing.T) {
+	const panicValue = "unit of work callback panicked"
+	tx := &fakeUnitOfWorkTx{}
+	database := &fakeUnitOfWorkDB{transactions: []*fakeUnitOfWorkTx{tx, &fakeUnitOfWorkTx{}}}
+
+	defer func() {
+		recovered := recover()
+		if recovered != panicValue {
+			t.Fatalf("recovered = %#v, want %#v", recovered, panicValue)
+		}
+		if database.begins != 1 || tx.rollbacks != 1 || tx.commits != 0 {
+			t.Fatalf("begins=%d commits=%d rollbacks=%d", database.begins, tx.commits, tx.rollbacks)
+		}
+		if tx.rollbackCtx != context.Background() {
+			t.Fatalf("rollback context = %v, want context.Background()", tx.rollbackCtx)
+		}
+	}()
+
+	err := NewUnitOfWork(database).Do(t.Context(), func(Tx) error {
+		panic(panicValue)
+	})
+	t.Fatalf("Do() returned %v, want panic", err)
+}
+
 func TestUnitOfWorkCombinesRollbackError(t *testing.T) {
 	callbackErr := &pgconn.PgError{Code: "40001"}
 	rollbackErr := errors.New("rollback failed")
@@ -194,6 +218,7 @@ type fakeUnitOfWorkTx struct {
 	rollbacks   int
 	commitErr   error
 	rollbackErr error
+	rollbackCtx context.Context
 }
 
 func (tx *fakeUnitOfWorkTx) Commit(context.Context) error {
@@ -201,7 +226,8 @@ func (tx *fakeUnitOfWorkTx) Commit(context.Context) error {
 	return tx.commitErr
 }
 
-func (tx *fakeUnitOfWorkTx) Rollback(context.Context) error {
+func (tx *fakeUnitOfWorkTx) Rollback(ctx context.Context) error {
 	tx.rollbacks++
+	tx.rollbackCtx = ctx
 	return tx.rollbackErr
 }
