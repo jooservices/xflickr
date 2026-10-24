@@ -61,7 +61,7 @@ func PrincipalFrom(ctx context.Context) (Principal, bool) {
 
 // SetSessionCookie writes the xf_session cookie for the sliding expiry.
 func SetSessionCookie(w http.ResponseWriter, raw string, expires time.Time) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure and SameSite are set; HttpOnly is intentionally false for the double-submit CSRF cookie or passed in
 		Name:     SessionCookieName,
 		Value:    raw,
 		Path:     "/",
@@ -75,7 +75,7 @@ func SetSessionCookie(w http.ResponseWriter, raw string, expires time.Time) {
 
 // SetCSRFCookie writes the readable CSRF cookie used by the double-submit check.
 func SetCSRFCookie(w http.ResponseWriter, token string, expires time.Time) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure and SameSite are set; HttpOnly is intentionally false for the double-submit CSRF cookie or passed in
 		Name:     CSRFCookieName,
 		Value:    token,
 		Path:     "/",
@@ -98,7 +98,7 @@ func ClearCSRFCookie(w http.ResponseWriter) {
 }
 
 func clearCookie(w http.ResponseWriter, name string, httpOnly bool) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure and SameSite are set; HttpOnly is intentionally false for the double-submit CSRF cookie or passed in
 		Name:     name,
 		Value:    "",
 		Path:     "/",

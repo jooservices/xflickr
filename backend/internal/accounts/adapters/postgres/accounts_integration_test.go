@@ -16,6 +16,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	redisv9 "github.com/redis/go-redis/v9"
+
 	"github.com/jooservices/xflickr/internal/accounts/adapters/flickr"
 	"github.com/jooservices/xflickr/internal/accounts/adapters/postgres"
 	accountsredis "github.com/jooservices/xflickr/internal/accounts/adapters/redis"
@@ -27,7 +29,6 @@ import (
 	settingspostgres "github.com/jooservices/xflickr/internal/settings/adapters/postgres"
 	settingsapp "github.com/jooservices/xflickr/internal/settings/app"
 	flickrclient "github.com/jooservices/xflickr/pkg/flickr"
-	redisv9 "github.com/redis/go-redis/v9"
 )
 
 const (

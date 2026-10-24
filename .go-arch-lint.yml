@@ -14,6 +14,9 @@ components:
   identity-domain:   { in: internal/identity/domain/** }
   identity-app:      { in: internal/identity/app/** }
   identity-adapters: { in: internal/identity/adapters/** }
+  accounts-domain:   { in: internal/accounts/domain/** }
+  accounts-app:      { in: internal/accounts/app/** }
+  accounts-adapters: { in: internal/accounts/adapters/** }
   settings-domain:   { in: internal/settings/domain/** }
   settings-app:      { in: internal/settings/app/** }
   settings-adapters: { in: internal/settings/adapters/** }
@@ -37,6 +40,10 @@ deps:
     mayDependOn: [identity-domain, platform, pkg, settings-app]
   identity-adapters:
     mayDependOn: [identity-domain, identity-app, platform, pkg, settings-app]
+  accounts-app:
+    mayDependOn: [accounts-domain, platform, pkg]
+  accounts-adapters:
+    mayDependOn: [accounts-domain, accounts-app, platform, pkg, settings-domain]
   settings-app:
     mayDependOn: [settings-domain, platform, pkg, identity-app]
   settings-adapters:
@@ -48,6 +55,9 @@ deps:
       - identity-domain
       - identity-app
       - identity-adapters
+      - accounts-domain
+      - accounts-app
+      - accounts-adapters
       - settings-domain
       - settings-app
       - settings-adapters

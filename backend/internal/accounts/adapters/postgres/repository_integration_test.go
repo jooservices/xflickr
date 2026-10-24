@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/jooservices/xflickr/internal/accounts/adapters/flickr"
 	"github.com/jooservices/xflickr/internal/accounts/adapters/postgres"
 	accountsettings "github.com/jooservices/xflickr/internal/accounts/adapters/settings"

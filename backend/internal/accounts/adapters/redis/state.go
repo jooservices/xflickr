@@ -10,8 +10,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jooservices/xflickr/internal/accounts/app"
 	redisv9 "github.com/redis/go-redis/v9"
+
+	"github.com/jooservices/xflickr/internal/accounts/app"
 )
 
 // States stores pending authorizations under the configured Redis prefix. The

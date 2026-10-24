@@ -475,7 +475,7 @@ func cookieByName(t *testing.T, response *httptest.ResponseRecorder, name string
 func TestLoginResponseWithoutUserDoesNotIssueASession(t *testing.T) {
 	called := false
 	middleware := MaintainSessionCookies(&fakeSessions{raw: "raw"})
-	wrapped := middleware(func(ctx context.Context, _ http.ResponseWriter, _ *http.Request, _ any) (any, error) {
+	wrapped := middleware(func(_ context.Context, _ http.ResponseWriter, _ *http.Request, _ any) (any, error) {
 		called = true
 		return gen.Login401Response{}, nil
 	}, loginOperationID)

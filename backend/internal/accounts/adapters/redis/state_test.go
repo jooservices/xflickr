@@ -7,9 +7,10 @@ import (
 	"time"
 
 	miniredis "github.com/alicebob/miniredis/v2"
+	redisv9 "github.com/redis/go-redis/v9"
+
 	"github.com/jooservices/xflickr/internal/accounts/app"
 	"github.com/jooservices/xflickr/internal/platform/crypto"
-	redisv9 "github.com/redis/go-redis/v9"
 )
 
 func newStates(t *testing.T) (States, *miniredis.Miniredis) {

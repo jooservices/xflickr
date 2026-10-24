@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	"github.com/jooservices/xflickr/internal/identity/adapters/postgres"
 	"github.com/jooservices/xflickr/internal/identity/app"

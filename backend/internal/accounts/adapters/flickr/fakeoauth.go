@@ -12,9 +12,9 @@ import (
 
 // Paths served by FakeOAuth.
 const (
-	FakeRequestTokenPath = "/services/oauth/request_token"
+	FakeRequestTokenPath = "/services/oauth/request_token" //nolint:gosec // URL path, not a credential
 	FakeAuthorizePath    = "/services/oauth/authorize"
-	FakeAccessTokenPath  = "/services/oauth/access_token"
+	FakeAccessTokenPath  = "/services/oauth/access_token" //nolint:gosec // URL path, not a credential
 )
 
 // FakeOAuth is a fake Flickr OAuth server for tests. It issues request tokens

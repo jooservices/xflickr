@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/jackc/pgx/v5"
+
 	"github.com/jooservices/xflickr/internal/accounts/app"
 	"github.com/jooservices/xflickr/internal/accounts/domain"
 	"github.com/jooservices/xflickr/internal/platform/crypto"
@@ -15,7 +16,8 @@ import (
 )
 
 const (
-	credentialsSQL = `
+	//nolint:gosec // SQL column list, not a credential
+	apiKeyRowSQL = `
 SELECT id, user_id, label, key_public, per_hour_limit, per_second_limit, burst, status, created_at, secret_sealed
 FROM api_keys
 WHERE id = $1 AND user_id = $2`
@@ -58,7 +60,7 @@ func (r *Repository) KeyCredentials(ctx context.Context, userID, keyID int64) (d
 	var sealed crypto.Sealed
 	err := r.unit.Do(ctx, func(tx db.Tx) error {
 		var status string
-		err := tx.QueryRow(ctx, credentialsSQL, keyID, userID).Scan(
+		err := tx.QueryRow(ctx, apiKeyRowSQL, keyID, userID).Scan(
 			&key.ID, &key.UserID, &key.Label, &key.PublicKey,
 			&key.PerHourLimit, &key.PerSecondLimit, &key.Burst, &status, &key.CreatedAt, &sealed,
 		)

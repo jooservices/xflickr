@@ -69,7 +69,7 @@ func TestEchoReportsCheckFailuresWithoutTheKey(t *testing.T) {
 		_, _ = io.WriteString(w, `{"stat":"fail","code":100,"message":"Invalid API Key"}`)
 	}))
 	t.Cleanup(codeServer.Close)
-	if err := (NewProbe(codeServer.URL, codeServer.Client())).Echo(t.Context(), "bad"); !errors.Is(err, app.ErrKeyInvalid) {
+	if err := NewProbe(codeServer.URL, codeServer.Client()).Echo(t.Context(), "bad"); !errors.Is(err, app.ErrKeyInvalid) {
 		t.Fatalf("code 100 error = %v", err)
 	}
 
@@ -126,5 +126,4 @@ func TestFakeFlickrRejectsUnexpectedRequests(t *testing.T) {
 			t.Fatalf("status = %d body = %s", response.StatusCode, body)
 		}
 	}
-
 }
