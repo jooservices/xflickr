@@ -24,6 +24,10 @@ paths:
     $ref: ./paths/flickr_accounts.yaml#/connect
   /flickr-accounts/callback:
     $ref: ./paths/flickr_accounts.yaml#/callback
+  /admin/users:
+    $ref: ./paths/admin_users.yaml#/collection
+  /admin/users/{id}:
+    $ref: ./paths/admin_users.yaml#/item
 components:
   schemas:
     Error:
@@ -46,3 +50,9 @@ components:
       $ref: ./schemas/flickr_accounts.yaml#/ConnectFlickrAccountResponse
     FlickrAccount:
       $ref: ./schemas/flickr_accounts.yaml#/FlickrAccount
+    AdminUser:
+      $ref: ./schemas/admin_users.yaml#/AdminUser
+    AdminUserPage:
+      $ref: ./schemas/admin_users.yaml#/AdminUserPage
+    UpdateAdminUserRequest:
+      $ref: ./schemas/admin_users.yaml#/UpdateAdminUserRequest

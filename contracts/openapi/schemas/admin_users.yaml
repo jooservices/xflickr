@@ -1,0 +1,49 @@
+AdminUser:
+  type: object
+  additionalProperties: false
+  description: A user as seen by an administrator. Password hashes are never included.
+  required: [id, email, role, locale, disabled, created_at]
+  properties:
+    id:
+      type: integer
+      format: int64
+    email:
+      type: string
+      format: email
+    role:
+      type: string
+      enum: [admin, user]
+    locale:
+      type: string
+    disabled:
+      type: boolean
+    created_at:
+      type: string
+      format: date-time
+AdminUserPage:
+  type: object
+  additionalProperties: false
+  required: [items, total, page, page_size]
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/AdminUser'
+    total:
+      type: integer
+      format: int64
+      description: Users matching the search across all pages
+    page:
+      type: integer
+    page_size:
+      type: integer
+UpdateAdminUserRequest:
+  type: object
+  additionalProperties: false
+  minProperties: 1
+  properties:
+    role:
+      type: string
+      enum: [admin, user]
+    disabled:
+      type: boolean

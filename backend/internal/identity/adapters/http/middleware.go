@@ -234,11 +234,21 @@ func authenticatedRequest(method, path string) bool {
 	}
 }
 
-// ProtectRoutes applies RequireUser to routes that need an authenticated principal.
+func adminRequest(path string) bool {
+	return path == "/admin" || strings.HasPrefix(path, "/admin/")
+}
+
+// ProtectRoutes applies RequireUser to routes that need an authenticated
+// principal and RequireAdmin to everything under /admin.
 func ProtectRoutes(sessions SessionService) func(http.Handler) http.Handler {
 	requireUser := RequireUser(sessions)
+	requireAdmin := RequireAdmin(sessions)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if adminRequest(r.URL.Path) {
+				requireAdmin(next).ServeHTTP(w, r)
+				return
+			}
 			if authenticatedRequest(r.Method, r.URL.Path) {
 				requireUser(next).ServeHTTP(w, r)
 				return

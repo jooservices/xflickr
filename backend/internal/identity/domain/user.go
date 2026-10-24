@@ -76,3 +76,32 @@ func VerifyPassword(encoded, password string) bool {
 	got := argon2.IDKey([]byte(password), salt, iterations, memory, parallelism, uint32(len(want))) //nolint:gosec // length is bounded to 16..128 above
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
+
+// ErrLastAdmin means a change would leave the system without an active administrator.
+var ErrLastAdmin = errors.New("identity: the last active administrator cannot be disabled or demoted")
+
+// UserChange is a partial update of a user's role and disabled state.
+// A nil field keeps the current value.
+type UserChange struct {
+	Role     *Role
+	Disabled *bool
+}
+
+// IsActiveAdmin reports whether the user is an administrator who can sign in.
+func (u User) IsActiveAdmin() bool { return u.Role == RoleAdmin && !u.Disabled }
+
+// Apply returns user with change applied. activeAdmins is the number of active
+// administrators before the change. It refuses a change that removes the last one.
+func (u User) Apply(change UserChange, activeAdmins int) (User, error) {
+	next := u
+	if change.Role != nil {
+		next.Role = *change.Role
+	}
+	if change.Disabled != nil {
+		next.Disabled = *change.Disabled
+	}
+	if u.IsActiveAdmin() && !next.IsActiveAdmin() && activeAdmins <= 1 {
+		return User{}, ErrLastAdmin
+	}
+	return next, nil
+}

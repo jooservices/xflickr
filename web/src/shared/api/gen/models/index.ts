@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.0.0
  */
 
+export * from './adminUser';
+export * from './adminUserPage';
+export * from './adminUserRole';
 export * from './apiKey';
 export * from './apiKeyStatus';
 export * from './authRequest';
@@ -18,6 +21,9 @@ export * from './flickrAccount';
 export * from './flickrAccountCallbackParams';
 export * from './flickrAccountStatus';
 export * from './health';
+export * from './listAdminUsersParams';
+export * from './updateAdminUserRequest';
+export * from './updateAdminUserRequestRole';
 export * from './updateKeyRequest';
 export * from './user';
 export * from './userRole';

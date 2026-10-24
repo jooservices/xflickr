@@ -25,6 +25,7 @@ import (
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
+	"github.com/jooservices/xflickr/internal/platform/audit"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/crypto"
 	"github.com/jooservices/xflickr/internal/platform/db"
@@ -222,6 +223,7 @@ func buildIdentityHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClien
 		LoginUseCase:    identityapp.Login{Repository: users, Limiter: identityredis.Limiter{Client: redisClient, Prefix: cfg.Redis.Prefix}, DummyPasswordHash: dummyHash},
 		Users:           users,
 		Sessions:        identityapp.Sessions{Repository: users, Users: users},
+		AdminUsers:      identityapp.AdminUsers{Store: users, Audit: audit.Discard},
 		Version:         version,
 	}, nil
 }

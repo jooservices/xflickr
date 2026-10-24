@@ -44,6 +44,10 @@ guide feature implementation; operational environment rules live in
   user. A missing or expired session responds with 401. `RequireAdmin` applies
   that same check, then responds with 403 when the signed-in user is not an
   administrator.
+- Administrators list users (`GET /admin/users`) and change a user's role or
+  disabled state (`PATCH /admin/users/{id}`). The last active administrator
+  cannot be disabled or demoted, and each change is recorded through the audit
+  port.
 - `DELETE /auth/sessions` revokes every session belonging to the current user
   except the session that sent the request. Logout revokes the current session
   and clears the session cookie.

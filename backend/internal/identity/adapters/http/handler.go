@@ -27,6 +27,7 @@ type Handler struct {
 	LoginUseCase    app.Login
 	Users           UserLookup
 	Sessions        SessionService
+	AdminUsers      AdminUserService
 	Version         string
 }
 
