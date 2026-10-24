@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import {
   COMPONENT_NAMES,
+  missingPatternSections,
+  patternSections,
   validateComponentGallery,
   validateComponentSpec,
   validateUiSpec,
@@ -13,6 +15,10 @@ const [poc, design, components, gallery] = await Promise.all([
   readFile('docs/ui/mockups/components.html', 'utf8'),
 ]);
 const result = validateUiSpec(poc, design);
+const patternFiles = Object.fromEntries(
+  await Promise.all(Object.keys(patternSections).map(async (file) => [file, await readFile(file, 'utf8').catch(() => '')])),
+);
+const missingSections = missingPatternSections(patternFiles);
 const componentSpec = validateComponentSpec(components);
 const componentGallery = validateComponentGallery(gallery);
 let failed = false;
@@ -37,6 +43,10 @@ if (componentGallery.missing.length) {
   for (const gap of componentGallery.missing) console.error('component gallery: ' + gap);
   failed = true;
 }
+if (missingSections.length) {
+  console.error('Missing pattern document sections: ' + missingSections.join(', '));
+  failed = true;
+}
 
 if (failed) {
   process.exitCode = 1;
@@ -48,8 +58,10 @@ if (failed) {
       result.mediaOverrideCount +
       ' media-query root overrides, ' +
       result.pocIcons.length +
-      ' icons are documented, and all ' +
+      ' icons are documented, ' +
       COMPONENT_NAMES.length +
-      ' shared UI components have a state table and a four-theme gallery.',
+      ' shared UI components have a state table and a four-theme gallery, and ' +
+      Object.values(patternSections).flat().length +
+      ' pattern sections are present.',
   );
 }

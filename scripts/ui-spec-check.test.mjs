@@ -4,6 +4,8 @@ import test from 'node:test';
 import {
   COMPONENT_NAMES,
   COMPONENT_STATES,
+  missingPatternSections,
+  patternSections,
   validateComponentGallery,
   validateComponentSpec,
   validateUiSpec,
@@ -647,4 +649,20 @@ test('documents every shared component and shows it in every theme', async () =>
       assert.ok(gallery.includes(`data-theme="${theme}"`), theme);
     }
   }
+});
+
+test('finds every pattern, accessibility, and i18n section', async () => {
+  const files = Object.fromEntries(
+    await Promise.all(Object.keys(patternSections).map(async (file) => [file, await readFile(file, 'utf8')])),
+  );
+  assert.deepEqual(missingPatternSections(files), []);
+});
+
+test('reports a missing pattern section and a missing file', () => {
+  const files = { 'docs/ui/patterns.md': '## Loading skeletons\n### Toast rules\n' };
+  const missing = missingPatternSections(files, {
+    'docs/ui/patterns.md': ['Loading skeletons', 'Toast rules', 'Offline mode'],
+    'docs/ui/a11y.md': ['Keyboard map'],
+  });
+  assert.deepEqual(missing, ['docs/ui/patterns.md: Offline mode', 'docs/ui/a11y.md: Keyboard map']);
 });

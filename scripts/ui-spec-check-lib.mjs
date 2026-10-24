@@ -402,3 +402,52 @@ function parseAttrs(raw) {
   }
   return attrs;
 }
+
+export const patternSections = {
+  'docs/ui/patterns.md': [
+    'Loading skeletons',
+    'Empty states',
+    'Default copy table',
+    'Error states',
+    'Partial and stale data markers',
+    'Forbidden and not-found pages',
+    'Session expiry',
+    'Offline mode',
+    'Live updates',
+    'SSE channel naming',
+    'Polling fallback intervals',
+    'Live and Paused indicator',
+    'New row animation',
+    'Toast rules',
+    'Responsive breakpoints',
+    'Data-testid naming convention',
+  ],
+  'docs/ui/a11y.md': [
+    'WCAG 2.2 AA checklist per component type',
+    'Focus management',
+    'Keyboard map',
+    'Reduced motion',
+    'Screen reader announcements for live regions',
+  ],
+  'docs/ui/i18n.md': [
+    'Key naming',
+    'English source rules',
+    'Vietnamese translation rules',
+    'Number, date, and duration formatting',
+    'Pluralisation',
+  ],
+};
+
+// Returns "<file>: <heading>" for every required heading missing from the files.
+export function missingPatternSections(files, required = patternSections) {
+  const missing = [];
+  for (const [file, headings] of Object.entries(required)) {
+    const found = new Set(
+      [...(files[file] ?? '').matchAll(/^#{2,3}\s+(.+?)\s*$/gm)].map((match) => match[1]),
+    );
+    for (const heading of headings) {
+      if (!found.has(heading)) missing.push(`${file}: ${heading}`);
+    }
+  }
+  return missing;
+}

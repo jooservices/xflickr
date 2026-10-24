@@ -17,3 +17,9 @@
   keyboard behaviour, and the gallery mockup.
 - [UI token source contract](ui/tokens.md) — machine-readable token schema and
   POC coverage requirements.
+- [UX patterns](ui/patterns.md) — loading, empty, error, live update, responsive,
+  and test id rules shared by every screen.
+- [Accessibility](ui/a11y.md) — WCAG 2.2 AA checklist, focus, keyboard, and live
+  region rules.
+- [Internationalisation and copy](ui/i18n.md) — key naming, English and
+  Vietnamese rules, formatting, and plurals.
