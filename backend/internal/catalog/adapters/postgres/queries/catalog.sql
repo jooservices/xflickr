@@ -52,7 +52,7 @@ WHERE photos.last_update IS DISTINCT FROM EXCLUDED.last_update
 UPDATE photos
 SET sizes = $2, sizes_status = $3, sizes_checked_at = $4
 WHERE id = $1
-  AND (sizes_status <> 'confirmed' OR $3 = 'confirmed')
+  AND (sizes_status <> 'confirmed' OR $3 IN ('confirmed', 'unavailable'))
   AND (sizes, sizes_status, sizes_checked_at) IS DISTINCT FROM ($2, $3, $4);
 
 -- name: MarkTombstone :exec

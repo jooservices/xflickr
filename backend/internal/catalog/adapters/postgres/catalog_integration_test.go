@@ -165,6 +165,16 @@ func TestCatalogUpsertsBatchIdempotencySizesAndPartitions(t *testing.T) {
 	if !reflect.DeepEqual(storedJSON, confirmedJSON) || storedStatus != string(domain.SizesConfirmed) || !storedCheckedAt.Equal(confirmedAt) {
 		t.Fatalf("stale sizes downgraded confirmed record: sizes=%s status=%s checked=%s", storedSizes, storedStatus, storedCheckedAt)
 	}
+	unavailableAt := confirmedAt.Add(2 * time.Second)
+	if err := repository.SetSizes(ctx, photoID, []byte(`[]`), domain.SizesUnavailable, unavailableAt); err != nil {
+		t.Fatalf("mark confirmed sizes unavailable: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT sizes, sizes_status, sizes_checked_at FROM photos WHERE id = $1`, photoID).Scan(&storedSizes, &storedStatus, &storedCheckedAt); err != nil {
+		t.Fatal(err)
+	}
+	if string(storedSizes) != `[]` || storedStatus != string(domain.SizesUnavailable) || !storedCheckedAt.Equal(unavailableAt) {
+		t.Fatalf("confirmed to unavailable update failed: sizes=%s status=%s checked=%s", storedSizes, storedStatus, storedCheckedAt)
+	}
 
 	tombstoneAt := time.Now().UTC().Truncate(time.Microsecond)
 	if err := repository.MarkTombstone(ctx, photoID, tombstoneAt); err != nil {

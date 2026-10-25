@@ -78,6 +78,9 @@ func TestPhotoLaneNextEnqueuesInOrderWithKeyAndDedupeKey(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(ids, []int64{5, 3}) {
 		t.Fatalf("Next() = %v, %v, want [5 3]", ids, err)
 	}
+	if got := []int64{enqueuer.jobs[0].PhotoID, enqueuer.jobs[1].PhotoID}; !reflect.DeepEqual(got, ids) {
+		t.Fatalf("enqueued photo order = %v, want selector order %v", got, ids)
+	}
 	job := enqueuer.jobs[0]
 	if job.KeyID != 42 || job.Class != quotadomain.Photo || job.Facet != "sizes" || job.DedupeKey != "photo:5:sizes" {
 		t.Fatalf("job = %+v", job)
