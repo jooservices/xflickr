@@ -65,7 +65,7 @@ deps:
   settings-adapters:
     mayDependOn: [settings-domain, settings-app, platform, pkg, identity-app]
   schedule-app:
-    mayDependOn: [schedule-domain, platform]
+    mayDependOn: [schedule-domain, platform, catalog-app, quota-app, quota-domain]
   schedule-adapters:
     mayDependOn: [schedule-domain, schedule-app, platform, pkg]
   quota-app:
