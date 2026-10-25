@@ -178,6 +178,49 @@ func TestUpdateMeResponses(t *testing.T) {
 	}
 }
 
+func TestSessionProfileHandlers(t *testing.T) {
+	ctx := WithPrincipal(context.Background(), Principal{
+		User: domain.User{ID: 9}, Session: domain.Session{ID: 31}, TokenHash: []byte{1, 2},
+	})
+	fake := &fakeSessions{
+		listed: []domain.Session{
+			{ID: 31, UserID: 9, LastSeenAt: time.Now(), CreatedAt: time.Now()},
+			{ID: 32, UserID: 9, LastSeenAt: time.Now(), CreatedAt: time.Now()},
+		},
+		revokeByIDOK: true,
+	}
+	h := Handler{Sessions: fake}
+	listed, err := h.ListMySessions(ctx, gen.ListMySessionsRequestObject{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, ok := listed.(gen.ListMySessions200JSONResponse)
+	if !ok || len(response.Items) != 2 || !response.Items[0].Current || response.Items[1].Current {
+		t.Fatalf("session list = %#v", listed)
+	}
+	revoked, err := h.RevokeMySession(ctx, gen.RevokeMySessionRequestObject{ID: 32})
+	if err != nil || fake.revokeByIDUser != 9 || fake.revokeByID != 32 {
+		t.Fatalf("session revoke response=%T user=%d id=%d err=%v", revoked, fake.revokeByIDUser, fake.revokeByID, err)
+	}
+	if _, ok := revoked.(gen.RevokeMySession204Response); !ok {
+		t.Fatalf("session revoke response = %T", revoked)
+	}
+	current, err := h.RevokeMySession(ctx, gen.RevokeMySessionRequestObject{ID: 31})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := current.(gen.RevokeMySession404Response); !ok {
+		t.Fatalf("current session revoke response = %T", current)
+	}
+	missing, err := h.ListMySessions(context.Background(), gen.ListMySessionsRequestObject{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := missing.(gen.ListMySessions401Response); !ok {
+		t.Fatalf("anonymous session list response = %T", missing)
+	}
+}
+
 func registerBody(email openapi_types.Email, password *string) *gen.RegisterJSONRequestBody {
 	return &gen.RegisterRequest{Email: email, Password: password, AcceptTerms: true, Locale: gen.RegisterRequestLocaleEn}
 }
@@ -239,7 +282,7 @@ func TestLoginResponses(t *testing.T) {
 				t.Fatalf("%s response %T", tc.name, got)
 			}
 		case "limited":
-			if _, ok := got.(gen.Login429Response); !ok {
+			if _, ok := got.(gen.Login429JSONResponse); !ok {
 				t.Fatalf("%s response %T", tc.name, got)
 			}
 		default:

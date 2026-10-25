@@ -16,6 +16,22 @@ function csrfToken(): string {
   return match ? decodeURIComponent(match[1]) : '';
 }
 
+export function csrfFetchOptions(method = 'GET'): RequestInit {
+  const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(method);
+  const token = csrfToken();
+  return {
+    method,
+    credentials: 'same-origin',
+    headers: unsafe && token ? { 'X-CSRF-Token': token } : {},
+  };
+}
+
+export function signalSessionExpired(status: number): void {
+  if (status === 401 && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+  }
+}
+
 export async function request<T>(
   path: string,
   method = 'GET',

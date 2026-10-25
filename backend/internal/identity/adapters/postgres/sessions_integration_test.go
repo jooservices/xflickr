@@ -65,7 +65,7 @@ func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherRaw, _, _, err := service.Issue(ctx, owner.ID)
+	otherRaw, otherSession, _, err := service.Issue(ctx, owner.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +82,13 @@ func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 	}
 	if _, err := repository.InsertSession(ctx, owner.ID, bytes.Repeat([]byte{1}, 16), time.Now().Add(time.Hour), time.Now()); err == nil {
 		t.Fatal("short token hash was stored")
+	}
+	listed, err := repository.ListSessions(ctx, owner.ID)
+	if err != nil || len(listed) != 2 {
+		t.Fatalf("ListSessions() = %d sessions, %v", len(listed), err)
+	}
+	if deleted, err := repository.DeleteSessionByID(ctx, other.ID, otherSession.ID); err != nil || deleted {
+		t.Fatalf("DeleteSessionByID() allowed a foreign owner: deleted=%v err=%v", deleted, err)
 	}
 
 	updated, err := repository.TouchSession(ctx, domain.HashSessionToken(raw), time.Now().Add(domain.SessionLifetime), time.Now().Add(time.Second))
@@ -153,6 +160,16 @@ func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 	if _, err := repository.FindSessionByHash(ctx, domain.HashSessionToken(foreignRaw), time.Now()); err != nil {
 		t.Fatalf("foreign session error = %v", err)
 	}
+	deletableRaw, deletableSession, _, err := service.Issue(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted, err := repository.DeleteSessionByID(ctx, owner.ID, deletableSession.ID); err != nil || !deleted {
+		t.Fatalf("DeleteSessionByID() = %v, %v", deleted, err)
+	}
+	if _, err := repository.FindSessionByHash(ctx, domain.HashSessionToken(deletableRaw), time.Now()); !errors.Is(err, app.ErrUnauthenticated) {
+		t.Fatalf("single-revoked session error = %v", err)
+	}
 	if err := repository.DeleteSessionByHash(ctx, domain.HashSessionToken(raw)); err != nil {
 		t.Fatal(err)
 	}
@@ -176,6 +193,12 @@ func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 	}
 	if err := repository.DeleteSessionByHash(canceled, domain.HashSessionToken(foreignRaw)); err == nil {
 		t.Fatal("delete succeeded with a canceled context")
+	}
+	if _, err := repository.ListSessions(canceled, owner.ID); err == nil {
+		t.Fatal("list succeeded with a canceled context")
+	}
+	if _, err := repository.DeleteSessionByID(canceled, owner.ID, 1); err == nil {
+		t.Fatal("delete by id succeeded with a canceled context")
 	}
 	if _, err := repository.FindByID(ctx, owner.ID+9_000_000_000); !errors.Is(err, app.ErrUserNotFound) {
 		t.Fatalf("missing user error = %v", err)

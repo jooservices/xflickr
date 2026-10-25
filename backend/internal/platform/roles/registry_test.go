@@ -9,6 +9,10 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -44,6 +48,12 @@ func TestBuildIdentityHandlerWiresSettingsAndDummyHash(t *testing.T) {
 	limiter, ok := handler.LoginUseCase.Limiter.(identityredis.Limiter)
 	if !ok || limiter.Prefix != "test:" {
 		t.Fatal("login limiter is not configured with the Redis prefix")
+	}
+}
+
+func TestBuildIdentityHandlerRejectsInvalidPasswordHashParameters(t *testing.T) {
+	if _, err := buildIdentityHandler(nil, nil, config.Config{}, "test"); err == nil {
+		t.Fatal("identity handler accepted invalid Argon2 settings")
 	}
 }
 
@@ -101,7 +111,7 @@ func TestBuildConfiguredAPIHandler(t *testing.T) {
 	}
 }
 
-func TestConfiguredAPIRoleReturnsDatabaseConnectionError(t *testing.T) {
+func TestConfiguredAPIRoleReturnsUnreachableWorktreeDatabaseError(t *testing.T) {
 	for key, value := range map[string]string{
 		"DB_HOST":                   "127.0.0.1",
 		"DB_PORT":                   "1",
@@ -139,10 +149,81 @@ func TestConfiguredAPIRoleReturnsConfigurationError(t *testing.T) {
 	}
 }
 
+func TestConfiguredAPIRoleReturnsDatabaseConnectionError(t *testing.T) {
+	for key, value := range map[string]string{
+		"DB_HOST":                   "127.0.0.1",
+		"DB_PORT":                   "1",
+		"DB_NAME":                   "xflickr_wt_roles_unit",
+		"DB_USER":                   "xflickr_roles_test",
+		"REDIS_PREFIX":              "roles_unit:",
+		"OPENSEARCH_INDEX_PREFIX":   "roles_unit_",
+		"NODE_ID":                   "roles-unit-test",
+		"XFLICKR_MASTER_KEYS":       "test:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{5}, 32)),
+		"XFLICKR_MASTER_KEY_ACTIVE": "test",
+	} {
+		t.Setenv(key, value)
+	}
+	if err := newConfiguredAPIRole(":0", "test").Run(context.Background()); err == nil {
+		t.Fatal("configured API role started without a reachable database")
+	}
+}
+
+func TestConfiguredAPIRoleStartsAgainstTheWorktreeServices(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use shared worktree services")
+	}
+	t.Setenv("REDIS_PREFIX", "roles_integration:")
+	t.Setenv("OPENSEARCH_INDEX_PREFIX", "roles_integration_")
+	t.Setenv("NODE_ID", "roles-integration")
+	t.Setenv("XFLICKR_MASTER_KEYS", "test:"+base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{5}, 32)))
+	t.Setenv("XFLICKR_MASTER_KEY_ACTIVE", "test")
+	_, source, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate integration test source")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(source), "../../../../"))
+	cfg, err := config.LoadWithDotEnv(filepath.Join(root, ".env"))
+	if err != nil {
+		t.Fatalf("load worktree runtime configuration: %v", err)
+	}
+	if !strings.HasPrefix(cfg.DB.Name, "xflickr_wt") {
+		t.Fatal("configured API role requires a worktree database")
+	}
+	t.Setenv("DB_HOST", cfg.DB.Host)
+	t.Setenv("DB_PORT", strconv.Itoa(cfg.DB.Port))
+	t.Setenv("DB_NAME", cfg.DB.Name)
+	t.Setenv("DB_USER", cfg.DB.User)
+	t.Setenv("DB_PASSWORD", cfg.DB.Password)
+	t.Setenv("DB_SSLMODE", cfg.DB.SSLMode)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- newConfiguredAPIRole("127.0.0.1:0", "integration-test").Run(ctx) }()
+	select {
+	case err := <-done:
+		t.Fatalf("configured API role stopped during startup: %v", err)
+	case <-time.After(500 * time.Millisecond):
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("configured API role shutdown: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("configured API role did not stop after cancellation")
+	}
+}
+
 type testRole struct {
 	name string
 	run  func(context.Context) error
 }
+
+type rejectingListener struct{ err error }
+
+func (listener rejectingListener) Accept() (net.Conn, error) { return nil, listener.err }
+func (rejectingListener) Close() error                       { return nil }
+func (rejectingListener) Addr() net.Addr                     { return &net.TCPAddr{} }
 
 func (r testRole) Name() string { return r.name }
 func (r testRole) Run(ctx context.Context) error {
@@ -391,6 +472,17 @@ func TestAPIRoleReturnsListenError(t *testing.T) {
 	}
 }
 
+func TestAPIRoleReturnsServeError(t *testing.T) {
+	role := NewAPIRole("unused", "test")
+	role.listenerFactory = func(string) (net.Listener, error) {
+		return rejectingListener{err: errors.New("forced accept failure")}, nil
+	}
+	err := role.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "forced accept failure") {
+		t.Fatalf("Run() error = %v, want listener accept failure", err)
+	}
+}
+
 type stubSessions struct{}
 
 func (stubSessions) Issue(context.Context, int64) (string, domain.Session, string, error) {
@@ -403,7 +495,9 @@ func (stubSessions) Authenticate(context.Context, string) (identityapp.Authentic
 
 func (stubSessions) Revoke(context.Context, string) error { return nil }
 
-func (stubSessions) RevokeOthers(context.Context, int64, []byte) error { return nil }
+func (stubSessions) RevokeOthers(context.Context, int64, []byte) error      { return nil }
+func (stubSessions) List(context.Context, int64) ([]domain.Session, error)  { return nil, nil }
+func (stubSessions) RevokeByID(context.Context, int64, int64) (bool, error) { return false, nil }
 
 func TestBuildKeyHandlerRejectsInvalidConfiguration(t *testing.T) {
 	if _, err := buildKeyHandler(&pgxpool.Pool{}, config.Config{}); err == nil || !strings.Contains(err.Error(), "master key") {

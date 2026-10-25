@@ -21,7 +21,17 @@ import type {
   UseQueryResult,
 } from '@tanstack/react-query';
 
-import type { AuthConfig, AuthRequest, RegisterRequest, UpdateMeRequest, User } from '../models';
+import type {
+  AuthConfig,
+  AuthRequest,
+  ChangePasswordRequest,
+  LoginLocked,
+  LoginRateLimited,
+  RegisterRequest,
+  SessionList,
+  UpdateMeRequest,
+  User,
+} from '../models';
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
   const result = { queryKey } as T & { queryKey: K };
@@ -303,15 +313,27 @@ export type loginResponse401 = {
   status: 401;
 };
 
-export type loginResponse429 = {
+export type loginResponse403 = {
   data: void;
+  status: 403;
+};
+
+export type loginResponse423 = {
+  data: LoginLocked;
+  status: 423;
+};
+
+export type loginResponse429 = {
+  data: LoginRateLimited;
   status: 429;
 };
 
 export type loginResponseSuccess = loginResponse200 & {
   headers: Headers;
 };
-export type loginResponseError = (loginResponse401 | loginResponse429) & {
+export type loginResponseError = (
+  loginResponse401 | loginResponse403 | loginResponse423 | loginResponse429
+) & {
   headers: Headers;
 };
 
@@ -362,7 +384,10 @@ export const login = async (
 
 export const getLoginMutationKey = () => ['login'] as const;
 
-export const getLoginMutationOptions = <TError = void, TContext = unknown>(options?: {
+export const getLoginMutationOptions = <
+  TError = void | LoginLocked | LoginRateLimited,
+  TContext = unknown,
+>(options?: {
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof login>>,
     TError,
@@ -396,13 +421,13 @@ export const getLoginMutationOptions = <TError = void, TContext = unknown>(optio
 
 export type LoginMutationResult = NonNullable<Awaited<ReturnType<typeof login>>>;
 export type LoginMutationBody = AuthRequest;
-export type LoginMutationError = void;
+export type LoginMutationError = void | LoginLocked | LoginRateLimited;
 export type LoginMutationVariables = { data: AuthRequest };
 
 /**
  * @summary Log in with email and password
  */
-export const useLogin = <TError = void, TContext = unknown>(
+export const useLogin = <TError = void | LoginLocked | LoginRateLimited, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof login>>,
@@ -845,4 +870,395 @@ export const useUpdateMe = <TError = void, TContext = unknown>(
   TContext
 > => {
   return useMutation(getUpdateMeMutationOptions(options), queryClient);
+};
+export type listMySessionsResponse200 = {
+  data: SessionList;
+  status: 200;
+};
+
+export type listMySessionsResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type listMySessionsResponseSuccess = listMySessionsResponse200 & {
+  headers: Headers;
+};
+export type listMySessionsResponseError = listMySessionsResponse401 & {
+  headers: Headers;
+};
+
+export type listMySessionsResponse = listMySessionsResponseSuccess | listMySessionsResponseError;
+
+export const getListMySessionsUrl = () => {
+  return `/me/sessions`;
+};
+
+/**
+ * @summary List the current user's active sessions
+ */
+export const listMySessions = async (options?: RequestInit): Promise<listMySessionsResponse> => {
+  const res = await fetch(getListMySessionsUrl(), {
+    ...options,
+    method: 'GET',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listMySessionsResponse['data'] = body ? JSON.parse(body) : {};
+  return { data, status: res.status, headers: res.headers } as listMySessionsResponse;
+};
+
+export const getListMySessionsQueryKey = () => {
+  return [`/me/sessions`] as const;
+};
+
+export const getListMySessionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listMySessions>>,
+  TError = void,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySessions>>, TError, TData>>;
+  fetch?: RequestInit;
+}) => {
+  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListMySessionsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listMySessions>>> = ({ signal }) =>
+    listMySessions({ signal, ...fetchOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listMySessions>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListMySessionsQueryResult = NonNullable<Awaited<ReturnType<typeof listMySessions>>>;
+export type ListMySessionsQueryError = void;
+
+export function useListMySessions<
+  TData = Awaited<ReturnType<typeof listMySessions>>,
+  TError = void,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySessions>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMySessions>>,
+          TError,
+          Awaited<ReturnType<typeof listMySessions>>
+        >,
+        'initialData'
+      >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListMySessions<
+  TData = Awaited<ReturnType<typeof listMySessions>>,
+  TError = void,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySessions>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMySessions>>,
+          TError,
+          Awaited<ReturnType<typeof listMySessions>>
+        >,
+        'initialData'
+      >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListMySessions<
+  TData = Awaited<ReturnType<typeof listMySessions>>,
+  TError = void,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySessions>>, TError, TData>>;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List the current user's active sessions
+ */
+
+export function useListMySessions<
+  TData = Awaited<ReturnType<typeof listMySessions>>,
+  TError = void,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySessions>>, TError, TData>>;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListMySessionsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type revokeMySessionResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type revokeMySessionResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type revokeMySessionResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type revokeMySessionResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type revokeMySessionResponseSuccess = revokeMySessionResponse204 & {
+  headers: Headers;
+};
+export type revokeMySessionResponseError = (
+  revokeMySessionResponse401 | revokeMySessionResponse403 | revokeMySessionResponse404
+) & {
+  headers: Headers;
+};
+
+export type revokeMySessionResponse = revokeMySessionResponseSuccess | revokeMySessionResponseError;
+
+export const getRevokeMySessionUrl = (id: number) => {
+  return `/me/sessions/${id}`;
+};
+
+/**
+ * @summary Revoke one of the current user's sessions
+ */
+export const revokeMySession = async (
+  id: number,
+  options?: RequestInit,
+): Promise<revokeMySessionResponse> => {
+  const res = await fetch(getRevokeMySessionUrl(id), {
+    ...options,
+    method: 'DELETE',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: revokeMySessionResponse['data'] = body ? JSON.parse(body) : undefined;
+  return { data, status: res.status, headers: res.headers } as revokeMySessionResponse;
+};
+
+export const getRevokeMySessionMutationKey = () => ['revokeMySession'] as const;
+
+export const getRevokeMySessionMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revokeMySession>>,
+    TError,
+    RevokeMySessionMutationVariables,
+    TContext
+  >;
+  fetch?: RequestInit;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof revokeMySession>>,
+  TError,
+  RevokeMySessionMutationVariables,
+  TContext
+> => {
+  const mutationKey = getRevokeMySessionMutationKey();
+  const { mutation: mutationOptions, fetch: fetchOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, fetch: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof revokeMySession>>,
+    RevokeMySessionMutationVariables
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return revokeMySession(id, fetchOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RevokeMySessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof revokeMySession>>
+>;
+
+export type RevokeMySessionMutationError = void;
+export type RevokeMySessionMutationVariables = { id: number };
+
+/**
+ * @summary Revoke one of the current user's sessions
+ */
+export const useRevokeMySession = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof revokeMySession>>,
+      TError,
+      RevokeMySessionMutationVariables,
+      TContext
+    >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof revokeMySession>>,
+  TError,
+  RevokeMySessionMutationVariables,
+  TContext
+> => {
+  return useMutation(getRevokeMySessionMutationOptions(options), queryClient);
+};
+export type changeMyPasswordResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type changeMyPasswordResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type changeMyPasswordResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type changeMyPasswordResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type changeMyPasswordResponseSuccess = changeMyPasswordResponse204 & {
+  headers: Headers;
+};
+export type changeMyPasswordResponseError = (
+  changeMyPasswordResponse400 | changeMyPasswordResponse401 | changeMyPasswordResponse403
+) & {
+  headers: Headers;
+};
+
+export type changeMyPasswordResponse =
+  changeMyPasswordResponseSuccess | changeMyPasswordResponseError;
+
+export const getChangeMyPasswordUrl = () => {
+  return `/me/password`;
+};
+
+/**
+ * @summary Change the current user's password
+ */
+export const changeMyPassword = async (
+  changePasswordRequest: ChangePasswordRequest,
+  options?: RequestInit,
+): Promise<changeMyPasswordResponse> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit['headers']>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  const res = await fetch(getChangeMyPasswordUrl(), {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(changePasswordRequest),
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: changeMyPasswordResponse['data'] = body ? JSON.parse(body) : undefined;
+  return { data, status: res.status, headers: res.headers } as changeMyPasswordResponse;
+};
+
+export const getChangeMyPasswordMutationKey = () => ['changeMyPassword'] as const;
+
+export const getChangeMyPasswordMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof changeMyPassword>>,
+    TError,
+    ChangeMyPasswordMutationVariables,
+    TContext
+  >;
+  fetch?: RequestInit;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof changeMyPassword>>,
+  TError,
+  ChangeMyPasswordMutationVariables,
+  TContext
+> => {
+  const mutationKey = getChangeMyPasswordMutationKey();
+  const { mutation: mutationOptions, fetch: fetchOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, fetch: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof changeMyPassword>>,
+    ChangeMyPasswordMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return changeMyPassword(data, fetchOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ChangeMyPasswordMutationResult = NonNullable<
+  Awaited<ReturnType<typeof changeMyPassword>>
+>;
+export type ChangeMyPasswordMutationBody = ChangePasswordRequest;
+export type ChangeMyPasswordMutationError = void;
+export type ChangeMyPasswordMutationVariables = { data: ChangePasswordRequest };
+
+/**
+ * @summary Change the current user's password
+ */
+export const useChangeMyPassword = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof changeMyPassword>>,
+      TError,
+      ChangeMyPasswordMutationVariables,
+      TContext
+    >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof changeMyPassword>>,
+  TError,
+  ChangeMyPasswordMutationVariables,
+  TContext
+> => {
+  return useMutation(getChangeMyPasswordMutationOptions(options), queryClient);
 };

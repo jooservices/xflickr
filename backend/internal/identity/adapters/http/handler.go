@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strconv"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
@@ -29,6 +30,7 @@ type Handler struct {
 	Sessions        SessionService
 	AdminUsers      AdminUserService
 	Profile         app.UpdateProfile
+	Password        app.ChangePassword
 	Version         string
 }
 
@@ -112,7 +114,13 @@ func (h Handler) Login(ctx context.Context, request gen.LoginRequestObject) (gen
 	}
 	u, err := h.LoginUseCase.Execute(ctx, string(request.Body.Email), *request.Body.Password, ip)
 	if errors.Is(err, app.ErrRateLimited) {
-		return gen.Login429Response{}, nil
+		retryAfter := 900
+		return gen.Login429JSONResponse{Body: gen.LoginRateLimited{Code: "rate_limited", Message: "Too many login attempts", Details: struct {
+			RetryAfterSeconds int `json:"retry_after_seconds"`
+		}{RetryAfterSeconds: retryAfter}}, Headers: gen.Login429ResponseHeaders{RetryAfter: &retryAfter}}, nil
+	}
+	if errors.Is(err, app.ErrAccountDisabled) {
+		return gen.Login403Response{}, nil
 	}
 	if errors.Is(err, app.ErrInvalidCredentials) {
 		return gen.Login401Response{}, nil
@@ -142,6 +150,74 @@ func (h Handler) RevokeOtherSessions(ctx context.Context, _ gen.RevokeOtherSessi
 		return nil, err
 	}
 	return gen.RevokeOtherSessions204Response{}, nil
+}
+
+func (h Handler) ListMySessions(ctx context.Context, _ gen.ListMySessionsRequestObject) (gen.ListMySessionsResponseObject, error) {
+	principal, ok := PrincipalFrom(ctx)
+	if !ok || principal.User.ID == 0 {
+		return gen.ListMySessions401Response{}, nil
+	}
+	items, err := h.Sessions.List(ctx, principal.User.ID)
+	if err != nil {
+		if errors.Is(err, app.ErrUnauthenticated) {
+			return gen.ListMySessions401Response{}, nil
+		}
+		return nil, err
+	}
+	result := make([]gen.Session, 0, len(items))
+	for _, item := range items {
+		result = append(result, gen.Session{
+			ID: strconv.FormatInt(item.ID, 10), Current: item.ID == principal.Session.ID,
+			UserAgentLabel: "Browser session", IPMasked: "",
+			LastSeenAt: item.LastSeenAt, CreatedAt: item.CreatedAt,
+		})
+	}
+	return gen.ListMySessions200JSONResponse{Items: result}, nil
+}
+
+func (h Handler) RevokeMySession(ctx context.Context, request gen.RevokeMySessionRequestObject) (gen.RevokeMySessionResponseObject, error) {
+	principal, ok := PrincipalFrom(ctx)
+	if !ok || principal.User.ID == 0 {
+		return gen.RevokeMySession401Response{}, nil
+	}
+	if request.ID == principal.Session.ID {
+		return gen.RevokeMySession404Response{}, nil
+	}
+	deleted, err := h.Sessions.RevokeByID(ctx, principal.User.ID, request.ID)
+	if err != nil {
+		if errors.Is(err, app.ErrUnauthenticated) {
+			return gen.RevokeMySession401Response{}, nil
+		}
+		return nil, err
+	}
+	if !deleted {
+		return gen.RevokeMySession404Response{}, nil
+	}
+	return gen.RevokeMySession204Response{}, nil
+}
+
+func (h Handler) ChangeMyPassword(ctx context.Context, request gen.ChangeMyPasswordRequestObject) (gen.ChangeMyPasswordResponseObject, error) {
+	principal, ok := PrincipalFrom(ctx)
+	if !ok || principal.User.ID == 0 {
+		return gen.ChangeMyPassword401Response{}, nil
+	}
+	if request.Body == nil {
+		return gen.ChangeMyPassword400Response{}, nil
+	}
+	if request.Body.CurrentPassword == nil || request.Body.NewPassword == nil {
+		return gen.ChangeMyPassword400Response{}, nil
+	}
+	err := h.Password.Execute(ctx, principal.User.ID, *request.Body.CurrentPassword, *request.Body.NewPassword, principal.TokenHash)
+	if errors.Is(err, app.ErrInvalidCurrentPassword) || errors.Is(err, app.ErrUnauthenticated) {
+		return gen.ChangeMyPassword401Response{}, nil
+	}
+	if errors.Is(err, app.ErrInvalidInput) {
+		return gen.ChangeMyPassword400Response{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return gen.ChangeMyPassword204Response{}, nil
 }
 
 func (h Handler) GetHealth(context.Context, gen.GetHealthRequestObject) (gen.GetHealthResponseObject, error) {

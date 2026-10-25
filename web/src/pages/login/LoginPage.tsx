@@ -24,13 +24,15 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [config, setConfig] = useState<{
-    registration_open: boolean;
-    passkey_enabled: boolean;
-  } | null>(null);
+  const [config, setConfig] = useState<{ registration_open: boolean } | null>(null);
   const [partial, setPartial] = useState(false);
   const [error, setError] = useState('');
-  const [rateLimited, setRateLimited] = useState(false);
+  const [cooldown, setCooldown] = useState<{
+    seconds: number;
+    locked: boolean;
+    unlock?: number;
+  } | null>(null);
+  const [cooldownEnded, setCooldownEnded] = useState(false);
 
   useEffect(() => {
     document.title = `${t(expired ? 'auth.expired.heading' : 'auth.login.title')} · XFlickr`;
@@ -40,11 +42,11 @@ export function LoginPage() {
     let active = true;
     void fetchCsrfConfig()
       .then((value) => {
-        if (active) setConfig(value);
+        if (active) setConfig({ registration_open: value.registration_open });
       })
       .catch(() => {
         if (active) {
-          setConfig({ registration_open: true, passkey_enabled: false });
+          setConfig({ registration_open: true });
           setPartial(true);
         }
       });
@@ -52,6 +54,20 @@ export function LoginPage() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!cooldown || cooldown.seconds <= 0) return;
+    const timer = window.setInterval(() => {
+      if (cooldown.seconds <= 1) {
+        setCooldown(null);
+        setError('');
+        setCooldownEnded(true);
+      } else {
+        setCooldown((current) => (current ? { ...current, seconds: current.seconds - 1 } : null));
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [cooldown]);
 
   useEffect(() => {
     if (session.status === 'authenticated') {
@@ -62,7 +78,8 @@ export function LoginPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
-    setRateLimited(false);
+    setCooldownEnded(false);
+    if (cooldown && cooldown.seconds > 0) return;
     if (!email.trim() || !email.includes('@')) {
       setError(t('auth.validation.email-invalid'));
       return;
@@ -89,11 +106,32 @@ export function LoginPage() {
           replace: true,
         });
       } else if (response.status === 429) {
-        setRateLimited(true);
-        setError(t('auth.error.rate-limited', { minutes: 1 }));
+        const details = (response.data as { details?: { retry_after_seconds?: number } }).details;
+        const headerSeconds = Number(response.headers.get('Retry-After'));
+        const seconds = Math.max(
+          1,
+          Math.ceil(
+            Number.isFinite(headerSeconds) && headerSeconds > 0
+              ? headerSeconds
+              : (details?.retry_after_seconds ?? 60),
+          ),
+        );
+        setCooldown({ seconds, locked: false });
+        setError(t('auth.error.rate-limited', { minutes: Math.ceil(seconds / 60) }));
         setPassword('');
       } else if (response.status === 423) {
-        setError(t('auth.error.locked', { time: '' }));
+        const lockedUntil = (response.data as { details?: { locked_until?: string } }).details
+          ?.locked_until;
+        const unlock = lockedUntil ? Date.parse(lockedUntil) : Number.NaN;
+        const seconds = Number.isFinite(unlock)
+          ? Math.max(1, Math.ceil((unlock - Date.now()) / 1000))
+          : 60;
+        setCooldown({ seconds, locked: true, unlock });
+        setError(
+          t('auth.error.locked', {
+            time: Number.isFinite(unlock) ? new Date(unlock).toLocaleTimeString(locale) : '',
+          }),
+        );
         setPassword('');
       } else if (response.status === 403) {
         setError(t('auth.error.disabled'));
@@ -180,13 +218,24 @@ export function LoginPage() {
           )}
           {error && (
             <div
-              className={`${styles.banner} ${rateLimited ? styles.warning : ''}`}
+              className={`${styles.banner} ${cooldown ? styles.warning : ''}`}
               role="alert"
               tabIndex={-1}
-              data-testid={rateLimited ? 'auth-ratelimit-banner' : 'auth-error-banner'}
+              data-testid={cooldown ? 'auth-ratelimit-banner' : 'auth-error-banner'}
             >
               {error}
-              {!rateLimited && (
+              {cooldown && (
+                <span
+                  className={styles.muted}
+                  data-testid="auth-cooldown-countdown"
+                  aria-live="off"
+                >
+                  {cooldown.locked
+                    ? t('auth.error.cooldown-seconds', { seconds: cooldown.seconds })
+                    : t('auth.error.cooldown-seconds', { seconds: cooldown.seconds })}
+                </span>
+              )}
+              {!cooldown && (
                 <button
                   type="button"
                   className={styles.linkButton}
@@ -201,6 +250,11 @@ export function LoginPage() {
           {partial && (
             <p className={styles.muted} data-testid="auth-partial-note">
               {t('auth.config.partial')}
+            </p>
+          )}
+          {cooldownEnded && (
+            <p className={styles.muted} role="status" data-testid="auth-cooldown-ended">
+              {t('auth.error.cooldown-ended')}
             </p>
           )}
           <form onSubmit={(event) => void submit(event)} noValidate data-testid="auth-login-form">
@@ -240,7 +294,7 @@ export function LoginPage() {
             <button
               className={styles.primary}
               type="submit"
-              disabled={busy || rateLimited}
+              disabled={busy || Boolean(cooldown)}
               data-testid="auth-login-submit"
             >
               {busy
@@ -248,19 +302,6 @@ export function LoginPage() {
                 : t(expired ? 'auth.expired.submit' : 'auth.login.submit')}
             </button>
           </form>
-          {config?.passkey_enabled && typeof PublicKeyCredential !== 'undefined' && (
-            <>
-              <div className={styles.divider}>{t('auth.login.or')}</div>
-              <button
-                className={styles.secondary}
-                type="button"
-                disabled={busy}
-                data-testid="auth-login-passkey"
-              >
-                {t('auth.login.passkey')}
-              </button>
-            </>
-          )}
           <div className={styles.footer}>
             {expired ? (
               <Link to="/login" data-testid="auth-expired-other-account">

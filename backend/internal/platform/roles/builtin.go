@@ -70,9 +70,10 @@ func (r idleRole) Run(ctx context.Context) error {
 
 // APIRole serves the health endpoint for the API process role.
 type APIRole struct {
-	address string
-	version string
-	handler http.Handler
+	address         string
+	version         string
+	handler         http.Handler
+	listenerFactory func(string) (net.Listener, error)
 }
 
 // NewAPIRole creates an API role bound to address.
@@ -261,6 +262,7 @@ func buildIdentityHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClien
 		LoginUseCase:    identityapp.Login{Repository: users, Limiter: identityredis.Limiter{Client: redisClient, Prefix: cfg.Redis.Prefix}, DummyPasswordHash: dummyHash},
 		Users:           users,
 		Profile:         identityapp.UpdateProfile{Repository: users},
+		Password:        identityapp.ChangePassword{Repository: users, Sessions: users, Params: params},
 		Sessions:        identityapp.Sessions{Repository: users, Users: users},
 		AdminUsers:      identityapp.AdminUsers{Store: users, Audit: auditpostgres.New(pool)},
 		Version:         version,
@@ -268,7 +270,11 @@ func buildIdentityHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClien
 }
 
 func (r APIRole) runServer(ctx context.Context, handler http.Handler) error {
-	listener, err := net.Listen("tcp", r.address)
+	listen := r.listenerFactory
+	if listen == nil {
+		listen = func(address string) (net.Listener, error) { return net.Listen("tcp", address) }
+	}
+	listener, err := listen(r.address)
 	if err != nil {
 		return err
 	}

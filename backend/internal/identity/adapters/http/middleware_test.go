@@ -29,6 +29,12 @@ type fakeSessions struct {
 	revokedUser     int64
 	revokedHash     []byte
 	revokeOthersErr error
+	listed          []domain.Session
+	listErr         error
+	revokeByID      int64
+	revokeByIDUser  int64
+	revokeByIDOK    bool
+	revokeByIDErr   error
 }
 
 func (f *fakeSessions) Issue(_ context.Context, userID int64) (string, domain.Session, string, error) {
@@ -56,6 +62,15 @@ func (f *fakeSessions) RevokeOthers(_ context.Context, userID int64, tokenHash [
 	f.revokedUser = userID
 	f.revokedHash = append([]byte(nil), tokenHash...)
 	return f.revokeOthersErr
+}
+
+func (f *fakeSessions) List(context.Context, int64) ([]domain.Session, error) {
+	return f.listed, f.listErr
+}
+
+func (f *fakeSessions) RevokeByID(_ context.Context, userID, sessionID int64) (bool, error) {
+	f.revokeByIDUser, f.revokeByID = userID, sessionID
+	return f.revokeByIDOK, f.revokeByIDErr
 }
 
 func TestRequireUserAndRequireAdminMatrix(t *testing.T) {

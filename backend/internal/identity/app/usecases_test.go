@@ -182,6 +182,18 @@ func TestLoginUsesSameCredentialFailure(t *testing.T) {
 	}
 }
 
+func TestLoginReportsDisabledOnlyAfterCorrectPassword(t *testing.T) {
+	params := domain.Argon2Params{Memory: 32 * 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
+	hash, err := domain.HashPassword("password", params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = (Login{Repository: loginRepo{user: domain.User{PasswordHash: hash, Disabled: true}}, Limiter: &limiter{allowed: true}, DummyPasswordHash: hash}).Execute(context.Background(), "a@example.com", "password", "ip")
+	if !errors.Is(err, ErrAccountDisabled) {
+		t.Fatalf("error = %v, want disabled account", err)
+	}
+}
+
 func TestLoginPerformsArgonVerificationForMissingEmail(t *testing.T) {
 	params := domain.Argon2Params{Memory: 32 * 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
 	dummy, err := domain.HashPassword("dummy", params)

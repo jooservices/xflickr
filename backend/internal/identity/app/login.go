@@ -12,6 +12,7 @@ var (
 	ErrInvalidCredentials = errors.New("invalid email or password")
 	ErrRateLimited        = errors.New("identity: too many login attempts")
 	ErrUserNotFound       = errors.New("identity: user not found")
+	ErrAccountDisabled    = errors.New("identity: account disabled")
 )
 
 const (
@@ -54,7 +55,10 @@ func (usecase Login) Execute(ctx context.Context, email, password, ip string) (d
 		return domain.User{}, err
 	}
 	valid := domain.VerifyPassword(user.PasswordHash, password)
-	if user.Disabled || !valid {
+	if user.Disabled && valid {
+		return domain.User{}, ErrAccountDisabled
+	}
+	if !valid {
 		return domain.User{}, ErrInvalidCredentials
 	}
 	return user, nil

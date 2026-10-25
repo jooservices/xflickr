@@ -97,3 +97,14 @@ func (repo *Repository) UpdateLocale(ctx context.Context, id int64, locale strin
 	}
 	return user, nil
 }
+
+func (repo *Repository) UpdatePassword(ctx context.Context, id int64, passwordHash string) error {
+	tag, err := repo.pool.Exec(ctx, `UPDATE users SET password_hash = $2 WHERE id = $1 AND disabled_at IS NULL`, id, passwordHash)
+	if err != nil {
+		return fmt.Errorf("identity: update user password: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return app.ErrUserNotFound
+	}
+	return nil
+}

@@ -62,6 +62,79 @@ UpdateMeRequest:
     locale:
       type: string
       enum: [en, vi]
+LoginRateLimited:
+  type: object
+  required: [code, message, details]
+  properties:
+    code:
+      type: string
+      const: rate_limited
+    message:
+      type: string
+    details:
+      type: object
+      required: [retry_after_seconds]
+      properties:
+        retry_after_seconds:
+          type: integer
+          minimum: 1
+LoginLocked:
+  type: object
+  required: [code, message, details]
+  properties:
+    code:
+      type: string
+      const: account_locked
+    message:
+      type: string
+    details:
+      type: object
+      required: [locked_until]
+      properties:
+        locked_until:
+          type: string
+          format: date-time
+Session:
+  type: object
+  required: [id, current, user_agent_label, ip_masked, last_seen_at, created_at]
+  properties:
+    id:
+      type: string
+    current:
+      type: boolean
+    user_agent_label:
+      type: string
+    ip_masked:
+      type: string
+    last_seen_at:
+      type: string
+      format: date-time
+    created_at:
+      type: string
+      format: date-time
+SessionList:
+  type: object
+  required: [items]
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/Session'
+ChangePasswordRequest:
+  type: object
+  additionalProperties: false
+  required: [current_password, new_password]
+  properties:
+    current_password:
+      type: string
+      minLength: 8
+      maxLength: 128
+      writeOnly: true
+    new_password:
+      type: string
+      minLength: 8
+      maxLength: 128
+      writeOnly: true
 User:
   type: object
   additionalProperties: false

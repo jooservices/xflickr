@@ -1,30 +1,28 @@
-import { useEffect, useState } from 'react';
-import type { FormEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { FormEvent, KeyboardEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router';
+import { useNavigate } from 'react-router';
 import { useSession } from '../../entities';
 import { SESSION_QUERY_KEY } from '../../entities/session/SessionProvider';
 import { useI18n } from '../../shared';
 import type { Locale } from '../../shared/i18n/catalog';
-import { request } from '../../features/auth/api';
+import { csrfFetchOptions, request, signalSessionExpired } from '../../features/auth/api';
+import {
+  changeMyPassword,
+  listMySessions,
+  revokeMySession,
+} from '../../shared/api/gen/default/default';
+import type { Session } from '../../shared/api/gen/models/session';
 import styles from './ProfilePage.module.css';
-
-type SessionItem = {
-  id: string;
-  current: boolean;
-  user_agent_label: string;
-  ip_masked: string;
-  last_seen_at: string;
-  created_at: string;
-};
 
 export function ProfilePage() {
   const { session } = useSession();
   const { t, locale, setLocale } = useI18n();
   const client = useQueryClient();
+  const navigate = useNavigate();
   const user = session.status === 'authenticated' ? session.user : undefined;
   const [language, setLanguage] = useState<Locale>(locale);
-  const [sessions, setSessions] = useState<SessionItem[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [sessionsError, setSessionsError] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -35,6 +33,11 @@ export function ProfilePage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [confirmAction, setConfirmAction] = useState<
+    { kind: 'one'; session: Session } | { kind: 'others' } | null
+  >(null);
+  const confirmationTrigger = useRef<HTMLElement | null>(null);
+  const sessionsHeading = useRef<HTMLHeadingElement>(null);
   const title = t('profile.title');
 
   useEffect(() => {
@@ -43,7 +46,8 @@ export function ProfilePage() {
 
   async function loadSessions() {
     try {
-      const result = await request<{ items?: SessionItem[] }>('/me/sessions');
+      const result = await listMySessions({ credentials: 'same-origin' });
+      signalSessionExpired(result.status);
       if (result.status !== 200) throw new Error('Could not load sessions');
       setSessions(result.data.items ?? []);
       setSessionsError(false);
@@ -56,9 +60,10 @@ export function ProfilePage() {
 
   useEffect(() => {
     let active = true;
-    void request<{ items?: SessionItem[] }>('/me/sessions')
+    void listMySessions({ credentials: 'same-origin' })
       .then((result) => {
         if (!active) return;
+        signalSessionExpired(result.status);
         if (result.status !== 200) {
           setSessionsError(true);
           return;
@@ -113,10 +118,14 @@ export function ProfilePage() {
     }
     setPasswordBusy(true);
     try {
-      const result = await request('/me/password', 'POST', {
-        current_password: currentPassword,
-        new_password: newPassword,
-      });
+      const result = await changeMyPassword(
+        {
+          current_password: currentPassword,
+          new_password: newPassword,
+        },
+        csrfFetchOptions('POST'),
+      );
+      signalSessionExpired(result.status);
       if (result.status === 401) {
         setPasswordError(t('profile.password.error.current'));
         setCurrentPassword('');
@@ -135,19 +144,58 @@ export function ProfilePage() {
     }
   }
 
-  async function revokeOthers() {
-    if (!window.confirm(t('profile.confirm.sessions'))) return;
+  async function confirmRevokeOthers() {
     const result = await request('/auth/sessions', 'DELETE');
     if (result.status === 204) await loadSessions();
     else setSessionsError(true);
   }
 
-  async function revokeOne(item: SessionItem) {
-    if (!window.confirm(t('profile.confirm.revoke', { device: item.user_agent_label }))) return;
-    const result = await request(`/me/sessions/${encodeURIComponent(item.id)}`, 'DELETE');
+  async function confirmRevokeOne(item: Session) {
+    const result = await revokeMySession(Number(item.id), csrfFetchOptions('DELETE'));
+    signalSessionExpired(result.status);
     if (result.status === 204 || result.status === 404)
       setSessions((current) => current.filter((sessionItem) => sessionItem.id !== item.id));
     else setMessage(t('profile.error.action'));
+  }
+
+  async function signOut() {
+    await request('/auth/logout', 'POST').catch(() => undefined);
+    client.removeQueries();
+    client.setQueryData(SESSION_QUERY_KEY, { status: 'unauthenticated' });
+    void navigate('/login', { replace: true });
+  }
+
+  async function confirmDialog() {
+    const action = confirmAction;
+    setConfirmAction(null);
+    if (action?.kind === 'one') await confirmRevokeOne(action.session);
+    if (action?.kind === 'others') await confirmRevokeOthers();
+    requestAnimationFrame(() => {
+      if (confirmationTrigger.current?.isConnected) confirmationTrigger.current.focus();
+      else sessionsHeading.current?.focus();
+    });
+  }
+
+  function onDialogKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setConfirmAction(null);
+      requestAnimationFrame(() => confirmationTrigger.current?.focus());
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const controls = event.currentTarget.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href]',
+    );
+    const first = controls.item(0);
+    const last = controls.item(controls.length - 1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
   }
 
   return (
@@ -257,11 +305,16 @@ export function ProfilePage() {
           data-testid="profile-sessions-card"
         >
           <div className={styles.cardHead}>
-            <h2 id="profile-sessions-title">{t('profile.sessions.title')}</h2>
+            <h2 id="profile-sessions-title" ref={sessionsHeading} tabIndex={-1}>
+              {t('profile.sessions.title')}
+            </h2>
             <button
               className={styles.secondary}
               type="button"
-              onClick={() => void revokeOthers()}
+              onClick={(event) => {
+                confirmationTrigger.current = event.currentTarget;
+                setConfirmAction({ kind: 'others' });
+              }}
               disabled={sessionsLoading || sessions.filter((item) => !item.current).length === 0}
               data-testid="profile-sessions-revoke-others"
             >
@@ -295,7 +348,7 @@ export function ProfilePage() {
               {sessions.map((item) => (
                 <li key={item.id} data-testid={`profile-session-row-${item.id}`}>
                   <div>
-                    <strong>{item.user_agent_label}</strong>
+                    <strong>{item.user_agent_label || t('profile.sessions.unknown-device')}</strong>
                     <p>
                       {item.ip_masked} ·{' '}
                       {t('profile.sessions.active', {
@@ -310,9 +363,12 @@ export function ProfilePage() {
                   ) : (
                     <button
                       className={styles.secondary}
-                      onClick={() => void revokeOne(item)}
+                      onClick={(event) => {
+                        confirmationTrigger.current = event.currentTarget;
+                        setConfirmAction({ kind: 'one', session: item });
+                      }}
                       aria-label={t('profile.sessions.revoke-label', {
-                        device: item.user_agent_label,
+                        device: item.user_agent_label || t('profile.sessions.unknown-device'),
                       })}
                       data-testid={`profile-session-revoke-${item.id}`}
                     >
@@ -326,8 +382,64 @@ export function ProfilePage() {
         </section>
       </div>
       <p className={styles.signout}>
-        <Link to="/login">{t('profile.signout')}</Link>
+        <button
+          className={styles.secondary}
+          type="button"
+          onClick={() => void signOut()}
+          data-testid="profile-account-signout"
+        >
+          {t('profile.signout')}
+        </button>
       </p>
+      {confirmAction && (
+        <div className={styles.modalBackdrop}>
+          <section
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profile-confirm-title"
+            onKeyDown={onDialogKeyDown}
+            data-testid="profile-confirm-dialog"
+          >
+            <h2 id="profile-confirm-title">
+              {confirmAction.kind === 'one'
+                ? t('profile.sessions.revoke.title')
+                : t('profile.sessions.revoke-others')}
+            </h2>
+            <p>
+              {confirmAction.kind === 'one'
+                ? t('profile.sessions.revoke.text', {
+                    device:
+                      confirmAction.session.user_agent_label ||
+                      t('profile.sessions.unknown-device'),
+                  })
+                : t('profile.sessions.revoke-others.text')}
+            </p>
+            <div className={styles.modalActions}>
+              <button
+                className={styles.secondary}
+                type="button"
+                autoFocus
+                onClick={() => {
+                  setConfirmAction(null);
+                  requestAnimationFrame(() => confirmationTrigger.current?.focus());
+                }}
+                data-testid="profile-confirm-cancel"
+              >
+                {t('profile.confirm.cancel')}
+              </button>
+              <button
+                className={styles.primary}
+                type="button"
+                onClick={() => void confirmDialog()}
+                data-testid="profile-confirm-ok"
+              >
+                {t('profile.sessions.revoke')}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

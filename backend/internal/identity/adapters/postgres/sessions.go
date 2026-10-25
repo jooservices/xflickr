@@ -69,3 +69,31 @@ func (repo *Repository) DeleteSessionByHash(ctx context.Context, tokenHash []byt
 	}
 	return nil
 }
+
+func (repo *Repository) ListSessions(ctx context.Context, userID int64) ([]domain.Session, error) {
+	rows, err := repo.pool.Query(ctx, `SELECT id, user_id, expires_at, last_seen_at, created_at FROM sessions WHERE user_id = $1 AND expires_at > now() ORDER BY last_seen_at DESC`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("identity: list sessions: %w", err)
+	}
+	defer rows.Close()
+	items := make([]domain.Session, 0)
+	for rows.Next() {
+		var session domain.Session
+		if err := rows.Scan(&session.ID, &session.UserID, &session.ExpiresAt, &session.LastSeenAt, &session.CreatedAt); err != nil {
+			return nil, fmt.Errorf("identity: scan session: %w", err)
+		}
+		items = append(items, session)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("identity: list sessions: %w", err)
+	}
+	return items, nil
+}
+
+func (repo *Repository) DeleteSessionByID(ctx context.Context, userID, sessionID int64) (bool, error) {
+	tag, err := repo.pool.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1 AND id = $2`, userID, sessionID)
+	if err != nil {
+		return false, fmt.Errorf("identity: revoke session: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}

@@ -162,6 +162,37 @@
 .signout a {
   color: var(--accent);
 }
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(12 14 18 / 55%);
+}
+.modal {
+  width: min(100%, 440px);
+  padding: 24px;
+  border: 1px solid var(--line2);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 20px 50px var(--shade);
+}
+.modal h2 {
+  margin: 0 0 12px;
+}
+.modal p {
+  color: var(--muted);
+}
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
 @media (max-width: 1099px) {
   .page {
     max-width: 720px;
@@ -188,6 +219,18 @@
   .list li button,
   .cardHead button {
     width: 100%;
+    min-height: 44px;
+  }
+  .modalBackdrop {
+    align-items: end;
+    padding: 0;
+  }
+  .modal {
+    width: 100%;
+    border-radius: 16px 16px 0 0;
+    padding: 24px 16px max(24px, env(safe-area-inset-bottom));
+  }
+  .modalActions > button {
     min-height: 44px;
   }
 }

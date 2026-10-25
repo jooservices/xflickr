@@ -86,6 +86,57 @@ describe('LoginPage', () => {
     expect(banner.textContent?.toLowerCase()).toContain(message.toLowerCase());
   });
 
+  it('uses Retry-After for the cooldown and re-enables sign in when it expires', async () => {
+    server.use(
+      http.post(
+        '*/auth/login',
+        () =>
+          new HttpResponse(JSON.stringify({ details: { retry_after_seconds: 4 } }), {
+            status: 429,
+            headers: { 'Content-Type': 'application/json', 'Retry-After': '1' },
+          }),
+      ),
+    );
+    renderApp({ session: signedOut, path: '/login' });
+    fireEvent.change(await screen.findByTestId('auth-login-email'), {
+      target: { value: 'a@example.test' },
+    });
+    fireEvent.change(screen.getByTestId('auth-login-password'), {
+      target: { value: 'password123' },
+    });
+    fireEvent.click(screen.getByTestId('auth-login-submit'));
+    expect(await screen.findByTestId('auth-cooldown-countdown')).toHaveTextContent('1 seconds');
+    expect(screen.getByTestId('auth-login-submit')).toBeDisabled();
+    await waitFor(() => expect(screen.getByTestId('auth-login-submit')).toBeEnabled(), {
+      timeout: 2500,
+    });
+    expect(screen.getByTestId('auth-cooldown-ended')).toHaveTextContent('try signing in again');
+  });
+
+  it('uses locked_until to show the unlock time and keep the form blocked until then', async () => {
+    const lockedUntil = new Date(Date.now() + 1500).toISOString();
+    server.use(
+      http.post('*/auth/login', () =>
+        HttpResponse.json({ details: { locked_until: lockedUntil } }, { status: 423 }),
+      ),
+    );
+    renderApp({ session: signedOut, path: '/login' });
+    fireEvent.change(await screen.findByTestId('auth-login-email'), {
+      target: { value: 'a@example.test' },
+    });
+    fireEvent.change(screen.getByTestId('auth-login-password'), {
+      target: { value: 'password123' },
+    });
+    fireEvent.click(screen.getByTestId('auth-login-submit'));
+    expect(await screen.findByTestId('auth-ratelimit-banner')).toHaveTextContent(
+      new Date(lockedUntil).toLocaleTimeString('en'),
+    );
+    expect(screen.getByTestId('auth-login-submit')).toBeDisabled();
+    await waitFor(() => expect(screen.getByTestId('auth-login-submit')).toBeEnabled(), {
+      timeout: 3000,
+    });
+  });
+
   it('validates email and password, allows password reveal and opens registration', async () => {
     const { router } = renderApp({ session: signedOut, path: '/login' });
     const submit = await screen.findByTestId('auth-login-submit');

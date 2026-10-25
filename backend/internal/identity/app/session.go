@@ -26,6 +26,8 @@ type SessionRepository interface {
 	TouchSession(context.Context, []byte, time.Time, time.Time) (bool, error)
 	DeleteOtherSessions(context.Context, int64, []byte) error
 	DeleteSessionByHash(context.Context, []byte) error
+	ListSessions(context.Context, int64) ([]domain.Session, error)
+	DeleteSessionByID(context.Context, int64, int64) (bool, error)
 }
 
 // SessionUserReader loads the account that owns a session.
@@ -132,6 +134,31 @@ func (s Sessions) RevokeOthers(ctx context.Context, userID int64, tokenHash []by
 		return errors.New("identity: session repository is required")
 	}
 	return s.Repository.DeleteOtherSessions(ctx, userID, tokenHash)
+}
+
+// List returns all sessions owned by userID, newest activity first.
+func (s Sessions) List(ctx context.Context, userID int64) ([]domain.Session, error) {
+	if userID <= 0 {
+		return nil, ErrUnauthenticated
+	}
+	if s.Repository == nil {
+		return nil, errors.New("identity: session repository is required")
+	}
+	return s.Repository.ListSessions(ctx, userID)
+}
+
+// RevokeByID removes a session only when it belongs to userID.
+func (s Sessions) RevokeByID(ctx context.Context, userID, sessionID int64) (bool, error) {
+	if userID <= 0 {
+		return false, ErrUnauthenticated
+	}
+	if sessionID <= 0 {
+		return false, nil
+	}
+	if s.Repository == nil {
+		return false, errors.New("identity: session repository is required")
+	}
+	return s.Repository.DeleteSessionByID(ctx, userID, sessionID)
 }
 
 func (s Sessions) now() time.Time {

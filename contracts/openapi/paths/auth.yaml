@@ -53,6 +53,24 @@ login:
         description: Invalid email or password
       '429':
         description: Too many login attempts
+        headers:
+          Retry-After:
+            description: Seconds until another login attempt is allowed
+            schema:
+              type: integer
+              minimum: 1
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/auth.yaml#/LoginRateLimited
+      '423':
+        description: Account is temporarily locked
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/auth.yaml#/LoginLocked
+      '403':
+        description: Account is disabled
 
 logout:
   post:
@@ -109,5 +127,60 @@ me:
         description: Invalid locale
       '401':
         description: Authentication required
+      '403':
+        description: CSRF token is missing or invalid
+
+me/sessions:
+  get:
+    operationId: ListMySessions
+    summary: List the current user's active sessions
+    responses:
+      '200':
+        description: Active sessions
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/auth.yaml#/SessionList
+      '401':
+        description: Authentication required
+
+me/sessions/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+  delete:
+    operationId: RevokeMySession
+    summary: Revoke one of the current user's sessions
+    responses:
+      '204':
+        description: Session revoked
+      '401':
+        description: Authentication required
+      '403':
+        description: CSRF token is missing or invalid
+      '404':
+        description: Session not found
+
+me/password:
+  post:
+    operationId: ChangeMyPassword
+    summary: Change the current user's password
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/auth.yaml#/ChangePasswordRequest
+    responses:
+      '204':
+        description: Password changed and other sessions revoked
+      '400':
+        description: Invalid password
+      '401':
+        description: Authentication required or current password is incorrect
       '403':
         description: CSRF token is missing or invalid

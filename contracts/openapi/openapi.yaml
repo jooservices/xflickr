@@ -18,6 +18,12 @@ paths:
     $ref: ./paths/auth.yaml#/sessions
   /me:
     $ref: ./paths/auth.yaml#/me
+  /me/sessions:
+    $ref: ./paths/auth.yaml#/me~1sessions
+  /me/sessions/{id}:
+    $ref: ./paths/auth.yaml#/me~1sessions~1{id}
+  /me/password:
+    $ref: ./paths/auth.yaml#/me~1password
   /keys:
     $ref: ./paths/keys.yaml#/collection
   /keys/{id}:

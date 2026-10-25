@@ -11,23 +11,29 @@ import (
 )
 
 type sessionMemory struct {
-	user       domain.User
-	userErr    error
-	insertErr  error
-	findErr    error
-	touchOK    bool
-	touchErr   error
-	touchCalls int
-	session    domain.Session
-	gotHash    []byte
-	gotUser    int64
-	gotExpires time.Time
-	gotSeen    time.Time
-	deleted    []byte
-	deleteErr  error
-	othersUser int64
-	othersHash []byte
-	othersErr  error
+	user        domain.User
+	userErr     error
+	insertErr   error
+	findErr     error
+	touchOK     bool
+	touchErr    error
+	touchCalls  int
+	session     domain.Session
+	gotHash     []byte
+	gotUser     int64
+	gotExpires  time.Time
+	gotSeen     time.Time
+	deleted     []byte
+	deleteErr   error
+	othersUser  int64
+	othersHash  []byte
+	othersErr   error
+	listed      []domain.Session
+	listErr     error
+	revokedID   int64
+	revokedFor  int64
+	revokeIDOK  bool
+	revokeIDErr error
 }
 
 func (m *sessionMemory) InsertSession(_ context.Context, userID int64, tokenHash []byte, expiresAt, seenAt time.Time) (domain.Session, error) {
@@ -65,6 +71,15 @@ func (m *sessionMemory) DeleteOtherSessions(_ context.Context, userID int64, tok
 func (m *sessionMemory) DeleteSessionByHash(_ context.Context, tokenHash []byte) error {
 	m.deleted = append([]byte(nil), tokenHash...)
 	return m.deleteErr
+}
+
+func (m *sessionMemory) ListSessions(context.Context, int64) ([]domain.Session, error) {
+	return m.listed, m.listErr
+}
+
+func (m *sessionMemory) DeleteSessionByID(_ context.Context, userID, sessionID int64) (bool, error) {
+	m.revokedFor, m.revokedID = userID, sessionID
+	return m.revokeIDOK, m.revokeIDErr
 }
 
 func (m *sessionMemory) FindByID(context.Context, int64) (domain.User, error) {
@@ -111,6 +126,46 @@ func TestIssueRejectsMissingDependencies(t *testing.T) {
 	service.Repository = &sessionMemory{insertErr: errors.New("database unavailable")}
 	if _, _, _, err := service.Issue(context.Background(), 1); err == nil {
 		t.Fatal("expected insert error")
+	}
+}
+
+func TestListAndRevokeSessions(t *testing.T) {
+	items := []domain.Session{{ID: 2}, {ID: 1}}
+	memory := &sessionMemory{listed: items, revokeIDOK: true}
+	service := Sessions{Repository: memory}
+	got, err := service.List(context.Background(), 7)
+	if err != nil || len(got) != 2 || got[0].ID != 2 {
+		t.Fatalf("List() = %v, %v", got, err)
+	}
+	deleted, err := service.RevokeByID(context.Background(), 7, 2)
+	if err != nil || !deleted || memory.revokedFor != 7 || memory.revokedID != 2 {
+		t.Fatalf("RevokeByID() = %v, %v; user=%d id=%d", deleted, err, memory.revokedFor, memory.revokedID)
+	}
+	if _, err := service.List(context.Background(), 0); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("List() without user error=%v", err)
+	}
+	if _, err := service.List(context.Background(), 7); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (Sessions{}).List(context.Background(), 7); err == nil {
+		t.Fatal("List() without repository succeeded")
+	}
+	if deleted, err := service.RevokeByID(context.Background(), 0, 2); !errors.Is(err, ErrUnauthenticated) || deleted {
+		t.Fatalf("RevokeByID() without user = %v, %v", deleted, err)
+	}
+	if deleted, err := service.RevokeByID(context.Background(), 7, 0); err != nil || deleted {
+		t.Fatalf("RevokeByID() with invalid id = %v, %v", deleted, err)
+	}
+	if _, err := (Sessions{}).RevokeByID(context.Background(), 7, 2); err == nil {
+		t.Fatal("RevokeByID() without repository succeeded")
+	}
+	memory.listErr = errors.New("database unavailable")
+	if _, err := service.List(context.Background(), 7); err == nil {
+		t.Fatal("List() ignored a repository failure")
+	}
+	memory.revokeIDErr = errors.New("database unavailable")
+	if _, err := service.RevokeByID(context.Background(), 7, 2); err == nil {
+		t.Fatal("RevokeByID() ignored a repository failure")
 	}
 }
 

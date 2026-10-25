@@ -46,6 +46,8 @@ type SessionService interface {
 	Authenticate(context.Context, string) (app.Authenticated, error)
 	Revoke(context.Context, string) error
 	RevokeOthers(context.Context, int64, []byte) error
+	List(context.Context, int64) ([]domain.Session, error)
+	RevokeByID(context.Context, int64, int64) (bool, error)
 }
 
 // WithPrincipal stores the authenticated principal on ctx.
@@ -218,10 +220,16 @@ var authenticatedRoutes = map[string]struct{}{
 	http.MethodGet + " /me":               {},
 	http.MethodPatch + " /me":             {},
 	http.MethodDelete + " /auth/sessions": {},
+	http.MethodGet + " /me/sessions":      {},
+	http.MethodDelete + " /me/sessions/":  {},
+	http.MethodPost + " /me/password":     {},
 }
 
 func authenticatedRequest(method, path string) bool {
 	if _, ok := authenticatedRoutes[method+" "+path]; ok {
+		return true
+	}
+	if method == http.MethodDelete && strings.HasPrefix(path, "/me/sessions/") {
 		return true
 	}
 	if path != "/keys" && !strings.HasPrefix(path, "/keys/") && !strings.HasPrefix(path, "/flickr-accounts/") {
