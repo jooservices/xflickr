@@ -479,7 +479,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 	if err := rows.Err(); err != nil {
 		t.Fatalf("iterate application settings: %v", err)
 	}
-	minimum, maximum := 1.0, 4.0
+	minimum, maximum, zero := 1.0, 4.0, 0.0
 	want := map[string]struct {
 		value string
 		min   *float64
@@ -498,13 +498,19 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		"node_cooldown":         {value: "2700"},
 		"group_pools_enabled":   {value: "false"},
 		"registration_open":     {value: "false"},
+		"per_key_ready_cap":     {value: "100", min: &zero},
+		"node_ready_cap":        {value: "500", min: &zero},
+		"media_ready_cap":       {value: "100", min: &zero},
+		"ai_ready_cap":          {value: "100", min: &zero},
+		"sync_ready_cap":        {value: "100", min: &zero},
+		"lease_timeout":         {value: "120", min: &minimum},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("seeded settings = %d, want %d", len(got), len(want))
 	}
 	for key, expected := range want {
 		item, ok := got[key]
-		wantOverridable := key != "registration_open"
+		wantOverridable := key != "registration_open" && key != "per_key_ready_cap" && key != "node_ready_cap" && key != "media_ready_cap" && key != "ai_ready_cap" && key != "sync_ready_cap" && key != "lease_timeout"
 		if !ok || item.overridable != wantOverridable || !jsonEqual(item.value, expected.value) || !floatPtrEqual(item.minimum, expected.min) || !floatPtrEqual(item.maximum, expected.max) {
 			t.Fatalf("seed %s = value %s overridable %v min %v max %v", key, item.value, item.overridable, item.minimum, item.maximum)
 		}
@@ -528,6 +534,12 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		RetryBackoff:        30 * time.Second,
 		NodeCooldown:        45 * time.Minute,
 		GroupPoolsEnabled:   false,
+		PerKeyReadyCap:      100,
+		NodeReadyCap:        500,
+		MediaReadyCap:       100,
+		AIReadyCap:          100,
+		SyncReadyCap:        100,
+		LeaseTimeout:        2 * time.Minute,
 	}
 	if effective != wantEffective {
 		t.Fatalf("effective seed = %+v, want %+v", effective, wantEffective)

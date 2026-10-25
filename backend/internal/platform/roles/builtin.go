@@ -30,8 +30,12 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/crypto"
 	"github.com/jooservices/xflickr/internal/platform/db"
 	"github.com/jooservices/xflickr/internal/platform/httpx"
+	"github.com/jooservices/xflickr/internal/platform/queue"
+	quotaPostgres "github.com/jooservices/xflickr/internal/quota/adapters/postgres"
+	quotaRedis "github.com/jooservices/xflickr/internal/quota/adapters/redis"
 	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
 	schedulepostgres "github.com/jooservices/xflickr/internal/schedule/adapters/postgres"
+	scheduleriver "github.com/jooservices/xflickr/internal/schedule/adapters/river"
 	scheduleapp "github.com/jooservices/xflickr/internal/schedule/app"
 	settingspostgres "github.com/jooservices/xflickr/internal/settings/adapters/postgres"
 	settingsapp "github.com/jooservices/xflickr/internal/settings/app"
@@ -46,9 +50,44 @@ func NewBuiltinRegistry(version string) *Registry {
 	registry := NewRegistry()
 	registerBuiltin(registry, newConfiguredAPIRole(apiAddress, version))
 	for _, name := range builtinRoleNames[1:] {
+		if name == "scheduler" {
+			registerBuiltin(registry, schedulerRole{})
+			continue
+		}
 		registerBuiltin(registry, idleRole{name: name})
 	}
 	return registry
+}
+
+type schedulerRole struct{}
+
+func (schedulerRole) Name() string { return "scheduler" }
+
+func (schedulerRole) Run(ctx context.Context) error {
+	if ctx == nil || ctx.Err() != nil {
+		return nil
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	pool, err := db.NewPool(ctx, cfg.DB)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	defer redisClient.Close()
+	queueAdapter, err := queue.NewRiver(pool, nil)
+	if err != nil {
+		return err
+	}
+	settings, err := scheduleriver.LoadSettings(ctx, pool)
+	if err != nil {
+		return err
+	}
+	pump := scheduleapp.Pump{Store: scheduleriver.Store{Pool: pool}, Credits: quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}}, Queue: queueAdapter, Settings: settings}
+	return pump.Run(ctx)
 }
 
 func registerBuiltin(registry *Registry, role Role) {

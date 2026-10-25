@@ -75,6 +75,61 @@ func (g Governor) keys(keyID int64) []string {
 	return []string{base + "bucket", base + "hourly", base + "window", base + "cooldown"}
 }
 
+// Capacity reports conservative dispatch credits from the same hourly usage
+// counter enforced by Acquire. A Redis or budget failure is treated as offline
+// so the scheduler cannot dispatch without quota visibility.
+func (g Governor) Capacity(ctx context.Context, keyID int64, window time.Duration) (int, error) {
+	if ctx == nil || keyID <= 0 || window <= 0 || g.Client == nil || g.Budgets == nil {
+		return 0, domain.ErrGovernorOffline
+	}
+	budget, err := g.Budgets.Budget(ctx, keyID)
+	if err != nil || budget.Validate() != nil {
+		return 0, domain.ErrGovernorOffline
+	}
+	used, start, err := readCapacityCounters(ctx, g.Client, g.keys(keyID))
+	if err != nil {
+		return 0, domain.ErrGovernorOffline
+	}
+	if start == 0 || time.Now().UnixMilli() >= start+int64(time.Hour/time.Millisecond) {
+		used = 0
+	}
+	credits := remainingCapacity(budget, used, window)
+	if credits > int64(math.MaxInt) {
+		credits = int64(math.MaxInt)
+	}
+	return int(credits), nil
+}
+
+func readCapacityCounters(ctx context.Context, client redisv9.UniversalClient, keys []string) (int64, int64, error) {
+	pipe := client.Pipeline()
+	usedCommand := pipe.Get(ctx, keys[1])
+	startCommand := pipe.Get(ctx, keys[2])
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redisv9.Nil) {
+		return 0, 0, err
+	}
+	used, usedErr := usedCommand.Int64()
+	start, startErr := startCommand.Int64()
+	if errors.Is(usedErr, redisv9.Nil) {
+		used, usedErr = 0, nil
+	}
+	if errors.Is(startErr, redisv9.Nil) {
+		start, startErr = 0, nil
+	}
+	if usedErr != nil {
+		return 0, 0, usedErr
+	}
+	if startErr != nil {
+		return 0, 0, startErr
+	}
+	return used, start, nil
+}
+
+func remainingCapacity(budget domain.Budget, used int64, window time.Duration) int64 {
+	remainingHourly := max(int64(0), budget.HourlyLimit-used-budget.Reserve)
+	perSecond := max(int64(0), budget.PerSecondRate*int64(window/time.Second))
+	return min(perSecond, remainingHourly)
+}
+
 type permit struct {
 	governor Governor
 	keyID    int64

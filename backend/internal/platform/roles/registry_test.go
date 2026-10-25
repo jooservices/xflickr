@@ -396,16 +396,41 @@ func TestBuiltinRegistryHasAllSupportedRoles(t *testing.T) {
 		t.Fatal("registry did not return scheduler role")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	started := make(chan struct{})
-	done := make(chan error, 1)
-	go func() {
-		close(started)
-		done <- scheduler.Run(ctx)
-	}()
-	<-started
 	cancel()
-	if err := <-done; err != nil {
+	if err := scheduler.Run(ctx); err != nil {
 		t.Fatalf("scheduler Run() error = %v", err)
+	}
+}
+
+func TestSchedulerRoleReportsMissingConfigurationAndIdleRoleStops(t *testing.T) {
+	if err := (schedulerRole{}).Run(nil); err != nil {
+		t.Fatalf("scheduler role with nil context = %v", err)
+	}
+	for _, key := range []string{"DB_HOST", "DB_NAME", "DB_USER", "REDIS_PREFIX", "OPENSEARCH_INDEX_PREFIX", "NODE_ID", "XFLICKR_MASTER_KEYS", "XFLICKR_MASTER_KEY_ACTIVE"} {
+		t.Setenv(key, "")
+	}
+	if err := (schedulerRole{}).Run(context.Background()); err == nil {
+		t.Fatal("scheduler role started without required configuration")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := (idleRole{name: "media"}).Run(ctx); err != nil {
+		t.Fatalf("idle worker role Run() = %v", err)
+	}
+}
+
+func TestSchedulerRoleBuildsWithValidSettingsAndStopsOnDatabaseDeadline(t *testing.T) {
+	for key, value := range map[string]string{
+		"DB_HOST": "127.0.0.1", "DB_PORT": "1", "DB_NAME": "xflickr_wtunit", "DB_USER": "unused",
+		"REDIS_PREFIX": "xflickr_wtunit:", "OPENSEARCH_INDEX_PREFIX": "xflickr_wtunit_", "NODE_ID": "scheduler-test",
+		"XFLICKR_MASTER_KEYS": "test-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "XFLICKR_MASTER_KEY_ACTIVE": "test-v1",
+	} {
+		t.Setenv(key, value)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := (schedulerRole{}).Run(ctx); err == nil {
+		t.Fatal("scheduler role ignored its database deadline")
 	}
 }
 

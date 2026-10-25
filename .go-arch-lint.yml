@@ -80,6 +80,9 @@ deps:
       - schedule-domain
       - schedule-app
       - schedule-adapters
+      - quota-domain
+      - quota-app
+      - quota-adapters
       - platform
       - pkg
   pkg:

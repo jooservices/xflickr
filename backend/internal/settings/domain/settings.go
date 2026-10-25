@@ -30,6 +30,12 @@ const (
 	NodeCooldown        Key = "node_cooldown"
 	GroupPoolsEnabled   Key = "group_pools_enabled"
 	RegistrationOpen    Key = "registration_open"
+	PerKeyReadyCap      Key = "per_key_ready_cap"
+	NodeReadyCap        Key = "node_ready_cap"
+	MediaReadyCap       Key = "media_ready_cap"
+	AIReadyCap          Key = "ai_ready_cap"
+	SyncReadyCap        Key = "sync_ready_cap"
+	LeaseTimeout        Key = "lease_timeout"
 )
 
 // Effective contains the merged, validated settings for one user. Durations
@@ -47,6 +53,12 @@ type Effective struct {
 	RetryBackoff        time.Duration
 	NodeCooldown        time.Duration
 	GroupPoolsEnabled   bool
+	PerKeyReadyCap      int
+	NodeReadyCap        int
+	MediaReadyCap       int
+	AIReadyCap          int
+	SyncReadyCap        int
+	LeaseTimeout        time.Duration
 }
 
 // Definition is the application-level value and policy for a setting.
@@ -142,6 +154,12 @@ var schemas = map[Key]JSONSchema{
 	NodeCooldown:        {Type: "integer", Minimum: minZero, Maximum: maxDuration},
 	GroupPoolsEnabled:   {Type: "boolean"},
 	RegistrationOpen:    {Type: "boolean"},
+	PerKeyReadyCap:      {Type: "integer", Minimum: minZero},
+	NodeReadyCap:        {Type: "integer", Minimum: minZero},
+	MediaReadyCap:       {Type: "integer", Minimum: minZero},
+	AIReadyCap:          {Type: "integer", Minimum: minZero},
+	SyncReadyCap:        {Type: "integer", Minimum: minZero},
+	LeaseTimeout:        {Type: "integer", Minimum: minOne, Maximum: maxDuration},
 }
 
 // SchemaFor returns the JSON schema associated with a typed key.
@@ -166,6 +184,12 @@ func Keys() []Key {
 		NodeCooldown,
 		GroupPoolsEnabled,
 		RegistrationOpen,
+		PerKeyReadyCap,
+		NodeReadyCap,
+		MediaReadyCap,
+		AIReadyCap,
+		SyncReadyCap,
+		LeaseTimeout,
 	}
 }
 
@@ -185,6 +209,12 @@ func Defaults() []Definition {
 		{Key: NodeCooldown, Value: json.RawMessage("2700"), UserOverridable: true},
 		{Key: GroupPoolsEnabled, Value: json.RawMessage("false"), UserOverridable: true},
 		{Key: RegistrationOpen, Value: json.RawMessage("false"), UserOverridable: false},
+		{Key: PerKeyReadyCap, Value: json.RawMessage("100"), UserOverridable: false, Min: floatPointer(0)},
+		{Key: NodeReadyCap, Value: json.RawMessage("500"), UserOverridable: false, Min: floatPointer(0)},
+		{Key: MediaReadyCap, Value: json.RawMessage("100"), UserOverridable: false, Min: floatPointer(0)},
+		{Key: AIReadyCap, Value: json.RawMessage("100"), UserOverridable: false, Min: floatPointer(0)},
+		{Key: SyncReadyCap, Value: json.RawMessage("100"), UserOverridable: false, Min: floatPointer(0)},
+		{Key: LeaseTimeout, Value: json.RawMessage("120"), UserOverridable: false, Min: floatPointer(1)},
 	}
 }
 
@@ -418,6 +448,24 @@ func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
 	}
 	if result.GroupPoolsEnabled, err = boolean(values[GroupPoolsEnabled]); err != nil {
 		return Effective{}, nil, invalidStored(GroupPoolsEnabled, err)
+	}
+	if result.PerKeyReadyCap, err = integer(values[PerKeyReadyCap]); err != nil {
+		return Effective{}, nil, invalidStored(PerKeyReadyCap, err)
+	}
+	if result.NodeReadyCap, err = integer(values[NodeReadyCap]); err != nil {
+		return Effective{}, nil, invalidStored(NodeReadyCap, err)
+	}
+	if result.MediaReadyCap, err = integer(values[MediaReadyCap]); err != nil {
+		return Effective{}, nil, invalidStored(MediaReadyCap, err)
+	}
+	if result.AIReadyCap, err = integer(values[AIReadyCap]); err != nil {
+		return Effective{}, nil, invalidStored(AIReadyCap, err)
+	}
+	if result.SyncReadyCap, err = integer(values[SyncReadyCap]); err != nil {
+		return Effective{}, nil, invalidStored(SyncReadyCap, err)
+	}
+	if result.LeaseTimeout, err = duration(values[LeaseTimeout]); err != nil {
+		return Effective{}, nil, invalidStored(LeaseTimeout, err)
 	}
 	return result, dropped, nil
 }

@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"errors"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -197,6 +198,37 @@ func TestAcquireFailsClosedForMissingOrInvalidBudget(t *testing.T) {
 	governor.Budgets = StaticBudgets{1: {HourlyLimit: 0}}
 	if permit, _, err := acquire(t, governor, domain.Interactive); permit != nil || !errors.Is(err, domain.ErrGovernorOffline) {
 		t.Fatalf("invalid budget result = %v %v", permit, err)
+	}
+}
+
+func TestCapacityUsesHourlyRemainingAndTwoMinuteRate(t *testing.T) {
+	budget := generousBudget()
+	budget.PerSecondRate = 10
+	governor, server, client := setupGovernor(t, budget)
+	credits, err := governor.Capacity(context.Background(), 1, 2*time.Minute)
+	if err != nil || credits != 1200 {
+		t.Fatalf("Capacity() = %d, %v; want 1200", credits, err)
+	}
+	keys := governor.keys(1)
+	server.Set(keys[1], "3400")
+	server.Set(keys[2], strconv.FormatInt(time.Now().UnixMilli(), 10))
+	credits, err = governor.Capacity(context.Background(), 1, 2*time.Minute)
+	if err != nil || credits != 100 {
+		t.Fatalf("Capacity(near hourly limit) = %d, %v; want 100", credits, err)
+	}
+	server.Set(keys[1], "3600")
+	credits, err = governor.Capacity(context.Background(), 1, 2*time.Minute)
+	if err != nil || credits != 0 {
+		t.Fatalf("Capacity(exhausted) = %d, %v; want 0", credits, err)
+	}
+	_ = client.Close()
+}
+
+func TestCapacityFailsClosedWhenRedisIsOffline(t *testing.T) {
+	governor, server, _ := setupGovernor(t, generousBudget())
+	server.Close()
+	if _, err := governor.Capacity(context.Background(), 7, 2*time.Minute); !errors.Is(err, domain.ErrGovernorOffline) {
+		t.Fatalf("Capacity() error = %v, want offline", err)
 	}
 }
 

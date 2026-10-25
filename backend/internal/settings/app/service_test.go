@@ -95,6 +95,12 @@ func TestEffectiveReturnsTypedDefaultsAndReusesThemUntilExpiry(t *testing.T) {
 		RetryBackoff:        30 * time.Second,
 		NodeCooldown:        45 * time.Minute,
 		GroupPoolsEnabled:   false,
+		PerKeyReadyCap:      100,
+		NodeReadyCap:        500,
+		MediaReadyCap:       100,
+		AIReadyCap:          100,
+		SyncReadyCap:        100,
+		LeaseTimeout:        2 * time.Minute,
 	}
 	if got != want {
 		t.Fatalf("Effective() = %+v, want %+v", got, want)
@@ -381,6 +387,12 @@ func TestSetUserAppliesOverridesInsideCapsAndRejectsTheRest(t *testing.T) {
 		RetryBackoff:        0,
 		NodeCooldown:        2 * time.Minute,
 		GroupPoolsEnabled:   true,
+		PerKeyReadyCap:      100,
+		NodeReadyCap:        500,
+		MediaReadyCap:       100,
+		AIReadyCap:          100,
+		SyncReadyCap:        100,
+		LeaseTimeout:        2 * time.Minute,
 	}
 	if got != want {
 		t.Fatalf("Effective() = %+v, want %+v", got, want)
