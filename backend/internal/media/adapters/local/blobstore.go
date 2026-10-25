@@ -15,7 +15,8 @@ import (
 	"github.com/jooservices/xflickr/internal/media/app"
 )
 
-var ErrNotFound = errors.New("media: blob not found")
+// ErrNotFound is retained as an adapter alias for callers migrating to app.ErrNotFound.
+var ErrNotFound = app.ErrNotFound
 
 // BlobStore stores blobs under a local directory. A zero maxBytes disables the
 // cap; negative caps are rejected by New.
@@ -41,15 +42,15 @@ func New(root string, maxBytes int64) (*BlobStore, error) {
 
 func (s *BlobStore) path(key string) (string, error) {
 	if s == nil || s.root == "" || strings.TrimSpace(key) == "" || filepath.IsAbs(key) {
-		return "", errors.New("media: invalid blob key")
+		return "", app.ErrInvalidKey
 	}
 	clean := filepath.Clean(filepath.FromSlash(key))
 	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return "", errors.New("media: invalid blob key")
+		return "", app.ErrInvalidKey
 	}
 	path := filepath.Join(s.root, clean)
 	if !strings.HasPrefix(path, s.root+string(filepath.Separator)) {
-		return "", errors.New("media: invalid blob key")
+		return "", app.ErrInvalidKey
 	}
 	return path, nil
 }
@@ -93,7 +94,7 @@ func (s *BlobStore) Put(ctx context.Context, key string, src io.Reader) error {
 		// Usage includes the temporary file written above, so subtract the old
 		// target and compare with the final on-disk size.
 		if usage-oldSize > s.maxBytes {
-			return errors.New("media: blob store capacity exceeded")
+			return app.ErrCapacityExceeded
 		}
 	}
 	if err := os.Rename(tmpName, path); err != nil {
@@ -143,6 +144,8 @@ func (s *BlobStore) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+// PresignGet returns a local file URL with an informational expiry timestamp.
+// The filesystem itself does not enforce expiration; the cleaner removes blobs.
 func (s *BlobStore) PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error) {
 	if ctx == nil || ttl <= 0 {
 		return "", errors.New("media: invalid presign request")

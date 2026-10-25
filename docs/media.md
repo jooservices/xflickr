@@ -9,6 +9,10 @@ reached.
 The media role runs the asset cleaner immediately at startup and every five
 minutes afterward. It selects expired asset rows, removes each blob, and then
 deletes that row. Failed blob deletions leave their rows available for retry.
+Invalid or empty blob keys are treated as already gone so they cannot block
+newer expired rows. A failed cleanup pass is logged and retried at the next
+interval. Local `PresignGet` returns a file URL with an informational expiry;
+the cleaner enforces retention rather than the URL.
 
 The workstation environment uses local storage and does not run Garage. A
 remote object-store adapter and its lifecycle rules belong to an environment

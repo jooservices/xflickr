@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jooservices/xflickr/internal/media/app"
 )
 
 func TestBlobStorePutGetStatUsagePresignDelete(t *testing.T) {
@@ -51,7 +53,7 @@ func TestBlobStorePutGetStatUsagePresignDelete(t *testing.T) {
 	if err := store.Delete(ctx, info.Key); err != nil {
 		t.Fatalf("repeat delete: %v", err)
 	}
-	if _, err := store.Get(ctx, info.Key); !errors.Is(err, ErrNotFound) {
+	if _, err := store.Get(ctx, info.Key); !errors.Is(err, app.ErrNotFound) {
 		t.Fatalf("Get() error=%v", err)
 	}
 }
@@ -68,8 +70,8 @@ func TestBlobStoreCapacityAndOverwrite(t *testing.T) {
 	if err := store.Put(ctx, "item", strings.NewReader("12345")); err != nil {
 		t.Fatalf("overwrite within cap: %v", err)
 	}
-	if err := store.Put(ctx, "other", strings.NewReader("x")); err == nil {
-		t.Fatal("expected capacity error")
+	if err := store.Put(ctx, "other", strings.NewReader("x")); !errors.Is(err, app.ErrCapacityExceeded) {
+		t.Fatalf("capacity error = %v", err)
 	}
 	full, err := store.Full(ctx)
 	if err != nil || !full {
@@ -89,20 +91,20 @@ func TestBlobStoreRejectsInvalidInputsAndKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, key := range []string{"", "../escape", "a/../../escape", "/absolute"} {
-		if err := store.Put(context.Background(), key, strings.NewReader("x")); err == nil {
-			t.Errorf("Put(%q) accepted invalid key", key)
+		if err := store.Put(context.Background(), key, strings.NewReader("x")); !errors.Is(err, app.ErrInvalidKey) {
+			t.Errorf("Put(%q) error = %v", key, err)
 		}
 	}
 	if err := store.Put(context.Background(), "ok", nil); err == nil {
 		t.Fatal("expected nil reader error")
 	}
-	if _, err := store.Get(context.Background(), "missing"); !errors.Is(err, ErrNotFound) {
+	if _, err := store.Get(context.Background(), "missing"); !errors.Is(err, app.ErrNotFound) {
 		t.Fatalf("missing get error=%v", err)
 	}
-	if _, err := store.Stat(context.Background(), "missing"); !errors.Is(err, ErrNotFound) {
+	if _, err := store.Stat(context.Background(), "missing"); !errors.Is(err, app.ErrNotFound) {
 		t.Fatalf("missing stat error=%v", err)
 	}
-	if _, err := store.PresignGet(context.Background(), "missing", time.Minute); !errors.Is(err, ErrNotFound) {
+	if _, err := store.PresignGet(context.Background(), "missing", time.Minute); !errors.Is(err, app.ErrNotFound) {
 		t.Fatalf("missing presign error=%v", err)
 	}
 	if _, err := store.PresignGet(context.Background(), "ok", 0); err == nil {

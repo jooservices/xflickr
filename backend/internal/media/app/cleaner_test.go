@@ -98,6 +98,15 @@ func TestCleanerRunOnceRetainsRowsAfterErrors(t *testing.T) {
 	}
 }
 
+func TestCleanerRunOnceDropsRowsWithInvalidKeys(t *testing.T) {
+	assets := &fakeAssets{items: []domain.Asset{{ID: 4}, {ID: 5, BlobKey: "invalid"}}}
+	blobs := &fakeBlobs{err: ErrInvalidKey}
+	err := (Cleaner{Assets: assets, Blobs: blobs}).RunOnce(context.Background())
+	if err != nil || len(assets.deleted) != 2 {
+		t.Fatalf("err=%v deleted=%v", err, assets.deleted)
+	}
+}
+
 func TestCleanerRunOnceRejectsMissingDependencies(t *testing.T) {
 	if err := (Cleaner{}).RunOnce(context.Background()); err == nil {
 		t.Fatal("expected validation error")
@@ -117,14 +126,34 @@ func TestCleanerRunStopsOnCanceledContext(t *testing.T) {
 	if err := (Cleaner{}).Run(nil); err == nil {
 		t.Fatal("expected nil context error")
 	}
-	if err := (Cleaner{Assets: &fakeAssets{selectErr: errors.New("select")}, Blobs: &fakeBlobs{}}).Run(context.Background()); err == nil {
-		t.Fatal("expected initial cleanup error")
-	}
-
 	ctx, cancel = context.WithCancel(context.Background())
 	assets := &fakeAssets{}
 	assets.onSelect = cancel
 	if err := (Cleaner{Assets: assets, Blobs: &fakeBlobs{}, Interval: time.Millisecond}).Run(ctx); err != nil {
 		t.Fatalf("Run() after cancellation: %v", err)
+	}
+}
+
+func TestCleanerRunSurvivesFailingPassAndCleansNextTick(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	selectionErr := errors.New("transient database error")
+	assets := &fakeAssets{selectErr: selectionErr, items: []domain.Asset{{ID: 22, BlobKey: "expired"}}}
+	passes := 0
+	assets.onSelect = func() {
+		passes++
+		if passes == 1 {
+			return
+		}
+		assets.selectErr = nil
+		cancel()
+	}
+	blobs := &fakeBlobs{}
+	err := (Cleaner{Assets: assets, Blobs: blobs, Interval: time.Millisecond}).Run(ctx)
+	if err != nil {
+		t.Fatalf("Run() = %v", err)
+	}
+	if passes < 2 || len(blobs.keys) != 1 || len(assets.deleted) != 1 || assets.deleted[0] != 22 {
+		t.Fatalf("passes=%d blobs=%v deleted=%v", passes, blobs.keys, assets.deleted)
 	}
 }

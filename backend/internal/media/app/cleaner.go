@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -18,6 +20,7 @@ type Cleaner struct {
 	Blobs    BlobStore
 	Interval time.Duration
 	Batch    int
+	Logger   *slog.Logger
 }
 
 // RunOnce deletes expired blobs before removing their database rows. A row is
@@ -36,9 +39,11 @@ func (c Cleaner) RunOnce(ctx context.Context) error {
 	}
 	var failures []error
 	for _, asset := range assets {
-		if err := c.Blobs.Delete(ctx, asset.BlobKey); err != nil {
-			failures = append(failures, fmt.Errorf("delete blob %q: %w", asset.BlobKey, err))
-			continue
+		if strings.TrimSpace(asset.BlobKey) != "" {
+			if err := c.Blobs.Delete(ctx, asset.BlobKey); err != nil && !errors.Is(err, ErrInvalidKey) {
+				failures = append(failures, fmt.Errorf("delete blob %q: %w", asset.BlobKey, err))
+				continue
+			}
 		}
 		if err := c.Assets.DeleteAsset(ctx, asset.ID); err != nil {
 			failures = append(failures, fmt.Errorf("delete asset %d: %w", asset.ID, err))
@@ -55,8 +60,12 @@ func (c Cleaner) Run(ctx context.Context) error {
 	if c.Interval <= 0 {
 		c.Interval = DefaultCleanInterval
 	}
+	logger := c.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	if err := c.RunOnce(ctx); err != nil && ctx.Err() == nil {
-		return err
+		logger.ErrorContext(ctx, "media cleaner pass failed", "error", err)
 	}
 	ticker := time.NewTicker(c.Interval)
 	defer ticker.Stop()
@@ -66,7 +75,7 @@ func (c Cleaner) Run(ctx context.Context) error {
 			return nil
 		case <-ticker.C:
 			if err := c.RunOnce(ctx); err != nil && ctx.Err() == nil {
-				return err
+				logger.ErrorContext(ctx, "media cleaner pass failed", "error", err)
 			}
 		}
 	}

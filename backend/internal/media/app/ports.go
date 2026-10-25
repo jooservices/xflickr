@@ -3,10 +3,20 @@ package app
 
 import (
 	"context"
+	"errors"
 	"io"
 	"time"
 
 	"github.com/jooservices/xflickr/internal/catalog/domain"
+)
+
+var (
+	// ErrNotFound reports that a blob does not exist in the configured store.
+	ErrNotFound = errors.New("media: blob not found")
+	// ErrCapacityExceeded reports that storing a blob would exceed the configured cap.
+	ErrCapacityExceeded = errors.New("media: blob store capacity exceeded")
+	// ErrInvalidKey reports a blob key that cannot identify a blob in the store.
+	ErrInvalidKey = errors.New("media: invalid blob key")
 )
 
 // BlobInfo describes a stored temporary blob.
