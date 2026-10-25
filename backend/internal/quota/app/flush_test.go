@@ -78,3 +78,27 @@ func TestRunDefaultsInterval(_ *testing.T) {
 	cancel()
 	Flusher{Store: &fakeStore{}, Counters: &fakeCounters{}}.Run(ctx, nil)
 }
+
+type fakePruner struct {
+	before time.Time
+	err    error
+}
+
+func (p *fakePruner) Prune(_ context.Context, before time.Time) error {
+	p.before = before
+	return p.err
+}
+
+func TestFlushOncePrunesCallLog(t *testing.T) {
+	pruner := &fakePruner{}
+	f := Flusher{Store: &fakeStore{}, Counters: &fakeCounters{}, Pruner: pruner, Now: func() time.Time { return base }}
+	if err := f.FlushOnce(context.Background()); err != nil || !pruner.before.Equal(base.Add(-2*Window)) {
+		t.Fatalf("prune = %v before %v", err, pruner.before)
+	}
+	boom := errors.New("boom")
+	pruner.err = boom
+	f.Now = nil
+	if err := f.FlushOnce(context.Background()); !errors.Is(err, boom) {
+		t.Fatalf("prune error = %v", err)
+	}
+}

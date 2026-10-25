@@ -45,6 +45,11 @@ type Governor struct {
 	Rebuilder interface {
 		Rebuild(context.Context, int64) error
 	}
+	// Recorder, when set, logs every granted call to api_call_log so a rebuild
+	// can recover calls made after the last flush. A failed record fails closed.
+	Recorder interface {
+		Record(ctx context.Context, keyID int64, class string, at time.Time) error
+	}
 }
 
 var _ domain.Governor = Governor{}
@@ -64,21 +69,44 @@ func (g Governor) Acquire(ctx context.Context, keyID int64, class domain.Class) 
 		if err != nil {
 			return nil, 0, err
 		}
-		if reason == reasonRebuild && g.Rebuilder != nil && attempt == 0 {
-			// Block until the counters are back; the retry then sees the marker.
-			if err := g.Rebuilder.Rebuild(ctx, keyID); err != nil {
-				return nil, 0, domain.ErrGovernorOffline
-			}
+		if retry, err := g.rebuildFirst(ctx, keyID, reason, attempt); err != nil {
+			return nil, 0, err
+		} else if retry {
 			continue
 		}
 		if !allowed {
 			return nil, wait, nil
+		}
+		if err := g.record(ctx, keyID, class); err != nil {
+			return nil, 0, err
 		}
 		return &permit{governor: g, keyID: keyID, budget: budget}, 0, nil
 	}
 }
 
 const reasonRebuild = "rebuild"
+
+// rebuildFirst blocks until the counters are back when the first attempt found
+// them lost; the retry then sees the ready marker.
+func (g Governor) rebuildFirst(ctx context.Context, keyID int64, reason string, attempt int) (bool, error) {
+	if reason != reasonRebuild || g.Rebuilder == nil || attempt != 0 {
+		return false, nil
+	}
+	if err := g.Rebuilder.Rebuild(ctx, keyID); err != nil {
+		return false, domain.ErrGovernorOffline
+	}
+	return true, nil
+}
+
+func (g Governor) record(ctx context.Context, keyID int64, class domain.Class) error {
+	if g.Recorder == nil {
+		return nil
+	}
+	if err := g.Recorder.Record(ctx, keyID, string(class), time.Now()); err != nil {
+		return domain.ErrGovernorOffline
+	}
+	return nil
+}
 
 func (g Governor) tryAcquire(ctx context.Context, keyID int64, class domain.Class, budget domain.Budget) (bool, time.Duration, string, error) {
 	requireReady := 0

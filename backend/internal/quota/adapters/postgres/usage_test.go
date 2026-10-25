@@ -159,7 +159,7 @@ func TestKeyIDs(t *testing.T) {
 
 func TestCallLog(t *testing.T) {
 	early := at.Add(-30 * time.Minute)
-	pool := &fakePool{row: valRow{values: []any{true}}, rows: &fakeRows{data: [][]any{
+	pool := &fakePool{rows: &fakeRows{data: [][]any{
 		{"person", int64(3), at},
 		{"photo", int64(2), early},
 	}}}
@@ -167,16 +167,6 @@ func TestCallLog(t *testing.T) {
 	if err != nil || got.ByClass["person"] != 3 || got.ByClass["photo"] != 2 || !got.First.Equal(early) {
 		t.Fatalf("Usage = %+v %v", got, err)
 	}
-	pool.row = valRow{values: []any{false}}
-	got, err = (CallLog{Pool: pool}).Usage(context.Background(), 1, at)
-	if err != nil || len(got.ByClass) != 0 || !got.First.IsZero() {
-		t.Fatalf("missing table = %+v %v", got, err)
-	}
-	pool.row = valRow{err: errors.New("down")}
-	if _, err := (CallLog{Pool: pool}).Usage(context.Background(), 1, at); err == nil {
-		t.Fatal("check error ignored")
-	}
-	pool.row = valRow{values: []any{true}}
 	pool.qErr = errors.New("down")
 	if _, err := (CallLog{Pool: pool}).Usage(context.Background(), 1, at); err == nil {
 		t.Fatal("query error ignored")
@@ -187,6 +177,29 @@ func TestCallLog(t *testing.T) {
 		t.Fatal("scan error ignored")
 	}
 	if _, err := (CallLog{}).Usage(context.Background(), 1, at); err == nil {
+		t.Fatal("nil pool accepted")
+	}
+}
+
+func TestCallLogRecordAndPrune(t *testing.T) {
+	pool := &fakePool{}
+	if err := (CallLog{Pool: pool}).Record(context.Background(), 4, "person", at); err != nil || pool.args[0] != int64(4) || pool.args[1] != "person" {
+		t.Fatalf("Record = %v args %v", err, pool.args)
+	}
+	if err := (CallLog{Pool: pool}).Prune(context.Background(), at); err != nil {
+		t.Fatal(err)
+	}
+	pool.execErr = errors.New("down")
+	if err := (CallLog{Pool: pool}).Record(context.Background(), 4, "person", at); err == nil {
+		t.Fatal("record error ignored")
+	}
+	if err := (CallLog{Pool: pool}).Prune(context.Background(), at); err == nil {
+		t.Fatal("prune error ignored")
+	}
+	if (CallLog{}).Record(context.Background(), 4, "person", at) == nil || (CallLog{Pool: pool}).Record(context.Background(), 0, "person", at) == nil || (CallLog{Pool: pool}).Record(context.Background(), 1, "", at) == nil {
+		t.Fatal("invalid record accepted")
+	}
+	if (CallLog{}).Prune(context.Background(), at) == nil {
 		t.Fatal("nil pool accepted")
 	}
 }

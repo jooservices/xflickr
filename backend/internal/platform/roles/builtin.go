@@ -3,6 +3,7 @@ package roles
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -36,7 +37,6 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/httpx"
 	"github.com/jooservices/xflickr/internal/platform/outbox"
 	"github.com/jooservices/xflickr/internal/platform/queue"
-	quotaPostgres "github.com/jooservices/xflickr/internal/quota/adapters/postgres"
 	quotaRedis "github.com/jooservices/xflickr/internal/quota/adapters/redis"
 	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
 	schedulepostgres "github.com/jooservices/xflickr/internal/schedule/adapters/postgres"
@@ -97,7 +97,9 @@ func (schedulerRole) Run(ctx context.Context) error {
 		return err
 	}
 	store := scheduleriver.Store{Pool: pool}
-	return newSchedulerPump(pool, redisClient, cfg, store, queueAdapter, settings).Run(ctx)
+	quota := newQuotaRuntime(pool, redisClient, cfg)
+	defer quota.start(ctx, slog.Default())()
+	return newSchedulerPump(pool, quota.Governor, store, queueAdapter, settings).Run(ctx)
 }
 
 type crawlRole struct{}
@@ -131,8 +133,8 @@ func (crawlRole) Run(ctx context.Context) error {
 	})
 }
 
-func newSchedulerPump(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, store scheduleapp.PumpStore, queueAdapter queue.JobQueue, settings scheduleapp.PumpSettings) scheduleapp.Pump {
-	return scheduleapp.Pump{Store: store, QueueState: queuepostgres.New(pool), Credits: quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}}, Queue: queueAdapter, Settings: settings}
+func newSchedulerPump(pool *pgxpool.Pool, governor quotaRedis.Governor, store scheduleapp.PumpStore, queueAdapter queue.JobQueue, settings scheduleapp.PumpSettings) scheduleapp.Pump {
+	return scheduleapp.Pump{Store: store, QueueState: queuepostgres.New(pool), Credits: governor, Queue: queueAdapter, Settings: settings}
 }
 
 func registerBuiltin(registry *Registry, role Role) {

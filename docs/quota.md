@@ -35,7 +35,17 @@ share a single rebuild.
 The rebuild reads the newest `quota_usage` window that started within the last
 hour and the `api_call_log` calls since that window began. Per class it takes
 the larger of the two, so it can over-count the window but never under-count
-it. With no stored row, the earliest logged call starts the window. The call
-log is read from `api_call_log(key_id, class, called_at)` and counts as empty
-until that table exists. Calls made after the last flush and before a Redis loss
-are recoverable only from the call log.
+it. With no stored row, the earliest logged call starts the window.
+
+`api_call_log(key_id, class, called_at)` is created by the
+`api_call_log` migration. The governor writes one row for every granted call
+(when a recorder is configured) before returning the permit; if the write
+fails, `Acquire` returns the governor-offline error. The flusher deletes rows
+older than two windows after each flush. A missing table is an error, so a
+rebuild fails closed instead of treating the log as empty. Calls made after the
+last flush and before a Redis loss are therefore recovered from the call log.
+
+The scheduler role builds one rebuilder, rebuilds every tracked key at start,
+and runs the flusher in the background until shutdown, when it flushes a last
+time. Failures of the start rebuild or of a flush are logged; `Acquire` keeps
+failing closed for any key that is not ready.

@@ -94,7 +94,7 @@ func TestRedisLossMidWindowDoesNotOverspend(t *testing.T) {
 	counters := Counters{Client: client, Prefix: prefix}
 	store := quotapostgres.Usage{Pool: pool}
 	rebuilder := &app.Rebuilder{Store: store, Calls: quotapostgres.CallLog{Pool: pool}, Counters: counters}
-	governor := Governor{Client: client, Prefix: prefix, Budgets: StaticBudgets{keyID: budget}, Rebuilder: rebuilder}
+	governor := Governor{Client: client, Prefix: prefix, Budgets: StaticBudgets{keyID: budget}, Rebuilder: rebuilder, Recorder: quotapostgres.CallLog{Pool: pool}}
 	flusher := app.Flusher{Store: store, Counters: counters}
 
 	granted := func(n int) int {
@@ -137,13 +137,35 @@ func TestRedisLossMidWindowDoesNotOverspend(t *testing.T) {
 		t.Fatalf("flushed used=%d by_class=%s", flushed, byClass)
 	}
 
-	// Kill every Redis key for this API key mid-window.
+	// Calls granted after the last flush are only in api_call_log. Kill every
+	// Redis key mid-window: the rebuild must still count them.
+	extra := granted(5)
+	if extra != 5 {
+		t.Fatalf("granted after flush = %d", extra)
+	}
+	var logged int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM api_call_log WHERE key_id=$1`, keyID).Scan(&logged); err != nil {
+		t.Fatal(err)
+	}
+	if logged != before+extra {
+		t.Fatalf("api_call_log rows = %d, want %d", logged, before+extra)
+	}
 	clearKeys()
 	after := granted(100)
-	if before+after > limit {
-		t.Fatalf("overspent: %d before loss + %d after loss > %d", before, after, limit)
+	if before+extra+after > limit {
+		t.Fatalf("overspent: %d + %d before loss + %d after loss > %d", before, extra, after, limit)
 	}
-	if after != limit-before {
-		t.Fatalf("granted after loss = %d, want %d", after, limit-before)
+	if after != limit-before-extra {
+		t.Fatalf("granted after loss = %d, want %d", after, limit-before-extra)
+	}
+
+	// A loss before any flush: nothing in quota_usage, so only the call log
+	// can restore the count.
+	if _, err := pool.Exec(ctx, `DELETE FROM quota_usage WHERE key_id=$1`, keyID); err != nil {
+		t.Fatal(err)
+	}
+	clearKeys()
+	if again := granted(100); again != 0 {
+		t.Fatalf("granted %d after loss with no stored usage, window already used up", again)
 	}
 }

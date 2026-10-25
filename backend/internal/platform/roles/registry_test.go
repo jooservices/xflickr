@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -28,6 +29,7 @@ import (
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/config"
+	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
 	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
 	scheduleapp "github.com/jooservices/xflickr/internal/schedule/app"
 )
@@ -521,11 +523,103 @@ func TestNewSchedulerPumpWiresQueueStatePublisher(t *testing.T) {
 	client := redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:1"})
 	defer client.Close()
 	settings := scheduleapp.PumpSettings{RetryMax: 4}
-	pump := newSchedulerPump(&pgxpool.Pool{}, client, config.Config{}, nil, nil, settings)
+	quota := newQuotaRuntime(&pgxpool.Pool{}, client, config.Config{})
+	pump := newSchedulerPump(&pgxpool.Pool{}, quota.Governor, nil, nil, settings)
 	if pump.QueueState == nil || pump.Settings.RetryMax != settings.RetryMax {
 		t.Fatalf("scheduler pump wiring = %+v", pump)
 	}
 }
+
+func TestNewQuotaRuntimeWiresRebuildFlushAndCallLog(t *testing.T) {
+	client := redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:1"})
+	defer client.Close()
+	quota := newQuotaRuntime(&pgxpool.Pool{}, client, config.Config{Redis: config.RedisConfig{Prefix: "wt:"}})
+	governor := quota.Governor
+	if governor.Rebuilder == nil || governor.Recorder == nil || governor.Budgets == nil || governor.Prefix != "wt:" {
+		t.Fatalf("governor wiring = %+v", governor)
+	}
+	if governor.Rebuilder != any(quota.Rebuilder) {
+		t.Fatal("governor and start rebuild use different rebuilders")
+	}
+	f := quota.Flusher
+	if f.Store == nil || f.Counters == nil || f.Pruner == nil || quota.Rebuilder.Store == nil || quota.Rebuilder.Calls == nil || quota.Rebuilder.Counters == nil {
+		t.Fatalf("flusher or rebuilder wiring is incomplete: %+v", quota)
+	}
+}
+
+func TestQuotaRuntimeStartRebuildsFlushesAndStops(t *testing.T) {
+	store := &startStore{rebuilt: make(chan struct{}, 1), flushed: make(chan struct{}, 8)}
+	quota := quotaRuntime{
+		Rebuilder: &quotaapp.Rebuilder{Store: store, Calls: startCalls{}, Counters: startCounters{}},
+		Flusher:   quotaapp.Flusher{Store: store, Counters: startCounters{}, Interval: 5 * time.Millisecond},
+	}
+	stop := quota.start(context.Background(), nil)
+	select {
+	case <-store.rebuilt:
+	default:
+		t.Fatal("start did not rebuild counters before returning")
+	}
+	select {
+	case <-store.flushed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("flusher did not run in the background")
+	}
+	stop()
+	stop()
+}
+
+func TestQuotaRuntimeStartLogsRebuildFailureAndKeepsFlushing(t *testing.T) {
+	store := &startStore{rebuilt: make(chan struct{}, 1), flushed: make(chan struct{}, 8), listErr: errors.New("down")}
+	quota := quotaRuntime{
+		Rebuilder: &quotaapp.Rebuilder{Store: store, Calls: startCalls{}, Counters: startCounters{}},
+		Flusher:   quotaapp.Flusher{Store: store, Counters: startCounters{}, Interval: 5 * time.Millisecond},
+	}
+	var logs bytes.Buffer
+	stop := quota.start(context.Background(), slog.New(slog.NewTextHandler(&logs, nil)))
+	time.Sleep(50 * time.Millisecond)
+	stop()
+	if !strings.Contains(logs.String(), "rebuild at start failed") || !strings.Contains(logs.String(), "flush failed") {
+		t.Fatalf("logs = %q", logs.String())
+	}
+}
+
+type startStore struct {
+	rebuilt, flushed chan struct{}
+	listErr          error
+}
+
+func (s *startStore) Save(context.Context, quotaapp.Usage) error { return nil }
+func (s *startStore) Latest(context.Context, int64, time.Time) (quotaapp.Usage, bool, error) {
+	select {
+	case s.rebuilt <- struct{}{}:
+	default:
+	}
+	return quotaapp.Usage{}, false, nil
+}
+
+func (s *startStore) KeyIDs(context.Context) ([]int64, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
+	select {
+	case s.flushed <- struct{}{}:
+	default:
+	}
+	return []int64{1}, nil
+}
+
+type startCalls struct{}
+
+func (startCalls) Usage(context.Context, int64, time.Time) (quotaapp.CallUsage, error) {
+	return quotaapp.CallUsage{}, nil
+}
+
+type startCounters struct{}
+
+func (startCounters) Snapshot(context.Context, int64) (quotaapp.Usage, bool, error) {
+	return quotaapp.Usage{}, false, nil
+}
+func (startCounters) Restore(context.Context, quotaapp.Usage) (bool, error) { return true, nil }
 
 func TestAPIRoleServesHealthAndStops(t *testing.T) {
 	reservation, err := net.Listen("tcp", "127.0.0.1:0")

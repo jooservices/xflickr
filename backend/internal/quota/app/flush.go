@@ -15,6 +15,15 @@ type Flusher struct {
 	Store    UsageStore
 	Counters CounterStore
 	Interval time.Duration
+	// Pruner, when set, drops call-log rows older than two windows after each
+	// flush; a rebuild never reads further back than one window.
+	Pruner CallPruner
+	Now    func() time.Time
+}
+
+// CallPruner deletes api_call_log rows logged before a time.
+type CallPruner interface {
+	Prune(ctx context.Context, before time.Time) error
 }
 
 // FlushOnce persists every key's live counters. Keys whose counters were lost
@@ -40,6 +49,15 @@ func (f Flusher) FlushOnce(ctx context.Context) error {
 		}
 		if err := f.Store.Save(ctx, usage); err != nil {
 			errs = append(errs, fmt.Errorf("quota: save usage for key %d: %w", id, err))
+		}
+	}
+	if f.Pruner != nil {
+		now := time.Now
+		if f.Now != nil {
+			now = f.Now
+		}
+		if err := f.Pruner.Prune(ctx, now().Add(-2*Window)); err != nil {
+			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)

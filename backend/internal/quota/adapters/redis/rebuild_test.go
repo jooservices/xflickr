@@ -161,3 +161,90 @@ func TestSnapshotRejectsCorruptCounts(t *testing.T) {
 		t.Fatal("corrupt window accepted")
 	}
 }
+
+type slowRebuilder struct {
+	inner   *app.Rebuilder
+	release chan struct{}
+	started chan struct{}
+}
+
+func (s slowRebuilder) Rebuild(ctx context.Context, keyID int64) error {
+	select {
+	case s.started <- struct{}{}:
+	default:
+	}
+	<-s.release
+	return s.inner.Rebuild(ctx, keyID)
+}
+
+func TestAcquireBlocksWhileRebuildIsRunning(t *testing.T) {
+	budget := generousBudget()
+	budget.HourlyLimit = 10
+	budget.Reserve = 0
+	g, _, _ := setupGovernor(t, budget)
+	slow := slowRebuilder{
+		inner:   rebuilderFor(g, memStore{has: true, usage: app.Usage{WindowStart: time.Now().Add(-time.Minute), Used: 7, ByClass: map[string]int64{"interactive": 7}}}, memCalls{}),
+		release: make(chan struct{}),
+		started: make(chan struct{}, 1),
+	}
+	g.Rebuilder = slow
+
+	const callers = 20
+	results := make(chan bool, callers)
+	for i := 0; i < callers; i++ {
+		go func() {
+			permit, _, err := acquire(t, g, domain.Interactive)
+			results <- err == nil && permit != nil
+		}()
+	}
+	select {
+	case <-slow.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("rebuild never started")
+	}
+	select {
+	case <-results:
+		t.Fatal("Acquire returned while the rebuild was still running")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(slow.release)
+	granted := 0
+	for i := 0; i < callers; i++ {
+		select {
+		case ok := <-results:
+			if ok {
+				granted++
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("Acquire did not resume after the rebuild")
+		}
+	}
+	if granted != 3 {
+		t.Fatalf("granted %d after rebuild, want 3 (limit 10, 7 already used)", granted)
+	}
+}
+
+type recorderFn func(context.Context, int64, string, time.Time) error
+
+func (f recorderFn) Record(ctx context.Context, keyID int64, class string, at time.Time) error {
+	return f(ctx, keyID, class, at)
+}
+
+func TestAcquireRecordsGrantsAndFailsClosedWhenRecordFails(t *testing.T) {
+	g, _, _ := setupGovernor(t, generousBudget())
+	var classes []string
+	g.Recorder = recorderFn(func(_ context.Context, keyID int64, class string, _ time.Time) error {
+		if keyID != 1 {
+			t.Errorf("key = %d", keyID)
+		}
+		classes = append(classes, class)
+		return nil
+	})
+	if permit, _, err := acquire(t, g, domain.Person); err != nil || permit == nil || len(classes) != 1 || classes[0] != "person" {
+		t.Fatalf("record on grant: %v %v %v", permit, err, classes)
+	}
+	g.Recorder = recorderFn(func(context.Context, int64, string, time.Time) error { return errors.New("db down") })
+	if permit, _, err := acquire(t, g, domain.Person); !errors.Is(err, domain.ErrGovernorOffline) || permit != nil {
+		t.Fatalf("record failure = %v %v", permit, err)
+	}
+}
