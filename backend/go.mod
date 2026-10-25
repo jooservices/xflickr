@@ -13,6 +13,9 @@ require (
 	github.com/oapi-codegen/runtime v1.8.0
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/redis/go-redis/v9 v9.23.0
+	github.com/riverqueue/river v0.49.0
+	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.49.0
+	github.com/riverqueue/river/rivertype v0.49.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/sync v0.24.0
 )
@@ -33,10 +36,16 @@ require (
 	github.com/oapi-codegen/oapi-codegen/v2 v2.8.1 // indirect
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
+	github.com/riverqueue/river/riverdriver v0.49.0 // indirect
+	github.com/riverqueue/river/rivershared v0.49.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/sethvargo/go-retry v0.5.0 // indirect
 	github.com/speakeasy-api/jsonpath v0.6.3 // indirect
 	github.com/speakeasy-api/openapi v1.24.0 // indirect
+	github.com/tidwall/gjson v1.19.0 // indirect
+	github.com/tidwall/match v1.2.0 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/vmware-labs/yaml-jsonpath v0.3.2 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

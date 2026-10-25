@@ -33,6 +33,7 @@ components:
       - internal/platform/db/**
       - internal/platform/httpx/**
       - internal/platform/outbox/**
+      - internal/platform/queue/**
   # Composition root: wires module adapters into runnable roles.
   wiring:            { in: internal/platform/roles/** }
   pkg:               { in: pkg/** }

@@ -17,6 +17,8 @@
   state components, and EN/VI i18n.
 - [Schedule backlog](schedule.md) — deduplicated work items, cursors, and state
   transitions.
+- [Durable job queue](job-queue.md) — transactional River jobs, worker queues,
+  retries, and dead letter events.
 - [Architecture decision records](adr/README.md) — durable architecture choices.
 - [UI view catalogue](ui/README.md) — all views, overlays, and the spec gate.
 - [User interface proof of concept](ui/poc/README.md) — static design prototype.
