@@ -75,8 +75,10 @@ deps:
     mayDependOn: [catalog-domain]
   catalog-adapters:
     mayDependOn: [catalog-domain, catalog-app, catalog-adapters-gen]
+  crawl-domain:
+    mayDependOn: [catalog-domain]
   crawl-app:
-    mayDependOn: [crawl-domain, settings-domain]
+    mayDependOn: [crawl-domain, settings-domain, catalog-domain, pkg]
   crawl-adapters:
     mayDependOn: [crawl-domain, crawl-app, platform]
   platform:

@@ -19,6 +19,8 @@
   idempotent upserts, compressed source payloads, and size status.
 - [Crawl interests](crawl-interests.md) — per-user person depth, lowest-depth
   deduplication, progress reporting, contact priority controls, and pause/resume.
+- [Crawl engine](crawl-engine.md) — facet interface, registry, page job flow
+  and error outcomes.
 - [Web app shells](web-shells.md) — user and admin shells, route guard, tokens,
   state components, and EN/VI i18n.
 - [Schedule backlog](schedule.md) — deduplicated work items, cursors, and state
