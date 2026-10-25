@@ -194,3 +194,20 @@ func TestSizesRequiresDependenciesAndHonorsCanceledContext(t *testing.T) {
 		t.Fatal("invalid job succeeded")
 	}
 }
+
+func TestSizesUnavailableIsNotRetriedOnRepeatedJobs(t *testing.T) {
+	handler, store, client := sizesRig()
+	client.err = &flickr.CallError{Kind: flickr.ErrNotFound}
+	if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
+		t.Fatal(err)
+	}
+	store.photo.SizesStatus = store.status
+	for range 3 {
+		if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if client.calls != 1 || store.status != catalog.SizesUnavailable {
+		t.Fatalf("unavailable photo re-requested: calls=%d status=%s", client.calls, store.status)
+	}
+}

@@ -320,6 +320,9 @@ func TestCatalogFacetsPersistReturnedRecordsAndEmptyResponses(t *testing.T) {
 		facet   domain.Facet
 		payload string
 	}{{facets.Albums{}, fmt.Sprintf(`{"photosets":{"pages":1,"photoset":[{"id":%q,"primary":"999999999999","photos":2,"title":{"_content":"Album"}}]}}`, suffix+"-album")}, {facets.Galleries{}, fmt.Sprintf(`{"galleries":{"pages":1,"gallery":[{"id":%q,"primary_photo_id":"999999999999","count_photos":1,"title":{"_content":"Gallery"}}]}}`, suffix+"-gallery")}, {facets.Groups{}, fmt.Sprintf(`{"groups":{"pages":1,"group":[{"nsid":%q,"name":"Group","members":3,"pool_count":4}]}}`, suffix+"-group")}}
+	if _, err := pool.Exec(ctx, `INSERT INTO people (nsid, username) VALUES ($1,'Subject')`, person); err != nil {
+		t.Fatal(err)
+	}
 	registry := crawlapp.NewRegistry()
 	ids := make([]int64, 0, len(facetsToRun))
 	responses := catalogFacetsFlickr{}
@@ -614,4 +617,141 @@ func photoFavoritesPayload(pages, page, count int, firstID int64, owner0, owner1
 		items[i] = fmt.Sprintf(`{"id":"%d","owner":%q,"ownername":%q,"secret":"s","server":"1","lastupdate":"1700000100","dateupload":"1700000000","date_faved":"1700000200","ispublic":1,"url_m":"https://example.invalid/medium"}`, firstID+int64(i), owner, username)
 	}
 	return fmt.Sprintf(`{"photos":{"page":%d,"pages":%d,"perpage":500,"photo":[%s]}}`, page, pages, strings.Join(items, ","))
+}
+
+type exhaustedGovernor struct{ wait time.Duration }
+
+func (g exhaustedGovernor) Acquire(context.Context, int64, domain.Lane) (crawlapp.Permit, time.Duration, error) {
+	return nil, g.wait, nil
+}
+
+type failingFlickr struct{ calls int }
+
+func (f *failingFlickr) Call(context.Context, crawlapp.Request) (json.RawMessage, error) {
+	f.calls++
+	return nil, fmt.Errorf("Flickr must not be called without quota")
+}
+
+func TestCatalogFacetsRetryIsIdempotentAndKeepsRealUsername(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	suffix := fmt.Sprintf("catalog-retry-%d", time.Now().UnixNano())
+	person, foreign := suffix+"@N01", suffix+"@N02"
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM person_groups WHERE person_nsid=$1`, person)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM groups WHERE nsid=$1`, suffix+"-group")
+		_, _ = pool.Exec(context.Background(), `DELETE FROM galleries WHERE id=$1`, suffix+"-gallery")
+		_, _ = pool.Exec(context.Background(), `DELETE FROM albums WHERE id=$1`, suffix+"-album")
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{person, foreign})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1`, userID)
+	})
+	for nsid, name := range map[string]string{person: "Real Name", foreign: "Foreign Name"} {
+		if _, err := pool.Exec(ctx, `INSERT INTO people (nsid, username) VALUES ($1,$2)`, nsid, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	registry := crawlapp.NewRegistry()
+	responses := catalogFacetsFlickr{
+		"flickr.photosets.getList": json.RawMessage(fmt.Sprintf(`{"photosets":{"pages":1,"photoset":[{"id":%q,"photos":2,"title":{"_content":"Album"}}]}}`, suffix+"-album")),
+		"flickr.galleries.getList": json.RawMessage(fmt.Sprintf(`{"galleries":{"pages":1,"gallery":[{"id":%q,"owner":%q,"count_photos":1,"title":{"_content":"Gallery"}}]}}`, suffix+"-gallery", foreign)),
+		"flickr.people.getGroups":  json.RawMessage(fmt.Sprintf(`{"groups":{"pages":1,"group":[{"nsid":%q,"name":"Group","members":3,"pool_count":4}]}}`, suffix+"-group")),
+	}
+	facetList := []domain.Facet{facets.Albums{}, facets.Galleries{}, facets.Groups{}}
+	for _, f := range facetList {
+		if err := registry.Register(f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store, err := NewEngine(pool, func(conn Conn) crawlapp.CatalogWriter {
+		repo, e := catalogpg.New(conn)
+		if e != nil {
+			t.Fatal(e)
+		}
+		return repo
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := &crawlapp.Engine{Registry: registry, Store: store, Units: store, Keys: intKeys{}, Governor: intGovernor{}, Flickr: responses, Settings: photosFavoritesSettings{maxDepth: 1}}
+	for _, f := range facetList {
+		id := insertPhotosFavoritesWork(t, ctx, pool, userID, f.Name(), person, 0, f)
+		var cursor []byte
+		if err := pool.QueryRow(ctx, `SELECT cursor FROM work_items WHERE id=$1`, id).Scan(&cursor); err != nil {
+			t.Fatal(err)
+		}
+		for round := 0; round < 2; round++ {
+			if err := engine.Handle(ctx, id); err != nil {
+				t.Fatalf("round %d %s: %v", round, f.Name(), err)
+			}
+			// Simulate a retry or worker restart replaying the same item.
+			if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready', cursor=$2 WHERE id=$1`, id, cursor); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	for name, query := range map[string]string{
+		"albums":        `SELECT count(*) FROM albums WHERE owner_nsid=$1`,
+		"galleries":     `SELECT count(*) FROM galleries WHERE id LIKE $1 || '%'`,
+		"groups":        `SELECT count(*) FROM groups WHERE nsid LIKE $1 || '%'`,
+		"person_groups": `SELECT count(*) FROM person_groups WHERE person_nsid=$1`,
+	} {
+		arg := person
+		if name == "galleries" || name == "groups" {
+			arg = suffix
+		}
+		if got := count(t, ctx, pool, query, arg); got != 1 {
+			t.Fatalf("%s rows after retry = %d, want 1", name, got)
+		}
+	}
+	for nsid, want := range map[string]string{person: "Real Name", foreign: "Foreign Name"} {
+		var username string
+		if err := pool.QueryRow(ctx, `SELECT username FROM people WHERE nsid=$1`, nsid).Scan(&username); err != nil || username != want {
+			t.Fatalf("username of %s = %q (%v), want %q", nsid, username, err, want)
+		}
+	}
+}
+
+func TestQuotaExhaustionLeavesCatalogWorkPendingAndOutOfReadyQueue(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	person := fmt.Sprintf("quota-wait-%d@N01", time.Now().UnixNano())
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1`, userID)
+	})
+	registry := crawlapp.NewRegistry()
+	if err := registry.Register(facets.Albums{}); err != nil {
+		t.Fatal(err)
+	}
+	id := insertPhotosFavoritesWork(t, ctx, pool, userID, "albums", person, 0, facets.Albums{})
+	store, err := NewEngine(pool, func(conn Conn) crawlapp.CatalogWriter {
+		repo, e := catalogpg.New(conn)
+		if e != nil {
+			t.Fatal(e)
+		}
+		return repo
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	flickrCalls := &failingFlickr{}
+	engine := &crawlapp.Engine{Registry: registry, Store: store, Units: store, Keys: intKeys{}, Governor: exhaustedGovernor{wait: time.Hour}, Flickr: flickrCalls, Settings: photosFavoritesSettings{maxDepth: 1}}
+	if err := engine.Handle(ctx, id); err != nil {
+		t.Fatalf("quota wait must defer, not fail: %v", err)
+	}
+	var state string
+	var attempts int
+	if err := pool.QueryRow(ctx, `SELECT state, attempts FROM work_items WHERE id=$1`, id).Scan(&state, &attempts); err != nil {
+		t.Fatal(err)
+	}
+	if state != "pending" || attempts != 0 || flickrCalls.calls != 0 {
+		t.Fatalf("state=%s attempts=%d flickr calls=%d, want pending/0/0", state, attempts, flickrCalls.calls)
+	}
+	// The pump promotes only pending rows whose not_before has passed.
+	if got := count(t, ctx, pool, `SELECT count(*) FROM work_items WHERE id=$1 AND state='pending' AND not_before <= now()`, id); got != 0 {
+		t.Fatalf("quota-gated item is eligible for the ready queue (%d)", got)
+	}
 }

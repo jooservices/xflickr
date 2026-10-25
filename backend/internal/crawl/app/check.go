@@ -59,6 +59,11 @@ func (ChangeCheck) Handle(_ context.Context, page domain.Page) (domain.Result, e
 	}
 }
 
+// catalogRefreshWork re-reads the albums, galleries and groups lists. It runs
+// only from the second probe of a check item, and a person's check item is
+// itself gated by CheckIntervalDue, so each catalog is reopened at most once
+// per check cycle (not per favorites page). Flickr offers no cheap change
+// probe for these lists; the interval gate is what bounds the quota spent.
 func catalogRefreshWork(person string) []domain.WorkSpec {
 	return []domain.WorkSpec{
 		{Kind: "albums", Subject: person, Method: "flickr.photosets.getList", Reopen: true, Params: map[string]string{"user_id": person, "per_page": strconv.Itoa(incrementalPerPage)}},

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jooservices/xflickr/internal/crawl/domain"
+	"github.com/jooservices/xflickr/internal/crawl/facets"
 )
 
 func TestCheckRequestsUseOnePhotoAndFavoritePerPage(t *testing.T) {
@@ -132,5 +133,37 @@ func TestCheckIntervalDue(t *testing.T) {
 	}
 	if CheckIntervalDue(now, now, 0) {
 		t.Fatal("zero interval should use the 24 hour default")
+	}
+}
+
+func TestCatalogKindsArePlannedExactlyOncePerCycle(t *testing.T) {
+	registry := NewRegistry()
+	for _, facet := range []domain.Facet{facets.Photos{}, facets.Favorites{}, facets.Albums{}, facets.Galleries{}, facets.Groups{}} {
+		if err := registry.Register(facet); err != nil {
+			t.Fatal(err)
+		}
+	}
+	initial := map[string]string{}
+	for _, spec := range registry.Plan(context.Background(), domain.Person{NSID: "p@N01"}) {
+		initial[spec.Kind] = spec.Method
+	}
+	refresh := map[string]int{}
+	for _, probe := range []string{"flickr.people.getPhotos", "flickr.favorites.getList"} {
+		item := domain.Item{Subject: "p@N01", Cursor: domain.Cursor{Method: probe}}
+		result, err := ChangeCheck{}.Handle(context.Background(), domain.Page{Item: item, Payload: json.RawMessage(`{"photos":{"total":0}}`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, spec := range result.Work {
+			refresh[spec.Kind]++
+			if want, ok := initial[spec.Kind]; ok && want != spec.Method {
+				t.Fatalf("%s refresh uses %s, initial plan uses %s", spec.Kind, spec.Method, want)
+			}
+		}
+	}
+	for _, kind := range []string{"albums", "galleries", "groups"} {
+		if initial[kind] == "" || refresh[kind] != 1 {
+			t.Fatalf("%s: initial=%q refreshed=%d, want planned initially and refreshed once per cycle", kind, initial[kind], refresh[kind])
+		}
 	}
 }

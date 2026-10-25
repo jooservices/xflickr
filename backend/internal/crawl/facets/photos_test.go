@@ -64,7 +64,7 @@ func TestFavoritesFacetStoresPhotosAndUniqueOwnerDiscoveries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.HasMore || len(result.Photos) != 3 || len(result.Favorites) != 1 || len(result.People) != 3 || len(result.Discoveries) != 2 {
+	if result.HasMore || len(result.Photos) != 3 || len(result.Favorites) != 1 || len(result.People) != 2 || len(result.Discoveries) != 2 {
 		t.Fatalf("favorites result sizes = photos:%d people:%d discoveries:%d more:%v", len(result.Photos), len(result.People), len(result.Discoveries), result.HasMore)
 	}
 	if result.Discoveries[0].Via != "favorite" || result.Discoveries[1].Via != "favorite" {

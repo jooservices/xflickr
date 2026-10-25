@@ -21,7 +21,7 @@ const upsertPerson = `-- name: UpsertPerson :batchexec
 INSERT INTO people (nsid, username, realname, profile, icon, photos_count, last_seen_at, facet_state)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (nsid) DO UPDATE SET
-    username = EXCLUDED.username,
+    username = CASE WHEN EXCLUDED.username = EXCLUDED.nsid AND people.username <> '' THEN people.username ELSE EXCLUDED.username END,
     realname = COALESCE(NULLIF(EXCLUDED.realname, ''), people.realname),
     profile = CASE WHEN EXCLUDED.profile <> '{}'::jsonb THEN EXCLUDED.profile ELSE people.profile END,
     icon = COALESCE(NULLIF(EXCLUDED.icon, ''), people.icon),
@@ -30,7 +30,7 @@ ON CONFLICT (nsid) DO UPDATE SET
     facet_state = CASE WHEN EXCLUDED.facet_state <> '{}'::jsonb THEN EXCLUDED.facet_state ELSE people.facet_state END
 WHERE (people.username, people.realname, people.profile, people.icon, people.photos_count, people.last_seen_at, people.facet_state)
     IS DISTINCT FROM
-    (EXCLUDED.username,
+    (CASE WHEN EXCLUDED.username = EXCLUDED.nsid AND people.username <> '' THEN people.username ELSE EXCLUDED.username END,
      COALESCE(NULLIF(EXCLUDED.realname, ''), people.realname),
      CASE WHEN EXCLUDED.profile <> '{}'::jsonb THEN EXCLUDED.profile ELSE people.profile END,
      COALESCE(NULLIF(EXCLUDED.icon, ''), people.icon),

@@ -40,7 +40,7 @@ func (Albums) Handle(_ context.Context, p domain.Page) (domain.Result, error) {
 	if err := json.Unmarshal(p.Payload, &e); err != nil {
 		return domain.Result{}, fmt.Errorf("crawl facets: decode albums: %w", err)
 	}
-	out := domain.Result{Albums: make([]catalog.Album, 0, len(e.Photosets.Items)), People: []catalog.Person{{NSID: p.Item.Subject, Username: p.Item.Subject}}}
+	out := domain.Result{Albums: make([]catalog.Album, 0, len(e.Photosets.Items))}
 	for _, x := range e.Photosets.Items {
 		primary, _ := strconv.ParseInt(x.Primary, 10, 64)
 		out.Albums = append(out.Albums, catalog.Album{ID: x.ID, OwnerNSID: p.Item.Subject, Title: x.Title.value(), Description: x.Description.value(), PrimaryPhotoID: positive(primary), PhotosCount: x.Count, CreatedAt: timeValue(x.Created), UpdatedAt: timeValue(x.Updated)})
@@ -76,7 +76,7 @@ func (Galleries) Handle(_ context.Context, p domain.Page) (domain.Result, error)
 	if err := json.Unmarshal(p.Payload, &e); err != nil {
 		return domain.Result{}, fmt.Errorf("crawl facets: decode galleries: %w", err)
 	}
-	out := domain.Result{Galleries: make([]catalog.Gallery, 0, len(e.Galleries.Items)), People: []catalog.Person{{NSID: p.Item.Subject, Username: p.Item.Subject}}}
+	out := domain.Result{Galleries: make([]catalog.Gallery, 0, len(e.Galleries.Items))}
 	for _, x := range e.Galleries.Items {
 		owner := x.Owner
 		if owner == "" {
@@ -116,7 +116,7 @@ func (Groups) Handle(_ context.Context, p domain.Page) (domain.Result, error) {
 	if err := json.Unmarshal(p.Payload, &e); err != nil {
 		return domain.Result{}, fmt.Errorf("crawl facets: decode groups: %w", err)
 	}
-	out := domain.Result{Groups: make([]catalog.Group, 0, len(e.Groups.Items)), PersonGroups: make([]catalog.PersonGroup, 0, len(e.Groups.Items)), People: []catalog.Person{{NSID: p.Item.Subject, Username: p.Item.Subject}}}
+	out := domain.Result{Groups: make([]catalog.Group, 0, len(e.Groups.Items)), PersonGroups: make([]catalog.PersonGroup, 0, len(e.Groups.Items))}
 	for _, x := range e.Groups.Items {
 		out.Groups = append(out.Groups, catalog.Group{NSID: x.NSID, Name: x.Name, Description: x.Description, MembersCount: x.Members, PoolCount: x.Pool})
 		out.PersonGroups = append(out.PersonGroups, catalog.PersonGroup{PersonNSID: p.Item.Subject, GroupNSID: x.NSID})

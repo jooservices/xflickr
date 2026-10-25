@@ -79,9 +79,6 @@ func parsePhotoPage(page domain.Page, discoverOwners bool) (domain.Result, error
 		result.Favorites = make([]catalog.Favorite, 0, len(envelope.Photos.Photo))
 	}
 	people := make(map[string]catalog.Person)
-	if discoverOwners && page.Item.Subject != "" {
-		people[page.Item.Subject] = catalog.Person{NSID: page.Item.Subject, Username: page.Item.Subject}
-	}
 	seenOwners := make(map[string]bool)
 	for i, raw := range envelope.Photos.Photo {
 		var photo flickr.Photo
