@@ -1,0 +1,95 @@
+people:
+  - nsid: 10000000@N00
+    username: seed-user
+    realname: Seed User
+    contacts: [10000001@N00, 10000002@N00]
+  - nsid: 10000001@N00
+    username: seed-contact-one
+    realname: Seed Contact One
+    contacts: [10000003@N00]
+  - nsid: 10000002@N00
+    username: seed-contact-two
+    realname: Seed Contact Two
+    contacts: [10000004@N00]
+  - nsid: 10000003@N00
+    username: seed-depth-two
+    realname: Seed Depth Two
+    contacts: [10000005@N00]
+  - nsid: 10000004@N00
+    username: seed-depth-two-b
+    realname: Seed Depth Two B
+    contacts: [10000006@N00]
+  - nsid: 10000005@N00
+    username: seed-depth-three
+    realname: Seed Depth Three
+    contacts: []
+  - nsid: 10000006@N00
+    username: seed-depth-three-b
+    realname: Seed Depth Three B
+    contacts: []
+photos:
+  - id: 52000000001
+    owner: 10000000@N00
+    title: Seed landscape
+    shape: landscape
+    favorites: [10000001@N00]
+  - id: 52000000002
+    owner: 10000001@N00
+    title: Seed geometric study
+    shape: geometry
+    favorites: [10000003@N00]
+  - id: 52000000003
+    owner: 10000003@N00
+    title: Seed color study
+    shape: color
+    favorites: [10000005@N00]
+favorites:
+  - person: 10000001@N00
+    photo: 52000000001
+    date: "1700000200"
+  - person: 10000003@N00
+    photo: 52000000002
+    date: "1700000300"
+  - person: 10000005@N00
+    photo: 52000000003
+    date: "1700000400"
+contacts:
+  - owner: 10000000@N00
+    nsid: 10000001@N00
+    friend: true
+    family: false
+  - owner: 10000000@N00
+    nsid: 10000002@N00
+    friend: true
+    family: true
+  - owner: 10000001@N00
+    nsid: 10000003@N00
+    friend: true
+    family: false
+  - owner: 10000002@N00
+    nsid: 10000004@N00
+    friend: true
+    family: false
+  - owner: 10000003@N00
+    nsid: 10000005@N00
+    friend: false
+    family: true
+  - owner: 10000004@N00
+    nsid: 10000006@N00
+    friend: false
+    family: true
+albums:
+  - id: 72177720000000001
+    owner: 10000000@N00
+    title: Seed album
+    photos: [52000000001, 52000000002]
+galleries:
+  - id: 72157600000000001
+    owner: 10000000@N00
+    title: Seed gallery
+    photos: [52000000001]
+groups:
+  - id: 90000000@N00
+    name: Seed group
+    members: [10000000@N00, 10000001@N00, 10000002@N00]
+    photos: [52000000001, 52000000002]
