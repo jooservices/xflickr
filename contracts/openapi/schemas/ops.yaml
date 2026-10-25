@@ -42,6 +42,7 @@ OpsStatus:
     - pending_items
     - oldest_pending_age_seconds
     - failed_work_items
+    - credential_decryption_failures
     - dead_jobs
     - token_status
   properties:
@@ -71,6 +72,7 @@ OpsStatus:
     pending_items: { type: integer, format: int64, minimum: 0 }
     oldest_pending_age_seconds: { type: integer, format: int64, minimum: 0 }
     failed_work_items: { type: integer, format: int64, minimum: 0 }
+    credential_decryption_failures: { type: integer, format: int64, minimum: 0, description: Work items whose last error indicates credential decryption failure, including prior failures and work held for retry. Check configured key IDs and envelope metadata without exposing key material. }
     dead_jobs: { type: integer, format: int64, minimum: 0, description: River jobs discarded after their last attempt. }
     token_status:
       type: string

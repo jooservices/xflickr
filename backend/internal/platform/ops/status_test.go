@@ -33,10 +33,11 @@ func TestStatusDerivesTotalsAndAge(t *testing.T) {
 			{KeyID: 2, Label: "b", Status: "valid", CallsLastHour: 50, Limit: 100},
 			{KeyID: 1, Label: "a", Status: "valid", CallsLastHour: 150, Limit: 100},
 		},
-		Pending:         Pending{Total: 2, Oldest: base.Add(-90 * time.Second)},
-		FailedWorkItems: 4,
-		DeadJobs:        5,
-		Tokens:          map[string]int64{"ok": 1, "revoked": 1},
+		Pending:                      Pending{Total: 2, Oldest: base.Add(-90 * time.Second)},
+		FailedWorkItems:              4,
+		CredentialDecryptionFailures: 2,
+		DeadJobs:                     5,
+		Tokens:                       map[string]int64{"ok": 1, "revoked": 1},
 	})
 	if status.ReadyJobs != 3 || status.CallsLastHour != 200 || status.OldestPendingAge != 90*time.Second {
 		t.Fatalf("status=%+v", status)
@@ -46,6 +47,9 @@ func TestStatusDerivesTotalsAndAge(t *testing.T) {
 	}
 	if status.TokenStatus != TokenRevoked || status.Idle() || status.IdleReason != "" {
 		t.Fatalf("token=%s idle=%v reason=%q", status.TokenStatus, status.Idle(), status.IdleReason)
+	}
+	if status.CredentialDecryptionFailures != 2 {
+		t.Fatalf("credential decryption failures = %d", status.CredentialDecryptionFailures)
 	}
 	if status.String() == "" {
 		t.Fatal("empty summary")

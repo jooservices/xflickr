@@ -23,16 +23,17 @@ func noActor(context.Context) (int64, bool) { return 0, false }
 func TestGetAdminOpsStatus(t *testing.T) {
 	generated := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 	handler := Handler{ActorID: actor, Service: fakeService{status: ops.Status{
-		GeneratedAt:      generated,
-		Counts:           ops.Counts{People: 1, Photos: 2, PhotoSizes: 3, Favorites: 4, Albums: 5, Galleries: 6, Groups: 7},
-		WorkItems:        map[string]int64{"pending": 2},
-		ReadyJobs:        0,
-		PhotoSizesJobs:   ops.LaneJobs{Pending: 8, Ready: 2, Running: 1},
-		Keys:             []ops.KeyStatus{{KeyID: 9, Label: "k", Status: "valid", CallsLastHour: 40, Limit: 100}},
-		OldestPendingAge: 2 * time.Minute,
-		TokenStatus:      ops.TokenOK,
-		IdleReason:       ops.ReasonNoKey,
-		PendingItems:     2,
+		GeneratedAt:                  generated,
+		Counts:                       ops.Counts{People: 1, Photos: 2, PhotoSizes: 3, Favorites: 4, Albums: 5, Galleries: 6, Groups: 7},
+		WorkItems:                    map[string]int64{"pending": 2},
+		ReadyJobs:                    0,
+		PhotoSizesJobs:               ops.LaneJobs{Pending: 8, Ready: 2, Running: 1},
+		Keys:                         []ops.KeyStatus{{KeyID: 9, Label: "k", Status: "valid", CallsLastHour: 40, Limit: 100}},
+		OldestPendingAge:             2 * time.Minute,
+		TokenStatus:                  ops.TokenOK,
+		IdleReason:                   ops.ReasonNoKey,
+		PendingItems:                 2,
+		CredentialDecryptionFailures: 3,
 	}}}
 	response, err := handler.GetAdminOpsStatus(t.Context(), gen.GetAdminOpsStatusRequestObject{})
 	if err != nil {
@@ -44,6 +45,9 @@ func TestGetAdminOpsStatus(t *testing.T) {
 	}
 	if ok.Counts.PhotoSizes != 3 || ok.PhotoSizesPending != 8 || ok.PhotoSizesReady != 2 || ok.PhotoSizesRunning != 1 || ok.OldestPendingAgeSeconds != 120 || ok.TokenStatus != gen.OpsStatusTokenStatusOk || ok.PendingItems != 2 {
 		t.Fatalf("body=%+v", ok)
+	}
+	if ok.CredentialDecryptionFailures != 3 {
+		t.Fatalf("credential decryption failures = %d", ok.CredentialDecryptionFailures)
 	}
 	if len(ok.Keys) != 1 || ok.Keys[0].Remaining != 60 || ok.Keys[0].Used != 40 || ok.IdleReason == nil || *ok.IdleReason != gen.NoKey {
 		t.Fatalf("keys=%+v idle=%v", ok.Keys, ok.IdleReason)

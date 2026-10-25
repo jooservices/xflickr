@@ -67,16 +67,17 @@ type Pending struct {
 
 // Snapshot is the raw data read from storage in one pass.
 type Snapshot struct {
-	Counts          Counts
-	WorkItems       map[string]int64
-	RiverJobs       map[string]int64
-	PhotoSizesJobs  LaneJobs
-	Keys            []KeyStatus
-	CallsLast10Min  int64
-	Pending         Pending
-	FailedWorkItems int64
-	DeadJobs        int64
-	Tokens          map[string]int64
+	Counts                       Counts
+	WorkItems                    map[string]int64
+	RiverJobs                    map[string]int64
+	PhotoSizesJobs               LaneJobs
+	Keys                         []KeyStatus
+	CallsLast10Min               int64
+	Pending                      Pending
+	FailedWorkItems              int64
+	DeadJobs                     int64
+	Tokens                       map[string]int64
+	CredentialDecryptionFailures int64
 }
 
 // LaneJobs reports durable size work waiting for execution, ready to run, and running.
@@ -93,21 +94,22 @@ type Store interface {
 
 // Status is the derived crawl health report.
 type Status struct {
-	GeneratedAt      time.Time
-	Counts           Counts
-	WorkItems        map[string]int64
-	ReadyJobs        int64
-	RiverJobs        map[string]int64
-	PhotoSizesJobs   LaneJobs
-	Keys             []KeyStatus
-	CallsLastHour    int64
-	CallsLast10Min   int64
-	PendingItems     int64
-	OldestPendingAge time.Duration
-	FailedWorkItems  int64
-	DeadJobs         int64
-	Tokens           map[string]int64
-	TokenStatus      string
+	GeneratedAt                  time.Time
+	Counts                       Counts
+	WorkItems                    map[string]int64
+	ReadyJobs                    int64
+	RiverJobs                    map[string]int64
+	PhotoSizesJobs               LaneJobs
+	Keys                         []KeyStatus
+	CallsLastHour                int64
+	CallsLast10Min               int64
+	PendingItems                 int64
+	OldestPendingAge             time.Duration
+	FailedWorkItems              int64
+	DeadJobs                     int64
+	Tokens                       map[string]int64
+	TokenStatus                  string
+	CredentialDecryptionFailures int64
 	// IdleReason is set when pending items exist but none is ready.
 	IdleReason string
 }
@@ -135,19 +137,20 @@ func (s Service) Status(ctx context.Context) (Status, error) {
 		now = s.Now()
 	}
 	status := Status{
-		GeneratedAt:     now.UTC(),
-		Counts:          snapshot.Counts,
-		WorkItems:       copyMap(snapshot.WorkItems),
-		ReadyJobs:       snapshot.WorkItems["ready"],
-		RiverJobs:       copyMap(snapshot.RiverJobs),
-		PhotoSizesJobs:  snapshot.PhotoSizesJobs,
-		Keys:            append([]KeyStatus(nil), snapshot.Keys...),
-		CallsLast10Min:  snapshot.CallsLast10Min,
-		PendingItems:    snapshot.Pending.Total,
-		FailedWorkItems: snapshot.FailedWorkItems,
-		DeadJobs:        snapshot.DeadJobs,
-		Tokens:          copyMap(snapshot.Tokens),
-		TokenStatus:     tokenStatus(snapshot.Tokens),
+		GeneratedAt:                  now.UTC(),
+		Counts:                       snapshot.Counts,
+		WorkItems:                    copyMap(snapshot.WorkItems),
+		ReadyJobs:                    snapshot.WorkItems["ready"],
+		RiverJobs:                    copyMap(snapshot.RiverJobs),
+		PhotoSizesJobs:               snapshot.PhotoSizesJobs,
+		Keys:                         append([]KeyStatus(nil), snapshot.Keys...),
+		CallsLast10Min:               snapshot.CallsLast10Min,
+		PendingItems:                 snapshot.Pending.Total,
+		FailedWorkItems:              snapshot.FailedWorkItems,
+		DeadJobs:                     snapshot.DeadJobs,
+		Tokens:                       copyMap(snapshot.Tokens),
+		TokenStatus:                  tokenStatus(snapshot.Tokens),
+		CredentialDecryptionFailures: snapshot.CredentialDecryptionFailures,
 	}
 	sort.Slice(status.Keys, func(i, j int) bool { return status.Keys[i].KeyID < status.Keys[j].KeyID })
 	for _, key := range status.Keys {

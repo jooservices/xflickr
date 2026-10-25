@@ -52,6 +52,9 @@ func (s Store) Snapshot(ctx context.Context) (ops.Snapshot, error) {
 	}
 	snap.FailedWorkItems = snap.WorkItems["failed"]
 	snap.DeadJobs = snap.RiverJobs["discarded"]
+	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM work_items WHERE (state = 'pending' AND last_error = 'credential_decryption_unavailable') OR (state = 'failed' AND last_error LIKE '%crypto: authentication failed%')`).Scan(&snap.CredentialDecryptionFailures); err != nil {
+		return ops.Snapshot{}, fmt.Errorf("ops: count credential decryption failures: %w", err)
+	}
 	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM api_call_log WHERE called_at > now() - interval '10 minutes'`).Scan(&snap.CallsLast10Min); err != nil {
 		return ops.Snapshot{}, fmt.Errorf("ops: count recent calls: %w", err)
 	}

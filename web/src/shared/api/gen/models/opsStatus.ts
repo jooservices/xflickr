@@ -51,6 +51,11 @@ export interface OpsStatus {
   /** @minimum 0 */
   failed_work_items: number;
   /**
+   * Work items whose last error indicates credential decryption failure
+   * @minimum 0
+   */
+  credential_decryption_failures: number;
+  /**
    * River jobs discarded after their last attempt.
    * @minimum 0
    */

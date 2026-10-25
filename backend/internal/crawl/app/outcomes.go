@@ -7,6 +7,10 @@ import (
 	"github.com/jooservices/xflickr/pkg/flickr"
 )
 
+// CredentialDecryptionReason is a stable, non-sensitive marker stored with
+// deferred work so operational health can identify a keyring problem.
+const CredentialDecryptionReason = "credential_decryption_unavailable" //nolint:gosec // Stable diagnostic marker, not secret material.
+
 // Outcome is what the engine does with a failed call.
 type Outcome int
 
@@ -41,14 +45,15 @@ func Classify(err error) Outcome {
 
 // Timing configures how long deferred items wait.
 type Timing struct {
-	MaxAttempts int
-	Backoff     time.Duration
-	QuotaWait   time.Duration
-	BlockedWait time.Duration
+	MaxAttempts    int
+	Backoff        time.Duration
+	QuotaWait      time.Duration
+	BlockedWait    time.Duration
+	CredentialWait time.Duration
 }
 
 // DefaultTiming is used for zero fields.
-var DefaultTiming = Timing{MaxAttempts: 5, Backoff: 30 * time.Second, QuotaWait: time.Minute, BlockedWait: 5 * time.Minute}
+var DefaultTiming = Timing{MaxAttempts: 5, Backoff: 30 * time.Second, QuotaWait: time.Minute, BlockedWait: 5 * time.Minute, CredentialWait: 15 * time.Minute}
 
 func (t Timing) withDefaults() Timing {
 	if t.MaxAttempts <= 0 {
@@ -62,6 +67,9 @@ func (t Timing) withDefaults() Timing {
 	}
 	if t.BlockedWait <= 0 {
 		t.BlockedWait = DefaultTiming.BlockedWait
+	}
+	if t.CredentialWait <= 0 {
+		t.CredentialWait = DefaultTiming.CredentialWait
 	}
 	return t
 }

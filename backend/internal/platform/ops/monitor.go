@@ -77,6 +77,9 @@ func (m *Monitor) Tick(ctx context.Context) error {
 	}
 	logger := m.logger()
 	logger.InfoContext(ctx, "crawl health", logAttrs(status)...)
+	if status.CredentialDecryptionFailures > 0 {
+		logger.WarnContext(ctx, "crawl credentials cannot be decrypted; check configured key IDs and stored envelope metadata", "credential_decryption_failures", status.CredentialDecryptionFailures)
+	}
 	if m.idleExpired(status) {
 		logger.WarnContext(ctx, "crawl idle: pending items but no ready jobs",
 			"reason", status.IdleReason,
@@ -143,6 +146,7 @@ func logAttrs(s Status) []any {
 		"pending_items", s.PendingItems,
 		"oldest_pending_age", s.OldestPendingAge.Round(time.Second).String(),
 		"failed_work_items", s.FailedWorkItems,
+		"credential_decryption_failures", s.CredentialDecryptionFailures,
 		"dead_jobs", s.DeadJobs,
 		"token_status", s.TokenStatus,
 	)
@@ -168,30 +172,31 @@ func mapAttrs(values map[string]int64) []any {
 func Events(s Status, node string) []Event {
 	stamp := s.GeneratedAt.UnixMicro()
 	health := Event{
-		"_timestamp":          stamp,
-		"event":               HealthEvent,
-		"node":                node,
-		"people":              s.Counts.People,
-		"photos":              s.Counts.Photos,
-		"photo_sizes":         s.Counts.PhotoSizes,
-		"photo_sizes_pending": s.PhotoSizesJobs.Pending,
-		"photo_sizes_ready":   s.PhotoSizesJobs.Ready,
-		"photo_sizes_running": s.PhotoSizesJobs.Running,
-		"favorites":           s.Counts.Favorites,
-		"albums":              s.Counts.Albums,
-		"galleries":           s.Counts.Galleries,
-		"groups":              s.Counts.Groups,
-		"ready_jobs":          s.ReadyJobs,
-		"calls_last_hour":     s.CallsLastHour,
-		"calls_last_10min":    s.CallsLast10Min,
-		"pending_items":       s.PendingItems,
-		"oldest_pending_sec":  int64(s.OldestPendingAge / time.Second),
-		"failed_work_items":   s.FailedWorkItems,
-		"dead_jobs":           s.DeadJobs,
-		"failed_total":        s.FailedWorkItems + s.DeadJobs,
-		"token_status":        s.TokenStatus,
-		"tokens_revoked":      s.Tokens[TokenRevoked],
-		"idle_reason":         s.IdleReason,
+		"_timestamp":                     stamp,
+		"event":                          HealthEvent,
+		"node":                           node,
+		"people":                         s.Counts.People,
+		"photos":                         s.Counts.Photos,
+		"photo_sizes":                    s.Counts.PhotoSizes,
+		"photo_sizes_pending":            s.PhotoSizesJobs.Pending,
+		"photo_sizes_ready":              s.PhotoSizesJobs.Ready,
+		"photo_sizes_running":            s.PhotoSizesJobs.Running,
+		"favorites":                      s.Counts.Favorites,
+		"albums":                         s.Counts.Albums,
+		"galleries":                      s.Counts.Galleries,
+		"groups":                         s.Counts.Groups,
+		"ready_jobs":                     s.ReadyJobs,
+		"calls_last_hour":                s.CallsLastHour,
+		"calls_last_10min":               s.CallsLast10Min,
+		"pending_items":                  s.PendingItems,
+		"oldest_pending_sec":             int64(s.OldestPendingAge / time.Second),
+		"failed_work_items":              s.FailedWorkItems,
+		"dead_jobs":                      s.DeadJobs,
+		"failed_total":                   s.FailedWorkItems + s.DeadJobs,
+		"token_status":                   s.TokenStatus,
+		"tokens_revoked":                 s.Tokens[TokenRevoked],
+		"idle_reason":                    s.IdleReason,
+		"credential_decryption_failures": s.CredentialDecryptionFailures,
 	}
 	for state, count := range s.WorkItems {
 		health["work_items_"+state] = count

@@ -18,6 +18,7 @@ The `scheduler` role logs `crawl health` once at start and then every minute
 | `keys.key_<id>.{calls_last_hour,used,remaining,limit}` | Hourly usage per key against `per_hour_limit`. Key labels and secrets are never logged. |
 | `pending_items`, `oldest_pending_age` | Pending work items and the age of the oldest. |
 | `failed_work_items`, `dead_jobs` | Failed work items and discarded River jobs (the dead-letter count). |
+| `credential_decryption_failures` | Work items whose last error indicates a stored credential could not be decrypted, including prior failures and work held for retry. A warning recommends checking configured key IDs and envelope metadata; it never includes key material. |
 | `token_status` | Worst Flickr account state: `none`, `ok`, `reconnect_required`, `revoked`. |
 
 ### Idle warning
@@ -34,7 +35,8 @@ When `pending_items > 0` and `ready_jobs = 0` for 5 minutes the monitor logs
 
 `GET /admin/ops/status` (administrators only) returns the same numbers as JSON;
 see `contracts/openapi/paths/ops.yaml`. It also carries `idle_reason` whenever
-pending items exist and none is ready.
+pending items exist and none is ready, and reports credential decryption work
+items as `credential_decryption_failures`.
 
 ## OpenObserve
 

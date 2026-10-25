@@ -159,6 +159,12 @@ type fakeFlickr struct {
 	requests []Request
 }
 
+type markedCredentialFailure struct{}
+
+func (markedCredentialFailure) Error() string { return "crypto: authentication failed" }
+
+func (markedCredentialFailure) CredentialDecryptionFailure() {}
+
 func (f *fakeFlickr) Call(_ context.Context, r Request) (json.RawMessage, error) {
 	f.requests = append(f.requests, r)
 	return f.payload, f.err
@@ -376,6 +382,7 @@ func TestHandleErrorOutcomes(t *testing.T) {
 		blocked bool
 	}{
 		{name: "quota waits without an attempt", err: flickr.ErrQuotaExceeded, call: "defer", wait: time.Minute},
+		{name: "credential decryption holds without an attempt", err: fmt.Errorf("%w: API key secret could not be opened", ErrCredentialDecryption), call: "defer", wait: 15 * time.Minute},
 		{name: "not found is done", err: flickr.ErrNotFound, call: "finish"},
 		{name: "revoked token stops", err: flickr.ErrTokenRevoked, call: "stop"},
 		{name: "invalid key stops", err: flickr.ErrInvalidKey, call: "stop"},
@@ -397,6 +404,9 @@ func TestHandleErrorOutcomes(t *testing.T) {
 				d := r.store.deferral
 				if d.ConsumeAttempt != tc.consume || !d.NotBefore.Equal(epoch.Add(tc.wait)) {
 					t.Fatalf("deferral = %+v", d)
+				}
+				if errors.Is(tc.err, ErrCredentialDecryption) && d.Reason != CredentialDecryptionReason {
+					t.Fatalf("credential failure reason = %q", d.Reason)
 				}
 			}
 			if (len(r.health.reported) == 1) != tc.blocked {
@@ -424,6 +434,33 @@ func TestHandleStopCarriesReason(t *testing.T) {
 	_ = r.engine.Handle(t.Context(), 7)
 	if r.store.stop.Reason != StopTokenRevoked {
 		t.Fatalf("stop = %+v", r.store.stop)
+	}
+}
+
+func TestCredentialDecryptionFailureCanRecoverWithoutConsumingAttempt(t *testing.T) {
+	r := newRig(t)
+	r.store.item.Attempts = 4
+	r.flickr.err = fmt.Errorf("crawl: open key 7 secret: %w", markedCredentialFailure{})
+	if err := r.engine.Handle(t.Context(), 7); err != nil {
+		t.Fatal(err)
+	}
+	if r.store.calls[len(r.store.calls)-1] != "defer" || r.store.deferral.ConsumeAttempt || r.store.deferral.Reason != CredentialDecryptionReason || !r.store.deferral.NotBefore.Equal(epoch.Add(15*time.Minute)) {
+		t.Fatalf("decryption failure deferral = %+v; calls=%v", r.store.deferral, r.store.calls)
+	}
+	var marker interface{ CredentialDecryptionFailure() }
+	if len(r.permit.done) != 1 || !errors.As(r.permit.done[0], &marker) {
+		t.Fatalf("permit outcome = %v", r.permit.done)
+	}
+
+	r.flickr.err = nil
+	if err := r.engine.Handle(t.Context(), 7); err != nil {
+		t.Fatal(err)
+	}
+	if !r.tx.finished {
+		t.Fatalf("recovered work did not finish its item; store calls=%v", r.store.calls)
+	}
+	if len(r.tx.log) == 0 {
+		t.Fatal("recovered work did not commit")
 	}
 }
 

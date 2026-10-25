@@ -20,6 +20,8 @@ var (
 	ErrItemNotFound = errors.New("crawl: work item not found")
 	// ErrEngineIncomplete means a required dependency is missing.
 	ErrEngineIncomplete = errors.New("crawl: engine dependencies are required")
+	// ErrCredentialDecryption means a persisted credential could not be opened.
+	ErrCredentialDecryption = errors.New("crawl: stored credential cannot be decrypted")
 )
 
 // KeyChooser picks the API key that pays for a call about a person.
@@ -236,6 +238,10 @@ func (e *Engine) hold(ctx context.Context, item domain.Item, wait time.Duration,
 // fail applies the outcome of a failed call or page.
 func (e *Engine) fail(ctx context.Context, item domain.Item, keyID int64, cause error) error {
 	timing := e.Timing.withDefaults()
+	var decryptionFailure interface{ CredentialDecryptionFailure() }
+	if errors.Is(cause, ErrCredentialDecryption) || errors.As(cause, &decryptionFailure) {
+		return e.hold(ctx, item, timing.CredentialWait, CredentialDecryptionReason)
+	}
 	switch Classify(cause) {
 	case OutcomeWaitQuota:
 		return e.hold(ctx, item, timing.QuotaWait, cause.Error())

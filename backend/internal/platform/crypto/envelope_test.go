@@ -45,6 +45,31 @@ func TestOpenRejectsWrongAssociatedData(t *testing.T) {
 	}
 }
 
+func TestOpenRejectsSameIDMasterKeyReplacementWithoutChangingEnvelope(t *testing.T) {
+	original := testKeyring(t, "develop-v1", 1)
+	configuredReplacement := testKeyring(t, "develop-v1", 2)
+	aad := RowAAD("api_keys", "42")
+	sealed, err := original.Seal([]byte("credential-secret"), aad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := sealed.clone()
+	_, openErr := configuredReplacement.Open(sealed, aad)
+	if !errors.Is(openErr, ErrAuthentication) {
+		t.Fatalf("Open() error = %v, want authentication failure", openErr)
+	}
+	var classified interface{ CredentialDecryptionFailure() }
+	if !errors.As(openErr, &classified) {
+		t.Fatal("authentication error does not identify a credential decryption failure")
+	}
+	if !bytes.Equal(sealed.Nonce, before.Nonce) || !bytes.Equal(sealed.Ciphertext, before.Ciphertext) || !bytes.Equal(sealed.WrappedDEK, before.WrappedDEK) || sealed.KeyID != before.KeyID {
+		t.Fatal("failed Open() modified the persisted envelope")
+	}
+	if strings.Contains(openErr.Error(), "credential-secret") {
+		t.Fatal("authentication error exposed secret material")
+	}
+}
+
 func TestOpenRejectsTamperedCiphertextAndWrappedKey(t *testing.T) {
 	keyring := testKeyring(t, "active", 1)
 	aad := []byte("row binding")

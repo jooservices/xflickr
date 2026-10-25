@@ -59,7 +59,7 @@ func TestSnapshotAndHealthLineIntegration(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO api_call_log(key_id,class,called_at) VALUES($1,'photo',now() - interval '30 minutes')`, keyID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state) VALUES('person.photos',$1,$2,NULL,'pending'),('person.photos',$3,$2,$4,'pending')`, suffix+"a", userID, suffix+"b", keyID); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,last_error) VALUES('person.photos',$1,$2,NULL,'pending',NULL),('person.photos',$3,$2,$4,'pending',NULL),('person.photos',$5,$2,$4,'pending','credential_decryption_unavailable'),('person.photos',$6,$2,$4,'failed','crawl: open key secret: crypto: authentication failed')`, suffix+"a", userID, suffix+"b", keyID, suffix+"c", suffix+"d"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1) ON CONFLICT DO NOTHING`, suffix); err != nil {
@@ -85,7 +85,7 @@ VALUES ($1,$2,now(),'public','provisional','[]','{}',decode(repeat('cd',32),'hex
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.Counts.People < 1 || snapshot.WorkItems["pending"] < 2 || snapshot.Pending.Total < 2 || snapshot.Pending.WithoutKey < 1 || snapshot.Pending.Oldest.IsZero() {
+	if snapshot.Counts.People < 1 || snapshot.WorkItems["pending"] < 3 || snapshot.Pending.Total < 3 || snapshot.Pending.WithoutKey < 1 || snapshot.Pending.Oldest.IsZero() || snapshot.CredentialDecryptionFailures != 2 {
 		t.Fatalf("snapshot=%+v", snapshot)
 	}
 	if snapshot.Tokens["revoked"] < 1 || snapshot.CallsLast10Min < 4 {
@@ -112,7 +112,7 @@ VALUES ($1,$2,now(),'public','provisional','[]','{}',decode(repeat('cd',32),'hex
 	if err := monitor.Tick(ctx); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"msg=\"crawl health\"", "people=", "photos=", "photo_sizes=", "photo_sizes_pending=", "photo_sizes_ready=", "photo_sizes_running=", "favorites=", "albums=", "galleries=", "groups=", "work_items.pending=", "ready_jobs=", "river_jobs", "calls_last_hour=", "calls_last_10min=", "oldest_pending_age=", "token_status=revoked", "failed_work_items=", "dead_jobs="} {
+	for _, want := range []string{"msg=\"crawl health\"", "people=", "photos=", "photo_sizes=", "photo_sizes_pending=", "photo_sizes_ready=", "photo_sizes_running=", "favorites=", "albums=", "galleries=", "groups=", "work_items.pending=", "ready_jobs=", "river_jobs", "calls_last_hour=", "calls_last_10min=", "oldest_pending_age=", "token_status=revoked", "failed_work_items=", "credential_decryption_failures=", "dead_jobs="} {
 		if !strings.Contains(logs.String(), want) {
 			t.Fatalf("log line misses %q: %s", want, logs.String())
 		}

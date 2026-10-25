@@ -822,6 +822,8 @@ export const getAdminOpsStatusResponseOldestPendingAgeSecondsMin = 0;
 
 export const getAdminOpsStatusResponseFailedWorkItemsMin = 0;
 
+export const getAdminOpsStatusResponseCredentialDecryptionFailuresMin = 0;
+
 export const getAdminOpsStatusResponseDeadJobsMin = 0;
 
 export const GetAdminOpsStatusResponse = zod.object({
@@ -876,6 +878,10 @@ export const GetAdminOpsStatusResponse = zod.object({
   pending_items: zod.int().min(getAdminOpsStatusResponsePendingItemsMin),
   oldest_pending_age_seconds: zod.int().min(getAdminOpsStatusResponseOldestPendingAgeSecondsMin),
   failed_work_items: zod.int().min(getAdminOpsStatusResponseFailedWorkItemsMin),
+  credential_decryption_failures: zod
+    .int()
+    .min(getAdminOpsStatusResponseCredentialDecryptionFailuresMin)
+    .describe('Work items whose last error indicates credential decryption failure'),
   dead_jobs: zod
     .int()
     .min(getAdminOpsStatusResponseDeadJobsMin)

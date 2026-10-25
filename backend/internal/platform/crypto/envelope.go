@@ -20,13 +20,21 @@ const (
 var (
 	// ErrUnknownKeyID means the sealed value refers to a master key that is not
 	// present in the configured keyring.
-	ErrUnknownKeyID = errors.New("crypto: unknown master key id")
+	ErrUnknownKeyID error = credentialDecryptionFailure("crypto: unknown master key id")
 	// ErrAuthentication means ciphertext, wrapped key, or associated data failed
 	// AES-GCM authentication.
-	ErrAuthentication = errors.New("crypto: authentication failed")
+	ErrAuthentication error = credentialDecryptionFailure("crypto: authentication failed")
 	// ErrInvalidSealed means the persisted envelope is incomplete or malformed.
-	ErrInvalidSealed = errors.New("crypto: invalid sealed value")
+	ErrInvalidSealed error = credentialDecryptionFailure("crypto: invalid sealed value")
 )
+
+type credentialDecryptionFailure string
+
+func (e credentialDecryptionFailure) Error() string { return string(e) }
+
+// CredentialDecryptionFailure marks an envelope error so callers can hold
+// dependent work for retry without importing this package.
+func (credentialDecryptionFailure) CredentialDecryptionFailure() {}
 
 // Seal encrypts plaintext with a fresh random data key and wraps that key with
 // the active master key. The supplied associated data must be provided again
