@@ -218,7 +218,7 @@ export function SetupPage() {
   }, [t]);
 
   useEffect(() => {
-    if (view !== 'loading') heading.current?.focus();
+    if (view !== 'loading' && !keyBannerRef.current) heading.current?.focus();
   }, [step, view]);
 
   useEffect(() => {
