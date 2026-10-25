@@ -3,10 +3,12 @@ import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { adminSession, renderApp, userSession } from '../../test/render';
 import { server } from '../../test/server';
-import { resetBootHandled } from '../guards';
+
 import { ADMIN_NAV, ADMIN_NAV_GROUPS } from './nav';
 
-beforeEach(resetBootHandled);
+beforeEach(() => {
+  window.localStorage.clear();
+});
 
 type QuotaKey = {
   key_id: number;

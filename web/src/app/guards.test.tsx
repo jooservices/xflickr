@@ -1,14 +1,14 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionContext } from '../entities';
 import type { Session } from '../entities';
 import {
   AdminGuard,
   decideAdminAccess,
-  resetBootHandled,
-  shouldRedirectAdminOnBoot,
-  markBootHandled,
+  readRoleView,
+  shouldLandOnAdmin,
+  writeRoleView,
 } from './guards';
 
 const admin: Session = {
@@ -97,14 +97,39 @@ describe('AdminGuard', () => {
   });
 });
 
-describe('shouldRedirectAdminOnBoot', () => {
-  beforeEach(resetBootHandled);
+describe('role view and landing', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
 
-  it('redirects an admin once per page load, never a user or an unknown session', () => {
-    expect(shouldRedirectAdminOnBoot(admin)).toBe(true);
-    expect(shouldRedirectAdminOnBoot(user)).toBe(false);
-    expect(shouldRedirectAdminOnBoot({ status: 'loading' })).toBe(false);
-    markBootHandled();
-    expect(shouldRedirectAdminOnBoot(admin)).toBe(false);
+  it('lands an admin on /admin only from / and only while the choice is Admin', () => {
+    expect(shouldLandOnAdmin(admin, '/')).toBe(true);
+    expect(shouldLandOnAdmin(admin, '/keys')).toBe(false);
+    expect(shouldLandOnAdmin(admin, '/library')).toBe(false);
+    writeRoleView('user');
+    expect(shouldLandOnAdmin(admin, '/')).toBe(false);
+    writeRoleView('admin');
+    expect(shouldLandOnAdmin(admin, '/')).toBe(true);
+  });
+
+  it('never lands a user or an unknown session on /admin', () => {
+    expect(shouldLandOnAdmin(user, '/')).toBe(false);
+    expect(shouldLandOnAdmin({ status: 'loading' }, '/')).toBe(false);
+  });
+
+  it('is safe when storage throws', () => {
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('denied');
+    });
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('denied');
+    });
+
+    expect(readRoleView()).toBe('admin');
+    expect(() => {
+      writeRoleView('user');
+    }).not.toThrow();
+    get.mockRestore();
+    set.mockRestore();
   });
 });

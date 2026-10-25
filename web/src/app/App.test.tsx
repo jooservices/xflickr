@@ -5,7 +5,7 @@ import { createMemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { server } from '../test/server';
 import { App } from './App';
-import { resetBootHandled } from './guards';
+
 import { routes } from './router';
 
 function renderBooted(path: string) {
@@ -15,7 +15,9 @@ function renderBooted(path: string) {
 }
 
 describe('App', () => {
-  beforeEach(resetBootHandled);
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
 
   it('boots with GET /me and renders the user shell', async () => {
     server.use(

@@ -3,10 +3,12 @@ import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { server } from '../../test/server';
 import { adminSession, renderApp, userSession } from '../../test/render';
-import { resetBootHandled } from '../guards';
+
 import { USER_NAV } from './nav';
 
-beforeEach(resetBootHandled);
+beforeEach(() => {
+  window.localStorage.clear();
+});
 
 describe('user shell', () => {
   it('shows the 11 tabs in order, each linking to its placeholder page', async () => {
@@ -323,8 +325,8 @@ describe('user shell access to /admin', () => {
     expect(await screen.findByTestId('shell-page')).toBeInTheDocument();
   });
 
-  it('redirects an admin who lands on a user route to /admin once', async () => {
-    const { router } = renderApp({ session: adminSession, path: '/library' });
+  it('lands an admin on /admin from / and remembers the User switch', async () => {
+    const { router } = renderApp({ session: adminSession, path: '/' });
 
     expect(await screen.findByTestId('admin-rail')).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/admin');
@@ -334,6 +336,48 @@ describe('user shell access to /admin', () => {
     );
     expect(await screen.findByTestId('shell-page')).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/');
+    expect(window.localStorage.getItem('xf_role_view')).toBe('user');
+  });
+
+  it('keeps an admin on / when the stored choice is User', async () => {
+    window.localStorage.setItem('xf_role_view', 'user');
+    const { router } = renderApp({ session: adminSession, path: '/' });
+
+    expect(await screen.findByTestId('shell-page')).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/');
+  });
+
+  it.each(['/library?tab=2', '/crawl', '/profile'])(
+    'opens the deep link %s for an admin without rewriting it',
+    async (path) => {
+      const { router } = renderApp({ session: adminSession, path });
+
+      expect(await screen.findByTestId('shell-nav')).toBeInTheDocument();
+      const { pathname, search } = router.state.location;
+      expect(pathname + search).toBe(path);
+    },
+  );
+
+  it('opens an admin screen directly for an admin and remembers Admin', async () => {
+    window.localStorage.setItem('xf_role_view', 'user');
+    const { router } = renderApp({ session: adminSession, path: '/admin/users?page=2' });
+
+    expect(await screen.findByTestId('admin-rail')).toBeInTheDocument();
+    expect(router.state.location.pathname + router.state.location.search).toBe(
+      '/admin/users?page=2',
+    );
+    expect(window.localStorage.getItem('xf_role_view')).toBe('admin');
+  });
+
+  it('still lands on /admin when storage is unavailable', async () => {
+    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('denied');
+    });
+    const { router } = renderApp({ session: adminSession, path: '/' });
+
+    expect(await screen.findByTestId('admin-rail')).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/admin');
+    spy.mockRestore();
   });
 });
 

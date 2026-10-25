@@ -20,24 +20,38 @@ export function decideAdminAccess(session: Session): AccessDecision {
   }
 }
 
-let bootHandled = false;
+const ROLE_VIEW_KEY = 'xf_role_view';
 
-/** Marks the first navigation of this page load as handled (call it from an effect). */
-export function markBootHandled(): void {
-  bootHandled = true;
+export type RoleView = 'user' | 'admin';
+
+/** The remembered User/Admin switch choice; `admin` until the admin picks User. Safe without storage. */
+export function readRoleView(): RoleView {
+  try {
+    return window.localStorage.getItem(ROLE_VIEW_KEY) === 'user' ? 'user' : 'admin';
+  } catch {
+    return 'admin';
+  }
 }
 
-/** Test helper: a new page load. */
-export function resetBootHandled(): void {
-  bootHandled = false;
+export function writeRoleView(view: RoleView): void {
+  try {
+    window.localStorage.setItem(ROLE_VIEW_KEY, view);
+  } catch {
+    // Storage unavailable: the switch still navigates, it is just not remembered.
+  }
 }
 
 /**
- * An admin who lands on a user route when the app boots goes to /admin once;
- * after that the User/Admin switch in the top bar can open the user view.
+ * Only the landing page `/` honours the remembered switch: an admin whose last
+ * choice was Admin lands on /admin. Any other URL is a deep link and is never rewritten.
  */
-export function shouldRedirectAdminOnBoot(session: Session): boolean {
-  return !bootHandled && session.status === 'authenticated' && session.user.role === 'admin';
+export function shouldLandOnAdmin(session: Session, pathname: string): boolean {
+  return (
+    pathname === '/' &&
+    session.status === 'authenticated' &&
+    session.user.role === 'admin' &&
+    readRoleView() === 'admin'
+  );
 }
 
 type AdminGuardProps = {

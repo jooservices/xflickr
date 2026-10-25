@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
-import { markBootHandled } from '../guards';
+import { writeRoleView } from '../guards';
 import { useSession } from '../../entities';
 import { ErrorState, Icon, useI18n, useTheme } from '../../shared';
 import { ClusterFooter } from './ClusterFooter';
@@ -76,6 +76,7 @@ function AdminTopBar({
               type="button"
               aria-pressed="false"
               onClick={() => {
+                writeRoleView('user');
                 void navigate('/');
               }}
             >
@@ -236,7 +237,7 @@ function Frame() {
   useRouteFocus();
 
   useEffect(() => {
-    markBootHandled();
+    writeRoleView('admin');
   }, []);
 
   const data = shell.data;

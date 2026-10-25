@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation, useMatch, useNavigate } from 'react-router';
-import { markBootHandled, shouldRedirectAdminOnBoot } from '../guards';
+import { shouldLandOnAdmin } from '../guards';
 import { useSession } from '../../entities';
 import {
   ErrorState,
@@ -359,12 +359,9 @@ function Shell({ forbidden }: UserShellProps) {
 /** Layout route for every USER route: top bar, tab row and `<main id="main">`. */
 export function UserShell(props: UserShellProps) {
   const { session } = useSession();
+  const { pathname } = useLocation();
 
-  useEffect(() => {
-    if (session.status !== 'loading') markBootHandled();
-  }, [session.status]);
-
-  if (props.forbidden !== true && shouldRedirectAdminOnBoot(session)) {
+  if (props.forbidden !== true && shouldLandOnAdmin(session, pathname)) {
     return <Navigate to="/admin" replace />;
   }
 
