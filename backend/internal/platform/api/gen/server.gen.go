@@ -23,6 +23,48 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AdminKeyQuotaState.
+const (
+	AdminKeyQuotaStateCooling   AdminKeyQuotaState = "cooling"
+	AdminKeyQuotaStateExhausted AdminKeyQuotaState = "exhausted"
+	AdminKeyQuotaStateOk        AdminKeyQuotaState = "ok"
+)
+
+// Valid indicates whether the value is a known member of the AdminKeyQuotaState enum.
+func (e AdminKeyQuotaState) Valid() bool {
+	switch e {
+	case AdminKeyQuotaStateCooling:
+		return true
+	case AdminKeyQuotaStateExhausted:
+		return true
+	case AdminKeyQuotaStateOk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminKeyQuotaTrend.
+const (
+	Falling AdminKeyQuotaTrend = "falling"
+	Rising  AdminKeyQuotaTrend = "rising"
+	Steady  AdminKeyQuotaTrend = "steady"
+)
+
+// Valid indicates whether the value is a known member of the AdminKeyQuotaTrend enum.
+func (e AdminKeyQuotaTrend) Valid() bool {
+	switch e {
+	case Falling:
+		return true
+	case Rising:
+		return true
+	case Steady:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AdminUserRole.
 const (
 	AdminUserRoleAdmin AdminUserRole = "admin"
@@ -77,6 +119,27 @@ func (e FlickrAccountStatus) Valid() bool {
 	case FlickrAccountStatusReconnectRequired:
 		return true
 	case FlickrAccountStatusRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for KeyQuotaState.
+const (
+	KeyQuotaStateCooling   KeyQuotaState = "cooling"
+	KeyQuotaStateExhausted KeyQuotaState = "exhausted"
+	KeyQuotaStateOk        KeyQuotaState = "ok"
+)
+
+// Valid indicates whether the value is a known member of the KeyQuotaState enum.
+func (e KeyQuotaState) Valid() bool {
+	switch e {
+	case KeyQuotaStateCooling:
+		return true
+	case KeyQuotaStateExhausted:
+		return true
+	case KeyQuotaStateOk:
 		return true
 	default:
 		return false
@@ -359,11 +422,39 @@ func (e UserRole) Valid() bool {
 	}
 }
 
+// AdminKeyQuota defines model for AdminKeyQuota.
+type AdminKeyQuota struct {
+	KeyID int64  `json:"key_id"`
+	Label string `json:"label"`
+	Limit int64  `json:"limit"`
+
+	// Node Identifier of the node that reported the state.
+	Node    string             `json:"node"`
+	ResetAt *time.Time         `json:"reset_at,omitempty"`
+	State   AdminKeyQuotaState `json:"state"`
+
+	// Trend Current usage compared with the previous window at the same point in the hour.
+	Trend  AdminKeyQuotaTrend `json:"trend"`
+	Used   int64              `json:"used"`
+	UserID *int64             `json:"user_id,omitempty"`
+}
+
+// AdminKeyQuotaState defines model for AdminKeyQuota.State.
+type AdminKeyQuotaState string
+
+// AdminKeyQuotaTrend Current usage compared with the previous window at the same point in the hour.
+type AdminKeyQuotaTrend string
+
 // AdminQueue defines model for AdminQueue.
 type AdminQueue struct {
 	BacklogByPlan        []PlanLaneBacklog `json:"backlog_by_plan"`
 	OldestItemAgeSeconds int64             `json:"oldest_item_age_seconds"`
 	ReadyQueueSizes      []ReadyQueueSize  `json:"ready_queue_sizes"`
+}
+
+// AdminQuota defines model for AdminQuota.
+type AdminQuota struct {
+	Keys []AdminKeyQuota `json:"keys"`
 }
 
 // AdminUser A user as seen by an administrator. Password hashes are never included.
@@ -527,6 +618,28 @@ type Health struct {
 	Version string `json:"version"`
 }
 
+// KeyQuota Hourly quota state of one API key.
+type KeyQuota struct {
+	KeyID int64 `json:"key_id"`
+
+	// Lanes Calls granted in the current hourly window, by priority lane.
+	Lanes LaneUsage `json:"lanes"`
+	Limit int64     `json:"limit"`
+
+	// Reserve Calls kept back for interactive use.
+	Reserve int64 `json:"reserve"`
+
+	// ResetAt End of the current hourly window. Omitted when no window is open.
+	ResetAt *time.Time `json:"reset_at,omitempty"`
+
+	// State cooling means Flickr rejected the key and it waits for the window to end; exhausted means the hourly limit is spent.
+	State KeyQuotaState `json:"state"`
+	Used  int64         `json:"used"`
+}
+
+// KeyQuotaState cooling means Flickr rejected the key and it waits for the window to end; exhausted means the hourly limit is spent.
+type KeyQuotaState string
+
 // LaneStatus defines model for LaneStatus.
 type LaneStatus struct {
 	Lane    LaneStatusLane `json:"lane"`
@@ -538,6 +651,13 @@ type LaneStatus struct {
 
 // LaneStatusLane defines model for LaneStatus.Lane.
 type LaneStatusLane string
+
+// LaneUsage Calls granted in the current hourly window, by priority lane.
+type LaneUsage struct {
+	Interactive int64 `json:"interactive"`
+	Person      int64 `json:"person"`
+	Photo       int64 `json:"photo"`
+}
 
 // LoginLocked defines model for LoginLocked.
 type LoginLocked struct {
@@ -793,6 +913,9 @@ type ServerInterface interface {
 	// GetAdminQueue Get aggregate queue state
 	// (GET /admin/queue)
 	GetAdminQueue(w http.ResponseWriter, r *http.Request)
+	// GetAdminQuota Get the quota state of every API key
+	// (GET /admin/quota)
+	GetAdminQuota(w http.ResponseWriter, r *http.Request)
 	// ListAdminUsers List users
 	// (GET /admin/users)
 	ListAdminUsers(w http.ResponseWriter, r *http.Request, params ListAdminUsersParams)
@@ -841,6 +964,9 @@ type ServerInterface interface {
 	// UpdateKey Change a key's label, limits, or secret
 	// (PUT /keys/{id})
 	UpdateKey(w http.ResponseWriter, r *http.Request, id int64)
+	// GetKeyQuota Get the quota state of one of the current user's API keys
+	// (GET /keys/{id}/quota)
+	GetKeyQuota(w http.ResponseWriter, r *http.Request, id int64)
 	// GetMe Get the authenticated user
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
@@ -895,6 +1021,12 @@ func (_ Unimplemented) UpdateAdminPlans(w http.ResponseWriter, r *http.Request) 
 // GetAdminQueue Get aggregate queue state
 // (GET /admin/queue)
 func (_ Unimplemented) GetAdminQueue(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetAdminQuota Get the quota state of every API key
+// (GET /admin/quota)
+func (_ Unimplemented) GetAdminQuota(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -991,6 +1123,12 @@ func (_ Unimplemented) GetKey(w http.ResponseWriter, r *http.Request, id int64) 
 // UpdateKey Change a key's label, limits, or secret
 // (PUT /keys/{id})
 func (_ Unimplemented) UpdateKey(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetKeyQuota Get the quota state of one of the current user's API keys
+// (GET /keys/{id}/quota)
+func (_ Unimplemented) GetKeyQuota(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1102,6 +1240,20 @@ func (siw *ServerInterfaceWrapper) GetAdminQueue(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetAdminQueue(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAdminQuota operation middleware
+func (siw *ServerInterfaceWrapper) GetAdminQuota(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAdminQuota(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1485,6 +1637,32 @@ func (siw *ServerInterfaceWrapper) UpdateKey(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// GetKeyQuota operation middleware
+func (siw *ServerInterfaceWrapper) GetKeyQuota(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetKeyQuota(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetMe operation middleware
 func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request) {
 
@@ -1837,6 +2015,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/keys/{id}", wrapper.UpdateKey)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/keys/{id}/quota", wrapper.GetKeyQuota)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/flickr-accounts/connect", wrapper.ConnectFlickrAccount)
 	})
 	r.Group(func(r chi.Router) {
@@ -1877,6 +2058,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/admin/queue", wrapper.GetAdminQueue)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/quota", wrapper.GetAdminQuota)
 	})
 
 	return r
@@ -2027,6 +2211,55 @@ func (response GetAdminQueue401JSONResponse) VisitGetAdminQueueResponse(w http.R
 type GetAdminQueue403JSONResponse Error
 
 func (response GetAdminQueue403JSONResponse) VisitGetAdminQueueResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAdminQuotaRequestObject struct {
+}
+
+type GetAdminQuotaResponseObject interface {
+	VisitGetAdminQuotaResponse(w http.ResponseWriter) error
+}
+
+type GetAdminQuota200JSONResponse AdminQuota
+
+func (response GetAdminQuota200JSONResponse) VisitGetAdminQuotaResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAdminQuota401JSONResponse Error
+
+func (response GetAdminQuota401JSONResponse) VisitGetAdminQuotaResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAdminQuota403JSONResponse Error
+
+func (response GetAdminQuota403JSONResponse) VisitGetAdminQuotaResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -2997,6 +3230,56 @@ func (response UpdateKey422JSONResponse) VisitUpdateKeyResponse(w http.ResponseW
 	return err
 }
 
+type GetKeyQuotaRequestObject struct {
+	ID int64 `json:"id"`
+}
+
+type GetKeyQuotaResponseObject interface {
+	VisitGetKeyQuotaResponse(w http.ResponseWriter) error
+}
+
+type GetKeyQuota200JSONResponse KeyQuota
+
+func (response GetKeyQuota200JSONResponse) VisitGetKeyQuotaResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetKeyQuota401JSONResponse Error
+
+func (response GetKeyQuota401JSONResponse) VisitGetKeyQuotaResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetKeyQuota404JSONResponse Error
+
+func (response GetKeyQuota404JSONResponse) VisitGetKeyQuotaResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetMeRequestObject struct {
 }
 
@@ -3525,6 +3808,9 @@ type StrictServerInterface interface {
 	// GetAdminQueue Get aggregate queue state
 	// (GET /admin/queue)
 	GetAdminQueue(ctx context.Context, request GetAdminQueueRequestObject) (GetAdminQueueResponseObject, error)
+	// GetAdminQuota Get the quota state of every API key
+	// (GET /admin/quota)
+	GetAdminQuota(ctx context.Context, request GetAdminQuotaRequestObject) (GetAdminQuotaResponseObject, error)
 	// ListAdminUsers List users
 	// (GET /admin/users)
 	ListAdminUsers(ctx context.Context, request ListAdminUsersRequestObject) (ListAdminUsersResponseObject, error)
@@ -3573,6 +3859,9 @@ type StrictServerInterface interface {
 	// UpdateKey Change a key's label, limits, or secret
 	// (PUT /keys/{id})
 	UpdateKey(ctx context.Context, request UpdateKeyRequestObject) (UpdateKeyResponseObject, error)
+	// GetKeyQuota Get the quota state of one of the current user's API keys
+	// (GET /keys/{id}/quota)
+	GetKeyQuota(ctx context.Context, request GetKeyQuotaRequestObject) (GetKeyQuotaResponseObject, error)
 	// GetMe Get the authenticated user
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
@@ -3719,6 +4008,30 @@ func (sh *strictHandler) GetAdminQueue(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetAdminQueueResponseObject); ok {
 		if err := validResponse.VisitGetAdminQueueResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAdminQuota operation middleware
+func (sh *strictHandler) GetAdminQuota(w http.ResponseWriter, r *http.Request) {
+	var request GetAdminQuotaRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAdminQuota(ctx, request.(GetAdminQuotaRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAdminQuota")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAdminQuotaResponseObject); ok {
+		if err := validResponse.VisitGetAdminQuotaResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -4173,6 +4486,32 @@ func (sh *strictHandler) UpdateKey(w http.ResponseWriter, r *http.Request, id in
 	}
 }
 
+// GetKeyQuota operation middleware
+func (sh *strictHandler) GetKeyQuota(w http.ResponseWriter, r *http.Request, id int64) {
+	var request GetKeyQuotaRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetKeyQuota(ctx, request.(GetKeyQuotaRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetKeyQuota")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetKeyQuotaResponseObject); ok {
+		if err := validResponse.VisitGetKeyQuotaResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetMe operation middleware
 func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	var request GetMeRequestObject
@@ -4483,95 +4822,104 @@ func (sh *strictHandler) RevokeMySession(w http.ResponseWriter, r *http.Request,
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"AK2JtWqIAzQuyhHQDfH8NpW2B0LuIUh/e/s/AwA=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

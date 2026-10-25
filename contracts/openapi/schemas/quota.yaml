@@ -1,0 +1,64 @@
+LaneUsage:
+  type: object
+  additionalProperties: false
+  description: Calls granted in the current hourly window, by priority lane.
+  required: [interactive, person, photo]
+  properties:
+    interactive: { type: integer, format: int64, minimum: 0 }
+    person: { type: integer, format: int64, minimum: 0 }
+    photo: { type: integer, format: int64, minimum: 0 }
+
+KeyQuota:
+  type: object
+  additionalProperties: false
+  description: Hourly quota state of one API key.
+  required: [key_id, used, limit, reserve, state, lanes]
+  properties:
+    key_id: { type: integer, format: int64 }
+    used: { type: integer, format: int64, minimum: 0 }
+    limit: { type: integer, format: int64, minimum: 1 }
+    reserve:
+      type: integer
+      format: int64
+      minimum: 0
+      description: Calls kept back for interactive use.
+    reset_at:
+      type: string
+      format: date-time
+      description: End of the current hourly window. Omitted when no window is open.
+    state:
+      type: string
+      enum: [ok, cooling, exhausted]
+      description: cooling means Flickr rejected the key and it waits for the window to end; exhausted means the hourly limit is spent.
+    lanes: { $ref: '#/LaneUsage' }
+
+AdminKeyQuota:
+  type: object
+  additionalProperties: false
+  required: [key_id, label, node, used, limit, state, trend]
+  properties:
+    key_id: { type: integer, format: int64 }
+    user_id: { type: integer, format: int64 }
+    label: { type: string }
+    node:
+      type: string
+      description: Identifier of the node that reported the state.
+    used: { type: integer, format: int64, minimum: 0 }
+    limit: { type: integer, format: int64, minimum: 1 }
+    reset_at: { type: string, format: date-time }
+    state:
+      type: string
+      enum: [ok, cooling, exhausted]
+    trend:
+      type: string
+      enum: [rising, steady, falling]
+      description: Current usage compared with the previous window at the same point in the hour.
+
+AdminQuota:
+  type: object
+  additionalProperties: false
+  required: [keys]
+  properties:
+    keys:
+      type: array
+      items: { $ref: '#/AdminKeyQuota' }

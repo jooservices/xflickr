@@ -23,6 +23,7 @@ import type {
 
 import type {
   AdminQueue,
+  AdminQuota,
   AdminUser,
   AdminUserPage,
   Error,
@@ -905,6 +906,134 @@ export function useGetAdminQueue<TData = Awaited<ReturnType<typeof getAdminQueue
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetAdminQueueQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type getAdminQuotaResponse200 = {
+  data: AdminQuota;
+  status: 200;
+};
+
+export type getAdminQuotaResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type getAdminQuotaResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type getAdminQuotaResponseSuccess = getAdminQuotaResponse200 & {
+  headers: Headers;
+};
+export type getAdminQuotaResponseError = (getAdminQuotaResponse401 | getAdminQuotaResponse403) & {
+  headers: Headers;
+};
+
+export type getAdminQuotaResponse = getAdminQuotaResponseSuccess | getAdminQuotaResponseError;
+
+export const getGetAdminQuotaUrl = () => {
+  return `/admin/quota`;
+};
+
+/**
+ * @summary Get the quota state of every API key
+ */
+export const getAdminQuota = async (options?: RequestInit): Promise<getAdminQuotaResponse> => {
+  const res = await fetch(getGetAdminQuotaUrl(), {
+    ...options,
+    method: 'GET',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAdminQuotaResponse['data'] = body ? JSON.parse(body) : {};
+  return { data, status: res.status, headers: res.headers } as getAdminQuotaResponse;
+};
+
+export const getGetAdminQuotaQueryKey = () => {
+  return [`/admin/quota`] as const;
+};
+
+export const getGetAdminQuotaQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminQuota>>,
+  TError = Error,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminQuota>>, TError, TData>>;
+  fetch?: RequestInit;
+}) => {
+  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminQuotaQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminQuota>>> = ({ signal }) =>
+    getAdminQuota({ signal, ...fetchOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminQuota>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetAdminQuotaQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminQuota>>>;
+export type GetAdminQuotaQueryError = Error;
+
+export function useGetAdminQuota<TData = Awaited<ReturnType<typeof getAdminQuota>>, TError = Error>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminQuota>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminQuota>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminQuota>>
+        >,
+        'initialData'
+      >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAdminQuota<TData = Awaited<ReturnType<typeof getAdminQuota>>, TError = Error>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminQuota>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminQuota>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminQuota>>
+        >,
+        'initialData'
+      >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAdminQuota<TData = Awaited<ReturnType<typeof getAdminQuota>>, TError = Error>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminQuota>>, TError, TData>>;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get the quota state of every API key
+ */
+
+export function useGetAdminQuota<TData = Awaited<ReturnType<typeof getAdminQuota>>, TError = Error>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminQuota>>, TError, TData>>;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminQuotaQueryOptions(options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

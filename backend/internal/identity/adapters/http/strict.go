@@ -88,3 +88,13 @@ func (StrictHandler) PauseCrawlContact(context.Context, gen.PauseCrawlContactReq
 func (StrictHandler) ResumeCrawlContact(context.Context, gen.ResumeCrawlContactRequestObject) (gen.ResumeCrawlContactResponseObject, error) {
 	return nil, errCrawlServedByCrawl
 }
+
+var errQuotaServedByQuota = errors.New("identity: quota state is served by the quota module")
+
+func (StrictHandler) GetKeyQuota(context.Context, gen.GetKeyQuotaRequestObject) (gen.GetKeyQuotaResponseObject, error) {
+	return nil, errQuotaServedByQuota
+}
+
+func (StrictHandler) GetAdminQuota(context.Context, gen.GetAdminQuotaRequestObject) (gen.GetAdminQuotaResponseObject, error) {
+	return nil, errQuotaServedByQuota
+}

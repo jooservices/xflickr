@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -37,7 +38,10 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/httpx"
 	"github.com/jooservices/xflickr/internal/platform/outbox"
 	"github.com/jooservices/xflickr/internal/platform/queue"
+	quotahttp "github.com/jooservices/xflickr/internal/quota/adapters/http"
+	quotaPostgres "github.com/jooservices/xflickr/internal/quota/adapters/postgres"
 	quotaRedis "github.com/jooservices/xflickr/internal/quota/adapters/redis"
+	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
 	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
 	schedulepostgres "github.com/jooservices/xflickr/internal/schedule/adapters/postgres"
 	queuepostgres "github.com/jooservices/xflickr/internal/schedule/adapters/queuepostgres"
@@ -98,6 +102,7 @@ func (schedulerRole) Run(ctx context.Context) error {
 	}
 	store := scheduleriver.Store{Pool: pool}
 	quota := newQuotaRuntime(pool, redisClient, cfg)
+	quota.Emitter = newQuotaEmitter(quotaStates(pool, redisClient, cfg), cfg)
 	defer quota.start(ctx, slog.Default())()
 	return newSchedulerPump(pool, quota.Governor, store, queueAdapter, settings).Run(ctx)
 }
@@ -221,7 +226,36 @@ func buildConfiguredAPIHandler(pool *pgxpool.Pool, redisClient redisv9.Universal
 	if err != nil {
 		return nil, err
 	}
-	return newAPIRouter(identity, keys, connect, plans, crawl), nil
+	return newAPIRouterWithQuota(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg)), nil
+}
+
+func buildQuotaHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config) quotahttp.QuotaHandler {
+	return quotahttp.QuotaHandler{
+		States:  quotaStates(pool, redisClient, cfg),
+		Node:    nodeID(cfg),
+		ActorID: userIDFromPrincipal,
+	}
+}
+
+func quotaStates(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config) quotaapp.States {
+	keys := quotaPostgres.Keys{Pool: pool}
+	return quotaapp.States{
+		Keys:    keys,
+		Budgets: quotaPostgres.Budgets{Pool: pool},
+		Live:    quotaRedis.Counters{Client: redisClient, Prefix: cfg.Redis.Prefix},
+		History: keys,
+	}
+}
+
+// nodeID names this node in quota reports: NODE_ID, or the host name.
+func nodeID(cfg config.Config) string {
+	if id := strings.TrimSpace(cfg.Node.ID); id != "" {
+		return id
+	}
+	if host, err := os.Hostname(); err == nil && host != "" {
+		return host
+	}
+	return "unknown"
 }
 
 // apiServer composes identity and API key handlers. The two types expose
@@ -231,6 +265,7 @@ type apiServer struct {
 	accountshttp.KeyHandler
 	accountshttp.ConnectHandler
 	crawlhttp.CrawlHandler
+	quotahttp.QuotaHandler
 	planHandler
 }
 
@@ -243,11 +278,15 @@ func newAPIRouter(identity identityhttp.Handler, keys accountshttp.KeyHandler, c
 	if len(crawlers) > 0 {
 		crawl = crawlers[0]
 	}
+	return newAPIRouterWithQuota(identity, keys, connect, plans, crawl, quotahttp.QuotaHandler{})
+}
+
+func newAPIRouterWithQuota(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawl crawlhttp.CrawlHandler, quota quotahttp.QuotaHandler) http.Handler {
 	router := chi.NewRouter()
 	router.Use(identityhttp.RequestBodyLimit)
 	router.Use(identityhttp.CSRF)
 	router.Use(identityhttp.ProtectRoutes(identity.Sessions))
-	return gen.HandlerFromMux(gen.NewStrictHandler(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
+	return gen.HandlerFromMux(gen.NewStrictHandler(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		identityhttp.MaintainSessionCookies(identity.Sessions),
 	}), router)

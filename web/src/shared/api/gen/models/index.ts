@@ -6,7 +6,11 @@
  * OpenAPI spec version: 0.0.0
  */
 
+export * from './adminKeyQuota';
+export * from './adminKeyQuotaState';
+export * from './adminKeyQuotaTrend';
 export * from './adminQueue';
+export * from './adminQuota';
 export * from './adminUser';
 export * from './adminUserPage';
 export * from './adminUserRole';
@@ -29,8 +33,11 @@ export * from './flickrAccount';
 export * from './flickrAccountCallbackParams';
 export * from './flickrAccountStatus';
 export * from './health';
+export * from './keyQuota';
+export * from './keyQuotaState';
 export * from './laneStatus';
 export * from './laneStatusLane';
+export * from './laneUsage';
 export * from './listAdminUsersParams';
 export * from './loginLocked';
 export * from './loginLockedDetails';

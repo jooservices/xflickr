@@ -73,3 +73,13 @@ func TestStrictHandlerLeavesCrawlControlsToCrawl(t *testing.T) {
 		t.Fatalf("resume error=%v", err)
 	}
 }
+
+func TestStrictHandlerLeavesQuotaToQuota(t *testing.T) {
+	handler := StrictHandler{}
+	if _, err := handler.GetKeyQuota(t.Context(), gen.GetKeyQuotaRequestObject{}); !errors.Is(err, errQuotaServedByQuota) {
+		t.Fatalf("key quota error=%v", err)
+	}
+	if _, err := handler.GetAdminQuota(t.Context(), gen.GetAdminQuotaRequestObject{}); !errors.Is(err, errQuotaServedByQuota) {
+		t.Fatalf("admin quota error=%v", err)
+	}
+}

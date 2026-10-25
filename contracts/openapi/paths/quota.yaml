@@ -1,0 +1,52 @@
+key:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      description: API key id
+      schema:
+        type: integer
+        format: int64
+  get:
+    operationId: GetKeyQuota
+    tags: [keys]
+    summary: Get the quota state of one of the current user's API keys
+    description: Returns used calls, limit, reserve, reset time, state and per-lane usage for the current hourly window.
+    responses:
+      '200':
+        description: Quota state
+        content:
+          application/json:
+            schema: { $ref: ../schemas/quota.yaml#/KeyQuota }
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '404':
+        description: Key not found for the current user
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+
+admin:
+  get:
+    operationId: GetAdminQuota
+    tags: [admin]
+    summary: Get the quota state of every API key
+    responses:
+      '200':
+        description: Quota state per key with node and trend
+        content:
+          application/json:
+            schema: { $ref: ../schemas/quota.yaml#/AdminQuota }
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '403':
+        description: Administrator role required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }

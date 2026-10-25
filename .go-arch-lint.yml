@@ -70,7 +70,7 @@ deps:
   quota-app:
     mayDependOn: [quota-domain]
   quota-adapters:
-    mayDependOn: [quota-domain, quota-app, pkg]
+    mayDependOn: [quota-domain, quota-app, platform, pkg]
   catalog-app:
     mayDependOn: [catalog-domain]
   catalog-adapters:

@@ -21,7 +21,7 @@ import type {
   UseQueryResult,
 } from '@tanstack/react-query';
 
-import type { ApiKey, CreateKeyRequest, Error, UpdateKeyRequest } from '../models';
+import type { ApiKey, CreateKeyRequest, Error, KeyQuota, UpdateKeyRequest } from '../models';
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
   const result = { queryKey } as T & { queryKey: K };
@@ -707,3 +707,144 @@ export const useDeleteKey = <TError = Error, TContext = unknown>(
 > => {
   return useMutation(getDeleteKeyMutationOptions(options), queryClient);
 };
+export type getKeyQuotaResponse200 = {
+  data: KeyQuota;
+  status: 200;
+};
+
+export type getKeyQuotaResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type getKeyQuotaResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type getKeyQuotaResponseSuccess = getKeyQuotaResponse200 & {
+  headers: Headers;
+};
+export type getKeyQuotaResponseError = (getKeyQuotaResponse401 | getKeyQuotaResponse404) & {
+  headers: Headers;
+};
+
+export type getKeyQuotaResponse = getKeyQuotaResponseSuccess | getKeyQuotaResponseError;
+
+export const getGetKeyQuotaUrl = (id: number) => {
+  return `/keys/${id}/quota`;
+};
+
+/**
+ * Returns used calls, limit, reserve, reset time, state and per-lane usage for the current hourly window.
+ * @summary Get the quota state of one of the current user's API keys
+ */
+export const getKeyQuota = async (
+  id: number,
+  options?: RequestInit,
+): Promise<getKeyQuotaResponse> => {
+  const res = await fetch(getGetKeyQuotaUrl(id), {
+    ...options,
+    method: 'GET',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getKeyQuotaResponse['data'] = body ? JSON.parse(body) : {};
+  return { data, status: res.status, headers: res.headers } as getKeyQuotaResponse;
+};
+
+export const getGetKeyQuotaQueryKey = (id: number) => {
+  return [`/keys/${id}/quota`] as const;
+};
+
+export const getGetKeyQuotaQueryOptions = <
+  TData = Awaited<ReturnType<typeof getKeyQuota>>,
+  TError = Error,
+>(
+  id: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getKeyQuota>>, TError, TData>>;
+    fetch?: RequestInit;
+  },
+) => {
+  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetKeyQuotaQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getKeyQuota>>> = ({ signal }) =>
+    getKeyQuota(id, { signal, ...fetchOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getKeyQuota>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type GetKeyQuotaQueryResult = NonNullable<Awaited<ReturnType<typeof getKeyQuota>>>;
+export type GetKeyQuotaQueryError = Error;
+
+export function useGetKeyQuota<TData = Awaited<ReturnType<typeof getKeyQuota>>, TError = Error>(
+  id: number,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getKeyQuota>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getKeyQuota>>,
+          TError,
+          Awaited<ReturnType<typeof getKeyQuota>>
+        >,
+        'initialData'
+      >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetKeyQuota<TData = Awaited<ReturnType<typeof getKeyQuota>>, TError = Error>(
+  id: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getKeyQuota>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getKeyQuota>>,
+          TError,
+          Awaited<ReturnType<typeof getKeyQuota>>
+        >,
+        'initialData'
+      >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetKeyQuota<TData = Awaited<ReturnType<typeof getKeyQuota>>, TError = Error>(
+  id: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getKeyQuota>>, TError, TData>>;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get the quota state of one of the current user's API keys
+ */
+
+export function useGetKeyQuota<TData = Awaited<ReturnType<typeof getKeyQuota>>, TError = Error>(
+  id: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getKeyQuota>>, TError, TData>>;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetKeyQuotaQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}

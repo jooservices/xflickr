@@ -49,3 +49,28 @@ The scheduler role builds one rebuilder, rebuilds every tracked key at start,
 and runs the flusher in the background until shutdown, when it flushes a last
 time. Failures of the start rebuild or of a flush are logged; `Acquire` keeps
 failing closed for any key that is not ready.
+
+## Quota state endpoints and events
+
+`GET /keys/{id}/quota` returns the signed-in owner's key state: `used`,
+`limit`, `reserve`, `reset_at` (end of the open hourly window, omitted when no
+window is open), `state` and `lanes` (granted calls per interactive, person and
+photo lane). A key that does not exist, is not valid, or belongs to someone else
+is a 404.
+
+`GET /admin/quota` lists every valid key with its owner, `node`, `state` and
+`trend`. It sits under `/admin`, so the identity middleware applies
+`RequireAdmin`. `node` is `NODE_ID` (the host name when unset).
+
+`state` is `cooling` while the key's cooldown marker is set (Flickr rejected it
+and it waits for the window to end), `exhausted` when `used` reached `limit`,
+and `ok` otherwise. A window that already ended counts as empty. `trend`
+compares `used` with the previous stored window's pace at the same point in the
+hour: `rising` or `falling` beyond a 10 percent tolerance, otherwise `steady`.
+Without a previous window any usage is `rising`.
+
+The scheduler role emits a `quota.state` event per valid key every minute to
+OpenObserve (`/api/{org}/{stream}/_json`): `key_id`, `used`, `limit`, `reserve`,
+`reset_at`, `state`, `trend`, `lane_interactive`, `lane_person`, `lane_photo` and
+`node`. Emission is off until `OPENOBSERVE_USERNAME` is set. A failed emit is
+logged and retried on the next tick.

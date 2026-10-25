@@ -3,12 +3,15 @@ package roles
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	redisv9 "github.com/redis/go-redis/v9"
 
 	"github.com/jooservices/xflickr/internal/platform/config"
+	quotaOpenObserve "github.com/jooservices/xflickr/internal/quota/adapters/openobserve"
 	quotaPostgres "github.com/jooservices/xflickr/internal/quota/adapters/postgres"
 	quotaRedis "github.com/jooservices/xflickr/internal/quota/adapters/redis"
 	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
@@ -20,6 +23,18 @@ type quotaRuntime struct {
 	Governor  quotaRedis.Governor
 	Rebuilder *quotaapp.Rebuilder
 	Flusher   quotaapp.Flusher
+	// Emitter, when set, sends a quota.state event per active key every minute.
+	Emitter *quotaapp.Emitter
+}
+
+// newQuotaEmitter sends quota.state events to OpenObserve. It returns nil, so
+// nothing is emitted, until OpenObserve credentials are configured.
+func newQuotaEmitter(states quotaapp.StateReader, cfg config.Config) *quotaapp.Emitter {
+	if cfg.Obs.Username == "" || cfg.Obs.URL == "" {
+		return nil
+	}
+	sink := quotaOpenObserve.Sink{URL: cfg.Obs.URL, Org: cfg.Obs.Org, Stream: cfg.Obs.Stream, Username: cfg.Obs.Username, Password: cfg.Obs.Password, Client: &http.Client{Timeout: 10 * time.Second}}
+	return &quotaapp.Emitter{States: states, Sink: sink, Node: nodeID(cfg)}
 }
 
 func newQuotaRuntime(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config) quotaRuntime {
@@ -52,6 +67,13 @@ func (q quotaRuntime) start(ctx context.Context, logger *slog.Logger) (stop func
 		defer wg.Done()
 		q.Flusher.Run(runCtx, func(err error) { logger.ErrorContext(runCtx, "quota: flush failed", "error", err) })
 	}()
+	if q.Emitter != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			q.Emitter.Run(runCtx, func(err error) { logger.ErrorContext(runCtx, "quota: emit state failed", "error", err) })
+		}()
+	}
 	var once sync.Once
 	return func() {
 		once.Do(func() {
