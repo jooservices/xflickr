@@ -24,6 +24,7 @@ var scripts embed.FS
 var (
 	acquireScript   = redisv9.NewScript(mustScript("scripts/acquire.lua"))
 	calibrateScript = redisv9.NewScript(mustScript("scripts/calibrate.lua"))
+	restoreScript   = redisv9.NewScript(mustScript("scripts/restore.lua"))
 )
 
 func mustScript(name string) string {
@@ -39,6 +40,11 @@ type Governor struct {
 	Client  redisv9.UniversalClient
 	Prefix  string
 	Budgets app.BudgetProvider
+	// Rebuilder, when set, makes Acquire fail closed for a key whose counters
+	// were lost, and rebuilds them before the call is allowed.
+	Rebuilder interface {
+		Rebuild(context.Context, int64) error
+	}
 }
 
 var _ domain.Governor = Governor{}
@@ -53,26 +59,48 @@ func (g Governor) Acquire(ctx context.Context, keyID int64, class domain.Class) 
 	if err != nil || budget.Validate() != nil {
 		return nil, 0, domain.ErrGovernorOffline
 	}
-	keys := g.keys(keyID)
-	result, err := acquireScript.Run(ctx, g.Client, keys, budget.PerSecondRate, budget.Burst, budget.HourlyLimit, budget.Reserve, budget.PersonLaneShare, string(class)).Slice()
-	if err != nil || len(result) < 2 {
-		return nil, 0, domain.ErrGovernorOffline
+	for attempt := 0; ; attempt++ {
+		allowed, wait, reason, err := g.tryAcquire(ctx, keyID, class, budget)
+		if err != nil {
+			return nil, 0, err
+		}
+		if reason == reasonRebuild && g.Rebuilder != nil && attempt == 0 {
+			// Block until the counters are back; the retry then sees the marker.
+			if err := g.Rebuilder.Rebuild(ctx, keyID); err != nil {
+				return nil, 0, domain.ErrGovernorOffline
+			}
+			continue
+		}
+		if !allowed {
+			return nil, wait, nil
+		}
+		return &permit{governor: g, keyID: keyID, budget: budget}, 0, nil
+	}
+}
+
+const reasonRebuild = "rebuild"
+
+func (g Governor) tryAcquire(ctx context.Context, keyID int64, class domain.Class, budget domain.Budget) (bool, time.Duration, string, error) {
+	requireReady := 0
+	if g.Rebuilder != nil {
+		requireReady = 1
+	}
+	result, err := acquireScript.Run(ctx, g.Client, g.keys(keyID), budget.PerSecondRate, budget.Burst, budget.HourlyLimit, budget.Reserve, budget.PersonLaneShare, string(class), requireReady).Slice()
+	if err != nil || len(result) < 3 {
+		return false, 0, "", domain.ErrGovernorOffline
 	}
 	allowed, okAllowed := asInt64(result[0])
 	waitMS, okWait := asInt64(result[1])
+	reason, _ := result[2].(string)
 	if !okAllowed || !okWait {
-		return nil, 0, domain.ErrGovernorOffline
+		return false, 0, "", domain.ErrGovernorOffline
 	}
-	wait := time.Duration(waitMS) * time.Millisecond
-	if allowed != 1 {
-		return nil, wait, nil
-	}
-	return &permit{governor: g, keyID: keyID, budget: budget}, 0, nil
+	return allowed == 1, time.Duration(waitMS) * time.Millisecond, reason, nil
 }
 
 func (g Governor) keys(keyID int64) []string {
 	base := fmt.Sprintf("%squota:key:%d:", g.Prefix, keyID)
-	return []string{base + "bucket", base + "hourly", base + "window", base + "cooldown"}
+	return []string{base + "bucket", base + "hourly", base + "window", base + "cooldown", base + "byclass", base + "ready"}
 }
 
 // Capacity reports conservative dispatch credits from the same hourly usage

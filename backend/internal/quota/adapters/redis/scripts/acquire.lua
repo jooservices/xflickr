@@ -1,5 +1,5 @@
--- KEYS: token bucket, hourly counter, window start, cooldown
--- ARGV: rate, burst, hourly limit, reserve, person share, class
+-- KEYS: token bucket, hourly counter, window start, cooldown, per-class counts, ready marker
+-- ARGV: rate, burst, hourly limit, reserve, person share, class, require ready (1/0)
 local nowParts = redis.call('TIME')
 local now = tonumber(nowParts[1]) * 1000 + math.floor(tonumber(nowParts[2]) / 1000)
 local rate = tonumber(ARGV[1])
@@ -8,6 +8,11 @@ local hourly = tonumber(ARGV[3])
 local reserve = tonumber(ARGV[4])
 local personShare = tonumber(ARGV[5])
 local class = ARGV[6]
+
+-- Fail closed until the counters were rebuilt after a Redis loss.
+if ARGV[7] == '1' and redis.call('EXISTS', KEYS[6]) == 0 then
+  return {0, 1000, 'rebuild'}
+end
 
 local cooldown = tonumber(redis.call('GET', KEYS[4]) or '0')
 if cooldown > now then
@@ -22,6 +27,7 @@ if start == 0 or now >= start + 3600000 then
   redis.call('SET', KEYS[3], start, 'PX', 7200000)
   redis.call('SET', KEYS[2], used, 'PX', 7200000)
   redis.call('DEL', KEYS[4])
+  redis.call('DEL', KEYS[5])
 end
 
 local tokenData = redis.call('HMGET', KEYS[1], 'tokens', 'updated')
@@ -50,4 +56,7 @@ end
 redis.call('HSET', KEYS[1], 'tokens', tokens - 1, 'updated', now)
 redis.call('PEXPIRE', KEYS[1], 7200000)
 redis.call('SET', KEYS[2], used + 1, 'PX', 7200000)
+redis.call('HINCRBY', KEYS[5], class, 1)
+redis.call('PEXPIRE', KEYS[5], 7200000)
+if ARGV[7] == '1' then redis.call('PEXPIRE', KEYS[6], 7200000) end
 return {1, 0, 'ok'}

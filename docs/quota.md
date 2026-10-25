@@ -16,3 +16,26 @@ Callers finish a permit with its result metadata. A Flickr quota-exceeded
 result recalibrates the hourly counter to the key's hourly limit and places the
 key in cooldown until the current hourly window ends. The counter and cooldown
 are scoped by API key.
+
+## Usage persistence and rebuild
+
+A flusher copies each valid key's hourly usage from Redis into
+`quota_usage(key_id, window_start, used, by_class)` every minute. A save never
+lowers `used` for a window, and keys whose Redis counters are missing are
+skipped so lost counters never overwrite stored usage. The governor counts
+granted calls per class (`byclass` hash) so `by_class` can be stored.
+
+When a governor is configured with a rebuilder, each key has a `ready` marker
+in Redis. If the marker is missing (at start or after Redis lost its keys),
+`Acquire` fails closed: it blocks while the counters are rebuilt, then retries
+once. If the rebuild fails it returns the governor-offline error; if the key
+still is not ready it returns a retry delay. Concurrent acquisitions for one key
+share a single rebuild.
+
+The rebuild reads the newest `quota_usage` window that started within the last
+hour and the `api_call_log` calls since that window began. Per class it takes
+the larger of the two, so it can over-count the window but never under-count
+it. With no stored row, the earliest logged call starts the window. The call
+log is read from `api_call_log(key_id, class, called_at)` and counts as empty
+until that table exists. Calls made after the last flush and before a Redis loss
+are recoverable only from the call log.
