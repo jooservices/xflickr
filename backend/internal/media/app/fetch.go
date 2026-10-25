@@ -57,6 +57,12 @@ type Fetcher struct {
 
 	mu    sync.Mutex
 	hosts map[string]*hostLimit
+	keys  map[string]*keyLimit
+}
+
+type keyLimit struct {
+	semaphore chan struct{}
+	refs      int
 }
 
 type hostLimit struct {
@@ -83,6 +89,11 @@ func (f *Fetcher) Fetch(ctx context.Context, source string, expected ...int64) (
 	}
 	urlHash := sha256.Sum256([]byte(source))
 	blobKey = fmt.Sprintf("originals/%x", urlHash)
+	releaseKey, err := f.acquireKey(ctx, blobKey)
+	if err != nil {
+		return "", "", 0, err
+	}
+	defer releaseKey()
 	limit := f.hostLimit(strings.ToLower(parsed.Host))
 	if err := f.acquire(ctx, limit); err != nil {
 		return "", "", 0, err
@@ -114,6 +125,20 @@ func (f *Fetcher) Fetch(ctx context.Context, source string, expected ...int64) (
 		}
 		if response.Body == nil {
 			lastErr = errors.New("media: CDN returned an empty response body")
+			continue
+		}
+		if response.StatusCode == 416 {
+			if closeErr := closeResponse(response); closeErr != nil {
+				return "", "", 0, fmt.Errorf("media: close unsatisfiable range response: %w", closeErr)
+			}
+			if currentSize > 0 {
+				if err := f.Blobs.Delete(ctx, blobKey); err != nil {
+					return "", "", 0, fmt.Errorf("media: discard unsatisfiable partial blob: %w", err)
+				}
+				lastErr = errors.New("media: CDN rejected resume range; restarting download")
+				continue
+			}
+			lastErr = errors.New("media: CDN rejected empty range request")
 			continue
 		}
 		if (response.StatusCode == 403 || response.StatusCode == 404) && !refreshed && f.Refresh != nil {
@@ -214,6 +239,40 @@ func (f *Fetcher) Fetch(ctx context.Context, source string, expected ...int64) (
 		lastErr = errors.New("media: CDN fetch failed")
 	}
 	return "", "", 0, fmt.Errorf("media: fetch failed after %d attempts: %w", FetchMaxAttempts, lastErr)
+}
+
+func (f *Fetcher) acquireKey(ctx context.Context, key string) (func(), error) {
+	f.mu.Lock()
+	if f.keys == nil {
+		f.keys = make(map[string]*keyLimit)
+	}
+	limit := f.keys[key]
+	if limit == nil {
+		limit = &keyLimit{semaphore: make(chan struct{}, 1)}
+		f.keys[key] = limit
+	}
+	limit.refs++
+	f.mu.Unlock()
+	select {
+	case limit.semaphore <- struct{}{}:
+		return func() {
+			<-limit.semaphore
+			f.mu.Lock()
+			limit.refs--
+			if limit.refs == 0 {
+				delete(f.keys, key)
+			}
+			f.mu.Unlock()
+		}, nil
+	case <-ctx.Done():
+		f.mu.Lock()
+		limit.refs--
+		if limit.refs == 0 {
+			delete(f.keys, key)
+		}
+		f.mu.Unlock()
+		return nil, ctx.Err()
+	}
 }
 
 func closeResponse(response *CDNResponse) error {

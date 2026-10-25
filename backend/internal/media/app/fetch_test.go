@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jooservices/xflickr/internal/media/adapters/cdn"
@@ -85,6 +86,92 @@ func TestFetcherRetriesLengthMismatchThenSucceeds(t *testing.T) {
 	_, _, size, err := fetcher.Fetch(context.Background(), server.URL+"/asset", int64(5))
 	if err != nil || size != 5 || calls != 2 {
 		t.Fatalf("Fetch() size=%d calls=%d err=%v", size, calls, err)
+	}
+}
+
+func TestFetcherRestartsAfterUnsatisfiableResume(t *testing.T) {
+	calls := 0
+	fetcher, server := fetchRig(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			_, _ = io.WriteString(w, "complete")
+			return
+		}
+		if calls == 2 {
+			if r.Header.Get("Range") == "" {
+				t.Errorf("expected resume Range header")
+			}
+			http.Error(w, "range not satisfiable", http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		if r.Header.Get("Range") != "" {
+			t.Errorf("restart Range = %q", r.Header.Get("Range"))
+		}
+		_, _ = io.WriteString(w, "complete")
+	})
+	defer server.Close()
+	_, _, size, err := fetcher.Fetch(context.Background(), server.URL+"/asset")
+	if err != nil || size != 8 || calls != 1 {
+		t.Fatalf("initial fetch size=%d calls=%d err=%v", size, calls, err)
+	}
+	_, _, size, err = fetcher.Fetch(context.Background(), server.URL+"/asset")
+	if err != nil || size != 8 || calls != 3 {
+		t.Fatalf("retry fetch size=%d calls=%d err=%v", size, calls, err)
+	}
+}
+
+func TestFetcherSerializesConcurrentFetchesForSameBlob(t *testing.T) {
+	var mu sync.Mutex
+	calls, active, maxActive := 0, 0, 0
+	started := make(chan struct{})
+	continueFirst := make(chan struct{})
+	fetcher, server := fetchRig(t, func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls++
+		active++
+		if active > maxActive {
+			maxActive = active
+		}
+		call := calls
+		mu.Unlock()
+		defer func() { mu.Lock(); active--; mu.Unlock() }()
+		if call == 1 {
+			close(started)
+			<-continueFirst
+		}
+		if r.Header.Get("Range") != "" {
+			http.Error(w, "range not satisfiable", http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		_, _ = io.WriteString(w, "content")
+	})
+	defer server.Close()
+	var wg sync.WaitGroup
+	results := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			key, _, size, err := fetcher.Fetch(context.Background(), server.URL+"/same")
+			if err == nil && (key == "" || size != 7) {
+				err = fmt.Errorf("unexpected fetch result key=%q size=%d", key, size)
+			}
+			results <- err
+		}()
+		if i == 0 {
+			<-started
+		}
+	}
+	close(continueFirst)
+	wg.Wait()
+	close(results)
+	for err := range results {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if maxActive != 1 {
+		t.Fatalf("concurrent requests for one blob = %d", maxActive)
 	}
 }
 

@@ -76,6 +76,25 @@ func TestFetchHostSemaphoreAndWait(t *testing.T) {
 	}
 }
 
+func TestAcquireKeyCancellationReleasesWaiterReference(t *testing.T) {
+	fetcher := &Fetcher{}
+	release, err := fetcher.acquireKey(context.Background(), "blob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := fetcher.acquireKey(ctx, "blob"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("blocked key acquire error = %v", err)
+	}
+	release()
+	fetcher.mu.Lock()
+	defer fetcher.mu.Unlock()
+	if len(fetcher.keys) != 0 {
+		t.Fatalf("key lock map retained entries: %d", len(fetcher.keys))
+	}
+}
+
 func TestLimitedBodyAppliesSharedBandwidthWait(t *testing.T) {
 	limit := &hostLimit{}
 	var waits []time.Duration
