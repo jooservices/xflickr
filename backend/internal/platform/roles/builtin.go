@@ -336,10 +336,14 @@ func quotaStates(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg co
 
 // nodeID names this node in quota reports: NODE_ID, or the host name.
 func nodeID(cfg config.Config) string {
+	return nodeIDWithHostname(cfg, os.Hostname)
+}
+
+func nodeIDWithHostname(cfg config.Config, hostname func() (string, error)) string {
 	if id := strings.TrimSpace(cfg.Node.ID); id != "" {
 		return id
 	}
-	if host, err := os.Hostname(); err == nil && host != "" {
+	if host, err := hostname(); err == nil && host != "" {
 		return host
 	}
 	return "unknown"
@@ -370,6 +374,7 @@ func newAPIRouter(identity identityhttp.Handler, keys accountshttp.KeyHandler, c
 
 func newAPIRouterWithQuota(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawl crawlhttp.CrawlHandler, quota quotahttp.QuotaHandler) http.Handler {
 	router := chi.NewRouter()
+	serveWebAssets(router, os.Getenv("XFLICKR_WEB_DIR"))
 	router.Use(identityhttp.RequestBodyLimit)
 	router.Use(identityhttp.CSRF)
 	router.Use(identityhttp.ProtectRoutes(identity.Sessions))

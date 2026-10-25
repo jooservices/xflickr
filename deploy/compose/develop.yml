@@ -1,0 +1,36 @@
+services:
+  xflickr:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: xflickr:develop
+    container_name: xflickr-develop
+    restart: unless-stopped
+    env_file:
+      - ${XFLICKR_DEVELOP_ENV_FILE:-../../.env.develop}
+    command:
+      - sh
+      - -c
+      - /app/xflickr migrate up && exec /app/xflickr
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "192.168.2.10:18490:8080"
+      - "127.0.0.1:18490:8080"
+    volumes:
+      - xflickr-develop-data:/app/data
+    networks:
+      - workspaces-shared
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  xflickr-develop-data:
+
+networks:
+  workspaces-shared:
+    external: true

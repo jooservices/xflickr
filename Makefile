@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help lint arch-lint test test-integration e2e gen gen-stale check ui-spec-check dev-up dev-down
+.PHONY: help lint arch-lint test test-integration e2e gen gen-stale check ui-spec-check dev-up dev-down develop-up develop-down develop-logs develop-status
 
 help:
 	@./docker/scripts/help.sh
@@ -40,3 +40,15 @@ dev-up:
 
 dev-down:
 	@./docker/scripts/dev.sh down
+
+develop-up:
+	@./docker/scripts/develop-env.sh up
+
+develop-down:
+	@./docker/scripts/develop-env.sh down
+
+develop-logs:
+	@./docker/scripts/develop-env.sh logs
+
+develop-status:
+	@./docker/scripts/develop-env.sh status

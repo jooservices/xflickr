@@ -2,6 +2,8 @@
 
 - [Environment and shared services](ENVIRONMENT.md) — workstation, runtime, and
   database rules.
+- [Develop environment](develop-environment.md) — the WSL application container,
+  startup, logs, updates, and safe reset options.
 - [Business specification](SPEC.md) — product rules and definition of done.
 - [Sessions, CSRF, and roles](sessions.md) — session cookie, double-submit
   CSRF, and role checks.

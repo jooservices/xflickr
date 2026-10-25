@@ -15,4 +15,8 @@ XFlickr developer commands:
   make check            Run all release verification steps.
   make dev-up           Check shared service health and worktree databases.
   make dev-down         Stop XFlickr-owned development services, if any.
+  make develop-up       Build and start the XFlickr develop application container.
+  make develop-down     Stop the XFlickr develop container and retain its data volume.
+  make develop-logs     Follow logs from the XFlickr develop container.
+  make develop-status   Show the XFlickr develop container status.
 EOF
