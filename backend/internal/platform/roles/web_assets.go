@@ -33,7 +33,7 @@ func serveWebAssets(router *chi.Mux, root string) {
 			files.ServeHTTP(w, r)
 			return
 		}
-		if isSPANavigation(r) {
+		if isSPANavigation(r) || isPageFallback(r) {
 			http.ServeFile(w, r, filepath.Join(root, "index.html")) // #nosec G703 -- this path uses a fixed index filename beneath the configured asset root.
 			return
 		}
@@ -51,6 +51,16 @@ func serveWebAssets(router *chi.Mux, root string) {
 func isSPANavigation(r *http.Request) bool {
 	return (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
 		strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/html") &&
+		!isBackendOnlyPath(r.URL.Path)
+}
+
+// isPageFallback reports a request for an unknown path from a client that did
+// not ask for JSON (curl and health probes send no Accept or */*), so "/" and
+// SPA routes such as /register return the HTML shell instead of a 404.
+func isPageFallback(r *http.Request) bool {
+	accept := strings.ToLower(r.Header.Get("Accept"))
+	return (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+		!strings.Contains(accept, "json") &&
 		!isBackendOnlyPath(r.URL.Path)
 }
 

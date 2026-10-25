@@ -151,20 +151,28 @@ func TestServeWebAssets(t *testing.T) {
 		name, method, path, body string
 		status                   int
 		navigation               bool
+		accept                   string
 	}{
 		{name: "index", method: http.MethodGet, path: "/", body: "<html>app</html>", status: http.StatusOK, navigation: true},
 		{name: "spa route", method: http.MethodGet, path: "/register", body: "<html>app</html>", status: http.StatusOK, navigation: true},
+		{name: "index without accept", method: http.MethodGet, path: "/", body: "<html>app</html>", status: http.StatusOK},
+		{name: "spa route without accept", method: http.MethodGet, path: "/register", body: "<html>app</html>", status: http.StatusOK},
 		{name: "asset", method: http.MethodGet, path: "/assets/app.js", body: "asset", status: http.StatusOK},
 		{name: "missing asset", method: http.MethodGet, path: "/assets/missing.js", status: http.StatusNotFound},
 		{name: "head", method: http.MethodHead, path: "/", status: http.StatusOK, navigation: true},
 		{name: "unsupported method", method: http.MethodPost, path: "/register", status: http.StatusNotFound},
-		{name: "unknown api path", method: http.MethodGet, path: "/keys/usage", body: `{"code":"not_found"}`, status: http.StatusNotFound},
-		{name: "json client", method: http.MethodGet, path: "/keys/usage", body: `{"code":"not_found"}`, status: http.StatusNotFound},
+		{name: "unknown api path", method: http.MethodGet, path: "/keys/usage", body: `{"code":"not_found"}`, status: http.StatusNotFound, accept: "application/json"},
+		{name: "json client", method: http.MethodGet, path: "/keys/usage", body: `{"code":"not_found"}`, status: http.StatusNotFound, accept: "application/json"},
+		{name: "json client on index", method: http.MethodGet, path: "/", body: `{"code":"not_found"}`, status: http.StatusNotFound, accept: "application/json"},
+		{name: "backend only path", method: http.MethodGet, path: "/auth/nope", body: `{"code":"not_found"}`, status: http.StatusNotFound},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			response := httptest.NewRecorder()
 			request := httptest.NewRequest(test.method, test.path, nil)
+			if test.accept != "" {
+				request.Header.Set("Accept", test.accept)
+			}
 			if test.navigation {
 				request.Header.Set("Accept", "text/html")
 			}
