@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Icon, useI18n } from '../../shared';
 import type { MessageKey } from '../../shared/i18n';
@@ -81,7 +81,7 @@ export function AddKeyModal({ onAdded, onClose }: AddKeyModalProps) {
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (failure.banner) banner.current?.focus();
   }, [failure.banner]);
 
