@@ -36,6 +36,9 @@ func executeWithCommands(ctx context.Context, args []string, envRoles string, re
 	if len(args) > 0 && args[0] == "migrate" {
 		return runMigrate(ctx, args[1:], stdout, stderr, runMigrations)
 	}
+	if len(args) > 0 && args[0] == "requeue" {
+		return runRequeue(ctx, args[1:], stdout, stderr, runConfiguredRequeue)
+	}
 	if len(args) > 0 && args[0] == "crypto" {
 		return runCrypto(ctx, args[1:], stdout, stderr, runRotation)
 	}

@@ -453,6 +453,26 @@ func countInflight(ctx context.Context, tx pgx.Tx, keyID int64, worker string) (
 // in the queue, and a live job is never cancelled.
 const liveRiverStates = `('available','pending','retryable','scheduled','running')`
 
+// SelfHealAfter is how long a work item that failed only because its lease
+// expired (an infrastructure fault) stays failed before Reclaim gives it a
+// fresh start with attempts reset.
+const SelfHealAfter = 15 * time.Minute
+
+// Requeue returns failed work items (all when ids is empty) to pending with
+// attempts reset. Rows keep their payload; the normal pump and quota gate
+// dispatch them. It reports how many rows were requeued.
+func (s Store) Requeue(ctx context.Context, ids []int64, now time.Time) (int, error) {
+	if s.Pool == nil {
+		return 0, errors.New("schedule: requeue database is required")
+	}
+	tag, err := s.Pool.Exec(ctx, `UPDATE work_items SET state='pending', attempts=0, not_before=$1, lease_expires_at=NULL, last_error=NULL, updated_at=$1
+		WHERE state='failed' AND (coalesce(cardinality($2::bigint[]), 0) = 0 OR id = ANY($2))`, now, ids)
+	if err != nil {
+		return 0, fmt.Errorf("schedule: requeue failed work: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
 // Reclaim returns work items with an expired lease and no live River job to
 // pending, with exponential delay based on the already-incremented attempt.
 func (s Store) Reclaim(ctx context.Context, retryMax int, base time.Duration, now time.Time) (int, error) {
@@ -486,6 +506,10 @@ func (s Store) Reclaim(ctx context.Context, retryMax int, base time.Duration, no
 	}
 	if err := applyExpiredLeases(ctx, tx, expiredRows, retryMax, base, now); err != nil {
 		return 0, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE work_items SET state='pending', attempts=0, not_before=$1, lease_expires_at=NULL, last_error=NULL, updated_at=$1
+		WHERE state='failed' AND last_error='lease expired' AND updated_at <= $2`, now, now.Add(-SelfHealAfter)); err != nil {
+		return 0, fmt.Errorf("schedule: self-heal lease-expired work: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("schedule: commit reclaim: %w", err)

@@ -208,6 +208,62 @@ func TestExpiredLeaseReturnsToPendingThenExhausts(t *testing.T) {
 	}
 }
 
+func TestFailedWorkIsSelfHealedAndRequeued(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run make test-integration to use the configured worktree database")
+	}
+	pool := integrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	suffix := fmt.Sprintf("heal-%d", time.Now().UnixNano())
+	for name, stale := range map[string]string{"-old": "1 hour", "-new": "1 minute"} {
+		if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state,attempts,last_error,updated_at) VALUES('sync_person',$1,'failed',5,'lease expired',now()-$2::interval)`, suffix+name, stale); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state,attempts,last_error,updated_at) VALUES('sync_person',$1,'failed',5,'flickr 5xx',now()-interval '1 hour')`, suffix+"-other"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
+	state := func(name string) (string, int) {
+		var st string
+		var attempts int
+		if err := pool.QueryRow(ctx, `SELECT state,attempts FROM work_items WHERE subject_key=$1`, suffix+name).Scan(&st, &attempts); err != nil {
+			t.Fatal(err)
+		}
+		return st, attempts
+	}
+	store := scheduleriver.Store{Pool: pool}
+	if _, err := store.Reclaim(ctx, 5, 30*time.Second, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if st, a := state("-old"); st != "pending" || a != 0 {
+		t.Fatalf("old lease-expired row state=%s attempts=%d, want pending/0", st, a)
+	}
+	if st, _ := state("-new"); st != "failed" {
+		t.Fatalf("recent failure state=%s, want failed (backoff)", st)
+	}
+	if st, _ := state("-other"); st != "failed" {
+		t.Fatalf("non-lease failure state=%s, want failed", st)
+	}
+	var id int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM work_items WHERE subject_key=$1`, suffix+"-other").Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := store.Requeue(ctx, []int64{id}, time.Now()); err != nil || n != 1 {
+		t.Fatalf("Requeue(id) = %d, %v", n, err)
+	}
+	if st, a := state("-other"); st != "pending" || a != 0 {
+		t.Fatalf("requeued row state=%s attempts=%d", st, a)
+	}
+	if n, err := store.Requeue(ctx, nil, time.Now()); err != nil || n < 1 {
+		t.Fatalf("Requeue(all) = %d, %v", n, err)
+	}
+	if st, _ := state("-new"); st != "pending" {
+		t.Fatalf("requeue-all left row state=%s", st)
+	}
+}
+
 func TestReclaimLeavesItemWithLiveRiverJobAlone(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("run make test-integration to use the configured worktree database")
