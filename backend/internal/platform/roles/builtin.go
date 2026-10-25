@@ -33,6 +33,8 @@ import (
 	identityredis "github.com/jooservices/xflickr/internal/identity/adapters/redis"
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
+	medialocal "github.com/jooservices/xflickr/internal/media/adapters/local"
+	mediaapp "github.com/jooservices/xflickr/internal/media/app"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
 	auditpostgres "github.com/jooservices/xflickr/internal/platform/audit/adapters/postgres"
 	"github.com/jooservices/xflickr/internal/platform/config"
@@ -75,6 +77,10 @@ func NewBuiltinRegistry(version string) *Registry {
 		}
 		if name == "sync" {
 			registerBuiltin(registry, syncRole{})
+			continue
+		}
+		if name == "media" {
+			registerBuiltin(registry, mediaRole{})
 			continue
 		}
 		registerBuiltin(registry, idleRole{name: name})
@@ -194,6 +200,37 @@ func (syncRole) Run(ctx context.Context) error {
 		return err
 	}
 	return queueAdapter.Start(ctx)
+}
+
+type mediaRole struct{}
+
+func (mediaRole) Name() string { return "media" }
+
+func (mediaRole) Run(ctx context.Context) error {
+	if ctx == nil || ctx.Err() != nil {
+		return nil
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	if cfg.Blob.Driver != "local" {
+		return fmt.Errorf("media: blob driver %q is not available in this environment", cfg.Blob.Driver)
+	}
+	pool, err := db.NewPool(ctx, cfg.DB)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	assets, err := catalogpostgres.New(pool)
+	if err != nil {
+		return err
+	}
+	blobs, err := medialocal.New(cfg.Blob.LocalDir, cfg.Blob.MaxBytes)
+	if err != nil {
+		return err
+	}
+	return (mediaapp.Cleaner{Assets: assets, Blobs: blobs}).Run(ctx)
 }
 
 type photoSizesClient struct {

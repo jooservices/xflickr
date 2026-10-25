@@ -34,6 +34,8 @@ components:
   crawl-app:        { in: internal/crawl/app/** }
   crawl-adapters:   { in: internal/crawl/adapters/** }
   crawl-facets:     { in: internal/crawl/facets/** }
+  media-app:        { in: internal/media/app/** }
+  media-adapters:   { in: internal/media/adapters/** }
   platform:
     in:
       - internal/platform/adapters/**
@@ -86,6 +88,10 @@ deps:
     mayDependOn: [crawl-domain, catalog-domain, pkg]
   crawl-adapters:
     mayDependOn: [crawl-domain, crawl-app, platform]
+  media-app:
+    mayDependOn: [catalog-domain]
+  media-adapters:
+    mayDependOn: [media-app]
   platform:
     mayDependOn: [platform, pkg, migrations]
   wiring:
@@ -111,6 +117,8 @@ deps:
       - crawl-domain
       - crawl-app
       - crawl-adapters
+      - media-app
+      - media-adapters
       - platform
       - pkg
   pkg:

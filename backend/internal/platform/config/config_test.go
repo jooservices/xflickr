@@ -23,7 +23,7 @@ func TestLoadFromEnvAppliesDefaults(t *testing.T) {
 	if cfg.Search.URL != "http://127.0.0.1:19200" {
 		t.Errorf("Search URL default = %q", cfg.Search.URL)
 	}
-	if cfg.Blob.Driver != "local" || cfg.Blob.LocalDir != "var/blobs" || cfg.Blob.S3Region != "us-east-1" {
+	if cfg.Blob.Driver != "local" || cfg.Blob.LocalDir != "var/blobs" || cfg.Blob.MaxBytes != 10737418240 || cfg.Blob.S3Region != "us-east-1" {
 		t.Errorf("Blob defaults = %#v", cfg.Blob)
 	}
 	if cfg.AI.URL != "http://127.0.0.1:11434" || cfg.AI.CaptionModel != "llama3.2" || cfg.AI.EmbeddingModel != "nomic-embed-text" {
@@ -65,6 +65,7 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 		"OPENSEARCH_INDEX_PREFIX":   "xflickr_wt68_",
 		"BLOB_DRIVER":               "s3",
 		"BLOB_LOCAL_DIR":            "/tmp/blobs",
+		"BLOB_MAX_BYTES":            "1234567",
 		"S3_ENDPOINT":               "https://objects.internal",
 		"S3_REGION":                 "ap-southeast-1",
 		"S3_BUCKET":                 "xflickr-worktree",
@@ -104,7 +105,7 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 	if cfg.Search.URL != "http://search.internal:9200" || cfg.Search.Username != "search-user" || cfg.Search.Password != "search-pass" || cfg.Search.IndexPrefix != "xflickr_wt68_" {
 		t.Errorf("Search values not loaded: %#v", cfg.Search)
 	}
-	if cfg.Blob.Driver != "s3" || cfg.Blob.LocalDir != "/tmp/blobs" || cfg.Blob.S3Endpoint != "https://objects.internal" || cfg.Blob.S3Region != "ap-southeast-1" || cfg.Blob.S3Bucket != "xflickr-worktree" || cfg.Blob.S3AccessKey != "s3-access" || cfg.Blob.S3SecretKey != "s3-secret" || !cfg.Blob.S3UsePathStyle {
+	if cfg.Blob.Driver != "s3" || cfg.Blob.LocalDir != "/tmp/blobs" || cfg.Blob.MaxBytes != 1234567 || cfg.Blob.S3Endpoint != "https://objects.internal" || cfg.Blob.S3Region != "ap-southeast-1" || cfg.Blob.S3Bucket != "xflickr-worktree" || cfg.Blob.S3AccessKey != "s3-access" || cfg.Blob.S3SecretKey != "s3-secret" || !cfg.Blob.S3UsePathStyle {
 		t.Errorf("Blob values not loaded: %#v", cfg.Blob)
 	}
 	if cfg.AI.URL != "http://ollama.internal:11434" || cfg.AI.CaptionModel != "caption-model" || cfg.AI.EmbeddingModel != "embedding-model" {
@@ -149,6 +150,7 @@ func TestLoadFromEnvValidatesSettings(t *testing.T) {
 		{name: "redis port invalid", key: "REDIS_PORT", value: "not-a-port", want: "parse environment"},
 		{name: "log level", key: "LOG_LEVEL", value: "trace", want: "LOG_LEVEL"},
 		{name: "blob driver", key: "BLOB_DRIVER", value: "garage", want: "BLOB_DRIVER"},
+		{name: "blob cap", key: "BLOB_MAX_BYTES", value: "-1", want: "BLOB_MAX_BYTES"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

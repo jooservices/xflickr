@@ -19,6 +19,8 @@
   account status, and events.
 - [Catalog people and photos](catalog.md) — partitioned photo metadata,
   idempotent upserts, compressed source payloads, and size status.
+- [Temporary media storage](media.md) — blob storage port, local storage cap,
+  and five-minute expiry cleanup.
 - [Crawl interests](crawl-interests.md) — per-user person depth, lowest-depth
   deduplication, progress reporting, contact priority controls, and pause/resume.
 - [Crawl engine](crawl-engine.md) — facet interface, registry, page job flow

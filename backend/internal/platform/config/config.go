@@ -74,6 +74,7 @@ type SearchConfig struct {
 type BlobConfig struct {
 	Driver         string `env:"BLOB_DRIVER" envDefault:"local"`
 	LocalDir       string `env:"BLOB_LOCAL_DIR" envDefault:"var/blobs"`
+	MaxBytes       int64  `env:"BLOB_MAX_BYTES" envDefault:"10737418240"`
 	S3Endpoint     string `env:"S3_ENDPOINT"`
 	S3Region       string `env:"S3_REGION" envDefault:"us-east-1"`
 	S3Bucket       string `env:"S3_BUCKET"`
@@ -337,6 +338,9 @@ func (cfg *Config) validate() error {
 	}
 
 	cfg.Blob.Driver = strings.ToLower(strings.TrimSpace(cfg.Blob.Driver))
+	if cfg.Blob.MaxBytes < 0 {
+		return fmt.Errorf("BLOB_MAX_BYTES must be zero or greater")
+	}
 	switch cfg.Blob.Driver {
 	case "local", "s3":
 	default:
