@@ -21,6 +21,11 @@ import (
 
 const riverJobKind = "xflickr_job"
 
+const (
+	deadLetterPublishAttempts = 3
+	deadLetterRetryDelay      = 25 * time.Millisecond
+)
+
 type riverArgs struct {
 	KindName string          `json:"kind"`
 	Args     json.RawMessage `json:"args"`
@@ -258,6 +263,10 @@ func (h *deadLetterHook) WorkEnd(ctx context.Context, row *rivertype.JobRow, wor
 	if workErr == nil || row == nil || row.Attempt < row.MaxAttempts {
 		return workErr
 	}
+	var cancelErr *river.JobCancelError
+	if errors.As(workErr, &cancelErr) {
+		return workErr
+	}
 	var args riverArgs
 	if err := json.Unmarshal(row.EncodedArgs, &args); err != nil {
 		return errors.Join(workErr, fmt.Errorf("queue: decode exhausted River job: %w", err))
@@ -270,10 +279,26 @@ func (h *deadLetterHook) WorkEnd(ctx context.Context, row *rivertype.JobRow, wor
 		"args": args.Args, "queue": args.Queue, "attempts": row.Attempt,
 		"error": workErr.Error(),
 	}
-	if err := h.publish(ctx, "job.dead", strconv.FormatInt(row.ID, 10), payload); err != nil {
-		return errors.Join(workErr, fmt.Errorf("queue: publish dead letter event: %w", err))
+	var publishErr error
+	for attempt := 1; attempt <= deadLetterPublishAttempts; attempt++ {
+		err := h.publish(ctx, "job.dead", strconv.FormatInt(row.ID, 10), payload)
+		if err == nil {
+			return workErr
+		}
+		publishErr = err
+		if attempt == deadLetterPublishAttempts {
+			break
+		}
+		timer := time.NewTimer(deadLetterRetryDelay * time.Duration(attempt))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			publishErr = errors.Join(publishErr, ctx.Err())
+			return errors.Join(workErr, fmt.Errorf("queue: dead letter outbox publish failed after %d attempts: %w", attempt, publishErr))
+		case <-timer.C:
+		}
 	}
-	return workErr
+	return errors.Join(workErr, fmt.Errorf("queue: dead letter outbox publish failed after %d attempts: %w", deadLetterPublishAttempts, publishErr))
 }
 
 func publishDeadLetter(ctx context.Context, pool *pgxpool.Pool, topic, key string, payload any) error {

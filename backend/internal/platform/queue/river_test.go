@@ -240,11 +240,122 @@ func TestDeadLetterHookPublishesFinalFailure(t *testing.T) {
 		t.Fatalf("published dead letter = %q %q %#v", topic, key, payload)
 	}
 	publishErr := errors.New("database unavailable")
-	hook.publish = func(context.Context, string, string, any) error { return publishErr }
-	if got := hook.WorkEnd(context.Background(), row, wantErr); !errors.Is(got, wantErr) || !errors.Is(got, publishErr) {
+	var publishCalls int
+	hook.publish = func(context.Context, string, string, any) error {
+		publishCalls++
+		return publishErr
+	}
+	if got := hook.WorkEnd(context.Background(), row, wantErr); !errors.Is(got, wantErr) || !errors.Is(got, publishErr) || !strings.Contains(got.Error(), "after 3 attempts") {
 		t.Fatalf("failed publication error = %v", got)
 	}
+	if publishCalls != deadLetterPublishAttempts {
+		t.Fatalf("publish attempts = %d, want %d", publishCalls, deadLetterPublishAttempts)
+	}
 }
+
+func TestDeadLetterHookRetriesPublish(t *testing.T) {
+	encoded, _ := json.Marshal(riverArgs{KindName: "crawl", Args: json.RawMessage(`{"id":1}`)})
+	row := &rivertype.JobRow{ID: 42, Attempt: 2, MaxAttempts: 2, EncodedArgs: encoded}
+	var calls int
+	hook := &deadLetterHook{publish: func(context.Context, string, string, any) error {
+		calls++
+		if calls == 1 {
+			return errors.New("temporary database error")
+		}
+		return nil
+	}}
+	if err := hook.WorkEnd(context.Background(), row, errors.New("handler failed")); err == nil || err.Error() != "handler failed" {
+		t.Fatalf("WorkEnd() error = %v, want original work error", err)
+	}
+	if calls != 2 {
+		t.Fatalf("publish attempts = %d, want retry success on attempt 2", calls)
+	}
+}
+
+func TestDeadLetterHookSkipsCanceledJob(t *testing.T) {
+	encoded, _ := json.Marshal(riverArgs{KindName: "crawl", Args: json.RawMessage(`{"id":1}`)})
+	row := &rivertype.JobRow{ID: 42, Attempt: 2, MaxAttempts: 2, EncodedArgs: encoded}
+	calls := 0
+	hook := &deadLetterHook{publish: func(context.Context, string, string, any) error {
+		calls++
+		return nil
+	}}
+	workErr := river.JobCancel(errors.New("operator canceled"))
+	if got := hook.WorkEnd(context.Background(), row, workErr); !errors.Is(got, workErr) {
+		t.Fatalf("WorkEnd() error = %v, want cancellation error", got)
+	}
+	if calls != 0 {
+		t.Fatalf("published %d dead letters for canceled job", calls)
+	}
+}
+
+func TestWorkerRunWaitsAndStopsOnCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	queue := &fakeWorkerQueue{stopped: make(chan struct{}), startReturned: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() { done <- (Worker{Queue: queue}).Run(ctx) }()
+	<-queue.startReturned
+	select {
+	case err := <-done:
+		t.Fatalf("Worker.Run() returned before cancellation: %v", err)
+	default:
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("Worker.Run() error = %v", err)
+	}
+	if queue.stopCalls != 1 || queue.stopHadCanceledContext {
+		t.Fatalf("Stop() calls = %d, canceled stop context = %v", queue.stopCalls, queue.stopHadCanceledContext)
+	}
+}
+
+func TestWorkerRunReturnsWhenQueueStops(t *testing.T) {
+	queue := &fakeWorkerQueue{stopped: make(chan struct{}), startReturned: make(chan struct{})}
+	go func() {
+		<-queue.startReturned
+		close(queue.stopped)
+	}()
+	if err := (Worker{Queue: queue}).Run(context.Background()); err != nil {
+		t.Fatalf("Worker.Run() error = %v", err)
+	}
+	if queue.stopCalls != 0 {
+		t.Fatalf("Worker.Run() called Stop() %d times after queue stopped", queue.stopCalls)
+	}
+}
+
+func TestWorkerRunReturnsStopError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	queue := &fakeWorkerQueue{stopped: make(chan struct{}), startReturned: make(chan struct{}), stopErr: errors.New("stop failed")}
+	done := make(chan error, 1)
+	go func() { done <- (Worker{Queue: queue}).Run(ctx) }()
+	<-queue.startReturned
+	cancel()
+	if err := <-done; !errors.Is(err, queue.stopErr) {
+		t.Fatalf("Worker.Run() error = %v, want stop error", err)
+	}
+}
+
+type fakeWorkerQueue struct {
+	stopped                chan struct{}
+	startReturned          chan struct{}
+	startErr               error
+	stopErr                error
+	stopCalls              int
+	stopHadCanceledContext bool
+}
+
+func (q *fakeWorkerQueue) Start(context.Context) error {
+	close(q.startReturned)
+	return q.startErr
+}
+
+func (q *fakeWorkerQueue) Stop(ctx context.Context) error {
+	q.stopCalls++
+	q.stopHadCanceledContext = ctx.Err() != nil
+	return q.stopErr
+}
+
+func (q *fakeWorkerQueue) Stopped() <-chan struct{} { return q.stopped }
 
 func disconnectedPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
