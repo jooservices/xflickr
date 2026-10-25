@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,7 +21,82 @@ type Downloads struct {
 	Jobs queue.JobQueue
 }
 
-var _ mediaapp.DownloadRepository = Downloads{}
+var (
+	_ mediaapp.DownloadRepository = Downloads{}
+	_ mediaapp.PackRepository     = Downloads{}
+)
+
+// PackItems loads a settled download and the TTL configured by its user's plan.
+func (r Downloads) PackItems(ctx context.Context, downloadID int64) ([]mediaapp.PackItem, time.Duration, error) {
+	if r.Pool == nil || ctx == nil || downloadID <= 0 {
+		return nil, 0, errors.New("media: pack database, context, and download id are required")
+	}
+	var ttlHours int
+	if err := r.Pool.QueryRow(ctx, `SELECT p.zip_ttl_hours FROM downloads d JOIN users u ON u.id=d.user_id JOIN plans p ON p.id=u.plan_id WHERE d.id=$1`, downloadID).Scan(&ttlHours); err != nil {
+		return nil, 0, fmt.Errorf("media: load download ZIP TTL: %w", err)
+	}
+	rows, err := r.Pool.Query(ctx, `SELECT di.photo_id, 'photo-'||di.photo_id::text||'-'||COALESCE(a.size_label,'original'), COALESCE(a.blob_key,''), COALESCE(a.bytes,0), COALESCE(encode(a.sha256,'hex'),''), di.error, di.state::text FROM download_items di LEFT JOIN assets a ON a.id=di.asset_id WHERE di.download_id=$1 ORDER BY di.photo_id`, downloadID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("media: load download items for pack: %w", err)
+	}
+	defer rows.Close()
+	items := make([]mediaapp.PackItem, 0)
+	for rows.Next() {
+		var item mediaapp.PackItem
+		var state string
+		if err := rows.Scan(&item.PhotoID, &item.Name, &item.BlobKey, &item.Size, &item.SHA256, &item.Failure, &state); err != nil {
+			return nil, 0, fmt.Errorf("media: scan download pack item: %w", err)
+		}
+		if state != "ready" && state != "failed" {
+			return nil, 0, fmt.Errorf("media: download item %d is not settled", item.PhotoID)
+		}
+		if state == "ready" && item.BlobKey == "" {
+			return nil, 0, fmt.Errorf("media: ready download item %d has no asset", item.PhotoID)
+		}
+		if state == "failed" && item.Failure == "" {
+			item.Failure = "download failed"
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("media: read download pack items: %w", err)
+	}
+	return items, time.Duration(ttlHours) * time.Hour, nil
+}
+
+// CompletePack records temporary part links and marks the download terminal
+// in one transaction.
+//
+//nolint:cyclop // Completion validates the whole package and commits all links and status together.
+func (r Downloads) CompletePack(ctx context.Context, downloadID int64, status string, parts []mediaapp.ZIPPart) error {
+	if r.Pool == nil || ctx == nil || downloadID <= 0 || (status != "ready" && status != "ready_with_errors") || len(parts) == 0 {
+		return errors.New("media: invalid ZIP completion")
+	}
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("media: begin ZIP completion: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	for _, part := range parts {
+		if part.Number <= 0 || part.BlobKey == "" || part.Bytes < 0 || part.ExpiresAt.IsZero() {
+			return errors.New("media: invalid ZIP part metadata")
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO download_parts(download_id,part_number,blob_key,bytes,expires_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(download_id,part_number) DO UPDATE SET blob_key=EXCLUDED.blob_key,bytes=EXCLUDED.bytes,expires_at=EXCLUDED.expires_at`, downloadID, part.Number, part.BlobKey, part.Bytes, part.ExpiresAt); err != nil {
+			return fmt.Errorf("media: save ZIP part: %w", err)
+		}
+	}
+	tag, err := tx.Exec(ctx, `UPDATE downloads SET status=$2 WHERE id=$1`, downloadID, status)
+	if err != nil {
+		return fmt.Errorf("media: update packed download: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return errors.New("media: download not found")
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("media: commit ZIP completion: %w", err)
+	}
+	return nil
+}
 
 func (r Downloads) Create(ctx context.Context, download mediadomain.Download, candidates []mediaapp.DownloadItemCandidate) (mediadomain.Download, error) {
 	if r.Pool == nil || r.Jobs == nil || ctx == nil {

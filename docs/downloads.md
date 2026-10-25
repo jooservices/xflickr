@@ -10,4 +10,12 @@ confirmed sizes are queued as `media.fetch` work on the `media` queue. Other
 items wait for a `photo.sizes` job on the `sync` queue, using a valid Flickr key
 belonging to the requesting user and the interactive quota class.
 
-Packing and ZIP delivery are outside this feature.
+Once every item is ready or failed, a `media.pack` job streams ready originals
+into ZIP parts using the stored method. Each part is capped at 2 GiB and stored
+in the configured blob store. The final part contains `manifest.csv`, with a
+row for each photo, its SHA-256 checksum, and any download failure. The download
+is marked `ready` or `ready_with_errors` after part metadata is committed.
+
+Part metadata is recorded in `download_parts` with the expiry from the user's
+plan ZIP TTL. Original per-photo blobs are removed after the parts are
+recorded; the ZIP parts remain temporary.

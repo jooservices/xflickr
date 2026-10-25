@@ -214,6 +214,7 @@ type mediaRole struct{}
 
 func (mediaRole) Name() string { return "media" }
 
+//nolint:cyclop // Role startup validates shared dependencies before starting its worker and cleaner.
 func (mediaRole) Run(ctx context.Context) error {
 	if ctx == nil || ctx.Err() != nil {
 		return nil
@@ -247,7 +248,35 @@ func (mediaRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return (mediaapp.Cleaner{Assets: assets, Blobs: blobs}).Run(ctx)
+	queueAdapter, err := queue.NewRiver(pool, map[string]int{"media": 1})
+	if err != nil {
+		return err
+	}
+	packer := mediaapp.Packer{Blobs: blobs, Repo: mediapostgres.Downloads{Pool: pool}}
+	if err := queueAdapter.RegisterWithOptions("media.pack", func(ctx context.Context, job queue.Job) error {
+		args, err := mediaapp.ParsePackJob(job.Args)
+		if err != nil {
+			return err
+		}
+		return packer.Pack(ctx, args.DownloadID)
+	}, queue.Options{Queue: "media", MaxAttempts: 3, LeaseTimeout: 2 * time.Hour}); err != nil {
+		return err
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan error, 2)
+	go func() { results <- queueAdapter.Start(runCtx) }()
+	go func() { results <- (mediaapp.Cleaner{Assets: assets, Blobs: blobs}).Run(runCtx) }()
+	first := <-results
+	cancel()
+	second := <-results
+	if first != nil && ctx.Err() == nil {
+		return first
+	}
+	if second != nil && ctx.Err() == nil {
+		return second
+	}
+	return nil
 }
 
 type photoSizesClient struct {
