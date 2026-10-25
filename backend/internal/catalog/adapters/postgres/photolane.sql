@@ -47,7 +47,8 @@ LEFT JOIN LATERAL (
         SELECT id, owner_nsid, uploaded_at
         FROM photos
         WHERE owner_nsid = r.person_nsid
-          AND sizes_status <> 'confirmed'
+          AND (sizes_status NOT IN ('confirmed', 'unavailable')
+               OR (sizes_status = 'confirmed' AND sizes_checked_at < last_update))
           AND tombstoned_at IS NULL
         ORDER BY uploaded_at DESC NULLS LAST, id DESC
         LIMIT $2::int

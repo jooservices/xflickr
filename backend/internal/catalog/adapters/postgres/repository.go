@@ -13,7 +13,10 @@ import (
 )
 
 // Repository stores catalog records.
-type Repository struct{ queries *gen.Queries }
+type Repository struct {
+	queries *gen.Queries
+	db      gen.DBTX
+}
 
 var _ app.Repository = (*Repository)(nil)
 
@@ -22,7 +25,7 @@ func New(database gen.DBTX) (*Repository, error) {
 	if database == nil {
 		return nil, errors.New("catalog: postgres database is required")
 	}
-	return &Repository{queries: gen.New(database)}, nil
+	return &Repository{queries: gen.New(database), db: database}, nil
 }
 
 func validateBatchSize(size int) error {
@@ -33,7 +36,7 @@ func validateBatchSize(size int) error {
 }
 
 func validSizesStatus(status string) bool {
-	return status == "none" || status == "provisional" || status == "confirmed"
+	return status == "none" || status == "provisional" || status == "confirmed" || status == "unavailable"
 }
 
 func jsonDocument(value []byte) bool { return json.Valid(value) }

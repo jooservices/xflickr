@@ -9,11 +9,35 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/jooservices/xflickr/internal/catalog/adapters/postgres/gen"
 	"github.com/jooservices/xflickr/internal/catalog/domain"
 )
+
+// LoadSizes returns the current photo version and its sizes check metadata.
+func (r *Repository) LoadSizes(ctx context.Context, id int64) (domain.Photo, bool, error) {
+	if r == nil || r.db == nil || ctx == nil || id <= 0 {
+		return domain.Photo{}, false, errors.New("catalog: photo sizes database, context and id are required")
+	}
+	var photo domain.Photo
+	var status string
+	var checked pgtype.Timestamptz
+	err := r.db.QueryRow(ctx, `SELECT id, last_update, sizes_status, sizes_checked_at FROM photos WHERE id=$1`, id).Scan(&photo.ID, &photo.LastUpdate, &status, &checked)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Photo{}, false, nil
+	}
+	if err != nil {
+		return domain.Photo{}, false, fmt.Errorf("catalog: load photo sizes state: %w", err)
+	}
+	photo.SizesStatus = domain.SizesStatus(status)
+	if checked.Valid {
+		photo.SizesCheckedAt = &checked.Time
+	}
+	return photo, true, nil
+}
 
 // UpsertPhotos inserts or refreshes at most 500 photos in one pgx batch.
 func (r *Repository) UpsertPhotos(ctx context.Context, photos []domain.Photo) error {

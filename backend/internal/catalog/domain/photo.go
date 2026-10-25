@@ -12,6 +12,7 @@ const (
 	SizesNone        SizesStatus = "none"
 	SizesProvisional SizesStatus = "provisional"
 	SizesConfirmed   SizesStatus = "confirmed"
+	SizesUnavailable SizesStatus = "unavailable"
 )
 
 // Visibility is Flickr's photo visibility classification.
@@ -62,7 +63,7 @@ func (p Photo) Validate() error {
 		return ErrInvalidPhoto
 	}
 	switch p.SizesStatus {
-	case "", SizesNone, SizesProvisional, SizesConfirmed:
+	case "", SizesNone, SizesProvisional, SizesConfirmed, SizesUnavailable:
 	default:
 		return ErrInvalidPhoto
 	}

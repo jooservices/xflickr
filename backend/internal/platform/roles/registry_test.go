@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	redisv9 "github.com/redis/go-redis/v9"
 
@@ -30,8 +31,10 @@ import (
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
+	quotadomain "github.com/jooservices/xflickr/internal/quota/domain"
 	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
 	scheduleapp "github.com/jooservices/xflickr/internal/schedule/app"
+	flickrclient "github.com/jooservices/xflickr/pkg/flickr"
 )
 
 func TestBuildIdentityHandlerWiresSettingsAndDummyHash(t *testing.T) {
@@ -200,6 +203,87 @@ func TestCrawlRoleReturnsConfigurationError(t *testing.T) {
 	t.Setenv("DB_HOST", "")
 	if err := (crawlRole{}).Run(context.Background()); err == nil {
 		t.Fatal("crawl role started with missing database configuration")
+	}
+}
+
+func TestSyncRoleStopsForCanceledContextAndReportsConfigurationErrors(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := (syncRole{}).Run(ctx); err != nil {
+		t.Fatalf("syncRole.Run(canceled) error = %v", err)
+	}
+	t.Setenv("DB_HOST", "")
+	if err := (syncRole{}).Run(context.Background()); err == nil {
+		t.Fatal("sync role started with missing database configuration")
+	}
+}
+
+func TestSyncRoleReturnsDatabaseConnectionError(t *testing.T) {
+	for key, value := range map[string]string{
+		"DB_HOST": "127.0.0.1", "DB_PORT": "1", "DB_NAME": "xflickr_wt_sync_unit", "DB_USER": "unused",
+		"REDIS_PREFIX": "sync_unit:", "OPENSEARCH_INDEX_PREFIX": "sync_unit_", "NODE_ID": "sync-unit-test",
+	} {
+		t.Setenv(key, value)
+	}
+	if err := (syncRole{}).Run(context.Background()); err == nil {
+		t.Fatal("sync role started without a reachable database")
+	}
+}
+
+type photoSizesQueryPool struct{ row pgx.Row }
+
+func (p photoSizesQueryPool) QueryRow(context.Context, string, ...any) pgx.Row { return p.row }
+
+type photoSizesQueryRow struct {
+	key, status string
+	err         error
+}
+
+func (r photoSizesQueryRow) Scan(dest ...any) error {
+	if r.err != nil {
+		return r.err
+	}
+	*dest[0].(*string), *dest[1].(*string) = r.key, r.status
+	return nil
+}
+
+type photoSizesTestPermit struct{ meta quotadomain.Meta }
+
+func (p *photoSizesTestPermit) Done(meta quotadomain.Meta) error { p.meta = meta; return nil }
+
+type photoSizesTestGovernor struct {
+	permit quotadomain.Permit
+	err    error
+	class  quotadomain.Class
+}
+
+func (g *photoSizesTestGovernor) Acquire(_ context.Context, _ int64, class quotadomain.Class) (quotadomain.Permit, time.Duration, error) {
+	g.class = class
+	return g.permit, 0, g.err
+}
+
+func TestPhotoSizesClientUsesValidKeyAndPhotoQuota(t *testing.T) {
+	pool := photoSizesQueryPool{row: photoSizesQueryRow{key: "public-key", status: "revoked"}}
+	governor := &photoSizesTestGovernor{}
+	if _, err := (photoSizesClient{Pool: pool, Client: flickrclient.NewClient("", nil), Quota: governor}).GetSizes(t.Context(), 4, "9"); err == nil {
+		t.Fatal("revoked key was used")
+	}
+	permit := &photoSizesTestPermit{}
+	governor.permit = permit
+	pool.row = photoSizesQueryRow{key: "public-key", status: "valid"}
+	var gotMethod, gotPhoto string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("parse Flickr form: %v", err)
+		}
+		gotMethod, gotPhoto = r.Form.Get("method"), r.Form.Get("photo_id")
+		_, _ = w.Write([]byte(`{"sizes":{"size":[{"label":"Original","width":100,"height":80,"source":"https://example.test/photo","media":"photo"}]}}`))
+	}))
+	defer server.Close()
+	client := photoSizesClient{Pool: pool, Client: flickrclient.NewClient(server.URL, server.Client()), Quota: governor}
+	sizes, err := client.GetSizes(t.Context(), 4, "9")
+	if err != nil || len(sizes) != 1 || gotMethod != "flickr.photos.getSizes" || gotPhoto != "9" || governor.class != quotadomain.Photo || permit.meta.Err != nil {
+		t.Fatalf("GetSizes() = %#v, %v; method=%q photo=%q class=%q meta=%+v", sizes, err, gotMethod, gotPhoto, governor.class, permit.meta)
 	}
 }
 

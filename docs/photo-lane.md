@@ -2,8 +2,8 @@
 
 Photos waiting for `getSizes` need no backlog rows. `photolane.Next(n)` (the
 `PhotoLane.Next` use case in `schedule/app`) reads the catalog directly: photos
-whose `sizes_status` is `none` or `provisional` (and that are not tombstoned),
-joined with `crawl_interests` through the owner.
+whose sizes are not terminally confirmed for their current `last_update` and
+that are not tombstoned, joined with `crawl_interests` through the owner.
 
 ## Ordering
 
@@ -23,16 +23,22 @@ has no eligible key. A transaction-scoped advisory lock on the dedupe key keeps
 concurrent producers from inserting the same job twice. `Next` pages past
 skipped photos (bounded) so already-queued photos do not starve the lane.
 
-Job handlers belong to JOOXF-8.
+The `photo.sizes` handler calls `flickr.photos.getSizes`, stores the returned
+sizes as `confirmed`, and records `sizes_checked_at`. A confirmed photo is
+skipped while its last update is no newer than that check. Flickr not-found and
+permission errors store an empty sizes list with status `unavailable`; those
+photos leave the lane and are not retried.
 
 ## Query and indexes
 
 `catalog/adapters/postgres/photolane.sql` ranks persons from three indexed,
 `LIMIT`ed streams (selected, starred, other by depth) and probes only the
 top-ranked persons through the partial index `photos_sizes_pending_idx`
-(`owner_nsid, uploaded_at DESC, id DESC WHERE sizes_status <> 'confirmed' AND
-tombstoned_at IS NULL`). The caller starts with 128 persons and doubles the
-probe only while it finds too few photos and a stream was cut by its limit.
+(`owner_nsid, uploaded_at DESC, id DESC`), which contains photos without a
+terminal size result and confirmed photos whose `sizes_checked_at` is older
+than `last_update`. Unavailable and tombstoned photos are excluded. The caller
+starts with 128 persons and doubles the probe only while it finds too few
+photos and a stream was cut by its limit.
 
 Limit: when the best-ranked persons have no pending photos left, the probe
 widens until it reaches persons with work, which costs more per call.

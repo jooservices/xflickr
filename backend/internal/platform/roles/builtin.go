@@ -3,6 +3,7 @@ package roles
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	redisv9 "github.com/redis/go-redis/v9"
 
@@ -22,6 +24,7 @@ import (
 	accountsettings "github.com/jooservices/xflickr/internal/accounts/adapters/settings"
 	accountsapp "github.com/jooservices/xflickr/internal/accounts/app"
 	accountsdomain "github.com/jooservices/xflickr/internal/accounts/domain"
+	catalogpostgres "github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
 	crawlhttp "github.com/jooservices/xflickr/internal/crawl/adapters/http"
 	crawlpostgres "github.com/jooservices/xflickr/internal/crawl/adapters/postgres"
 	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
@@ -42,6 +45,7 @@ import (
 	quotaPostgres "github.com/jooservices/xflickr/internal/quota/adapters/postgres"
 	quotaRedis "github.com/jooservices/xflickr/internal/quota/adapters/redis"
 	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
+	quotadomain "github.com/jooservices/xflickr/internal/quota/domain"
 	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
 	schedulepostgres "github.com/jooservices/xflickr/internal/schedule/adapters/postgres"
 	queuepostgres "github.com/jooservices/xflickr/internal/schedule/adapters/queuepostgres"
@@ -49,6 +53,7 @@ import (
 	scheduleapp "github.com/jooservices/xflickr/internal/schedule/app"
 	settingspostgres "github.com/jooservices/xflickr/internal/settings/adapters/postgres"
 	settingsapp "github.com/jooservices/xflickr/internal/settings/app"
+	flickrclient "github.com/jooservices/xflickr/pkg/flickr"
 )
 
 const apiAddress = ":8080"
@@ -66,6 +71,10 @@ func NewBuiltinRegistry(version string) *Registry {
 		}
 		if name == "crawl" {
 			registerBuiltin(registry, crawlRole{})
+			continue
+		}
+		if name == "sync" {
+			registerBuiltin(registry, syncRole{})
 			continue
 		}
 		registerBuiltin(registry, idleRole{name: name})
@@ -136,6 +145,84 @@ func (crawlRole) Run(ctx context.Context) error {
 	return outbox.NewConsumer(pool).Consume(ctx, accountsdomain.ConnectedTopic, func(ctx context.Context, event outbox.Event) error {
 		return service.HandleConnected(ctx, event.Payload)
 	})
+}
+
+type syncRole struct{}
+
+func (syncRole) Name() string { return "sync" }
+
+func (syncRole) Run(ctx context.Context) error {
+	if ctx == nil || ctx.Err() != nil {
+		return nil
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	pool, err := db.NewPool(ctx, cfg.DB)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	defer redisClient.Close()
+	queueAdapter, err := queue.NewRiver(pool, map[string]int{scheduleriver.PhotoQueue: 1})
+	if err != nil {
+		return err
+	}
+	catalogRepository, err := catalogpostgres.New(pool)
+	if err != nil {
+		return err
+	}
+	quota := quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Recorder: quotaPostgres.CallLog{Pool: pool}}
+	client := flickrclient.NewClient("", nil)
+	handler := crawlapp.Sizes{
+		Store:  catalogRepository,
+		Flickr: photoSizesClient{Pool: pool, Client: client, Quota: quota},
+	}
+	if err := queueAdapter.RegisterWithOptions(scheduleriver.PhotoJobKind, func(ctx context.Context, job queue.Job) error {
+		args, err := crawlapp.ParseSizesJob(job.Args)
+		if err != nil {
+			return err
+		}
+		return handler.Handle(ctx, args)
+	}, queue.Options{Queue: scheduleriver.PhotoQueue}); err != nil {
+		return err
+	}
+	return queueAdapter.Start(ctx)
+}
+
+type photoSizesClient struct {
+	Pool interface {
+		QueryRow(context.Context, string, ...any) pgx.Row
+	}
+	Client *flickrclient.Client
+	Quota  quotadomain.Governor
+}
+
+func (c photoSizesClient) GetSizes(ctx context.Context, keyID int64, photoID string) ([]flickrclient.PhotoSize, error) {
+	if c.Pool == nil || c.Client == nil || c.Quota == nil || keyID <= 0 {
+		return nil, errors.New("crawl: photo sizes client dependencies are required")
+	}
+	var apiKey, status string
+	if err := c.Pool.QueryRow(ctx, `SELECT key_public, status FROM api_keys WHERE id=$1`, keyID).Scan(&apiKey, &status); err != nil {
+		return nil, fmt.Errorf("crawl: load photo sizes key: %w", err)
+	}
+	if status != "valid" {
+		return nil, errors.New("crawl: photo sizes key is not valid")
+	}
+	permit, _, err := c.Quota.Acquire(ctx, keyID, quotadomain.Photo)
+	if err != nil {
+		return nil, err
+	}
+	if permit == nil {
+		return nil, flickrclient.ErrQuotaExceeded
+	}
+	sizes, callErr := c.Client.PhotosGetSizes(ctx, flickrclient.Credentials{APIKey: apiKey}, photoID)
+	if doneErr := permit.Done(quotadomain.Meta{Err: callErr}); doneErr != nil {
+		return nil, fmt.Errorf("crawl: release photo sizes quota permit: %w", doneErr)
+	}
+	return sizes, callErr
 }
 
 func newSchedulerPump(pool *pgxpool.Pool, governor quotaRedis.Governor, store scheduleapp.PumpStore, queueAdapter queue.JobQueue, settings scheduleapp.PumpSettings) scheduleapp.Pump {

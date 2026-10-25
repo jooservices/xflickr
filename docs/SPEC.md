@@ -83,6 +83,10 @@ guide feature implementation; operational environment rules live in
 - Schedule Flickr work in two lanes: a person lane for contacts, photos,
   favorites, albums, and related records; and a sizes lane for retrieving photo
   size URLs.
+- Confirm photo sizes with `flickr.photos.getSizes` and record the check time.
+  Skip a confirmed result while the photo's `last_update` is unchanged. Mark a
+  photo unavailable after Flickr reports not found or permission denied, and do
+  not retry that photo in the sizes lane.
 - Share each key's configured hourly and per-second allowance across its lanes.
   Keep the configured reserve for user-started requests when the key approaches
   its limit.
