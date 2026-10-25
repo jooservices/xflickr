@@ -257,6 +257,11 @@ func (e *Engine) fail(ctx context.Context, item domain.Item, keyID int64, cause 
 		}
 		return e.hold(ctx, item, timing.BlockedWait, cause.Error())
 	default:
+		if isRecoverableFlickrFailure(cause) {
+			consume := item.Attempts+1 < timing.MaxAttempts
+			delay := min(timing.retryDelay(item.Attempts), 5*time.Minute)
+			return e.Store.Defer(ctx, item.ID, Deferral{NotBefore: e.now().Add(delay), ConsumeAttempt: consume, Reason: cause.Error()})
+		}
 		if item.Attempts+1 >= timing.MaxAttempts {
 			return e.Store.Fail(ctx, item.ID, cause.Error())
 		}

@@ -20,6 +20,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 	settingsdomain "github.com/jooservices/xflickr/internal/settings/domain"
+	"github.com/jooservices/xflickr/pkg/flickr"
 )
 
 var errSimulatedCrash = errors.New("simulated crash before commit")
@@ -55,11 +56,14 @@ func (intGovernor) Acquire(context.Context, int64, domain.Lane) (app.Permit, tim
 	return intPermit{}, 0, nil
 }
 
-type intFlickr struct{ calls int }
+type intFlickr struct {
+	calls int
+	err   error
+}
 
 func (f *intFlickr) Call(context.Context, app.Request) (json.RawMessage, error) {
 	f.calls++
-	return json.RawMessage(`{}`), nil
+	return json.RawMessage(`{}`), f.err
 }
 
 type intSettings struct{}
@@ -206,6 +210,67 @@ func TestEngineCrashBetweenCallAndCommitRerunsSafely(t *testing.T) {
 	}
 	if after := count(t, ctx, pool, `SELECT count(*) FROM work_items WHERE user_id = $1`, userID); after != before || flickrCalls.calls != callsBefore {
 		t.Fatalf("a finished item changed state: items %d -> %d, calls %d -> %d", before, after, callsBefore, flickrCalls.calls)
+	}
+}
+
+func TestRecoverableFlickrFailureKeepsWorkItemPending(t *testing.T) {
+	cases := []struct {
+		name      string
+		cause     error
+		wantState string
+		wantTries int
+	}{
+		{name: "rate limit", cause: flickr.ErrRateLimited, wantState: "pending", wantTries: 4},
+		{name: "service unavailable", cause: flickr.ErrServiceUnavailable, wantState: "pending", wantTries: 4},
+		{name: "permission denied", cause: flickr.ErrPermission, wantState: "done", wantTries: 4},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pool := openEngineTestPool(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+			userID := insertInterestTestUser(t, ctx, pool)
+			suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+			subject := "retry-" + suffix
+			kind := "retry_" + suffix
+			cursor, _ := json.Marshal(domain.Cursor{Page: 3, Method: "flickr.people.getPhotos", Params: map[string]string{"user_id": subject}})
+			var itemID int64
+			if err := pool.QueryRow(ctx, `INSERT INTO work_items (kind, subject_key, user_id, state, depth, attempts, cursor) VALUES ($1, $2, $3, 'ready', 0, 4, $4) RETURNING id`, kind, subject, userID, cursor).Scan(&itemID); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE id=$1`, itemID) })
+			store, err := NewEngine(pool, func(c Conn) app.CatalogWriter {
+				repo, repoErr := catalogpg.New(c)
+				if repoErr != nil {
+					t.Fatal(repoErr)
+				}
+				return repo
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			registry := app.NewRegistry()
+			if err := registry.Register(intFacet{name: kind}); err != nil {
+				t.Fatal(err)
+			}
+			engine := &app.Engine{Registry: registry, Store: store, Units: store, Keys: intKeys{}, Governor: intGovernor{}, Flickr: &intFlickr{err: tc.cause}, Settings: intSettings{}, Timing: app.Timing{MaxAttempts: 5, Backoff: 30 * time.Second}}
+			if err := engine.Handle(ctx, itemID); err != nil {
+				t.Fatal(err)
+			}
+			var state string
+			var attempts int
+			var gotCursor []byte
+			if err := pool.QueryRow(ctx, `SELECT state, attempts, cursor FROM work_items WHERE id=$1`, itemID).Scan(&state, &attempts, &gotCursor); err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := domain.ParseCursor(gotCursor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if state != tc.wantState || attempts != tc.wantTries || parsed.Page != 3 || parsed.Params["user_id"] != subject {
+				t.Fatalf("state=%s attempts=%d cursor=%+v; want %s/%d with original page/subject", state, attempts, parsed, tc.wantState, tc.wantTries)
+			}
+		})
 	}
 }
 

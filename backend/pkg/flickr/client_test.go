@@ -96,8 +96,9 @@ func TestCallMapsFlickrErrors(t *testing.T) {
 		{name: "revoked token", code: 99, text: "User not logged in", want: ErrTokenRevoked},
 		{name: "permission token error", code: 99, text: "Insufficient permissions", want: ErrTokenRevoked, alsoWant: ErrPermission},
 		{name: "permission", code: 10, text: "Insufficient permissions", want: ErrPermission},
+		{name: "code 98 permission", code: 98, text: "Permission denied", want: ErrPermission},
 		{name: "quota message", code: 42, text: "Request quota exceeded", want: ErrQuotaExceeded},
-		{name: "quota code", code: 429, text: "Rate limited", want: ErrQuotaExceeded},
+		{name: "rate limit code", code: 429, text: "Rate limited", want: ErrRateLimited},
 		{name: "unknown Flickr code", code: 777, text: "Unknown failure", want: nil},
 	}
 	for _, test := range tests {
@@ -139,7 +140,7 @@ func TestCallMapsHTTPFailures(t *testing.T) {
 		body   string
 		want   error
 	}{
-		{name: "rate limited", status: http.StatusTooManyRequests, body: "edge rate limit", want: ErrQuotaExceeded},
+		{name: "rate limited", status: http.StatusTooManyRequests, body: "edge rate limit", want: ErrRateLimited},
 		{name: "edge blocked", status: http.StatusForbidden, body: "<html>blocked</html>", want: ErrIPBlocked},
 		{name: "server failure", status: http.StatusBadGateway, body: "upstream failure", want: ErrTransient},
 		{name: "permission denied", status: http.StatusUnauthorized, body: "unauthorized", want: ErrPermission},

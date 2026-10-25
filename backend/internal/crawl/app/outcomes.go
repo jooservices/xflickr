@@ -32,15 +32,21 @@ func Classify(err error) Outcome {
 	switch {
 	case errors.Is(err, flickr.ErrQuotaExceeded):
 		return OutcomeWaitQuota
-	case errors.Is(err, flickr.ErrNotFound):
-		return OutcomeDone
 	case errors.Is(err, flickr.ErrTokenRevoked), errors.Is(err, flickr.ErrInvalidKey):
 		return OutcomeStop
+	case errors.Is(err, flickr.ErrPermission):
+		return OutcomeDone
+	case errors.Is(err, flickr.ErrNotFound):
+		return OutcomeDone
 	case errors.Is(err, flickr.ErrIPBlocked):
 		return OutcomeRequeueBlocked
 	default:
 		return OutcomeRetry
 	}
+}
+
+func isRecoverableFlickrFailure(err error) bool {
+	return errors.Is(err, flickr.ErrRateLimited) || errors.Is(err, flickr.ErrServiceUnavailable)
 }
 
 // Timing configures how long deferred items wait.

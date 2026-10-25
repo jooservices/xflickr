@@ -9,6 +9,7 @@ var (
 	ErrInvalidKey         = errors.New("flickr: invalid API key")
 	ErrServiceUnavailable = errors.New("flickr: service unavailable")
 	ErrQuotaExceeded      = errors.New("flickr: quota exceeded")
+	ErrRateLimited        = errors.New("flickr: rate limited")
 	ErrIPBlocked          = errors.New("flickr: IP blocked")
 	ErrNotFound           = errors.New("flickr: resource not found")
 	ErrPermission         = errors.New("flickr: permission denied")

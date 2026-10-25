@@ -382,8 +382,10 @@ func TestHandleErrorOutcomes(t *testing.T) {
 		blocked bool
 	}{
 		{name: "quota waits without an attempt", err: flickr.ErrQuotaExceeded, call: "defer", wait: time.Minute},
+		{name: "rate limited backs off", err: flickr.ErrRateLimited, call: "defer", consume: true, wait: time.Minute},
 		{name: "credential decryption holds without an attempt", err: fmt.Errorf("%w: API key secret could not be opened", ErrCredentialDecryption), call: "defer", wait: 15 * time.Minute},
 		{name: "not found is done", err: flickr.ErrNotFound, call: "finish"},
+		{name: "permission denied is terminal for resource", err: flickr.ErrPermission, call: "finish"},
 		{name: "revoked token stops", err: flickr.ErrTokenRevoked, call: "stop"},
 		{name: "invalid key stops", err: flickr.ErrInvalidKey, call: "stop"},
 		{name: "ip blocked is reported and requeued", err: flickr.ErrIPBlocked, call: "defer", wait: 5 * time.Minute, blocked: true},
@@ -417,6 +419,26 @@ func TestHandleErrorOutcomes(t *testing.T) {
 			}
 			if len(r.tx.log) != 0 {
 				t.Fatalf("failed call must not commit: %v", r.tx.log)
+			}
+		})
+	}
+}
+
+func TestRecoverableFlickrFailuresStayBufferedAfterAttemptLimit(t *testing.T) {
+	for _, cause := range []error{flickr.ErrRateLimited, flickr.ErrServiceUnavailable} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			r := newRig(t)
+			r.store.item.Attempts = 4
+			r.engine.Timing = Timing{MaxAttempts: 5, Backoff: 30 * time.Second}
+			r.flickr.err = cause
+			if err := r.engine.Handle(t.Context(), 7); err != nil {
+				t.Fatal(err)
+			}
+			if r.store.calls[len(r.store.calls)-1] != "defer" || r.store.deferral.ConsumeAttempt {
+				t.Fatalf("failure must remain pending without consuming past limit: %+v; calls=%v", r.store.deferral, r.store.calls)
+			}
+			if !r.store.deferral.NotBefore.Equal(epoch.Add(5 * time.Minute)) {
+				t.Fatalf("retry must use capped backoff, got %s", r.store.deferral.NotBefore.Sub(epoch))
 			}
 		})
 	}

@@ -157,7 +157,7 @@ func (c *Client) Call(ctx context.Context, creds Credentials, method string, par
 	}
 
 	if response.StatusCode == http.StatusTooManyRequests {
-		return nil, meta, &CallError{Kind: ErrQuotaExceeded, Code: meta.ErrorCode, Status: response.StatusCode, Message: responseMessage(envelope, "too many requests")}
+		return nil, meta, &CallError{Kind: ErrRateLimited, Code: meta.ErrorCode, Status: response.StatusCode, Message: responseMessage(envelope, "too many requests")}
 	}
 	if response.StatusCode >= 500 {
 		return nil, meta, &CallError{Kind: ErrTransient, Code: meta.ErrorCode, Status: response.StatusCode, Message: responseMessage(envelope, http.StatusText(response.StatusCode))}
@@ -295,11 +295,17 @@ func flickrError(envelope responseEnvelope, status int) error {
 		kind = ErrInvalidKey
 	case code == 105:
 		kind = ErrServiceUnavailable
+	case code == 429:
+		kind = ErrRateLimited
 	case code == 1 || code == 2:
 		kind = ErrNotFound
-	case code == 98 || code == 99:
+	case code == 98 && invalidTokenMessage(message):
 		kind = ErrTokenRevoked
-		if code == 99 && strings.Contains(strings.ToLower(message), "permission") {
+	case code == 98:
+		kind = ErrPermission
+	case code == 99:
+		kind = ErrTokenRevoked
+		if strings.Contains(strings.ToLower(message), "permission") {
 			kind = errors.Join(ErrTokenRevoked, ErrPermission)
 		}
 	case code == 10:
@@ -308,6 +314,11 @@ func flickrError(envelope responseEnvelope, status int) error {
 		kind = ErrQuotaExceeded
 	}
 	return &CallError{Kind: kind, Code: code, Status: status, Message: message}
+}
+
+func invalidTokenMessage(message string) bool {
+	lower := strings.ToLower(message)
+	return strings.Contains(lower, "invalid auth token") || strings.Contains(lower, "token is invalid") || strings.Contains(lower, "token revoked")
 }
 
 func isQuotaError(code int, message string) bool {
