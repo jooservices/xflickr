@@ -995,3 +995,88 @@ func TestConnectedAccountCrawlRunsCycleThenPumpThenWorkerWithinQuota(t *testing.
 		t.Fatalf("pending after exhausted quota = %d, %v; want 1", pending, err)
 	}
 }
+
+func TestRequeuedFailedWorkRunsThroughPumpAndQuotaToDone(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run make test-integration to use the configured worktree database")
+	}
+	pool := integrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+	defer cancel()
+	suffix := fmt.Sprintf("requeue-e2e-%d", time.Now().UnixNano())
+	keyID := seedKey(t, ctx, pool, suffix)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM api_call_log WHERE key_id=$1`, keyID)
+		cleanupPumpFixture(t, pool, suffix)
+	})
+	var ids []int64
+	for _, name := range []string{"-first", "-second"} {
+		var id int64
+		if err := pool.QueryRow(ctx, `INSERT INTO work_items(kind,subject_key,key_id,state,attempts,last_error) VALUES('sync_person',$1,$2,'failed',5,'lease expired') RETURNING id`, suffix+name, keyID).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	stateOf := func(id int64) string {
+		var st string
+		if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE id=$1`, id).Scan(&st); err != nil {
+			t.Fatal(err)
+		}
+		return st
+	}
+	// Leave exactly one call of the hourly budget (3600 - 100 reserve) unused.
+	const hourly = 3600
+	if _, err := pool.Exec(ctx, `INSERT INTO api_call_log(key_id,class) SELECT $1,'person' FROM generate_series(1,$2)`, keyID, hourly-100-1); err != nil {
+		t.Fatal(err)
+	}
+	store := scheduleriver.Store{Pool: pool}
+	if n, err := store.Requeue(ctx, ids, time.Now()); err != nil || n != 2 {
+		t.Fatalf("Requeue() = %d, %v; want 2", n, err)
+	}
+	for _, id := range ids {
+		if st := stateOf(id); st != "pending" {
+			t.Fatalf("requeued item %d state=%s, want pending (requeue must not skip the pump)", id, st)
+		}
+	}
+	adapter, err := queue.NewRiver(pool, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 1000, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	capacity := logCapacity{pool: pool, hourly: hourly}
+	if n, err := store.Pump(ctx, settings, capacity, adapter); err != nil || n != 1 {
+		t.Fatalf("Pump() = %d, %v; want exactly the one call of remaining quota", n, err)
+	}
+	var readyID int64
+	var pending int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE state='pending'), coalesce(max(id) FILTER (WHERE state='ready'),0) FROM work_items WHERE id=ANY($1)`, ids).Scan(&pending, &readyID); err != nil || readyID == 0 || pending != 1 {
+		t.Fatalf("after pump pending=%d ready id=%d err=%v; want 1 pending and 1 ready", pending, readyID, err)
+	}
+	// Worker: run the ready item against the fake Flickr, log the call, finish it.
+	flickr := &fakeFlickrClient{}
+	flickr.Call("flickr.people.getInfo")
+	if _, err := pool.Exec(ctx, `INSERT INTO api_call_log(key_id,class) VALUES($1,'person')`, keyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='done' WHERE id=$1`, readyID); err != nil {
+		t.Fatal(err)
+	}
+	if st := stateOf(readyID); st != "done" {
+		t.Fatalf("worked item state=%s, want done", st)
+	}
+	var logged int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM api_call_log WHERE key_id=$1`, keyID).Scan(&logged); err != nil || flickr.calls != 1 || logged != hourly-100 {
+		t.Fatalf("flickr calls=%d api_call_log rows=%d err=%v; want 1 call and %d rows (within quota)", flickr.calls, logged, err, hourly-100)
+	}
+	// Quota is spent: the other requeued item must stay pending, not bypass the gate.
+	if n, err := store.Pump(ctx, settings, capacity, adapter); err != nil || n != 0 {
+		t.Fatalf("Pump() with exhausted quota = %d, %v; want 0", n, err)
+	}
+	for _, id := range ids {
+		if id != readyID {
+			if st := stateOf(id); st != "pending" {
+				t.Fatalf("item %d state=%s with exhausted quota, want pending", id, st)
+			}
+		}
+	}
+}
