@@ -17,7 +17,7 @@ import (
 
 //nolint:gosec // G101 false positive: SQL text naming credential columns
 const (
-	//nolint:gosec // SQL column list, not a credential
+	//nolint:gosec // SQL column list names credential fields but contains no credential values.
 	apiKeyRowSQL = `
 SELECT id, user_id, label, key_public, per_hour_limit, per_second_limit, burst, status, created_at, secret_sealed
 FROM api_keys

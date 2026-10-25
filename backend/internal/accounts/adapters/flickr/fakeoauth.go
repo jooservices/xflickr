@@ -14,9 +14,9 @@ import (
 //
 //nolint:gosec // G101 false positive on "token" in URL paths
 const (
-	FakeRequestTokenPath = "/services/oauth/request_token" //nolint:gosec // URL path, not a credential
+	FakeRequestTokenPath = "/services/oauth/request_token" //nolint:gosec // #nosec G101 -- OAuth route path is not a credential.
 	FakeAuthorizePath    = "/services/oauth/authorize"
-	FakeAccessTokenPath  = "/services/oauth/access_token" //nolint:gosec // URL path, not a credential
+	FakeAccessTokenPath  = "/services/oauth/access_token" //nolint:gosec // #nosec G101 -- OAuth route path is not a credential.
 )
 
 // FakeOAuth is a fake Flickr OAuth server for tests. It issues request tokens

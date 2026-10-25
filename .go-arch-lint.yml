@@ -55,7 +55,7 @@ deps:
   schedule-app:
     mayDependOn: [schedule-domain, platform]
   schedule-adapters:
-    mayDependOn: [schedule-domain, schedule-app, platform]
+    mayDependOn: [schedule-domain, schedule-app, platform, pkg]
   platform:
     mayDependOn: [platform, pkg, migrations]
   wiring:
