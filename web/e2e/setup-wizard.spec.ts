@@ -100,6 +100,9 @@ test('shows a persistent crawling-off banner when the user has no valid key', as
   await page.route('**/keys', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   );
+  await page.route('**/flickr-accounts', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  );
   await page.goto('/profile');
   await expect(page.getByTestId('shell-crawling-off-banner')).toBeVisible();
   await page.getByTestId('shell-banner-add-key').click();

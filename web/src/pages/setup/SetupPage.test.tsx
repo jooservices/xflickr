@@ -362,7 +362,7 @@ describe('OAuth return', () => {
     expect(await screen.findByTestId('wizard-step-done')).toBeInTheDocument();
     expect(calls).toBe(1);
     expect(router.state.location.search).toBe('?step=3&connected=9');
-    expect(await screen.findByTestId('wizard-crawl-progress')).toHaveTextContent('4');
+    await waitFor(() => expect(screen.getByTestId('wizard-crawl-progress')).toHaveTextContent('4'));
   });
 
   it('focuses and announces the new account row, in English and Vietnamese', async () => {
