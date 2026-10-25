@@ -73,4 +73,13 @@ func TestCreateDownloadMapsUseCaseErrors(t *testing.T) {
 	if _, err = h.CreateDownload(context.Background(), gen.CreateDownloadRequestObject{Body: &gen.CreateDownloadRequest{Kind: gen.CreateDownloadRequestKindTray}}); !errors.Is(err, want) {
 		t.Fatalf("error=%v", err)
 	}
+	h.Downloads = &downloadServiceFake{err: mediaapp.ErrNoFlickrKey}
+	got, err = h.CreateDownload(context.Background(), gen.CreateDownloadRequestObject{Body: &gen.CreateDownloadRequest{Kind: gen.CreateDownloadRequestKindTray}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, ok := got.(gen.CreateDownload409JSONResponse)
+	if !ok || response.Code != "flickr_key_required" || response.Message == "" {
+		t.Fatalf("missing key response=%#v", got)
+	}
 }

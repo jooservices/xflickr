@@ -44,6 +44,9 @@ func (h DownloadHandler) CreateDownload(ctx context.Context, request gen.CreateD
 	if errors.Is(err, mediaapp.ErrInvalidDownloadRequest) || errors.Is(err, mediadomain.ErrInvalidDownload) {
 		return gen.CreateDownload400JSONResponse(gen.Error{Code: "invalid_request"}), nil
 	}
+	if errors.Is(err, mediaapp.ErrNoFlickrKey) {
+		return gen.CreateDownload409JSONResponse(gen.Error{Code: "flickr_key_required", Message: "Connect a Flickr account with a valid API key to confirm photo sizes"}), nil
+	}
 	if err != nil {
 		return nil, err
 	}

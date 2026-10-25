@@ -145,8 +145,8 @@ func TestCreateAlbumDownloadWithPostgres(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE api_keys SET status='revoked' WHERE id=$1`, keyID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (Downloads{Pool: pool, Jobs: jobs}).Create(ctx, failed, []app.DownloadItemCandidate{{PhotoID: photoIDs[1], OwnerNSID: owner}}); err == nil {
-		t.Fatal("accepted missing valid user key")
+	if _, err := (Downloads{Pool: pool, Jobs: jobs}).Create(ctx, failed, []app.DownloadItemCandidate{{PhotoID: photoIDs[1], OwnerNSID: owner}}); !errors.Is(err, app.ErrNoFlickrKey) {
+		t.Fatalf("missing valid user key error = %v", err)
 	}
 }
 

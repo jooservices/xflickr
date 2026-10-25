@@ -11,7 +11,12 @@ import (
 	sharingdomain "github.com/jooservices/xflickr/internal/sharing/domain"
 )
 
-var ErrInvalidDownloadRequest = errors.New("media: invalid download request")
+var (
+	ErrInvalidDownloadRequest = errors.New("media: invalid download request")
+	ErrNoFlickrKey            = errors.New("media: no valid Flickr key")
+)
+
+const MaxDownloadItems = 500
 
 type DownloadRepository interface {
 	Create(context.Context, mediadomain.Download, []DownloadItemCandidate) (mediadomain.Download, error)
@@ -48,23 +53,10 @@ func (s Downloads) Create(ctx context.Context, input CreateDownloadInput) (media
 	if err != nil {
 		return mediadomain.Download{}, err
 	}
-	visible := make([]DownloadItemCandidate, 0, len(candidates))
-	items := make([]mediadomain.DownloadItem, 0, len(candidates))
-	for _, candidate := range candidates {
-		observers := make([]sharingdomain.Observer, 0, len(candidate.Observers))
-		for _, observer := range candidate.Observers {
-			observers = append(observers, sharingdomain.Observer{UserID: observer.UserID, SharingEnabled: observer.SharingEnabled})
-		}
-		if !sharingdomain.CanSee(sharingdomain.User{ID: input.UserID}, sharingdomain.Record{Visibility: candidate.Visibility, Observers: observers}) {
-			continue
-		}
-		visible = append(visible, DownloadItemCandidate{PhotoID: candidate.PhotoID, OwnerNSID: candidate.OwnerNSID, SizesConfirmed: candidate.SizesConfirmed})
-		state := mediadomain.ItemWaitingSizes
-		if candidate.SizesConfirmed {
-			state = mediadomain.ItemPending
-		}
-		items = append(items, mediadomain.DownloadItem{PhotoID: candidate.PhotoID, State: state})
+	if len(candidates) > MaxDownloadItems {
+		return mediadomain.Download{}, ErrInvalidDownloadRequest
 	}
+	visible, items, skipped := selectVisibleDownloadItems(input.UserID, candidates)
 	now := time.Now().UTC()
 	if s.Now != nil {
 		now = s.Now().UTC()
@@ -73,7 +65,7 @@ func (s Downloads) Create(ctx context.Context, input CreateDownloadInput) (media
 	if ttl <= 0 {
 		ttl = 24 * time.Hour
 	}
-	download := mediadomain.Download{UserID: input.UserID, Kind: input.Kind, Subject: input.Subject, Status: "pending", CreatedAt: now, ExpiresAt: now.Add(ttl), Items: items, Skipped: len(candidates) - len(visible)}
+	download := mediadomain.Download{UserID: input.UserID, Kind: input.Kind, Subject: input.Subject, Status: "pending", CreatedAt: now, ExpiresAt: now.Add(ttl), Items: items, Skipped: skipped}
 	if input.Kind == mediadomain.DownloadTray {
 		download.Subject = "tray"
 	}
@@ -83,11 +75,34 @@ func (s Downloads) Create(ctx context.Context, input CreateDownloadInput) (media
 	return s.Repository.Create(ctx, download, visible)
 }
 
+func selectVisibleDownloadItems(userID int64, candidates []catalogapp.DownloadCandidate) ([]DownloadItemCandidate, []mediadomain.DownloadItem, int) {
+	visible := make([]DownloadItemCandidate, 0, len(candidates))
+	items := make([]mediadomain.DownloadItem, 0, len(candidates))
+	skipped := 0
+	for _, candidate := range candidates {
+		observers := make([]sharingdomain.Observer, 0, len(candidate.Observers))
+		for _, observer := range candidate.Observers {
+			observers = append(observers, sharingdomain.Observer{UserID: observer.UserID, SharingEnabled: observer.SharingEnabled})
+		}
+		if !sharingdomain.CanSee(sharingdomain.User{ID: userID}, sharingdomain.Record{Visibility: candidate.Visibility, Observers: observers}) {
+			skipped++
+			continue
+		}
+		visible = append(visible, DownloadItemCandidate{PhotoID: candidate.PhotoID, OwnerNSID: candidate.OwnerNSID, SizesConfirmed: candidate.SizesConfirmed})
+		state := mediadomain.ItemWaitingSizes
+		if candidate.SizesConfirmed {
+			state = mediadomain.ItemPending
+		}
+		items = append(items, mediadomain.DownloadItem{PhotoID: candidate.PhotoID, State: state})
+	}
+	return visible, items, skipped
+}
+
 func validDownloadSelection(input CreateDownloadInput) bool {
 	if strings.TrimSpace(input.Subject) != "" && len(input.PhotoIDs) == 0 {
 		return input.Kind == mediadomain.DownloadContact || input.Kind == mediadomain.DownloadAlbum
 	}
-	if input.Kind != mediadomain.DownloadTray || strings.TrimSpace(input.Subject) != "" || len(input.PhotoIDs) == 0 {
+	if input.Kind != mediadomain.DownloadTray || strings.TrimSpace(input.Subject) != "" || len(input.PhotoIDs) == 0 || len(input.PhotoIDs) > MaxDownloadItems {
 		return false
 	}
 	seen := make(map[int64]struct{}, len(input.PhotoIDs))

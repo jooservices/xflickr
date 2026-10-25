@@ -11,6 +11,9 @@ export interface CreateDownloadRequest {
   kind: CreateDownloadRequestKind;
   /** @minLength 1 */
   subject?: string;
-  /** @minItems 1 */
+  /**
+   * @minItems 1
+   * @maxItems 500
+   */
   photo_ids?: number[];
 }

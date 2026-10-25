@@ -1299,11 +1299,16 @@ export type createDownloadResponse401 = {
   status: 401;
 };
 
+export type createDownloadResponse409 = {
+  data: Error;
+  status: 409;
+};
+
 export type createDownloadResponseSuccess = createDownloadResponse201 & {
   headers: Headers;
 };
 export type createDownloadResponseError = (
-  createDownloadResponse400 | createDownloadResponse401
+  createDownloadResponse400 | createDownloadResponse401 | createDownloadResponse409
 ) & {
   headers: Headers;
 };

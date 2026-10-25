@@ -76,3 +76,17 @@ func TestDownloadsRejectInvalidSelection(t *testing.T) {
 		t.Fatalf("missing repo err=%v", err)
 	}
 }
+
+func TestDownloadsRejectSelectionsOverLimit(t *testing.T) {
+	photos := make([]int64, MaxDownloadItems+1)
+	for i := range photos {
+		photos[i] = int64(i + 1)
+	}
+	if _, err := (Downloads{Repository: &downloadsFake{}}).Create(context.Background(), CreateDownloadInput{UserID: 1, Kind: mediadomain.DownloadTray, PhotoIDs: photos}); !errors.Is(err, ErrInvalidDownloadRequest) {
+		t.Fatalf("oversized tray error = %v", err)
+	}
+	catalog := catalogapp.DownloadCatalog{Photos: &downloadsFake{candidates: make([]catalogapp.DownloadCandidate, MaxDownloadItems+1)}}
+	if _, err := (Downloads{Catalog: catalog, Repository: &downloadsFake{}}).Create(context.Background(), CreateDownloadInput{UserID: 1, Kind: mediadomain.DownloadAlbum, Subject: "large"}); !errors.Is(err, ErrInvalidDownloadRequest) {
+		t.Fatalf("oversized album error = %v", err)
+	}
+}
