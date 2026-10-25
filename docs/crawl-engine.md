@@ -53,3 +53,19 @@ reports that owner as a discovery. The engine records that interest at
 `depth + 1` only when it is within that user's effective maximum depth. Photos
 on a maximum-depth page are still stored; their owners do not create deeper
 interests.
+
+## Change checks and incremental work
+
+`crawl/app.CheckRequests` builds one-item probes for a person's photo and
+favorite lists using their stored upload and favorite checkpoints. A positive
+Flickr `photos.total` produces only the matching `photos` or `favorites` work
+spec, carrying the same `min_upload_date` or `min_fave_date` and the normal
+500-item page size. A zero total produces no incremental work. The settings
+interval defaults to 24 hours when no positive effective interval is supplied.
+
+`SelectCyclePerson` sorts the interested people by NSID and advances beyond
+the stored cursor. It wraps to the first person only after exhausting the
+ordered list. `crawl_cycles` stores that cursor per user, while
+`crawl_interests` stores per-person photo, favorite, and check checkpoints.
+One `flickr.photos.getContactsPhotos` response can flag several distinct
+contact owners for checks.

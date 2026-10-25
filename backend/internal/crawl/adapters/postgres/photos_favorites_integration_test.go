@@ -31,6 +31,28 @@ func (f photosFavoritesFlickr) Call(_ context.Context, request crawlapp.Request)
 	return nil, fmt.Errorf("unexpected Flickr request %s page %d", key, page)
 }
 
+type checkIncrementalFlickr struct {
+	subject string
+	owner   string
+	calls   []crawlapp.Request
+}
+
+func (f *checkIncrementalFlickr) Call(_ context.Context, request crawlapp.Request) (json.RawMessage, error) {
+	f.calls = append(f.calls, request)
+	if request.Params["per_page"] == "1" {
+		if request.Method == "flickr.people.getPhotos" {
+			return json.RawMessage(`{"photos":{"total":"1","pages":1,"photo":[]}}`), nil
+		}
+		if request.Method == "flickr.favorites.getList" {
+			return json.RawMessage(`{"photos":{"total":"0","pages":0,"photo":[]}}`), nil
+		}
+	}
+	if request.Method == "flickr.people.getPhotos" && request.Params["user_id"] == f.subject && request.Params["page"] == "1" {
+		return json.RawMessage(photoFavoritesPayload(1, 1, 1, 710000000000002000, f.owner, "New Photo Owner")), nil
+	}
+	return nil, fmt.Errorf("unexpected Flickr request %s %#v", request.Method, request.Params)
+}
+
 type photosFavoritesSettings struct{ maxDepth int }
 
 func (s photosFavoritesSettings) Effective(context.Context, int64) (settingsdomain.Effective, error) {
@@ -132,6 +154,98 @@ func TestPhotosAndFavoritesFacetsCommitPagesAndGateOwnerDiscovery(t *testing.T) 
 	}
 	if username != "Known Person" || realname != "Known Person" || string(profile) != `{"bio": "keep"}` || icon != "known-icon" || photosCount != 42 || !strings.Contains(string(state), "contacts") {
 		t.Fatalf("sparse owner upsert clobbered catalog fields: username=%q realname=%q profile=%s icon=%q photos=%d state=%s", username, realname, profile, icon, photosCount, state)
+	}
+}
+
+func TestChangeCheckFindsPhotoAndCrawlsOneIncrementalPage(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	subject := "check-person-" + suffix
+	owner := "check-owner-" + suffix + "@N01"
+	checkpoint := time.Now().UTC().Truncate(time.Second)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=$1`, int64(710000000000002000))
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, owner)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, userID, subject)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via) VALUES($1,$2,0,'test')`, userID, subject); err != nil {
+		t.Fatal(err)
+	}
+
+	flickrFake := &checkIncrementalFlickr{subject: subject, owner: owner}
+	checkCursor := domain.Cursor{Page: 1, Method: "flickr.people.getPhotos", CheckpointAt: checkpoint.Unix(), Params: map[string]string{
+		"user_id": subject, "min_upload_date": "1700000000", "min_fave_date": "1700000100", "per_page": "1",
+	}}
+	encodedCursor, err := json.Marshal(checkCursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var checkItemID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,depth,cursor) VALUES('check',$1,$2,'ready',0,$3) RETURNING id`, subject, userID, encodedCursor).Scan(&checkItemID); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewEngine(pool, func(conn Conn) crawlapp.CatalogWriter {
+		repo, repoErr := catalogpg.New(conn)
+		if repoErr != nil {
+			t.Fatal(repoErr)
+		}
+		return repo
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := crawlapp.NewRegistry()
+	for _, facet := range []domain.Facet{crawlapp.ChangeCheck{}, facets.Photos{}, facets.Favorites{}} {
+		if err := registry.Register(facet); err != nil {
+			t.Fatal(err)
+		}
+	}
+	engine := &crawlapp.Engine{
+		Registry: registry, Store: store, Units: store, Keys: intKeys{}, Governor: intGovernor{},
+		Flickr: flickrFake, Settings: photosFavoritesSettings{maxDepth: 1},
+	}
+	if err := engine.Handle(ctx, checkItemID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready' WHERE id=$1`, checkItemID); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Handle(ctx, checkItemID); err != nil {
+		t.Fatal(err)
+	}
+	var photoItemID int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM work_items WHERE user_id=$1 AND kind='photos' AND subject_key=$2`, userID, subject).Scan(&photoItemID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready' WHERE id=$1`, photoItemID); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Handle(ctx, photoItemID); err != nil {
+		t.Fatal(err)
+	}
+	if len(flickrFake.calls) != 3 {
+		t.Fatalf("Flickr calls = %d, want two probes and one crawl page", len(flickrFake.calls))
+	}
+	if got := count(t, ctx, pool, `SELECT count(*) FROM photos WHERE id=$1`, int64(710000000000002000)); got != 1 {
+		t.Fatalf("crawled photos = %d, want one", got)
+	}
+	var state string
+	if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE id=$1`, photoItemID).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != domain.StateDone {
+		t.Fatalf("work item state = %q, want done after one page", state)
+	}
+	var lastSeen time.Time
+	if err := pool.QueryRow(ctx, `SELECT last_seen_at FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, userID, subject).Scan(&lastSeen); err != nil {
+		t.Fatal(err)
+	}
+	if !lastSeen.Equal(checkpoint) {
+		t.Fatalf("last seen checkpoint = %s, want %s", lastSeen, checkpoint)
 	}
 }
 

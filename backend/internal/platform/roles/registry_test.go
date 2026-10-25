@@ -608,8 +608,11 @@ func TestNewSchedulerPumpWiresQueueStatePublisher(t *testing.T) {
 	defer client.Close()
 	settings := scheduleapp.PumpSettings{RetryMax: 4}
 	quota := newQuotaRuntime(&pgxpool.Pool{}, client, config.Config{})
-	pump := newSchedulerPump(&pgxpool.Pool{}, quota.Governor, nil, nil, settings)
-	if pump.QueueState == nil || pump.Settings.RetryMax != settings.RetryMax {
+	pump, err := newSchedulerPump(&pgxpool.Pool{}, quota.Governor, nil, nil, settings)
+	if err != nil {
+		t.Fatalf("newSchedulerPump() error = %v", err)
+	}
+	if pump.QueueState == nil || pump.ChangeChecks == nil || pump.Settings.RetryMax != settings.RetryMax {
 		t.Fatalf("scheduler pump wiring = %+v", pump)
 	}
 }

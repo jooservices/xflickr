@@ -205,11 +205,23 @@ func (w workTx) Advance(ctx context.Context, id int64, cursor domain.Cursor) err
 }
 
 func (w workTx) Finish(ctx context.Context, id int64) error {
-	if _, err := w.tx.Exec(ctx, finishSQL, id); err != nil {
+	if _, err := w.tx.Exec(ctx, finishCrawlSQL, id); err != nil {
 		return fmt.Errorf("crawl: finish work item: %w", err)
 	}
 	return nil
 }
+
+const finishCrawlSQL = `WITH finished AS (
+	UPDATE work_items SET state = 'done', last_error=NULL, lease_expires_at=NULL, updated_at=now()
+	WHERE id=$1 AND state='running'
+	RETURNING kind, subject_key, user_id, COALESCE((cursor->>'checkpoint_at')::bigint,0) AS checkpoint_at
+)
+UPDATE crawl_interests AS interest SET
+	last_seen_at=CASE WHEN finished.kind='photos' THEN to_timestamp(finished.checkpoint_at) ELSE interest.last_seen_at END,
+	last_fave_at=CASE WHEN finished.kind='favorites' THEN to_timestamp(finished.checkpoint_at) ELSE interest.last_fave_at END
+FROM finished
+WHERE interest.user_id=finished.user_id AND interest.person_nsid=finished.subject_key
+	AND finished.checkpoint_at > 0 AND finished.kind IN ('photos','favorites')`
 
 type interestTx struct{ tx Conn }
 

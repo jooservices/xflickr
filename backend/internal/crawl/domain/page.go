@@ -17,9 +17,10 @@ const (
 // Cursor is the page progress stored in the work item's JSON cursor. It also
 // carries the request, so one item pages one Flickr method to its end.
 type Cursor struct {
-	Page   int               `json:"page"`
-	Method string            `json:"method"`
-	Params map[string]string `json:"params,omitempty"`
+	Page         int               `json:"page"`
+	Method       string            `json:"method"`
+	Params       map[string]string `json:"params,omitempty"`
+	CheckpointAt int64             `json:"checkpoint_at,omitempty"`
 }
 
 // ErrInvalidCursor means a stored cursor cannot drive a request.
@@ -42,7 +43,7 @@ func ParseCursor(raw []byte) (Cursor, error) {
 
 // NewCursor returns the first-page cursor for a spec.
 func NewCursor(spec WorkSpec) Cursor {
-	return Cursor{Page: 1, Method: spec.Method, Params: spec.Params}
+	return Cursor{Page: 1, Method: spec.Method, Params: spec.Params, CheckpointAt: spec.CheckpointAt}
 }
 
 // Next returns the cursor for the following page.

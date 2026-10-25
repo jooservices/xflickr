@@ -33,10 +33,11 @@ type Person struct {
 // until a page reports no more results. Kind names the facet that handles it;
 // empty means the facet that produced the spec.
 type WorkSpec struct {
-	Kind    string
-	Subject string
-	Method  string
-	Params  map[string]string
+	Kind         string
+	Subject      string
+	Method       string
+	Params       map[string]string
+	CheckpointAt int64
 }
 
 // Validate checks that the spec can be stored as a work item.

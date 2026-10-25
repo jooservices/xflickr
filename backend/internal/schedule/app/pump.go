@@ -56,6 +56,11 @@ type QueueStatePublisher interface {
 	PublishQueueState(context.Context) error
 }
 
+// ChangeCheckScheduler schedules per-user change checks alongside queue work.
+type ChangeCheckScheduler interface {
+	RunOnce(context.Context) error
+}
+
 // Pump coordinates a single bounded scheduling pass.
 type Pump struct {
 	Store              PumpStore
@@ -64,6 +69,7 @@ type Pump struct {
 	Settings           PumpSettings
 	Logger             *slog.Logger
 	QueueState         QueueStatePublisher
+	ChangeChecks       ChangeCheckScheduler
 	QueueStateInterval time.Duration
 }
 
@@ -76,6 +82,11 @@ func (p Pump) RunOnce(ctx context.Context) (int, error) {
 	}
 	if err := ctx.Err(); err != nil {
 		return 0, err
+	}
+	if p.ChangeChecks != nil {
+		if err := p.ChangeChecks.RunOnce(ctx); err != nil {
+			return 0, err
+		}
 	}
 	if _, err := p.Store.Reclaim(ctx, p.Settings.RetryMax, p.Settings.RetryBackoff, time.Now()); err != nil {
 		return 0, err

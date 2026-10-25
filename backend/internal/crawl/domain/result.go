@@ -29,6 +29,8 @@ type Result struct {
 	Observations []Observation
 	Discoveries  []Discovery
 	Work         []WorkSpec
+	// NextCursor changes the next request without finishing the same work item.
+	NextCursor *Cursor
 	// HasMore asks for the next page of the same item; false finishes it.
 	HasMore bool
 }

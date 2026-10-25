@@ -14,6 +14,10 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/queue"
 )
 
+type changeCheckFake struct{ err error }
+
+func (f changeCheckFake) RunOnce(context.Context) error { return f.err }
+
 func TestCreditsBoundsAllCapacitySources(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -80,6 +84,19 @@ func TestPumpRunOnceReclaimsAndDispatches(t *testing.T) {
 	store.pumpErr = errors.New("pump")
 	if _, err := pump.RunOnce(context.Background()); err == nil {
 		t.Fatal("RunOnce ignored pump error")
+	}
+}
+
+func TestPumpRunOnceSchedulesChecksBeforeDispatch(t *testing.T) {
+	store := &pumpFakeStore{}
+	pump := Pump{Store: store, Credits: fakeCredits{}, Queue: fakeQueue{}, Settings: validPumpSettings(), ChangeChecks: changeCheckFake{}}
+	if _, err := pump.RunOnce(context.Background()); err != nil || store.pumps != 1 {
+		t.Fatalf("RunOnce() = %v, pumps=%d", err, store.pumps)
+	}
+	checkErr := errors.New("change check scheduling failed")
+	pump.ChangeChecks = changeCheckFake{err: checkErr}
+	if _, err := pump.RunOnce(context.Background()); !errors.Is(err, checkErr) || store.pumps != 1 {
+		t.Fatalf("RunOnce() error = %v, pumps=%d", err, store.pumps)
 	}
 }
 

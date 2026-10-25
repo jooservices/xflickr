@@ -113,7 +113,11 @@ func (schedulerRole) Run(ctx context.Context) error {
 	quota := newQuotaRuntime(pool, redisClient, cfg)
 	quota.Emitter = newQuotaEmitter(quotaStates(pool, redisClient, cfg), cfg)
 	defer quota.start(ctx, slog.Default())()
-	return newSchedulerPump(pool, quota.Governor, store, queueAdapter, settings).Run(ctx)
+	pump, err := newSchedulerPump(pool, quota.Governor, store, queueAdapter, settings)
+	if err != nil {
+		return err
+	}
+	return pump.Run(ctx)
 }
 
 type crawlRole struct{}
@@ -225,8 +229,18 @@ func (c photoSizesClient) GetSizes(ctx context.Context, keyID int64, photoID str
 	return sizes, callErr
 }
 
-func newSchedulerPump(pool *pgxpool.Pool, governor quotaRedis.Governor, store scheduleapp.PumpStore, queueAdapter queue.JobQueue, settings scheduleapp.PumpSettings) scheduleapp.Pump {
-	return scheduleapp.Pump{Store: store, QueueState: queuepostgres.New(pool), Credits: governor, Queue: queueAdapter, Settings: settings}
+func newSchedulerPump(pool *pgxpool.Pool, governor quotaRedis.Governor, store scheduleapp.PumpStore, queueAdapter queue.JobQueue, settings scheduleapp.PumpSettings) (scheduleapp.Pump, error) {
+	cycleRepository, err := crawlpostgres.NewCycleRepository(pool)
+	if err != nil {
+		return scheduleapp.Pump{}, err
+	}
+	effectiveSettingsRepository, err := settingspostgres.New(pool)
+	if err != nil {
+		return scheduleapp.Pump{}, err
+	}
+	pump := scheduleapp.Pump{Store: store, QueueState: queuepostgres.New(pool), Credits: governor, Queue: queueAdapter, Settings: settings}
+	pump.ChangeChecks = crawlapp.Cycle{Store: cycleRepository, Users: cycleRepository, Settings: settingsapp.New(effectiveSettingsRepository)}
+	return pump, nil
 }
 
 func registerBuiltin(registry *Registry, role Role) {

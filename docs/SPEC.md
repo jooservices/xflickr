@@ -80,6 +80,16 @@ guide feature implementation; operational environment rules live in
 
 ## Crawl work and quota
 
+- Schedule a per-person change check using each user's `change_check_interval`
+  (default 24 hours). Check photos with
+  `flickr.people.getPhotos(min_upload_date=last_seen, per_page=1)` and
+  favorites with
+  `flickr.favorites.getList(min_fave_date=last_fave, per_page=1)`. A positive
+  `total` queues the corresponding incremental photo or favorite pages with
+  the same minimum date. The scheduler advances a per-user cycle cursor only
+  after visiting each person, then wraps to the first person.
+- A `flickr.photos.getContactsPhotos` response for a connected account may flag
+  multiple direct contacts for change checks in one call.
 - Schedule Flickr work in two lanes: a person lane for contacts, photos,
   favorites, albums, and related records; and a sizes lane for retrieving photo
   size URLs.

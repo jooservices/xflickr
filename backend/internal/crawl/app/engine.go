@@ -274,17 +274,32 @@ func (e *Engine) commit(ctx context.Context, item domain.Item, result domain.Res
 		if err != nil {
 			return err
 		}
-		if current.State != domain.StateRunning || current.Cursor.Page != item.Cursor.Page {
+		if current.State != domain.StateRunning || !sameCursor(current.Cursor, item.Cursor) {
 			return nil
 		}
 		if err := e.write(ctx, w, item, result, maxDepth); err != nil {
 			return err
+		}
+		if result.NextCursor != nil {
+			return w.Work.Advance(ctx, item.ID, *result.NextCursor)
 		}
 		if result.HasMore {
 			return w.Work.Advance(ctx, item.ID, item.Cursor.Next())
 		}
 		return w.Work.Finish(ctx, item.ID)
 	})
+}
+
+func sameCursor(left, right domain.Cursor) bool {
+	if left.Page != right.Page || left.Method != right.Method || left.CheckpointAt != right.CheckpointAt || len(left.Params) != len(right.Params) {
+		return false
+	}
+	for key, value := range left.Params {
+		if right.Params[key] != value {
+			return false
+		}
+	}
+	return true
 }
 
 func (e *Engine) write(ctx context.Context, w Writers, item domain.Item, result domain.Result, maxDepth int) error {

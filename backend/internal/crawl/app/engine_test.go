@@ -312,6 +312,19 @@ func TestHandleSkipsStalePages(t *testing.T) {
 	}
 }
 
+func TestHandleSkipsStaleProbeWithSamePageNumber(t *testing.T) {
+	r := newRig(t)
+	r.tx.current = r.store.item
+	r.tx.current.Cursor.Method = "flickr.favorites.getList"
+	r.facet.result = domain.Result{People: []catalog.Person{{NSID: "x"}}}
+	if err := r.engine.Handle(t.Context(), 7); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.tx.log) != 0 || r.tx.finished || r.tx.advanced != nil {
+		t.Fatalf("stale probe wrote: %+v", r.tx)
+	}
+}
+
 func TestHandleSkipsFinishedItems(t *testing.T) {
 	for _, state := range []string{domain.StateDone, domain.StateFailed} {
 		r := newRig(t)
