@@ -757,3 +757,48 @@ func integrationPool(t *testing.T) *pgxpool.Pool {
 	}
 	return dbtest.Open(t, cfg)
 }
+
+func TestPumpAssignsOwnerKeyToKeylessPendingWork(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run make test-integration to use the configured worktree database")
+	}
+	pool := integrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	suffix := fmt.Sprintf("keyless-%d", time.Now().UnixNano())
+	keyID := seedKey(t, ctx, pool, suffix)
+	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
+	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed) SELECT user_id,id,$1,'owner','{}','{}' FROM api_keys WHERE id=$2`, suffix+"@N00", keyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state) SELECT 'check',$1 || '-owned',user_id,'pending' FROM api_keys WHERE id=$2`, suffix, keyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state) VALUES('check',$1,'pending')`, suffix+"-orphan"); err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := queue.NewRiver(pool, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 1000, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	store := scheduleriver.Store{Pool: pool}
+	if n, err := store.Pump(ctx, settings, fixedCapacity(0), adapter); err != nil || n != 0 {
+		t.Fatalf("Pump() without quota = %d, %v", n, err)
+	}
+	var assigned int64
+	var state string
+	if err := pool.QueryRow(ctx, `SELECT key_id, state FROM work_items WHERE subject_key=$1`, suffix+"-owned").Scan(&assigned, &state); err != nil || assigned != keyID || state != "pending" {
+		t.Fatalf("owned row key=%d state=%s err=%v", assigned, state, err)
+	}
+	if n, err := store.Pump(ctx, settings, fixedCapacity(10), adapter); err != nil || n < 1 {
+		t.Fatalf("Pump() with quota = %d, %v", n, err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE subject_key=$1`, suffix+"-owned").Scan(&state); err != nil || state != "ready" {
+		t.Fatalf("owned row state=%s err=%v", state, err)
+	}
+	var orphanKey *int64
+	if err := pool.QueryRow(ctx, `SELECT key_id FROM work_items WHERE subject_key=$1`, suffix+"-orphan").Scan(&orphanKey); err != nil || orphanKey != nil {
+		t.Fatalf("orphan row key=%v err=%v", orphanKey, err)
+	}
+}

@@ -207,10 +207,10 @@ func enqueueCycleCheck(ctx context.Context, tx cycleTx, userID int64, now time.T
 		return false, fmt.Errorf("crawl: encode check cursor: %w", err)
 	}
 	tag, err := tx.Exec(ctx, `
-		INSERT INTO work_items (kind, subject_key, user_id, depth, cursor)
-		VALUES ('check', $1, $2, $3, $4)
+		INSERT INTO work_items (kind, subject_key, user_id, key_id, depth, cursor)
+		VALUES ('check', $1, $2, (SELECT fa.key_id FROM flickr_accounts fa WHERE fa.user_id=$2 AND fa.status='ok' ORDER BY fa.id LIMIT 1), $3, $4)
 		ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO UPDATE SET
-			state='pending', cursor=EXCLUDED.cursor, attempts=0, last_error=NULL,
+			key_id=COALESCE(EXCLUDED.key_id, work_items.key_id), state='pending', cursor=EXCLUDED.cursor, attempts=0, last_error=NULL,
 			not_before=$5, updated_at=$5
 		WHERE work_items.state IN ('done','failed')`, candidate.person, userID, candidate.depth, cursorJSON, now)
 	if err != nil {
@@ -236,11 +236,11 @@ func advanceCycle(ctx context.Context, tx cycleTx, userID int64, now time.Time, 
 		if err != nil {
 			return fmt.Errorf("crawl: encode contacts photos cursor: %w", err)
 		}
-		tag, err := tx.Exec(ctx, `INSERT INTO work_items (kind, subject_key, user_id, depth, cursor)
-			SELECT 'contacts_photos', nsid, user_id, 0, jsonb_set($2::jsonb, '{params,user_id}', to_jsonb(nsid))
+		tag, err := tx.Exec(ctx, `INSERT INTO work_items (kind, subject_key, user_id, key_id, depth, cursor)
+			SELECT 'contacts_photos', nsid, user_id, key_id, 0, jsonb_set($2::jsonb, '{params,user_id}', to_jsonb(nsid))
 			FROM flickr_accounts WHERE user_id=$1 AND status='ok'
 			ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO UPDATE SET
-				state='pending', cursor=EXCLUDED.cursor, attempts=0, last_error=NULL,
+				key_id=COALESCE(EXCLUDED.key_id, work_items.key_id), state='pending', cursor=EXCLUDED.cursor, attempts=0, last_error=NULL,
 				not_before=$3, lease_expires_at=NULL, updated_at=$3
 			WHERE work_items.state IN ('done','failed')`, userID, cursorJSON, now)
 		if err != nil {

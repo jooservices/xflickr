@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -129,6 +131,12 @@ func (s Store) Pump(ctx context.Context, settings app.PumpSettings, credits app.
 		return 0, fmt.Errorf("schedule: begin pump: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
+	if err := assignOwnerKeys(ctx, tx); err != nil {
+		return 0, err
+	}
+	if err := warnKeylessPending(ctx, tx); err != nil {
+		return 0, err
+	}
 	listKeys := s.listKeys
 	if listKeys == nil {
 		listKeys = pendingKeys
@@ -370,6 +378,44 @@ func (s Store) pumpQueuePlan(ctx context.Context, tx pgx.Tx, keyID int64, cap qu
 
 func configuredQueues(settings app.PumpSettings) []queueCap {
 	return []queueCap{{"media", settings.MediaReadyCap}, {"ai", settings.AIReadyCap}, {"sync", settings.SyncReadyCap}}
+}
+
+// assignOwnerKeys gives pending rows without a key the key of the owning
+// user's active Flickr account, so producers that predate key assignment
+// cannot strand work. Rows without an active account stay unassigned.
+func assignOwnerKeys(ctx context.Context, tx pgx.Tx) error {
+	if _, err := tx.Exec(ctx, `UPDATE work_items w SET key_id=owner.key_id, updated_at=now()
+FROM (SELECT DISTINCT ON (user_id) user_id, key_id FROM flickr_accounts WHERE status='ok' ORDER BY user_id, id) owner
+WHERE w.state='pending' AND w.key_id IS NULL AND w.user_id=owner.user_id`); err != nil {
+		return fmt.Errorf("schedule: assign owner keys: %w", err)
+	}
+	return nil
+}
+
+const keylessWarnInterval = time.Minute
+
+var (
+	keylessWarnMu   sync.Mutex
+	keylessWarnLast time.Time
+)
+
+// warnKeylessPending logs, at most once per minute, due pending rows that no
+// key can dispatch.
+func warnKeylessPending(ctx context.Context, tx pgx.Tx) error {
+	var count int64
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM work_items WHERE state='pending' AND key_id IS NULL AND not_before <= now()`).Scan(&count); err != nil {
+		return fmt.Errorf("schedule: count keyless pending work: %w", err)
+	}
+	if count == 0 {
+		return nil
+	}
+	keylessWarnMu.Lock()
+	defer keylessWarnMu.Unlock()
+	if now := time.Now(); now.Sub(keylessWarnLast) >= keylessWarnInterval {
+		keylessWarnLast = now
+		slog.WarnContext(ctx, "pending work cannot be dispatched: owner has no active Flickr account key", "pending_without_key", count)
+	}
+	return nil
 }
 
 func pendingKeys(ctx context.Context, tx pgx.Tx) ([]int64, error) {

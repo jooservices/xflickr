@@ -202,7 +202,11 @@ func (s *Store) PublishQueueState(ctx context.Context) error {
 	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE state='available'`).Scan(&ready); err != nil {
 		return fmt.Errorf("schedule: query queue state ready jobs: %w", err)
 	}
-	payload, err := json.Marshal(map[string]any{"backlog_by_lane": lanes, "ready_jobs": ready})
+	var keyless int64
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM work_items WHERE state='pending' AND key_id IS NULL`).Scan(&keyless); err != nil {
+		return fmt.Errorf("schedule: query queue state keyless work: %w", err)
+	}
+	payload, err := json.Marshal(map[string]any{"backlog_by_lane": lanes, "ready_jobs": ready, "pending_without_key": keyless})
 	if err != nil {
 		return fmt.Errorf("schedule: encode queue state: %w", err)
 	}

@@ -208,12 +208,12 @@ func (w workTx) Enqueue(ctx context.Context, work app.NewWork) error {
 	if work.UserID > 0 {
 		userID = work.UserID
 	}
-	query := `INSERT INTO work_items (kind, subject_key, user_id, depth, cursor) VALUES ($1, $2, $3, $4, $5)
+	query := `INSERT INTO work_items (kind, subject_key, user_id, key_id, depth, cursor) VALUES ($1, $2, $3, (SELECT fa.key_id FROM flickr_accounts fa WHERE fa.user_id=$3 AND fa.status='ok' ORDER BY fa.id LIMIT 1), $4, $5)
 		ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO NOTHING`
 	if work.Reopen {
-		query = `INSERT INTO work_items (kind, subject_key, user_id, depth, cursor) VALUES ($1, $2, $3, $4, $5)
+		query = `INSERT INTO work_items (kind, subject_key, user_id, key_id, depth, cursor) VALUES ($1, $2, $3, (SELECT fa.key_id FROM flickr_accounts fa WHERE fa.user_id=$3 AND fa.status='ok' ORDER BY fa.id LIMIT 1), $4, $5)
 			ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO UPDATE SET
-				state='pending', cursor=EXCLUDED.cursor, attempts=0, last_error=NULL,
+				key_id=COALESCE(EXCLUDED.key_id, work_items.key_id), state='pending', cursor=EXCLUDED.cursor, attempts=0, last_error=NULL,
 				not_before=now(), lease_expires_at=NULL, updated_at=now()
 			WHERE work_items.state IN ('done','failed')`
 	}
