@@ -95,7 +95,11 @@ func initialize(ctx context.Context, client blobClient, bucket string, maxBytes 
 			return nil, fmt.Errorf("media: create s3 bucket: %w", err)
 		}
 	}
-	if err := client.SetBucketLifecycle(ctx, bucket, retentionLifecycle(maxTTL)); err != nil {
+	existingLifecycle, err := client.GetBucketLifecycle(ctx, bucket)
+	if err != nil && !isMissingLifecycle(err) {
+		return nil, fmt.Errorf("media: read s3 lifecycle: %w", err)
+	}
+	if err := client.SetBucketLifecycle(ctx, bucket, mergeRetentionLifecycle(existingLifecycle, maxTTL)); err != nil {
 		return nil, fmt.Errorf("media: configure s3 lifecycle: %w", err)
 	}
 	return store, nil
@@ -118,6 +122,28 @@ func retentionLifecycle(maxTTL time.Duration) *lifecycle.Configuration {
 	}}}
 }
 
+func mergeRetentionLifecycle(existing *lifecycle.Configuration, maxTTL time.Duration) *lifecycle.Configuration {
+	merged := &lifecycle.Configuration{}
+	if existing != nil {
+		*merged = *existing
+		merged.Rules = append([]lifecycle.Rule(nil), existing.Rules...)
+	}
+	retention := retentionLifecycle(maxTTL).Rules[0]
+	for i, rule := range merged.Rules {
+		if rule.ID == retention.ID {
+			merged.Rules[i] = retention
+			return merged
+		}
+	}
+	merged.Rules = append(merged.Rules, retention)
+	return merged
+}
+
+func isMissingLifecycle(err error) bool {
+	var response minio.ErrorResponse
+	return errors.As(err, &response) && response.Code == "NoSuchLifecycleConfiguration"
+}
+
 func (s *BlobStore) validate(ctx context.Context, key string) error {
 	if s == nil || s.client == nil || strings.TrimSpace(s.bucket) == "" || ctx == nil || strings.TrimSpace(key) == "" || strings.HasPrefix(key, "/") || strings.Contains(key, "..") || strings.Contains(key, "\\") {
 		return app.ErrInvalidKey
@@ -132,6 +158,13 @@ func (s *BlobStore) Put(ctx context.Context, key string, src io.Reader) error {
 	}
 	if err := s.validate(ctx, key); err != nil {
 		return err
+	}
+	full, err := s.Full(ctx)
+	if err != nil {
+		return err
+	}
+	if full {
+		return app.ErrCapacityExceeded
 	}
 	if _, err := s.client.PutObject(ctx, s.bucket, key, src, -1, minio.PutObjectOptions{}); err != nil {
 		return fmt.Errorf("media: put s3 object: %w", err)

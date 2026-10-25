@@ -18,23 +18,24 @@ import (
 )
 
 type fakeClient struct {
-	exists       bool
-	checkErr     error
-	makeErr      error
-	lifecycleErr error
-	putErr       error
-	statErr      error
-	getErr       error
-	deleteErr    error
-	presignErr   error
-	listErr      error
-	objects      []minio.ObjectInfo
-	stat         minio.ObjectInfo
-	lifecycle    *lifecycle.Configuration
-	putCalled    bool
-	getCalled    bool
-	deleted      bool
-	presignTTL   time.Duration
+	exists          bool
+	checkErr        error
+	makeErr         error
+	lifecycleErr    error
+	lifecycleGetErr error
+	putErr          error
+	statErr         error
+	getErr          error
+	deleteErr       error
+	presignErr      error
+	listErr         error
+	objects         []minio.ObjectInfo
+	stat            minio.ObjectInfo
+	lifecycle       *lifecycle.Configuration
+	putCalled       bool
+	getCalled       bool
+	deleted         bool
+	presignTTL      time.Duration
 }
 
 func (f *fakeClient) BucketExists(context.Context, string) (bool, error) {
@@ -51,11 +52,16 @@ func (f *fakeClient) SetBucketLifecycle(_ context.Context, _ string, config *lif
 }
 
 func (f *fakeClient) GetBucketLifecycle(context.Context, string) (*lifecycle.Configuration, error) {
-	return f.lifecycle, f.lifecycleErr
+	return f.lifecycle, f.lifecycleGetErr
 }
 
-func (f *fakeClient) PutObject(context.Context, string, string, io.Reader, int64, minio.PutObjectOptions) (minio.UploadInfo, error) {
+func (f *fakeClient) PutObject(_ context.Context, _ string, _ string, reader io.Reader, _ int64, _ minio.PutObjectOptions) (minio.UploadInfo, error) {
 	f.putCalled = true
+	contents, err := io.ReadAll(reader)
+	if err != nil {
+		return minio.UploadInfo{}, err
+	}
+	f.objects = append(f.objects, minio.ObjectInfo{Size: int64(len(contents))})
 	return minio.UploadInfo{}, f.putErr
 }
 
@@ -115,8 +121,23 @@ func TestInitializeCreatesBucketAndInstallsSafetyLifecycle(t *testing.T) {
 	}
 }
 
+func TestInitializePreservesOtherLifecycleRules(t *testing.T) {
+	other := lifecycle.Rule{ID: "operator-rule", Status: "Enabled", Expiration: lifecycle.Expiration{Days: 30}}
+	managed := lifecycle.Rule{ID: "xflickr-temporary-blobs-expiry", Status: "Enabled", Expiration: lifecycle.Expiration{Days: 9}}
+	client := &fakeClient{exists: true, lifecycle: &lifecycle.Configuration{Rules: []lifecycle.Rule{other, managed}}}
+	if _, err := initialize(context.Background(), client, "assets", 0, 25*time.Hour, "us-east-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.lifecycle.Rules) != 2 || client.lifecycle.Rules[0].ID != other.ID || client.lifecycle.Rules[0].Expiration.Days != 30 {
+		t.Fatalf("operator lifecycle rule was changed: %#v", client.lifecycle.Rules)
+	}
+	if client.lifecycle.Rules[1].ID != managed.ID || client.lifecycle.Rules[1].Expiration.Days != 3 {
+		t.Fatalf("managed lifecycle rule was not updated: %#v", client.lifecycle.Rules)
+	}
+}
+
 func TestInitializeErrors(t *testing.T) {
-	for _, client := range []*fakeClient{{checkErr: errors.New("check")}, {makeErr: errors.New("make")}, {lifecycleErr: errors.New("lifecycle")}} {
+	for _, client := range []*fakeClient{{checkErr: errors.New("check")}, {makeErr: errors.New("make")}, {lifecycleGetErr: errors.New("lifecycle read")}, {lifecycleErr: errors.New("lifecycle write")}} {
 		if _, err := initialize(context.Background(), client, "assets", 0, time.Hour, "us-east-1"); err == nil {
 			t.Fatal("expected initialization error")
 		}
@@ -142,7 +163,16 @@ func TestNewValidatesAndParsesConfiguration(t *testing.T) {
 }
 
 func TestNewInitializesS3ClientAndLifecycle(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has("lifecycle") {
+			w.Header().Set("Content-Type", "application/xml")
+			if r.Method == http.MethodGet {
+				_, _ = io.WriteString(w, `<LifecycleConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></LifecycleConfiguration>`)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -156,7 +186,7 @@ func TestNewInitializesS3ClientAndLifecycle(t *testing.T) {
 }
 
 func TestBlobOperations(t *testing.T) {
-	client := &fakeClient{stat: minio.ObjectInfo{Size: 7, LastModified: time.Unix(10, 0)}, objects: []minio.ObjectInfo{{Size: 7}, {Size: 8}}}
+	client := &fakeClient{stat: minio.ObjectInfo{Size: 7, LastModified: time.Unix(10, 0)}, objects: []minio.ObjectInfo{{Size: 8}}}
 	store := &BlobStore{client: client, bucket: "assets", maxBytes: 15}
 	if err := store.Put(context.Background(), "key", strings.NewReader("payload")); err != nil || !client.putCalled {
 		t.Fatalf("put: %v", err)
@@ -187,6 +217,17 @@ func TestBlobOperations(t *testing.T) {
 	full, err = store.Full(context.Background())
 	if err != nil || full {
 		t.Fatalf("unlimited full: %t %v", full, err)
+	}
+}
+
+func TestPutRejectsWhenCapacityIsFull(t *testing.T) {
+	client := &fakeClient{objects: []minio.ObjectInfo{{Size: 10}}}
+	store := &BlobStore{client: client, bucket: "assets", maxBytes: 10}
+	if err := store.Put(context.Background(), "key", strings.NewReader("x")); !errors.Is(err, app.ErrCapacityExceeded) {
+		t.Fatalf("put with full store: %v", err)
+	}
+	if client.putCalled {
+		t.Fatal("put object called after capacity was reached")
 	}
 }
 
