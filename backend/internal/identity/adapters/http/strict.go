@@ -37,6 +37,10 @@ func (StrictHandler) UpdateKey(context.Context, gen.UpdateKeyRequestObject) (gen
 
 var errFlickrAccountsServedByAccounts = errors.New("identity: flickr accounts are served by the accounts module")
 
+func (StrictHandler) ListFlickrAccounts(context.Context, gen.ListFlickrAccountsRequestObject) (gen.ListFlickrAccountsResponseObject, error) {
+	return nil, errFlickrAccountsServedByAccounts
+}
+
 func (StrictHandler) ConnectFlickrAccount(context.Context, gen.ConnectFlickrAccountRequestObject) (gen.ConnectFlickrAccountResponseObject, error) {
 	return nil, errFlickrAccountsServedByAccounts
 }
@@ -68,6 +72,14 @@ func (StrictHandler) GetAdminQueue(context.Context, gen.GetAdminQueueRequestObje
 }
 
 var errCrawlServedByCrawl = errors.New("identity: crawl controls are served by the crawl module")
+
+func (StrictHandler) GetMeCrawlSettings(context.Context, gen.GetMeCrawlSettingsRequestObject) (gen.GetMeCrawlSettingsResponseObject, error) {
+	return nil, errCrawlServedByCrawl
+}
+
+func (StrictHandler) UpdateMeCrawlSettings(context.Context, gen.UpdateMeCrawlSettingsRequestObject) (gen.UpdateMeCrawlSettingsResponseObject, error) {
+	return nil, errCrawlServedByCrawl
+}
 
 func (StrictHandler) GetMeCrawl(context.Context, gen.GetMeCrawlRequestObject) (gen.GetMeCrawlResponseObject, error) {
 	return nil, errCrawlServedByCrawl

@@ -17,6 +17,7 @@ import (
 
 //nolint:gosec // G101 false positive: SQL text naming credential columns
 const (
+	listAccountsSQL = `SELECT id, user_id, key_id, nsid, username, status, created_at FROM flickr_accounts WHERE user_id = $1 ORDER BY id`
 	//nolint:gosec // SQL column list names credential fields but contains no credential values.
 	apiKeyRowSQL = `
 SELECT id, user_id, label, key_public, per_hour_limit, per_second_limit, burst, status, created_at, secret_sealed
@@ -50,6 +51,35 @@ SET status = '` + string(domain.AccountRevoked) + `'
 WHERE id = $1 AND status <> '` + string(domain.AccountRevoked) + `'
 RETURNING user_id, key_id, nsid`
 )
+
+// List returns account metadata only; OAuth credentials are never selected.
+func (r *Repository) ListAccounts(ctx context.Context, userID int64) ([]domain.Account, error) {
+	if err := r.ready(ctx); err != nil {
+		return nil, err
+	}
+	accounts := make([]domain.Account, 0)
+	err := r.unit.Do(ctx, func(tx db.Tx) error {
+		rows, err := tx.Query(ctx, listAccountsSQL, userID)
+		if err != nil {
+			return fmt.Errorf("accounts: list flickr accounts: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var account domain.Account
+			var status string
+			if err := rows.Scan(&account.ID, &account.UserID, &account.KeyID, &account.NSID, &account.Username, &status, &account.CreatedAt); err != nil {
+				return fmt.Errorf("accounts: scan flickr account: %w", err)
+			}
+			account.Status = domain.AccountStatus(status)
+			accounts = append(accounts, account)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return accounts, nil
+}
 
 // KeyCredentials returns the user's key and its sealed secret so the OAuth
 // flow can sign requests. Only this method loads the sealed secret.

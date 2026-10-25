@@ -879,3 +879,25 @@ func cloneFloat(value *float64) *float64 {
 	copied := *value
 	return &copied
 }
+
+func TestDepthPolicyReportsTheDefaultCapAndOverride(t *testing.T) {
+	repository := &fakeRepository{snapshot: domain.DefaultSnapshot()}
+	service := New(repository)
+	policy, err := service.DepthPolicy(t.Context(), 5)
+	if err != nil || policy != (DepthPolicy{Depth: 2, Default: 2, Max: 4}) {
+		t.Fatalf("DepthPolicy() = %+v, %v", policy, err)
+	}
+	repository.overrides = map[int64]map[domain.Key]json.RawMessage{5: {domain.MaxDepth: json.RawMessage("3")}}
+	service.evict(5)
+	if policy, err = service.DepthPolicy(t.Context(), 5); err != nil || policy.Depth != 3 || policy.Default != 2 {
+		t.Fatalf("overridden DepthPolicy() = %+v, %v", policy, err)
+	}
+	repository.loadErr = errors.New("down")
+	service.evict(5)
+	if _, err = service.DepthPolicy(t.Context(), 5); err == nil {
+		t.Fatal("DepthPolicy swallowed a load failure")
+	}
+	if _, err = New(&fakeRepository{snapshot: domain.Snapshot{Settings: map[domain.Key]domain.Definition{}}}).DepthPolicy(t.Context(), 5); err == nil {
+		t.Fatal("DepthPolicy accepted a missing setting")
+	}
+}

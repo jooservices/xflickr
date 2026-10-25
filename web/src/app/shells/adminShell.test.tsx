@@ -1,13 +1,45 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { adminShellFixture } from '../../test/handlers';
 import { adminSession, renderApp, userSession } from '../../test/render';
 import { server } from '../../test/server';
 import { resetBootHandled } from '../guards';
 import { ADMIN_NAV, ADMIN_NAV_GROUPS } from './nav';
 
 beforeEach(resetBootHandled);
+
+type QuotaKey = {
+  key_id: number;
+  node: string;
+  used: number;
+  state: 'ok' | 'cooling' | 'exhausted';
+};
+
+/** `GET /admin/quota`: the admin shell derives its cluster counters from it. */
+const quota = (keys: QuotaKey[]) =>
+  http.get('*/admin/quota', () =>
+    HttpResponse.json({
+      keys: keys.map((key) => ({
+        label: `Key ${String(key.key_id)}`,
+        limit: 3600,
+        trend: 'steady',
+        ...key,
+      })),
+    }),
+  );
+
+const healthyNodes: QuotaKey[] = ['n1', 'n2', 'n3', 'n4'].map((node, index) => ({
+  key_id: index + 1,
+  node,
+  used: 10_800,
+  state: 'ok',
+}));
+const issues: QuotaKey[] = [5, 6, 7].map((key_id) => ({
+  key_id,
+  node: 'n1',
+  used: 0,
+  state: 'cooling',
+}));
 
 describe('admin shell', () => {
   it('renders the 14 rail items in three groups, in order', async () => {
@@ -48,72 +80,50 @@ describe('admin shell', () => {
     expect(await screen.findByTestId('shell-notfound')).toBeInTheDocument();
   });
 
-  it('shows the Issues badge in the link name and the bell count', async () => {
+  it('shows the Issues badge in the link name from keys that are not ok', async () => {
+    server.use(quota([...healthyNodes, ...issues]));
     renderApp({ session: adminSession, path: '/admin' });
 
     expect(await screen.findByTestId('admin-nav-issues-badge')).toHaveTextContent('3');
     expect(screen.getByTestId('admin-nav-issues')).toHaveAccessibleName('Issues, 3 open');
-    expect(screen.getByTestId('admin-bell-count')).toHaveTextContent('2');
+    expect(screen.queryByTestId('admin-bell-count')).toBeNull();
   });
 
-  it('hides the badge and count at 0', async () => {
-    server.use(
-      http.get('*/admin/shell', () =>
-        HttpResponse.json({ ...adminShellFixture, open_issues: 0, unread_notifications: 0 }),
-      ),
-    );
+  it('hides the badge at 0', async () => {
+    server.use(quota(healthyNodes));
     renderApp({ session: adminSession, path: '/admin' });
 
     await screen.findByTestId('admin-cluster-status');
     expect(screen.queryByTestId('admin-nav-issues-badge')).toBeNull();
-    expect(screen.queryByTestId('admin-bell-count')).toBeNull();
   });
 
-  it('shows the cluster footer with status, summary and sparkline', async () => {
+  it('shows the cluster footer with status and summary', async () => {
+    server.use(quota(healthyNodes));
     renderApp({ session: adminSession, path: '/admin' });
 
     expect(screen.getByTestId('admin-cluster-loading')).toBeInTheDocument();
     expect(await screen.findByTestId('admin-cluster-status')).toHaveTextContent('Healthy');
     expect(screen.getByTestId('admin-cluster-summary')).toHaveTextContent('12 calls/s · 4/4 nodes');
-    expect(screen.getByTestId('admin-cluster-spark')).toHaveAccessibleName(
-      'Cluster calls per second, last 60 minutes, now 12',
-    );
     expect(screen.getByTestId('admin-cluster-footer')).toHaveAttribute('href', '/admin/nodes');
     expect(screen.queryByTestId('admin-cluster-stale')).toBeNull();
   });
 
   it.each([
-    ['degraded', 'Degraded'],
-    ['down', 'Down'],
-  ])('shows the %s cluster status as a word', async (status, word) => {
-    server.use(
-      http.get('*/admin/shell', () =>
-        HttpResponse.json({
-          ...adminShellFixture,
-          cluster: { ...adminShellFixture.cluster, status },
-        }),
-      ),
-    );
+    [
+      'degraded',
+      'Degraded',
+      [healthyNodes[0], { ...healthyNodes[1], state: 'exhausted' as const }],
+    ],
+    ['down', 'Down', [{ ...healthyNodes[0], state: 'cooling' as const }]],
+  ])('shows the %s cluster status as a word', async (_status, word, keys) => {
+    server.use(quota(keys));
     renderApp({ session: adminSession, path: '/admin' });
 
     expect(await screen.findByTestId('admin-cluster-status')).toHaveTextContent(word);
   });
 
   it('shows the empty footer when no node joined', async () => {
-    server.use(
-      http.get('*/admin/shell', () =>
-        HttpResponse.json({
-          ...adminShellFixture,
-          cluster: {
-            status: 'unknown',
-            nodes_total: 0,
-            nodes_healthy: 0,
-            calls_per_second: 0,
-            calls_history: [],
-          },
-        }),
-      ),
-    );
+    server.use(quota([]));
     renderApp({ session: adminSession, path: '/admin' });
 
     expect(await screen.findByTestId('admin-cluster-empty')).toHaveTextContent('No nodes joined');
@@ -127,11 +137,11 @@ describe('admin shell', () => {
   it('shows the footer error with Retry, without hiding the content', async () => {
     let calls = 0;
     server.use(
-      http.get('*/admin/shell', () => {
+      http.get('*/admin/quota', () => {
         calls += 1;
         return calls === 1
           ? new HttpResponse(null, { status: 500 })
-          : HttpResponse.json(adminShellFixture);
+          : HttpResponse.json({ keys: [] });
       }),
     );
     renderApp({ session: adminSession, path: '/admin' });
@@ -143,7 +153,7 @@ describe('admin shell', () => {
     expect(screen.queryByTestId('admin-nav-issues-badge')).toBeNull();
 
     fireEvent.click(screen.getByTestId('admin-cluster-retry'));
-    expect(await screen.findByTestId('admin-cluster-status')).toHaveTextContent('Healthy');
+    expect(await screen.findByTestId('admin-cluster-empty')).toBeInTheDocument();
   });
 
   it('marks the footer stale when live is paused', async () => {
@@ -205,9 +215,9 @@ describe('admin shell', () => {
   it('never fetches admin data for a non-admin', async () => {
     const hit = vi.fn();
     server.use(
-      http.get('*/admin/shell', () => {
+      http.get('*/admin/quota', () => {
         hit();
-        return HttpResponse.json(adminShellFixture);
+        return HttpResponse.json({ keys: [] });
       }),
     );
     renderApp({ session: userSession, path: '/admin' });

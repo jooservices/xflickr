@@ -22,23 +22,26 @@ const apiKey = (id: number, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
+/** One `GET /keys/{id}/quota` answer; the page builds its usage from these. */
 const usageItem = (id: number, extra: Record<string, unknown> = {}) => ({
   key_id: id,
   used: 2140,
-  person_used: 1500,
-  sizes_used: 640,
+  limit: 3600,
   reserve: 100,
-  burst_now: 2,
-  window_resets_at: '2099-01-01T00:20:00Z',
-  hourly: Array.from({ length: 24 }, (_, index) => (index === 3 ? 3600 : index * 100)),
-  node_id: 'node-a',
-  node_ip: '10.0.0.7',
-  paused: false,
+  reset_at: new Date(Date.now() + 20 * 60_000).toISOString(),
   state: 'ok',
+  lanes: { interactive: 0, person: 1500, photo: 640 },
   ...extra,
 });
 
-const snapshot = (items: unknown[]) => ({ server_time: '2099-01-01T00:00:00Z', items });
+const quotaReply = (items: { key_id?: unknown }[]) =>
+  http.get('*/keys/:id/quota', ({ params }) => {
+    const item = items.find((candidate) => String(candidate.key_id) === params.id);
+    return item === undefined
+      ? HttpResponse.json({ code: 'not_found' }, { status: 404 })
+      : HttpResponse.json(item);
+  });
+
 const account = (extra: Record<string, unknown> = {}) => ({
   id: 9,
   key_id: 1,
@@ -52,7 +55,7 @@ const account = (extra: Record<string, unknown> = {}) => ({
 function world(keys: unknown[], usage: unknown[] = [], accounts: unknown[] = []) {
   server.use(
     http.get('*/keys', () => HttpResponse.json(keys)),
-    http.get('*/keys/usage', () => HttpResponse.json(snapshot(usage))),
+    quotaReply(usage as { key_id?: unknown }[]),
     http.get('*/flickr-accounts', () => HttpResponse.json(accounts)),
   );
 }
@@ -131,11 +134,11 @@ describe('KeysPage states', () => {
     let usageCalls = 0;
     world([apiKey(1)], [], []);
     server.use(
-      http.get('*/keys/usage', () => {
+      http.get('*/keys/:id/quota', () => {
         usageCalls += 1;
         return usageCalls === 1
           ? new HttpResponse(null, { status: 500 })
-          : HttpResponse.json(snapshot([usageItem(1)]));
+          : HttpResponse.json(usageItem(1));
       }),
     );
     open();
@@ -144,24 +147,24 @@ describe('KeysPage states', () => {
     expect(screen.getByTestId('keys-card-used')).toHaveTextContent('Used – / 3,600');
     expect(screen.getByTestId('keys-card-bar')).not.toHaveAttribute('aria-valuetext');
     fireEvent.click(screen.getByTestId('keys-stale-retry'));
-    await waitFor(() => expect(screen.queryByTestId('keys-stale-banner')).toBeNull());
-    expect(screen.getByTestId('keys-card-used')).toHaveTextContent('Used 2,140 / 3,600');
+    await waitFor(() =>
+      expect(screen.getByTestId('keys-card-used')).toHaveTextContent('Used 2,140 / 3,600'),
+    );
+    expect(screen.queryByTestId('keys-stale-banner')).toBeNull();
   });
 
   it('shows an inline retry when accounts fail to load', async () => {
     world([apiKey(1)], [usageItem(1)]);
-    let calls = 0;
+    let failing = true;
     server.use(
-      http.get('*/flickr-accounts', () => {
-        calls += 1;
-        return calls === 1
-          ? new HttpResponse(null, { status: 500 })
-          : HttpResponse.json([account()]);
-      }),
+      http.get('*/flickr-accounts', () =>
+        failing ? new HttpResponse(null, { status: 500 }) : HttpResponse.json([account()]),
+      ),
     );
     open();
 
     const retry = await screen.findByTestId('keys-accounts-retry');
+    failing = false;
     fireEvent.click(retry);
     expect(await screen.findByTestId('keys-account-123@N01')).toBeInTheDocument();
   });
@@ -179,10 +182,9 @@ describe('KeysPage cards', () => {
       ],
       [
         usageItem(1),
-        usageItem(2, { used: 3550, state: 'reserve' }),
+        usageItem(2, { used: 3550, state: 'cooling' }),
         usageItem(3, { used: 3600, state: 'exhausted' }),
-        usageItem(4, { state: 'revoked' }),
-        usageItem(5, { paused: true }),
+        usageItem(5),
       ],
     );
     open();
@@ -198,21 +200,18 @@ describe('KeysPage cards', () => {
     expect(ok.getByTestId('keys-card-reserve')).toHaveTextContent(
       '100 calls for actions you start',
     );
-    expect(ok.getByTestId('keys-card-burst')).toHaveTextContent('2 / 8 per second');
-    expect(ok.getByTestId('keys-card-node')).toHaveTextContent('node-a · 10.0.0.7');
+    expect(ok.getByTestId('keys-card-burst')).toHaveTextContent('8');
     expect(ok.getByTestId('keys-card-reset')).toHaveTextContent(/^\d\d:\d\d$/);
     expect(ok.getByTestId('keys-card-lane-person')).toHaveTextContent('1,500');
     expect(ok.getByTestId('keys-card-lane-sizes')).toHaveTextContent('640');
     expect(ok.queryByTestId('keys-card-hint')).toBeNull();
-    expect((await card(2)).getByTestId('keys-card-hint')).toHaveTextContent('In reserve');
+    expect((await card(2)).getByTestId('keys-card-hint')).toHaveTextContent('Cap reached');
     expect((await card(3)).getByTestId('keys-card-hint')).toHaveTextContent('Cap reached');
     const revoked = await card(4);
     expect(revoked.getByTestId('keys-card-state')).toHaveTextContent('Revoked');
     expect(revoked.getByTestId('keys-card-hint')).toHaveTextContent('no longer accepts');
-    expect(revoked.queryByTestId('keys-card-pause')).toBeNull();
     const invalid = await card(5);
     expect(invalid.getByTestId('keys-card-state')).toHaveTextContent('Invalid');
-    expect(invalid.queryByTestId('keys-card-paused')).toBeInTheDocument();
     expect(screen.getByTestId('keys-note')).toBeInTheDocument();
     expect(screen.getAllByRole('article')).toHaveLength(5);
   });
@@ -258,41 +257,6 @@ describe('KeysPage cards', () => {
     fireEvent.click(await screen.findByTestId('keys-accounts-connect-2'));
     expect(await screen.findByTestId('keys-toast')).toHaveTextContent('Could not start');
     expect(leaveTo).not.toHaveBeenCalled();
-  });
-
-  it('pauses and resumes a key', async () => {
-    world([apiKey(1)], []);
-    const bodies: { paused: boolean }[] = [];
-    server.use(
-      http.get('*/keys/usage', () =>
-        HttpResponse.json(snapshot([usageItem(1, { paused: bodies.at(-1)?.paused ?? false })])),
-      ),
-      http.put('*/keys/1', async ({ request }) => {
-        bodies.push((await request.json()) as { paused: boolean });
-        return HttpResponse.json(apiKey(1));
-      }),
-    );
-    open();
-
-    const pause = await screen.findByTestId('keys-card-pause');
-    expect(pause).toHaveAccessibleName('Pause Key 1');
-    fireEvent.click(pause);
-    expect(await screen.findByTestId('keys-card-paused')).toHaveTextContent('Paused');
-    expect(screen.getByTestId('keys-card-hint')).toHaveTextContent('Paused: no scheduled calls');
-    expect(screen.getByTestId('keys-toast')).toHaveTextContent('Key 1 paused');
-    fireEvent.click(screen.getByTestId('keys-card-pause'));
-    await waitFor(() => expect(screen.queryByTestId('keys-card-paused')).toBeNull());
-    expect(bodies).toEqual([{ paused: true }, { paused: false }]);
-  });
-
-  it('keeps the card and toasts when pause fails', async () => {
-    world([apiKey(1)], [usageItem(1)]);
-    server.use(http.put('*/keys/1', () => HttpResponse.json({ code: 'x' }, { status: 500 })));
-    open();
-
-    fireEvent.click(await screen.findByTestId('keys-card-pause'));
-    expect(await screen.findByTestId('keys-toast')).toHaveTextContent('Nothing changed');
-    expect(screen.queryByTestId('keys-card-paused')).toBeNull();
   });
 
   it('removes a key after confirmation and moves focus to the empty block', async () => {
@@ -345,9 +309,7 @@ describe('KeysPage cards', () => {
     try {
       let state = 'ok';
       world([apiKey(1)], []);
-      server.use(
-        http.get('*/keys/usage', () => HttpResponse.json(snapshot([usageItem(1, { state })]))),
-      );
+      server.use(http.get('*/keys/:id/quota', () => HttpResponse.json(usageItem(1, { state }))));
       open();
 
       await screen.findByTestId('keys-card-1');
@@ -366,11 +328,9 @@ describe('KeysPage cards', () => {
     let calls = 0;
     world([apiKey(1)], []);
     server.use(
-      http.get('*/keys/usage', () => {
+      http.get('*/keys/:id/quota', () => {
         calls += 1;
-        return HttpResponse.json(
-          snapshot([usageItem(1, { window_resets_at: '2099-01-01T00:00:00Z' })]),
-        );
+        return HttpResponse.json(usageItem(1, { reset_at: '2000-01-01T00:00:00Z' }));
       }),
     );
     open();
@@ -381,15 +341,14 @@ describe('KeysPage cards', () => {
   });
 
   it('renders Vietnamese copy', async () => {
-    world([apiKey(1)], [usageItem(1, { state: 'reserve' })]);
+    world([apiKey(1)], [usageItem(1, { state: 'exhausted' })]);
     open('/keys', 'vi');
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Khóa & hạn mức' }),
     ).toBeInTheDocument();
-    expect(await screen.findByTestId('keys-card-state')).toHaveTextContent('Dự trữ');
+    expect(await screen.findByTestId('keys-card-state')).toHaveTextContent('Hết hạn mức');
     expect(screen.getByTestId('keys-card-used')).toHaveTextContent('Đã dùng 2.140 / 3.600');
-    expect(screen.getByTestId('keys-card-pause')).toHaveAccessibleName('Tạm dừng Key 1');
   });
 });
 
@@ -427,17 +386,13 @@ describe('Add API key', () => {
 
     server.use(
       http.get('*/keys', () => HttpResponse.json([apiKey(7, { label: 'Mine' })])),
-      http.get('*/keys/usage', () =>
-        HttpResponse.json(snapshot([usageItem(7, { used: 0, node_id: 'node-b' })])),
-      ),
+      quotaReply([usageItem(7, { used: 0 })]),
     );
     fireEvent.click(screen.getByTestId('keys-add-submit'));
 
     await waitFor(() => expect(screen.queryByTestId('keys-add-modal')).toBeNull());
     expect(posted).toEqual([{ label: 'Mine', key: KEY, secret: SECRET }]);
-    expect(await screen.findByTestId('keys-toast')).toHaveTextContent(
-      'Key checked and placed on node-b',
-    );
+    expect(await screen.findByTestId('keys-toast')).toHaveTextContent('Key checked and saved');
     expect(await screen.findByTestId('keys-card-7')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Mine' })).toHaveFocus();
     expect(router.state.location.search).toBe('');

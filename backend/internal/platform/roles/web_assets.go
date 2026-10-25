@@ -1,6 +1,7 @@
 package roles
 
 import (
+	"encoding/json"
 	"net/http"
 	"path"
 	"path/filepath"
@@ -16,8 +17,7 @@ func serveWebAssets(router *chi.Mux, root string) {
 	files := http.FileServer(http.Dir(root))
 	router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
-				strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/html") &&
+			if browserNavigation(r) &&
 				path.Ext(r.URL.Path) == "" &&
 				!strings.HasPrefix(r.URL.Path, "/assets/") {
 				http.ServeFile(w, r, filepath.Join(root, "index.html")) // #nosec G703 -- this path uses a fixed index filename beneath the configured asset root.
@@ -27,15 +27,23 @@ func serveWebAssets(router *chi.Mux, root string) {
 		})
 	})
 	router.NotFound(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			http.NotFound(w, r)
-			return
-		}
-
 		if path.Ext(r.URL.Path) != "" {
 			files.ServeHTTP(w, r)
 			return
 		}
-		http.ServeFile(w, r, filepath.Join(root, "index.html")) // #nosec G703 -- this path uses a fixed index filename beneath the configured asset root.
+		if browserNavigation(r) {
+			http.ServeFile(w, r, filepath.Join(root, "index.html")) // #nosec G703 -- this path uses a fixed index filename beneath the configured asset root.
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		if r.Method != http.MethodHead {
+			_ = json.NewEncoder(w).Encode(map[string]string{"code": "not_found"})
+		}
 	})
+}
+
+func browserNavigation(r *http.Request) bool {
+	return (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+		strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/html")
 }

@@ -136,6 +136,14 @@ func TestConnectFlowAgainstFakeFlickrOAuth(t *testing.T) {
 	if account.UserID != userID || account.KeyID != key.ID || account.NSID != connectNSID || account.Username != "jamal" || account.Status != domain.AccountOK {
 		t.Fatalf("account = %+v", account)
 	}
+	listed, err := connect.List(ctx, userID)
+	if err != nil || len(listed) != 1 || listed[0].ID != account.ID || listed[0].Status != domain.AccountOK {
+		t.Fatalf("listed accounts = %+v, %v", listed, err)
+	}
+	otherAccounts, err := connect.List(ctx, otherID)
+	if err != nil || len(otherAccounts) != 0 {
+		t.Fatalf("other user's accounts = %+v, %v", otherAccounts, err)
+	}
 	var token, secret crypto.Sealed
 	if err := pool.QueryRow(ctx, `SELECT token_sealed, secret_sealed FROM flickr_accounts WHERE id = $1`, account.ID).Scan(&token, &secret); err != nil {
 		t.Fatal(err)

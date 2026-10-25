@@ -4,7 +4,8 @@ import { Link, useLocation, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '../../shared';
 import { useTheme } from '../../shared/theme';
-import { fetchCsrfConfig, request, validatedReturnTo } from '../../features/auth/api';
+import { asResult, fetchCsrfConfig, validatedReturnTo } from '../../features/auth/api';
+import { login } from '../../shared/api/gen/default/default';
 import type { AuthUser } from '../../features/auth/api';
 import { SESSION_QUERY_KEY } from '../../entities/session/SessionProvider';
 import { useSession } from '../../entities';
@@ -103,10 +104,7 @@ export function LoginPage() {
     }
     setBusy(true);
     try {
-      const response = await request<AuthUser>('/auth/login', 'POST', {
-        email: email.trim(),
-        password,
-      });
+      const response = asResult<AuthUser>(await login({ email: email.trim(), password }));
       if (response.status === 200) {
         setPassword('');
         queryClient.setQueryData(SESSION_QUERY_KEY, {
@@ -163,66 +161,6 @@ export function LoginPage() {
       setError(t('auth.error.server'));
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function signInWithPasskey() {
-    setError('');
-    try {
-      const options = await request<Record<string, unknown>>(
-        '/auth/passkey/options',
-        'POST',
-        email.trim() ? { email: email.trim() } : {},
-      );
-      if (options.status !== 200 || !navigator.credentials || !('PublicKeyCredential' in window))
-        throw new Error('Passkey unavailable');
-      const publicKey = options.data as Record<string, unknown>;
-      const decode = (value: unknown) =>
-        typeof value === 'string'
-          ? Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/')), (char) =>
-              char.charCodeAt(0),
-            )
-          : value;
-      const credential = (await navigator.credentials.get({
-        publicKey: {
-          ...publicKey,
-          challenge: decode(publicKey.challenge),
-          allowCredentials: Array.isArray(publicKey.allowCredentials)
-            ? (publicKey.allowCredentials as Array<Record<string, unknown>>).map((item) => ({
-                ...item,
-                id: decode(item.id),
-              }))
-            : undefined,
-        } as PublicKeyCredentialRequestOptions,
-      })) as PublicKeyCredential | null;
-      if (!credential) return;
-      const response = credential.response as AuthenticatorAssertionResponse;
-      const encode = (value: ArrayBuffer) =>
-        btoa(String.fromCharCode(...new Uint8Array(value)))
-          .replace(/\+/g, '-')
-          .replace(/\//g, '_')
-          .replace(/=+$/, '');
-      const verified = await request<AuthUser>('/auth/passkey/verify', 'POST', {
-        id: credential.id,
-        rawId: encode(credential.rawId),
-        type: credential.type,
-        response: {
-          authenticatorData: encode(response.authenticatorData),
-          clientDataJSON: encode(response.clientDataJSON),
-          signature: encode(response.signature),
-          userHandle: response.userHandle ? encode(response.userHandle) : null,
-        },
-      });
-      if (verified.status !== 200) throw new Error('Passkey verification failed');
-      queryClient.setQueryData(SESSION_QUERY_KEY, { status: 'authenticated', user: verified.data });
-      localStorage.setItem('xf.signed-in', String(Date.now()));
-      document.documentElement.lang = verified.data.locale || locale;
-      void navigate(verified.data.role === 'admin' && returnTo === '/' ? '/admin' : returnTo, {
-        replace: true,
-      });
-    } catch (cause) {
-      if (cause instanceof DOMException && cause.name === 'NotAllowedError') return;
-      setError(t('auth.error.passkey'));
     }
   }
 
@@ -410,22 +348,6 @@ export function LoginPage() {
                 : t(expired ? 'auth.expired.submit' : 'auth.login.submit')}
             </button>
           </form>
-          {config?.passkey_enabled && 'PublicKeyCredential' in window && (
-            <>
-              <div className={styles.divider} data-testid="auth-login-divider">
-                {t('auth.login.or')}
-              </div>
-              <button
-                type="button"
-                className={styles.secondary}
-                onClick={() => void signInWithPasskey()}
-                data-testid="auth-login-passkey"
-                disabled={busy}
-              >
-                {t('auth.login.passkey')}
-              </button>
-            </>
-          )}
           <div className={styles.footer}>
             {expired ? (
               <Link to="/login" data-testid="auth-expired-other-account">

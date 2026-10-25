@@ -7,6 +7,8 @@ ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd -P)"
 GOLANGCI_LINT_VERSION="${GOLANGCI_LINT_VERSION:-v2.15.0}"
 
 "$SCRIPT_DIR/run.sh" shellcheck shellcheck "$SCRIPT_DIR"/*.sh
+"$SCRIPT_DIR/api-usage-check.test.sh"
+"$SCRIPT_DIR/api-usage-check.sh"
 "$SCRIPT_DIR/ui-spec-check.sh"
 (
 	cd "$ROOT/backend"

@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 
-/**
- * Chrome data. These endpoints are contract requests from the shell specs
- * (docs/ui/views/*-shell.md) and are not in contracts/openapi yet, so the
- * shapes follow the spec exactly and any failure is handled as a partial state.
- */
+import { getAdminQuota } from '../../shared/api/gen/admin/admin';
+import { loadAccounts, loadKeys } from '../../features/keys/api';
+import type { ApiKey, FlickrAccount } from '../../shared/api/gen/models';
+
+/** Chrome data (docs/ui/views/*-shell.md), built from the contract endpoints the backend serves. */
 
 export type Attention = {
   kind: 'key_revoked' | 'token_expired' | 'cloud_expired';
@@ -17,26 +18,6 @@ export type ShellSummary = {
   running_downloads: number;
   tray_count: number;
   attention: Attention[];
-};
-
-export type TrayItem = {
-  photo_id: string;
-  title: string;
-  owner_name: string;
-  thumb_url: string;
-  added_at: string;
-};
-
-export type Tray = { items: TrayItem[]; count: number; estimated_bytes: number };
-
-export type NotificationItem = {
-  id: string;
-  kind: string;
-  tone: 'ok' | 'warn' | 'bad' | 'info';
-  text_key: string;
-  params: Record<string, string | number>;
-  created_at: string;
-  read: boolean;
 };
 
 export type AdminShellData = {
@@ -52,25 +33,65 @@ export type AdminShellData = {
   generated_at: string;
 };
 
-export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { credentials: 'same-origin', ...init });
-  if (!response.ok) {
-    throw new Error(`${url} answered ${String(response.status)}`);
-  }
-  return (await response.json()) as T;
+function unavailable(what: string, status: number): Error {
+  return Object.assign(new Error(`Could not load ${what}`), { status });
 }
 
-export async function sendRequest(url: string, method: string, body?: unknown): Promise<void> {
-  const response = await fetch(url, {
-    method,
-    credentials: 'same-origin',
-    ...(body === undefined
-      ? {}
-      : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-  });
-  if (!response.ok) {
-    throw new Error(`${method} ${url} answered ${String(response.status)}`);
-  }
+/**
+ * Badges and banners, assembled from the contract data the pages already load: the person's keys
+ * and Flickr accounts give the attention banners. Notifications and downloads have no endpoint
+ * yet, so their counts are zero. A failed list only hides its banners.
+ */
+export function summarize(keys: ApiKey[] | undefined, accounts: FlickrAccount[] | undefined) {
+  const attention: Attention[] = [
+    ...(keys ?? [])
+      .filter((key) => key.status !== 'valid')
+      .map((key): Attention => ({ kind: 'key_revoked', id: String(key.id), label: key.label })),
+    ...(accounts ?? [])
+      .filter((account) => account.status === 'reconnect_required')
+      .map((account): Attention => ({
+        kind: 'token_expired',
+        id: String(account.key_id),
+        label: account.username,
+      })),
+  ];
+  const summary: ShellSummary = {
+    unread_notifications: 0,
+    running_downloads: 0,
+    tray_count: 0,
+    attention,
+  };
+  return summary;
+}
+
+/** Cluster footer and badges of the administrator shell, derived from the quota overview. */
+export async function loadAdminShell(signal?: AbortSignal): Promise<AdminShellData> {
+  const response = await getAdminQuota({ signal });
+  if (response.status !== 200) throw unavailable('the cluster state', response.status);
+  const keys = response.data.keys;
+  const nodes = new Map<string, boolean>();
+  for (const key of keys) nodes.set(key.node, (nodes.get(key.node) ?? false) || key.state === 'ok');
+  const healthy = [...nodes.values()].filter(Boolean).length;
+  const status: AdminShellData['cluster']['status'] =
+    nodes.size === 0
+      ? 'unknown'
+      : healthy === nodes.size
+        ? 'ok'
+        : healthy === 0
+          ? 'down'
+          : 'degraded';
+  return {
+    open_issues: keys.filter((key) => key.state !== 'ok').length,
+    unread_notifications: 0,
+    cluster: {
+      status,
+      nodes_total: nodes.size,
+      nodes_healthy: healthy,
+      calls_per_second: keys.reduce((sum, key) => sum + key.used, 0) / 3600,
+      calls_history: [],
+    },
+    generated_at: new Date().toISOString(),
+  };
 }
 
 export const REQUEST_TIMEOUT_MS = 10_000;
@@ -79,43 +100,28 @@ function withTimeout(signal: AbortSignal): AbortSignal {
   return AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]);
 }
 
-/** Badges and banners. A failure only hides them; nothing else breaks. */
+/** The query keys are the ones the keys and wizard pages use, so the shell adds no requests. */
 export function useShellSummary(enabled: boolean) {
-  return useQuery({
-    queryKey: ['shell', 'summary'],
-    queryFn: ({ signal }) =>
-      fetchJson<ShellSummary>('/shell/summary', { signal: withTimeout(signal) }),
+  const keys = useQuery({
+    queryKey: ['/keys'],
+    queryFn: ({ signal }) => loadKeys(signal),
     enabled,
     retry: false,
   });
-}
-
-export function useTray(enabled: boolean) {
-  return useQuery({
-    queryKey: ['shell', 'tray'],
-    queryFn: ({ signal }) => fetchJson<Tray>('/tray', { signal: withTimeout(signal) }),
+  const accounts = useQuery({
+    queryKey: ['/flickr-accounts'],
+    queryFn: ({ signal }) => loadAccounts(signal),
     enabled,
     retry: false,
   });
-}
-
-export function useNotifications(enabled: boolean) {
-  return useQuery({
-    queryKey: ['shell', 'notifications'],
-    queryFn: ({ signal }) =>
-      fetchJson<{ items: NotificationItem[] }>('/notifications?limit=30', {
-        signal: withTimeout(signal),
-      }),
-    enabled,
-    retry: false,
-  });
+  const data = useMemo(() => summarize(keys.data, accounts.data), [keys.data, accounts.data]);
+  return { data };
 }
 
 export function useAdminShell(enabled: boolean) {
   return useQuery({
     queryKey: ['admin', 'shell'],
-    queryFn: ({ signal }) =>
-      fetchJson<AdminShellData>('/admin/shell', { signal: withTimeout(signal) }),
+    queryFn: ({ signal }) => loadAdminShell(withTimeout(signal)),
     enabled,
     retry: false,
     refetchInterval: 10_000,

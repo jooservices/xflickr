@@ -5,9 +5,8 @@ import { Icon, useI18n, useLoadingTiming } from '../../shared';
 import type { MessageKey } from '../../shared/i18n';
 import type { ApiKey } from '../../shared/api/gen/models';
 import { loadAccounts, loadKeys } from '../../features/keys/api';
-import { loadUsage, removeKey, setKeyPaused, startConnect } from './api';
+import { loadUsage, removeKey, startConnect } from './api';
 import { leaveTo } from './navigate';
-import type { UsageSnapshot } from './api';
 import { AddKeyDialog } from './AddKeyDialog';
 import { KeyCard } from './KeyCard';
 import { RemoveKeyDialog } from './RemoveKeyDialog';
@@ -155,19 +154,9 @@ export function KeysPage() {
     queryClient.setQueryData<ApiKey[]>(KEYS, (current) => [...(current ?? []), key]);
     closeAdd();
     setFocusCard(key.id);
-    let node = '–';
-    try {
-      const fresh = await queryClient.fetchQuery({
-        queryKey: USAGE,
-        queryFn: ({ signal }) => loadUsage(signal),
-        staleTime: 0,
-      });
-      node = fresh.items.find((item) => item.key_id === key.id)?.node_id ?? node;
-    } catch {
-      // Usage fills in on the next poll.
-    }
+    void queryClient.invalidateQueries({ queryKey: USAGE });
     void queryClient.invalidateQueries({ queryKey: ACCOUNTS });
-    toast(t('keys.toast.added', { node }));
+    toast(t('keys.toast.added'));
   };
 
   const guard = async (id: number, action: () => Promise<void>) => {
@@ -183,23 +172,6 @@ export function KeysPage() {
       setPending(Array.from(busy.current));
     }
   };
-
-  const togglePause = (key: ApiKey, paused: boolean) =>
-    guard(key.id, async () => {
-      await setKeyPaused(key.id, paused);
-      queryClient.setQueryData<UsageSnapshot>(USAGE, (current) =>
-        current === undefined
-          ? current
-          : {
-              ...current,
-              items: current.items.map((item) =>
-                item.key_id === key.id ? { ...item, paused } : item,
-              ),
-            },
-      );
-      void queryClient.invalidateQueries({ queryKey: USAGE });
-      toast(t(paused ? 'keys.toast.paused' : 'keys.toast.resumed', { label: key.label }));
-    });
 
   const confirmRemove = () => {
     const key = removing;
@@ -336,7 +308,6 @@ export function KeysPage() {
                     if (element) cards.current.set(key.id, element);
                     else cards.current.delete(key.id);
                   }}
-                  onToggle={(target, paused) => void togglePause(target, paused)}
                   onRemove={setRemoving}
                   onConnect={(keyId) => void connect(keyId)}
                   onRetryAccounts={() => void accounts.refetch()}

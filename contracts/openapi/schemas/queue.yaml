@@ -48,6 +48,23 @@ LaneStatus:
     waiting: { type: integer, format: int64, minimum: 0 }
     paused: { type: integer, format: int64, minimum: 0 }
 
+CrawlSettings:
+  type: object
+  additionalProperties: false
+  description: The current user's crawl depth and the administrator limits.
+  required: [depth, depth_default, depth_max]
+  properties:
+    depth: { type: integer, minimum: 1, description: Effective depth for this user. }
+    depth_default: { type: integer, minimum: 1 }
+    depth_max: { type: integer, minimum: 1 }
+
+UpdateCrawlSettingsRequest:
+  type: object
+  additionalProperties: false
+  required: [depth]
+  properties:
+    depth: { type: integer, minimum: 1 }
+
 StarContactRequest:
   type: object
   additionalProperties: false

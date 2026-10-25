@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test';
-import { mockApi } from './support';
+import { expect } from '@playwright/test';
+
+import { mockApi, test } from './support';
 
 test.describe('user authentication', () => {
   test('signs in and signs out', async ({ page }) => {

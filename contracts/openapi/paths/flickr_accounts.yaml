@@ -1,3 +1,22 @@
+collection:
+  get:
+    operationId: ListFlickrAccounts
+    tags: [flickr-accounts]
+    summary: List the current user's connected Flickr accounts
+    responses:
+      '200':
+        description: Connected accounts owned by the current user
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: ../schemas/flickr_accounts.yaml#/FlickrAccount }
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+
 connect:
   post:
     operationId: ConnectFlickrAccount

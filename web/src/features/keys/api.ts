@@ -1,4 +1,5 @@
-import { request } from '../auth/api';
+import { getMeCrawlSettings, updateMeCrawlSettings } from '../../shared/api/gen/crawl/crawl';
+import { listFlickrAccounts } from '../../shared/api/gen/flickr-accounts/flickr-accounts';
 import { createKey, listKeys } from '../../shared/api/gen/keys/keys';
 import type { ApiKey, CreateKeyRequest, FlickrAccount } from '../../shared/api/gen/models';
 
@@ -13,35 +14,34 @@ export async function checkAndSaveKey(body: CreateKeyRequest) {
   return createKey(body);
 }
 
-export type CrawlSettings = { depth?: number | null; depth_default: number; depth_max: number };
+export type CrawlSettings = { depth: number; depth_default: number; depth_max: number };
 
-/**
- * The calls below are contract requests (docs/ui/views/user-wizard.md, Data and API):
- * their paths are not in OpenAPI yet, so they go through the shared request helper
- * (CSRF header, session-expiry signal) instead of the generated client. A missing
- * endpoint is a failure like any other; callers show it as the Error state.
- */
-async function read<T>(path: string, what: string, signal?: AbortSignal): Promise<T> {
-  const response = await request<T>(path, 'GET', undefined, signal);
-  if (response.status < 200 || response.status >= 300)
-    throw Object.assign(new Error(`Could not load ${what}`), { status: response.status });
+/** Lists the current user's Flickr accounts (`GET /flickr-accounts`). */
+export async function loadAccounts(signal?: AbortSignal): Promise<FlickrAccount[]> {
+  const response = await listFlickrAccounts({ signal });
+  if (response.status !== 200)
+    throw Object.assign(new Error('Could not load accounts'), { status: response.status });
   return response.data;
 }
 
-/** Lists the current user's Flickr accounts (`GET /flickr-accounts`). */
-export function loadAccounts(signal?: AbortSignal): Promise<FlickrAccount[]> {
-  return read<FlickrAccount[]>('/flickr-accounts', 'accounts', signal);
+/** Reads the person's crawl depth and the administrator limits (`GET /me/crawl/settings`). */
+export async function loadCrawlSettings(signal?: AbortSignal): Promise<CrawlSettings> {
+  const response = await getMeCrawlSettings({ signal });
+  if (response.status !== 200)
+    throw Object.assign(new Error('Could not load crawl settings'), { status: response.status });
+  return response.data;
 }
 
-/** Reads the person's crawl depth and the administrator limits (`GET /me/crawl-settings`). */
-export function loadCrawlSettings(signal?: AbortSignal): Promise<CrawlSettings> {
-  return read<CrawlSettings>('/me/crawl-settings', 'crawl settings', signal);
-}
-
-/** Stores the depth and queues the first crawl (`POST /crawl/start`); 202 on success. */
+/**
+ * Stores the depth the crawl starts from (`PUT /me/crawl/settings`). The crawl itself began when
+ * the first account was connected; the depth bounds how far it goes.
+ */
 export async function startCrawl(depth: number): Promise<{ status: number; code?: string }> {
-  const response = await request<{ code?: string }>('/crawl/start', 'POST', { depth });
-  return { status: response.status, code: response.data.code };
+  const response = await updateMeCrawlSettings({ depth });
+  return {
+    status: response.status,
+    code: 'code' in response.data ? response.data.code : undefined,
+  };
 }
 
 export type KeyFields = { key?: 'format' | 'duplicate'; secret?: 'format' };

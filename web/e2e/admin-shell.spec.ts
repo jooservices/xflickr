@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test';
-import { expectNoSeriousViolations, mockApi } from './support';
+import { expect } from '@playwright/test';
+
+import { expectNoSeriousViolations, mockApi, test } from './support';
 
 const items = [
   ['overview', '/admin', 'Overview'],
@@ -56,12 +57,12 @@ test.describe('admin shell', () => {
     });
   }
 
-  test('shows the cluster footer, the Issues badge and the bell count', async ({ page }) => {
+  test('shows the cluster footer and the Issues badge', async ({ page }) => {
     await page.goto('/admin');
 
     await expect(page.getByTestId('admin-cluster-summary')).toHaveText('12 calls/s · 4/4 nodes');
     await expect(page.getByTestId('admin-nav-issues')).toHaveAccessibleName('Issues, 3 open');
-    await expect(page.getByTestId('admin-bell-count')).toHaveText('2');
+    await expect(page.getByTestId('admin-bell-count')).toHaveCount(0);
     await page.getByTestId('admin-cluster-footer').click();
     await expect(page).toHaveURL(/\/admin\/nodes$/);
   });

@@ -29,6 +29,7 @@ import (
 	catalogapp "github.com/jooservices/xflickr/internal/catalog/app"
 	crawlhttp "github.com/jooservices/xflickr/internal/crawl/adapters/http"
 	crawlpostgres "github.com/jooservices/xflickr/internal/crawl/adapters/postgres"
+	crawlsettings "github.com/jooservices/xflickr/internal/crawl/adapters/settings"
 	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identitypostgres "github.com/jooservices/xflickr/internal/identity/adapters/postgres"
@@ -537,7 +538,12 @@ func buildCrawlHandler(pool *pgxpool.Pool) (crawlhttp.CrawlHandler, error) {
 	if err != nil {
 		return crawlhttp.CrawlHandler{}, err
 	}
-	return crawlhttp.CrawlHandler{Controls: crawlapp.Controls{Repository: repository, Rescorer: scheduleriver.PersonRescorer{Pool: pool}}, ActorID: userIDFromPrincipal}, nil
+	settingsRepository, err := settingspostgres.New(pool)
+	if err != nil {
+		return crawlhttp.CrawlHandler{}, err
+	}
+	depth := crawlapp.Depth{Store: crawlsettings.Depth{Settings: settingsapp.New(settingsRepository)}}
+	return crawlhttp.CrawlHandler{Controls: crawlapp.Controls{Repository: repository, Rescorer: scheduleriver.PersonRescorer{Pool: pool}}, Depth: depth, ActorID: userIDFromPrincipal}, nil
 }
 
 func buildKeyHandler(pool *pgxpool.Pool, cfg config.Config) (accountshttp.KeyHandler, error) {

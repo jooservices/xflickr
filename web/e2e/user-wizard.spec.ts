@@ -1,6 +1,7 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
+
 import type { Page, Route } from '@playwright/test';
-import { expectNoSeriousViolations, mockApi } from './support';
+import { expectNoSeriousViolations, mockApi, test } from './support';
 
 const KEY = '0123456789abcdef0123456789abcdef';
 const SECRET = '0123456789abcdef';
@@ -27,7 +28,7 @@ const connected = {
 type World = {
   keys: ReturnType<typeof apiKey>[];
   accounts: (typeof connected)[];
-  settings: { depth: number | null; depth_default: number; depth_max: number } | number;
+  settings: { depth: number; depth_default: number; depth_max: number } | number;
   keysStatus: number;
   keyCreate: { status: number; body?: unknown }[];
   crawlStart: { status: number; body?: unknown };
@@ -42,10 +43,10 @@ async function wizardApi(page: Page, overrides: Partial<World> = {}): Promise<Wo
   const world: World = {
     keys: [],
     accounts: [],
-    settings: { depth: null, depth_default: 2, depth_max: 4 },
+    settings: { depth: 2, depth_default: 2, depth_max: 4 },
     keysStatus: 200,
     keyCreate: [],
-    crawlStart: { status: 202, body: { started: true } },
+    crawlStart: { status: 200, body: { depth: 2, depth_default: 2, depth_max: 4 } },
     posted: { keys: [], crawl: [] },
     ...overrides,
   };
@@ -76,14 +77,14 @@ async function wizardApi(page: Page, overrides: Partial<World> = {}): Promise<Wo
     world.accounts = [connected];
     return json(route, connected);
   });
-  await page.route(at('/me/crawl-settings'), (route) =>
-    typeof world.settings === 'number'
+  await page.route(at('/me/crawl/settings'), (route) => {
+    if (route.request().method() === 'PUT') {
+      world.posted.crawl.push(route.request().postDataJSON());
+      return json(route, world.crawlStart.body ?? {}, world.crawlStart.status);
+    }
+    return typeof world.settings === 'number'
       ? json(route, { code: 'x' }, world.settings)
-      : json(route, world.settings),
-  );
-  await page.route(at('/crawl/start'), (route) => {
-    world.posted.crawl.push(route.request().postDataJSON());
-    return json(route, world.crawlStart.body ?? {}, world.crawlStart.status);
+      : json(route, world.settings);
   });
   return world;
 }

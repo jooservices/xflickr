@@ -77,3 +77,34 @@ resume:
       '400': { description: Invalid request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
       '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
       '404': { description: Contact not found, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+
+settings:
+  get:
+    operationId: GetMeCrawlSettings
+    tags: [crawl]
+    summary: Get the crawl depth and its limits
+    responses:
+      '200':
+        description: Crawl settings
+        content:
+          application/json:
+            schema: { $ref: ../schemas/queue.yaml#/CrawlSettings }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+  put:
+    operationId: UpdateMeCrawlSettings
+    tags: [crawl]
+    summary: Set the crawl depth
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: ../schemas/queue.yaml#/UpdateCrawlSettingsRequest }
+    responses:
+      '200':
+        description: Updated crawl settings
+        content:
+          application/json:
+            schema: { $ref: ../schemas/queue.yaml#/CrawlSettings }
+      '400': { description: Invalid request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '422': { description: 'Depth above the administrator limit (code depth_above_cap; details.max_depth)', content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }

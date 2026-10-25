@@ -36,7 +36,6 @@ const hintCopy: Record<Hint, MessageKey> = {
   revoked: 'keys.revoked.hint',
   exhausted: 'keys.exhausted.hint',
   reserve: 'keys.reserve.hint',
-  paused: 'keys.paused.hint',
 };
 
 type KeyCardProps = {
@@ -49,13 +48,12 @@ type KeyCardProps = {
   busy: boolean;
   connecting: boolean;
   heading: (element: HTMLHeadingElement | null) => void;
-  onToggle: (key: ApiKey, paused: boolean) => void;
   onRemove: (key: ApiKey) => void;
   onConnect: (keyId: number) => void;
   onRetryAccounts: () => void;
 };
 
-/** One key: state, quota bar, facts, lanes, 24-hour history, accounts and actions. */
+/** One key: state, quota bar, facts, lanes, accounts and actions. */
 export function KeyCard({
   apiKey,
   usage,
@@ -65,7 +63,6 @@ export function KeyCard({
   busy,
   connecting,
   heading,
-  onToggle,
   onRemove,
   onConnect,
   onRetryAccounts,
@@ -76,9 +73,8 @@ export function KeyCard({
   const dash = '–';
   const cap = apiKey.per_hour_limit;
   const pill = pillOf(apiKey, usage);
-  const hint = hintOf(pill, usage);
-  const paused = usage?.paused === true;
-  const muted = paused || isTerminal(pill);
+  const hint = hintOf(pill);
+  const muted = isTerminal(pill);
   const tone = muted || pill === null ? styles.barMuted : barTone[pill];
   const used = usage?.used;
   const [firstUsed] = useState(used);
@@ -119,11 +115,6 @@ export function KeyCard({
               {t(pillCopy[pill])}
             </span>
           )}
-          {paused ? (
-            <span className={styles.badge} data-testid="keys-card-paused">
-              {t('keys.paused')}
-            </span>
-          ) : null}
         </div>
       </header>
 
@@ -176,17 +167,7 @@ export function KeyCard({
         </div>
         <div>
           <dt>{t('keys.burst')}</dt>
-          <dd data-testid="keys-card-burst">
-            {usage === undefined
-              ? dash
-              : t('keys.burst.value', { now: n(usage.burst_now), limit: n(apiKey.burst) })}
-          </dd>
-        </div>
-        <div>
-          <dt>{t('keys.egress')}</dt>
-          <dd className={styles.mono} data-testid="keys-card-node">
-            {usage === undefined ? dash : `${usage.node_id} · ${usage.node_ip}`}
-          </dd>
+          <dd data-testid="keys-card-burst">{n(apiKey.burst)}</dd>
         </div>
       </dl>
 
@@ -207,28 +188,12 @@ export function KeyCard({
         ))}
       </div>
 
-      <div data-testid="keys-card-history">
-        <span className={styles.sectionTitle}>
-          {t('keys.history')} <small>({t('keys.history.legend')})</small>
-        </span>
-        <div className={styles.hbars} aria-hidden="true">
-          {(usage?.hourly ?? []).map((calls, index) => (
-            <span
-              key={index}
-              className={calls >= cap ? styles.hbarBad : undefined}
-              style={{ height: `${String(Math.max(4, percent(calls, cap)))}%` }}
-            />
-          ))}
-        </div>
-      </div>
-
       {hint === null ? null : (
         <p
-          className={`${styles.hint} ${hint === 'reserve' ? styles.hintWarn : hint === 'paused' ? '' : styles.hintBad}`}
+          className={`${styles.hint} ${hint === 'reserve' ? styles.hintWarn : styles.hintBad}`}
           data-testid="keys-card-hint"
         >
-          <Icon name={hint === 'paused' ? 'pause' : 'alert'} size={14} />{' '}
-          {t(hintCopy[hint], { time: resetsAt })}
+          <Icon name="alert" size={14} /> {t(hintCopy[hint], { time: resetsAt })}
         </p>
       )}
 
@@ -242,20 +207,6 @@ export function KeyCard({
       />
 
       <footer className={styles.actions}>
-        {isTerminal(pill) ? null : (
-          <button
-            type="button"
-            className={styles.secondary}
-            disabled={busy || usage === undefined}
-            aria-label={t(paused ? 'keys.resume.aria' : 'keys.pause.aria', {
-              label: apiKey.label,
-            })}
-            onClick={() => onToggle(apiKey, !paused)}
-            data-testid="keys-card-pause"
-          >
-            {t(paused ? 'keys.resume' : 'keys.pause')}
-          </button>
-        )}
         <button
           type="button"
           className={styles.dangerGhost}

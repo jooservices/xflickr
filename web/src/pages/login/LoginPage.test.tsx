@@ -6,19 +6,6 @@ import { renderApp } from '../../test/render';
 
 const signedOut = { status: 'unauthenticated' as const };
 
-function mockCredentialGet() {
-  const previous = Object.getOwnPropertyDescriptor(navigator, 'credentials');
-  const get = vi.fn();
-  Object.defineProperty(navigator, 'credentials', { configurable: true, value: { get } });
-  return {
-    get,
-    restore() {
-      if (previous) Object.defineProperty(navigator, 'credentials', previous);
-      else Reflect.deleteProperty(navigator, 'credentials');
-    },
-  };
-}
-
 describe('LoginPage', () => {
   it('submits credentials and sends a signed-in user to a safe return path', async () => {
     let posted: unknown;
@@ -61,21 +48,11 @@ describe('LoginPage', () => {
     await waitFor(() => expect(screen.getByTestId('auth-login-password')).toHaveValue(''));
   });
 
-  it('renders passkey action only when enabled and supported', async () => {
+  it('offers no passkey action because the backend has no passkey endpoints', async () => {
     vi.stubGlobal('PublicKeyCredential', () => undefined);
     server.use(
       http.get('*/auth/config', () =>
         HttpResponse.json({ registration_open: true, passkey_enabled: true }),
-      ),
-    );
-    const enabled = renderApp({ session: signedOut, path: '/login' });
-    expect(await screen.findByTestId('auth-login-passkey')).toBeInTheDocument();
-    expect(screen.getByTestId('auth-login-divider')).toHaveTextContent('or');
-    enabled.unmount();
-
-    server.use(
-      http.get('*/auth/config', () =>
-        HttpResponse.json({ registration_open: true, passkey_enabled: false }),
       ),
     );
     renderApp({ session: signedOut, path: '/login' });
@@ -83,80 +60,6 @@ describe('LoginPage', () => {
     expect(screen.queryByTestId('auth-login-passkey')).not.toBeInTheDocument();
     expect(screen.queryByTestId('auth-login-divider')).not.toBeInTheDocument();
     vi.unstubAllGlobals();
-  });
-
-  it('completes passkey sign-in and applies the signed-in user locale', async () => {
-    vi.stubGlobal('PublicKeyCredential', () => undefined);
-    const bytes = new Uint8Array([1, 2, 3]).buffer;
-    const credential = {
-      id: 'passkey-id',
-      rawId: bytes,
-      type: 'public-key',
-      response: {
-        authenticatorData: bytes,
-        clientDataJSON: bytes,
-        signature: bytes,
-        userHandle: null,
-      },
-    } as unknown as PublicKeyCredential;
-    const credentialApi = mockCredentialGet();
-    credentialApi.get.mockResolvedValue(credential);
-    const { router } = renderApp({ session: signedOut, path: '/login?return_to=%2Fphotos' });
-    server.use(
-      http.get('*/auth/config', () =>
-        HttpResponse.json({ registration_open: true, passkey_enabled: true }),
-      ),
-      http.post('*/auth/passkey/options', () =>
-        HttpResponse.json({ challenge: 'AQID', allowCredentials: [] }),
-      ),
-      http.post('*/auth/passkey/verify', () =>
-        HttpResponse.json({ id: 7, email: 'passkey@example.test', role: 'user', locale: 'vi' }),
-      ),
-    );
-    fireEvent.click(await screen.findByTestId('auth-login-passkey'));
-    await waitFor(() => expect(router.state.location.pathname).toBe('/photos'));
-    expect(credentialApi.get).toHaveBeenCalled();
-    expect(document.documentElement.lang).toBe('vi');
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-    credentialApi.restore();
-  });
-
-  it('shows passkey failures and treats a cancelled browser prompt silently', async () => {
-    vi.stubGlobal('PublicKeyCredential', () => undefined);
-    server.use(
-      http.get('*/auth/config', () =>
-        HttpResponse.json({ registration_open: true, passkey_enabled: true }),
-      ),
-      http.post('*/auth/passkey/options', () =>
-        HttpResponse.json({ challenge: 'AQID', allowCredentials: [] }),
-      ),
-      http.post('*/auth/passkey/verify', () => new HttpResponse(null, { status: 401 })),
-    );
-    const credentialApi = mockCredentialGet();
-    credentialApi.get.mockResolvedValue({
-      id: 'credential',
-      rawId: new ArrayBuffer(0),
-      type: 'public-key',
-      response: {
-        authenticatorData: new ArrayBuffer(0),
-        clientDataJSON: new ArrayBuffer(0),
-        signature: new ArrayBuffer(0),
-        userHandle: null,
-      },
-    } as unknown as PublicKeyCredential);
-    renderApp({ session: signedOut, path: '/login' });
-    fireEvent.click(await screen.findByTestId('auth-login-passkey'));
-    expect(await screen.findByTestId('auth-error-banner')).toHaveTextContent(
-      'Passkey sign-in did not work',
-    );
-
-    credentialApi.get.mockRejectedValueOnce(new DOMException('Cancelled', 'NotAllowedError'));
-    fireEvent.click(screen.getByTestId('auth-login-passkey'));
-    await waitFor(() => expect(screen.queryByTestId('auth-error-banner')).not.toBeInTheDocument());
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-    credentialApi.restore();
   });
 
   it('shows the form with partial defaults when auth config fails', async () => {

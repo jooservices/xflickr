@@ -24,9 +24,11 @@ import type {
 import type {
   CrawlContactRequest,
   CrawlQueue,
+  CrawlSettings,
   CrawlStatus,
   Error,
   StarContactRequest,
+  UpdateCrawlSettingsRequest,
 } from '../models';
 
 import { customFetch } from '../../mutator';
@@ -300,6 +302,282 @@ export function useGetMeCrawl<TData = Awaited<ReturnType<typeof getMeCrawl>>, TE
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+export type getMeCrawlSettingsResponse200 = {
+  data: CrawlSettings;
+  status: 200;
+};
+
+export type getMeCrawlSettingsResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type getMeCrawlSettingsResponseSuccess = getMeCrawlSettingsResponse200 & {
+  headers: Headers;
+};
+export type getMeCrawlSettingsResponseError = getMeCrawlSettingsResponse401 & {
+  headers: Headers;
+};
+
+export type getMeCrawlSettingsResponse =
+  getMeCrawlSettingsResponseSuccess | getMeCrawlSettingsResponseError;
+
+export const getGetMeCrawlSettingsUrl = () => {
+  return `/me/crawl/settings`;
+};
+
+/**
+ * @summary Get the crawl depth and its limits
+ */
+export const getMeCrawlSettings = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getMeCrawlSettingsResponse> => {
+  return customFetch<getMeCrawlSettingsResponse>(getGetMeCrawlSettingsUrl(), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getGetMeCrawlSettingsQueryKey = () => {
+  return [`/me/crawl/settings`] as const;
+};
+
+export const getGetMeCrawlSettingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMeCrawlSettings>>,
+  TError = Error,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeCrawlSettings>>, TError, TData>>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetMeCrawlSettingsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMeCrawlSettings>>> = ({ signal }) =>
+    getMeCrawlSettings({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMeCrawlSettings>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetMeCrawlSettingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMeCrawlSettings>>
+>;
+export type GetMeCrawlSettingsQueryError = Error;
+
+export function useGetMeCrawlSettings<
+  TData = Awaited<ReturnType<typeof getMeCrawlSettings>>,
+  TError = Error,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeCrawlSettings>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMeCrawlSettings>>,
+          TError,
+          Awaited<ReturnType<typeof getMeCrawlSettings>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetMeCrawlSettings<
+  TData = Awaited<ReturnType<typeof getMeCrawlSettings>>,
+  TError = Error,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getMeCrawlSettings>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMeCrawlSettings>>,
+          TError,
+          Awaited<ReturnType<typeof getMeCrawlSettings>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetMeCrawlSettings<
+  TData = Awaited<ReturnType<typeof getMeCrawlSettings>>,
+  TError = Error,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeCrawlSettings>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get the crawl depth and its limits
+ */
+
+export function useGetMeCrawlSettings<
+  TData = Awaited<ReturnType<typeof getMeCrawlSettings>>,
+  TError = Error,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeCrawlSettings>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMeCrawlSettingsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type updateMeCrawlSettingsResponse200 = {
+  data: CrawlSettings;
+  status: 200;
+};
+
+export type updateMeCrawlSettingsResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type updateMeCrawlSettingsResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type updateMeCrawlSettingsResponse422 = {
+  data: Error;
+  status: 422;
+};
+
+export type updateMeCrawlSettingsResponseSuccess = updateMeCrawlSettingsResponse200 & {
+  headers: Headers;
+};
+export type updateMeCrawlSettingsResponseError = (
+  | updateMeCrawlSettingsResponse400
+  | updateMeCrawlSettingsResponse401
+  | updateMeCrawlSettingsResponse422
+) & {
+  headers: Headers;
+};
+
+export type updateMeCrawlSettingsResponse =
+  updateMeCrawlSettingsResponseSuccess | updateMeCrawlSettingsResponseError;
+
+export const getUpdateMeCrawlSettingsUrl = () => {
+  return `/me/crawl/settings`;
+};
+
+/**
+ * @summary Set the crawl depth
+ */
+export const updateMeCrawlSettings = async (
+  updateCrawlSettingsRequest: UpdateCrawlSettingsRequest,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<updateMeCrawlSettingsResponse> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit['headers']>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  return customFetch<updateMeCrawlSettingsResponse>(getUpdateMeCrawlSettingsUrl(), {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateCrawlSettingsRequest),
+  });
+};
+
+export const getUpdateMeCrawlSettingsMutationKey = () => ['updateMeCrawlSettings'] as const;
+
+export const getUpdateMeCrawlSettingsMutationOptions = <
+  TError = Error,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateMeCrawlSettings>>,
+    TError,
+    UpdateMeCrawlSettingsMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateMeCrawlSettings>>,
+  TError,
+  UpdateMeCrawlSettingsMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUpdateMeCrawlSettingsMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateMeCrawlSettings>>,
+    UpdateMeCrawlSettingsMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateMeCrawlSettings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateMeCrawlSettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateMeCrawlSettings>>
+>;
+export type UpdateMeCrawlSettingsMutationBody = UpdateCrawlSettingsRequest;
+export type UpdateMeCrawlSettingsMutationError = Error;
+export type UpdateMeCrawlSettingsMutationVariables = { data: UpdateCrawlSettingsRequest };
+
+/**
+ * @summary Set the crawl depth
+ */
+export const useUpdateMeCrawlSettings = <TError = Error, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateMeCrawlSettings>>,
+      TError,
+      UpdateMeCrawlSettingsMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateMeCrawlSettings>>,
+  TError,
+  UpdateMeCrawlSettingsMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateMeCrawlSettingsMutationOptions(options), queryClient);
+};
 export type starMyContactResponse204 = {
   data: void;
   status: 204;

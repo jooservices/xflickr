@@ -115,43 +115,33 @@ describe('user shell', () => {
     expect(await screen.findByTestId('shell-toast')).toHaveTextContent('Live data paused');
   });
 
-  it('shows summary badges, hiding the Downloads count at 0', async () => {
-    renderApp({ session: userSession });
-
-    expect(await screen.findByTestId('shell-tray-count')).toHaveTextContent('12');
-    expect(screen.getByTestId('shell-notifications-count')).toHaveTextContent('3');
-    expect(screen.getByTestId('shell-nav-downloads-count')).toHaveTextContent('2');
-    expect(screen.getByTestId('shell-notifications-button')).toHaveAccessibleName(
-      'Notifications, 3 unread',
-    );
-  });
-
-  it('hides badges when the summary fails', async () => {
-    server.use(http.get('*/shell/summary', () => new HttpResponse(null, { status: 500 })));
+  it('hides the counters while nothing produces notifications, downloads or a tray', async () => {
     renderApp({ session: userSession });
 
     await screen.findByTestId('shell-tray-button');
-    await waitFor(() => {
-      expect(screen.queryByTestId('shell-tray-count')).toBeNull();
-    });
+    expect(screen.queryByTestId('shell-tray-count')).toBeNull();
     expect(screen.queryByTestId('shell-notifications-count')).toBeNull();
+    expect(screen.queryByTestId('shell-nav-downloads-count')).toBeNull();
   });
 
-  it('shows 99+ above 99 unread', async () => {
+  it('keeps the shell working when the key list fails', async () => {
+    server.use(http.get('*/keys', () => new HttpResponse(null, { status: 500 })));
+    renderApp({ session: userSession });
+
+    await screen.findByTestId('shell-tray-button');
+    expect(screen.getByTestId('shell-nav')).toBeInTheDocument();
+    expect(screen.queryByTestId('shell-tray-count')).toBeNull();
+  });
+
+  it('survives an HTML answer (the SPA index) where JSON is expected', async () => {
     server.use(
-      http.get('*/shell/summary', () =>
-        HttpResponse.json({
-          unread_notifications: 120,
-          running_downloads: 0,
-          tray_count: 0,
-          attention: [],
-        }),
-      ),
+      http.get('*/keys', () => new HttpResponse('<html></html>', { status: 200 })),
+      http.get('*/flickr-accounts', () => new HttpResponse('<html></html>', { status: 200 })),
     );
     renderApp({ session: userSession });
 
-    expect(await screen.findByTestId('shell-notifications-count')).toHaveTextContent('99+');
-    expect(screen.queryByTestId('shell-nav-downloads-count')).toBeNull();
+    expect(await screen.findByTestId('shell-nav')).toBeInTheDocument();
+    expect(screen.queryByTestId('shell-crawling-off-banner')).toBeNull();
   });
 
   it('submits the search box to /search?q= and ignores empty text', async () => {
@@ -252,51 +242,52 @@ describe('user shell global states', () => {
 
   it('shows key-revoked and token-expired banners with dismiss and a "more" link', async () => {
     server.use(
-      http.get('*/shell/summary', () =>
-        HttpResponse.json({
-          unread_notifications: 0,
-          running_downloads: 0,
-          tray_count: 0,
-          attention: [
-            { kind: 'key_revoked', id: 'k1', label: 'Main key' },
-            { kind: 'token_expired', id: 'a1', label: 'anna' },
-            { kind: 'token_expired', id: 'a2', label: 'bob' },
-            { kind: 'cloud_expired', id: 'c1', label: 'Drive' },
-          ],
-        }),
+      http.get('*/keys', () =>
+        HttpResponse.json([{ id: 1, label: 'Main key', status: 'revoked' }]),
+      ),
+      http.get('*/flickr-accounts', () =>
+        HttpResponse.json([
+          { id: 1, key_id: 11, username: 'anna', status: 'reconnect_required' },
+          { id: 2, key_id: 12, username: 'bob', status: 'reconnect_required' },
+          { id: 3, key_id: 13, username: 'cy', status: 'reconnect_required' },
+          { id: 4, key_id: 14, username: 'dee', status: 'ok' },
+        ]),
       ),
     );
     renderApp({ session: userSession });
 
-    const key = await screen.findByTestId('shell-key-revoked-banner-k1');
+    const key = await screen.findByTestId('shell-key-revoked-banner-1');
     expect(key).toHaveTextContent('Main key');
-    expect(screen.getByTestId('shell-token-expired-banner-a1')).toBeInTheDocument();
-    expect(screen.getByTestId('shell-token-expired-banner-a2')).toBeInTheDocument();
-    expect(screen.queryByTestId('shell-token-expired-banner-c1')).toBeNull();
+    expect(screen.getByTestId('shell-token-expired-banner-11')).toBeInTheDocument();
+    expect(screen.getByTestId('shell-token-expired-banner-12')).toBeInTheDocument();
+    expect(screen.queryByTestId('shell-token-expired-banner-13')).toBeNull();
+    expect(screen.queryByTestId('shell-token-expired-banner-14')).toBeNull();
     expect(screen.getByRole('link', { name: '1 more' })).toHaveAttribute('href', '/accounts');
 
-    fireEvent.click(screen.getByTestId('shell-banner-dismiss-k1'));
-    expect(screen.queryByTestId('shell-key-revoked-banner-k1')).toBeNull();
+    fireEvent.click(screen.getByTestId('shell-banner-dismiss-1'));
+    expect(screen.queryByTestId('shell-key-revoked-banner-1')).toBeNull();
   });
 
-  it('reconnects a cloud banner through /sync', async () => {
+  it('starts the Flickr authorization of the key when reconnecting an account', async () => {
     server.use(
-      http.get('*/shell/summary', () =>
-        HttpResponse.json({
-          unread_notifications: 0,
-          running_downloads: 0,
-          tray_count: 0,
-          attention: [{ kind: 'cloud_expired', id: 'c1', label: 'Drive' }],
-        }),
+      http.get('*/flickr-accounts', () =>
+        HttpResponse.json([{ id: 1, key_id: 11, username: 'anna', status: 'reconnect_required' }]),
       ),
+      http.post('*/flickr-accounts/connect', async ({ request }) => {
+        expect(await request.json()).toEqual({ key_id: 11 });
+        return HttpResponse.json({ authorize_url: '/authorized' });
+      }),
     );
-    const { router } = renderApp({ session: userSession });
+    const assign = vi.fn();
+    vi.stubGlobal('location', { ...window.location, assign });
+    renderApp({ session: userSession });
 
-    fireEvent.click(await screen.findByTestId('shell-banner-reconnect-c1'));
+    fireEvent.click(await screen.findByTestId('shell-banner-reconnect-11'));
 
     await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/sync');
+      expect(assign).toHaveBeenCalledWith('/authorized');
     });
+    vi.unstubAllGlobals();
   });
 
   it('shows the maintenance page after three failed health probes', async () => {
@@ -381,25 +372,22 @@ describe('crawling-off banner', () => {
 
   it('keeps the offline banner first and the token cap of 2 with the banner shown', async () => {
     server.use(
-      http.get('*/shell/summary', () =>
-        HttpResponse.json({
-          unread_notifications: 0,
-          running_downloads: 0,
-          tray_count: 0,
-          attention: [
-            { kind: 'key_revoked', id: 'k1', label: 'Main key' },
-            { kind: 'token_expired', id: 'a1', label: 'anna' },
-            { kind: 'token_expired', id: 'a2', label: 'bob' },
-            { kind: 'token_expired', id: 'a3', label: 'cy' },
-          ],
-        }),
+      http.get('*/keys', () =>
+        HttpResponse.json([{ id: 1, label: 'Main key', status: 'revoked' }]),
+      ),
+      http.get('*/flickr-accounts', () =>
+        HttpResponse.json([
+          { id: 1, key_id: 11, username: 'anna', status: 'reconnect_required' },
+          { id: 2, key_id: 12, username: 'bob', status: 'reconnect_required' },
+          { id: 3, key_id: 13, username: 'cy', status: 'reconnect_required' },
+        ]),
       ),
     );
     renderApp({ session: userSession, path: '/profile' });
     await screen.findByTestId('shell-crawling-off-banner');
     fireEvent(window, new Event('offline'));
     await screen.findByTestId('shell-offline-banner');
-    await screen.findByTestId('shell-key-revoked-banner-k1');
+    await screen.findByTestId('shell-key-revoked-banner-1');
 
     const order = Array.from(
       document.querySelectorAll(
@@ -409,9 +397,9 @@ describe('crawling-off banner', () => {
     expect(order).toEqual([
       'shell-offline-banner',
       'shell-crawling-off-banner',
-      'shell-key-revoked-banner-k1',
-      'shell-token-expired-banner-a1',
-      'shell-token-expired-banner-a2',
+      'shell-key-revoked-banner-1',
+      'shell-token-expired-banner-11',
+      'shell-token-expired-banner-12',
     ]);
   });
 });

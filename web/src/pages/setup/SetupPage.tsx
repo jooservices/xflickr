@@ -174,7 +174,7 @@ export function SetupPage() {
         : 'steps';
 
   const settingsQuery = useQuery({
-    queryKey: ['/me/crawl-settings'],
+    queryKey: ['crawl', 'settings'],
     queryFn: ({ signal }) => loadCrawlSettings(signal),
     enabled: view === 'steps' && step === 3 && hasAccount,
     retry: false,
@@ -183,10 +183,7 @@ export function SetupPage() {
   const settingsFailed = settingsQuery.isError;
   // The slider runs from 1 to the administrator cap and never starts above it.
   const depthMax = settings ? Math.max(1, settings.depth_max) : DEFAULT_DEPTH;
-  const depthStart = Math.min(
-    settings ? (settings.depth ?? settings.depth_default) : DEFAULT_DEPTH,
-    depthMax,
-  );
+  const depthStart = Math.min(settings ? settings.depth : DEFAULT_DEPTH, depthMax);
   const depth = Math.min(Math.max(depthChoice ?? depthStart, 1), depthMax);
 
   useEffect(() => {
@@ -339,11 +336,11 @@ export function SetupPage() {
     setFinishError(null);
     try {
       const result = await startCrawl(depth);
-      if (result.status === 202) {
+      if (result.status === 200) {
         void navigate('/', { state: { toast: 'user.wizard.done.toast' } });
         return;
       }
-      if (result.status === 422 && result.code === 'depth_out_of_range') {
+      if (result.status === 422 && result.code === 'depth_above_cap') {
         setDepthChoice(null);
         void settingsQuery.refetch();
         setFinishError('depth');

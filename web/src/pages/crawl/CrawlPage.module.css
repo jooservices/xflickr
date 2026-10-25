@@ -31,6 +31,11 @@
   max-width: 70ch;
   color: var(--muted);
 }
+.g2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
 .g3 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -602,6 +607,7 @@
 }
 
 @media (max-width: 899px) {
+  .g2,
   .g3 {
     grid-template-columns: minmax(0, 1fr);
   }

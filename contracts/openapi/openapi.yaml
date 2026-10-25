@@ -34,6 +34,8 @@ paths:
     $ref: ./paths/quota.yaml#/key
   /flickr-accounts/connect:
     $ref: ./paths/flickr_accounts.yaml#/connect
+  /flickr-accounts:
+    $ref: ./paths/flickr_accounts.yaml#/collection
   /flickr-accounts/callback:
     $ref: ./paths/flickr_accounts.yaml#/callback
   /admin/users:
@@ -48,6 +50,8 @@ paths:
     $ref: ./paths/queue.yaml#/user_queue
   /me/crawl:
     $ref: ./paths/crawl.yaml#/status
+  /me/crawl/settings:
+    $ref: ./paths/crawl.yaml#/settings
   /me/contacts/{nsid}/star:
     $ref: ./paths/crawl.yaml#/star
   /me/contacts/{nsid}/select:
@@ -106,6 +110,10 @@ components:
       $ref: ./schemas/queue.yaml#/CrawlQueue
     CrawlStatus:
       $ref: ./schemas/queue.yaml#/CrawlStatus
+    CrawlSettings:
+      $ref: ./schemas/queue.yaml#/CrawlSettings
+    UpdateCrawlSettingsRequest:
+      $ref: ./schemas/queue.yaml#/UpdateCrawlSettingsRequest
     StarContactRequest:
       $ref: ./schemas/queue.yaml#/StarContactRequest
     CrawlContactRequest:

@@ -17,8 +17,15 @@ type ControlService interface {
 	Resume(context.Context, int64, string) error
 }
 
+// DepthService reads and changes the signed-in user's crawl depth.
+type DepthService interface {
+	Get(context.Context, int64) (app.DepthPolicy, error)
+	Set(context.Context, int64, int) (app.DepthPolicy, error)
+}
+
 type CrawlHandler struct {
 	Controls ControlService
+	Depth    DepthService
 	ActorID  func(context.Context) (int64, bool)
 }
 
@@ -167,4 +174,47 @@ func (h CrawlHandler) actor(ctx context.Context) (int64, bool) {
 		return 0, false
 	}
 	return h.ActorID(ctx)
+}
+
+func settingsBody(policy app.DepthPolicy) gen.CrawlSettings {
+	return gen.CrawlSettings{Depth: policy.Depth, DepthDefault: policy.Default, DepthMax: policy.Max}
+}
+
+func (h CrawlHandler) GetMeCrawlSettings(ctx context.Context, _ gen.GetMeCrawlSettingsRequestObject) (gen.GetMeCrawlSettingsResponseObject, error) {
+	user, ok := h.actor(ctx)
+	if !ok {
+		return gen.GetMeCrawlSettings401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
+	}
+	if h.Depth == nil {
+		return nil, errors.New("crawl: depth service is required")
+	}
+	policy, err := h.Depth.Get(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+	return gen.GetMeCrawlSettings200JSONResponse(settingsBody(policy)), nil
+}
+
+func (h CrawlHandler) UpdateMeCrawlSettings(ctx context.Context, request gen.UpdateMeCrawlSettingsRequestObject) (gen.UpdateMeCrawlSettingsResponseObject, error) {
+	user, ok := h.actor(ctx)
+	if !ok {
+		return gen.UpdateMeCrawlSettings401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
+	}
+	if h.Depth == nil {
+		return nil, errors.New("crawl: depth service is required")
+	}
+	if request.Body == nil {
+		return gen.UpdateMeCrawlSettings400JSONResponse(gen.Error{Code: "invalid_request", Message: "Depth is required"}), nil
+	}
+	policy, err := h.Depth.Set(ctx, user, request.Body.Depth)
+	switch {
+	case errors.Is(err, app.ErrDepthInvalid):
+		return gen.UpdateMeCrawlSettings400JSONResponse(gen.Error{Code: "invalid_request", Message: "Depth must be at least 1"}), nil
+	case errors.Is(err, app.ErrDepthAboveCap):
+		details := map[string]interface{}{"max_depth": policy.Max}
+		return gen.UpdateMeCrawlSettings422JSONResponse(gen.Error{Code: "depth_above_cap", Message: "Depth is above the administrator limit", Details: &details}), nil
+	case err != nil:
+		return nil, err
+	}
+	return gen.UpdateMeCrawlSettings200JSONResponse(settingsBody(policy)), nil
 }

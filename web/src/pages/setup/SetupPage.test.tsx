@@ -31,10 +31,10 @@ const keysReply = (keys: unknown[] = []) => http.get('*/keys', () => HttpRespons
 const accountsReply = (accounts: unknown[] = []) =>
   http.get('*/flickr-accounts', () => HttpResponse.json(accounts));
 const settingsReply = (
-  settings: Record<string, unknown> = { depth: null, depth_default: 2, depth_max: 4 },
-) => http.get('*/me/crawl-settings', () => HttpResponse.json(settings));
+  settings: Record<string, unknown> = { depth: 2, depth_default: 2, depth_max: 4 },
+) => http.get('*/me/crawl/settings', () => HttpResponse.json(settings));
 const crawlStart = (status: number, body: Record<string, unknown> = {}) =>
-  http.post('*/crawl/start', () => HttpResponse.json(body, { status }));
+  http.put('*/me/crawl/settings', () => HttpResponse.json(body, { status }));
 const postKey = (status: number, body: unknown) =>
   http.post('*/keys', () => HttpResponse.json(body as Record<string, unknown>, { status }));
 
@@ -612,7 +612,7 @@ describe('setup wizard step 3 crawl start', () => {
   };
 
   it('defaults the depth to 2 and caps the slider at depth_max', async () => {
-    stepThree(settingsReply({ depth: null, depth_default: 2, depth_max: 4 }));
+    stepThree(settingsReply({ depth: 2, depth_default: 2, depth_max: 4 }));
     const slider = await screen.findByTestId('wizard-depth');
     await waitFor(() => expect(slider).toHaveAttribute('max', '4'));
     expect(slider).toHaveAttribute('min', '1');
@@ -627,12 +627,12 @@ describe('setup wizard step 3 crawl start', () => {
     await waitFor(() => expect(screen.getByTestId('wizard-depth')).toHaveValue('3'));
   });
 
-  it('posts the chosen depth, goes Home after 202 and shows the toast there', async () => {
+  it('posts the chosen depth, goes Home after 200 and shows the toast there', async () => {
     const start = vi.fn(async ({ request }: { request: Request }) => {
       expect(await request.json()).toEqual({ depth: 3 });
-      return HttpResponse.json({ started: true }, { status: 202 });
+      return HttpResponse.json({ depth: 3, depth_default: 2, depth_max: 4 });
     });
-    const { router } = stepThree(settingsReply(), http.post('*/crawl/start', start));
+    const { router } = stepThree(settingsReply(), http.put('*/me/crawl/settings', start));
     await waitFor(() => expect(screen.getByTestId('wizard-depth')).toHaveAttribute('max', '4'));
     fireEvent.change(screen.getByTestId('wizard-depth'), { target: { value: '3' } });
     fireEvent.click(screen.getByTestId('wizard-finish'));
@@ -657,20 +657,20 @@ describe('setup wizard step 3 crawl start', () => {
   it('reports a network failure of the start call', async () => {
     stepThree(
       settingsReply(),
-      http.post('*/crawl/start', () => HttpResponse.error()),
+      http.put('*/me/crawl/settings', () => HttpResponse.error()),
     );
     fireEvent.click(await screen.findByTestId('wizard-finish'));
     expect(await screen.findByTestId('wizard-done-error')).toBeInTheDocument();
   });
 
-  it('re-reads the settings and explains depth_out_of_range', async () => {
+  it('re-reads the settings and explains depth_above_cap', async () => {
     let reads = 0;
     stepThree(
-      http.get('*/me/crawl-settings', () => {
+      http.get('*/me/crawl/settings', () => {
         reads += 1;
         return HttpResponse.json({ depth: null, depth_default: 2, depth_max: reads === 1 ? 4 : 2 });
       }),
-      crawlStart(422, { code: 'depth_out_of_range' }),
+      crawlStart(422, { code: 'depth_above_cap' }),
     );
     await waitFor(() => expect(screen.getByTestId('wizard-depth')).toHaveAttribute('max', '4'));
     fireEvent.change(screen.getByTestId('wizard-depth'), { target: { value: '4' } });
@@ -683,12 +683,12 @@ describe('setup wizard step 3 crawl start', () => {
   it('works with depth 2 and a stale banner when the settings fail, and retries them', async () => {
     let fail = true;
     stepThree(
-      http.get('*/me/crawl-settings', () =>
+      http.get('*/me/crawl/settings', () =>
         fail
           ? HttpResponse.json({ code: 'x' }, { status: 500 })
-          : HttpResponse.json({ depth: null, depth_default: 2, depth_max: 4 }),
+          : HttpResponse.json({ depth: 2, depth_default: 2, depth_max: 4 }),
       ),
-      crawlStart(202, { started: true }),
+      crawlStart(200, { depth: 2, depth_default: 2, depth_max: 4 }),
     );
     const banner = await screen.findByTestId('wizard-stale-banner');
     expect(banner).toHaveTextContent('Depth 2 is used');

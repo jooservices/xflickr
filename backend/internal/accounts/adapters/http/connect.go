@@ -12,11 +12,32 @@ import (
 
 // ConnectService is the Flickr account connection use case set.
 type ConnectService interface {
+	List(context.Context, int64) ([]domain.Account, error)
 	Start(ctx context.Context, userID, keyID int64) (string, error)
 	Complete(ctx context.Context, userID int64, state, oauthToken, verifier string) (domain.Account, error)
 }
 
 var _ ConnectService = app.Connect{}
+
+// ListFlickrAccounts returns account metadata for the signed-in user.
+func (h ConnectHandler) ListFlickrAccounts(ctx context.Context, _ gen.ListFlickrAccountsRequestObject) (gen.ListFlickrAccountsResponseObject, error) {
+	userID, ok := principalID(ctx, h.Principal)
+	if !ok {
+		return gen.ListFlickrAccounts401JSONResponse(unauthenticated()), nil
+	}
+	if h.Accounts == nil {
+		return nil, errors.New("accounts: connect service is required")
+	}
+	accounts, err := h.Accounts.List(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(gen.ListFlickrAccounts200JSONResponse, 0, len(accounts))
+	for _, account := range accounts {
+		out = append(out, gen.FlickrAccount{ID: account.ID, KeyID: account.KeyID, Nsid: account.NSID, Username: account.Username, Status: gen.FlickrAccountStatus(account.Status), CreatedAt: account.CreatedAt})
+	}
+	return out, nil
+}
 
 // ConnectHandler implements the /flickr-accounts operations on the generated
 // strict server. Responses never include tokens or the request token secret.

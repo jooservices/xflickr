@@ -2,7 +2,7 @@ import type { ApiKey } from '../../shared/api/gen/models';
 import type { KeyUsage } from './api';
 
 export type Pill = 'ok' | 'reserve' | 'exhausted' | 'revoked' | 'invalid';
-export type Hint = 'revoked' | 'exhausted' | 'reserve' | 'paused';
+export type Hint = 'revoked' | 'exhausted' | 'reserve';
 
 /** The state pill: a key that Flickr refuses wins over the quota state. */
 export function pillOf(key: ApiKey, usage: KeyUsage | undefined): Pill | null {
@@ -12,11 +12,11 @@ export function pillOf(key: ApiKey, usage: KeyUsage | undefined): Pill | null {
 }
 
 /** The single hint line of a card, most urgent first. */
-export function hintOf(pill: Pill | null, usage: KeyUsage | undefined): Hint | null {
+export function hintOf(pill: Pill | null): Hint | null {
   if (pill === 'revoked' || pill === 'invalid') return 'revoked';
   if (pill === 'exhausted') return 'exhausted';
   if (pill === 'reserve') return 'reserve';
-  return usage?.paused === true ? 'paused' : null;
+  return null;
 }
 
 export const isTerminal = (pill: Pill | null) => pill === 'revoked' || pill === 'invalid';

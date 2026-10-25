@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { I18nProvider } from '../../shared';
 import { PlaceholderPage } from './PlaceholderPage';
 
-function renderPage() {
+function renderPage(unavailable = false) {
   return render(
     <MemoryRouter>
       <I18nProvider initialLocale="vi">
@@ -13,6 +13,7 @@ function renderPage() {
           titleKey="shell.nav.library"
           emptyTitleKey="shell.home.empty.title"
           emptyTextKey="shell.home.empty.text"
+          unavailable={unavailable}
         />
       </I18nProvider>
     </MemoryRouter>,
@@ -48,5 +49,14 @@ describe('PlaceholderPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Trang này chưa được xây dựng.')).toBeInTheDocument();
     });
+  });
+});
+
+describe('PlaceholderPage for a feature that does not exist yet', () => {
+  it('explains that it is not available, instead of a blank page or an error', () => {
+    renderPage(true);
+
+    expect(screen.getByTestId('shell-unavailable-empty')).toHaveTextContent('Chưa có sẵn');
+    expect(screen.queryByText('Trang này chưa được xây dựng.')).not.toBeInTheDocument();
   });
 });

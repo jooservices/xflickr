@@ -13,15 +13,20 @@ import (
 )
 
 type scriptedConnect struct {
-	url     string
-	account domain.Account
-	err     error
+	url      string
+	account  domain.Account
+	accounts []domain.Account
+	err      error
 
 	userID   int64
 	keyID    int64
 	state    string
 	token    string
 	verifier string
+}
+
+func (s *scriptedConnect) List(context.Context, int64) ([]domain.Account, error) {
+	return s.accounts, s.err
 }
 
 func (s *scriptedConnect) Start(_ context.Context, userID, keyID int64) (string, error) {
@@ -46,6 +51,9 @@ func TestConnectEndpointsRequireAUser(t *testing.T) {
 	if response, err := handler.FlickrAccountCallback(t.Context(), gen.FlickrAccountCallbackRequestObject{}); err != nil || !codeIs(t, response, "unauthenticated") {
 		t.Fatalf("callback = %T %v", response, err)
 	}
+	if response, err := handler.ListFlickrAccounts(t.Context(), gen.ListFlickrAccountsRequestObject{}); err != nil || !codeIs(t, response, "unauthenticated") {
+		t.Fatalf("list accounts = %T %v", response, err)
+	}
 	if response, err := (ConnectHandler{}).ConnectFlickrAccount(nil, gen.ConnectFlickrAccountRequestObject{}); err != nil || !codeIs(t, response, "unauthenticated") {
 		t.Fatalf("nil principal = %T %v", response, err)
 	}
@@ -58,6 +66,26 @@ func TestConnectEndpointsRejectAMissingService(t *testing.T) {
 	}
 	if _, err := handler.FlickrAccountCallback(t.Context(), gen.FlickrAccountCallbackRequestObject{}); err == nil {
 		t.Fatal("callback accepted a missing service")
+	}
+	if _, err := handler.ListFlickrAccounts(t.Context(), gen.ListFlickrAccountsRequestObject{}); err == nil {
+		t.Fatal("list accounts accepted a missing service")
+	}
+}
+
+func TestListFlickrAccountsReturnsOnlyOwnedMetadata(t *testing.T) {
+	created := time.Unix(1_700_000_000, 0).UTC()
+	service := &scriptedConnect{accounts: []domain.Account{{ID: 11, UserID: 9, KeyID: 4, NSID: "21207597@N07", Username: "jamal", Status: domain.AccountOK, CreatedAt: created}}}
+	response, err := connectedAs(service).ListFlickrAccounts(t.Context(), gen.ListFlickrAccountsRequestObject{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, ok := response.(gen.ListFlickrAccounts200JSONResponse)
+	if !ok || len(body) != 1 || body[0].ID != 11 || body[0].Nsid != "21207597@N07" || body[0].KeyID != 4 || !body[0].CreatedAt.Equal(created) {
+		t.Fatalf("response = %#v", response)
+	}
+	service.err = errors.New("database down")
+	if _, err := connectedAs(service).ListFlickrAccounts(t.Context(), gen.ListFlickrAccountsRequestObject{}); !errors.Is(err, service.err) {
+		t.Fatalf("list error = %v", err)
 	}
 }
 

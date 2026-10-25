@@ -18,7 +18,7 @@ function userPageElement(path: string, labelKey: MessageKey) {
   if (path === '/profile') return <ProfilePage />;
   if (path === '/crawl') return <CrawlPage />;
   if (path === '/keys') return <KeysPage />;
-  return <PlaceholderPage scope="shell" titleKey={labelKey} />;
+  return <PlaceholderPage scope="shell" titleKey={labelKey} unavailable />;
 }
 
 const userPages: RouteObject[] = [
@@ -40,11 +40,20 @@ const userPages: RouteObject[] = [
   })),
   {
     path: 'contacts/:id',
-    element: <PlaceholderPage scope="shell" titleKey="shell.page.contact" />,
+    element: <PlaceholderPage scope="shell" titleKey="shell.page.contact" unavailable />,
   },
-  { path: 'albums/:id', element: <PlaceholderPage scope="shell" titleKey="shell.page.album" /> },
-  { path: 'accounts', element: <PlaceholderPage scope="shell" titleKey="shell.page.accounts" /> },
-  { path: 'sessions', element: <PlaceholderPage scope="shell" titleKey="shell.page.sessions" /> },
+  {
+    path: 'albums/:id',
+    element: <PlaceholderPage scope="shell" titleKey="shell.page.album" unavailable />,
+  },
+  {
+    path: 'accounts',
+    element: <PlaceholderPage scope="shell" titleKey="shell.page.accounts" unavailable />,
+  },
+  {
+    path: 'sessions',
+    element: <PlaceholderPage scope="shell" titleKey="shell.page.sessions" unavailable />,
+  },
   {
     path: 'onboarding',
     element: <SetupPage />,

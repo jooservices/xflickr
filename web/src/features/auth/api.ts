@@ -1,5 +1,6 @@
+import { getAuthConfig } from '../../shared/api/gen/default/default';
 import type { Locale } from '../../shared/i18n/catalog';
-import { csrfFetch, readCsrfToken, signalSessionExpired } from '../../shared/api/mutator';
+import { readCsrfToken, signalSessionExpired } from '../../shared/api/mutator';
 
 export { signalSessionExpired };
 
@@ -23,30 +24,9 @@ export function csrfFetchOptions(method = 'GET'): RequestInit {
   };
 }
 
-export async function request<T>(
-  path: string,
-  method = 'GET',
-  body?: unknown,
-  signal?: AbortSignal,
-): Promise<ApiResult<T>> {
-  const response = await csrfFetch(path, {
-    method,
-    signal,
-    headers: {
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const text = response.status === 204 ? '' : await response.text();
-  let data: T = {} as T;
-  if (text) {
-    try {
-      data = JSON.parse(text) as T;
-    } catch {
-      data = {} as T;
-    }
-  }
-  return { status: response.status, data, headers: response.headers };
+/** Narrows a generated-client answer to the body shape the caller reads. */
+export function asResult<T>(result: { status: number; data: unknown; headers: Headers }) {
+  return result as ApiResult<T>;
 }
 
 export function validatedReturnTo(value: string | null): string {
@@ -71,13 +51,8 @@ export async function fetchCsrfConfig(): Promise<{
   terms_url?: string;
   privacy_url?: string;
 }> {
-  const response = await request<{
-    registration_open?: boolean;
-    passkey_enabled?: boolean;
-    terms_url?: string;
-    privacy_url?: string;
-  }>('/auth/config');
-  if (response.status < 200 || response.status >= 300) throw new Error('Auth config unavailable');
+  const response = await getAuthConfig();
+  if (response.status !== 200) throw new Error('Auth config unavailable');
   const sameOriginPath = (value: string | undefined) =>
     value?.startsWith('/') && !value.startsWith('//') && !value.includes('\\') ? value : undefined;
   return {

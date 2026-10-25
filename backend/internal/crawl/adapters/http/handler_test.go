@@ -197,3 +197,80 @@ func TestContactControlAuthenticationAndNotFound(t *testing.T) {
 		}
 	}
 }
+
+type depthStub struct {
+	policy app.DepthPolicy
+	err    error
+	set    int
+}
+
+func (d *depthStub) Get(context.Context, int64) (app.DepthPolicy, error) { return d.policy, d.err }
+
+func (d *depthStub) Set(_ context.Context, _ int64, depth int) (app.DepthPolicy, error) {
+	d.set = depth
+	return d.policy, d.err
+}
+
+func TestCrawlSettingsRequireAUserAndService(t *testing.T) {
+	if r, err := (CrawlHandler{}).GetMeCrawlSettings(context.Background(), gen.GetMeCrawlSettingsRequestObject{}); err != nil || r == nil {
+		t.Fatalf("get without actor = %v, %v", r, err)
+	} else if _, ok := r.(gen.GetMeCrawlSettings401JSONResponse); !ok {
+		t.Fatalf("get without actor = %T", r)
+	}
+	if r, _ := (CrawlHandler{}).UpdateMeCrawlSettings(context.Background(), gen.UpdateMeCrawlSettingsRequestObject{}); r == nil {
+		t.Fatal("update without actor returned nil")
+	} else if _, ok := r.(gen.UpdateMeCrawlSettings401JSONResponse); !ok {
+		t.Fatalf("update without actor = %T", r)
+	}
+	handler := CrawlHandler{ActorID: testActor}
+	if _, err := handler.GetMeCrawlSettings(context.Background(), gen.GetMeCrawlSettingsRequestObject{}); err == nil {
+		t.Fatal("get accepted a missing depth service")
+	}
+	if _, err := handler.UpdateMeCrawlSettings(context.Background(), gen.UpdateMeCrawlSettingsRequestObject{}); err == nil {
+		t.Fatal("update accepted a missing depth service")
+	}
+}
+
+func TestCrawlSettingsReadAndWrite(t *testing.T) {
+	stub := &depthStub{policy: app.DepthPolicy{Depth: 3, Default: 2, Max: 4}}
+	handler := CrawlHandler{ActorID: testActor, Depth: stub}
+	got, err := handler.GetMeCrawlSettings(context.Background(), gen.GetMeCrawlSettingsRequestObject{})
+	body, ok := got.(gen.GetMeCrawlSettings200JSONResponse)
+	if err != nil || !ok || body.Depth != 3 || body.DepthDefault != 2 || body.DepthMax != 4 {
+		t.Fatalf("get = %#v, %v", got, err)
+	}
+	put, err := handler.UpdateMeCrawlSettings(context.Background(), gen.UpdateMeCrawlSettingsRequestObject{Body: &gen.UpdateCrawlSettingsRequest{Depth: 3}})
+	if _, ok := put.(gen.UpdateMeCrawlSettings200JSONResponse); err != nil || !ok || stub.set != 3 {
+		t.Fatalf("put = %#v, %v", put, err)
+	}
+	if r, _ := handler.UpdateMeCrawlSettings(context.Background(), gen.UpdateMeCrawlSettingsRequestObject{}); r == nil {
+		t.Fatal("nil body returned nil")
+	} else if _, ok := r.(gen.UpdateMeCrawlSettings400JSONResponse); !ok {
+		t.Fatalf("nil body = %T", r)
+	}
+}
+
+func TestCrawlSettingsMapErrors(t *testing.T) {
+	stub := &depthStub{policy: app.DepthPolicy{Max: 4}}
+	handler := CrawlHandler{ActorID: testActor, Depth: stub}
+	request := gen.UpdateMeCrawlSettingsRequestObject{Body: &gen.UpdateCrawlSettingsRequest{Depth: 9}}
+	stub.err = app.ErrDepthAboveCap
+	r, _ := handler.UpdateMeCrawlSettings(context.Background(), request)
+	capped, ok := r.(gen.UpdateMeCrawlSettings422JSONResponse)
+	if !ok || capped.Code != "depth_above_cap" || (*capped.Details)["max_depth"] != 4 {
+		t.Fatalf("cap = %#v", r)
+	}
+	stub.err = app.ErrDepthInvalid
+	if r, _ = handler.UpdateMeCrawlSettings(context.Background(), request); r == nil {
+		t.Fatal("invalid returned nil")
+	} else if _, ok := r.(gen.UpdateMeCrawlSettings400JSONResponse); !ok {
+		t.Fatalf("invalid = %T", r)
+	}
+	stub.err = errors.New("down")
+	if _, err := handler.UpdateMeCrawlSettings(context.Background(), request); err == nil {
+		t.Fatal("update swallowed a store failure")
+	}
+	if _, err := handler.GetMeCrawlSettings(context.Background(), gen.GetMeCrawlSettingsRequestObject{}); err == nil {
+		t.Fatal("get swallowed a store failure")
+	}
+}

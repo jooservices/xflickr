@@ -13,18 +13,13 @@ const key = (status: ApiKey['status']): ApiKey => ({
   status,
   created_at: '2026-10-25T00:00:00Z',
 });
-const usage = (state: KeyUsage['state'], paused = false): KeyUsage => ({
+const usage = (state: KeyUsage['state']): KeyUsage => ({
   key_id: 1,
   used: 1,
   person_used: 1,
   sizes_used: 0,
   reserve: 100,
-  burst_now: 0,
   window_resets_at: '2026-10-25T11:00:00Z',
-  hourly: [],
-  node_id: 'n1',
-  node_ip: '10.0.0.1',
-  paused,
   state,
 });
 
@@ -37,11 +32,10 @@ describe('keys format helpers', () => {
   });
 
   it('picks one hint, most urgent first', () => {
-    expect(hintOf('invalid', undefined)).toBe('revoked');
-    expect(hintOf('exhausted', usage('exhausted', true))).toBe('exhausted');
-    expect(hintOf('reserve', usage('reserve'))).toBe('reserve');
-    expect(hintOf('ok', usage('ok', true))).toBe('paused');
-    expect(hintOf('ok', usage('ok'))).toBeNull();
+    expect(hintOf('invalid')).toBe('revoked');
+    expect(hintOf('exhausted')).toBe('exhausted');
+    expect(hintOf('reserve')).toBe('reserve');
+    expect(hintOf('ok')).toBeNull();
     expect(isTerminal('revoked')).toBe(true);
     expect(isTerminal('ok')).toBe(false);
   });

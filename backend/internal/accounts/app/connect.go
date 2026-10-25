@@ -92,6 +92,8 @@ type Cipher interface {
 // AccountRepository stores connected accounts and publishes their events in
 // the same transaction.
 type AccountRepository interface {
+	// List returns connected accounts owned by the user without token material.
+	ListAccounts(context.Context, int64) ([]domain.Account, error)
 	// KeyCredentials returns the user's key with its sealed secret. It
 	// returns ErrNotFound when the key is not the user's.
 	KeyCredentials(ctx context.Context, userID, keyID int64) (domain.APIKey, crypto.Sealed, error)
@@ -114,6 +116,23 @@ type Connect struct {
 	CallbackURL string
 	// NewState returns a fresh unguessable state. Nil uses 256 random bits.
 	NewState func() (string, error)
+}
+
+// List returns the signed-in user's connected Flickr accounts.
+func (c Connect) List(ctx context.Context, userID int64) ([]domain.Account, error) {
+	if c.Repository == nil {
+		return nil, errors.New("accounts: connect repository is required")
+	}
+	if ctx == nil {
+		return nil, errors.New("accounts: context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if userID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	return c.Repository.ListAccounts(ctx, userID)
 }
 
 // Start asks Flickr for a request token for the user's key, keeps it for

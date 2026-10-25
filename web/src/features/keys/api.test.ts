@@ -37,7 +37,7 @@ describe('key API', () => {
 });
 
 describe('contract requests', () => {
-  it('loads the account list and reports every failure, including a missing endpoint', async () => {
+  it('loads the account list and reports every failure', async () => {
     server.use(http.get('*/flickr-accounts', () => HttpResponse.json([{ id: 1 }])));
     await expect(loadAccounts()).resolves.toEqual([{ id: 1 }]);
 
@@ -48,31 +48,31 @@ describe('contract requests', () => {
   });
 
   it('loads the crawl settings and reports failures', async () => {
-    const settings = { depth: null, depth_default: 2, depth_max: 4 };
-    server.use(http.get('*/me/crawl-settings', () => HttpResponse.json(settings)));
+    const settings = { depth: 2, depth_default: 2, depth_max: 4 };
+    server.use(http.get('*/me/crawl/settings', () => HttpResponse.json(settings)));
     await expect(loadCrawlSettings()).resolves.toEqual(settings);
 
-    server.use(http.get('*/me/crawl-settings', () => new HttpResponse(null, { status: 404 })));
+    server.use(http.get('*/me/crawl/settings', () => new HttpResponse(null, { status: 404 })));
     await expect(loadCrawlSettings()).rejects.toMatchObject({ status: 404 });
   });
 
-  it('starts the crawl with the depth and the CSRF header', async () => {
+  it('stores the depth with the CSRF header', async () => {
     document.cookie = 'xf_csrf=tok';
     server.use(
-      http.post('*/crawl/start', async ({ request }) => {
+      http.put('*/me/crawl/settings', async ({ request }) => {
         expect(request.headers.get('X-CSRF-Token')).toBe('tok');
         expect(await request.json()).toEqual({ depth: 3 });
-        return HttpResponse.json({ started: true }, { status: 202 });
+        return HttpResponse.json({ depth: 3, depth_default: 2, depth_max: 4 });
       }),
     );
-    await expect(startCrawl(3)).resolves.toEqual({ status: 202, code: undefined });
+    await expect(startCrawl(3)).resolves.toEqual({ status: 200, code: undefined });
 
     server.use(
-      http.post('*/crawl/start', () =>
-        HttpResponse.json({ code: 'depth_out_of_range' }, { status: 422 }),
+      http.put('*/me/crawl/settings', () =>
+        HttpResponse.json({ code: 'depth_above_cap' }, { status: 422 }),
       ),
     );
-    await expect(startCrawl(9)).resolves.toEqual({ status: 422, code: 'depth_out_of_range' });
+    await expect(startCrawl(9)).resolves.toEqual({ status: 422, code: 'depth_above_cap' });
   });
 });
 

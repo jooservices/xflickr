@@ -21,6 +21,8 @@ import { SessionModal, ShortcutsDialog } from './Dialogs';
 import { MaintenancePage, useMaintenance } from './Maintenance';
 import { Notifications } from './Notifications';
 import { Tray } from './Tray';
+import { logout } from '../../shared/api/gen/default/default';
+import { startConnect } from '../../pages/keys/api';
 import { useShellSummary } from './data';
 import { USER_NAV } from './nav';
 import { ShellRuntimeProvider, useShellRuntime } from './runtime';
@@ -210,7 +212,7 @@ function Shell({ forbidden }: UserShellProps) {
   };
 
   const signOut = () => {
-    void fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' }).finally(() => {
+    void logout().finally(() => {
       client.clear();
       window.location.assign('/login');
     });
@@ -329,11 +331,11 @@ function Shell({ forbidden }: UserShellProps) {
           onReconnect={(item) => {
             if (item.kind === 'cloud_expired') void navigate('/sync');
             else {
-              void fetch('/flickr-accounts/connect', { method: 'POST' })
-                .then((response) => response.json() as Promise<{ authorize_url?: string }>)
-                .then((body) => {
-                  if (body.authorize_url !== undefined) window.location.assign(body.authorize_url);
-                });
+              void startConnect(Number(item.id))
+                .then((url) => {
+                  window.location.assign(url);
+                })
+                .catch(() => undefined);
             }
           }}
         />

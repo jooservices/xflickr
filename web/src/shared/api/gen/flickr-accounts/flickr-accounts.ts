@@ -206,6 +206,143 @@ export const useConnectFlickrAccount = <TError = Error, TContext = unknown>(
 > => {
   return useMutation(getConnectFlickrAccountMutationOptions(options), queryClient);
 };
+export type listFlickrAccountsResponse200 = {
+  data: FlickrAccount[];
+  status: 200;
+};
+
+export type listFlickrAccountsResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type listFlickrAccountsResponseSuccess = listFlickrAccountsResponse200 & {
+  headers: Headers;
+};
+export type listFlickrAccountsResponseError = listFlickrAccountsResponse401 & {
+  headers: Headers;
+};
+
+export type listFlickrAccountsResponse =
+  listFlickrAccountsResponseSuccess | listFlickrAccountsResponseError;
+
+export const getListFlickrAccountsUrl = () => {
+  return `/flickr-accounts`;
+};
+
+/**
+ * @summary List the current user's connected Flickr accounts
+ */
+export const listFlickrAccounts = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<listFlickrAccountsResponse> => {
+  return customFetch<listFlickrAccountsResponse>(getListFlickrAccountsUrl(), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getListFlickrAccountsQueryKey = () => {
+  return [`/flickr-accounts`] as const;
+};
+
+export const getListFlickrAccountsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listFlickrAccounts>>,
+  TError = Error,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listFlickrAccounts>>, TError, TData>>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListFlickrAccountsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listFlickrAccounts>>> = ({ signal }) =>
+    listFlickrAccounts({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listFlickrAccounts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListFlickrAccountsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listFlickrAccounts>>
+>;
+export type ListFlickrAccountsQueryError = Error;
+
+export function useListFlickrAccounts<
+  TData = Awaited<ReturnType<typeof listFlickrAccounts>>,
+  TError = Error,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listFlickrAccounts>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listFlickrAccounts>>,
+          TError,
+          Awaited<ReturnType<typeof listFlickrAccounts>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListFlickrAccounts<
+  TData = Awaited<ReturnType<typeof listFlickrAccounts>>,
+  TError = Error,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listFlickrAccounts>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listFlickrAccounts>>,
+          TError,
+          Awaited<ReturnType<typeof listFlickrAccounts>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListFlickrAccounts<
+  TData = Awaited<ReturnType<typeof listFlickrAccounts>>,
+  TError = Error,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listFlickrAccounts>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List the current user's connected Flickr accounts
+ */
+
+export function useListFlickrAccounts<
+  TData = Awaited<ReturnType<typeof listFlickrAccounts>>,
+  TError = Error,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listFlickrAccounts>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListFlickrAccountsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 export type flickrAccountCallbackResponse200 = {
   data: FlickrAccount;
   status: 200;

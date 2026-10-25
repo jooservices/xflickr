@@ -1,34 +1,49 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect } from '@playwright/test';
+import { expect, test as base } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 
 type Role = 'user' | 'admin';
 
-const summary = { unread_notifications: 3, running_downloads: 2, tray_count: 12, attention: [] };
-
-const adminShell = {
-  open_issues: 3,
-  unread_notifications: 2,
-  cluster: {
-    status: 'ok',
-    nodes_total: 4,
-    nodes_healthy: 4,
-    calls_per_second: 12,
-    calls_history: Array.from({ length: 60 }, (_, index) => (index * 7) % 23),
-  },
-  generated_at: '2026-10-25T10:00:00Z',
-};
-
 const endpoints = [
   '/me',
-  '/shell/summary',
-  '/admin/shell',
-  '/tray',
-  '/notifications',
   '/healthz',
   '/keys',
+  '/flickr-accounts',
+  '/admin/quota',
+  '/me/crawl',
   '/me/crawl/queue',
+  '/me/crawl/settings',
 ];
+
+const contract = readFileSync(
+  fileURLToPath(new URL('../../contracts/openapi/openapi.yaml', import.meta.url)),
+  'utf8',
+);
+const contractPaths = [...contract.matchAll(/^ {2}(\/[^:\n]+):/gm)].map(
+  (match) => new RegExp(`^${match[1].replace(/\{[^}]+\}/g, '[^/]+')}$`),
+);
+
+/**
+ * Every test fails when the page sends an API request to a path that is not in contracts/openapi,
+ * so a screen can no longer pass against routes the backend does not serve.
+ */
+export const test = base.extend<{ contractGuard: undefined }>({
+  contractGuard: [
+    async ({ page }, use) => {
+      const outside: string[] = [];
+      page.on('request', (request) => {
+        if (!['fetch', 'xhr', 'eventsource'].includes(request.resourceType())) return;
+        const { pathname } = new URL(request.url());
+        if (!contractPaths.some((pattern) => pattern.test(pathname))) outside.push(pathname);
+      });
+      await use(undefined);
+      expect(outside, 'paths called outside contracts/openapi').toEqual([]);
+    },
+    { auto: true },
+  ],
+});
 
 /** Answers the endpoints the shells read, so the browser needs no backend. */
 export async function mockApi(page: Page, role: Role | 'anonymous'): Promise<void> {
@@ -51,18 +66,29 @@ export async function mockApi(page: Page, role: Role | 'anonymous'): Promise<voi
                 locale: 'en',
                 created_at: '2026-10-01T00:00:00Z',
               });
-        case '/shell/summary':
-          return json(summary);
-        case '/admin/shell':
-          return role === 'admin' ? json(adminShell) : json({ code: 'forbidden' }, 403);
-        case '/tray':
-          return json({ items: [], count: 0, estimated_bytes: 0 });
-        case '/notifications':
-          return json({ items: [] });
+        case '/admin/quota':
+          return role === 'admin'
+            ? json({
+                keys: [1, 2, 3, 4, 5, 6, 7].map((id) => ({
+                  key_id: id,
+                  label: `Key ${String(id)}`,
+                  node: `n${String(Math.min(id, 4))}`,
+                  used: id <= 4 ? 10_800 : 0,
+                  limit: 3600,
+                  state: id <= 4 ? 'ok' : 'cooling',
+                  trend: 'steady',
+                })),
+              })
+            : json({ code: 'forbidden' }, 403);
         case '/keys':
+        case '/flickr-accounts':
           return json([]);
         case '/me/crawl/queue':
           return json({ lanes: [] });
+        case '/me/crawl':
+          return json({ depths: [], facets: [], lanes: [] });
+        case '/me/crawl/settings':
+          return json({ depth: 2, depth_default: 2, depth_max: 4 });
         default:
           return json({ status: 'ok' });
       }

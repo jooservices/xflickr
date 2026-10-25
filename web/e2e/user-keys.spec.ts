@@ -1,6 +1,7 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
+
 import type { Page, Route } from '@playwright/test';
-import { expectNoSeriousViolations, mockApi } from './support';
+import { expectNoSeriousViolations, mockApi, test } from './support';
 
 const KEY = '0123456789abcdef0123456789abcdef';
 const SECRET = '0123456789abcdef';
@@ -16,19 +17,15 @@ const apiKey = (id: number, extra: Record<string, unknown> = {}) => ({
   created_at: '2026-10-25T00:00:00Z',
   ...extra,
 });
+/** One `GET /keys/{id}/quota` answer; the page builds its usage from these. */
 const usage = (id: number, extra: Record<string, unknown> = {}) => ({
   key_id: id,
   used: 2140,
-  person_used: 1500,
-  sizes_used: 640,
+  limit: 3600,
   reserve: 100,
-  burst_now: 2,
-  window_resets_at: '2099-01-01T00:20:00Z',
-  hourly: Array.from({ length: 24 }, (_, index) => (index === 3 ? 3600 : index * 100)),
-  node_id: 'node-a',
-  node_ip: '10.0.0.7',
-  paused: false,
+  reset_at: new Date(Date.now() + 20 * 60_000).toISOString(),
   state: 'ok',
+  lanes: { interactive: 0, person: 1500, photo: 640 },
   ...extra,
 });
 const flickr = (extra: Record<string, unknown> = {}) => ({
@@ -48,7 +45,6 @@ type World = {
   keysStatus: number;
   usageStatus: number;
   create: { status: number; body?: unknown }[];
-  puts: unknown[];
   deletes: string[];
   connects: unknown[];
 };
@@ -65,7 +61,6 @@ async function keysApi(page: Page, overrides: Partial<World> = {}): Promise<Worl
     keysStatus: 200,
     usageStatus: 200,
     create: [],
-    puts: [],
     deletes: [],
     connects: [],
     ...overrides,
@@ -87,23 +82,19 @@ async function keysApi(page: Page, overrides: Partial<World> = {}): Promise<Worl
     world.usage.push(usage(created.id, { used: 0 }));
     return json(route, created, 201);
   });
-  await page.route(at('/keys/usage'), (route) =>
-    world.usageStatus === 200
-      ? json(route, { server_time: '2099-01-01T00:00:00Z', items: world.usage })
-      : json(route, { code: 'x' }, world.usageStatus),
+  await page.route(
+    (url) => /^\/keys\/\d+\/quota$/.test(url.pathname),
+    (route) => {
+      if (world.usageStatus !== 200) return json(route, { code: 'x' }, world.usageStatus);
+      const id = Number(new URL(route.request().url()).pathname.split('/').at(-2));
+      const entry = world.usage.find((candidate) => candidate.key_id === id);
+      return entry === undefined ? json(route, { code: 'not_found' }, 404) : json(route, entry);
+    },
   );
   await page.route(
     (url) => /^\/keys\/\d+$/.test(url.pathname),
     (route) => {
       const id = item(new URL(route.request().url()));
-      if (route.request().method() === 'PUT') {
-        const body = route.request().postDataJSON() as { paused: boolean };
-        world.puts.push(body);
-        world.usage = world.usage.map((entry) =>
-          entry.key_id === id ? { ...entry, paused: body.paused } : entry,
-        );
-        return json(route, apiKey(id));
-      }
       world.deletes.push(String(id));
       world.keys = world.keys.filter((entry) => entry.id !== id);
       return route.fulfill({ status: 204 });
@@ -139,7 +130,7 @@ test('empty state, then adds a key and shows its card', async ({ page }) => {
   await expect(page.getByTestId('keys-add-modal')).toHaveCount(0);
   await expect(page.getByTestId('keys-card-1')).toBeVisible();
   await expect(page.getByTestId('keys-card-1').getByTestId('keys-card-label')).toBeFocused();
-  await expect(page.getByTestId('keys-toast')).toContainText('placed on node-a');
+  await expect(page.getByTestId('keys-toast')).toContainText('Key checked and saved');
   await expect(page.getByTestId('keys-accounts-connect-1')).toBeVisible();
   expect(world.keys).toHaveLength(1);
 });
@@ -178,15 +169,9 @@ test('keeps the modal open on bad hex, key_invalid and key_duplicate', async ({ 
   await expect(page).toHaveURL(/\/keys$/);
 });
 
-test('pauses and resumes, and removes only after confirmation', async ({ page }) => {
+test('removes only after confirmation', async ({ page }) => {
   const world = await keysApi(page, { keys: [apiKey(1)], usage: [usage(1)] });
   await page.goto('/keys');
-
-  await page.getByTestId('keys-card-pause').click();
-  await expect(page.getByTestId('keys-card-paused')).toBeVisible();
-  await page.getByTestId('keys-card-pause').click();
-  await expect(page.getByTestId('keys-card-paused')).toHaveCount(0);
-  expect(world.puts).toEqual([{ paused: true }, { paused: false }]);
 
   await page.getByTestId('keys-card-remove').click();
   await expect(page.getByTestId('keys-remove-modal')).toBeVisible();
@@ -201,14 +186,13 @@ test('pauses and resumes, and removes only after confirmation', async ({ page })
   expect(world.deletes).toEqual(['1']);
 });
 
-test('shows ok, reserve, exhausted and revoked cards and starts a reconnect', async ({ page }) => {
+test('shows ok, cooling, exhausted and revoked cards and starts a reconnect', async ({ page }) => {
   const world = await keysApi(page, {
     keys: [apiKey(1), apiKey(2), apiKey(3), apiKey(4, { status: 'revoked' })],
     usage: [
       usage(1),
-      usage(2, { used: 3550, state: 'reserve' }),
+      usage(2, { used: 3550, state: 'cooling' }),
       usage(3, { used: 3600, state: 'exhausted' }),
-      usage(4, { state: 'revoked' }),
     ],
     accounts: [flickr({ status: 'reconnect_required' })],
   });
@@ -219,7 +203,9 @@ test('shows ok, reserve, exhausted and revoked cards and starts a reconnect', as
   await expect(page.getByTestId('keys-card-3').getByTestId('keys-card-state')).toHaveText(
     'Exhausted',
   );
-  await expect(page.getByTestId('keys-card-4').getByTestId('keys-card-pause')).toHaveCount(0);
+  await expect(page.getByTestId('keys-card-4').getByTestId('keys-card-state')).toHaveText(
+    'Revoked',
+  );
   await expect(page.getByTestId('keys-card-1').getByTestId('keys-card-bar')).toHaveAttribute(
     'aria-valuetext',
     '2,140 of 3,600 calls used',

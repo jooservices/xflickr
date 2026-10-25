@@ -125,6 +125,37 @@ func (service *Service) Effective(ctx context.Context, userID int64) (domain.Eff
 	return effective, nil
 }
 
+// DepthPolicy reports a user's effective crawl depth with the application
+// default and the administrator cap (zero when no cap is configured).
+type DepthPolicy struct {
+	Depth, Default, Max int
+}
+
+// DepthPolicy reads the max_depth setting for one user.
+func (service *Service) DepthPolicy(ctx context.Context, userID int64) (DepthPolicy, error) {
+	effective, err := service.Effective(ctx, userID)
+	if err != nil {
+		return DepthPolicy{}, err
+	}
+	snapshot, err := service.repository.Load(ctx, userID)
+	if err != nil {
+		return DepthPolicy{}, fmt.Errorf("settings: load depth policy for user %d: %w", userID, err)
+	}
+	setting, found := snapshot.Settings[domain.MaxDepth]
+	if !found {
+		return DepthPolicy{}, fmt.Errorf("settings: %s is not configured", domain.MaxDepth)
+	}
+	var fallback int
+	if err := json.Unmarshal(setting.Value, &fallback); err != nil {
+		return DepthPolicy{}, fmt.Errorf("settings: decode %s: %w", domain.MaxDepth, err)
+	}
+	policy := DepthPolicy{Depth: effective.MaxDepth, Default: fallback}
+	if setting.Max != nil {
+		policy.Max = int(*setting.Max)
+	}
+	return policy, nil
+}
+
 // RegistrationOpen reads the application registration policy through the
 // settings repository. Identity consumes this narrow application port rather
 // than querying the settings tables directly.

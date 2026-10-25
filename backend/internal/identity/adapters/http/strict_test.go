@@ -28,6 +28,9 @@ func TestStrictHandlerLeavesAPIKeysToAccounts(t *testing.T) {
 
 func TestStrictHandlerLeavesFlickrAccountsToAccounts(t *testing.T) {
 	handler := StrictHandler{}
+	if _, err := handler.ListFlickrAccounts(t.Context(), gen.ListFlickrAccountsRequestObject{}); !errors.Is(err, errFlickrAccountsServedByAccounts) {
+		t.Fatalf("list flickr accounts error=%v", err)
+	}
 	if _, err := handler.ConnectFlickrAccount(t.Context(), gen.ConnectFlickrAccountRequestObject{}); !errors.Is(err, errFlickrAccountsServedByAccounts) {
 		t.Fatalf("connect error = %v", err)
 	}
@@ -59,6 +62,12 @@ func TestStrictHandlerLeavesCrawlControlsToCrawl(t *testing.T) {
 	handler := StrictHandler{}
 	if _, err := handler.GetMeCrawl(t.Context(), gen.GetMeCrawlRequestObject{}); !errors.Is(err, errCrawlServedByCrawl) {
 		t.Fatalf("crawl status error=%v", err)
+	}
+	if _, err := handler.GetMeCrawlSettings(t.Context(), gen.GetMeCrawlSettingsRequestObject{}); !errors.Is(err, errCrawlServedByCrawl) {
+		t.Fatalf("crawl settings error=%v", err)
+	}
+	if _, err := handler.UpdateMeCrawlSettings(t.Context(), gen.UpdateMeCrawlSettingsRequestObject{}); !errors.Is(err, errCrawlServedByCrawl) {
+		t.Fatalf("update crawl settings error=%v", err)
 	}
 	if _, err := handler.StarMyContact(t.Context(), gen.StarMyContactRequestObject{}); !errors.Is(err, errCrawlServedByCrawl) {
 		t.Fatalf("star error=%v", err)

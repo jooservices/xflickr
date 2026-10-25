@@ -51,6 +51,19 @@ func TestStartStoresSealedRequestTokenAndReturnsAuthorizeURL(t *testing.T) {
 	}
 }
 
+func TestListReturnsAccountsOwnedByUser(t *testing.T) {
+	fixture := newConnectFixture(t)
+	want := []domain.Account{{ID: 11, UserID: 7, KeyID: 4, NSID: "21207597@N07", Username: "jamal", Status: domain.AccountOK}}
+	fixture.repo.accounts = want
+	got, err := fixture.connect.List(t.Context(), 7)
+	if err != nil || len(got) != 1 || got[0] != want[0] {
+		t.Fatalf("List() = %#v, %v", got, err)
+	}
+	if _, err = fixture.connect.List(t.Context(), 0); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("invalid user list error = %v", err)
+	}
+}
+
 func TestStartRejectsBadInputAndUnusableKeys(t *testing.T) {
 	fixture := newConnectFixture(t)
 	if _, err := fixture.connect.Start(t.Context(), 0, 4); !errors.Is(err, ErrInvalidInput) {
@@ -324,6 +337,7 @@ func (c *testCipher) Seal(plaintext, aad []byte) (crypto.Sealed, error) {
 
 type fakeAccountRepo struct {
 	key           domain.APIKey
+	accounts      []domain.Account
 	sealedKey     crypto.Sealed
 	keyErr        error
 	connectErr    error
@@ -333,6 +347,10 @@ type fakeAccountRepo struct {
 	revoked       map[int64]int
 	revokeChanged bool
 	revokeErr     error
+}
+
+func (r *fakeAccountRepo) ListAccounts(context.Context, int64) ([]domain.Account, error) {
+	return r.accounts, nil
 }
 
 func (r *fakeAccountRepo) KeyCredentials(context.Context, int64, int64) (domain.APIKey, crypto.Sealed, error) {

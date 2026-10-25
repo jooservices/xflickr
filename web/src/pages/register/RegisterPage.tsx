@@ -6,7 +6,8 @@ import { useTheme } from '../../shared/theme';
 import { useSession } from '../../entities';
 import { useQueryClient } from '@tanstack/react-query';
 import { SESSION_QUERY_KEY } from '../../entities/session/SessionProvider';
-import { fetchCsrfConfig, request, validatedReturnTo } from '../../features/auth/api';
+import { asResult, fetchCsrfConfig, validatedReturnTo } from '../../features/auth/api';
+import { login, register } from '../../shared/api/gen/default/default';
 import type { AuthUser } from '../../features/auth/api';
 import styles from '../auth.module.css';
 
@@ -111,12 +112,9 @@ export function RegisterPage() {
     }
     setBusy(true);
     try {
-      const created = await request<AuthUser>('/auth/register', 'POST', {
-        email: email.trim(),
-        password,
-        accept_terms: true,
-        locale,
-      });
+      const created = asResult<AuthUser>(
+        await register({ email: email.trim(), password, accept_terms: true, locale }),
+      );
       if (created.status === 409) {
         const code = (created.data as { code?: string }).code;
         if (code === 'registration_closed') {
@@ -168,10 +166,7 @@ export function RegisterPage() {
         setError(t('auth.error.server'));
         return;
       }
-      const loggedIn = await request<AuthUser>('/auth/login', 'POST', {
-        email: email.trim(),
-        password,
-      });
+      const loggedIn = asResult<AuthUser>(await login({ email: email.trim(), password }));
       setPassword('');
       setConfirm('');
       if (loggedIn.status === 200) {

@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test';
-import { expectNoSeriousViolations, mockApi } from './support';
+import { expect } from '@playwright/test';
+
+import { expectNoSeriousViolations, mockApi, test } from './support';
 
 const tabs = [
   ['home', '/', 'Home'],
@@ -75,7 +76,7 @@ test.describe('user shell', () => {
     await expect(page.getByTestId('shell-error')).toBeVisible();
     await expectNoSeriousViolations(page);
     await page.getByTestId('shell-error-retry').click();
-    await expect(page.getByTestId('shell-page')).toContainText('not built yet');
+    await expect(page.getByTestId('shell-unavailable-empty')).toContainText('Not available yet');
   });
 
   test('opens and closes the avatar menu, tray and notifications with the keyboard', async ({

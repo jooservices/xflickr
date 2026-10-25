@@ -54,3 +54,8 @@
   Vietnamese rules, formatting, and plurals.
 - [Photo lane selection](photo-lane.md) — catalog-driven getSizes selection, ordering and dedupe.
 - [Fake Flickr server](fake-flickr.md) — seeded REST and OAuth responses, scenarios, and generated images.
+# API reconciliation
+
+The current web API to contract and backend route mapping is generated in
+[`api-reconciliation.md`](api-reconciliation.md) by
+`docker/scripts/api-usage-check.sh`.

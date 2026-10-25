@@ -98,7 +98,7 @@ deps:
   crawl-facets:
     mayDependOn: [crawl-domain, catalog-domain, pkg]
   crawl-adapters:
-    mayDependOn: [crawl-domain, crawl-app, platform]
+    mayDependOn: [crawl-domain, crawl-app, platform, settings-app, settings-domain]
   media-app:
     mayDependOn: [media-domain, catalog-domain, catalog-app, sharing-domain]
   media-adapters:

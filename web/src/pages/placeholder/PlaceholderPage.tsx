@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Icon, PageState, StatePreview, useI18n } from '../../shared';
+import { EmptyState, Icon, PageState, StatePreview, useI18n } from '../../shared';
 import type { IconName, MessageKey, ViewState } from '../../shared';
 import styles from './PlaceholderPage.module.css';
 
@@ -11,6 +11,7 @@ type PlaceholderPageProps = {
   emptyIcon?: IconName;
   emptyTitleKey?: MessageKey;
   emptyTextKey?: MessageKey;
+  unavailable?: boolean;
 };
 
 /**
@@ -23,6 +24,7 @@ export function PlaceholderPage({
   emptyIcon,
   emptyTitleKey,
   emptyTextKey,
+  unavailable = false,
 }: PlaceholderPageProps) {
   const { t } = useI18n();
   const [state, setState] = useState<ViewState>('normal');
@@ -45,14 +47,35 @@ export function PlaceholderPage({
             setState('normal');
           }, 600);
         }}
-        emptyIcon={emptyIcon}
-        emptyTitle={emptyTitleKey === undefined ? undefined : t(emptyTitleKey)}
-        emptyText={emptyTextKey === undefined ? undefined : t(emptyTextKey)}
+        emptyIcon={unavailable ? 'info' : emptyIcon}
+        emptyTitle={
+          unavailable
+            ? t('common.not-available.title')
+            : emptyTitleKey === undefined
+              ? undefined
+              : t(emptyTitleKey)
+        }
+        emptyText={
+          unavailable
+            ? t('common.not-available.text')
+            : emptyTextKey === undefined
+              ? undefined
+              : t(emptyTextKey)
+        }
       >
-        <div className={styles.placeholder}>
-          <Icon name="sparkle" size={24} />
-          <p>{t('common.placeholder.text')}</p>
-        </div>
+        {unavailable ? (
+          <EmptyState
+            testId={`${scope}-unavailable`}
+            icon="info"
+            title={t('common.not-available.title')}
+            text={t('common.not-available.text')}
+          />
+        ) : (
+          <div className={styles.placeholder}>
+            <Icon name="sparkle" size={24} />
+            <p>{t('common.placeholder.text')}</p>
+          </div>
+        )}
       </PageState>
     </div>
   );

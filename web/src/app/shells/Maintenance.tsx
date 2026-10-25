@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon, useI18n } from '../../shared';
+import { getHealth } from '../../shared/api/gen/common/common';
 import styles from './shells.module.css';
 
 export const PROBE_FAILURES_TO_DOWN = 3;
@@ -10,8 +11,8 @@ type Maintenance = { down: boolean; checkedAt: Date | null; retryNow: () => void
 
 async function probe(): Promise<boolean> {
   try {
-    const response = await fetch('/healthz', { cache: 'no-store' });
-    return response.ok;
+    const response = await getHealth({ cache: 'no-store' });
+    return response.status >= 200 && response.status < 300;
   } catch {
     return false;
   }

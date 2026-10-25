@@ -1,5 +1,7 @@
-import { request } from '../../features/auth/api';
 import { connectFlickrAccount } from '../../shared/api/gen/flickr-accounts/flickr-accounts';
+import { deleteKey, getKeyQuota } from '../../shared/api/gen/keys/keys';
+import type { ApiKey, KeyQuota } from '../../shared/api/gen/models';
+import { loadKeys } from '../../features/keys/api';
 
 export type KeyState = 'ok' | 'reserve' | 'exhausted' | 'revoked';
 
@@ -9,12 +11,7 @@ export type KeyUsage = {
   person_used: number;
   sizes_used: number;
   reserve: number;
-  burst_now: number;
   window_resets_at: string;
-  hourly: number[];
-  node_id: string;
-  node_ip: string;
-  paused: boolean;
   state: KeyState;
 };
 
@@ -23,28 +20,42 @@ export type UsageSnapshot = { server_time: string; items: KeyUsage[] };
 const failure = (what: string, status: number) =>
   Object.assign(new Error(`Could not ${what}`), { status });
 
-/**
- * The calls below are contract requests (docs/ui/views/user-keys.md, Data and API):
- * their paths are not in OpenAPI yet, so they go through the shared request helper
- * (CSRF header, session-expiry signal). A missing endpoint is a failure like any other.
- */
-
-/** Reads the usage snapshot of the current user's keys (`GET /keys/usage`). */
-export async function loadUsage(signal?: AbortSignal): Promise<UsageSnapshot> {
-  const response = await request<UsageSnapshot>('/keys/usage', 'GET', undefined, signal);
-  if (response.status !== 200) throw failure('load usage', response.status);
-  return response.data;
+/** Cooling and exhausted keys both wait for the window to end, so the card shows them alike. */
+function usageOf(quota: KeyQuota, serverTime: string): KeyUsage {
+  return {
+    key_id: quota.key_id,
+    used: quota.used,
+    person_used: quota.lanes.person,
+    sizes_used: quota.lanes.photo,
+    reserve: quota.reserve,
+    window_resets_at: quota.reset_at ?? serverTime,
+    state: quota.state === 'ok' ? 'ok' : 'exhausted',
+  };
 }
 
-/** Pauses or resumes scheduled calls of a key (`PUT /keys/{id}` with `paused`). */
-export async function setKeyPaused(id: number, paused: boolean): Promise<void> {
-  const response = await request<{ code?: string }>(`/keys/${String(id)}`, 'PUT', { paused });
-  if (response.status !== 200) throw failure('update the key', response.status);
+/**
+ * Reads the usage of the current user's keys: `GET /keys`, then `GET /keys/{id}/quota`
+ * for each key that is not revoked. A key whose quota cannot be read is left out.
+ */
+export async function loadUsage(signal?: AbortSignal): Promise<UsageSnapshot> {
+  const keys: ApiKey[] = await loadKeys(signal);
+  const serverTime = new Date().toISOString();
+  const answers = await Promise.all(
+    keys
+      .filter((key) => key.status !== 'revoked')
+      .map(async (key) => {
+        const response = await getKeyQuota(key.id, { signal });
+        if (response.status === 200) return usageOf(response.data, serverTime);
+        if (response.status === 404) return null;
+        throw failure('load usage', response.status);
+      }),
+  );
+  return { server_time: serverTime, items: answers.filter((item) => item !== null) };
 }
 
 /** Removes a key and its accounts (`DELETE /keys/{id}`); an already missing key counts as removed. */
 export async function removeKey(id: number): Promise<void> {
-  const response = await request<{ code?: string }>(`/keys/${String(id)}`, 'DELETE');
+  const response = await deleteKey(id);
   if (response.status !== 204 && response.status !== 404)
     throw failure('remove the key', response.status);
 }

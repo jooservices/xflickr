@@ -149,18 +149,25 @@ func TestServeWebAssets(t *testing.T) {
 	tests := []struct {
 		name, method, path, body string
 		status                   int
+		navigation               bool
 	}{
-		{name: "index", method: http.MethodGet, path: "/", body: "<html>app</html>", status: http.StatusOK},
-		{name: "spa route", method: http.MethodGet, path: "/register", body: "<html>app</html>", status: http.StatusOK},
+		{name: "index", method: http.MethodGet, path: "/", body: "<html>app</html>", status: http.StatusOK, navigation: true},
+		{name: "spa route", method: http.MethodGet, path: "/register", body: "<html>app</html>", status: http.StatusOK, navigation: true},
 		{name: "asset", method: http.MethodGet, path: "/assets/app.js", body: "asset", status: http.StatusOK},
 		{name: "missing asset", method: http.MethodGet, path: "/assets/missing.js", status: http.StatusNotFound},
-		{name: "head", method: http.MethodHead, path: "/", status: http.StatusOK},
+		{name: "head", method: http.MethodHead, path: "/", status: http.StatusOK, navigation: true},
 		{name: "unsupported method", method: http.MethodPost, path: "/register", status: http.StatusNotFound},
+		{name: "unknown api path", method: http.MethodGet, path: "/keys/usage", body: `{"code":"not_found"}`, status: http.StatusNotFound},
+		{name: "json client", method: http.MethodGet, path: "/keys/usage", body: `{"code":"not_found"}`, status: http.StatusNotFound},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			response := httptest.NewRecorder()
-			router.ServeHTTP(response, httptest.NewRequest(test.method, test.path, nil))
+			request := httptest.NewRequest(test.method, test.path, nil)
+			if test.navigation {
+				request.Header.Set("Accept", "text/html")
+			}
+			router.ServeHTTP(response, request)
 			if response.Code != test.status {
 				t.Fatalf("status = %d, want %d", response.Code, test.status)
 			}

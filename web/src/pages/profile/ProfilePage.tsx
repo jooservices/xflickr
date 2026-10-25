@@ -6,11 +6,14 @@ import { useSession } from '../../entities';
 import { SESSION_QUERY_KEY } from '../../entities/session/SessionProvider';
 import { useI18n } from '../../shared';
 import type { Locale } from '../../shared/i18n/catalog';
-import { csrfFetchOptions, request, signalSessionExpired } from '../../features/auth/api';
+import { asResult, csrfFetchOptions, signalSessionExpired } from '../../features/auth/api';
 import {
   changeMyPassword,
   listMySessions,
+  logout,
   revokeMySession,
+  revokeOtherSessions,
+  updateMe,
 } from '../../shared/api/gen/default/default';
 import type { Session } from '../../shared/api/gen/models/session';
 import styles from './ProfilePage.module.css';
@@ -145,7 +148,7 @@ export function ProfilePage() {
     setSaving(true);
     setMessage('');
     try {
-      const result = await request<typeof user>('/me', 'PATCH', { locale: language });
+      const result = asResult<typeof user>(await updateMe({ locale: language }));
       if (result.status !== 200) throw new Error('Could not save profile');
       setLocale(language);
       if (result.data)
@@ -227,7 +230,7 @@ export function ProfilePage() {
   }
 
   async function confirmRevokeOthers() {
-    const result = await request('/auth/sessions', 'DELETE');
+    const result = await revokeOtherSessions();
     if (result.status === 204) await loadSessions();
     else setSessionsError(true);
   }
@@ -241,7 +244,7 @@ export function ProfilePage() {
   }
 
   async function signOut() {
-    await request('/auth/logout', 'POST').catch(() => undefined);
+    await logout().catch(() => undefined);
     client.removeQueries();
     client.setQueryData(SESSION_QUERY_KEY, { status: 'unauthenticated' });
     void navigate('/login', { replace: true });
