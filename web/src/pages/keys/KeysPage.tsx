@@ -25,7 +25,8 @@ function noticeFromParams(params: URLSearchParams): ConnectionNotice | null {
   const code = params.get('connect_error');
   if (!code) return null;
   if (code === 'denied' || code === 'authorization_denied') return 'denied';
-  if (code === 'expired' || code === 'invalid_state' || code === 'unauthenticated') return 'expired';
+  if (code === 'expired' || code === 'invalid_state' || code === 'unauthenticated')
+    return 'expired';
   return 'start';
 }
 
