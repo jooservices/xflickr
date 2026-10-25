@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/jooservices/xflickr/internal/accounts/app"
@@ -108,7 +109,7 @@ func (h ConnectHandler) FlickrAccountCallback(ctx context.Context, request gen.F
 		return callbackFailure(err)
 	}
 	if browser {
-		return callbackRedirect("/keys?connected=1"), nil
+		return callbackRedirect("/keys?connected=" + strconv.FormatInt(account.ID, 10)), nil
 	}
 	return gen.FlickrAccountCallback200JSONResponse{
 		ID:        account.ID,

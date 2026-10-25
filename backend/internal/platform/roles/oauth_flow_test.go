@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -177,11 +178,12 @@ func TestOAuthFlowThroughRouterAgainstFakeOAuth(t *testing.T) {
 	// Authorized: the browser callback stores the account and lands on the SPA.
 	token, state := start()
 	response := navigate(callbackURL(token, state, oauth.Approve(token)), true)
-	wantRedirect(response, "/keys?connected=1")
 	if len(repository.accounts) != 1 || repository.accounts[0].NSID != flowNSID || repository.accounts[0].UserID != flowUserID {
 		t.Fatalf("accounts = %+v", repository.accounts)
 	}
-	wantPage(navigate("/keys?connected=1", true))
+	connectedTo := "/keys?connected=" + strconv.FormatInt(repository.accounts[0].ID, 10)
+	wantRedirect(response, connectedTo)
+	wantPage(navigate(connectedTo, true))
 	wantPage(navigate("/admin/nodes", true))
 	wantPage(navigate("/keys", false))
 

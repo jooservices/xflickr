@@ -87,6 +87,19 @@ describe('KeysPage states', () => {
     await waitFor(() => expect(router.state.location.search).toBe(''));
   });
 
+  it('names the account from the redirect id when several are connected', async () => {
+    world(
+      [apiKey(1)],
+      [usageItem(1)],
+      [account(), account({ id: 12, nsid: '456@N02', username: 'Ben' })],
+    );
+    open('/keys?connected=12');
+
+    expect(await screen.findByTestId('keys-connect-notice')).toHaveTextContent(
+      'Ben is connected. Crawl can start.',
+    );
+  });
+
   it('shows a specific callback error and retries authorization', async () => {
     leaveTo.mockImplementation(() => undefined);
     world([apiKey(1)], [usageItem(1)], []);

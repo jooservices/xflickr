@@ -190,7 +190,7 @@ func TestBrowserCallbackRedirectsAndJSONCallbackKeepsContract(t *testing.T) {
 			t.Fatalf("redirect status=%d location=%q, want 302 %q", writer.Code, writer.Header().Get("Location"), want)
 		}
 	}
-	checkRedirect(response, "/keys?connected=1")
+	checkRedirect(response, "/keys?connected=11")
 
 	service.err = app.ErrInvalidState
 	response, err = connectedAs(service).FlickrAccountCallback(ctx, gen.FlickrAccountCallbackRequestObject{})

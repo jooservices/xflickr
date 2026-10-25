@@ -53,6 +53,11 @@ export function KeysPage() {
   const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(() =>
     noticeFromParams(params),
   );
+  // The server redirect names the account that was just connected (`connected=<id>`).
+  const [connectedId] = useState(() => {
+    const marker = params.get('connected');
+    return marker && marker !== '1' ? Number(marker) || null : null;
+  });
   const [removing, setRemoving] = useState<ApiKey | null>(null);
   const [pending, setPending] = useState<number[]>([]);
   const [connecting, setConnecting] = useState(false);
@@ -347,6 +352,12 @@ export function KeysPage() {
     );
   }
 
+  const connectedName =
+    (connectedId === null
+      ? accounts.data?.at(-1)
+      : accounts.data?.find((item) => item.id === connectedId)
+    )?.username ?? '';
+
   return (
     <div className={styles.page} data-testid="keys-page">
       <header className={styles.head}>
@@ -377,7 +388,7 @@ export function KeysPage() {
         >
           <p>
             {connectionNotice === 'connected'
-              ? t('keys.connect.success', { name: accounts.data?.[0]?.username ?? '' })
+              ? t('keys.connect.success', { name: connectedName })
               : t(
                   connectionNotice === 'denied'
                     ? 'user.wizard.connect.denied'
