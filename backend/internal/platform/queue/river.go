@@ -11,12 +11,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
-
-	"github.com/jooservices/xflickr/internal/platform/outbox"
 )
 
 const riverJobKind = "xflickr_job"
@@ -24,6 +23,7 @@ const riverJobKind = "xflickr_job"
 const (
 	deadLetterPublishAttempts = 3
 	deadLetterRetryDelay      = 25 * time.Millisecond
+	deadLetterReconcileDelay  = time.Second
 )
 
 type riverArgs struct {
@@ -199,6 +199,57 @@ func (r *River) Start(ctx context.Context) error {
 	if err := r.client.Start(ctx); err != nil {
 		return fmt.Errorf("queue: start River client: %w", err)
 	}
+	go r.reconcileDeadLettersLoop(ctx)
+	return nil
+}
+
+// reconcileDeadLettersLoop repairs dead-letter events missed by the work-end
+// hook or by River finalizing a job without running a worker hook.
+func (r *River) reconcileDeadLettersLoop(ctx context.Context) {
+	ticker := time.NewTicker(deadLetterReconcileDelay)
+	defer ticker.Stop()
+	for {
+		// Transient database failures are retried on the next tick.
+		_ = reconcileDeadLetters(ctx, r.pool)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+// reconcileDeadLetters publishes an idempotent event for every discarded
+// River job, including jobs discarded by River's stuck-job rescuer.
+type deadLetterExecer interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func reconcileDeadLetters(ctx context.Context, database deadLetterExecer) error {
+	if database == nil {
+		return errors.New("queue: dead letter reconciliation database is required")
+	}
+	_, err := database.Exec(ctx, `
+		INSERT INTO outbox_events (topic, key, payload)
+		SELECT 'job.dead', jobs.id::text,
+		       jsonb_build_object(
+		           'job_id', jobs.id::text,
+		           'kind', jobs.args->>'kind',
+		           'args', jobs.args->'args',
+		           'queue', jobs.args->>'queue',
+		           'attempts', jobs.attempt,
+		           'error', 'job discarded'
+		       )
+		FROM river_job AS jobs
+		WHERE jobs.state = 'discarded'
+		  AND NOT EXISTS (
+		      SELECT 1 FROM outbox_events AS events
+		      WHERE events.topic = 'job.dead' AND events.key = jobs.id::text
+		  )
+		ON CONFLICT DO NOTHING`)
+	if err != nil {
+		return fmt.Errorf("queue: reconcile dead letter events: %w", err)
+	}
 	return nil
 }
 
@@ -310,7 +361,14 @@ func publishDeadLetter(ctx context.Context, pool *pgxpool.Pool, topic, key strin
 		return fmt.Errorf("begin dead letter event: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	if err := outbox.PublishContext(ctx, tx, topic, key, payload); err != nil {
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("encode dead letter event: %w", err)
+	}
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO outbox_events (topic, key, payload) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		topic, key, encoded,
+	); err != nil {
 		return fmt.Errorf("publish dead letter event: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {

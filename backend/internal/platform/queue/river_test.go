@@ -34,6 +34,9 @@ func TestNewRiverValidation(t *testing.T) {
 	if err := adapter.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
+	if err := (&River{}).Stop(context.Background()); err != nil {
+		t.Fatalf("uninitialized Stop() error = %v", err)
+	}
 	if err := (*River)(nil).Stop(context.Background()); err != nil {
 		t.Fatalf("nil adapter Stop() error = %v", err)
 	}
@@ -48,6 +51,39 @@ func TestNewRiverValidation(t *testing.T) {
 	if err := (Worker{}).Run(context.Background()); err == nil {
 		t.Fatal("Worker.Run() accepted missing queue")
 	}
+}
+
+func TestReconcileDeadLetters(t *testing.T) {
+	if err := reconcileDeadLetters(context.Background(), nil); err == nil {
+		t.Fatal("reconcileDeadLetters() accepted a nil database")
+	}
+	queryErr := errors.New("database unavailable")
+	if err := reconcileDeadLetters(context.Background(), &fakeDeadLetterExecer{err: queryErr}); !errors.Is(err, queryErr) {
+		t.Fatalf("reconcileDeadLetters() database error = %v", err)
+	}
+	database := &fakeDeadLetterExecer{}
+	if err := reconcileDeadLetters(context.Background(), database); err != nil {
+		t.Fatalf("reconcileDeadLetters() error = %v", err)
+	}
+	if !strings.Contains(database.query, "jobs.state = 'discarded'") || !strings.Contains(database.query, "ON CONFLICT DO NOTHING") {
+		t.Fatalf("reconciliation query does not select discarded jobs idempotently: %s", database.query)
+	}
+}
+
+func TestReconcileDeadLettersLoopStopsWithContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	(&River{pool: disconnectedPool(t)}).reconcileDeadLettersLoop(ctx)
+}
+
+type fakeDeadLetterExecer struct {
+	query string
+	err   error
+}
+
+func (f *fakeDeadLetterExecer) Exec(_ context.Context, query string, _ ...any) (pgconn.CommandTag, error) {
+	f.query = query
+	return pgconn.CommandTag{}, f.err
 }
 
 func TestRegisterAndStartValidation(t *testing.T) {
@@ -269,6 +305,27 @@ func TestDeadLetterHookRetriesPublish(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatalf("publish attempts = %d, want retry success on attempt 2", calls)
+	}
+}
+
+func TestDeadLetterHookReturnsWhenPublishContextIsCanceled(t *testing.T) {
+	encoded, _ := json.Marshal(riverArgs{KindName: "crawl", Args: json.RawMessage(`{"id":1}`)})
+	row := &rivertype.JobRow{ID: 42, Attempt: 2, MaxAttempts: 2, EncodedArgs: encoded}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	publishErr := errors.New("database unavailable")
+	calls := 0
+	hook := &deadLetterHook{publish: func(context.Context, string, string, any) error {
+		calls++
+		return publishErr
+	}}
+	workErr := errors.New("handler failed")
+	got := hook.WorkEnd(ctx, row, workErr)
+	if !errors.Is(got, workErr) || !errors.Is(got, publishErr) || !errors.Is(got, context.Canceled) {
+		t.Fatalf("WorkEnd() canceled publication error = %v", got)
+	}
+	if calls != 1 {
+		t.Fatalf("publish attempts = %d, want 1 before cancellation", calls)
 	}
 }
 
