@@ -6,8 +6,9 @@ import "errors"
 type CreditInput struct {
 	RemainingQuota int
 	PerKeyReadyCap int
+	KeyInflight    int
 	NodeCap        int
-	Inflight       int
+	NodeInflight   int
 	WorkerCap      int
 	WorkerInflight int
 }
@@ -15,11 +16,11 @@ type CreditInput struct {
 // Credits returns the number of rows that may be dispatched for one key and
 // worker queue during this pump tick.
 func Credits(input CreditInput) (int, error) {
-	if input.RemainingQuota < 0 || input.PerKeyReadyCap < 0 || input.NodeCap < 0 || input.Inflight < 0 || input.WorkerCap < 0 || input.WorkerInflight < 0 {
+	if input.RemainingQuota < 0 || input.PerKeyReadyCap < 0 || input.KeyInflight < 0 || input.NodeCap < 0 || input.NodeInflight < 0 || input.WorkerCap < 0 || input.WorkerInflight < 0 {
 		return 0, errors.New("schedule: capacity values cannot be negative")
 	}
-	keyCredits := min(input.RemainingQuota, input.PerKeyReadyCap)
-	nodeFree := max(0, input.NodeCap-input.Inflight)
+	keyFree := max(0, input.PerKeyReadyCap-input.KeyInflight)
+	nodeFree := max(0, input.NodeCap-input.NodeInflight)
 	workerFree := max(0, input.WorkerCap-input.WorkerInflight)
-	return min(keyCredits, nodeFree, workerFree), nil
+	return min(input.RemainingQuota, keyFree, nodeFree, workerFree), nil
 }

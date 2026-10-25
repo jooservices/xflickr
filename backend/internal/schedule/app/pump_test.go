@@ -1,8 +1,11 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,9 +23,10 @@ func TestCreditsBoundsAllCapacitySources(t *testing.T) {
 	}{
 		{"quota", CreditInput{RemainingQuota: 7, PerKeyReadyCap: 20, NodeCap: 30, WorkerCap: 40}, 7, false},
 		{"key cap", CreditInput{RemainingQuota: 30, PerKeyReadyCap: 12, NodeCap: 30, WorkerCap: 40}, 12, false},
-		{"node free", CreditInput{RemainingQuota: 30, PerKeyReadyCap: 30, NodeCap: 15, Inflight: 9, WorkerCap: 40}, 6, false},
+		{"key free", CreditInput{RemainingQuota: 30, PerKeyReadyCap: 15, KeyInflight: 9, NodeCap: 40, WorkerCap: 40}, 6, false},
+		{"node free", CreditInput{RemainingQuota: 30, PerKeyReadyCap: 30, NodeCap: 15, NodeInflight: 9, WorkerCap: 40}, 6, false},
 		{"worker free", CreditInput{RemainingQuota: 30, PerKeyReadyCap: 30, NodeCap: 40, WorkerCap: 20, WorkerInflight: 18}, 2, false},
-		{"saturated", CreditInput{NodeCap: 1, Inflight: 3}, 0, false},
+		{"saturated", CreditInput{NodeCap: 1, NodeInflight: 3}, 0, false},
 		{"negative", CreditInput{RemainingQuota: -1}, 0, true},
 	}
 	for _, test := range tests {
@@ -97,6 +101,20 @@ func TestPumpRunStopsOnCancellation(t *testing.T) {
 	pump := Pump{}
 	if err := pump.Run(ctx); err != nil {
 		t.Fatalf("Run() = %v", err)
+	}
+}
+
+func TestPumpRunLogsTickFailures(t *testing.T) {
+	store := &pumpFakeStore{reclaimErr: errors.New("quota: governor offline")}
+	var output bytes.Buffer
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	pump := Pump{Store: store, Credits: fakeCredits{}, Queue: fakeQueue{}, Settings: validPumpSettings(), Logger: slog.New(slog.NewTextHandler(&output, nil))}
+	if err := pump.Run(ctx); err != nil {
+		t.Fatalf("Run() = %v", err)
+	}
+	if !strings.Contains(output.String(), "scheduler pump tick failed") || !strings.Contains(output.String(), "quota: governor offline") {
+		t.Fatalf("Run() log = %q, want scheduler and governor failure", output.String())
 	}
 }
 

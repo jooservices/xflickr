@@ -72,13 +72,13 @@ func TestExpiredLeaseReturnsToPendingThenExhausts(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 	suffix := fmt.Sprintf("lease-%d", time.Now().UnixNano())
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state,attempts,lease_expires_at) VALUES('sync_person',$1,'ready',0,now()-interval '1 second')`, suffix); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state,attempts,lease_expires_at) VALUES('sync_person',$1,'running',0,now()-interval '1 second')`, suffix); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
 	store := scheduleriver.Store{Pool: pool}
-	if count, err := store.Reclaim(ctx, 5, 30*time.Second, time.Now()); err != nil || count != 1 {
-		t.Fatalf("Reclaim() = %d, %v", count, err)
+	if count, err := store.Reclaim(ctx, 5, 30*time.Second, time.Now()); err != nil || count < 1 {
+		t.Fatalf("Reclaim() = %d, %v; want at least the expired fixture", count, err)
 	}
 	var state string
 	var attempts int
@@ -116,6 +116,59 @@ func TestExpiredLeaseReturnsToPendingThenExhausts(t *testing.T) {
 	var deadEvents int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE topic='job.dead' AND key=(SELECT id::text FROM work_items WHERE subject_key=$1)`, suffix).Scan(&deadEvents); err != nil || deadEvents != 1 {
 		t.Fatalf("dead events=%d err=%v", deadEvents, err)
+	}
+}
+
+func TestReclaimCancelsExpiredRiverJobBeforeReenqueue(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run make test-integration to use the configured worktree database")
+	}
+	pool := integrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	suffix := fmt.Sprintf("lease-job-%d", time.Now().UnixNano())
+	keyID := seedKey(t, ctx, pool, suffix)
+	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,key_id,state,lease_expires_at) VALUES('sync_person',$1,$2,'ready',now()-interval '1 second')`, suffix, keyID); err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := queue.NewRiver(pool, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workID int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM work_items WHERE subject_key=$1`, suffix).Scan(&workID); err != nil {
+		t.Fatal(err)
+	}
+	args := []byte(fmt.Sprintf(`{"work_item_id":%d,"kind":"sync_person","subject_key":%q}`, workID, suffix))
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Enqueue(ctx, tx, queue.Job{Kind: "sync_person", Args: args}, queue.Options{Queue: "sync", MaxAttempts: 5, LeaseTimeout: time.Minute}); err != nil {
+		tx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	store := scheduleriver.Store{Pool: pool}
+	if count, err := store.Reclaim(ctx, 5, 30*time.Second, time.Now()); err != nil || count < 1 {
+		t.Fatalf("Reclaim() = %d, %v; want at least the expired fixture", count, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET not_before=now() WHERE id=$1`, workID); err != nil {
+		t.Fatal(err)
+	}
+	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	if _, err := store.Pump(ctx, settings, fixedCapacity(1), adapter); err != nil {
+		t.Fatal(err)
+	}
+	var active, cancelled int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE state <> 'cancelled'), count(*) FILTER (WHERE state = 'cancelled') FROM river_job WHERE args->'args'->>'work_item_id'=$1`, fmt.Sprint(workID)).Scan(&active, &cancelled); err != nil {
+		t.Fatal(err)
+	}
+	if active != 1 || cancelled != 1 {
+		t.Fatalf("River job states: active=%d cancelled=%d, want 1 each", active, cancelled)
 	}
 }
 

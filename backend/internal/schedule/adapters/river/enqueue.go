@@ -79,6 +79,12 @@ type queueCap struct {
 	cap  int
 }
 
+type expiredLease struct {
+	id       int64
+	attempts int
+	kind     string
+}
+
 func (s Store) Pump(ctx context.Context, settings app.PumpSettings, credits app.CreditProvider, jobs queue.JobQueue) (int, error) {
 	if s.Pool == nil || credits == nil || jobs == nil {
 		return 0, errors.New("schedule: pump adapter dependencies are required")
@@ -137,12 +143,15 @@ func (s Store) pumpKey(ctx context.Context, tx pgx.Tx, keyID int64, settings app
 	if err != nil {
 		return 0, fmt.Errorf("schedule: read key %d quota credits: %w", keyID, err)
 	}
-	keyReady, err := count(ctx, tx, keyID, "")
+	keyInflight, err := count(ctx, tx, keyID, "")
 	if err != nil {
 		return 0, err
 	}
-	keyFree := min(remaining, settings.PerKeyReadyCap-keyReady)
-	if keyFree <= 0 {
+	nodeInflight, err := count(ctx, tx, 0, "")
+	if err != nil {
+		return 0, err
+	}
+	if remaining <= 0 || keyInflight >= settings.PerKeyReadyCap || nodeInflight >= settings.NodeReadyCap {
 		return 0, nil
 	}
 	dispatched := 0
@@ -151,11 +160,18 @@ func (s Store) pumpKey(ctx context.Context, tx pgx.Tx, keyID int64, settings app
 		if err != nil {
 			return 0, err
 		}
-		nodeInflight, err := count(ctx, tx, 0, "")
+		limit, err := app.Credits(app.CreditInput{
+			RemainingQuota: remaining - dispatched,
+			PerKeyReadyCap: settings.PerKeyReadyCap,
+			KeyInflight:    keyInflight + dispatched,
+			NodeCap:        settings.NodeReadyCap,
+			NodeInflight:   nodeInflight + dispatched,
+			WorkerCap:      cap.cap,
+			WorkerInflight: workerInflight,
+		})
 		if err != nil {
 			return 0, err
 		}
-		limit := min(keyFree, max(0, settings.NodeReadyCap-nodeInflight), max(0, cap.cap-workerInflight))
 		if limit == 0 {
 			continue
 		}
@@ -164,8 +180,7 @@ func (s Store) pumpKey(ctx context.Context, tx pgx.Tx, keyID int64, settings app
 			return 0, err
 		}
 		dispatched += queued
-		keyFree -= queued
-		if keyFree <= 0 {
+		if dispatched >= remaining || keyInflight+dispatched >= settings.PerKeyReadyCap || nodeInflight+dispatched >= settings.NodeReadyCap {
 			break
 		}
 	}
@@ -173,7 +188,7 @@ func (s Store) pumpKey(ctx context.Context, tx pgx.Tx, keyID int64, settings app
 }
 
 func (s Store) pumpQueue(ctx context.Context, tx pgx.Tx, keyID int64, cap queueCap, limit int, settings app.PumpSettings, jobs queue.JobQueue) (int, error) {
-	rows, err := tx.Query(ctx, `SELECT id, kind, subject_key, cursor FROM work_items WHERE state = 'pending' AND key_id = $1 AND not_before <= now() AND (CASE WHEN kind LIKE 'ai%' THEN 'ai' WHEN kind LIKE 'media%' THEN 'media' ELSE 'sync' END) = $2 ORDER BY priority_base DESC, not_before, id LIMIT $3 FOR UPDATE SKIP LOCKED`, keyID, cap.name, limit)
+	rows, err := tx.Query(ctx, `SELECT id, kind, subject_key, cursor FROM work_items WHERE state = 'pending' AND key_id = $1 AND worker_type = $2 AND not_before <= now() ORDER BY priority_base DESC, not_before, id LIMIT $3 FOR UPDATE SKIP LOCKED`, keyID, cap.name, limit)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: select pending work: %w", err)
 	}
@@ -246,18 +261,13 @@ func (s Store) Reclaim(ctx context.Context, retryMax int, base time.Duration, no
 		return 0, fmt.Errorf("schedule: begin reclaim: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	rows, err := tx.Query(ctx, `SELECT id, attempts, kind FROM work_items WHERE state='ready' AND lease_expires_at <= $1 ORDER BY lease_expires_at, id FOR UPDATE SKIP LOCKED`, now)
+	rows, err := tx.Query(ctx, `SELECT id, attempts, kind FROM work_items WHERE state IN ('ready','running') AND lease_expires_at <= $1 ORDER BY lease_expires_at, id FOR UPDATE SKIP LOCKED`, now)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: select expired leases: %w", err)
 	}
-	type expired struct {
-		id       int64
-		attempts int
-		kind     string
-	}
-	expiredRows := make([]expired, 0)
+	expiredRows := make([]expiredLease, 0)
 	for rows.Next() {
-		var row expired
+		var row expiredLease
 		if err := rows.Scan(&row.id, &row.attempts, &row.kind); err != nil {
 			rows.Close()
 			return 0, fmt.Errorf("schedule: scan expired lease: %w", err)
@@ -269,14 +279,27 @@ func (s Store) Reclaim(ctx context.Context, retryMax int, base time.Duration, no
 	if rowsErr != nil {
 		return 0, fmt.Errorf("schedule: read expired leases: %w", rowsErr)
 	}
+	if err := applyExpiredLeases(ctx, tx, expiredRows, retryMax, base, now); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("schedule: commit reclaim: %w", err)
+	}
+	return len(expiredRows), nil
+}
+
+func applyExpiredLeases(ctx context.Context, tx pgx.Tx, expiredRows []expiredLease, retryMax int, base time.Duration, now time.Time) error {
 	for _, row := range expiredRows {
 		attempts := row.attempts + 1
+		if err := cancelExpiredRiverJob(ctx, tx, row.id, now); err != nil {
+			return err
+		}
 		if attempts >= retryMax {
 			if _, err := tx.Exec(ctx, `UPDATE work_items SET state='failed', attempts=$2, last_error='lease expired', lease_expires_at=NULL, updated_at=$3 WHERE id=$1`, row.id, attempts, now); err != nil {
-				return 0, fmt.Errorf("schedule: fail exhausted lease: %w", err)
+				return fmt.Errorf("schedule: fail exhausted lease: %w", err)
 			}
 			if err := outbox.PublishContext(ctx, tx, "job.dead", fmt.Sprint(row.id), map[string]any{"work_item_id": row.id, "kind": row.kind, "attempts": attempts, "error": "lease expired"}); err != nil {
-				return 0, err
+				return err
 			}
 			continue
 		}
@@ -285,11 +308,15 @@ func (s Store) Reclaim(ctx context.Context, retryMax int, base time.Duration, no
 			delay *= 2
 		}
 		if _, err := tx.Exec(ctx, `UPDATE work_items SET state='pending', attempts=$2, not_before=$3, lease_expires_at=NULL, last_error='lease expired', updated_at=$4 WHERE id=$1`, row.id, attempts, now.Add(delay), now); err != nil {
-			return 0, fmt.Errorf("schedule: return expired lease to pending: %w", err)
+			return fmt.Errorf("schedule: return expired lease to pending: %w", err)
 		}
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("schedule: commit reclaim: %w", err)
+	return nil
+}
+
+func cancelExpiredRiverJob(ctx context.Context, tx pgx.Tx, workItemID int64, now time.Time) error {
+	if _, err := tx.Exec(ctx, `UPDATE river_job SET state='cancelled', finalized_at=$2 WHERE state IN ('available','pending','retryable','scheduled','running') AND args->'args'->>'work_item_id'=$1`, fmt.Sprint(workItemID), now); err != nil {
+		return fmt.Errorf("schedule: cancel expired River job: %w", err)
 	}
-	return len(expiredRows), nil
+	return nil
 }

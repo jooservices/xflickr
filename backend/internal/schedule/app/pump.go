@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/jooservices/xflickr/internal/platform/queue"
@@ -47,6 +48,7 @@ type Pump struct {
 	Credits  CreditProvider
 	Queue    queue.JobQueue
 	Settings PumpSettings
+	Logger   *slog.Logger
 }
 
 func (p Pump) RunOnce(ctx context.Context) (int, error) {
@@ -74,7 +76,13 @@ func (p Pump) Run(ctx context.Context) error {
 	ticker := time.NewTicker(PumpInterval)
 	defer ticker.Stop()
 	for {
-		_, _ = p.RunOnce(ctx)
+		if _, err := p.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			logger := p.Logger
+			if logger == nil {
+				logger = slog.Default()
+			}
+			logger.ErrorContext(ctx, "scheduler pump tick failed", "error", err)
+		}
 		select {
 		case <-ctx.Done():
 			return nil
