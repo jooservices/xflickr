@@ -48,4 +48,8 @@ if ! curl --fail --silent --show-error "$BASE_URL/register" | grep -qi '<html'; 
 	printf 'Registration page failed.\n' >&2
 	exit 1
 fi
-printf 'Web index and registration pages: ok\n'
+if ! curl --fail --silent --show-error -H 'Accept: text/html' "$BASE_URL/keys" | grep -qi '<html'; then
+	printf 'Keys page failed.\n' >&2
+	exit 1
+fi
+printf 'Web index, registration, and keys pages: ok\n'

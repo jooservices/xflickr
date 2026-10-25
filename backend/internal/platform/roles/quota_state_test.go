@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -98,5 +99,34 @@ func TestAPIRouterServesQuotaEndpointsBehindAuthentication(t *testing.T) {
 		if response.Code != http.StatusUnauthorized || !strings.Contains(response.Body.String(), `"code":"unauthenticated"`) {
 			t.Fatalf("GET %s status=%d body=%s", path, response.Code, response.Body.String())
 		}
+	}
+}
+
+func TestAPIRouterServesSPAForHTMLNavigationOnAPIRoutes(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "index.html"), []byte("<html>app</html>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XFLICKR_WEB_DIR", root)
+	router := newAPIRouterWithQuota(identityhttp.Handler{Version: "t", Sessions: stubSessions{}}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{}, crawlhttp.CrawlHandler{}, quotahttp.QuotaHandler{})
+
+	for _, path := range []string{"/keys", "/admin/nodes"} {
+		t.Run(path, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			request.Header.Set("Accept", "text/html")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "<html>app</html>") {
+				t.Fatalf("GET %s status=%d body=%q, want SPA index", path, response.Code, response.Body.String())
+			}
+		})
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/keys", nil)
+	request.Header.Set("Accept", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized || !strings.Contains(response.Body.String(), `"code":"unauthenticated"`) {
+		t.Fatalf("GET /keys as API request status=%d body=%q, want unauthenticated API response", response.Code, response.Body.String())
 	}
 }
