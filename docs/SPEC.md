@@ -107,6 +107,9 @@ guide feature implementation; operational environment rules live in
 - Store queued and retryable work in the durable buffer queue so workers can
   claim work, retry transient failures with backoff, and recover after restart.
   Respect priorities and per-key quota when dispatching jobs.
+- Work that failed only from lease expiry is retried automatically after 15
+  minutes with attempts reset, and `xflickr requeue` returns failed work to
+  pending; both go through the normal pump and quota gate.
 - Enqueue jobs in the same database transaction as the work they represent.
   Configure queue concurrency and job timeouts, maximum attempts, and backoff by
   queue and job kind. Mark exhausted jobs discarded and publish them to the

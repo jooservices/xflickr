@@ -256,11 +256,35 @@ func TestFailedWorkIsSelfHealedAndRequeued(t *testing.T) {
 	if st, a := state("-other"); st != "pending" || a != 0 {
 		t.Fatalf("requeued row state=%s attempts=%d", st, a)
 	}
-	if n, err := store.Requeue(ctx, nil, time.Now()); err != nil || n < 1 {
-		t.Fatalf("Requeue(all) = %d, %v", n, err)
+	// "Requeue all" has no id filter, so run it on a private copy of work_items
+	// in a scratch schema: it must not touch other rows of the shared database.
+	scratch := fmt.Sprintf("requeue_all_%d", time.Now().UnixNano())
+	if _, err := pool.Exec(ctx, `CREATE SCHEMA `+scratch); err != nil {
+		t.Fatal(err)
 	}
-	if st, _ := state("-new"); st != "pending" {
-		t.Fatalf("requeue-all left row state=%s", st)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DROP SCHEMA `+scratch+` CASCADE`) })
+	if _, err := pool.Exec(ctx, `CREATE TABLE `+scratch+`.work_items (LIKE public.work_items INCLUDING DEFAULTS INCLUDING IDENTITY)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO `+scratch+`.work_items(kind,subject_key,state,attempts,last_error) VALUES('sync_person','a','failed',5,'x'),('sync_person','b','failed',3,'y'),('sync_person','c','done',0,NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	poolConfig := pool.Config().Copy()
+	poolConfig.ConnConfig.RuntimeParams["search_path"] = scratch
+	scratchPool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scratchPool.Close()
+	if n, err := (scheduleriver.Store{Pool: scratchPool}).Requeue(ctx, nil, time.Now()); err != nil || n != 2 {
+		t.Fatalf("Requeue(all) = %d, %v; want the 2 failed scratch rows", n, err)
+	}
+	var pending, done int
+	if err := scratchPool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE state='pending' AND attempts=0), count(*) FILTER (WHERE state='done') FROM work_items`).Scan(&pending, &done); err != nil || pending != 2 || done != 1 {
+		t.Fatalf("scratch pending=%d done=%d err=%v; want 2 and 1", pending, done, err)
+	}
+	if st, _ := state("-new"); st != "failed" {
+		t.Fatalf("requeue-all leaked into the shared table: row state=%s, want failed", st)
 	}
 }
 
@@ -996,7 +1020,7 @@ func TestConnectedAccountCrawlRunsCycleThenPumpThenWorkerWithinQuota(t *testing.
 	}
 }
 
-func TestRequeuedFailedWorkRunsThroughPumpAndQuotaToDone(t *testing.T) {
+func TestRequeuedFailedWorkIsDispatchedOnlyThroughPumpAndQuotaGate(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("run make test-integration to use the configured worktree database")
 	}
@@ -1052,21 +1076,11 @@ func TestRequeuedFailedWorkRunsThroughPumpAndQuotaToDone(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE state='pending'), coalesce(max(id) FILTER (WHERE state='ready'),0) FROM work_items WHERE id=ANY($1)`, ids).Scan(&pending, &readyID); err != nil || readyID == 0 || pending != 1 {
 		t.Fatalf("after pump pending=%d ready id=%d err=%v; want 1 pending and 1 ready", pending, readyID, err)
 	}
-	// Worker: run the ready item against the fake Flickr, log the call, finish it.
-	flickr := &fakeFlickrClient{}
-	flickr.Call("flickr.people.getInfo")
+	// The worker's call lands in api_call_log (the real worker run is covered in
+	// roles.TestRequeuedFailedItemRunsThroughPumpAndWorkerToDone); here that
+	// call spends the last quota credit.
 	if _, err := pool.Exec(ctx, `INSERT INTO api_call_log(key_id,class) VALUES($1,'person')`, keyID); err != nil {
 		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='done' WHERE id=$1`, readyID); err != nil {
-		t.Fatal(err)
-	}
-	if st := stateOf(readyID); st != "done" {
-		t.Fatalf("worked item state=%s, want done", st)
-	}
-	var logged int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM api_call_log WHERE key_id=$1`, keyID).Scan(&logged); err != nil || flickr.calls != 1 || logged != hourly-100 {
-		t.Fatalf("flickr calls=%d api_call_log rows=%d err=%v; want 1 call and %d rows (within quota)", flickr.calls, logged, err, hourly-100)
 	}
 	// Quota is spent: the other requeued item must stay pending, not bypass the gate.
 	if n, err := store.Pump(ctx, settings, capacity, adapter); err != nil || n != 0 {

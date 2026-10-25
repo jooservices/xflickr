@@ -21,6 +21,8 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 	"github.com/jooservices/xflickr/internal/platform/queue"
+	scheduleriver "github.com/jooservices/xflickr/internal/schedule/adapters/river"
+	scheduleapp "github.com/jooservices/xflickr/internal/schedule/app"
 	flickrclient "github.com/jooservices/xflickr/pkg/flickr"
 )
 
@@ -64,54 +66,7 @@ func TestCrawlWorkerRunsSyncJobAgainstFakeFlickr(t *testing.T) {
 	pool := dbtest.Open(t, cfg.DB)
 	redisClient := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	defer redisClient.Close()
-	ring, err := keyringFromConfig(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	suffix := fmt.Sprintf("crawl-%d", time.Now().UnixNano())
-	person := "10000000@N00"
-	var userID, keyID, accountID, itemID int64
-	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'unused','user') RETURNING id`, suffix+"@example.test").Scan(&userID); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { cleanupCrawlFixture(pool, userID, suffix) })
-	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'crawl test',$2,'{}',3600,10,10) RETURNING id`, userID, suffix).Scan(&keyID); err != nil {
-		t.Fatal(err)
-	}
-	sealedSecret, err := ring.Seal([]byte("key-secret"), accountsdomain.SecretAAD(keyID))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE api_keys SET secret_sealed=$2 WHERE id=$1`, keyID, sealedSecret); err != nil {
-		t.Fatal(err)
-	}
-	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed) VALUES($1,$2,$3,'owner','{}','{}') RETURNING id`, userID, keyID, person).Scan(&accountID); err != nil {
-		t.Fatal(err)
-	}
-	sealedToken, err := ring.Seal([]byte("token"), accountsdomain.TokenAAD(accountID))
-	if err != nil {
-		t.Fatal(err)
-	}
-	sealedTokenSecret, err := ring.Seal([]byte("token-secret"), accountsdomain.TokenSecretAAD(accountID))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE flickr_accounts SET token_sealed=$2, secret_sealed=$3 WHERE id=$1`, accountID, sealedToken, sealedTokenSecret); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via) VALUES($1,$2,0,'test')`, userID, person); err != nil {
-		t.Fatal(err)
-	}
-	cursor, err := json.Marshal(map[string]any{"page": 1, "method": "flickr.people.getPhotos", "checkpoint_at": time.Now().Unix(), "params": map[string]string{
-		"user_id": person, "min_upload_date": "0", "min_fave_date": "0", "per_page": "1",
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := pool.QueryRow(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,cursor,lease_expires_at) VALUES('check',$1,$2,$3,'ready',$4,now()+interval '2 minutes') RETURNING id`, person, userID, keyID, cursor).Scan(&itemID); err != nil {
-		t.Fatal(err)
-	}
+	userID, keyID, itemID, person := seedCrawlFixture(t, ctx, pool, cfg, "ready", time.Now().Add(2*time.Minute))
 
 	dataset, err := fakeflickr.LoadDataset("")
 	if err != nil {
@@ -164,6 +119,62 @@ func TestCrawlWorkerRunsSyncJobAgainstFakeFlickr(t *testing.T) {
 	}
 }
 
+// seedCrawlFixture creates an account, key, depth-0 interest and one check
+// work item in the given state, and returns the ids the test needs.
+func seedCrawlFixture(t *testing.T, ctx context.Context, pool *pgxpool.Pool, cfg config.Config, state string, lease any) (userID, keyID, itemID int64, person string) {
+	t.Helper()
+	ring, err := keyringFromConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	suffix := fmt.Sprintf("crawl-%d", time.Now().UnixNano())
+	person = "10000000@N00"
+	var accountID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'unused','user') RETURNING id`, suffix+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupCrawlFixture(pool, userID, suffix) })
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'crawl test',$2,'{}',3600,10,10) RETURNING id`, userID, suffix).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	sealedSecret, err := ring.Seal([]byte("key-secret"), accountsdomain.SecretAAD(keyID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE api_keys SET secret_sealed=$2 WHERE id=$1`, keyID, sealedSecret); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed) VALUES($1,$2,$3,'owner','{}','{}') RETURNING id`, userID, keyID, person).Scan(&accountID); err != nil {
+		t.Fatal(err)
+	}
+	sealedToken, err := ring.Seal([]byte("token"), accountsdomain.TokenAAD(accountID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealedTokenSecret, err := ring.Seal([]byte("token-secret"), accountsdomain.TokenSecretAAD(accountID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE flickr_accounts SET token_sealed=$2, secret_sealed=$3 WHERE id=$1`, accountID, sealedToken, sealedTokenSecret); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via) VALUES($1,$2,0,'test')`, userID, person); err != nil {
+		t.Fatal(err)
+	}
+	cursor, err := json.Marshal(map[string]any{"page": 1, "method": "flickr.people.getPhotos", "checkpoint_at": time.Now().Unix(), "params": map[string]string{
+		"user_id": person, "min_upload_date": "0", "min_fave_date": "0", "per_page": "1",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,cursor,lease_expires_at) VALUES('check',$1,$2,$3,$5,$4,$6) RETURNING id`, person, userID, keyID, cursor, state, lease).Scan(&itemID); err != nil {
+		t.Fatal(err)
+	}
+
+	return userID, keyID, itemID, person
+}
+
 func waitItemState(t *testing.T, ctx context.Context, pool *pgxpool.Pool, itemID int64, want string) {
 	t.Helper()
 	var state string
@@ -209,4 +220,80 @@ func cleanupCrawlFixture(pool *pgxpool.Pool, userID int64, suffix string) {
 	_, _ = pool.Exec(ctx, `DELETE FROM work_items WHERE user_id=$1`, userID)
 	_, _ = pool.Exec(ctx, `DELETE FROM crawl_interests WHERE user_id=$1`, userID)
 	_, _ = pool.Exec(ctx, `DELETE FROM users WHERE email=$1`, suffix+"@example.test")
+}
+
+type fixedCredits int
+
+func (c fixedCredits) Capacity(context.Context, int64, time.Duration) (int, error) { return int(c), nil }
+
+// TestRequeuedFailedItemRunsThroughPumpAndWorkerToDone proves a failed item
+// returns to pending on requeue, is dispatched only by the pump, and the crawl
+// worker then runs it against the fake Flickr and finishes it.
+func TestRequeuedFailedItemRunsThroughPumpAndWorkerToDone(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use the shared worktree database")
+	}
+	cfg := crawlIntegrationConfig(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, cfg.DB)
+	redisClient := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	defer redisClient.Close()
+	_, keyID, itemID, _ := seedCrawlFixture(t, ctx, pool, cfg, "failed", nil)
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET attempts=5, last_error='lease expired' WHERE id=$1`, itemID); err != nil {
+		t.Fatal(err)
+	}
+
+	store := scheduleriver.Store{Pool: pool}
+	if n, err := store.Requeue(ctx, []int64{itemID}, time.Now().Add(-time.Second)); err != nil || n != 1 {
+		t.Fatalf("Requeue() = %d, %v; want 1", n, err)
+	}
+	waitItemState(t, ctx, pool, itemID, "pending")
+
+	dataset, err := fakeflickr.LoadDataset("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := httptest.NewServer(fakeflickr.NewServer(dataset, nil))
+	defer fake.Close()
+	engine, err := newCrawlEngine(pool, redisClient, cfg, flickrclient.NewClient(fake.URL+"/services/rest", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := queue.NewRiver(pool, map[string]int{"sync": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registerCrawlJobs(adapter, engine); err != nil {
+		t.Fatal(err)
+	}
+	settings := scheduleapp.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 1000, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	pump := func() {
+		t.Helper()
+		// Pump is synchronous: the item leaves pending before the worker can finish it.
+		if _, err := store.Pump(ctx, settings, fixedCredits(100), adapter); err != nil {
+			t.Fatalf("Pump() = %v", err)
+		}
+	}
+
+	runCtx, stop := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() { done <- (queue.Worker{Queue: adapter}).Run(runCtx) }()
+	defer func() {
+		stop()
+		if err := <-done; err != nil {
+			t.Errorf("worker stopped with error: %v", err)
+		}
+	}()
+
+	// One job is one page: the photo probe leaves the item pending for the
+	// favorite probe, which the pump dispatches as a second job.
+	pump()
+	waitItemState(t, ctx, pool, itemID, "pending")
+	pump()
+	waitItemState(t, ctx, pool, itemID, "done")
+	var calls int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM api_call_log WHERE key_id=$1`, keyID).Scan(&calls); err != nil || calls < 2 {
+		t.Fatalf("api_call_log rows = %d, %v; want the worker's photo and favorite probes", calls, err)
+	}
 }

@@ -32,3 +32,17 @@ bounded batch of due pending rows on every pump tick; the configured plan weight
 comes from the item's owner's plan. Plan resource shares reserve each plan's
 fraction of available dispatch capacity, then unused allocation is lent to
 plans with backlog.
+
+## Self-heal and requeue of failed work
+
+A row that failed only because its lease expired (`last_error = 'lease
+expired'`, an infrastructure fault such as a stopped worker) is not final.
+Reclaim returns it to `pending` once it has been failed for `SelfHealAfter`
+(15 minutes), with `attempts` reset to 0 and the error cleared. Failures with
+any other error stay failed.
+
+`xflickr requeue [--id N[,N...]]` returns failed rows to `pending` with
+`attempts` reset: all failed rows without `--id`, otherwise only the listed ids
+(`--id` may repeat). Payload and cursor are kept, so no data is lost. The
+command only changes the row; the normal pump and quota gate dispatch it, so
+requeued work never bypasses quota. It prints the number of rows requeued.
