@@ -76,7 +76,15 @@ func (c *Client) PhotosGetExif(ctx context.Context, creds Credentials, photoID, 
 
 // PhotosGetAllContexts calls flickr.photos.getAllContexts.
 func (c *Client) PhotosGetAllContexts(ctx context.Context, creds Credentials, photoID string) (PhotoContexts, error) {
-	return getObject[PhotoContexts](ctx, c, creds, "flickr.photos.getAllContexts", "contexts", map[string]string{"photo_id": photoID})
+	var contexts PhotoContexts
+	raw, err := c.call(ctx, creds, "flickr.photos.getAllContexts", map[string]string{"photo_id": photoID})
+	if err != nil {
+		return contexts, err
+	}
+	if err := decodeObject(raw, &contexts); err != nil {
+		return PhotoContexts{}, err
+	}
+	return contexts, nil
 }
 
 // PhotosCommentsGetList calls flickr.photos.comments.getList.
