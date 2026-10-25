@@ -98,7 +98,12 @@ func (f *Fetcher) Fetch(ctx context.Context, source string, expected ...int64) (
 	if err := f.acquire(ctx, limit); err != nil {
 		return "", "", 0, err
 	}
-	defer f.release(limit)
+	hostAcquired := true
+	defer func() {
+		if hostAcquired {
+			f.release(limit)
+		}
+	}()
 
 	refreshed := false
 	var lastErr error
@@ -167,11 +172,16 @@ func (f *Fetcher) Fetch(ctx context.Context, source string, expected ...int64) (
 			newLimit := f.hostLimit(strings.ToLower(parsed.Host))
 			if newLimit != limit {
 				f.release(limit)
+				hostAcquired = false
 				limit = newLimit
 				if err := f.acquire(ctx, limit); err != nil {
 					return "", "", 0, err
 				}
+				hostAcquired = true
 			}
+			// Refreshing the URL is a separate operation from downloading it.
+			// Preserve all three download attempts for the refreshed URL.
+			attempt--
 			continue
 		}
 		if response.StatusCode != 200 && response.StatusCode != 206 {

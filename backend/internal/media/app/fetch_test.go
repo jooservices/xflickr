@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jooservices/xflickr/internal/media/adapters/cdn"
 	"github.com/jooservices/xflickr/internal/media/adapters/local"
@@ -195,6 +196,94 @@ func TestFetcherRefreshesUnavailableURLOnce(t *testing.T) {
 	if err != nil || size != 5 || refreshes != 1 || calls != 2 {
 		t.Fatalf("Fetch() size=%d refreshes=%d calls=%d err=%v", size, refreshes, calls, err)
 	}
+}
+
+func TestFetcherRefreshMovesHostAndReleasesBothHostSlots(t *testing.T) {
+	oldServer, newServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/old" {
+			http.Error(w, "expired", http.StatusForbidden)
+			return
+		}
+		_, _ = io.WriteString(w, "old")
+	})), httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "fresh")
+	}))
+	defer oldServer.Close()
+	defer newServer.Close()
+	store, err := local.New(t.TempDir(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fetcher := &app.Fetcher{
+		Blobs:  store,
+		HTTP:   cdn.New(http.DefaultTransport),
+		Limits: app.FetchLimits{PerHostConcurrency: 1},
+		Refresh: func(context.Context, string) (string, int64, error) {
+			return newServer.URL + "/fresh", 5, nil
+		},
+	}
+
+	fetchWithTimeout := func(source string) error {
+		result := make(chan error, 1)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			_, _, _, err := fetcher.Fetch(ctx, source)
+			result <- err
+		}()
+		select {
+		case err := <-result:
+			return err
+		case <-time.After(2 * time.Second):
+			return errors.New("Fetch() did not return")
+		}
+	}
+	if err := fetchWithTimeout(oldServer.URL + "/old"); err != nil {
+		t.Fatalf("Fetch() after cross-host refresh: %v", err)
+	}
+	if err := fetchWithTimeout(oldServer.URL + "/healthy"); err != nil {
+		t.Fatalf("old host slot was not released: %v", err)
+	}
+	if err := fetchWithTimeout(newServer.URL + "/another"); err != nil {
+		t.Fatalf("new host slot was not released: %v", err)
+	}
+}
+
+func TestFetcherRefreshStillRetriesAfterTwoTransportFailures(t *testing.T) {
+	calls := 0
+	fetcher, server := fetchRig(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 1 {
+			http.NotFound(w, nil)
+			return
+		}
+		_, _ = io.WriteString(w, "fresh")
+	})
+	defer server.Close()
+	fetcher.HTTP = &failingThenCDN{transport: cdn.New(server.Client().Transport), failures: 2}
+	refreshes := 0
+	fetcher.Refresh = func(context.Context, string) (string, int64, error) {
+		refreshes++
+		return server.URL + "/refreshed", 5, nil
+	}
+	_, _, size, err := fetcher.Fetch(context.Background(), server.URL+"/old")
+	if err != nil || size != 5 || calls != 2 || refreshes != 1 || fetcher.HTTP.(*failingThenCDN).calls != 4 {
+		t.Fatalf("Fetch() size=%d requests=%d refreshes=%d HTTP calls=%d err=%v", size, calls, refreshes, fetcher.HTTP.(*failingThenCDN).calls, err)
+	}
+}
+
+type failingThenCDN struct {
+	transport app.CDNClient
+	failures  int
+	calls     int
+}
+
+func (c *failingThenCDN) Get(ctx context.Context, request app.CDNRequest) (*app.CDNResponse, error) {
+	c.calls++
+	if c.calls <= c.failures {
+		return nil, errors.New("temporary transport failure")
+	}
+	return c.transport.Get(ctx, request)
 }
 
 func TestFetcherRejectsInvalidRequestAndRetriesFailure(t *testing.T) {
