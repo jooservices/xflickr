@@ -271,7 +271,9 @@ func seedCrawlFixture(t *testing.T, ctx context.Context, pool *pgxpool.Pool, cfg
 	}
 
 	suffix := fmt.Sprintf("crawl-%d", time.Now().UnixNano())
-	person = "10000000@N00"
+	// Keep this fixture's key pool isolated from other users' interests: the
+	// quota selector may choose any usable key for a shared Flickr person.
+	person = suffix + "@N00"
 	var accountID int64
 	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'unused','user') RETURNING id`, suffix+"@example.test").Scan(&userID); err != nil {
 		t.Fatal(err)
@@ -405,7 +407,7 @@ func TestRequeuedFailedItemRunsThroughPumpAndWorkerToDone(t *testing.T) {
 	pool := dbtest.Open(t, cfg.DB)
 	redisClient := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	defer redisClient.Close()
-	_, keyID, itemID, _ := seedCrawlFixture(t, ctx, pool, cfg, "failed", nil)
+	_, keyID, itemID, person := seedCrawlFixture(t, ctx, pool, cfg, "failed", nil)
 	if _, err := pool.Exec(ctx, `UPDATE work_items SET attempts=5, last_error='lease expired' WHERE id=$1`, itemID); err != nil {
 		t.Fatal(err)
 	}
@@ -420,6 +422,8 @@ func TestRequeuedFailedItemRunsThroughPumpAndWorkerToDone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	dataset.People = append(dataset.People, fakeflickr.Person{NSID: person, Username: person, RealName: "Crawl Integration Test"})
+	dataset.Photos = append(dataset.Photos, fakeflickr.Photo{ID: person + "-photo", Owner: person, Title: "Crawl integration photo", Shape: "landscape"})
 	fake := httptest.NewServer(fakeflickr.NewServer(dataset, nil))
 	defer fake.Close()
 	engine, err := newCrawlEngine(pool, redisClient, cfg, flickrclient.NewClient(fake.URL+"/services/rest", nil))
