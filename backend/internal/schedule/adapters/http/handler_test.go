@@ -17,6 +17,20 @@ type serviceStub struct {
 	actor, user, plan              int64
 }
 
+type queueServiceStub struct {
+	lanes []app.LaneEstimate
+	admin app.AdminQueue
+	err   error
+	user  int64
+}
+
+func (s *queueServiceStub) ForUser(_ context.Context, userID int64) ([]app.LaneEstimate, error) {
+	s.user = userID
+	return s.lanes, s.err
+}
+
+func (s *queueServiceStub) ForAdmin(context.Context) (app.AdminQueue, error) { return s.admin, s.err }
+
 func (s *serviceStub) List(context.Context) ([]domain.Plan, error) { return s.plans, s.listErr }
 func (s *serviceStub) Replace(_ context.Context, actor int64, p []domain.Plan) error {
 	s.actor = actor
@@ -31,6 +45,61 @@ func (s *serviceStub) Assign(_ context.Context, actor, user, plan int64) error {
 	return s.assignErr
 }
 func actorOK(context.Context) (int64, bool) { return 7, true }
+
+func TestGetMeCrawlQueue(t *testing.T) {
+	ctx := context.Background()
+	if _, err := (Handler{}).GetMeCrawlQueue(ctx, gen.GetMeCrawlQueueRequestObject{}); err != nil {
+		t.Fatal(err)
+	}
+	h := Handler{ActorID: actorOK}
+	if _, err := h.GetMeCrawlQueue(ctx, gen.GetMeCrawlQueueRequestObject{}); err == nil {
+		t.Fatal("missing queue service accepted")
+	}
+	eta := 2.5
+	svc := &queueServiceStub{lanes: []app.LaneEstimate{{Lane: "person", BacklogCalls: 5, EffectiveCallsPerHour: 2, ETAHours: &eta}}}
+	h.Queue = svc
+	response, err := h.GetMeCrawlQueue(ctx, gen.GetMeCrawlQueueRequestObject{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := response.(gen.GetMeCrawlQueue200JSONResponse)
+	if svc.user != 7 || len(got.Lanes) != 1 || got.Lanes[0].Lane != "person" || got.Lanes[0].EtaHours == nil || *got.Lanes[0].EtaHours != eta {
+		t.Fatalf("response=%+v user=%d", got, svc.user)
+	}
+	svc.err = errors.New("database")
+	if _, err := h.GetMeCrawlQueue(ctx, gen.GetMeCrawlQueueRequestObject{}); err == nil {
+		t.Fatal("queue error swallowed")
+	}
+}
+
+func TestGetAdminQueue(t *testing.T) {
+	ctx := context.Background()
+	if _, err := (Handler{}).GetAdminQueue(ctx, gen.GetAdminQueueRequestObject{}); err != nil {
+		t.Fatal(err)
+	}
+	h := Handler{ActorID: actorOK}
+	if _, err := h.GetAdminQueue(ctx, gen.GetAdminQueueRequestObject{}); err == nil {
+		t.Fatal("missing queue service accepted")
+	}
+	svc := &queueServiceStub{admin: app.AdminQueue{
+		BacklogByPlan:        []app.PlanLaneBacklog{{Plan: "pro", Lane: "sizes", BacklogCalls: 3}},
+		OldestItemAgeSeconds: 42,
+		ReadyQueueSizes:      []app.ReadyQueueSize{{Queue: "sync", ReadyJobs: 9}},
+	}}
+	h.Queue = svc
+	response, err := h.GetAdminQueue(ctx, gen.GetAdminQueueRequestObject{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := response.(gen.GetAdminQueue200JSONResponse)
+	if len(got.BacklogByPlan) != 1 || got.BacklogByPlan[0].Plan != "pro" || got.BacklogByPlan[0].Lane != "sizes" || got.OldestItemAgeSeconds != 42 || len(got.ReadyQueueSizes) != 1 || got.ReadyQueueSizes[0].ReadyJobs != 9 {
+		t.Fatalf("response=%+v", got)
+	}
+	svc.err = errors.New("database")
+	if _, err := h.GetAdminQueue(ctx, gen.GetAdminQueueRequestObject{}); err == nil {
+		t.Fatal("queue error swallowed")
+	}
+}
 
 func TestGetAdminPlans(t *testing.T) {
 	if _, err := (Handler{}).GetAdminPlans(context.Background(), gen.GetAdminPlansRequestObject{}); err != nil {

@@ -93,6 +93,12 @@ guide feature implementation; operational environment rules live in
   explicitly requested.
 - Reuse already-crawled eligible records when sharing permits it; crawl each
   shared record once where possible.
+- Expose active crawl backlog by person and sizes lane. ETA is backlog calls
+  divided by effective calls per hour from the user's connected valid Flickr
+  keys, applying configured hourly, per-second, daily, and lane-share limits.
+  Administrators can inspect backlog by plan and lane, oldest active item age,
+  and available River jobs by worker queue. Publish aggregate `queue.state`
+  snapshots through the outbox once per minute.
 
 ## Downloads and cloud sync
 

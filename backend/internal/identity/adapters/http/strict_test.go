@@ -47,4 +47,10 @@ func TestStrictHandlerLeavesPlansToSchedule(t *testing.T) {
 	if _, err := handler.UpdateAdminUserPlan(t.Context(), gen.UpdateAdminUserPlanRequestObject{}); !errors.Is(err, errPlansServedBySchedule) {
 		t.Fatalf("assign plan error = %v", err)
 	}
+	if _, err := handler.GetMeCrawlQueue(t.Context(), gen.GetMeCrawlQueueRequestObject{}); !errors.Is(err, errPlansServedBySchedule) {
+		t.Fatalf("get user queue error = %v", err)
+	}
+	if _, err := handler.GetAdminQueue(t.Context(), gen.GetAdminQueueRequestObject{}); !errors.Is(err, errPlansServedBySchedule) {
+		t.Fatalf("get admin queue error = %v", err)
+	}
 }

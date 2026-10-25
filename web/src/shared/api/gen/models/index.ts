@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.0.0
  */
 
+export * from './adminQueue';
 export * from './adminUser';
 export * from './adminUserPage';
 export * from './adminUserRole';
@@ -16,6 +17,7 @@ export * from './authRequest';
 export * from './changePasswordRequest';
 export * from './connectFlickrAccountRequest';
 export * from './connectFlickrAccountResponse';
+export * from './crawlQueue';
 export * from './createKeyRequest';
 export * from './error';
 export * from './errorDetails';
@@ -29,6 +31,11 @@ export * from './loginLockedDetails';
 export * from './loginRateLimited';
 export * from './loginRateLimitedDetails';
 export * from './plan';
+export * from './planLaneBacklog';
+export * from './planLaneBacklogLane';
+export * from './queueLane';
+export * from './queueLaneLane';
+export * from './readyQueueSize';
 export * from './registerConflict';
 export * from './registerConflictCode';
 export * from './registerRequest';

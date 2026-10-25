@@ -29,6 +29,7 @@ import (
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
+	scheduleapp "github.com/jooservices/xflickr/internal/schedule/app"
 )
 
 func TestBuildIdentityHandlerWiresSettingsAndDummyHash(t *testing.T) {
@@ -87,11 +88,34 @@ func TestBuildPlanHandler(t *testing.T) {
 	}
 }
 
+func TestFeatureHandlerBuildersRequireDatabase(t *testing.T) {
+	client := redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:1"})
+	defer client.Close()
+	if _, err := buildKeyHandler(nil, config.Config{}); err == nil {
+		t.Fatal("key handler accepted a nil database")
+	}
+	if _, err := buildConnectHandler(nil, client, config.Config{}); err == nil {
+		t.Fatal("connect handler accepted a nil database")
+	}
+}
+
+func TestAPIRoleReturnsListenerError(t *testing.T) {
+	want := errors.New("listen failed")
+	role := NewAPIRole(":0", "test")
+	role.listenerFactory = func(string) (net.Listener, error) { return nil, want }
+	if err := role.Run(context.Background()); !errors.Is(err, want) {
+		t.Fatalf("APIRole.Run() error = %v", err)
+	}
+}
+
 func TestBuildConfiguredAPIHandler(t *testing.T) {
 	client := redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:1"})
 	defer client.Close()
 	if _, err := buildConfiguredAPIHandler(nil, client, config.Config{}, "test"); err == nil {
 		t.Fatal("handler builder accepted a nil database")
+	}
+	if _, err := buildConfiguredAPIHandler(&pgxpool.Pool{}, client, config.Config{Identity: config.IdentityConfig{Argon2Memory: 32 * 1024, Argon2Iterations: 1, Argon2Parallelism: 1, Argon2SaltLength: 16, Argon2KeyLength: 32}}, "test"); err == nil {
+		t.Fatal("handler builder accepted missing keyring configuration")
 	}
 	encoded := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
 	cfg := config.Config{
@@ -431,6 +455,16 @@ func TestSchedulerRoleBuildsWithValidSettingsAndStopsOnDatabaseDeadline(t *testi
 	defer cancel()
 	if err := (schedulerRole{}).Run(ctx); err == nil {
 		t.Fatal("scheduler role ignored its database deadline")
+	}
+}
+
+func TestNewSchedulerPumpWiresQueueStatePublisher(t *testing.T) {
+	client := redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:1"})
+	defer client.Close()
+	settings := scheduleapp.PumpSettings{RetryMax: 4}
+	pump := newSchedulerPump(&pgxpool.Pool{}, client, config.Config{}, nil, nil, settings)
+	if pump.QueueState == nil || pump.Settings.RetryMax != settings.RetryMax {
+		t.Fatalf("scheduler pump wiring = %+v", pump)
 	}
 }
 

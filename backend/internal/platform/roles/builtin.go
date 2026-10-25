@@ -35,6 +35,7 @@ import (
 	quotaRedis "github.com/jooservices/xflickr/internal/quota/adapters/redis"
 	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
 	schedulepostgres "github.com/jooservices/xflickr/internal/schedule/adapters/postgres"
+	queuepostgres "github.com/jooservices/xflickr/internal/schedule/adapters/queuepostgres"
 	scheduleriver "github.com/jooservices/xflickr/internal/schedule/adapters/river"
 	scheduleapp "github.com/jooservices/xflickr/internal/schedule/app"
 	settingspostgres "github.com/jooservices/xflickr/internal/settings/adapters/postgres"
@@ -86,8 +87,12 @@ func (schedulerRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	pump := scheduleapp.Pump{Store: scheduleriver.Store{Pool: pool}, Credits: quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}}, Queue: queueAdapter, Settings: settings}
-	return pump.Run(ctx)
+	store := scheduleriver.Store{Pool: pool}
+	return newSchedulerPump(pool, redisClient, cfg, store, queueAdapter, settings).Run(ctx)
+}
+
+func newSchedulerPump(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, store scheduleapp.PumpStore, queueAdapter queue.JobQueue, settings scheduleapp.PumpSettings) scheduleapp.Pump {
+	return scheduleapp.Pump{Store: store, QueueState: queuepostgres.New(pool), Credits: quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}}, Queue: queueAdapter, Settings: settings}
 }
 
 func registerBuiltin(registry *Registry, role Role) {
@@ -255,6 +260,7 @@ func buildPlanHandler(pool *pgxpool.Pool) (schedulehttp.Handler, error) {
 	store := schedulepostgres.New(pool)
 	return schedulehttp.Handler{
 		Plans: &scheduleapp.Plans{Store: store},
+		Queue: scheduleapp.Queue{Store: queuepostgres.New(pool)},
 		ActorID: func(ctx context.Context) (int64, bool) {
 			principal, ok := identityhttp.PrincipalFrom(ctx)
 			if !ok || principal.User.ID <= 0 {

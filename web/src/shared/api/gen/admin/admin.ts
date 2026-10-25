@@ -22,6 +22,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AdminQueue,
   AdminUser,
   AdminUserPage,
   Error,
@@ -784,3 +785,130 @@ export const useUpdateAdminUserPlan = <TError = Error, TContext = unknown>(
 > => {
   return useMutation(getUpdateAdminUserPlanMutationOptions(options), queryClient);
 };
+export type getAdminQueueResponse200 = {
+  data: AdminQueue;
+  status: 200;
+};
+
+export type getAdminQueueResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type getAdminQueueResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type getAdminQueueResponseSuccess = getAdminQueueResponse200 & {
+  headers: Headers;
+};
+export type getAdminQueueResponseError = (getAdminQueueResponse401 | getAdminQueueResponse403) & {
+  headers: Headers;
+};
+
+export type getAdminQueueResponse = getAdminQueueResponseSuccess | getAdminQueueResponseError;
+
+export const getGetAdminQueueUrl = () => {
+  return `/admin/queue`;
+};
+
+/**
+ * @summary Get aggregate queue state
+ */
+export const getAdminQueue = async (options?: RequestInit): Promise<getAdminQueueResponse> => {
+  const res = await fetch(getGetAdminQueueUrl(), {
+    ...options,
+    method: 'GET',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAdminQueueResponse['data'] = body ? JSON.parse(body) : {};
+  return { data, status: res.status, headers: res.headers } as getAdminQueueResponse;
+};
+
+export const getGetAdminQueueQueryKey = () => {
+  return [`/admin/queue`] as const;
+};
+
+export const getGetAdminQueueQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminQueue>>,
+  TError = Error,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminQueue>>, TError, TData>>;
+  fetch?: RequestInit;
+}) => {
+  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminQueueQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminQueue>>> = ({ signal }) =>
+    getAdminQueue({ signal, ...fetchOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminQueue>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetAdminQueueQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminQueue>>>;
+export type GetAdminQueueQueryError = Error;
+
+export function useGetAdminQueue<TData = Awaited<ReturnType<typeof getAdminQueue>>, TError = Error>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminQueue>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminQueue>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminQueue>>
+        >,
+        'initialData'
+      >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAdminQueue<TData = Awaited<ReturnType<typeof getAdminQueue>>, TError = Error>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminQueue>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminQueue>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminQueue>>
+        >,
+        'initialData'
+      >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAdminQueue<TData = Awaited<ReturnType<typeof getAdminQueue>>, TError = Error>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminQueue>>, TError, TData>>;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get aggregate queue state
+ */
+
+export function useGetAdminQueue<TData = Awaited<ReturnType<typeof getAdminQueue>>, TError = Error>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminQueue>>, TError, TData>>;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminQueueQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}

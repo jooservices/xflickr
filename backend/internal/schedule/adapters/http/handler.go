@@ -15,10 +15,57 @@ type PlanService interface {
 	Assign(context.Context, int64, int64, int64) error
 }
 
+type QueueService interface {
+	ForUser(context.Context, int64) ([]app.LaneEstimate, error)
+	ForAdmin(context.Context) (app.AdminQueue, error)
+}
+
 // Handler implements administrator plan endpoints. ActorID is populated from the authenticated request context.
 type Handler struct {
 	Plans   PlanService
+	Queue   QueueService
 	ActorID func(context.Context) (int64, bool)
+}
+
+func (h Handler) GetMeCrawlQueue(ctx context.Context, _ gen.GetMeCrawlQueueRequestObject) (gen.GetMeCrawlQueueResponseObject, error) {
+	userID, ok := h.actor(ctx)
+	if !ok {
+		return gen.GetMeCrawlQueue401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
+	}
+	if h.Queue == nil {
+		return nil, errors.New("schedule: queue service is required")
+	}
+	lanes, err := h.Queue.ForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]gen.QueueLane, 0, len(lanes))
+	for _, lane := range lanes {
+		out = append(out, gen.QueueLane{Lane: gen.QueueLaneLane(lane.Lane), BacklogCalls: lane.BacklogCalls, EffectiveCallsPerHour: lane.EffectiveCallsPerHour, EtaHours: lane.ETAHours})
+	}
+	return gen.GetMeCrawlQueue200JSONResponse{Lanes: out}, nil
+}
+
+func (h Handler) GetAdminQueue(ctx context.Context, _ gen.GetAdminQueueRequestObject) (gen.GetAdminQueueResponseObject, error) {
+	if _, ok := h.actor(ctx); !ok {
+		return gen.GetAdminQueue401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
+	}
+	if h.Queue == nil {
+		return nil, errors.New("schedule: queue service is required")
+	}
+	snapshot, err := h.Queue.ForAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	backlog := make([]gen.PlanLaneBacklog, 0, len(snapshot.BacklogByPlan))
+	for _, item := range snapshot.BacklogByPlan {
+		backlog = append(backlog, gen.PlanLaneBacklog{Plan: item.Plan, Lane: gen.PlanLaneBacklogLane(item.Lane), BacklogCalls: item.BacklogCalls})
+	}
+	queues := make([]gen.ReadyQueueSize, 0, len(snapshot.ReadyQueueSizes))
+	for _, item := range snapshot.ReadyQueueSizes {
+		queues = append(queues, gen.ReadyQueueSize{Queue: item.Queue, ReadyJobs: item.ReadyJobs})
+	}
+	return gen.GetAdminQueue200JSONResponse{BacklogByPlan: backlog, OldestItemAgeSeconds: snapshot.OldestItemAgeSeconds, ReadyQueueSizes: queues}, nil
 }
 
 func (h Handler) GetAdminPlans(ctx context.Context, _ gen.GetAdminPlansRequestObject) (gen.GetAdminPlansResponseObject, error) {

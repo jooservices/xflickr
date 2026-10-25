@@ -1,0 +1,43 @@
+CrawlQueue:
+  type: object
+  required: [lanes]
+  properties:
+    lanes:
+      type: array
+      items: { $ref: '#/QueueLane' }
+
+QueueLane:
+  type: object
+  required: [lane, backlog_calls, effective_calls_per_hour, eta_hours]
+  properties:
+    lane: { type: string, enum: [person, sizes] }
+    backlog_calls: { type: integer, format: int64, minimum: 0 }
+    effective_calls_per_hour: { type: number, format: double, minimum: 0 }
+    eta_hours: { type: [number, 'null'], format: double, minimum: 0 }
+
+AdminQueue:
+  type: object
+  required: [backlog_by_plan, oldest_item_age_seconds, ready_queue_sizes]
+  properties:
+    backlog_by_plan:
+      type: array
+      items: { $ref: '#/PlanLaneBacklog' }
+    oldest_item_age_seconds: { type: integer, format: int64, minimum: 0 }
+    ready_queue_sizes:
+      type: array
+      items: { $ref: '#/ReadyQueueSize' }
+
+PlanLaneBacklog:
+  type: object
+  required: [plan, lane, backlog_calls]
+  properties:
+    plan: { type: string }
+    lane: { type: string, enum: [person, sizes] }
+    backlog_calls: { type: integer, format: int64, minimum: 0 }
+
+ReadyQueueSize:
+  type: object
+  required: [queue, ready_jobs]
+  properties:
+    queue: { type: string }
+    ready_jobs: { type: integer, format: int64, minimum: 0 }

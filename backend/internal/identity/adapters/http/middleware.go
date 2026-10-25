@@ -218,6 +218,7 @@ func requirePrincipal(sessions SessionService, admin bool) func(http.Handler) ht
 
 var authenticatedRoutes = map[string]struct{}{
 	http.MethodGet + " /me":               {},
+	http.MethodGet + " /me/crawl/queue":   {},
 	http.MethodPatch + " /me":             {},
 	http.MethodDelete + " /auth/sessions": {},
 	http.MethodGet + " /me/sessions":      {},

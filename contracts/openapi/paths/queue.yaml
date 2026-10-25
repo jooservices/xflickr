@@ -1,0 +1,38 @@
+user_queue:
+  get:
+    operationId: GetMeCrawlQueue
+    tags: [crawl]
+    summary: Get the current user's crawl backlog and ETA
+    responses:
+      '200':
+        description: Crawl queue counts and ETA by lane
+        content:
+          application/json:
+            schema: { $ref: ../schemas/queue.yaml#/CrawlQueue }
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+
+admin_queue:
+  get:
+    operationId: GetAdminQueue
+    tags: [admin]
+    summary: Get aggregate queue state
+    responses:
+      '200':
+        description: Backlog grouped by plan and lane with ready queue sizes
+        content:
+          application/json:
+            schema: { $ref: ../schemas/queue.yaml#/AdminQueue }
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '403':
+        description: Administrator role required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }

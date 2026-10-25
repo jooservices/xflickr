@@ -58,3 +58,11 @@ func (StrictHandler) UpdateAdminPlans(context.Context, gen.UpdateAdminPlansReque
 func (StrictHandler) UpdateAdminUserPlan(context.Context, gen.UpdateAdminUserPlanRequestObject) (gen.UpdateAdminUserPlanResponseObject, error) {
 	return nil, errPlansServedBySchedule
 }
+
+func (StrictHandler) GetMeCrawlQueue(context.Context, gen.GetMeCrawlQueueRequestObject) (gen.GetMeCrawlQueueResponseObject, error) {
+	return nil, errPlansServedBySchedule
+}
+
+func (StrictHandler) GetAdminQueue(context.Context, gen.GetAdminQueueRequestObject) (gen.GetAdminQueueResponseObject, error) {
+	return nil, errPlansServedBySchedule
+}

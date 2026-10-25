@@ -124,6 +124,32 @@ func TestPumpRunLogsTickFailures(t *testing.T) {
 	}
 }
 
+func TestPumpRunPublishesQueueStateImmediatelyAndOnInterval(t *testing.T) {
+	publisher := &statePublisherStub{}
+	ctx, cancel := context.WithTimeout(context.Background(), 18*time.Millisecond)
+	defer cancel()
+	pump := Pump{Store: &pumpFakeStore{}, Credits: fakeCredits{}, Queue: fakeQueue{}, Settings: validPumpSettings(), QueueState: publisher, QueueStateInterval: 5 * time.Millisecond}
+	if err := pump.Run(ctx); err != nil {
+		t.Fatalf("Run() = %v", err)
+	}
+	if publisher.calls < 2 {
+		t.Fatalf("queue state publications = %d, want initial and periodic publication", publisher.calls)
+	}
+}
+
+func TestPumpRunLogsQueueStatePublicationFailures(t *testing.T) {
+	var output bytes.Buffer
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	pump := Pump{Store: &pumpFakeStore{}, Credits: fakeCredits{}, Queue: fakeQueue{}, Settings: validPumpSettings(), QueueState: &statePublisherStub{err: errors.New("outbox offline")}, Logger: slog.New(slog.NewTextHandler(&output, nil))}
+	if err := pump.Run(ctx); err != nil {
+		t.Fatalf("Run() = %v", err)
+	}
+	if !strings.Contains(output.String(), "scheduler queue state publication failed") || !strings.Contains(output.String(), "outbox offline") {
+		t.Fatalf("Run() log = %q, want queue state publication failure", output.String())
+	}
+}
+
 func validPumpSettings() PumpSettings {
 	return PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
 }
@@ -141,6 +167,16 @@ type pumpFakeStore struct {
 	pumps, reclaims     int
 	pumpErr, reclaimErr error
 	reclaimTime         time.Time
+}
+
+type statePublisherStub struct {
+	calls int
+	err   error
+}
+
+func (s *statePublisherStub) PublishQueueState(context.Context) error {
+	s.calls++
+	return s.err
 }
 
 func (s *pumpFakeStore) Pump(context.Context, PumpSettings, CreditProvider, queue.JobQueue) (int, error) {

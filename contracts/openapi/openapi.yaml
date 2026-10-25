@@ -40,6 +40,10 @@ paths:
     $ref: ./paths/plans.yaml#/collection
   /admin/users/{id}/plan:
     $ref: ./paths/plans.yaml#/user_plan
+  /me/crawl/queue:
+    $ref: ./paths/queue.yaml#/user_queue
+  /admin/queue:
+    $ref: ./paths/queue.yaml#/admin_queue
 components:
   schemas:
     AuthConfig:
@@ -76,3 +80,7 @@ components:
       $ref: ./schemas/plans.yaml#/UpdateAdminPlansRequest
     UpdateUserPlanRequest:
       $ref: ./schemas/plans.yaml#/UpdateUserPlanRequest
+    CrawlQueue:
+      $ref: ./schemas/queue.yaml#/CrawlQueue
+    AdminQueue:
+      $ref: ./schemas/queue.yaml#/AdminQueue

@@ -51,13 +51,20 @@ type CreditProvider interface {
 	Capacity(context.Context, int64, time.Duration) (int, error)
 }
 
+// QueueStatePublisher emits aggregate queue state for event consumers.
+type QueueStatePublisher interface {
+	PublishQueueState(context.Context) error
+}
+
 // Pump coordinates a single bounded scheduling pass.
 type Pump struct {
-	Store    PumpStore
-	Credits  CreditProvider
-	Queue    queue.JobQueue
-	Settings PumpSettings
-	Logger   *slog.Logger
+	Store              PumpStore
+	Credits            CreditProvider
+	Queue              queue.JobQueue
+	Settings           PumpSettings
+	Logger             *slog.Logger
+	QueueState         QueueStatePublisher
+	QueueStateInterval time.Duration
 }
 
 func (p Pump) RunOnce(ctx context.Context) (int, error) {
@@ -93,6 +100,29 @@ func (p Pump) Run(ctx context.Context) error {
 	}
 	ticker := time.NewTicker(PumpInterval)
 	defer ticker.Stop()
+	statePublisher := p.QueueState
+	if statePublisher == nil {
+		statePublisher, _ = p.Store.(QueueStatePublisher)
+	}
+	stateInterval := p.QueueStateInterval
+	if stateInterval <= 0 {
+		stateInterval = QueueStateInterval
+	}
+	stateTicker := time.NewTicker(stateInterval)
+	defer stateTicker.Stop()
+	publishQueueState := func() {
+		if statePublisher == nil {
+			return
+		}
+		if err := statePublisher.PublishQueueState(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			logger := p.Logger
+			if logger == nil {
+				logger = slog.Default()
+			}
+			logger.ErrorContext(ctx, "scheduler queue state publication failed", "error", err)
+		}
+	}
+	publishQueueState()
 	for {
 		if _, err := p.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			logger := p.Logger
@@ -105,6 +135,8 @@ func (p Pump) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
+		case <-stateTicker.C:
+			publishQueueState()
 		}
 	}
 }

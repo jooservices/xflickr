@@ -21,6 +21,8 @@
   transitions.
 - [Durable job queue](job-queue.md) — transactional River jobs, worker queues,
   retries, and dead letter events.
+- [Queue state and ETA](queue-state.md) — backlog snapshots, lane capacity,
+  ETA estimates, and the `queue.state` event.
 - [Architecture decision records](adr/README.md) — durable architecture choices.
 - [UI view catalogue](ui/README.md) — all views, overlays, and the spec gate.
 - [User interface proof of concept](ui/poc/README.md) — static design prototype.
