@@ -22,4 +22,16 @@ export default defineConfig({
       },
     },
   },
+  xflickrZod: {
+    input: {
+      target: '../.tmp/openapi.bundle.yaml',
+    },
+    output: {
+      mode: 'single',
+      target: './src/shared/api/zod/schemas.ts',
+      client: 'zod',
+      clean: true,
+      formatter: 'prettier',
+    },
+  },
 });

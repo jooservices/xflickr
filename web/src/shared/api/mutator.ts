@@ -1,4 +1,7 @@
 import { SESSION_EXPIRED_EVENT } from './sessionEvents';
+import { ApiShapeError, validateBody } from './validate';
+
+export { ApiShapeError };
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -74,10 +77,32 @@ export async function csrfFetch(
   return response;
 }
 
+/**
+ * Parses a response body as JSON. A non-JSON content type (an HTML fallback page served with
+ * status 200) or unparsable JSON becomes an `ApiShapeError`. Empty bodies yield `undefined`.
+ * Error statuses are parsed leniently because proxies answer them with plain text.
+ */
+export async function readJsonBody(response: Response): Promise<unknown> {
+  const text = [204, 205, 304].includes(response.status) ? '' : await response.text();
+  if (text === '') return undefined;
+  const contentType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+  const isJson = contentType === 'application/json' || contentType?.endsWith('+json') === true;
+  if (!isJson && response.status < 400) {
+    throw new ApiShapeError('The server returned a non-JSON response');
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (response.status >= 400) return undefined;
+    throw new ApiShapeError('The server returned invalid JSON');
+  }
+}
+
 /** Orval fetch mutator; keeps the generated client's `{ data, status, headers }` result. */
 export async function customFetch<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await csrfFetch(input, init);
-  const text = [204, 205, 304].includes(response.status) ? '' : await response.text();
-  const data = text ? JSON.parse(text) : {};
+  const path = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  const method = (init?.method ?? 'GET').toUpperCase();
+  const data = validateBody(path, method, response.status, await readJsonBody(response));
   return { data, status: response.status, headers: response.headers } as T;
 }

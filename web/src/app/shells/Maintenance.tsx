@@ -14,6 +14,7 @@ async function probe(): Promise<boolean> {
     const response = await getHealth({ cache: 'no-store' });
     return response.status >= 200 && response.status < 300;
   } catch {
+    // A network failure and an ApiShapeError (an SPA fallback page) are both a failed probe.
     return false;
   }
 }

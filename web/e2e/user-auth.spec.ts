@@ -9,7 +9,12 @@ test.describe('user authentication', () => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ registration_open: true, passkey_enabled: false }),
+        body: JSON.stringify({
+          registration_open: true,
+          passkey_enabled: false,
+          password_min: 8,
+          password_max: 128,
+        }),
       }),
     );
     await page.route('**/auth/login', async (route) => {
@@ -48,7 +53,12 @@ test.describe('user authentication', () => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ registration_open: true, passkey_enabled: false }),
+        body: JSON.stringify({
+          registration_open: true,
+          passkey_enabled: false,
+          password_min: 8,
+          password_max: 128,
+        }),
       }),
     );
     await page.route('**/me', async (route) => {
@@ -72,7 +82,13 @@ test.describe('user authentication', () => {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ id: 1, email: 'user@example.test', role: 'user', locale: 'en' }),
+        body: JSON.stringify({
+          id: 1,
+          email: 'user@example.test',
+          role: 'user',
+          locale: 'en',
+          created_at: '2026-01-01T00:00:00Z',
+        }),
       });
     });
     await page.goto('/profile');
@@ -94,14 +110,25 @@ test.describe('user authentication', () => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ registration_open: true, passkey_enabled: false }),
+        body: JSON.stringify({
+          registration_open: true,
+          passkey_enabled: false,
+          password_min: 8,
+          password_max: 128,
+        }),
       }),
     );
     await page.route('**/auth/login', (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ id: 2, email: 'anna@example.test', role: 'user', locale: 'en' }),
+        body: JSON.stringify({
+          id: 2,
+          email: 'anna@example.test',
+          role: 'user',
+          locale: 'en',
+          created_at: '2026-01-01T00:00:00Z',
+        }),
       }),
     );
     await page.goto('/login?reason=expired&return_to=%2F%2Fevil.example');

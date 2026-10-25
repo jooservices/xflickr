@@ -2,7 +2,7 @@ import { http, HttpResponse } from 'msw/http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { server } from '../../test/server';
 import { SESSION_EXPIRED_EVENT } from './sessionEvents';
-import { csrfFetch } from './mutator';
+import { ApiShapeError, csrfFetch, customFetch } from './mutator';
 
 afterEach(() => {
   document.cookie = 'xf_csrf=; Max-Age=0; path=/';
@@ -86,5 +86,42 @@ describe('csrfFetch', () => {
     expect(forbiddenCalls).toBe(1);
     expect(expiredCount).toBe(1);
     window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  });
+});
+
+describe('customFetch response validation', () => {
+  it('rejects an HTML SPA fallback returned with status 200', async () => {
+    server.use(
+      http.get(
+        '*/keys',
+        () =>
+          new HttpResponse('<html>app</html>', {
+            status: 200,
+            headers: { 'Content-Type': 'text/html' },
+          }),
+      ),
+    );
+
+    await expect(customFetch('/keys')).rejects.toBeInstanceOf(ApiShapeError);
+  });
+
+  it('rejects null and object-shaped key collection responses', async () => {
+    server.use(http.get('*/keys', () => HttpResponse.json(null)));
+    await expect(customFetch('/keys')).rejects.toBeInstanceOf(ApiShapeError);
+    server.use(http.get('*/keys', () => HttpResponse.json({ keys: [] })));
+    await expect(customFetch('/keys')).rejects.toBeInstanceOf(ApiShapeError);
+  });
+
+  it('rejects successful API responses with a non-JSON content type', async () => {
+    server.use(
+      http.get(
+        '*/me',
+        () =>
+          new HttpResponse('{"email":"a@b.c"}', {
+            headers: { 'Content-Type': 'text/plain' },
+          }),
+      ),
+    );
+    await expect(customFetch('/me')).rejects.toBeInstanceOf(ApiShapeError);
   });
 });

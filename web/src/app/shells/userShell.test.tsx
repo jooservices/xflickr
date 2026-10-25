@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { apiKeyBody } from '../../test/fixtures';
 import { server } from '../../test/server';
 import { adminSession, renderApp, userSession } from '../../test/render';
 
@@ -292,6 +293,39 @@ describe('user shell global states', () => {
     vi.unstubAllGlobals();
   });
 
+  describe('reconnecting a Flickr account', () => {
+    const tokenBanner = () =>
+      server.use(
+        http.get('*/flickr-accounts', () =>
+          HttpResponse.json([
+            { id: 1, key_id: 11, username: 'anna', status: 'reconnect_required' },
+          ]),
+        ),
+      );
+
+    it.each([
+      [
+        'an HTML 200',
+        () =>
+          new HttpResponse('<!doctype html><html></html>', {
+            headers: { 'Content-Type': 'text/html' },
+          }),
+      ],
+      ['a null body', () => HttpResponse.json(null)],
+      ['a body without authorize_url', () => HttpResponse.json({})],
+      ['a 500', () => new HttpResponse(null, { status: 500 })],
+    ])('shows an error instead of crashing on %s', async (_name, respond) => {
+      tokenBanner();
+      server.use(http.post('*/flickr-accounts/connect', respond));
+      renderApp({ session: userSession });
+
+      fireEvent.click(await screen.findByTestId('shell-banner-reconnect-11'));
+
+      expect(await screen.findByTestId('shell-reconnect-error')).toBeInTheDocument();
+      expect(screen.getByTestId('shell-nav')).toBeInTheDocument();
+    });
+  });
+
   it('shows the maintenance page after three failed health probes', async () => {
     server.use(http.get('*/healthz', () => new HttpResponse(null, { status: 503 })));
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -304,11 +338,29 @@ describe('user shell global states', () => {
     );
     expect(screen.queryByTestId('shell-nav')).toBeNull();
 
-    server.use(http.get('*/healthz', () => HttpResponse.json({ status: 'ok' })));
+    server.use(http.get('*/healthz', () => HttpResponse.json({ status: 'ok', version: 'test' })));
     fireEvent.click(screen.getByTestId('shell-maintenance-retry'));
     await vi.advanceTimersByTimeAsync(100);
     vi.useRealTimers();
     expect(await screen.findByTestId('shell-nav')).toBeInTheDocument();
+  });
+});
+
+describe('maintenance probe', () => {
+  it('treats an HTML 200 from /healthz as a failed probe', async () => {
+    server.use(
+      http.get(
+        '*/healthz',
+        () => new HttpResponse('<!doctype html>', { headers: { 'Content-Type': 'text/html' } }),
+      ),
+    );
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderApp({ session: userSession });
+
+    await vi.advanceTimersByTimeAsync(40_000);
+    vi.useRealTimers();
+
+    expect(await screen.findByTestId('shell-maintenance')).toBeInTheDocument();
   });
 });
 
@@ -382,7 +434,7 @@ describe('user shell access to /admin', () => {
 });
 
 describe('crawling-off banner', () => {
-  const validKey = { id: 1, label: 'Main', status: 'valid' };
+  const validKey = apiKeyBody();
 
   it.each(['/', '/library', '/profile', '/keys', '/onboarding'])(
     'shows the banner on %s while no valid key exists and links to the wizard',

@@ -52,6 +52,48 @@ afterEach(() => {
   document.cookie = 'xf_csrf=; Max-Age=0; path=/';
 });
 
+describe('setup wizard bad responses', () => {
+  it.each([
+    [
+      'HTML with status 200',
+      () =>
+        new HttpResponse('<!doctype html><html>app</html>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' },
+        }),
+    ],
+    ['a null body', () => HttpResponse.json(null)],
+  ])('shows the retryable error when the keys list is %s', async (_name, reply) => {
+    server.use(
+      http.get('*/keys', () => reply()),
+      accountsReply(),
+    );
+    open();
+    expect(await screen.findByTestId('wizard-error')).toBeInTheDocument();
+    expect(screen.getByTestId('wizard-error-retry')).toBeEnabled();
+  });
+
+  it.each([
+    [
+      'HTML with status 200',
+      () =>
+        new HttpResponse('<!doctype html><html>app</html>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' },
+        }),
+    ],
+    ['a null body', () => HttpResponse.json(null)],
+  ])('does not crash when the accounts list is %s', async (_name, reply) => {
+    server.use(
+      keysReply([acceptedKey]),
+      http.get('*/flickr-accounts', () => reply()),
+    );
+    open();
+    expect(await screen.findByTestId('wizard-error')).toBeInTheDocument();
+    expect(screen.queryByText(/Unexpected Application Error/)).toBeNull();
+  });
+});
+
 describe('setup wizard step 1', () => {
   it('starts at step 1 for a first visit with the explainer and all fields', async () => {
     server.use(keysReply(), accountsReply());

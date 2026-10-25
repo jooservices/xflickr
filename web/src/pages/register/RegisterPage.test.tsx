@@ -6,7 +6,16 @@ import { renderApp } from '../../test/render';
 
 describe('RegisterPage', () => {
   it('validates the password and required terms before submitting', async () => {
-    server.use(http.get('*/auth/config', () => HttpResponse.json({ registration_open: true })));
+    server.use(
+      http.get('*/auth/config', () =>
+        HttpResponse.json({
+          registration_open: true,
+          passkey_enabled: false,
+          password_min: 8,
+          password_max: 128,
+        }),
+      ),
+    );
     renderApp({ session: { status: 'unauthenticated' }, path: '/register' });
     fireEvent.change(await screen.findByTestId('auth-register-email'), {
       target: { value: 'new@example.test' },
@@ -17,7 +26,16 @@ describe('RegisterPage', () => {
   });
 
   it('shows the closed-registration state from public configuration', async () => {
-    server.use(http.get('*/auth/config', () => HttpResponse.json({ registration_open: false })));
+    server.use(
+      http.get('*/auth/config', () =>
+        HttpResponse.json({
+          registration_open: false,
+          passkey_enabled: false,
+          password_min: 8,
+          password_max: 128,
+        }),
+      ),
+    );
     renderApp({ session: { status: 'unauthenticated' }, path: '/register' });
     expect(await screen.findByTestId('auth-register-closed')).toHaveTextContent(
       'Registration is closed',
@@ -106,9 +124,26 @@ describe('RegisterPage', () => {
   it('registers and signs in before sending the new user to onboarding', async () => {
     const { router } = renderApp({ session: { status: 'unauthenticated' }, path: '/register' });
     server.use(
-      http.post('*/auth/register', () => HttpResponse.json({ id: 9 }, { status: 201 })),
+      http.post('*/auth/register', () =>
+        HttpResponse.json(
+          {
+            id: 9,
+            email: 'new@example.test',
+            role: 'user',
+            locale: 'en',
+            created_at: '2026-01-01T00:00:00Z',
+          },
+          { status: 201 },
+        ),
+      ),
       http.post('*/auth/login', () =>
-        HttpResponse.json({ id: 9, email: 'new@example.test', role: 'user', locale: 'en' }),
+        HttpResponse.json({
+          id: 9,
+          email: 'new@example.test',
+          role: 'user',
+          locale: 'en',
+          created_at: '2026-01-01T00:00:00Z',
+        }),
       ),
     );
     fireEvent.change(await screen.findByTestId('auth-register-email'), {
@@ -180,7 +215,18 @@ describe('RegisterPage', () => {
   it('keeps the created account and shows sign-in when automatic login fails', async () => {
     const { router } = renderApp({ session: { status: 'unauthenticated' }, path: '/register' });
     server.use(
-      http.post('*/auth/register', () => HttpResponse.json({ id: 10 }, { status: 201 })),
+      http.post('*/auth/register', () =>
+        HttpResponse.json(
+          {
+            id: 10,
+            email: 'new@example.test',
+            role: 'user',
+            locale: 'en',
+            created_at: '2026-01-01T00:00:00Z',
+          },
+          { status: 201 },
+        ),
+      ),
       http.post('*/auth/login', () => new HttpResponse(null, { status: 500 })),
     );
     fireEvent.change(await screen.findByTestId('auth-register-email'), {

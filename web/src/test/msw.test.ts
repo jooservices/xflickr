@@ -5,6 +5,6 @@ describe('MSW', () => {
     const response = await fetch('http://localhost/api/health');
 
     expect(response.ok).toBe(true);
-    await expect(response.json()).resolves.toEqual({ status: 'ok' });
+    await expect(response.json()).resolves.toEqual({ status: 'ok', version: 'test' });
   });
 });

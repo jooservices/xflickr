@@ -14,6 +14,25 @@ const open = (path = '/crawl', locale: 'en' | 'vi' = 'en') =>
 const queueWith = (patch: Record<string, unknown>) =>
   server.use(http.get('*/me/crawl/queue', () => json({ ...queueFixture, ...patch })));
 
+describe('CrawlPage bad responses', () => {
+  it.each([
+    [
+      'HTML with status 200',
+      () =>
+        new HttpResponse('<!doctype html><html>app</html>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' },
+        }),
+    ],
+    ['a null body', () => HttpResponse.json(null)],
+  ])('shows the retryable error when every endpoint answers %s', async (_name, reply) => {
+    server.use(http.get('*/me/crawl/*', () => reply()));
+    open();
+    expect(await screen.findByTestId('user-crawl-error')).toBeInTheDocument();
+    expect(screen.getByTestId('user-crawl-error-retry')).toBeEnabled();
+  });
+});
+
 describe('CrawlPage ready state', () => {
   it('shows depth, lanes with ETA, per-depth columns and the not-available block', async () => {
     open();

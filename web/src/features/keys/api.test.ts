@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw/http';
 import { describe, expect, it } from 'vitest';
+import { apiKeyBody } from '../../test/fixtures';
 import { server } from '../../test/server';
 import {
   checkAndSaveKey,
@@ -29,7 +30,7 @@ describe('key API', () => {
     server.use(
       http.post('*/keys', async ({ request }) => {
         expect(await request.json()).toMatchObject(body);
-        return HttpResponse.json({ id: 1 }, { status: 201 });
+        return HttpResponse.json(apiKeyBody(), { status: 201 });
       }),
     );
     await expect(checkAndSaveKey(body)).resolves.toMatchObject({ status: 201 });
@@ -78,8 +79,8 @@ describe('contract requests', () => {
 
 describe('saveKey', () => {
   it('returns the stored key on 201', async () => {
-    post(201, { id: 7 });
-    await expect(saveKey(body)).resolves.toEqual({ key: { id: 7 } });
+    post(201, apiKeyBody({ id: 7 }));
+    await expect(saveKey(body)).resolves.toEqual({ key: apiKeyBody({ id: 7 }) });
   });
 
   it('maps field errors, duplicate, invalid, no node and other failures', async () => {

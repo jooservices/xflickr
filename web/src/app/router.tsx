@@ -13,6 +13,7 @@ import { ProfilePage } from '../pages/profile/ProfilePage';
 import { KeysPage } from '../pages/keys';
 import { SetupPage } from '../pages/setup/SetupPage';
 import { CrawlPage } from '../pages/crawl';
+import { RouteErrorPage } from './ErrorBoundary';
 
 function userPageElement(path: string, labelKey: MessageKey) {
   if (path === '/profile') return <ProfilePage />;
@@ -91,8 +92,8 @@ function UserNotFound() {
 }
 
 export const routes: RouteObject[] = [
-  { path: '/login', element: <LoginPage /> },
-  { path: '/register', element: <RegisterPage /> },
+  { path: '/login', element: <LoginPage />, errorElement: <RouteErrorPage /> },
+  { path: '/register', element: <RegisterPage />, errorElement: <RouteErrorPage /> },
   {
     path: '/admin',
     element: (
@@ -105,8 +106,9 @@ export const routes: RouteObject[] = [
       </AdminGuard>
     ),
     children: adminPages,
+    errorElement: <RouteErrorPage />,
   },
-  { path: '/', element: <UserShell />, children: userPages },
+  { path: '/', element: <UserShell />, children: userPages, errorElement: <RouteErrorPage /> },
 ];
 
 export function createAppRouter() {

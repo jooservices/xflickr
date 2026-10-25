@@ -1,3 +1,4 @@
+import { ApiShapeError } from '../../shared/api/mutator';
 import {
   getMeCrawl,
   getMeCrawlQueue,
@@ -45,7 +46,7 @@ async function ok<T>(
     response = await call({ signal: timeoutSignal(signal) });
   } catch (error) {
     if (signal?.aborted === true) throw error;
-    throw new CrawlApiError(0);
+    throw new CrawlApiError(error instanceof ApiShapeError ? 502 : 0);
   }
   if (response.status !== 200) {
     const body = response.data as { code?: string; details?: Record<string, unknown> };

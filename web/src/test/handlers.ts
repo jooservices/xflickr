@@ -3,8 +3,10 @@ import { crawlHandlers } from './crawl';
 
 export const handlers = [
   ...crawlHandlers,
-  http.get('http://localhost/api/health', () => HttpResponse.json({ status: 'ok' })),
-  http.get('*/healthz', () => HttpResponse.json({ status: 'ok' })),
+  http.get('http://localhost/api/health', () =>
+    HttpResponse.json({ status: 'ok', version: 'test' }),
+  ),
+  http.get('*/healthz', () => HttpResponse.json({ status: 'ok', version: 'test' })),
   http.get('*/auth/config', () =>
     HttpResponse.json({ registration_open: true, passkey_enabled: false }),
   ),

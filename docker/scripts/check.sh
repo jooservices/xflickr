@@ -35,5 +35,6 @@ run_step test
 run_step test-integration
 run_step e2e
 run_step gen
+run_step gen-stale
 
 printf '\nAll release verification steps passed.\n'

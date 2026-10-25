@@ -128,6 +128,39 @@ describe('KeysPage states', () => {
     );
   });
 
+  it.each([
+    [
+      'an HTML SPA response',
+      () => new HttpResponse('<html>app</html>', { headers: { 'Content-Type': 'text/html' } }),
+    ],
+    ['a null list body', () => HttpResponse.json(null)],
+  ])('shows a retryable error for %s', async (_case, response) => {
+    server.use(http.get('*/keys', () => response()));
+    open();
+    expect(await screen.findByTestId('keys-error')).toBeInTheDocument();
+    expect(screen.getByTestId('keys-error-retry')).toBeEnabled();
+  });
+
+  it.each([
+    ['usage', '*/keys/usage'],
+    ['accounts', '*/flickr-accounts'],
+  ])('does not crash when %s answers HTML with status 200', async (_name, path) => {
+    world([]);
+    server.use(
+      http.get(
+        path,
+        () =>
+          new HttpResponse('<!doctype html><html>app</html>', {
+            status: 200,
+            headers: { 'Content-Type': 'text/html' },
+          }),
+      ),
+    );
+    open();
+    expect(await screen.findByTestId('keys-page')).toBeInTheDocument();
+    expect(screen.queryByTestId('global-error')).toBeNull();
+  });
+
   it('shows the empty block and opens the Add modal from it', async () => {
     world([]);
     open();

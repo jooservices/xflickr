@@ -140,6 +140,7 @@ function Shell({ forbidden }: UserShellProps) {
   const client = useQueryClient();
   const [shortcuts, setShortcuts] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [reconnectFailed, setReconnectFailed] = useState(false);
   const authenticated = session.status === 'authenticated';
   const summary = useShellSummary(authenticated);
   const keys = useQuery({
@@ -331,14 +332,28 @@ function Shell({ forbidden }: UserShellProps) {
           onReconnect={(item) => {
             if (item.kind === 'cloud_expired') void navigate('/sync');
             else {
+              setReconnectFailed(false);
               void startConnect(Number(item.id))
                 .then((url) => {
                   window.location.assign(url);
                 })
-                .catch(() => undefined);
+                .catch(() => {
+                  setReconnectFailed(true);
+                });
             }
           }}
         />
+        {reconnectFailed ? (
+          <div
+            className={`${styles.banner} ${styles.warn}`}
+            role="alert"
+            data-testid="shell-reconnect-error"
+          >
+            <span>
+              <Icon name="alert" /> {t('shell.banner.reconnect-failed')}
+            </span>
+          </div>
+        ) : null}
         <Crumb />
         {content}
       </main>

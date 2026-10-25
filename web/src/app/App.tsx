@@ -5,6 +5,7 @@ import type { DataRouter } from 'react-router';
 import { SessionProvider } from '../entities';
 import { I18nProvider } from '../shared';
 import { createAppRouter } from './router';
+import { AppErrorBoundary } from './ErrorBoundary';
 
 type AppProps = {
   /** Lets tests supply a memory router. */
@@ -20,7 +21,9 @@ export function App({ router, queryClient }: AppProps) {
     <QueryClientProvider client={client}>
       <I18nProvider>
         <SessionProvider>
-          <RouterProvider router={appRouter} />
+          <AppErrorBoundary>
+            <RouterProvider router={appRouter} />
+          </AppErrorBoundary>
         </SessionProvider>
       </I18nProvider>
     </QueryClientProvider>

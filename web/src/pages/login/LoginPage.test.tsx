@@ -11,11 +11,22 @@ describe('LoginPage', () => {
     let posted: unknown;
     server.use(
       http.get('*/auth/config', () =>
-        HttpResponse.json({ registration_open: false, passkey_enabled: false }),
+        HttpResponse.json({
+          registration_open: false,
+          passkey_enabled: false,
+          password_min: 8,
+          password_max: 128,
+        }),
       ),
       http.post('*/auth/login', async ({ request }) => {
         posted = await request.json();
-        return HttpResponse.json({ id: 4, email: 'a@example.test', role: 'user', locale: 'en' });
+        return HttpResponse.json({
+          id: 4,
+          email: 'a@example.test',
+          role: 'user',
+          locale: 'en',
+          created_at: '2026-01-01T00:00:00Z',
+        });
       }),
     );
     const { router } = renderApp({ session: signedOut, path: '/login?return_to=%2Falbums%2F42' });
@@ -52,7 +63,12 @@ describe('LoginPage', () => {
     vi.stubGlobal('PublicKeyCredential', () => undefined);
     server.use(
       http.get('*/auth/config', () =>
-        HttpResponse.json({ registration_open: true, passkey_enabled: true }),
+        HttpResponse.json({
+          registration_open: true,
+          passkey_enabled: true,
+          password_min: 8,
+          password_max: 128,
+        }),
       ),
     );
     renderApp({ session: signedOut, path: '/login' });
@@ -84,7 +100,13 @@ describe('LoginPage', () => {
     });
     server.use(
       http.post('*/auth/login', () =>
-        HttpResponse.json({ id: 4, email: 'a@example.test', role: 'user', locale: 'en' }),
+        HttpResponse.json({
+          id: 4,
+          email: 'a@example.test',
+          role: 'user',
+          locale: 'en',
+          created_at: '2026-01-01T00:00:00Z',
+        }),
       ),
     );
     fireEvent.click(screen.getByTestId('auth-login-submit'));
@@ -185,7 +207,12 @@ describe('LoginPage', () => {
     const { router } = renderApp({
       session: {
         status: 'authenticated',
-        user: { id: 1, email: 'a@example.test', role: 'user', locale: 'en' },
+        user: {
+          id: 1,
+          email: 'a@example.test',
+          role: 'user',
+          locale: 'en',
+        },
       },
       path: '/login?return_to=%2Fcontacts',
     });
