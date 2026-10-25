@@ -11,6 +11,18 @@ fi
 
 cd "$ROOT/web"
 
+find_available_port() {
+	local node_bin
+	node_bin="$(command -v node || true)"
+	if [[ -z "$node_bin" ]]; then
+		printf 'Web end-to-end tests need Node.js to select an available port.\n' >&2
+		exit 1
+	fi
+	"$node_bin" -e 'const net = require("node:net"); const server = net.createServer(); server.listen(0, "127.0.0.1", () => { const address = server.address(); if (address && typeof address !== "string") process.stdout.write(String(address.port)); server.close(); });'
+}
+
+export E2E_PORT="${E2E_PORT:-$(find_available_port)}"
+
 # Playwright needs a browser. The shared node runtime does not have one, and the
 # host cannot open a server that listens only inside that container. When Chrome
 # is on the host, run the suite there. GitHub Actions leaves WORKSPACES_RUNTIME
