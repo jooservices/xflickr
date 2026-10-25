@@ -26,6 +26,10 @@ components:
   quota-domain:     { in: internal/quota/domain/** }
   quota-app:        { in: internal/quota/app/** }
   quota-adapters:   { in: internal/quota/adapters/** }
+  catalog-domain:   { in: internal/catalog/domain/** }
+  catalog-app:      { in: internal/catalog/app/** }
+  catalog-adapters: { in: internal/catalog/adapters/** }
+  catalog-adapters-gen: { in: internal/catalog/adapters/postgres/gen/** }
   platform:
     in:
       - internal/platform/adapters/**
@@ -64,6 +68,10 @@ deps:
     mayDependOn: [quota-domain]
   quota-adapters:
     mayDependOn: [quota-domain, quota-app, pkg]
+  catalog-app:
+    mayDependOn: [catalog-domain]
+  catalog-adapters:
+    mayDependOn: [catalog-domain, catalog-app, catalog-adapters-gen]
   platform:
     mayDependOn: [platform, pkg, migrations]
   wiring:
@@ -83,6 +91,9 @@ deps:
       - quota-domain
       - quota-app
       - quota-adapters
+      - catalog-domain
+      - catalog-app
+      - catalog-adapters
       - platform
       - pkg
   pkg:

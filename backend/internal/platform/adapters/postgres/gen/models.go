@@ -3,3 +3,616 @@
 //   sqlc v1.31.1
 
 package gen
+
+import (
+	"database/sql/driver"
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type RiverJobState string
+
+const (
+	RiverJobStateAvailable RiverJobState = "available"
+	RiverJobStateCancelled RiverJobState = "cancelled"
+	RiverJobStateCompleted RiverJobState = "completed"
+	RiverJobStateDiscarded RiverJobState = "discarded"
+	RiverJobStatePending   RiverJobState = "pending"
+	RiverJobStateRetryable RiverJobState = "retryable"
+	RiverJobStateRunning   RiverJobState = "running"
+	RiverJobStateScheduled RiverJobState = "scheduled"
+)
+
+func (e *RiverJobState) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = RiverJobState(s)
+	case string:
+		*e = RiverJobState(s)
+	default:
+		return fmt.Errorf("unsupported scan type for RiverJobState: %T", src)
+	}
+	return nil
+}
+
+type NullRiverJobState struct {
+	RiverJobState RiverJobState
+	Valid         bool // Valid is true if RiverJobState is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullRiverJobState) Scan(value interface{}) error {
+	if value == nil {
+		ns.RiverJobState, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.RiverJobState.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullRiverJobState) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.RiverJobState), nil
+}
+
+type ApiKey struct {
+	ID             int64
+	UserID         int64
+	Label          string
+	KeyPublic      string
+	SecretSealed   []byte
+	PerHourLimit   int32
+	PerSecondLimit int32
+	Burst          int32
+	Status         string
+	CreatedAt      pgtype.Timestamptz
+}
+
+type AppSetting struct {
+	Key             string
+	Value           []byte
+	UserOverridable bool
+	Min             pgtype.Float8
+	Max             pgtype.Float8
+}
+
+type AuditEvent struct {
+	ID        int64
+	Actor     string
+	Action    string
+	Target    string
+	Detail    []byte
+	CreatedAt pgtype.Timestamptz
+}
+
+type FlickrAccount struct {
+	ID           int64
+	UserID       int64
+	KeyID        int64
+	Nsid         string
+	Username     string
+	TokenSealed  []byte
+	SecretSealed []byte
+	Status       string
+	CreatedAt    pgtype.Timestamptz
+}
+
+type OutboxEvent struct {
+	ID          int64
+	Topic       string
+	Key         string
+	Payload     []byte
+	CreatedAt   pgtype.Timestamptz
+	ProcessedAt pgtype.Timestamptz
+}
+
+type Person struct {
+	Nsid        string
+	Username    string
+	Realname    string
+	Profile     []byte
+	Icon        string
+	PhotosCount int64
+	LastSeenAt  pgtype.Timestamptz
+	FacetState  []byte
+}
+
+type Photo struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type PhotosP00 struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type PhotosP01 struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type PhotosP02 struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type PhotosP03 struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type PhotosP04 struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type PhotosP05 struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type PhotosP06 struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type PhotosP07 struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type PhotosP08 struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type PhotosP09 struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type PhotosP10 struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type PhotosP11 struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type PhotosP12 struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type PhotosP13 struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type PhotosP14 struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type PhotosP15 struct {
+	ID             int64
+	OwnerNsid      string
+	Secret         string
+	Server         string
+	Title          string
+	Description    string
+	Tags           []string
+	TakenAt        pgtype.Timestamptz
+	UploadedAt     pgtype.Timestamptz
+	LastUpdate     pgtype.Timestamptz
+	Visibility     string
+	License        string
+	Media          string
+	Geo            []byte
+	Sizes          []byte
+	SizesStatus    string
+	SizesCheckedAt pgtype.Timestamptz
+	Raw            []byte
+	ContentHash    []byte
+	TombstonedAt   pgtype.Timestamptz
+}
+
+type Plan struct {
+	ID            int64
+	Name          string
+	Weight        int32
+	MaxDepthCap   int32
+	MaxContacts   int32
+	AiQuotaPerDay int32
+	ZipTtlHours   int32
+	ResourceShare pgtype.Numeric
+}
+
+type RiverJob struct {
+	ID           int64
+	State        RiverJobState
+	Attempt      int16
+	MaxAttempts  int16
+	AttemptedAt  pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
+	FinalizedAt  pgtype.Timestamptz
+	ScheduledAt  pgtype.Timestamptz
+	Priority     int16
+	Args         []byte
+	AttemptedBy  []string
+	Errors       [][]byte
+	Kind         string
+	Metadata     []byte
+	Queue        string
+	Tags         []string
+	UniqueKey    []byte
+	UniqueStates pgtype.Bits
+}
+
+type RiverLeader struct {
+	ElectedAt pgtype.Timestamptz
+	ExpiresAt pgtype.Timestamptz
+	LeaderID  string
+	Name      string
+}
+
+type RiverNotification struct {
+	ID        int64
+	CreatedAt pgtype.Timestamptz
+	Payload   string
+	Topic     string
+}
+
+type RiverQueue struct {
+	Name      string
+	CreatedAt pgtype.Timestamptz
+	Metadata  []byte
+	PausedAt  pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type Session struct {
+	ID         int64
+	UserID     int64
+	TokenHash  []byte
+	ExpiresAt  pgtype.Timestamptz
+	LastSeenAt pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
+	UserAgent  string
+	IpAddress  string
+}
+
+type User struct {
+	ID           int64
+	Email        string
+	PasswordHash string
+	Role         string
+	Locale       string
+	CreatedAt    pgtype.Timestamptz
+	DisabledAt   pgtype.Timestamptz
+	PlanID       int64
+}
+
+type UserSetting struct {
+	UserID int64
+	Key    string
+	Value  []byte
+}
+
+type WorkItem struct {
+	ID             int64
+	Kind           string
+	SubjectKey     string
+	UserID         pgtype.Int8
+	KeyID          pgtype.Int8
+	State          string
+	Cursor         []byte
+	PriorityBase   int32
+	Attempts       int32
+	NotBefore      pgtype.Timestamptz
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	LastError      pgtype.Text
+	LeaseExpiresAt pgtype.Timestamptz
+	WorkerType     pgtype.Text
+	DirectAction   bool
+	Starred        bool
+	Depth          int32
+	Score          float64
+	ScoreUpdatedAt pgtype.Timestamptz
+}
