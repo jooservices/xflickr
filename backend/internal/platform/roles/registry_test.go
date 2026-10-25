@@ -485,7 +485,7 @@ func TestAPIRoleReturnsServeError(t *testing.T) {
 
 type stubSessions struct{}
 
-func (stubSessions) Issue(context.Context, int64) (string, domain.Session, string, error) {
+func (stubSessions) Issue(context.Context, int64, string, string) (string, domain.Session, string, error) {
 	return "", domain.Session{}, "", errors.New("sessions are not available")
 }
 

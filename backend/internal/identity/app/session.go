@@ -21,7 +21,7 @@ type Authenticated struct {
 
 // SessionRepository stores hashed session ids.
 type SessionRepository interface {
-	InsertSession(context.Context, int64, []byte, time.Time, time.Time) (domain.Session, error)
+	InsertSession(context.Context, int64, []byte, time.Time, time.Time, string, string) (domain.Session, error)
 	FindSessionByHash(context.Context, []byte, time.Time) (domain.Session, error)
 	TouchSession(context.Context, []byte, time.Time, time.Time) (bool, error)
 	DeleteOtherSessions(context.Context, int64, []byte) error
@@ -44,7 +44,7 @@ type Sessions struct {
 
 // Issue creates a session for userID and returns the opaque id plus a CSRF token.
 // The repository receives only the SHA-256 hash of the opaque id.
-func (s Sessions) Issue(ctx context.Context, userID int64) (string, domain.Session, string, error) {
+func (s Sessions) Issue(ctx context.Context, userID int64, userAgent, ipAddress string) (string, domain.Session, string, error) {
 	if s.Repository == nil {
 		return "", domain.Session{}, "", errors.New("identity: session repository is required")
 	}
@@ -60,7 +60,7 @@ func (s Sessions) Issue(ctx context.Context, userID int64) (string, domain.Sessi
 		return "", domain.Session{}, "", err
 	}
 	now := s.now()
-	session, err := s.Repository.InsertSession(ctx, userID, domain.HashSessionToken(raw), now.Add(domain.SessionLifetime), now)
+	session, err := s.Repository.InsertSession(ctx, userID, domain.HashSessionToken(raw), now.Add(domain.SessionLifetime), now, userAgent, ipAddress)
 	if err != nil {
 		return "", domain.Session{}, "", err
 	}

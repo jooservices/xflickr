@@ -28,9 +28,17 @@ register:
             schema:
               $ref: ../schemas/auth.yaml#/User
       '400':
-        description: Invalid request
+        description: Invalid registration fields
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/auth.yaml#/RegisterValidationError
       '409':
-        description: Email already registered or registration closed
+        description: Registration conflict
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/auth.yaml#/RegisterConflict
 
 login:
   post:

@@ -26,6 +26,8 @@ type Session struct {
 	ExpiresAt  time.Time
 	LastSeenAt time.Time
 	CreatedAt  time.Time
+	UserAgent  string
+	IPAddress  string
 }
 
 var readRandom = rand.Read

@@ -125,7 +125,6 @@ export function ProfilePage() {
         },
         csrfFetchOptions('POST'),
       );
-      signalSessionExpired(result.status);
       if (result.status === 401) {
         setPasswordError(t('profile.password.error.current'));
         setCurrentPassword('');

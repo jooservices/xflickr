@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useI18n } from '../../shared';
@@ -30,6 +30,17 @@ export function RegisterPage() {
   } | null>(null);
   const [partial, setPartial] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{
+    email?: string;
+    password?: string;
+    confirm?: string;
+    terms?: string;
+  }>({});
+  const [emailTaken, setEmailTaken] = useState(false);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const confirmRef = useRef<HTMLInputElement>(null);
+  const termsRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -62,28 +73,40 @@ export function RegisterPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
+    setFieldErrors({});
+    setEmailTaken(false);
     if (!email.trim() || !email.includes('@')) {
-      setError(t('auth.validation.email-invalid'));
+      setFieldErrors({
+        email: t(
+          !email.trim() ? 'auth.validation.email-required' : 'auth.validation.email-invalid',
+        ),
+      });
+      emailRef.current?.focus();
       return;
     }
     if (password.length < 8) {
-      setError(t('auth.validation.password-short', { min: 8 }));
+      setFieldErrors({ password: t('auth.validation.password-short', { min: 8 }) });
+      passwordRef.current?.focus();
       return;
     }
     if (password.length > 128) {
-      setError(t('auth.validation.password-long', { max: 128 }));
+      setFieldErrors({ password: t('auth.validation.password-long', { max: 128 }) });
+      passwordRef.current?.focus();
       return;
     }
     if (password.toLowerCase() === email.trim().toLowerCase()) {
-      setError(t('auth.password.rule-email'));
+      setFieldErrors({ password: t('auth.password.rule-email') });
+      passwordRef.current?.focus();
       return;
     }
     if (confirm !== password) {
-      setError(t('auth.validation.confirm-mismatch'));
+      setFieldErrors({ confirm: t('auth.validation.confirm-mismatch') });
+      confirmRef.current?.focus();
       return;
     }
     if (!terms) {
-      setError(t('auth.validation.terms-required'));
+      setFieldErrors({ terms: t('auth.validation.terms-required') });
+      termsRef.current?.focus();
       return;
     }
     setBusy(true);
@@ -95,7 +118,50 @@ export function RegisterPage() {
         locale,
       });
       if (created.status === 409) {
-        setError(t('auth.error.email-taken'));
+        const code = (created.data as { code?: string }).code;
+        if (code === 'registration_closed') {
+          setConfig((current) => ({
+            ...(current ?? { registration_open: true }),
+            registration_open: false,
+          }));
+        } else {
+          setFieldErrors({ email: t('auth.error.email-taken') });
+          setEmailTaken(true);
+          emailRef.current?.focus();
+        }
+        return;
+      }
+      if (created.status === 400) {
+        const fields =
+          (created.data as { details?: { fields?: Record<string, string> } }).details?.fields ?? {};
+        const mapped = {
+          ...(fields.email
+            ? {
+                email: t(
+                  fields.email === 'required'
+                    ? 'auth.validation.email-required'
+                    : 'auth.validation.email-invalid',
+                ),
+              }
+            : {}),
+          ...(fields.password
+            ? {
+                password: t(
+                  fields.password === 'too_long'
+                    ? 'auth.validation.password-long'
+                    : fields.password === 'required'
+                      ? 'auth.validation.password-required'
+                      : 'auth.validation.password-short',
+                  { min: 8, max: 128 },
+                ),
+              }
+            : {}),
+          ...(fields.accept_terms ? { terms: t('auth.validation.terms-required') } : {}),
+        };
+        setFieldErrors(mapped);
+        if (mapped.email) emailRef.current?.focus();
+        else if (mapped.password) passwordRef.current?.focus();
+        else termsRef.current?.focus();
         return;
       }
       if (created.status !== 201) {
@@ -231,9 +297,32 @@ export function RegisterPage() {
                 type="email"
                 autoComplete="username"
                 value={email}
+                ref={emailRef}
                 onChange={(event) => setEmail(event.target.value)}
+                aria-invalid={Boolean(fieldErrors.email)}
+                aria-describedby={fieldErrors.email ? 'auth-error-email' : undefined}
                 data-testid="auth-register-email"
               />
+              {fieldErrors.email && (
+                <span
+                  className={styles.fieldError}
+                  id="auth-error-email"
+                  data-testid="auth-error-email"
+                >
+                  {fieldErrors.email}
+                  {emailTaken && (
+                    <>
+                      {' '}
+                      <Link
+                        to={`/login?email=${encodeURIComponent(email.trim())}`}
+                        data-testid="auth-error-email-taken-link"
+                      >
+                        {t('auth.error.email-taken-cta')}
+                      </Link>
+                    </>
+                  )}
+                </span>
+              )}
             </label>
             <label className={styles.field}>
               {t('auth.field.password')} <span>{t('auth.field.required')}</span>
@@ -242,7 +331,14 @@ export function RegisterPage() {
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="new-password"
                   value={password}
+                  ref={passwordRef}
                   onChange={(event) => setPassword(event.target.value)}
+                  aria-invalid={Boolean(fieldErrors.password)}
+                  aria-describedby={
+                    fieldErrors.password
+                      ? 'auth-error-password auth-register-rules'
+                      : 'auth-register-rules'
+                  }
                   data-testid="auth-register-password"
                 />
                 <button
@@ -270,6 +366,15 @@ export function RegisterPage() {
                   {emailMet ? '✓' : '·'} {t('auth.password.rule-email')}
                 </li>
               </ul>
+              {fieldErrors.password && (
+                <span
+                  className={styles.fieldError}
+                  id="auth-error-password"
+                  data-testid="auth-error-password"
+                >
+                  {fieldErrors.password}
+                </span>
+              )}
             </label>
             <label className={styles.field}>
               {t('auth.field.confirm')} <span>{t('auth.field.required')}</span>
@@ -277,15 +382,30 @@ export function RegisterPage() {
                 type="password"
                 autoComplete="new-password"
                 value={confirm}
+                ref={confirmRef}
                 onChange={(event) => setConfirm(event.target.value)}
+                aria-invalid={Boolean(fieldErrors.confirm)}
+                aria-describedby={fieldErrors.confirm ? 'auth-error-confirm' : undefined}
                 data-testid="auth-register-confirm"
               />
+              {fieldErrors.confirm && (
+                <span
+                  className={styles.fieldError}
+                  id="auth-error-confirm"
+                  data-testid="auth-error-confirm"
+                >
+                  {fieldErrors.confirm}
+                </span>
+              )}
             </label>
             <label className={styles.check}>
               <input
                 type="checkbox"
                 checked={terms}
+                ref={termsRef}
                 onChange={(event) => setTerms(event.target.checked)}
+                aria-invalid={Boolean(fieldErrors.terms)}
+                aria-describedby={fieldErrors.terms ? 'auth-error-terms' : undefined}
                 data-testid="auth-register-terms"
               />
               <span>
@@ -295,6 +415,11 @@ export function RegisterPage() {
                 })}
               </span>
             </label>
+            {fieldErrors.terms && (
+              <p className={styles.fieldError} id="auth-error-terms" data-testid="auth-error-terms">
+                {fieldErrors.terms}
+              </p>
+            )}
             {config?.terms_url !== undefined || config?.privacy_url !== undefined ? (
               <div className={styles.termsLinks}>
                 {config?.terms_url === undefined ? null : (

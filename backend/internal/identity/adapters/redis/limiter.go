@@ -30,8 +30,7 @@ return count
 `)
 
 func (limiter Limiter) Allow(ctx context.Context, email, ip string) (bool, error) {
-	keyHash := sha256.Sum256([]byte(email + "\x00" + ip))
-	key := limiter.Prefix + "auth:login:" + hex.EncodeToString(keyHash[:])
+	key := limiter.key(email, ip)
 	windowSeconds := limiter.windowSeconds
 	if windowSeconds == nil {
 		windowSeconds = int64((15 * time.Minute) / time.Second)
@@ -41,4 +40,20 @@ func (limiter Limiter) Allow(ctx context.Context, email, ip string) (bool, error
 		return false, err
 	}
 	return count <= 5, nil
+}
+
+func (limiter Limiter) RetryAfter(ctx context.Context, email, ip string) (time.Duration, error) {
+	remaining, err := limiter.Client.PTTL(ctx, limiter.key(email, ip)).Result()
+	if err != nil {
+		return 0, err
+	}
+	if remaining < 0 {
+		return 0, nil
+	}
+	return remaining, nil
+}
+
+func (limiter Limiter) key(email, ip string) string {
+	keyHash := sha256.Sum256([]byte(email + "\x00" + ip))
+	return limiter.Prefix + "auth:login:" + hex.EncodeToString(keyHash[:])
 }

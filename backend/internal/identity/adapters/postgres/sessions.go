@@ -12,13 +12,13 @@ import (
 	"github.com/jooservices/xflickr/internal/identity/domain"
 )
 
-func (repo *Repository) InsertSession(ctx context.Context, userID int64, tokenHash []byte, expiresAt, seenAt time.Time) (domain.Session, error) {
+func (repo *Repository) InsertSession(ctx context.Context, userID int64, tokenHash []byte, expiresAt, seenAt time.Time, userAgent, ipAddress string) (domain.Session, error) {
 	var session domain.Session
 	err := repo.pool.QueryRow(ctx, `
-INSERT INTO sessions (user_id, token_hash, expires_at, last_seen_at)
-VALUES ($1, $2, $3, $4)
-RETURNING id, user_id, expires_at, last_seen_at, created_at`,
-		userID, tokenHash, expiresAt, seenAt).Scan(&session.ID, &session.UserID, &session.ExpiresAt, &session.LastSeenAt, &session.CreatedAt)
+INSERT INTO sessions (user_id, token_hash, expires_at, last_seen_at, user_agent, ip_address)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, user_id, expires_at, last_seen_at, created_at, user_agent, ip_address`,
+		userID, tokenHash, expiresAt, seenAt, userAgent, ipAddress).Scan(&session.ID, &session.UserID, &session.ExpiresAt, &session.LastSeenAt, &session.CreatedAt, &session.UserAgent, &session.IPAddress)
 	if err != nil {
 		return domain.Session{}, fmt.Errorf("identity: insert session: %w", err)
 	}
@@ -28,9 +28,9 @@ RETURNING id, user_id, expires_at, last_seen_at, created_at`,
 func (repo *Repository) FindSessionByHash(ctx context.Context, tokenHash []byte, now time.Time) (domain.Session, error) {
 	var session domain.Session
 	err := repo.pool.QueryRow(ctx, `
-SELECT id, user_id, expires_at, last_seen_at, created_at
+SELECT id, user_id, expires_at, last_seen_at, created_at, user_agent, ip_address
 FROM sessions
-WHERE token_hash = $1 AND expires_at > $2`, tokenHash, now).Scan(&session.ID, &session.UserID, &session.ExpiresAt, &session.LastSeenAt, &session.CreatedAt)
+WHERE token_hash = $1 AND expires_at > $2`, tokenHash, now).Scan(&session.ID, &session.UserID, &session.ExpiresAt, &session.LastSeenAt, &session.CreatedAt, &session.UserAgent, &session.IPAddress)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Session{}, app.ErrUnauthenticated
@@ -71,7 +71,7 @@ func (repo *Repository) DeleteSessionByHash(ctx context.Context, tokenHash []byt
 }
 
 func (repo *Repository) ListSessions(ctx context.Context, userID int64) ([]domain.Session, error) {
-	rows, err := repo.pool.Query(ctx, `SELECT id, user_id, expires_at, last_seen_at, created_at FROM sessions WHERE user_id = $1 AND expires_at > now() ORDER BY last_seen_at DESC`, userID)
+	rows, err := repo.pool.Query(ctx, `SELECT id, user_id, expires_at, last_seen_at, created_at, user_agent, ip_address FROM sessions WHERE user_id = $1 AND expires_at > now() ORDER BY last_seen_at DESC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("identity: list sessions: %w", err)
 	}
@@ -79,7 +79,7 @@ func (repo *Repository) ListSessions(ctx context.Context, userID int64) ([]domai
 	items := make([]domain.Session, 0)
 	for rows.Next() {
 		var session domain.Session
-		if err := rows.Scan(&session.ID, &session.UserID, &session.ExpiresAt, &session.LastSeenAt, &session.CreatedAt); err != nil {
+		if err := rows.Scan(&session.ID, &session.UserID, &session.ExpiresAt, &session.LastSeenAt, &session.CreatedAt, &session.UserAgent, &session.IPAddress); err != nil {
 			return nil, fmt.Errorf("identity: scan session: %w", err)
 		}
 		items = append(items, session)

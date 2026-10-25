@@ -27,7 +27,9 @@ import type {
   ChangePasswordRequest,
   LoginLocked,
   LoginRateLimited,
+  RegisterConflict,
   RegisterRequest,
+  RegisterValidationError,
   SessionList,
   UpdateMeRequest,
   User,
@@ -180,12 +182,12 @@ export type registerResponse201 = {
 };
 
 export type registerResponse400 = {
-  data: void;
+  data: RegisterValidationError;
   status: 400;
 };
 
 export type registerResponse409 = {
-  data: void;
+  data: RegisterConflict;
   status: 409;
 };
 
@@ -243,7 +245,10 @@ export const register = async (
 
 export const getRegisterMutationKey = () => ['register'] as const;
 
-export const getRegisterMutationOptions = <TError = void, TContext = unknown>(options?: {
+export const getRegisterMutationOptions = <
+  TError = RegisterValidationError | RegisterConflict,
+  TContext = unknown,
+>(options?: {
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof register>>,
     TError,
@@ -278,13 +283,16 @@ export const getRegisterMutationOptions = <TError = void, TContext = unknown>(op
 
 export type RegisterMutationResult = NonNullable<Awaited<ReturnType<typeof register>>>;
 export type RegisterMutationBody = RegisterRequest;
-export type RegisterMutationError = void;
+export type RegisterMutationError = RegisterValidationError | RegisterConflict;
 export type RegisterMutationVariables = { data: RegisterRequest };
 
 /**
  * @summary Register a user
  */
-export const useRegister = <TError = void, TContext = unknown>(
+export const useRegister = <
+  TError = RegisterValidationError | RegisterConflict,
+  TContext = unknown,
+>(
   options?: {
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof register>>,

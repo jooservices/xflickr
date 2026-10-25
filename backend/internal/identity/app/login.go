@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/jooservices/xflickr/internal/identity/domain"
 )
@@ -26,7 +27,13 @@ type LoginRepository interface {
 }
 type LoginLimiter interface {
 	Allow(context.Context, string, string) (bool, error)
+	RetryAfter(context.Context, string, string) (time.Duration, error)
 }
+
+func (usecase Login) RetryAfter(ctx context.Context, email, ip string) (time.Duration, error) {
+	return usecase.Limiter.RetryAfter(ctx, strings.ToLower(strings.TrimSpace(email)), ip)
+}
+
 type Login struct {
 	Repository        LoginRepository
 	Limiter           LoginLimiter

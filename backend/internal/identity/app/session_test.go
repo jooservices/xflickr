@@ -36,7 +36,7 @@ type sessionMemory struct {
 	revokeIDErr error
 }
 
-func (m *sessionMemory) InsertSession(_ context.Context, userID int64, tokenHash []byte, expiresAt, seenAt time.Time) (domain.Session, error) {
+func (m *sessionMemory) InsertSession(_ context.Context, userID int64, tokenHash []byte, expiresAt, seenAt time.Time, userAgent, ipAddress string) (domain.Session, error) {
 	m.gotUser = userID
 	m.gotHash = append([]byte(nil), tokenHash...)
 	m.gotExpires = expiresAt
@@ -44,7 +44,7 @@ func (m *sessionMemory) InsertSession(_ context.Context, userID int64, tokenHash
 	if m.insertErr != nil {
 		return domain.Session{}, m.insertErr
 	}
-	return domain.Session{ID: 11, UserID: userID, ExpiresAt: expiresAt, LastSeenAt: seenAt, CreatedAt: seenAt}, nil
+	return domain.Session{ID: 11, UserID: userID, ExpiresAt: expiresAt, LastSeenAt: seenAt, CreatedAt: seenAt, UserAgent: userAgent, IPAddress: ipAddress}, nil
 }
 
 func (m *sessionMemory) FindSessionByHash(context.Context, []byte, time.Time) (domain.Session, error) {
@@ -93,7 +93,7 @@ func TestIssueStoresOnlyTheSessionHash(t *testing.T) {
 	now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 	memory := &sessionMemory{}
 	service := Sessions{Repository: memory, Now: func() time.Time { return now }}
-	raw, session, csrf, err := service.Issue(context.Background(), 7)
+	raw, session, csrf, err := service.Issue(context.Background(), 7, "Firefox", "192.0.2.8")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,22 +109,22 @@ func TestIssueStoresOnlyTheSessionHash(t *testing.T) {
 	if !memory.gotExpires.Equal(now.Add(domain.SessionLifetime)) || !memory.gotSeen.Equal(now) {
 		t.Fatalf("expiry=%s seen=%s", memory.gotExpires, memory.gotSeen)
 	}
-	if session.UserID != 7 || !session.ExpiresAt.Equal(memory.gotExpires) {
+	if session.UserID != 7 || !session.ExpiresAt.Equal(memory.gotExpires) || session.UserAgent != "Firefox" || session.IPAddress != "192.0.2.8" {
 		t.Fatalf("session = %+v", session)
 	}
 }
 
 func TestIssueRejectsMissingDependencies(t *testing.T) {
 	service := Sessions{}
-	if _, _, _, err := service.Issue(context.Background(), 1); err == nil {
+	if _, _, _, err := service.Issue(context.Background(), 1, "", ""); err == nil {
 		t.Fatal("expected missing repository error")
 	}
 	service.Repository = &sessionMemory{}
-	if _, _, _, err := service.Issue(context.Background(), 0); err == nil {
+	if _, _, _, err := service.Issue(context.Background(), 0, "", ""); err == nil {
 		t.Fatal("expected missing user error")
 	}
 	service.Repository = &sessionMemory{insertErr: errors.New("database unavailable")}
-	if _, _, _, err := service.Issue(context.Background(), 1); err == nil {
+	if _, _, _, err := service.Issue(context.Background(), 1, "", ""); err == nil {
 		t.Fatal("expected insert error")
 	}
 }
@@ -281,7 +281,7 @@ func TestRevokeSessionAndOthers(t *testing.T) {
 func TestSessionsUseTheCurrentTimeByDefault(t *testing.T) {
 	memory := &sessionMemory{}
 	before := time.Now().UTC().Add(-time.Second)
-	if _, _, _, err := (Sessions{Repository: memory}).Issue(context.Background(), 1); err != nil {
+	if _, _, _, err := (Sessions{Repository: memory}).Issue(context.Background(), 1, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	after := time.Now().UTC().Add(time.Second)

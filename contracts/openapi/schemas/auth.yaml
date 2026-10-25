@@ -54,6 +54,43 @@ RegisterRequest:
     locale:
       type: string
       enum: [en, vi]
+RegisterValidationError:
+  type: object
+  required: [code, message, details]
+  properties:
+    code:
+      type: string
+      const: validation_failed
+    message:
+      type: string
+    details:
+      type: object
+      required: [fields]
+      properties:
+        fields:
+          type: object
+          properties:
+            email:
+              type: string
+              enum: [required, invalid, too_long]
+            password:
+              type: string
+              enum: [required, too_short, too_long]
+            accept_terms:
+              type: string
+              enum: [required]
+            locale:
+              type: string
+              enum: [invalid]
+RegisterConflict:
+  type: object
+  required: [code, message]
+  properties:
+    code:
+      type: string
+      enum: [email_taken, registration_closed]
+    message:
+      type: string
 UpdateMeRequest:
   type: object
   additionalProperties: false

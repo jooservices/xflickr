@@ -49,8 +49,9 @@ func (r repo) FindByEmail(context.Context, string) (domain.User, error) { return
 func (r repo) FindByID(context.Context, int64) (domain.User, error)     { return r.user, r.err }
 
 type rateLimit struct {
-	allowed bool
-	err     error
+	allowed   bool
+	err       error
+	remaining time.Duration
 }
 
 type openRegistration bool
@@ -64,6 +65,9 @@ func (p registrationFailure) RegistrationOpen(context.Context) (bool, error) {
 }
 
 func (r rateLimit) Allow(context.Context, string, string) (bool, error) { return r.allowed, r.err }
+func (r rateLimit) RetryAfter(context.Context, string, string) (time.Duration, error) {
+	return r.remaining, nil
+}
 
 func TestRegisterResponses(t *testing.T) {
 	params := domain.Argon2Params{Memory: 32 * 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
@@ -75,7 +79,7 @@ func TestRegisterResponses(t *testing.T) {
 		name string
 		body *gen.RegisterJSONRequestBody
 		want any
-	}{{"created", registerBody(email, &password), gen.Register201JSONResponse{}}, {"missing body", nil, gen.Register400Response{}}, {"missing password", registerBody(email, nil), gen.Register400Response{}}, {"invalid input", registerBody(email, &short), gen.Register400Response{}}, {"closed", registerBody(email, &password), gen.Register409Response{}}, {"duplicate", registerBody(email, &password), gen.Register409Response{}}} {
+	}{{"created", registerBody(email, &password), gen.Register201JSONResponse{}}, {"missing body", nil, gen.Register400JSONResponse{}}, {"missing password", registerBody(email, nil), gen.Register400JSONResponse{}}, {"invalid input", registerBody(email, &short), gen.Register400JSONResponse{}}, {"closed", registerBody(email, &password), gen.Register409JSONResponse{}}, {"duplicate", registerBody(email, &password), gen.Register409JSONResponse{}}} {
 		h := good
 		if tc.name == "closed" {
 			h.RegisterUseCase.Repository = repo{err: app.ErrRegistrationClosed}
@@ -92,12 +96,14 @@ func TestRegisterResponses(t *testing.T) {
 			if _, ok := got.(gen.Register201JSONResponse); !ok {
 				t.Fatalf("%s response %T", tc.name, got)
 			}
-		case gen.Register400Response:
-			if _, ok := got.(gen.Register400Response); !ok {
+		case gen.Register400JSONResponse:
+			response, ok := got.(gen.Register400JSONResponse)
+			if !ok || response.Code != gen.ValidationFailed || response.Details.Fields.Password == nil {
 				t.Fatalf("%s response %T", tc.name, got)
 			}
-		case gen.Register409Response:
-			if _, ok := got.(gen.Register409Response); !ok {
+		case gen.Register409JSONResponse:
+			response, ok := got.(gen.Register409JSONResponse)
+			if !ok || (tc.name == "closed" && response.Code != gen.RegistrationClosed) || (tc.name == "duplicate" && response.Code != gen.EmailTaken) {
 				t.Fatalf("%s response %T", tc.name, got)
 			}
 		}
@@ -184,8 +190,8 @@ func TestSessionProfileHandlers(t *testing.T) {
 	})
 	fake := &fakeSessions{
 		listed: []domain.Session{
-			{ID: 31, UserID: 9, LastSeenAt: time.Now(), CreatedAt: time.Now()},
-			{ID: 32, UserID: 9, LastSeenAt: time.Now(), CreatedAt: time.Now()},
+			{ID: 31, UserID: 9, UserAgent: "Mozilla/5.0 Firefox/122 Linux", IPAddress: "203.0.113.42", LastSeenAt: time.Now(), CreatedAt: time.Now()},
+			{ID: 32, UserID: 9, UserAgent: "Mozilla/5.0 Chrome/122 Windows", IPAddress: "198.51.100.22", LastSeenAt: time.Now(), CreatedAt: time.Now()},
 		},
 		revokeByIDOK: true,
 	}
@@ -197,6 +203,9 @@ func TestSessionProfileHandlers(t *testing.T) {
 	response, ok := listed.(gen.ListMySessions200JSONResponse)
 	if !ok || len(response.Items) != 2 || !response.Items[0].Current || response.Items[1].Current {
 		t.Fatalf("session list = %#v", listed)
+	}
+	if response.Items[0].UserAgentLabel != "Firefox on Linux" || response.Items[0].IPMasked != "203.0.113.x" || response.Items[1].UserAgentLabel != "Chrome on Windows" {
+		t.Fatalf("session metadata = %#v", response.Items)
 	}
 	revoked, err := h.RevokeMySession(ctx, gen.RevokeMySessionRequestObject{ID: 32})
 	if err != nil || fake.revokeByIDUser != 9 || fake.revokeByID != 32 {
@@ -218,6 +227,34 @@ func TestSessionProfileHandlers(t *testing.T) {
 	}
 	if _, ok := missing.(gen.ListMySessions401Response); !ok {
 		t.Fatalf("anonymous session list response = %T", missing)
+	}
+}
+
+func TestSessionMetadataFormatting(t *testing.T) {
+	for _, test := range []struct {
+		name, input, want string
+	}{
+		{"unknown agent", "", "Unknown device"},
+		{"unrecognized agent", "custom client", "Browser"},
+		{"edge on android", "Mozilla/5.0 Edg/122 Android", "Edge on Android"},
+		{"safari on macos", "Mozilla/5.0 Safari/17 Mac OS X", "Safari on macOS"},
+		{"firefox on ios", "Mozilla/5.0 Firefox/122 iPhone", "Firefox on iOS"},
+		{"chromium on linux", "Mozilla/5.0 Chromium/122 Linux", "Chromium on Linux"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := userAgentLabel(test.input); got != test.want {
+				t.Fatalf("userAgentLabel(%q) = %q, want %q", test.input, got, test.want)
+			}
+		})
+	}
+	if got := maskIP("203.0.113.42"); got != "203.0.113.x" {
+		t.Fatalf("IPv4 mask = %q", got)
+	}
+	if got := maskIP("2001:db8:abcd:1234::1"); got != "2001:db8:abcd::" {
+		t.Fatalf("IPv6 mask = %q", got)
+	}
+	if got := maskIP("not an IP"); got != "" {
+		t.Fatalf("invalid IP mask = %q", got)
 	}
 }
 
@@ -261,7 +298,7 @@ func TestLoginResponses(t *testing.T) {
 		limiter rateLimit
 		body    *gen.LoginJSONRequestBody
 		want    string
-	}{{"success", repo{user: domain.User{ID: 1, PasswordHash: hash, CreatedAt: time.Now()}}, rateLimit{allowed: true}, request.Body, "ok"}, {"bad password", repo{user: domain.User{PasswordHash: hash}}, rateLimit{allowed: true}, func() *gen.AuthRequest { p := "badpass1"; return &gen.AuthRequest{Password: &p} }(), "unauthorized"}, {"missing body", repo{}, rateLimit{}, nil, "unauthorized"}, {"limited", repo{}, rateLimit{allowed: false}, request.Body, "limited"}, {"limiter error", repo{}, rateLimit{err: errors.New("redis")}, request.Body, "error"}} {
+	}{{"success", repo{user: domain.User{ID: 1, PasswordHash: hash, CreatedAt: time.Now()}}, rateLimit{allowed: true}, request.Body, "ok"}, {"bad password", repo{user: domain.User{PasswordHash: hash}}, rateLimit{allowed: true}, func() *gen.AuthRequest { p := "badpass1"; return &gen.AuthRequest{Password: &p} }(), "unauthorized"}, {"missing body", repo{}, rateLimit{}, nil, "unauthorized"}, {"limited", repo{}, rateLimit{allowed: false, remaining: 37 * time.Second}, request.Body, "limited"}, {"limiter error", repo{}, rateLimit{err: errors.New("redis")}, request.Body, "error"}} {
 		h := Handler{LoginUseCase: app.Login{Repository: tc.repo, Limiter: tc.limiter, DummyPasswordHash: dummy}}
 		req := request
 		req.Body = tc.body
@@ -282,7 +319,8 @@ func TestLoginResponses(t *testing.T) {
 				t.Fatalf("%s response %T", tc.name, got)
 			}
 		case "limited":
-			if _, ok := got.(gen.Login429JSONResponse); !ok {
+			limited, ok := got.(gen.Login429JSONResponse)
+			if !ok || limited.Body.Details.RetryAfterSeconds != 37 || limited.Headers.RetryAfter == nil || *limited.Headers.RetryAfter != 37 {
 				t.Fatalf("%s response %T", tc.name, got)
 			}
 		default:

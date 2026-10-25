@@ -34,6 +34,10 @@ func TestLimiterAllowsFiveAttemptsAndExpires(t *testing.T) {
 	if err != nil || allowed {
 		t.Fatalf("sixth attempt allowed=%v err=%v", allowed, err)
 	}
+	remaining, err := limiter.RetryAfter(context.Background(), "user@example.com", "127.0.0.1")
+	if err != nil || remaining != 15*time.Minute {
+		t.Fatalf("RetryAfter() = %s, %v; want 15m", remaining, err)
+	}
 	allowed, err = limiter.Allow(context.Background(), "user@example.com", "127.0.0.2")
 	if err != nil || !allowed {
 		t.Fatalf("different IP allowed=%v err=%v", allowed, err)

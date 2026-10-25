@@ -42,7 +42,7 @@ type principalKey struct{}
 
 // SessionService issues, checks, and revokes server-side sessions.
 type SessionService interface {
-	Issue(context.Context, int64) (string, domain.Session, string, error)
+	Issue(context.Context, int64, string, string) (string, domain.Session, string, error)
 	Authenticate(context.Context, string) (app.Authenticated, error)
 	Revoke(context.Context, string) error
 	RevokeOthers(context.Context, int64, []byte) error
@@ -287,7 +287,7 @@ func MaintainSessionCookies(sessions SessionService) gen.StrictMiddlewareFunc {
 			if sessions == nil {
 				return nil, errors.New("identity: session service is required")
 			}
-			raw, session, csrf, err := sessions.Issue(ctx, user.ID)
+			raw, session, csrf, err := sessions.Issue(ctx, user.ID, r.UserAgent(), clientIP(ctx))
 			if err != nil {
 				return nil, err
 			}

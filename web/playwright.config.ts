@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const port = Number(process.env.E2E_PORT ?? 4173);
+const port = 4173;
 const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${port}`;
 const channel = process.env.PLAYWRIGHT_CHROME_CHANNEL;
 
@@ -15,9 +15,6 @@ export default defineConfig({
     baseURL,
     colorScheme: 'light',
     trace: 'on-first-retry',
-    ...(process.env.PLAYWRIGHT_CHROME_PATH === undefined
-      ? {}
-      : { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROME_PATH } }),
     ...(channel === undefined ? {} : { channel }),
   },
   webServer: {

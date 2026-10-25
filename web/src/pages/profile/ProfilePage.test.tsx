@@ -52,6 +52,21 @@ describe('ProfilePage', () => {
     expect(await screen.findByTestId('shell-session-modal')).toBeInTheDocument();
   });
 
+  it('announces a locale save failure while retaining the selected language', async () => {
+    server.use(http.patch('*/me', () => new HttpResponse(null, { status: 500 })));
+    renderApp({ session: userSession, path: '/profile' });
+    const language = await screen.findByTestId('profile-account-language');
+    fireEvent.change(language, { target: { value: 'vi' } });
+    fireEvent.click(screen.getByTestId('profile-account-save'));
+    await waitFor(() =>
+      expect(screen.getByTestId('profile-page')).toHaveTextContent(
+        /Could not save your profile|Không thể lưu hồ sơ/,
+      ),
+    );
+    expect(language).toHaveValue('vi');
+    expect(screen.queryByTestId('shell-session-modal')).not.toBeInTheDocument();
+  });
+
   it('shows session loading errors with an independent retry control', async () => {
     let loads = 0;
     server.use(
@@ -141,6 +156,7 @@ describe('ProfilePage', () => {
     expect(await screen.findByTestId('profile-password-error')).toHaveTextContent(
       'current password is not right',
     );
+    expect(screen.queryByTestId('shell-session-modal')).not.toBeInTheDocument();
   });
 
   it('shows a general error when the password service fails', async () => {

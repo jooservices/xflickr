@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -20,13 +20,19 @@ export function LoginPage() {
   const params = new URLSearchParams(location.search);
   const expired = params.get('reason') === 'expired';
   const returnTo = validatedReturnTo(params.get('return_to'));
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(params.get('email') ?? '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [config, setConfig] = useState<{ registration_open: boolean } | null>(null);
+  const [config, setConfig] = useState<{
+    registration_open: boolean;
+    passkey_enabled: boolean;
+  } | null>(null);
   const [partial, setPartial] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
   const [cooldown, setCooldown] = useState<{
     seconds: number;
     locked: boolean;
@@ -42,11 +48,11 @@ export function LoginPage() {
     let active = true;
     void fetchCsrfConfig()
       .then((value) => {
-        if (active) setConfig({ registration_open: value.registration_open });
+        if (active) setConfig(value);
       })
       .catch(() => {
         if (active) {
-          setConfig({ registration_open: true });
+          setConfig({ registration_open: true, passkey_enabled: false });
           setPartial(true);
         }
       });
@@ -78,14 +84,21 @@ export function LoginPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
+    setFieldErrors({});
     setCooldownEnded(false);
     if (cooldown && cooldown.seconds > 0) return;
     if (!email.trim() || !email.includes('@')) {
-      setError(t('auth.validation.email-invalid'));
+      setFieldErrors({
+        email: t(
+          !email.trim() ? 'auth.validation.email-required' : 'auth.validation.email-invalid',
+        ),
+      });
+      emailRef.current?.focus();
       return;
     }
     if (!password) {
-      setError(t('auth.validation.password-required'));
+      setFieldErrors({ password: t('auth.validation.password-required') });
+      passwordRef.current?.focus();
       return;
     }
     setBusy(true);
@@ -138,6 +151,10 @@ export function LoginPage() {
         setPassword('');
       } else if (response.status === 401) {
         setError(t('auth.error.invalid-credentials'));
+        setFieldErrors({
+          email: t('auth.error.invalid-credentials'),
+          password: t('auth.error.invalid-credentials'),
+        });
         setPassword('');
       } else {
         setError(t('auth.error.server'));
@@ -146,6 +163,66 @@ export function LoginPage() {
       setError(t('auth.error.server'));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function signInWithPasskey() {
+    setError('');
+    try {
+      const options = await request<Record<string, unknown>>(
+        '/auth/passkey/options',
+        'POST',
+        email.trim() ? { email: email.trim() } : {},
+      );
+      if (options.status !== 200 || !navigator.credentials || !('PublicKeyCredential' in window))
+        throw new Error('Passkey unavailable');
+      const publicKey = options.data as Record<string, unknown>;
+      const decode = (value: unknown) =>
+        typeof value === 'string'
+          ? Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/')), (char) =>
+              char.charCodeAt(0),
+            )
+          : value;
+      const credential = (await navigator.credentials.get({
+        publicKey: {
+          ...publicKey,
+          challenge: decode(publicKey.challenge),
+          allowCredentials: Array.isArray(publicKey.allowCredentials)
+            ? (publicKey.allowCredentials as Array<Record<string, unknown>>).map((item) => ({
+                ...item,
+                id: decode(item.id),
+              }))
+            : undefined,
+        } as PublicKeyCredentialRequestOptions,
+      })) as PublicKeyCredential | null;
+      if (!credential) return;
+      const response = credential.response as AuthenticatorAssertionResponse;
+      const encode = (value: ArrayBuffer) =>
+        btoa(String.fromCharCode(...new Uint8Array(value)))
+          .replace(/\+/g, '-')
+          .replace(/\//g, '_')
+          .replace(/=+$/, '');
+      const verified = await request<AuthUser>('/auth/passkey/verify', 'POST', {
+        id: credential.id,
+        rawId: encode(credential.rawId),
+        type: credential.type,
+        response: {
+          authenticatorData: encode(response.authenticatorData),
+          clientDataJSON: encode(response.clientDataJSON),
+          signature: encode(response.signature),
+          userHandle: response.userHandle ? encode(response.userHandle) : null,
+        },
+      });
+      if (verified.status !== 200) throw new Error('Passkey verification failed');
+      queryClient.setQueryData(SESSION_QUERY_KEY, { status: 'authenticated', user: verified.data });
+      localStorage.setItem('xf.signed-in', String(Date.now()));
+      document.documentElement.lang = verified.data.locale || locale;
+      void navigate(verified.data.role === 'admin' && returnTo === '/' ? '/admin' : returnTo, {
+        replace: true,
+      });
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === 'NotAllowedError') return;
+      setError(t('auth.error.passkey'));
     }
   }
 
@@ -221,7 +298,15 @@ export function LoginPage() {
               className={`${styles.banner} ${cooldown ? styles.warning : ''}`}
               role="alert"
               tabIndex={-1}
-              data-testid={cooldown ? 'auth-ratelimit-banner' : 'auth-error-banner'}
+              data-testid={
+                cooldown?.locked
+                  ? 'auth-locked-banner'
+                  : cooldown
+                    ? 'auth-ratelimit-banner'
+                    : error === t('auth.error.disabled')
+                      ? 'auth-disabled-banner'
+                      : 'auth-error-banner'
+              }
             >
               {error}
               {cooldown && (
@@ -235,7 +320,7 @@ export function LoginPage() {
                     : t('auth.error.cooldown-seconds', { seconds: cooldown.seconds })}
                 </span>
               )}
-              {!cooldown && (
+              {!cooldown && error !== t('auth.error.disabled') && (
                 <button
                   type="button"
                   className={styles.linkButton}
@@ -265,9 +350,20 @@ export function LoginPage() {
                 autoComplete="username"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                aria-invalid={Boolean(error && error.includes('@'))}
+                ref={emailRef}
+                aria-invalid={Boolean(fieldErrors.email)}
+                aria-describedby={fieldErrors.email ? 'auth-error-email' : undefined}
                 data-testid="auth-login-email"
               />
+              {fieldErrors.email && (
+                <span
+                  id="auth-error-email"
+                  className={styles.fieldError}
+                  data-testid="auth-error-email"
+                >
+                  {fieldErrors.email}
+                </span>
+              )}
             </label>
             <label className={styles.field}>
               {t('auth.field.password')} <span>{t('auth.field.required')}</span>
@@ -276,7 +372,10 @@ export function LoginPage() {
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
                   value={password}
+                  ref={passwordRef}
                   onChange={(event) => setPassword(event.target.value)}
+                  aria-invalid={Boolean(fieldErrors.password)}
+                  aria-describedby={fieldErrors.password ? 'auth-error-password' : undefined}
                   data-testid="auth-login-password"
                 />
                 <button
@@ -290,6 +389,15 @@ export function LoginPage() {
                   ◉
                 </button>
               </div>
+              {fieldErrors.password && (
+                <span
+                  id="auth-error-password"
+                  className={styles.fieldError}
+                  data-testid="auth-error-password"
+                >
+                  {fieldErrors.password}
+                </span>
+              )}
             </label>
             <button
               className={styles.primary}
@@ -302,6 +410,22 @@ export function LoginPage() {
                 : t(expired ? 'auth.expired.submit' : 'auth.login.submit')}
             </button>
           </form>
+          {config?.passkey_enabled && 'PublicKeyCredential' in window && (
+            <>
+              <div className={styles.divider} data-testid="auth-login-divider">
+                {t('auth.login.or')}
+              </div>
+              <button
+                type="button"
+                className={styles.secondary}
+                onClick={() => void signInWithPasskey()}
+                data-testid="auth-login-passkey"
+                disabled={busy}
+              >
+                {t('auth.login.passkey')}
+              </button>
+            </>
+          )}
           <div className={styles.footer}>
             {expired ? (
               <Link to="/login" data-testid="auth-expired-other-account">

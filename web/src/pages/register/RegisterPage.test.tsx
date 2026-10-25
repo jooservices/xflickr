@@ -13,12 +13,71 @@ describe('RegisterPage', () => {
     });
     fireEvent.change(screen.getByTestId('auth-register-password'), { target: { value: 'short' } });
     fireEvent.click(screen.getByTestId('auth-register-submit'));
-    expect(await screen.findByTestId('auth-error-banner')).toHaveTextContent('at least 8');
+    expect(await screen.findByTestId('auth-error-password')).toHaveTextContent('at least 8');
   });
 
   it('shows the closed-registration state from public configuration', async () => {
     server.use(http.get('*/auth/config', () => HttpResponse.json({ registration_open: false })));
     renderApp({ session: { status: 'unauthenticated' }, path: '/register' });
+    expect(await screen.findByTestId('auth-register-closed')).toHaveTextContent(
+      'Registration is closed',
+    );
+  });
+
+  it('maps server validation details to field errors and focuses the first invalid field', async () => {
+    server.use(
+      http.post('*/auth/register', () =>
+        HttpResponse.json(
+          {
+            code: 'validation_failed',
+            details: {
+              fields: { email: 'invalid', password: 'too_short', accept_terms: 'required' },
+            },
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderApp({ session: { status: 'unauthenticated' }, path: '/register' });
+    fireEvent.change(await screen.findByTestId('auth-register-email'), {
+      target: { value: 'new@example.test' },
+    });
+    fireEvent.change(screen.getByTestId('auth-register-password'), {
+      target: { value: 'valid-password' },
+    });
+    fireEvent.change(screen.getByTestId('auth-register-confirm'), {
+      target: { value: 'valid-password' },
+    });
+    fireEvent.click(screen.getByTestId('auth-register-terms'));
+    fireEvent.click(screen.getByTestId('auth-register-submit'));
+    expect(await screen.findByTestId('auth-error-email')).toHaveTextContent('valid email');
+    expect(screen.getByTestId('auth-error-password')).toHaveTextContent('at least 8');
+    expect(screen.getByTestId('auth-error-terms')).toHaveTextContent('Accept the terms');
+    expect(screen.getByTestId('auth-register-email')).toHaveAttribute(
+      'aria-describedby',
+      'auth-error-email',
+    );
+    expect(screen.getByTestId('auth-register-email')).toHaveFocus();
+  });
+
+  it('changes to the closed state after registration_closed from the server', async () => {
+    server.use(
+      http.post('*/auth/register', () =>
+        HttpResponse.json({ code: 'registration_closed' }, { status: 409 }),
+      ),
+    );
+    renderApp({ session: { status: 'unauthenticated' }, path: '/register' });
+    fireEvent.change(await screen.findByTestId('auth-register-email'), {
+      target: { value: 'new@example.test' },
+    });
+    fireEvent.change(screen.getByTestId('auth-register-password'), {
+      target: { value: 'valid-password' },
+    });
+    fireEvent.change(screen.getByTestId('auth-register-confirm'), {
+      target: { value: 'valid-password' },
+    });
+    fireEvent.click(screen.getByTestId('auth-register-terms'));
+    fireEvent.click(screen.getByTestId('auth-register-submit'));
     expect(await screen.findByTestId('auth-register-closed')).toHaveTextContent(
       'Registration is closed',
     );
@@ -36,12 +95,12 @@ describe('RegisterPage', () => {
       target: { value: 'other-password' },
     });
     fireEvent.click(screen.getByTestId('auth-register-submit'));
-    expect(await screen.findByTestId('auth-error-banner')).toHaveTextContent('do not match');
+    expect(await screen.findByTestId('auth-error-confirm')).toHaveTextContent('do not match');
     fireEvent.change(screen.getByTestId('auth-register-confirm'), {
       target: { value: 'valid-password' },
     });
     fireEvent.click(screen.getByTestId('auth-register-submit'));
-    expect(await screen.findByTestId('auth-error-banner')).toHaveTextContent('Accept the terms');
+    expect(await screen.findByTestId('auth-error-terms')).toHaveTextContent('Accept the terms');
   });
 
   it('registers and signs in before sending the new user to onboarding', async () => {
@@ -68,7 +127,7 @@ describe('RegisterPage', () => {
 
   it('shows the email conflict returned by the server', async () => {
     server.use(http.post('*/auth/register', () => new HttpResponse(null, { status: 409 })));
-    renderApp({ session: { status: 'unauthenticated' }, path: '/register' });
+    const { router } = renderApp({ session: { status: 'unauthenticated' }, path: '/register' });
     fireEvent.change(await screen.findByTestId('auth-register-email'), {
       target: { value: 'new@example.test' },
     });
@@ -80,11 +139,15 @@ describe('RegisterPage', () => {
     });
     fireEvent.click(screen.getByTestId('auth-register-terms'));
     fireEvent.click(screen.getByTestId('auth-register-submit'));
-    expect(await screen.findByTestId('auth-error-banner')).toHaveTextContent('already exists');
+    expect(await screen.findByTestId('auth-error-email')).toHaveTextContent('already exists');
+    expect(screen.getByTestId('auth-error-email-taken-link')).toHaveTextContent('Sign in instead');
+    fireEvent.click(screen.getByTestId('auth-error-email-taken-link'));
+    expect(router.state.location.pathname).toBe('/login');
+    expect(await screen.findByTestId('auth-login-email')).toHaveValue('new@example.test');
   });
 
   it.each([
-    ['', 'Enter a valid email'],
+    ['', 'Enter your email'],
     ['bad-email', 'Enter a valid email'],
   ])('rejects an invalid email before submitting', async (email, expected) => {
     renderApp({ session: { status: 'unauthenticated' }, path: '/register' });
@@ -92,7 +155,7 @@ describe('RegisterPage', () => {
       target: { value: email },
     });
     fireEvent.click(screen.getByTestId('auth-register-submit'));
-    expect(await screen.findByTestId('auth-error-banner')).toHaveTextContent(expected);
+    expect(await screen.findByTestId('auth-error-email')).toHaveTextContent(expected);
   });
 
   it('rejects an overlong password and a password equal to the email', async () => {
@@ -104,12 +167,12 @@ describe('RegisterPage', () => {
       target: { value: 'x'.repeat(129) },
     });
     fireEvent.click(screen.getByTestId('auth-register-submit'));
-    expect(await screen.findByTestId('auth-error-banner')).toHaveTextContent('at most 128');
+    expect(await screen.findByTestId('auth-error-password')).toHaveTextContent('at most 128');
     fireEvent.change(screen.getByTestId('auth-register-password'), {
       target: { value: 'same@example.test' },
     });
     fireEvent.click(screen.getByTestId('auth-register-submit'));
-    expect(await screen.findByTestId('auth-error-banner')).toHaveTextContent(
+    expect(await screen.findByTestId('auth-error-password')).toHaveTextContent(
       'Different from your email',
     );
   });

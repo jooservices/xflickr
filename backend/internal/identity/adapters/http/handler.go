@@ -3,9 +3,13 @@ package http
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
@@ -59,25 +63,73 @@ func (h Handler) GetAuthConfig(ctx context.Context, _ gen.GetAuthConfigRequestOb
 
 func (h Handler) Register(ctx context.Context, request gen.RegisterRequestObject) (gen.RegisterResponseObject, error) {
 	if request.Body == nil {
-		return gen.Register400Response{}, nil
+		return registerValidationResponse("required", "required", "required", ""), nil
 	}
 	if request.Body.Password == nil {
-		return gen.Register400Response{}, nil
+		return registerValidationResponse("", "required", "", ""), nil
 	}
 	if !bool(request.Body.AcceptTerms) {
-		return gen.Register400Response{}, nil
+		return registerValidationResponse("", "", "required", ""), nil
 	}
 	u, err := h.RegisterUseCase.Execute(ctx, string(request.Body.Email), *request.Body.Password, string(request.Body.Locale))
 	if err != nil {
 		if errors.Is(err, app.ErrInvalidInput) {
-			return gen.Register400Response{}, nil
+			return registerValidationResponseFor(request.Body), nil
 		}
-		if errors.Is(err, app.ErrRegistrationClosed) || errors.Is(err, app.ErrEmailExists) {
-			return gen.Register409Response{}, nil
+		if errors.Is(err, app.ErrRegistrationClosed) {
+			return gen.Register409JSONResponse{Code: gen.RegistrationClosed, Message: "Registration is closed"}, nil
+		}
+		if errors.Is(err, app.ErrEmailExists) {
+			return gen.Register409JSONResponse{Code: gen.EmailTaken, Message: "Email is already registered"}, nil
 		}
 		return nil, err
 	}
 	return gen.Register201JSONResponse(apiUser(u)), nil
+}
+
+func registerValidationResponse(email, password, terms, locale string) gen.Register400JSONResponse {
+	response := gen.Register400JSONResponse{Code: gen.ValidationFailed, Message: "Registration details are invalid"}
+	if email != "" {
+		field := gen.RegisterValidationErrorDetailsFieldsEmail(email)
+		response.Details.Fields.Email = &field
+	}
+	if password != "" {
+		field := gen.RegisterValidationErrorDetailsFieldsPassword(password)
+		response.Details.Fields.Password = &field
+	}
+	if terms != "" {
+		field := gen.RegisterValidationErrorDetailsFieldsAcceptTerms(terms)
+		response.Details.Fields.AcceptTerms = &field
+	}
+	if locale != "" {
+		field := gen.RegisterValidationErrorDetailsFieldsLocale(locale)
+		response.Details.Fields.Locale = &field
+	}
+	return response
+}
+
+func registerValidationResponseFor(body *gen.RegisterJSONRequestBody) gen.Register400JSONResponse {
+	email := strings.TrimSpace(string(body.Email))
+	password := ""
+	if body.Password != nil {
+		password = *body.Password
+	}
+	if email == "" {
+		return registerValidationResponse("required", "", "", "")
+	}
+	if len(email) > app.MaxEmailBytes {
+		return registerValidationResponse("too_long", "", "", "")
+	}
+	if password == "" {
+		return registerValidationResponse("", "required", "", "")
+	}
+	if len(password) < app.MinPasswordBytes {
+		return registerValidationResponse("", "too_short", "", "")
+	}
+	if len(password) > app.MaxPasswordBytes {
+		return registerValidationResponse("", "too_long", "", "")
+	}
+	return registerValidationResponse("", "", "", "invalid")
 }
 
 func (h Handler) UpdateMe(ctx context.Context, request gen.UpdateMeRequestObject) (gen.UpdateMeResponseObject, error) {
@@ -105,16 +157,17 @@ func (h Handler) Login(ctx context.Context, request gen.LoginRequestObject) (gen
 	if request.Body == nil {
 		return gen.Login401Response{}, nil
 	}
-	ip, _, _ := net.SplitHostPort(requestIP(ctx))
-	if ip == "" {
-		ip = requestIP(ctx)
-	}
+	ip := clientIP(ctx)
 	if request.Body.Password == nil {
 		return gen.Login401Response{}, nil
 	}
 	u, err := h.LoginUseCase.Execute(ctx, string(request.Body.Email), *request.Body.Password, ip)
 	if errors.Is(err, app.ErrRateLimited) {
-		retryAfter := 900
+		remaining, retryErr := h.LoginUseCase.RetryAfter(ctx, string(request.Body.Email), ip)
+		if retryErr != nil || remaining <= 0 {
+			remaining = time.Minute
+		}
+		retryAfter := int(math.Ceil(remaining.Seconds()))
 		return gen.Login429JSONResponse{Body: gen.LoginRateLimited{Code: "rate_limited", Message: "Too many login attempts", Details: struct {
 			RetryAfterSeconds int `json:"retry_after_seconds"`
 		}{RetryAfterSeconds: retryAfter}}, Headers: gen.Login429ResponseHeaders{RetryAfter: &retryAfter}}, nil
@@ -168,11 +221,45 @@ func (h Handler) ListMySessions(ctx context.Context, _ gen.ListMySessionsRequest
 	for _, item := range items {
 		result = append(result, gen.Session{
 			ID: strconv.FormatInt(item.ID, 10), Current: item.ID == principal.Session.ID,
-			UserAgentLabel: "Browser session", IPMasked: "",
+			UserAgentLabel: userAgentLabel(item.UserAgent), IPMasked: maskIP(item.IPAddress),
 			LastSeenAt: item.LastSeenAt, CreatedAt: item.CreatedAt,
 		})
 	}
 	return gen.ListMySessions200JSONResponse{Items: result}, nil
+}
+
+func maskIP(value string) string {
+	ip := net.ParseIP(value)
+	if ip == nil {
+		return ""
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return fmt.Sprintf("%d.%d.%d.x", v4[0], v4[1], v4[2])
+	}
+	return ip.Mask(net.CIDRMask(48, 128)).String()
+}
+
+func userAgentLabel(value string) string {
+	value = strings.ToLower(value)
+	if value == "" {
+		return "Unknown device"
+	}
+	browser := firstUserAgentMatch(value, "Browser", [][2]string{{"edg/", "Edge"}, {"firefox/", "Firefox"}, {"chromium/", "Chromium"}, {"chrome/", "Chrome"}, {"safari/", "Safari"}})
+	os := firstUserAgentMatch(value, "", [][2]string{{"windows", "Windows"}, {"android", "Android"}, {"iphone", "iOS"}, {"ipad", "iOS"}, {"ios", "iOS"}, {"mac os", "macOS"}, {"macintosh", "macOS"}, {"linux", "Linux"}})
+	if os == "" {
+		return browser
+	}
+	return browser + " on " + os
+}
+
+func firstUserAgentMatch(value, fallback string, candidates [][2]string) string {
+	for _, candidate := range candidates {
+		if !strings.Contains(value, candidate[0]) {
+			continue
+		}
+		return candidate[1]
+	}
+	return fallback
 }
 
 func (h Handler) RevokeMySession(ctx context.Context, request gen.RevokeMySessionRequestObject) (gen.RevokeMySessionResponseObject, error) {
@@ -245,6 +332,14 @@ func WithRemoteAddress(ctx context.Context, address string) context.Context {
 
 func requestIP(ctx context.Context) string {
 	value, _ := ctx.Value(remoteAddressKey{}).(string)
+	return value
+}
+
+func clientIP(ctx context.Context) string {
+	value := requestIP(ctx)
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		return host
+	}
 	return value
 }
 

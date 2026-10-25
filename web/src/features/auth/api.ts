@@ -52,6 +52,7 @@ export async function request<T>(
     response.status === 401 &&
     path !== '/auth/login' &&
     path !== '/auth/register' &&
+    !path.startsWith('/auth/passkey/') &&
     typeof window !== 'undefined'
   ) {
     window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
@@ -72,7 +73,7 @@ export function validatedReturnTo(value: string | null): string {
     value === null ||
     value.length > 2048 ||
     !value.startsWith('/') ||
-    value.startsWith('//') ||
+    value.includes('//') ||
     value.includes('\\') ||
     value === '/login' ||
     value === '/register'

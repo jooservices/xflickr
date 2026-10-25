@@ -56,20 +56,20 @@ func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	wantColumns := []string{"id", "user_id", "token_hash", "expires_at", "last_seen_at", "created_at"}
+	wantColumns := []string{"id", "user_id", "token_hash", "expires_at", "last_seen_at", "created_at", "user_agent", "ip_address"}
 	if !slices.Equal(columns, wantColumns) {
 		t.Fatalf("sessions columns = %v", columns)
 	}
 
-	raw, session, csrf, err := service.Issue(ctx, owner.ID)
+	raw, session, csrf, err := service.Issue(ctx, owner.ID, "Firefox on Linux", "203.0.113.42")
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherRaw, otherSession, _, err := service.Issue(ctx, owner.ID)
+	otherRaw, otherSession, _, err := service.Issue(ctx, owner.ID, "Chrome on Windows", "198.51.100.27")
 	if err != nil {
 		t.Fatal(err)
 	}
-	foreignRaw, _, _, err := service.Issue(ctx, other.ID)
+	foreignRaw, _, _, err := service.Issue(ctx, other.ID, "Safari on macOS", "192.0.2.10")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,12 +80,15 @@ func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 	if !bytes.Equal(stored, domain.HashSessionToken(raw)) || bytes.Contains(stored, []byte(raw)) {
 		t.Fatal("session row does not store the SHA-256 hash of the opaque id")
 	}
-	if _, err := repository.InsertSession(ctx, owner.ID, bytes.Repeat([]byte{1}, 16), time.Now().Add(time.Hour), time.Now()); err == nil {
+	if _, err := repository.InsertSession(ctx, owner.ID, bytes.Repeat([]byte{1}, 16), time.Now().Add(time.Hour), time.Now(), "", ""); err == nil {
 		t.Fatal("short token hash was stored")
 	}
 	listed, err := repository.ListSessions(ctx, owner.ID)
 	if err != nil || len(listed) != 2 {
 		t.Fatalf("ListSessions() = %d sessions, %v", len(listed), err)
+	}
+	if listed[0].UserAgent != "Chrome on Windows" || listed[0].IPAddress != "198.51.100.27" || listed[1].UserAgent != "Firefox on Linux" || listed[1].IPAddress != "203.0.113.42" {
+		t.Fatalf("session client metadata = %#v", listed)
 	}
 	if deleted, err := repository.DeleteSessionByID(ctx, other.ID, otherSession.ID); err != nil || deleted {
 		t.Fatalf("DeleteSessionByID() allowed a foreign owner: deleted=%v err=%v", deleted, err)
@@ -160,7 +163,7 @@ func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 	if _, err := repository.FindSessionByHash(ctx, domain.HashSessionToken(foreignRaw), time.Now()); err != nil {
 		t.Fatalf("foreign session error = %v", err)
 	}
-	deletableRaw, deletableSession, _, err := service.Issue(ctx, owner.ID)
+	deletableRaw, deletableSession, _, err := service.Issue(ctx, owner.ID, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +182,7 @@ func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 
 	canceled, stop := context.WithCancel(ctx)
 	stop()
-	if _, err := repository.InsertSession(canceled, owner.ID, domain.HashSessionToken(raw), time.Now().Add(time.Hour), time.Now()); err == nil {
+	if _, err := repository.InsertSession(canceled, owner.ID, domain.HashSessionToken(raw), time.Now().Add(time.Hour), time.Now(), "", ""); err == nil {
 		t.Fatal("insert succeeded with a canceled context")
 	}
 	if _, err := repository.FindSessionByHash(canceled, domain.HashSessionToken(foreignRaw), time.Now()); err == nil {

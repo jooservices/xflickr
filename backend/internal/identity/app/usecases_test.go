@@ -136,6 +136,10 @@ func (l *limiter) Allow(_ context.Context, email, _ string) (bool, error) {
 	return l.allowed, nil
 }
 
+func (l *limiter) RetryAfter(context.Context, string, string) (time.Duration, error) {
+	return time.Minute, nil
+}
+
 func TestLoginRateLimit(t *testing.T) {
 	limit := &limiter{}
 	_, err := (Login{Repository: loginRepo{}, Limiter: limit}).Execute(context.Background(), "a@example.com", "bad", "127.0.0.1")
@@ -160,6 +164,10 @@ type failingLimiter struct{}
 
 func (failingLimiter) Allow(context.Context, string, string) (bool, error) {
 	return false, errors.New("redis unavailable")
+}
+
+func (failingLimiter) RetryAfter(context.Context, string, string) (time.Duration, error) {
+	return 0, errors.New("redis unavailable")
 }
 
 func TestLoginReturnsLimiterError(t *testing.T) {

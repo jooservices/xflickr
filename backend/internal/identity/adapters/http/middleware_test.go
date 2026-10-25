@@ -24,6 +24,8 @@ type fakeSessions struct {
 	session         domain.Session
 	issueErr        error
 	issuedUser      int64
+	issuedUserAgent string
+	issuedIP        string
 	revoked         []string
 	revokeErr       error
 	revokedUser     int64
@@ -37,8 +39,10 @@ type fakeSessions struct {
 	revokeByIDErr   error
 }
 
-func (f *fakeSessions) Issue(_ context.Context, userID int64) (string, domain.Session, string, error) {
+func (f *fakeSessions) Issue(_ context.Context, userID int64, userAgent, ip string) (string, domain.Session, string, error) {
 	f.issuedUser = userID
+	f.issuedUserAgent = userAgent
+	f.issuedIP = ip
 	if f.issueErr != nil {
 		return "", domain.Session{}, "", f.issueErr
 	}
@@ -322,6 +326,7 @@ func TestLoginAndLogoutMaintainSessionCookies(t *testing.T) {
 	server := gen.NewStrictHandler(StrictHandler{Handler: handler}, []gen.StrictMiddlewareFunc{MaintainSessionCookies(handler.Sessions)})
 	login := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"email":"u@example.com","password":"secret12"}`))
 	login.Header.Set("Content-Type", "application/json")
+	login.Header.Set("User-Agent", "Mozilla/5.0 Firefox/122 Linux")
 	login = login.WithContext(WithRemoteAddress(login.Context(), "127.0.0.1:9"))
 	loginResponse := httptest.NewRecorder()
 	server.Login(loginResponse, login)
@@ -330,6 +335,9 @@ func TestLoginAndLogoutMaintainSessionCookies(t *testing.T) {
 	}
 	if fake.issuedUser != 4 {
 		t.Fatalf("issued user = %d", fake.issuedUser)
+	}
+	if fake.issuedUserAgent != "Mozilla/5.0 Firefox/122 Linux" || fake.issuedIP != "127.0.0.1" {
+		t.Fatalf("issued client metadata = %q %q", fake.issuedUserAgent, fake.issuedIP)
 	}
 	session := cookieByName(t, loginResponse, SessionCookieName)
 	if session.Value != "opaque-session" || !session.HttpOnly || !session.Secure || session.SameSite != http.SameSiteLaxMode {
