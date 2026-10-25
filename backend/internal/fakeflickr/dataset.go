@@ -23,17 +23,15 @@ type Dataset struct {
 var defaultSeed []byte
 
 type Person struct {
-	NSID     string   `yaml:"nsid"`
-	Username string   `yaml:"username"`
-	RealName string   `yaml:"realname"`
-	Contacts []string `yaml:"contacts"`
+	NSID     string `yaml:"nsid"`
+	Username string `yaml:"username"`
+	RealName string `yaml:"realname"`
 }
 type Photo struct {
-	ID        string   `yaml:"id"`
-	Owner     string   `yaml:"owner"`
-	Title     string   `yaml:"title"`
-	Shape     string   `yaml:"shape"`
-	Favorites []string `yaml:"favorites"`
+	ID    string `yaml:"id"`
+	Owner string `yaml:"owner"`
+	Title string `yaml:"title"`
+	Shape string `yaml:"shape"`
 }
 type Favorite struct {
 	Person string `yaml:"person"`

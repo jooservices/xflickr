@@ -1,3 +1,3 @@
 package fakeflickr
 
-//go:generate go run generate_image.go
+// Image content is generated deterministically from each photo's ID and shape at request time.

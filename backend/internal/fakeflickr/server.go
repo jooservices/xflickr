@@ -1,13 +1,13 @@
 package fakeflickr
 
 import (
-	_ "embed"
 	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // Server is a local Flickr-compatible REST, OAuth, and image server.
@@ -17,10 +17,8 @@ type Server struct {
 	mux       *http.ServeMux
 	mu        sync.Mutex
 	callbacks map[string]string
+	nextToken uint64
 }
-
-//go:embed testdata/seed.jpg
-var seedJPEG []byte
 
 func NewServer(dataset Dataset, scenarios *Scenarios) *Server {
 	if scenarios == nil {
@@ -61,11 +59,11 @@ func (s *Server) rest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid form", http.StatusBadRequest)
 		return
 	}
-	if !s.scenarios.before(w, r) {
-		return
-	}
 	if s.scenarios.revoked(r.Form.Get("oauth_token")) {
 		flickrError(w, 98, "Invalid auth token")
+		return
+	}
+	if !s.scenarios.before(w, r) {
 		return
 	}
 	method := r.Form.Get("method")
@@ -86,16 +84,101 @@ func flickrError(w http.ResponseWriter, code int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"stat": "fail", "code": code, "message": message})
 }
+
+func flickrFailure(code int, message string) (map[string]any, bool) {
+	return map[string]any{"stat": "fail", "code": code, "message": message}, true
+}
+
+func needsPerson(method string) bool {
+	switch method {
+	case "people.getInfo", "people.getPhotos", "people.getPublicPhotos", "favorites.getPublicList", "contacts.getPublicList", "galleries.getList", "people.getGroups", "people.getPublicGroups":
+		return true
+	}
+	return false
+}
+
+func needsPhoto(method string) bool {
+	switch method {
+	case "photos.getSizes", "photos.getInfo", "photos.getExif", "photos.getAllContexts", "photos.comments.getList", "photos.getFavorites", "photos.people.getList":
+		return true
+	}
+	return false
+}
+
+func supportsUserLookup(method string) bool {
+	switch method {
+	case "favorites.getList", "contacts.getPublicList", "photosets.getList", "photosets.getPhotos", "galleries.getList", "people.getGroups", "people.getPublicGroups":
+		return true
+	}
+	return false
+}
+
+func publicBaseURL(r *http.Request) string {
+	proto := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0])
+	if proto == "" {
+		if r.TLS != nil {
+			proto = "https"
+		} else {
+			proto = "http"
+		}
+	}
+	host := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Host"), ",")[0])
+	if host == "" {
+		host = r.Host
+	}
+	return proto + "://" + host
+}
+
+func contains(values []string, value string) bool {
+	for _, v := range values {
+		if v == value {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) group(id string) (Group, bool) {
+	for _, g := range s.dataset.Groups {
+		if g.ID == id {
+			return g, true
+		}
+	}
+	return Group{}, false
+}
 func content(value string) map[string]string { return map[string]string{"_content": value} }
 
 //nolint:cyclop // Flickr method dispatch intentionally maps each typed method to its wire envelope.
 func (s *Server) response(method string, r *http.Request) (map[string]any, bool) {
 	person := s.person(r.Form.Get("user_id"))
+	if r.Form.Get("user_id") == "" && (method == "test.login" || method == "contacts.getList" || method == "favorites.getList" || method == "photosets.getList" || method == "photos.getContactsPhotos") && len(s.dataset.People) > 0 {
+		person = s.dataset.People[0]
+	}
 	photo := s.photo(r.Form.Get("photo_id"))
+	if (needsPerson(method) || (r.Form.Get("user_id") != "" && supportsUserLookup(method))) && person.NSID == "" {
+		return flickrFailure(1, "User not found")
+	}
+	if needsPhoto(method) && photo.ID == "" {
+		return flickrFailure(2, "Photo not found")
+	}
+	if method == "groups.pools.getPhotos" {
+		group, ok := s.group(r.Form.Get("group_id"))
+		if !ok {
+			return flickrFailure(5, "Group not found")
+		}
+		rows := []any{}
+		for _, id := range group.Photos {
+			if p := s.photo(id); p.ID != "" {
+				rows = append(rows, s.photoJSON(p, r))
+			}
+		}
+		p, per := parsePositive(r.Form.Get("page"), 1), parsePositive(r.Form.Get("per_page"), 100)
+		return map[string]any{"stat": "ok", "photos": map[string]any{"page": p, "pages": max(1, (len(rows)+per-1)/per), "perpage": per, "total": len(rows), "photo": rows}}, true
+	}
 	photos := s.photosFor(person.NSID)
 	photoRows := make([]any, 0, len(photos))
 	for _, p := range photos {
-		photoRows = append(photoRows, s.photoJSON(p))
+		photoRows = append(photoRows, s.photoJSON(p, r))
 	}
 	contacts := make([]any, 0)
 	for _, c := range s.dataset.Contacts {
@@ -125,23 +208,49 @@ func (s *Server) response(method string, r *http.Request) (map[string]any, bool)
 	case "test.login":
 		return map[string]any{"stat": "ok", "user": map[string]any{"id": person.NSID, "username": content(person.Username)}}, true
 	case "people.getInfo":
-		return map[string]any{"stat": "ok", "person": s.personJSON(person)}, true
+		return map[string]any{"stat": "ok", "person": s.personJSON(person, r)}, true
 	case "people.getPhotos", "people.getPublicPhotos", "favorites.getList", "favorites.getPublicList", "photosets.getPhotos", "galleries.getPhotos", "groups.pools.getPhotos":
 		if method == "favorites.getList" || method == "favorites.getPublicList" {
-			photoRows = s.favoritePhotos(person.NSID)
+			photoRows = s.favoritePhotos(person.NSID, r)
 		}
 		if method == "photosets.getPhotos" {
 			albumPhotos := []any{}
+			found := false
 			for _, album := range s.dataset.Albums {
-				if album.ID == r.Form.Get("photoset_id") {
+				if album.ID == r.Form.Get("photoset_id") && (r.Form.Get("user_id") == "" || album.Owner == r.Form.Get("user_id")) {
+					found = true
 					for _, id := range album.Photos {
-						albumPhotos = append(albumPhotos, s.photoJSON(s.photo(id)))
+						if p := s.photo(id); p.ID != "" {
+							albumPhotos = append(albumPhotos, s.photoJSON(p, r))
+						}
 					}
 				}
+			}
+			if !found {
+				return flickrFailure(3, "Photoset not found")
 			}
 			p := parsePositive(r.Form.Get("page"), 1)
 			per := parsePositive(r.Form.Get("per_page"), 100)
 			return map[string]any{"stat": "ok", "photoset": map[string]any{"id": r.Form.Get("photoset_id"), "page": p, "pages": max(1, (len(albumPhotos)+per-1)/per), "perpage": per, "total": len(albumPhotos), "photo": albumPhotos}}, true
+		}
+		if method == "galleries.getPhotos" {
+			var gallery *Gallery
+			for i := range s.dataset.Galleries {
+				if s.dataset.Galleries[i].ID == r.Form.Get("gallery_id") {
+					gallery = &s.dataset.Galleries[i]
+					break
+				}
+			}
+			if gallery == nil {
+				return flickrFailure(4, "Gallery not found")
+			}
+			rows := []any{}
+			for _, id := range gallery.Photos {
+				if p := s.photo(id); p.ID != "" {
+					rows = append(rows, s.photoJSON(p, r))
+				}
+			}
+			return photoPage("photos", rows), true
 		}
 		return photoPage("photos", photoRows), true
 	case "contacts.getList", "contacts.getPublicList":
@@ -149,9 +258,9 @@ func (s *Server) response(method string, r *http.Request) (map[string]any, bool)
 	case "photos.getContactsPhotos":
 		return photoPage("photos", photoRows), true
 	case "photos.getSizes":
-		return map[string]any{"stat": "ok", "sizes": map[string]any{"canblog": 0, "canprint": 0, "candownload": 1, "size": []any{s.sizeJSON(photo, "Square", 75, 75), s.sizeJSON(photo, "Small", 240, 160), s.sizeJSON(photo, "Large", 1200, 800), s.sizeJSON(photo, "Original", 2400, 1600)}}}, true
+		return map[string]any{"stat": "ok", "sizes": map[string]any{"canblog": 0, "canprint": 0, "candownload": 1, "size": []any{s.sizeJSON(photo, r, "Square", 75, 75), s.sizeJSON(photo, r, "Small", 240, 160), s.sizeJSON(photo, r, "Large", 1200, 800), s.sizeJSON(photo, r, "Original", 2400, 1600)}}}, true
 	case "photos.getInfo":
-		return map[string]any{"stat": "ok", "photo": map[string]any{"id": photo.ID, "secret": "seedsecret", "server": "1", "farm": 1, "dateuploaded": "1700000000", "isfavorite": 0, "license": "0", "safety_level": 0, "rotation": 0, "originalsecret": "seedsecret", "originalformat": "jpg", "owner": map[string]any{"nsid": photo.Owner, "username": s.person(photo.Owner).Username, "path_alias": s.person(photo.Owner).Username}, "title": content(photo.Title), "description": content("Seeded public image"), "visibility": map[string]any{"ispublic": 1, "isfriend": 0, "isfamily": 0}, "dates": map[string]any{"posted": "1700000000", "taken": "2023-11-14 00:00:00", "takengranularity": 0, "takenunknown": 0}, "tags": map[string]any{"tag": []any{}}, "urls": map[string]any{"url": []any{map[string]any{"type": "photopage", "_content": "http://localhost:8088/photo/" + photo.ID}}}}}, true
+		return map[string]any{"stat": "ok", "photo": map[string]any{"id": photo.ID, "secret": "seedsecret", "server": "1", "farm": 1, "dateuploaded": "1700000000", "isfavorite": 0, "license": "0", "safety_level": 0, "rotation": 0, "originalsecret": "seedsecret", "originalformat": "jpg", "owner": map[string]any{"nsid": photo.Owner, "username": s.person(photo.Owner).Username, "path_alias": s.person(photo.Owner).Username}, "title": content(photo.Title), "description": content("Seeded public image"), "visibility": map[string]any{"ispublic": 1, "isfriend": 0, "isfamily": 0}, "dates": map[string]any{"posted": "1700000000", "taken": "2023-11-14 00:00:00", "takengranularity": 0, "takenunknown": 0}, "tags": map[string]any{"tag": []any{}}, "urls": map[string]any{"url": []any{map[string]any{"type": "photopage", "_content": publicBaseURL(r) + "/photo/" + photo.ID}}}}}, true
 	case "photos.getExif":
 		return map[string]any{"stat": "ok", "photo": map[string]any{"id": photo.ID, "secret": "seedsecret", "server": "1", "farm": 1, "camera": "Fake Camera", "exif": []any{}}}, true
 	case "photos.getAllContexts":
@@ -188,13 +297,15 @@ func (s *Server) response(method string, r *http.Request) (map[string]any, bool)
 	case "people.getGroups", "people.getPublicGroups":
 		rows := []any{}
 		for _, g := range s.dataset.Groups {
-			rows = append(rows, map[string]any{"nsid": g.ID, "name": g.Name, "admin": 0, "members": len(g.Members), "pool_count": len(g.Photos)})
+			if contains(g.Members, person.NSID) {
+				rows = append(rows, map[string]any{"nsid": g.ID, "name": g.Name, "admin": 0, "members": len(g.Members), "pool_count": len(g.Photos)})
+			}
 		}
 		return page("groups", "group", rows, len(rows)), true
 	case "groups.getInfo":
-		g := Group{}
-		if len(s.dataset.Groups) > 0 {
-			g = s.dataset.Groups[0]
+		g, ok := s.group(r.Form.Get("group_id"))
+		if !ok {
+			return flickrFailure(5, "Group not found")
 		}
 		return map[string]any{"stat": "ok", "group": map[string]any{"id": g.ID, "name": content(g.Name), "description": content("Seed group"), "members": content(strconv.Itoa(len(g.Members))), "pool_count": content(strconv.Itoa(len(g.Photos))), "privacy": content("3"), "rules": content("")}}, true
 	default:
@@ -208,9 +319,6 @@ func (s *Server) person(id string) Person {
 			return p
 		}
 	}
-	if len(s.dataset.People) > 0 {
-		return s.dataset.People[0]
-	}
 	return Person{}
 }
 
@@ -219,9 +327,6 @@ func (s *Server) photo(id string) Photo {
 		if p.ID == id {
 			return p
 		}
-	}
-	if len(s.dataset.Photos) > 0 {
-		return s.dataset.Photos[0]
 	}
 	return Photo{}
 }
@@ -233,33 +338,30 @@ func (s *Server) photosFor(owner string) []Photo {
 			out = append(out, p)
 		}
 	}
-	if len(out) == 0 {
-		out = append(out, s.dataset.Photos...)
-	}
 	return out
 }
 
-func (s *Server) favoritePhotos(owner string) []any {
+func (s *Server) favoritePhotos(owner string, r *http.Request) []any {
 	rows := []any{}
 	for _, favorite := range s.dataset.Favorites {
 		if favorite.Person == owner {
-			rows = append(rows, s.photoJSON(s.photo(favorite.Photo)))
+			rows = append(rows, s.photoJSON(s.photo(favorite.Photo), r))
 		}
 	}
 	return rows
 }
 
-func (s *Server) personJSON(p Person) map[string]any {
-	return map[string]any{"id": p.NSID, "nsid": p.NSID, "ispro": 0, "is_deleted": 0, "iconserver": "0", "iconfarm": 0, "path_alias": p.Username, "has_stats": 1, "username": content(p.Username), "realname": content(p.RealName), "location": content(""), "description": content("Seed user"), "photosurl": content("http://localhost:8088/photos/" + p.Username), "profileurl": content("http://localhost:8088/people/" + p.NSID), "mobileurl": content(""), "photos": map[string]any{"firstdate": content("1700000000"), "firstdatetaken": content("2023-11-14 00:00:00"), "count": content(strconv.Itoa(len(s.photosFor(p.NSID))))}}
+func (s *Server) personJSON(p Person, r *http.Request) map[string]any {
+	return map[string]any{"id": p.NSID, "nsid": p.NSID, "ispro": 0, "is_deleted": 0, "iconserver": "0", "iconfarm": 0, "path_alias": p.Username, "has_stats": 1, "username": content(p.Username), "realname": content(p.RealName), "location": content(""), "description": content("Seed user"), "photosurl": content(publicBaseURL(r) + "/photos/" + p.Username), "profileurl": content(publicBaseURL(r) + "/people/" + p.NSID), "mobileurl": content(""), "photos": map[string]any{"firstdate": content("1700000000"), "firstdatetaken": content("2023-11-14 00:00:00"), "count": content(strconv.Itoa(len(s.photosFor(p.NSID))))}}
 }
 
-func (s *Server) photoJSON(p Photo) map[string]any {
-	url := "http://localhost:8088/images/" + p.ID + ".jpg"
+func (s *Server) photoJSON(p Photo, r *http.Request) map[string]any {
+	url := publicBaseURL(r) + "/images/" + p.ID + ".jpg"
 	return map[string]any{"id": p.ID, "owner": p.Owner, "secret": "seedsecret", "server": "1", "farm": 1, "title": p.Title, "ispublic": 1, "isfriend": 0, "isfamily": 0, "ownername": s.person(p.Owner).Username, "dateupload": 1700000000, "lastupdate": 1700000100, "date_faved": 1700000200, "views": 1, "tags": "seed", "license": "0", "media": "photo", "description": content("Seeded public image"), "o_width": 2400, "o_height": 1600, "url_sq": url, "url_t": url, "url_s": url, "url_m": url, "url_z": url, "url_l": url, "url_o": url, "width_o": 2400, "height_o": 1600}
 }
 
-func (s *Server) sizeJSON(p Photo, label string, w, h int) map[string]any {
-	return map[string]any{"label": label, "width": w, "height": h, "source": "http://localhost:8088/images/" + p.ID + ".jpg", "media": "photo"}
+func (s *Server) sizeJSON(p Photo, r *http.Request, label string, w, h int) map[string]any {
+	return map[string]any{"label": label, "width": w, "height": h, "source": publicBaseURL(r) + "/images/" + p.ID + ".jpg", "media": "photo"}
 }
 
 func (s *Server) albumJSON(a Album) map[string]any {
@@ -289,16 +391,23 @@ func parsePositive(v string, fallback int) int {
 }
 
 func (s *Server) requestToken(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "invalid form", http.StatusBadRequest)
 		return
 	}
-	s.oauth(w, r, "oauth_token=request-token&oauth_token_secret=request-secret&oauth_callback_confirmed=true")
-	if r.Method == http.MethodGet || r.Method == http.MethodPost {
-		s.mu.Lock()
-		s.callbacks["request-token"] = r.Form.Get("oauth_callback")
-		s.mu.Unlock()
+	if !s.scenarios.before(w, r) {
+		return
 	}
+	token := "request-token-" + strconv.FormatUint(atomic.AddUint64(&s.nextToken, 1), 10)
+	s.mu.Lock()
+	s.callbacks[token] = r.Form.Get("oauth_callback")
+	s.mu.Unlock()
+	w.Header().Set("Content-Type", "application/x-www-form-urlencoded")
+	_, _ = w.Write([]byte("oauth_token=" + url.QueryEscape(token) + "&oauth_token_secret=request-secret&oauth_callback_confirmed=true"))
 }
 
 func (s *Server) accessToken(w http.ResponseWriter, r *http.Request) {
@@ -365,8 +474,9 @@ func (s *Server) image(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
-	w.Header().Set("Content-Length", strconv.Itoa(len(seedJPEG)))
+	jpeg := generatedJPEG(s.photo(id))
+	w.Header().Set("Content-Length", strconv.Itoa(len(jpeg)))
 	if r.Method == http.MethodGet {
-		_, _ = w.Write(seedJPEG)
+		_, _ = w.Write(jpeg)
 	}
 }
