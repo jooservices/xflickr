@@ -211,3 +211,23 @@ func TestSizesUnavailableIsNotRetriedOnRepeatedJobs(t *testing.T) {
 		t.Fatalf("unavailable photo re-requested: calls=%d status=%s", client.calls, store.status)
 	}
 }
+
+func TestSizesQuotaExceededWaitsInsteadOfFailing(t *testing.T) {
+	handler, store, client := sizesRig()
+	client.err = flickr.ErrQuotaExceeded
+	err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12})
+	var waiting *QuotaWaitError
+	if !errors.As(err, &waiting) || waiting.Wait != DefaultTiming.QuotaWait || !errors.Is(err, flickr.ErrQuotaExceeded) {
+		t.Fatalf("Handle() = %v", err)
+	}
+	if store.sets != 0 {
+		t.Fatal("quota wait stored a terminal outcome")
+	}
+	client.err = NewQuotaWaitError(flickr.ErrQuotaExceeded, 7*time.Minute)
+	if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); !errors.As(err, &waiting) || waiting.Wait != 7*time.Minute {
+		t.Fatalf("Handle() kept wait = %v", err)
+	}
+	if got := waiting.Error(); !strings.Contains(got, "quota exceeded") {
+		t.Fatalf("Error() = %q", got)
+	}
+}

@@ -456,3 +456,18 @@ func (fakeTx) QueryRow(context.Context, string, ...any) pgx.Row { return nil }
 func (fakeTx) Conn() *pgx.Conn                                  { return nil }
 
 func timePtr(value time.Time) *time.Time { return &value }
+
+func TestSnoozeClampsAndDeadLetterHookIgnoresIt(t *testing.T) {
+	var snooze *rivertype.JobSnoozeError
+	if err := Snooze(0); !errors.As(err, &snooze) || snooze.Duration != time.Second {
+		t.Fatalf("Snooze(0) = %v", err)
+	}
+	if err := Snooze(5 * time.Hour); !errors.As(err, &snooze) || snooze.Duration != time.Hour {
+		t.Fatalf("Snooze(5h) = %v", err)
+	}
+	hook := &deadLetterHook{}
+	row := &rivertype.JobRow{Attempt: 3, MaxAttempts: 3}
+	if got := hook.WorkEnd(context.Background(), row, Snooze(time.Minute)); !errors.As(got, &snooze) {
+		t.Fatalf("snoozed final-attempt WorkEnd() = %v", got)
+	}
+}

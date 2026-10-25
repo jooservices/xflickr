@@ -27,6 +27,26 @@ type ClassifiedSizesClient interface {
 	GetSizesClass(ctx context.Context, keyID int64, photoID string, class quotadomain.Class) ([]flickr.PhotoSize, error)
 }
 
+// QuotaWaitError tells the job runner to hold a sizes job until quota resets
+// instead of failing it. It unwraps to flickr.ErrQuotaExceeded.
+type QuotaWaitError struct {
+	Wait  time.Duration
+	Cause error
+}
+
+func (e *QuotaWaitError) Error() string { return e.Cause.Error() }
+
+func (e *QuotaWaitError) Unwrap() error { return e.Cause }
+
+// NewQuotaWaitError wraps cause with the delay before the next attempt. A
+// non-positive wait falls back to the default quota wait.
+func NewQuotaWaitError(cause error, wait time.Duration) *QuotaWaitError {
+	if wait <= 0 {
+		wait = DefaultTiming.QuotaWait
+	}
+	return &QuotaWaitError{Wait: wait, Cause: cause}
+}
+
 // Sizes handles one photo.sizes River job.
 type Sizes struct {
 	Store  SizesStore
@@ -99,6 +119,12 @@ func shouldSkipSizes(photo catalog.Photo, exists bool) bool {
 func (s Sizes) recordFlickrError(ctx context.Context, photoID int64, cause error) error {
 	if errors.Is(cause, flickr.ErrNotFound) || errors.Is(cause, flickr.ErrPermission) {
 		return s.Store.SetSizes(ctx, photoID, []byte("[]"), catalog.SizesUnavailable, s.now())
+	}
+	if Classify(cause) == OutcomeWaitQuota {
+		var waiting *QuotaWaitError
+		if !errors.As(cause, &waiting) {
+			cause = NewQuotaWaitError(cause, 0)
+		}
 	}
 	return fmt.Errorf("crawl: get sizes for photo %d: %w", photoID, cause)
 }

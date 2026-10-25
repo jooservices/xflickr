@@ -283,3 +283,27 @@ func TestAsInt64Conversions(t *testing.T) {
 		})
 	}
 }
+
+func TestPersonLaneCannotStarvePhotoShare(t *testing.T) {
+	budget := domain.Budget{HourlyLimit: 100, PerSecondRate: 1000, Burst: 1000, Reserve: 10, PersonLaneShare: 0.3}
+	governor, _, _ := setupGovernor(t, budget)
+	person := 0
+	for {
+		permit, _, err := acquire(t, governor, domain.Person)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if permit == nil {
+			break
+		}
+		person++
+	}
+	if person != 20 {
+		t.Fatalf("person used %d calls, want 20 while photo share is unused", person)
+	}
+	for i := 0; i < 70; i++ {
+		if permit, _, err := acquire(t, governor, domain.Photo); err != nil || permit == nil {
+			t.Fatalf("photo %d starved: %v %v", i, permit, err)
+		}
+	}
+}

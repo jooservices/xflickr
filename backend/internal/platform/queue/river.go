@@ -276,6 +276,15 @@ func (r *River) Stopped() <-chan struct{} {
 	return r.client.Stopped()
 }
 
+// maxSnooze bounds one snooze so a job always rechecks within an hour.
+const maxSnooze = time.Hour
+
+// Snooze returns an error that makes River run the job again after d without
+// consuming an attempt.
+func Snooze(d time.Duration) error {
+	return river.JobSnooze(min(max(d, time.Second), maxSnooze))
+}
+
 type dispatchWorker struct {
 	river.WorkerDefaults[riverArgs]
 	adapter *River
@@ -312,6 +321,10 @@ type deadLetterHook struct {
 
 func (h *deadLetterHook) WorkEnd(ctx context.Context, row *rivertype.JobRow, workErr error) error {
 	if workErr == nil || row == nil || row.Attempt < row.MaxAttempts {
+		return workErr
+	}
+	var snoozeErr *rivertype.JobSnoozeError
+	if errors.As(workErr, &snoozeErr) {
 		return workErr
 	}
 	var cancelErr *river.JobCancelError

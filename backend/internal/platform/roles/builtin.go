@@ -255,7 +255,7 @@ func registerPhotoSizes(queueAdapter *queue.River, pool *pgxpool.Pool, redisClie
 		if err != nil {
 			return err
 		}
-		return handler.Handle(ctx, args)
+		return snoozeOnQuota(handler.Handle(ctx, args))
 	}, queue.Options{Queue: scheduleriver.PhotoQueue})
 }
 
@@ -319,6 +319,16 @@ func (mediaRole) Run(ctx context.Context) error {
 	return nil
 }
 
+// snoozeOnQuota turns a quota wait into a River snooze, which never consumes an
+// attempt, so exhausted quota delays a sizes job instead of discarding it.
+func snoozeOnQuota(err error) error {
+	var waiting *crawlapp.QuotaWaitError
+	if errors.As(err, &waiting) {
+		return queue.Snooze(waiting.Wait)
+	}
+	return err
+}
+
 type photoSizesClient struct {
 	Pool interface {
 		QueryRow(context.Context, string, ...any) pgx.Row
@@ -345,12 +355,12 @@ func (c photoSizesClient) GetSizesClass(ctx context.Context, keyID int64, photoI
 	if !class.Valid() {
 		return nil, quotadomain.ErrInvalidClass
 	}
-	permit, _, err := c.Quota.Acquire(ctx, keyID, class)
+	permit, wait, err := c.Quota.Acquire(ctx, keyID, class)
 	if err != nil {
 		return nil, err
 	}
 	if permit == nil {
-		return nil, flickrclient.ErrQuotaExceeded
+		return nil, crawlapp.NewQuotaWaitError(flickrclient.ErrQuotaExceeded, wait)
 	}
 	sizes, callErr := c.Client.PhotosGetSizes(ctx, flickrclient.Credentials{APIKey: apiKey}, photoID)
 	if doneErr := permit.Done(quotadomain.Meta{Err: callErr}); doneErr != nil {

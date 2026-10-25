@@ -43,11 +43,16 @@ if tokens < 1 then
   return {0, wait, 'rate'}
 end
 
+-- The photo lane owns a fixed share of the hour: it may use at most that many
+-- calls, and the person lane must leave unused photo share available.
 local ceiling = hourly
+local photoShareCap = math.min(math.floor(hourly * (1 - personShare)), math.max(0, hourly - reserve))
+local photoUsed = tonumber(redis.call('HGET', KEYS[5], 'photo') or '0')
 if class == 'photo' then
-  ceiling = math.min(math.floor(hourly * (1 - personShare)), math.max(0, hourly - reserve))
-elseif class == 'person' then
   ceiling = math.max(0, hourly - reserve)
+  if photoUsed >= photoShareCap then ceiling = 0 end
+elseif class == 'person' then
+  ceiling = math.max(0, hourly - reserve) - math.max(0, photoShareCap - photoUsed)
 end
 if used >= ceiling then
   return {0, math.max(1, start + 3600000 - now), 'hourly'}
