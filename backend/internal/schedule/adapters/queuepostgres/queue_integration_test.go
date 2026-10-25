@@ -83,11 +83,14 @@ func TestQueueSnapshotsAndEventIntegration(t *testing.T) {
 	if admin.OldestItemAgeSeconds < 89 || len(admin.ReadyQueueSizes) == 0 {
 		t.Fatalf("admin queue=%+v", admin)
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state) VALUES('person',$1,$2,'pending')`, suffix+"-keyless", userID); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.PublishQueueState(ctx); err != nil {
 		t.Fatal(err)
 	}
 	var eventCount int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE topic='queue.state' AND key='global' AND id>$1 AND payload ? 'backlog_by_lane' AND payload ? 'ready_jobs'`, eventCursor).Scan(&eventCount); err != nil || eventCount != 1 {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE topic='queue.state' AND key='global' AND id>$1 AND payload ? 'backlog_by_lane' AND payload ? 'ready_jobs' AND (payload->>'pending_without_key')::bigint >= 1`, eventCursor).Scan(&eventCount); err != nil || eventCount != 1 {
 		t.Fatalf("queue.state events=%d err=%v", eventCount, err)
 	}
 }

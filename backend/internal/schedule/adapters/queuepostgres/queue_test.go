@@ -2,6 +2,7 @@ package queuepostgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -110,6 +111,7 @@ func TestPublishQueueState(t *testing.T) {
 		{name: "lane scan", db: func() *fakeDB { d := publishDB(); d.queryRows[0].scanErr = true; return d }(), wantErr: true},
 		{name: "lane iteration", db: func() *fakeDB { d := publishDB(); d.queryRows[0].err = errors.New("rows"); return d }(), wantErr: true},
 		{name: "ready query", db: func() *fakeDB { d := publishDB(); d.rowErrors[1] = errors.New("ready"); return d }(), wantErr: true},
+		{name: "keyless query", db: func() *fakeDB { d := publishDB(); d.rowErrors[2] = errors.New("keyless"); return d }(), wantErr: true},
 		{name: "begin", db: func() *fakeDB { d := publishDB(); d.beginErr = errors.New("begin"); return d }(), wantErr: true},
 		{name: "insert", db: func() *fakeDB { d := publishDB(); d.tx.execErr = errors.New("insert"); return d }(), wantErr: true},
 		{name: "commit", db: func() *fakeDB { d := publishDB(); d.tx.commitErr = errors.New("commit"); return d }(), wantErr: true},
@@ -139,7 +141,29 @@ func TestPublishQueueState(t *testing.T) {
 	}
 }
 
+func TestPublishQueueStateIncludesKeylessPendingCount(t *testing.T) {
+	db := publishDB()
+	db.rowValues = map[int]int64{1: 4, 2: 7}
+	if err := (&Store{pool: db}).PublishQueueState(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(db.tx.execArgs) != 1 {
+		t.Fatalf("outbox inserts=%d", len(db.tx.execArgs))
+	}
+	var payload struct {
+		Ready   int64 `json:"ready_jobs"`
+		Keyless int64 `json:"pending_without_key"`
+	}
+	if err := json.Unmarshal(db.tx.execArgs[0].([]byte), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Ready != 4 || payload.Keyless != 7 {
+		t.Fatalf("payload=%+v, want ready 4 and pending_without_key 7", payload)
+	}
+}
+
 type fakeDB struct {
+	rowValues   map[int]int64
 	queryCalls  int
 	queryRows   []fakeRows
 	queryErrors map[int]error
@@ -178,7 +202,11 @@ func (d *fakeDB) Query(_ context.Context, _ string, _ ...any) (rows, error) {
 
 func (d *fakeDB) QueryRow(context.Context, string, ...any) row {
 	d.rowCalls++
-	return fakeRow{value: int64(11), err: d.rowErrors[d.rowCalls]}
+	value := int64(11)
+	if v, ok := d.rowValues[d.rowCalls]; ok {
+		value = v
+	}
+	return fakeRow{value: value, err: d.rowErrors[d.rowCalls]}
 }
 
 func (d *fakeDB) Begin(context.Context) (queueTx, error) {
@@ -239,11 +267,15 @@ func (*fakeRows) Close()       {}
 
 type fakeTx struct {
 	execCalls          int
+	execArgs           []any
 	execErr, commitErr error
 }
 
-func (tx *fakeTx) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+func (tx *fakeTx) Exec(_ context.Context, _ string, args ...any) (pgconn.CommandTag, error) {
 	tx.execCalls++
+	if len(args) > 0 {
+		tx.execArgs = append(tx.execArgs, args[0])
+	}
 	return pgconn.CommandTag{}, tx.execErr
 }
 func (tx *fakeTx) Commit(context.Context) error { return tx.commitErr }

@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	crawlpostgres "github.com/jooservices/xflickr/internal/crawl/adapters/postgres"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 	"github.com/jooservices/xflickr/internal/platform/queue"
@@ -800,5 +801,131 @@ func TestPumpAssignsOwnerKeyToKeylessPendingWork(t *testing.T) {
 	var orphanKey *int64
 	if err := pool.QueryRow(ctx, `SELECT key_id FROM work_items WHERE subject_key=$1`, suffix+"-orphan").Scan(&orphanKey); err != nil || orphanKey != nil {
 		t.Fatalf("orphan row key=%v err=%v", orphanKey, err)
+	}
+}
+
+// logCapacity models the governor: the hourly budget minus the 100-call
+// reserve, less every call already in api_call_log.
+type logCapacity struct {
+	pool   *pgxpool.Pool
+	hourly int
+}
+
+func (c logCapacity) Capacity(ctx context.Context, keyID int64, _ time.Duration) (int, error) {
+	var used int
+	if err := c.pool.QueryRow(ctx, `SELECT count(*) FROM api_call_log WHERE key_id=$1 AND called_at > now() - interval '1 hour'`, keyID).Scan(&used); err != nil {
+		return 0, err
+	}
+	return max(0, c.hourly-100-used), nil
+}
+
+type fakeFlickrClient struct{ calls int }
+
+func (f *fakeFlickrClient) Call(string) { f.calls++ }
+
+func TestConnectedAccountCrawlRunsCycleThenPumpThenWorkerWithinQuota(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run make test-integration to use the configured worktree database")
+	}
+	pool := integrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+	defer cancel()
+	suffix := fmt.Sprintf("e2e-%d", time.Now().UnixNano())
+	keyID := seedKey(t, ctx, pool, suffix)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM api_call_log WHERE key_id=$1`, keyID)
+		cleanupPumpFixture(t, pool, suffix)
+	})
+	// Connect the account: an ok Flickr account on the key, and the owner as the depth-0 interest.
+	person := suffix + "-owner"
+	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed) SELECT user_id,id,$1,'owner','{}','{}' FROM api_keys WHERE id=$2`, suffix+"@N00", keyID); err != nil {
+		t.Fatal(err)
+	}
+	var userID int64
+	if err := pool.QueryRow(ctx, `SELECT user_id FROM api_keys WHERE id=$1`, keyID).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via) VALUES($1,$2,0,'connected_account')`, userID, person); err != nil {
+		t.Fatal(err)
+	}
+	// A second item of the same account is waiting, so quota is the only limit.
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state) VALUES('check',$1,$2,$3,'pending')`, suffix+"-second", userID, keyID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Run a cycle: the new check item must carry the account's key.
+	cycles, err := crawlpostgres.NewCycleRepository(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if queued, err := cycles.ScheduleNext(ctx, userID, time.Now().UTC(), 24*time.Hour); err != nil || !queued {
+		t.Fatalf("ScheduleNext() = %v, %v; want queued", queued, err)
+	}
+	var cycleKey *int64
+	var cycleState string
+	if err := pool.QueryRow(ctx, `SELECT key_id, state FROM work_items WHERE user_id=$1 AND subject_key=$2`, userID, person).Scan(&cycleKey, &cycleState); err != nil || cycleKey == nil || *cycleKey != keyID || cycleState != "pending" {
+		t.Fatalf("cycle item key=%v state=%s err=%v, want key %d pending", cycleKey, cycleState, err, keyID)
+	}
+
+	// Leave exactly one call of the hourly budget (3600 - 100 reserve) unused.
+	const hourly = 3600
+	if _, err := pool.Exec(ctx, `INSERT INTO api_call_log(key_id,class) SELECT $1,'person' FROM generate_series(1,$2)`, keyID, hourly-100-1); err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := queue.NewRiver(pool, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 1000, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	store := scheduleriver.Store{Pool: pool}
+	capacity := logCapacity{pool: pool, hourly: hourly}
+	dispatched, err := store.Pump(ctx, settings, capacity, adapter)
+	if err != nil || dispatched != 1 {
+		t.Fatalf("Pump() = %d, %v; want exactly the one call of remaining quota", dispatched, err)
+	}
+	var ready, jobs int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE state='ready') FROM work_items WHERE user_id=$1`, userID).Scan(&ready); err != nil || ready != 1 {
+		t.Fatalf("ready items = %d, %v; want 1", ready, err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE queue='sync' AND args->'args'->>'subject_key' LIKE $1`, suffix+"-%").Scan(&jobs); err != nil || jobs != 1 {
+		t.Fatalf("River jobs = %d, %v; want 1", jobs, err)
+	}
+
+	// Worker: run each ready item against the fake Flickr and log the call.
+	flickr := &fakeFlickrClient{}
+	rows, err := pool.Query(ctx, `SELECT id FROM work_items WHERE user_id=$1 AND state='ready'`, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	for _, id := range ids {
+		flickr.Call("flickr.people.getInfo")
+		if _, err := pool.Exec(ctx, `INSERT INTO api_call_log(key_id,class) VALUES($1,'person')`, keyID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `UPDATE work_items SET state='done' WHERE id=$1`, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var logged int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM api_call_log WHERE key_id=$1`, keyID).Scan(&logged); err != nil || flickr.calls != 1 || logged != hourly-100 {
+		t.Fatalf("flickr calls=%d api_call_log rows=%d err=%v; want 1 call and %d rows", flickr.calls, logged, err, hourly-100)
+	}
+
+	// Quota is spent: the remaining item stays pending until the window resets.
+	if dispatched, err := store.Pump(ctx, settings, capacity, adapter); err != nil || dispatched != 0 {
+		t.Fatalf("Pump() with exhausted quota = %d, %v; want 0", dispatched, err)
+	}
+	var pending int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM work_items WHERE user_id=$1 AND state='pending'`, userID).Scan(&pending); err != nil || pending != 1 {
+		t.Fatalf("pending after exhausted quota = %d, %v; want 1", pending, err)
 	}
 }
