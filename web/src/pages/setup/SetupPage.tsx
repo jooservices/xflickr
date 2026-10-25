@@ -2,10 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, RefObject } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
-import {
-  connectFlickrAccount,
-  flickrAccountCallback,
-} from '../../shared/api/gen/flickr-accounts/flickr-accounts';
+import { connectFlickrAccount } from '../../shared/api/gen/flickr-accounts/flickr-accounts';
 import type { ApiKey, FlickrAccount } from '../../shared/api/gen/models';
 import { Icon, useI18n, useLoadingTiming } from '../../shared';
 import type { MessageKey } from '../../shared/i18n';
@@ -87,29 +84,30 @@ export function SetupPage() {
   const secretField = useRef<HTMLInputElement>(null);
   const keyBannerRef = useRef<HTMLDivElement>(null);
   const rows = useRef(new Map<number, HTMLLIElement>());
-  const callbackStarted = useRef<string | null>(null);
   const announced = useRef<number | null>(null);
   const abort = useRef<AbortController | null>(null);
   const finishing = useRef(false);
 
   const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const hintStep = params.get('step');
-  const connectedId = Number(params.get('connected')) || null;
-  // The server redirects the browser here after Flickr; the existing callback API
-  // stays the authority when the deployment points Flickr's callback at the web app.
-  const callback = useMemo(() => {
-    const state = params.get('state');
-    const oauthToken = params.get('oauth_token');
-    const verifier = params.get('oauth_verifier');
-    return state && oauthToken
-      ? { state, oauth_token: oauthToken, ...(verifier ? { oauth_verifier: verifier } : {}) }
-      : null;
-  }, [params]);
+  // The redirect parameters are stripped from the URL right away, so they are read once.
+  const [arrival] = useState(() => {
+    const marker = params.get('connected');
+    const code = params.get('connect_error') ?? params.get('error');
+    const errorKind: ConnectError | null =
+      code === 'denied' || code === 'authorization_denied'
+        ? 'denied'
+        : code === 'expired' || code === 'invalid_state'
+          ? 'expired'
+          : code
+            ? 'start'
+            : null;
+    return { connectedId: Number(marker) || null, connectedMarker: marker === '1', errorKind };
+  });
+  const { connectedId, connectedMarker, errorKind: redirectErrorKind } = arrival;
 
   const [override, setOverride] = useState<Step | null>(null);
   const [selectedKeyId, setSelectedKeyId] = useState<number | null>(null);
-  const [callbackAccount, setCallbackAccount] = useState<FlickrAccount | null>(null);
-  const [callbackPending, setCallbackPending] = useState(callback !== null);
   const [liveText, setLiveText] = useState('');
   const [addKeyOpen, setAddKeyOpen] = useState(false);
   const [depthChoice, setDepthChoice] = useState<number | null>(null);
@@ -126,10 +124,7 @@ export function SetupPage() {
   const [sending, setSending] = useState(false);
 
   const [waiting, setWaiting] = useState(false);
-  const [connectError, setConnectError] = useState<ConnectError | null>(() => {
-    const param = params.get('error');
-    return param === 'denied' || param === 'expired' ? param : null;
-  });
+  const [connectError, setConnectError] = useState<ConnectError | null>(() => redirectErrorKind);
 
   const keysQuery = useQuery({
     queryKey: ['/keys'],
@@ -145,22 +140,21 @@ export function SetupPage() {
   const keys: ApiKey[] = useMemo(() => keysQuery.data ?? [], [keysQuery.data]);
   const validKeys = keys.filter((item) => item.status === 'valid');
   const activeKey = keys.find((item) => item.id === selectedKeyId) ?? validKeys.at(-1) ?? null;
-  const accountList = useMemo(() => {
-    const base = accountsQuery.data ?? [];
-    return callbackAccount && !base.some((item) => item.id === callbackAccount.id)
-      ? [...base, callbackAccount]
-      : base;
-  }, [accountsQuery.data, callbackAccount]);
+  const accountList = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
   const hasAccount = accountList.length > 0;
 
   // The server decides the step; `?step=` is only a hint that is honoured when the
   // data supports it.
   const derived: Step = hasAccount ? 3 : activeKey ? 2 : 1;
   const hinted: Step | null =
-    hintStep === '3' && (activeKey || hasAccount) ? 3 : hintStep === '2' && activeKey ? 2 : null;
+    (connectedMarker || hintStep === '3') && (activeKey || hasAccount)
+      ? 3
+      : (redirectErrorKind !== null || hintStep === '2') && activeKey
+        ? 2
+        : null;
   const step: Step = override ?? hinted ?? derived;
 
-  const initialLoading = keysQuery.isPending || accountsQuery.isPending || callbackPending;
+  const initialLoading = keysQuery.isPending || accountsQuery.isPending;
   const showSkeleton = useLoadingTiming(initialLoading, SKELETON_DELAY);
   const forbidden = statusOf(keysQuery.error) === 403 || statusOf(accountsQuery.error) === 403;
   const loadFailed =
@@ -187,28 +181,13 @@ export function SetupPage() {
   const depth = Math.min(Math.max(depthChoice ?? depthStart, 1), depthMax);
 
   useEffect(() => {
-    if (!callback || callbackStarted.current === callback.state) return;
-    callbackStarted.current = callback.state;
-    void flickrAccountCallback(callback)
-      .then((response) => {
-        if (response.status === 200) {
-          setCallbackAccount(response.data);
-          setOverride(3);
-          void queryClient.invalidateQueries({ queryKey: ['/flickr-accounts'] });
-          void navigate(`/onboarding?step=3&connected=${response.data.id}`, { replace: true });
-        } else {
-          setOverride(2);
-          setConnectError(
-            response.status === 400 ? (callback.oauth_verifier ? 'expired' : 'denied') : 'start',
-          );
-        }
-      })
-      .catch(() => {
-        setOverride(2);
-        setConnectError('start');
-      })
-      .finally(() => setCallbackPending(false));
-  }, [callback, navigate, queryClient]);
+    if (!params.has('connected') && !params.has('connect_error') && !params.has('error')) return;
+    const next = new URLSearchParams(params);
+    next.delete('connected');
+    next.delete('connect_error');
+    next.delete('error');
+    void navigate(`/onboarding${next.size ? `?${next.toString()}` : ''}`, { replace: true });
+  }, [params, navigate]);
 
   useEffect(() => {
     document.title = `${t('user.wizard.title')} · XFlickr`;
@@ -225,7 +204,8 @@ export function SetupPage() {
   // The account that was just connected is announced and focused once.
   const connectedAccount =
     view === 'steps' && step === 3
-      ? accountList.find((item) => item.id === (connectedId ?? callbackAccount?.id))
+      ? (accountList.find((item) => item.id === (connectedMarker ? undefined : connectedId)) ??
+        (connectedMarker ? accountList.at(-1) : undefined))
       : undefined;
   useEffect(() => {
     if (!connectedAccount || announced.current === connectedAccount.id) return;

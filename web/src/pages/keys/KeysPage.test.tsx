@@ -77,6 +77,35 @@ beforeEach(() => {
 });
 
 describe('KeysPage states', () => {
+  it('shows the connected account and removes the success parameter', async () => {
+    world([apiKey(1)], [usageItem(1)], [account()]);
+    const { router } = open('/keys?connected=1');
+
+    expect(await screen.findByTestId('keys-connect-notice')).toHaveTextContent(
+      'Anna is connected. Crawl can start.',
+    );
+    await waitFor(() => expect(router.state.location.search).toBe(''));
+  });
+
+  it('shows a specific callback error and retries authorization', async () => {
+    leaveTo.mockImplementation(() => undefined);
+    world([apiKey(1)], [usageItem(1)], []);
+    server.use(
+      http.post('*/flickr-accounts/connect', () =>
+        HttpResponse.json({ authorize_url: 'https://flickr.test/authorize' }),
+      ),
+    );
+    const { router } = open('/keys?connect_error=invalid_state');
+
+    expect(await screen.findByTestId('keys-connect-notice')).toHaveTextContent(
+      'The Flickr sign-in expired. Start again.',
+    );
+    await screen.findByTestId('keys-accounts-none');
+    fireEvent.click(screen.getByTestId('keys-connect-retry'));
+    await waitFor(() => expect(leaveTo).toHaveBeenCalledWith('https://flickr.test/authorize'));
+    await waitFor(() => expect(router.state.location.search).toBe(''));
+  });
+
   it('shows the empty block and opens the Add modal from it', async () => {
     world([]);
     open();

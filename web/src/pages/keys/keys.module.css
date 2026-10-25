@@ -3,6 +3,26 @@
   flex-direction: column;
   gap: 16px;
 }
+.connectionNotice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.connectionNotice p {
+  flex: 1;
+  margin: 0;
+}
+.connectionNotice button {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
 .head {
   display: flex;
   align-items: flex-start;

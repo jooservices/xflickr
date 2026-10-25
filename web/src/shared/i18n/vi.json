@@ -538,6 +538,7 @@
   "keys.accounts.reconnect-required": "Cần kết nối lại",
   "keys.accounts.revoked": "Đã thu hồi quyền",
   "keys.accounts.error": "Không tải được tài khoản.",
+  "keys.connect.success": "{name} đã kết nối. Có thể bắt đầu thu thập.",
   "keys.reserve.hint": "Đang ở mức dự trữ: chỉ thao tác bạn bắt đầu dùng khóa này.",
   "keys.exhausted.hint": "Đã chạm hạn mức. Thu thập tiếp tục lúc {time}.",
   "keys.paused.hint": "Đã tạm dừng: không có lượt gọi theo lịch. Hãy tiếp tục để thu thập lại.",

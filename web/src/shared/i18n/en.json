@@ -538,6 +538,7 @@
   "keys.accounts.reconnect-required": "Reconnect needed",
   "keys.accounts.revoked": "Access revoked",
   "keys.accounts.error": "Accounts could not load.",
+  "keys.connect.success": "{name} is connected. Crawl can start.",
   "keys.reserve.hint": "In reserve: only actions you start use this key now.",
   "keys.exhausted.hint": "Cap reached. Crawling resumes at {time}.",
   "keys.paused.hint": "Paused: no scheduled calls. Resume to crawl again.",

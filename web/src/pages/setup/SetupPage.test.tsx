@@ -353,27 +353,13 @@ describe('setup wizard step 2', () => {
 });
 
 describe('OAuth return', () => {
-  const callbackPath = '/onboarding?state=state-1&oauth_token=req-1&oauth_verifier=v';
+  it('shows the connected account from the server redirect and removes the query parameter', async () => {
+    server.use(keysReply([acceptedKey]), accountsReply([account]), settingsReply());
+    const { router } = open('/onboarding?connected=1');
 
-  it('completes the callback once, even when the language is switched while pending', async () => {
-    let calls = 0;
-    server.use(
-      keysReply([acceptedKey]),
-      accountsReply(),
-      settingsReply(),
-      http.get('*/flickr-accounts/callback', async ({ request }) => {
-        calls += 1;
-        expect(new URL(request.url).searchParams.get('state')).toBe('state-1');
-        await delay(80);
-        return HttpResponse.json(account);
-      }),
-    );
-    const { router } = open(callbackPath);
-
-    fireEvent.click(await screen.findByTestId('shell-lang-toggle'));
     expect(await screen.findByTestId('wizard-step-done')).toBeInTheDocument();
-    expect(calls).toBe(1);
-    expect(router.state.location.search).toBe('?step=3&connected=9');
+    expect(screen.getByTestId('wizard-live-region')).toHaveTextContent('Anna · Connected');
+    await waitFor(() => expect(router.state.location.search).toBe(''));
   });
 
   it('focuses and announces the new account row, in English and Vietnamese', async () => {
@@ -392,28 +378,15 @@ describe('OAuth return', () => {
   });
 
   it.each([
-    ['/onboarding?state=s&oauth_token=t', 'wizard-connect-denied', 400],
-    ['/onboarding?state=s&oauth_token=t&oauth_verifier=v', 'wizard-connect-expired', 400],
-    ['/onboarding?state=s&oauth_token=t&oauth_verifier=v', 'wizard-connect-error', 503],
-  ])('shows %s as %s on step 2 (status %s)', async (path, testId, status) => {
-    server.use(
-      keysReply([acceptedKey]),
-      accountsReply(),
-      http.get('*/flickr-accounts/callback', () => HttpResponse.json({ code: 'x' }, { status })),
-    );
-    open(path);
+    ['/onboarding?connect_error=authorization_denied', 'wizard-connect-denied'],
+    ['/onboarding?connect_error=invalid_state', 'wizard-connect-expired'],
+    ['/onboarding?connect_error=flickr_unavailable', 'wizard-connect-error'],
+  ])('shows redirect %s as %s on step 2', async (path, testId) => {
+    server.use(keysReply([acceptedKey]), accountsReply());
+    const { router } = open(path);
     expect(await screen.findByTestId(testId)).toBeInTheDocument();
     expect(screen.getByTestId('wizard-step-connect')).toBeInTheDocument();
-  });
-
-  it('shows a network failure of the callback as the start failure', async () => {
-    server.use(
-      keysReply([acceptedKey]),
-      accountsReply(),
-      http.get('*/flickr-accounts/callback', () => HttpResponse.error()),
-    );
-    open(callbackPath);
-    expect(await screen.findByTestId('wizard-connect-error')).toBeInTheDocument();
+    await waitFor(() => expect(router.state.location.search).toBe(''));
   });
 });
 

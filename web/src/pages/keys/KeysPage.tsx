@@ -18,6 +18,16 @@ const SKELETON_DELAY_MS = 150;
 const POLL_MS = [10_000, 20_000, 40_000, 60_000];
 const ACCOUNTS_POLL_MS = 30_000;
 const TOAST_MS = 3000;
+type ConnectionNotice = 'connected' | 'denied' | 'expired' | 'start';
+
+function noticeFromParams(params: URLSearchParams): ConnectionNotice | null {
+  if (params.has('connected')) return 'connected';
+  const code = params.get('connect_error');
+  if (!code) return null;
+  if (code === 'denied' || code === 'authorization_denied') return 'denied';
+  if (code === 'expired' || code === 'invalid_state') return 'expired';
+  return 'start';
+}
 
 const statusOf = (error: unknown) => (error as { status?: number } | null)?.status;
 const KEYS = ['/keys'] as const;
@@ -38,6 +48,10 @@ export function KeysPage() {
   const busy = useRef(new Set<number>());
 
   const [addOpen, setAddOpen] = useState(params.get('add') === '1');
+  // Flickr sends the browser here through a full navigation, so the outcome is read once on mount.
+  const [connectionNotice, setConnectionNotice] = useState<ConnectionNotice | null>(() =>
+    noticeFromParams(params),
+  );
   const [removing, setRemoving] = useState<ApiKey | null>(null);
   const [pending, setPending] = useState<number[]>([]);
   const [connecting, setConnecting] = useState(false);
@@ -77,6 +91,14 @@ export function KeysPage() {
     retry: false,
     refetchInterval: ACCOUNTS_POLL_MS,
   });
+
+  useEffect(() => {
+    if (!params.has('connected') && !params.has('connect_error')) return;
+    const next = new URLSearchParams(params);
+    next.delete('connected');
+    next.delete('connect_error');
+    setParams(next, { replace: true });
+  }, [params, setParams]);
 
   useEffect(() => {
     document.title = t('shell.document-title', { view: t('keys.title') });
@@ -346,6 +368,46 @@ export function KeysPage() {
         </button>
       </header>
       {content}
+      {connectionNotice && (connectionNotice !== 'connected' || accounts.data) ? (
+        <div
+          className={styles.connectionNotice}
+          role={connectionNotice === 'connected' ? 'status' : 'alert'}
+          data-testid="keys-connect-notice"
+        >
+          <p>
+            {connectionNotice === 'connected'
+              ? t('keys.connect.success', { name: accounts.data?.[0]?.username ?? '' })
+              : t(
+                  connectionNotice === 'denied'
+                    ? 'user.wizard.connect.denied'
+                    : connectionNotice === 'expired'
+                      ? 'user.wizard.connect.expired'
+                      : 'user.wizard.connect.error.start',
+                )}
+          </p>
+          {connectionNotice !== 'connected' ? (
+            <button
+              type="button"
+              onClick={() => {
+                const key = list.find((item) => item.status === 'valid');
+                if (key) void connect(key.id);
+                else retryFailed();
+              }}
+              data-testid="keys-connect-retry"
+            >
+              {t('common.retry')}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setConnectionNotice(null)}
+            aria-label={t('common.close')}
+            data-testid="keys-connect-dismiss"
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
       <div className={styles.toasts} aria-live="polite" data-testid="keys-toast-region">
         {toasts.map((item) => (
           <div key={item.id} className={styles.toast} data-testid="keys-toast">

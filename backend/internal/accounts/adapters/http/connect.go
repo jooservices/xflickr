@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/jooservices/xflickr/internal/accounts/app"
 	"github.com/jooservices/xflickr/internal/accounts/domain"
@@ -46,6 +48,22 @@ type ConnectHandler struct {
 	Principal Principal
 }
 
+type acceptContextKey struct{}
+
+// WithRequestAccept makes the request's content negotiation available to the
+// strict handler, whose generated interface does not include the HTTP request.
+func WithRequestAccept(ctx context.Context, accept string) context.Context {
+	return context.WithValue(ctx, acceptContextKey{}, accept)
+}
+
+type callbackRedirect string
+
+func (location callbackRedirect) VisitFlickrAccountCallbackResponse(w http.ResponseWriter) error {
+	w.Header().Set("Location", string(location))
+	w.WriteHeader(http.StatusFound)
+	return nil
+}
+
 // ConnectFlickrAccount starts the flow and returns the Flickr authorize URL.
 func (h ConnectHandler) ConnectFlickrAccount(ctx context.Context, request gen.ConnectFlickrAccountRequestObject) (gen.ConnectFlickrAccountResponseObject, error) {
 	userID, ok := principalID(ctx, h.Principal)
@@ -67,8 +85,12 @@ func (h ConnectHandler) ConnectFlickrAccount(ctx context.Context, request gen.Co
 
 // FlickrAccountCallback completes the flow for the signed-in user.
 func (h ConnectHandler) FlickrAccountCallback(ctx context.Context, request gen.FlickrAccountCallbackRequestObject) (gen.FlickrAccountCallbackResponseObject, error) {
+	browser := strings.Contains(strings.ToLower(requestAccept(ctx)), "text/html")
 	userID, ok := principalID(ctx, h.Principal)
 	if !ok {
+		if browser {
+			return callbackRedirect("/keys?connect_error=unauthenticated"), nil
+		}
 		return gen.FlickrAccountCallback401JSONResponse(unauthenticated()), nil
 	}
 	if h.Accounts == nil {
@@ -80,7 +102,13 @@ func (h ConnectHandler) FlickrAccountCallback(ctx context.Context, request gen.F
 	}
 	account, err := h.Accounts.Complete(ctx, userID, request.Params.State, request.Params.OauthToken, verifier)
 	if err != nil {
+		if browser {
+			return callbackRedirect("/keys?connect_error=" + url.QueryEscape(callbackErrorCode(err))), nil
+		}
 		return callbackFailure(err)
+	}
+	if browser {
+		return callbackRedirect("/keys?connected=1"), nil
 	}
 	return gen.FlickrAccountCallback200JSONResponse{
 		ID:        account.ID,
@@ -90,6 +118,21 @@ func (h ConnectHandler) FlickrAccountCallback(ctx context.Context, request gen.F
 		Status:    gen.FlickrAccountStatus(account.Status),
 		CreatedAt: account.CreatedAt,
 	}, nil
+}
+
+func requestAccept(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	accept, _ := ctx.Value(acceptContextKey{}).(string)
+	return accept
+}
+
+func callbackErrorCode(err error) string {
+	if body, _, ok := connectError(err); ok {
+		return body.Code
+	}
+	return "flickr_error"
 }
 
 func principalID(ctx context.Context, principal Principal) (int64, bool) {

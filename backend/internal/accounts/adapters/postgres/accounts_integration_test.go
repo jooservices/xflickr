@@ -216,6 +216,19 @@ func TestConnectFlowAgainstFakeFlickrOAuth(t *testing.T) {
 	if _, err := connect.Complete(ctx, userID, state, requestToken, ""); !errors.Is(err, app.ErrAuthorizationDenied) {
 		t.Fatalf("declined = %v", err)
 	}
+	// An expired pending authorization (its Redis entry is gone) is an invalid state, not an account.
+	authorizeURL, err = connect.Start(ctx, userID, key.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestToken = queryParam(t, authorizeURL, "oauth_token")
+	state = queryParam(t, oauth.Callback(requestToken), "state")
+	for _, name := range scanKeys(t, ctx, redisClient, prefix+"accounts:oauth:*") {
+		redisClient.Del(ctx, name)
+	}
+	if _, err := connect.Complete(ctx, userID, state, requestToken, oauth.Approve(requestToken)); !errors.Is(err, app.ErrInvalidState) {
+		t.Fatalf("expired state = %v", err)
+	}
 	if _, err := pool.Exec(ctx, `UPDATE api_keys SET status = 'invalid' WHERE id = $1`, key.ID); err != nil {
 		t.Fatal(err)
 	}

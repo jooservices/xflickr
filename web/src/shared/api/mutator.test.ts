@@ -29,6 +29,7 @@ describe('csrfFetch', () => {
     server.use(
       http.get('*/mutator-test', ({ request }) => {
         expect(request.headers.has('X-CSRF-Token')).toBe(false);
+        expect(request.headers.get('Accept')).toBe('application/json');
         return HttpResponse.json({ ok: true });
       }),
     );

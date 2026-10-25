@@ -506,6 +506,11 @@ func newAPIRouterWithQuota(identity identityhttp.Handler, keys accountshttp.KeyH
 func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawl crawlhttp.CrawlHandler, quota quotahttp.QuotaHandler, sharing sharinghttp.Handler, downloads mediahttp.DownloadHandler) http.Handler {
 	router := chi.NewRouter()
 	serveWebAssets(router, os.Getenv("XFLICKR_WEB_DIR"))
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(accountshttp.WithRequestAccept(r.Context(), r.Header.Get("Accept"))))
+		})
+	})
 	router.Use(identityhttp.RequestBodyLimit)
 	router.Use(identityhttp.CSRF)
 	router.Use(identityhttp.ProtectRoutes(identity.Sessions))

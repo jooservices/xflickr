@@ -70,12 +70,12 @@ async function wizardApi(page: Page, overrides: Partial<World> = {}): Promise<Wo
   await page.route(at('/flickr-accounts'), (route) => json(route, world.accounts));
   await page.route(at('/flickr-accounts/connect'), (route) =>
     json(route, {
-      authorize_url: `${new URL(page.url()).origin}/onboarding?state=fake-state&oauth_token=fake-token&oauth_verifier=v`,
+      authorize_url: `${new URL(page.url()).origin}/fakeflickr/authorize`,
     }),
   );
-  await page.route(at('/flickr-accounts/callback'), (route) => {
+  await page.route(at('/fakeflickr/authorize'), (route) => {
     world.accounts = [connected];
-    return json(route, connected);
+    return route.fulfill({ status: 302, headers: { location: '/onboarding?connected=1' } });
   });
   await page.route(at('/me/crawl/settings'), (route) => {
     if (route.request().method() === 'PUT') {
@@ -113,7 +113,7 @@ test('walks the three steps: key, authorization return, then starts the crawl', 
   await page.getByTestId('wizard-connect-allow').click();
   await expect(page.getByTestId('wizard-step-done')).toBeVisible();
   await expect(page.getByTestId('wizard-account-fake-user')).toBeFocused();
-  await expect(page).toHaveURL(/step=3&connected=9/);
+  await expect(page).toHaveURL(/\/onboarding$/);
   await expect(page.getByTestId('wizard-depth')).toHaveValue('2');
   await expectNoSeriousViolations(page);
 

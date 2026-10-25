@@ -3,6 +3,8 @@ package http
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -168,5 +170,37 @@ func TestCallbackMapsFailures(t *testing.T) {
 		if _, err := connectedAs(&scriptedConnect{err: failure}).FlickrAccountCallback(t.Context(), gen.FlickrAccountCallbackRequestObject{}); !errors.Is(err, failure) {
 			t.Errorf("%v error = %v", failure, err)
 		}
+	}
+}
+
+func TestBrowserCallbackRedirectsAndJSONCallbackKeepsContract(t *testing.T) {
+	service := &scriptedConnect{account: domain.Account{ID: 11, UserID: 9, Username: "jamal"}}
+	ctx := WithRequestAccept(t.Context(), "text/html,application/xhtml+xml")
+	response, err := connectedAs(service).FlickrAccountCallback(ctx, gen.FlickrAccountCallbackRequestObject{Params: gen.FlickrAccountCallbackParams{State: "s", OauthToken: "t"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRedirect := func(got gen.FlickrAccountCallbackResponseObject, want string) {
+		t.Helper()
+		writer := httptest.NewRecorder()
+		if err := got.VisitFlickrAccountCallbackResponse(writer); err != nil {
+			t.Fatal(err)
+		}
+		if writer.Code != http.StatusFound || writer.Header().Get("Location") != want {
+			t.Fatalf("redirect status=%d location=%q, want 302 %q", writer.Code, writer.Header().Get("Location"), want)
+		}
+	}
+	checkRedirect(response, "/keys?connected=1")
+
+	service.err = app.ErrInvalidState
+	response, err = connectedAs(service).FlickrAccountCallback(ctx, gen.FlickrAccountCallbackRequestObject{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkRedirect(response, "/keys?connect_error=invalid_state")
+
+	response, err = connectedAs(service).FlickrAccountCallback(t.Context(), gen.FlickrAccountCallbackRequestObject{})
+	if err != nil || !codeIs(t, response, "invalid_state") {
+		t.Fatalf("JSON callback = %T %v", response, err)
 	}
 }

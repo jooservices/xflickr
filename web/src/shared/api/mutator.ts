@@ -43,6 +43,7 @@ export async function csrfFetch(
   const method = (init.method ?? 'GET').toUpperCase();
   const unsafe = !SAFE_METHODS.has(method);
   const headers = new Headers(init.headers);
+  headers.set('Accept', 'application/json');
 
   if (unsafe) {
     const token = readCsrfToken();
