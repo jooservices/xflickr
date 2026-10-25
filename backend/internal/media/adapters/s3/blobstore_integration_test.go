@@ -5,10 +5,15 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/jooservices/xflickr/internal/media/app"
 )
@@ -101,5 +106,65 @@ func TestS3Integration(t *testing.T) {
 	full, err = store.Full(ctx)
 	if err != nil || full {
 		t.Fatalf("store should be below cap after delete: full=%t err=%v", full, err)
+	}
+}
+
+// TestS3PresignedURLExpires runs in the standard test suite without an
+// external S3 service. The shared XFlickr environment does not run Garage or
+// allow test-owned service containers, so this local endpoint models the S3
+// presigned-request expiry check while using MinIO's real URL signer.
+func TestS3PresignedURLExpires(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		issuedAt, err := time.Parse("20060102T150405Z", query.Get("X-Amz-Date"))
+		if err != nil {
+			http.Error(w, "invalid presigned request", http.StatusForbidden)
+			return
+		}
+		expires, err := strconv.Atoi(query.Get("X-Amz-Expires"))
+		if err != nil || expires < 1 || time.Now().UTC().After(issuedAt.Add(time.Duration(expires)*time.Second)) {
+			http.Error(w, "request has expired", http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	endpoint, secure, err := parseEndpoint(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := minio.New(endpoint, &minio.Options{
+		Creds:        credentials.NewStaticV4("integration-access", "integration-secret", ""),
+		Secure:       secure,
+		Region:       "us-east-1",
+		BucketLookup: minio.BucketLookupPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &BlobStore{client: client, bucket: "temporary-assets"}
+	url, err := store.PresignGet(context.Background(), "integration-object", 2*time.Second)
+	if err != nil {
+		t.Fatalf("presign: %v", err)
+	}
+
+	response, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("request before expiry: %v", err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("request before expiry status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	time.Sleep(2200 * time.Millisecond)
+	response, err = http.Get(url)
+	if err != nil {
+		t.Fatalf("request after expiry: %v", err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("request after expiry status = %d, want %d", response.StatusCode, http.StatusForbidden)
 	}
 }
