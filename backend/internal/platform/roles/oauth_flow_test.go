@@ -62,6 +62,9 @@ func (r *flowRepository) Connect(_ context.Context, account accountsdomain.Accou
 }
 
 func (r *flowRepository) MarkRevoked(context.Context, int64) (bool, error) { return false, nil }
+func (r *flowRepository) ListAccounts(context.Context, int64) ([]accountsdomain.Account, error) {
+	return nil, nil
+}
 
 type flowStates struct {
 	pending map[string]accountsapp.Pending
