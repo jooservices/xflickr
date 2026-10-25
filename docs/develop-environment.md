@@ -39,3 +39,9 @@ Ollama runs natively on the WSL host. To add the AI role, edit the ignored
 `.env.develop`: append `,ai-worker` to `XFLICKR_ROLES` and set `OLLAMA_URL` to
 `http://host.docker.internal:11434` (or the configured host endpoint). The
 default role list does not start the AI worker.
+
+## Monitoring
+
+The scheduler role logs a `crawl health` line every minute and ships it to the
+OpenObserve stream `xflickr`; `GET /admin/ops/status` returns the same numbers
+to administrators. See [ops-monitoring.md](ops-monitoring.md).

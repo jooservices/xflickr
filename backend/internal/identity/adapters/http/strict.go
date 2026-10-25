@@ -122,3 +122,9 @@ func (StrictHandler) GetKeyQuota(context.Context, gen.GetKeyQuotaRequestObject) 
 func (StrictHandler) GetAdminQuota(context.Context, gen.GetAdminQuotaRequestObject) (gen.GetAdminQuotaResponseObject, error) {
 	return nil, errQuotaServedByQuota
 }
+
+var errOpsServedByOps = errors.New("identity: ops status is served by the ops module")
+
+func (StrictHandler) GetAdminOpsStatus(context.Context, gen.GetAdminOpsStatusRequestObject) (gen.GetAdminOpsStatusResponseObject, error) {
+	return nil, errOpsServedByOps
+}

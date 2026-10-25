@@ -53,3 +53,22 @@ if ! curl --fail --silent --show-error -H 'Accept: text/html' "$BASE_URL/keys" |
 	exit 1
 fi
 printf 'Web index, registration, and keys pages: ok\n'
+
+ops_status="$(curl --silent --output /dev/null --write-out '%{http_code}' "$BASE_URL/admin/ops/status")"
+if [[ "$ops_status" != 401 && "$ops_status" != 403 ]]; then
+	printf 'Admin ops status endpoint should require authentication (got HTTP %s).\n' "$ops_status" >&2
+	exit 1
+fi
+if [[ -n "${XFLICKR_ADMIN_COOKIE:-}" ]]; then
+	if ! curl --fail --silent --show-error --header "Cookie: $XFLICKR_ADMIN_COOKIE" "$BASE_URL/admin/ops/status" | grep -q '"calls_last_10min"'; then
+		printf 'Admin ops status did not return the crawl health report.\n' >&2
+		exit 1
+	fi
+fi
+printf 'Admin ops status endpoint: ok\n'
+
+if ! "${compose[@]}" logs --no-color --tail 500 xflickr 2>/dev/null | grep -q 'crawl health'; then
+	printf 'No "crawl health" log line found; the scheduler role logs one at start and every minute.\n' >&2
+	exit 1
+fi
+printf 'Crawl health log line: ok\n'

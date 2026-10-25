@@ -92,3 +92,9 @@ func TestStrictHandlerLeavesQuotaToQuota(t *testing.T) {
 		t.Fatalf("admin quota error=%v", err)
 	}
 }
+
+func TestStrictHandlerLeavesOpsToOps(t *testing.T) {
+	if _, err := (StrictHandler{}).GetAdminOpsStatus(t.Context(), gen.GetAdminOpsStatusRequestObject{}); !errors.Is(err, errOpsServedByOps) {
+		t.Fatalf("ops status error=%v", err)
+	}
+}

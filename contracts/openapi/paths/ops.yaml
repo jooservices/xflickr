@@ -1,0 +1,22 @@
+status:
+  get:
+    operationId: GetAdminOpsStatus
+    tags: [admin]
+    summary: Get the crawl health report
+    description: Same numbers as the periodic "crawl health" log line. Large catalog counts may be planner estimates.
+    responses:
+      '200':
+        description: Crawl health
+        content:
+          application/json:
+            schema: { $ref: ../schemas/ops.yaml#/OpsStatus }
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '403':
+        description: Administrator role required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }

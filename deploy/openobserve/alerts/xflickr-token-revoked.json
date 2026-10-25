@@ -1,0 +1,14 @@
+{
+  "name": "xflickr-token-revoked",
+  "stream_type": "logs",
+  "stream_name": "xflickr",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "sql",
+    "sql": "SELECT count(*) AS hits FROM \"xflickr\" WHERE event = 'crawl.health' AND tokens_revoked > 0 HAVING count(*) >= 1"
+  },
+  "trigger_condition": { "period": 5, "operator": ">=", "threshold": 1, "frequency": 1, "silence": 60 },
+  "destinations": [],
+  "enabled": true,
+  "description": "At least one connected Flickr account has a revoked token."
+}

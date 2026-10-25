@@ -28,6 +28,7 @@ import type {
   AdminUserPage,
   Error,
   ListAdminUsersParams,
+  OpsStatus,
   Plan,
   UpdateAdminPlansRequest,
   UpdateAdminUserRequest,
@@ -1009,6 +1010,149 @@ export function useGetAdminQuota<TData = Awaited<ReturnType<typeof getAdminQuota
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetAdminQuotaQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type getAdminOpsStatusResponse200 = {
+  data: OpsStatus;
+  status: 200;
+};
+
+export type getAdminOpsStatusResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type getAdminOpsStatusResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type getAdminOpsStatusResponseSuccess = getAdminOpsStatusResponse200 & {
+  headers: Headers;
+};
+export type getAdminOpsStatusResponseError = (
+  getAdminOpsStatusResponse401 | getAdminOpsStatusResponse403
+) & {
+  headers: Headers;
+};
+
+export type getAdminOpsStatusResponse =
+  getAdminOpsStatusResponseSuccess | getAdminOpsStatusResponseError;
+
+export const getGetAdminOpsStatusUrl = () => {
+  return `/admin/ops/status`;
+};
+
+/**
+ * Same numbers as the periodic "crawl health" log line. Large catalog counts may be planner estimates.
+ * @summary Get the crawl health report
+ */
+export const getAdminOpsStatus = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getAdminOpsStatusResponse> => {
+  return customFetch<getAdminOpsStatusResponse>(getGetAdminOpsStatusUrl(), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getGetAdminOpsStatusQueryKey = () => {
+  return [`/admin/ops/status`] as const;
+};
+
+export const getGetAdminOpsStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminOpsStatus>>,
+  TError = Error,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminOpsStatus>>, TError, TData>>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminOpsStatusQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminOpsStatus>>> = ({ signal }) =>
+    getAdminOpsStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminOpsStatus>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetAdminOpsStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminOpsStatus>>
+>;
+export type GetAdminOpsStatusQueryError = Error;
+
+export function useGetAdminOpsStatus<
+  TData = Awaited<ReturnType<typeof getAdminOpsStatus>>,
+  TError = Error,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminOpsStatus>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminOpsStatus>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminOpsStatus>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAdminOpsStatus<
+  TData = Awaited<ReturnType<typeof getAdminOpsStatus>>,
+  TError = Error,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminOpsStatus>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminOpsStatus>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminOpsStatus>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAdminOpsStatus<
+  TData = Awaited<ReturnType<typeof getAdminOpsStatus>>,
+  TError = Error,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminOpsStatus>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get the crawl health report
+ */
+
+export function useGetAdminOpsStatus<
+  TData = Awaited<ReturnType<typeof getAdminOpsStatus>>,
+  TError = Error,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminOpsStatus>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminOpsStatusQueryOptions(options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

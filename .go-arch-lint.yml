@@ -50,6 +50,7 @@ components:
       - internal/platform/crypto/**
       - internal/platform/db/**
       - internal/platform/httpx/**
+      - internal/platform/ops/**
       - internal/platform/outbox/**
       - internal/platform/queue/**
   # Standalone fake Flickr service used by contract and E2E tests.

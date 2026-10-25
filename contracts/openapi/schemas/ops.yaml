@@ -1,0 +1,76 @@
+OpsCounts:
+  type: object
+  additionalProperties: false
+  required: [people, photos, photo_sizes, favorites, albums, galleries, groups]
+  properties:
+    people: { type: integer, format: int64, minimum: 0 }
+    photos: { type: integer, format: int64, minimum: 0 }
+    photo_sizes: { type: integer, format: int64, minimum: 0, description: Photos whose sizes are confirmed. }
+    favorites: { type: integer, format: int64, minimum: 0 }
+    albums: { type: integer, format: int64, minimum: 0 }
+    galleries: { type: integer, format: int64, minimum: 0 }
+    groups: { type: integer, format: int64, minimum: 0 }
+
+OpsKey:
+  type: object
+  additionalProperties: false
+  required: [key_id, label, status, calls_last_hour, used, remaining, limit]
+  properties:
+    key_id: { type: integer, format: int64 }
+    label: { type: string }
+    status: { type: string, enum: [valid, invalid, revoked] }
+    calls_last_hour: { type: integer, format: int64, minimum: 0 }
+    used: { type: integer, format: int64, minimum: 0 }
+    remaining: { type: integer, format: int64, minimum: 0 }
+    limit: { type: integer, format: int64, minimum: 1 }
+
+OpsStatus:
+  type: object
+  additionalProperties: false
+  required:
+    - generated_at
+    - counts
+    - work_items
+    - ready_jobs
+    - river_jobs
+    - keys
+    - calls_last_hour
+    - calls_last_10min
+    - pending_items
+    - oldest_pending_age_seconds
+    - failed_work_items
+    - dead_jobs
+    - token_status
+  properties:
+    generated_at: { type: string, format: date-time }
+    counts: { $ref: '#/OpsCounts' }
+    work_items:
+      type: object
+      description: Work items by state.
+      additionalProperties: { type: integer, format: int64, minimum: 0 }
+    ready_jobs:
+      type: integer
+      format: int64
+      minimum: 0
+      description: Work items in the ready state.
+    river_jobs:
+      type: object
+      description: River jobs by state.
+      additionalProperties: { type: integer, format: int64, minimum: 0 }
+    keys:
+      type: array
+      items: { $ref: '#/OpsKey' }
+    calls_last_hour: { type: integer, format: int64, minimum: 0 }
+    calls_last_10min: { type: integer, format: int64, minimum: 0 }
+    pending_items: { type: integer, format: int64, minimum: 0 }
+    oldest_pending_age_seconds: { type: integer, format: int64, minimum: 0 }
+    failed_work_items: { type: integer, format: int64, minimum: 0 }
+    dead_jobs: { type: integer, format: int64, minimum: 0, description: River jobs discarded after their last attempt. }
+    token_status:
+      type: string
+      enum: [none, ok, reconnect_required, revoked]
+      description: Worst Flickr account token state.
+    idle_reason:
+      type: string
+      enum: [no_key, quota_exhausted, not_before_in_future, unknown]
+      description: Present when pending items exist but none is ready.

@@ -64,6 +64,8 @@ paths:
     $ref: ./paths/queue.yaml#/admin_queue
   /admin/quota:
     $ref: ./paths/quota.yaml#/admin
+  /admin/ops/status:
+    $ref: ./paths/ops.yaml#/status
   /downloads:
     $ref: ./paths/downloads.yaml#/create
 components:
@@ -124,6 +126,8 @@ components:
       $ref: ./schemas/quota.yaml#/KeyQuota
     AdminQuota:
       $ref: ./schemas/quota.yaml#/AdminQuota
+    OpsStatus:
+      $ref: ./schemas/ops.yaml#/OpsStatus
     CreateDownloadRequest:
       $ref: ./schemas/downloads.yaml#/CreateDownloadRequest
     Download:

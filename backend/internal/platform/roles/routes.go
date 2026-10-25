@@ -53,6 +53,7 @@ var routeAccess = map[string]identityhttp.Access{
 	"PUT /admin/plans":           identityhttp.AccessAdmin,
 	"GET /admin/queue":           identityhttp.AccessAdmin,
 	"GET /admin/quota":           identityhttp.AccessAdmin,
+	"GET /admin/ops/status":      identityhttp.AccessAdmin,
 }
 
 // accessResolver classifies a request by the route pattern the router matches
