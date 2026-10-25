@@ -53,13 +53,7 @@ type KeyPool struct {
 // a user with a crawl interest in the person. Ties go to the least recently
 // used key, then the lowest ID so the result is deterministic.
 func (p KeyPool) Choose(ctx context.Context, personNSID string, class domain.Class) (KeyID, error) {
-	if ctx == nil || p.Interests == nil || p.Keys == nil || p.Quota == nil {
-		return 0, errors.New("quota: key pool dependencies are required")
-	}
-	if !class.Valid() {
-		return 0, domain.ErrInvalidClass
-	}
-	if err := ctx.Err(); err != nil {
+	if err := p.precheck(ctx, class); err != nil {
 		return 0, err
 	}
 	users, err := p.Interests.InterestedUsers(ctx, personNSID)
@@ -70,13 +64,8 @@ func (p KeyPool) Choose(ctx context.Context, personNSID string, class domain.Cla
 	if p.Now != nil {
 		now = p.Now()
 	}
-	var (
-		best      PoolKey
-		bestQuota int
-		found     bool
-		seenUsers = make(map[int64]bool, len(users))
-		seenKeys  = map[KeyID]bool{}
-	)
+	sel := &selection{seenKeys: map[KeyID]bool{}}
+	seenUsers := make(map[int64]bool, len(users))
 	for _, userID := range users {
 		if seenUsers[userID] {
 			continue
@@ -86,30 +75,64 @@ func (p KeyPool) Choose(ctx context.Context, personNSID string, class domain.Cla
 		if err != nil {
 			return 0, fmt.Errorf("quota: load keys of user %d: %w", userID, err)
 		}
-		for _, key := range keys {
-			if seenKeys[key.ID] || !key.Valid || key.CooldownUntil.After(now) {
-				continue
-			}
-			seenKeys[key.ID] = true
-			remaining, err := p.Quota.Capacity(ctx, int64(key.ID), Window)
-			if errors.Is(err, ErrKeyUnavailable) {
-				continue
-			}
-			if err != nil {
-				return 0, fmt.Errorf("quota: read quota of key %d: %w", key.ID, err)
-			}
-			if remaining <= 0 {
-				continue
-			}
-			if !found || better(key, remaining, best, bestQuota) {
-				best, bestQuota, found = key, remaining, true
-			}
+		if err := p.consider(ctx, keys, now, sel); err != nil {
+			return 0, err
 		}
 	}
-	if !found {
+	if !sel.found {
 		return 0, ErrNoKey
 	}
-	return best.ID, nil
+	return sel.best.ID, nil
+}
+
+// selection tracks the best key seen so far across all interested users.
+type selection struct {
+	best      PoolKey
+	bestQuota int
+	found     bool
+	seenKeys  map[KeyID]bool
+}
+
+func (p KeyPool) consider(ctx context.Context, keys []PoolKey, now time.Time, sel *selection) error {
+	for _, key := range keys {
+		if sel.seenKeys[key.ID] || !key.Valid || key.CooldownUntil.After(now) {
+			continue
+		}
+		sel.seenKeys[key.ID] = true
+		remaining, err := p.remaining(ctx, key)
+		if err != nil {
+			return err
+		}
+		if remaining <= 0 {
+			continue
+		}
+		if !sel.found || better(key, remaining, sel.best, sel.bestQuota) {
+			sel.best, sel.bestQuota, sel.found = key, remaining, true
+		}
+	}
+	return nil
+}
+
+func (p KeyPool) precheck(ctx context.Context, class domain.Class) error {
+	if ctx == nil || p.Interests == nil || p.Keys == nil || p.Quota == nil {
+		return errors.New("quota: key pool dependencies are required")
+	}
+	if !class.Valid() {
+		return domain.ErrInvalidClass
+	}
+	return ctx.Err()
+}
+
+// remaining is the key's spendable calls; a key the governor marks unavailable has none.
+func (p KeyPool) remaining(ctx context.Context, key PoolKey) (int, error) {
+	n, err := p.Quota.Capacity(ctx, int64(key.ID), Window)
+	if errors.Is(err, ErrKeyUnavailable) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("quota: read quota of key %d: %w", key.ID, err)
+	}
+	return n, nil
 }
 
 func better(key PoolKey, quota int, best PoolKey, bestQuota int) bool {
