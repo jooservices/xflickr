@@ -251,8 +251,72 @@
   background-size: 200% 100%;
   animation: shimmer 1.2s ease infinite;
 }
-.loading i:nth-child(2) {
+.loading .skBar {
+  height: 4px;
+}
+.loading .skHead {
+  height: 28px;
+  width: 70%;
+}
+.loading .skField {
   height: 64px;
+}
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.warn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+}
+.fieldError {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--bad) !important;
+}
+.accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.accounts li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.accounts li small {
+  flex-basis: 100%;
+}
+.accounts code {
+  font-family: var(--f-mono);
+  color: var(--muted);
+  font-size: 12px;
+}
+.okText {
+  margin-left: auto;
+  color: var(--ok);
+  font-weight: 600;
+}
+.badText {
+  margin-left: auto;
+  color: var(--bad);
+  font-weight: 600;
 }
 .state {
   margin: auto;
@@ -293,6 +357,14 @@
   }
   .actions {
     flex-direction: column;
+  }
+  .accounts li {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .okText,
+  .badText {
+    margin-left: 0;
   }
   .actions > *,
   .body form > .primary {

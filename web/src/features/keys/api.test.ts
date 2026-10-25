@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw/http';
 import { describe, expect, it } from 'vitest';
 import { server } from '../../test/server';
-import { checkAndSaveKey, loadKeys } from './api';
+import { checkAndSaveKey, loadAccounts, loadKeys } from './api';
 
 describe('key API', () => {
   it('loads the current user keys', async () => {
@@ -28,5 +28,16 @@ describe('key API', () => {
     await expect(
       checkAndSaveKey({ label: 'My key', key: 'public', secret: 'secret' }),
     ).resolves.toMatchObject({ status: 201 });
+  });
+
+  it('loads the account list, treats a missing endpoint as unknown, and reports failures', async () => {
+    server.use(http.get('*/flickr-accounts', () => HttpResponse.json([{ id: 1 }])));
+    await expect(loadAccounts()).resolves.toEqual([{ id: 1 }]);
+
+    server.use(http.get('*/flickr-accounts', () => new HttpResponse(null, { status: 404 })));
+    await expect(loadAccounts()).resolves.toBeNull();
+
+    server.use(http.get('*/flickr-accounts', () => new HttpResponse(null, { status: 403 })));
+    await expect(loadAccounts()).rejects.toMatchObject({ status: 403 });
   });
 });

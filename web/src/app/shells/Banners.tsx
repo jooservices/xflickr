@@ -13,7 +13,10 @@ type BannersProps = {
   onReconnect: (item: Attention) => void;
 };
 
-/** Banner order in main: offline, key revoked, token expired (at most 2, then "N more"). */
+/**
+ * Banner order in main: offline, crawling off (no valid key), key revoked, token
+ * expired (at most 2, then "N more"). Offline always stays first.
+ */
 export function Banners({ offline, crawlingOff, attention, onReconnect }: BannersProps) {
   const { t } = useI18n();
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
@@ -29,6 +32,13 @@ export function Banners({ offline, crawlingOff, attention, onReconnect }: Banner
 
   return (
     <>
+      {offline ? (
+        <div className={styles.banner} role="status" data-testid="shell-offline-banner">
+          <span>
+            <Icon name="info" /> {t('shell.offline.banner')}
+          </span>
+        </div>
+      ) : null}
       {crawlingOff ? (
         <div
           className={`${styles.banner} ${styles.warn}`}
@@ -41,13 +51,6 @@ export function Banners({ offline, crawlingOff, attention, onReconnect }: Banner
           <Link className={styles.btn} to="/onboarding" data-testid="shell-banner-add-key">
             {t('shell.banner.setup')}
           </Link>
-        </div>
-      ) : null}
-      {offline ? (
-        <div className={styles.banner} role="status" data-testid="shell-offline-banner">
-          <span>
-            <Icon name="info" /> {t('shell.offline.banner')}
-          </span>
         </div>
       ) : null}
       {keys.map((item) => (

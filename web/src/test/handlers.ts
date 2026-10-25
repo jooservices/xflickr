@@ -21,6 +21,7 @@ export const handlers = [
   ),
   http.get('*/me/sessions', () => HttpResponse.json({ items: [] })),
   http.get('*/keys', () => HttpResponse.json([])),
+  http.get('*/flickr-accounts', () => HttpResponse.json([])),
   http.get('*/shell/summary', () =>
     HttpResponse.json({
       unread_notifications: 3,

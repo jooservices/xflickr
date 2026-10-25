@@ -341,3 +341,73 @@ describe('user shell access to /admin', () => {
     expect(router.state.location.pathname).toBe('/');
   });
 });
+
+describe('crawling-off banner', () => {
+  const validKey = { id: 1, label: 'Main', status: 'valid' };
+
+  it.each(['/', '/library', '/profile', '/keys', '/onboarding'])(
+    'shows the banner on %s while no valid key exists and links to the wizard',
+    async (path) => {
+      renderApp({ session: userSession, path });
+
+      const banner = await screen.findByTestId('shell-crawling-off-banner');
+      expect(banner).toHaveTextContent('Crawling is off');
+      expect(screen.getByTestId('shell-banner-add-key')).toHaveAttribute('href', '/onboarding');
+    },
+  );
+
+  it('stays hidden for a valid key and counts a revoked-only list as no valid key', async () => {
+    server.use(http.get('*/keys', () => HttpResponse.json([validKey])));
+    const first = renderApp({ session: userSession, path: '/profile' });
+    await screen.findByTestId('shell-nav-home');
+    expect(screen.queryByTestId('shell-crawling-off-banner')).toBeNull();
+    first.unmount();
+
+    server.use(http.get('*/keys', () => HttpResponse.json([{ ...validKey, status: 'revoked' }])));
+    renderApp({ session: userSession, path: '/profile' });
+    expect(await screen.findByTestId('shell-crawling-off-banner')).toBeInTheDocument();
+  });
+
+  it('stays hidden while the key list fails', async () => {
+    server.use(http.get('*/keys', () => new HttpResponse(null, { status: 500 })));
+    renderApp({ session: userSession, path: '/profile' });
+    await screen.findByTestId('shell-nav-home');
+    expect(screen.queryByTestId('shell-crawling-off-banner')).toBeNull();
+  });
+
+  it('keeps the offline banner first and the token cap of 2 with the banner shown', async () => {
+    server.use(
+      http.get('*/shell/summary', () =>
+        HttpResponse.json({
+          unread_notifications: 0,
+          running_downloads: 0,
+          tray_count: 0,
+          attention: [
+            { kind: 'key_revoked', id: 'k1', label: 'Main key' },
+            { kind: 'token_expired', id: 'a1', label: 'anna' },
+            { kind: 'token_expired', id: 'a2', label: 'bob' },
+            { kind: 'token_expired', id: 'a3', label: 'cy' },
+          ],
+        }),
+      ),
+    );
+    renderApp({ session: userSession, path: '/profile' });
+    await screen.findByTestId('shell-crawling-off-banner');
+    fireEvent(window, new Event('offline'));
+    await screen.findByTestId('shell-offline-banner');
+    await screen.findByTestId('shell-key-revoked-banner-k1');
+
+    const order = Array.from(
+      document.querySelectorAll(
+        '[data-testid="shell-offline-banner"],[data-testid="shell-crawling-off-banner"],[data-testid^="shell-key-revoked-banner"],[data-testid^="shell-token-expired-banner"]',
+      ),
+    ).map((node) => node.getAttribute('data-testid'));
+    expect(order).toEqual([
+      'shell-offline-banner',
+      'shell-crawling-off-banner',
+      'shell-key-revoked-banner-k1',
+      'shell-token-expired-banner-a1',
+      'shell-token-expired-banner-a2',
+    ]);
+  });
+});
