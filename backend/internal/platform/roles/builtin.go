@@ -34,6 +34,7 @@ import (
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	medialocal "github.com/jooservices/xflickr/internal/media/adapters/local"
+	medias3 "github.com/jooservices/xflickr/internal/media/adapters/s3"
 	mediaapp "github.com/jooservices/xflickr/internal/media/app"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
 	auditpostgres "github.com/jooservices/xflickr/internal/platform/audit/adapters/postgres"
@@ -214,9 +215,6 @@ func (mediaRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if cfg.Blob.Driver != "local" {
-		return fmt.Errorf("media: blob driver %q is not available in this environment", cfg.Blob.Driver)
-	}
 	pool, err := db.NewPool(ctx, cfg.DB)
 	if err != nil {
 		return err
@@ -226,7 +224,19 @@ func (mediaRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	blobs, err := medialocal.New(cfg.Blob.LocalDir, cfg.Blob.MaxBytes)
+	var blobs mediaapp.BlobStore
+	switch cfg.Blob.Driver {
+	case "local":
+		blobs, err = medialocal.New(cfg.Blob.LocalDir, cfg.Blob.MaxBytes)
+	case "s3":
+		blobs, err = medias3.New(ctx, medias3.Config{
+			Endpoint: cfg.Blob.S3Endpoint, Region: cfg.Blob.S3Region, Bucket: cfg.Blob.S3Bucket,
+			AccessKey: cfg.Blob.S3AccessKey, SecretKey: cfg.Blob.S3SecretKey,
+			UsePathStyle: cfg.Blob.S3UsePathStyle, MaxBytes: cfg.Blob.MaxBytes, MaxTTL: cfg.Blob.MaxTTL,
+		})
+	default:
+		return fmt.Errorf("media: unsupported blob driver %q", cfg.Blob.Driver)
+	}
 	if err != nil {
 		return err
 	}

@@ -66,6 +66,7 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 		"BLOB_DRIVER":               "s3",
 		"BLOB_LOCAL_DIR":            "/tmp/blobs",
 		"BLOB_MAX_BYTES":            "1234567",
+		"BLOB_MAX_TTL":              "48h",
 		"S3_ENDPOINT":               "https://objects.internal",
 		"S3_REGION":                 "ap-southeast-1",
 		"S3_BUCKET":                 "xflickr-worktree",
@@ -151,6 +152,7 @@ func TestLoadFromEnvValidatesSettings(t *testing.T) {
 		{name: "log level", key: "LOG_LEVEL", value: "trace", want: "LOG_LEVEL"},
 		{name: "blob driver", key: "BLOB_DRIVER", value: "garage", want: "BLOB_DRIVER"},
 		{name: "blob cap", key: "BLOB_MAX_BYTES", value: "-1", want: "BLOB_MAX_BYTES"},
+		{name: "blob ttl", key: "BLOB_MAX_TTL", value: "0s", want: "BLOB_MAX_TTL"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
