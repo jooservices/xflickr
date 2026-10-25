@@ -9,6 +9,7 @@ import { ADMIN_NAV, USER_NAV } from './shells/nav';
 import { LoginPage } from '../pages/login/LoginPage';
 import { RegisterPage } from '../pages/register/RegisterPage';
 import { ProfilePage } from '../pages/profile/ProfilePage';
+import { SetupPage } from '../pages/setup/SetupPage';
 
 const userPages: RouteObject[] = [
   {
@@ -41,7 +42,7 @@ const userPages: RouteObject[] = [
   { path: 'sessions', element: <PlaceholderPage scope="shell" titleKey="shell.page.sessions" /> },
   {
     path: 'onboarding',
-    element: <PlaceholderPage scope="shell" titleKey="shell.page.onboarding" />,
+    element: <SetupPage />,
   },
   { path: '*', element: <UserNotFound /> },
 ];

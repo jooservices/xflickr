@@ -20,6 +20,7 @@ export const handlers = [
     HttpResponse.json({ registration_open: true, passkey_enabled: false }),
   ),
   http.get('*/me/sessions', () => HttpResponse.json({ items: [] })),
+  http.get('*/keys', () => HttpResponse.json([])),
   http.get('*/shell/summary', () =>
     HttpResponse.json({
       unread_notifications: 3,

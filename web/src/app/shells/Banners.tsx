@@ -8,12 +8,13 @@ const MAX_BANNERS = 2;
 
 type BannersProps = {
   offline: boolean;
+  crawlingOff: boolean;
   attention: Attention[];
   onReconnect: (item: Attention) => void;
 };
 
 /** Banner order in main: offline, key revoked, token expired (at most 2, then "N more"). */
-export function Banners({ offline, attention, onReconnect }: BannersProps) {
+export function Banners({ offline, crawlingOff, attention, onReconnect }: BannersProps) {
   const { t } = useI18n();
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
   const visible = (kind: Attention['kind'][]) =>
@@ -28,6 +29,20 @@ export function Banners({ offline, attention, onReconnect }: BannersProps) {
 
   return (
     <>
+      {crawlingOff ? (
+        <div
+          className={`${styles.banner} ${styles.warn}`}
+          role="status"
+          data-testid="shell-crawling-off-banner"
+        >
+          <span>
+            <Icon name="alert" /> {t('shell.banner.crawling-off')}
+          </span>
+          <Link className={styles.btn} to="/onboarding" data-testid="shell-banner-add-key">
+            {t('shell.banner.setup')}
+          </Link>
+        </div>
+      ) : null}
       {offline ? (
         <div className={styles.banner} role="status" data-testid="shell-offline-banner">
           <span>

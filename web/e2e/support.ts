@@ -19,7 +19,16 @@ const adminShell = {
   generated_at: '2026-10-25T10:00:00Z',
 };
 
-const endpoints = ['/me', '/shell/summary', '/admin/shell', '/tray', '/notifications', '/healthz'];
+const endpoints = [
+  '/me',
+  '/shell/summary',
+  '/admin/shell',
+  '/tray',
+  '/notifications',
+  '/healthz',
+  '/keys',
+  '/me/crawl/queue',
+];
 
 /** Answers the endpoints the shells read, so the browser needs no backend. */
 export async function mockApi(page: Page, role: Role | 'anonymous'): Promise<void> {
@@ -48,6 +57,10 @@ export async function mockApi(page: Page, role: Role | 'anonymous'): Promise<voi
           return json({ items: [], count: 0, estimated_bytes: 0 });
         case '/notifications':
           return json({ items: [] });
+        case '/keys':
+          return json([]);
+        case '/me/crawl/queue':
+          return json({ lanes: [] });
         default:
           return json({ status: 'ok' });
       }

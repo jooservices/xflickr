@@ -69,7 +69,7 @@ describe('user shell', () => {
   it('hides the tab row on onboarding', async () => {
     renderApp({ session: userSession, path: '/onboarding' });
 
-    await screen.findByTestId('shell-page');
+    await screen.findByTestId('wizard-page');
     expect(screen.queryByTestId('shell-nav')).toBeNull();
   });
 

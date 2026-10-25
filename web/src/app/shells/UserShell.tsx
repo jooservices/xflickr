@@ -26,6 +26,8 @@ import { ShellRuntimeProvider, useShellRuntime } from './runtime';
 import { useRouteFocus } from './useRouteFocus';
 import styles from './shells.module.css';
 import { SESSION_EXPIRED_EVENT } from '../../shared/api/sessionEvents';
+import { useQuery } from '@tanstack/react-query';
+import { loadKeys } from '../../features/keys/api';
 
 type UserShellProps = {
   /** Renders the 403 page in the content area (a non-admin on an admin route). */
@@ -137,6 +139,12 @@ function Shell({ forbidden }: UserShellProps) {
   const [sessionExpired, setSessionExpired] = useState(false);
   const authenticated = session.status === 'authenticated';
   const summary = useShellSummary(authenticated);
+  const keys = useQuery({
+    queryKey: ['/keys'],
+    queryFn: ({ signal }) => loadKeys(signal),
+    enabled: authenticated,
+    retry: false,
+  });
   const maintenance = useMaintenance(authenticated);
   const { toggleLive } = useShellRuntime();
   const loading = session.status === 'loading';
@@ -305,6 +313,9 @@ function Shell({ forbidden }: UserShellProps) {
       <main id="main" className={styles.main} tabIndex={-1} data-testid="shell-main">
         <Banners
           offline={offline}
+          crawlingOff={
+            authenticated && keys.isSuccess && !keys.data.some((item) => item.status === 'valid')
+          }
           attention={data?.attention ?? []}
           onReconnect={(item) => {
             if (item.kind === 'cloud_expired') void navigate('/sync');
