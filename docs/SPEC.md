@@ -74,6 +74,10 @@ guide feature implementation; operational environment rules live in
   Flickr calls.
 - When disabled, the user sees records crawled through their own access; records
   are not contributed to the shared pool.
+- Record observations belong to a user and connected Flickr account and preserve
+  the first time that account saw each record. Sharing is off by default, and
+  every change to the user's sharing choice publishes `sharing.changed` through
+  the transactional outbox.
 - Never share API keys, secrets, OAuth tokens, private photos, or downloads.
   Apply Flickr visibility and authorization rules even when a record is
   otherwise shareable.

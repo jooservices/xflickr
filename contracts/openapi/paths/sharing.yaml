@@ -1,0 +1,18 @@
+setting:
+  put:
+    operationId: PutMeSharing
+    tags: [sharing]
+    summary: Update the current user's sharing choice
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: ../schemas/sharing.yaml#/UpdateSharingRequest }
+    responses:
+      '200':
+        description: Current sharing setting
+        content:
+          application/json:
+            schema: { $ref: ../schemas/sharing.yaml#/SharingSetting }
+      '400': { description: Invalid request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }

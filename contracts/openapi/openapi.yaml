@@ -24,6 +24,8 @@ paths:
     $ref: ./paths/auth.yaml#/me~1sessions~1{id}
   /me/password:
     $ref: ./paths/auth.yaml#/me~1password
+  /me/sharing:
+    $ref: ./paths/sharing.yaml#/setting
   /keys:
     $ref: ./paths/keys.yaml#/collection
   /keys/{id}:
@@ -70,6 +72,10 @@ components:
       $ref: ./schemas/auth.yaml#/AuthRequest
     User:
       $ref: ./schemas/auth.yaml#/User
+    SharingSetting:
+      $ref: ./schemas/sharing.yaml#/SharingSetting
+    UpdateSharingRequest:
+      $ref: ./schemas/sharing.yaml#/UpdateSharingRequest
     ApiKey:
       $ref: ./schemas/keys.yaml#/ApiKey
     CreateKeyRequest:

@@ -1,5 +1,7 @@
 # Documentation
 
+- [Sharing settings and observations](sharing.md)
+
 - [Environment and shared services](ENVIRONMENT.md) — workstation, runtime, and
   database rules.
 - [Develop environment](develop-environment.md) — the WSL application container,

@@ -56,6 +56,9 @@ import (
 	scheduleapp "github.com/jooservices/xflickr/internal/schedule/app"
 	settingspostgres "github.com/jooservices/xflickr/internal/settings/adapters/postgres"
 	settingsapp "github.com/jooservices/xflickr/internal/settings/app"
+	sharinghttp "github.com/jooservices/xflickr/internal/sharing/adapters/http"
+	sharingpostgres "github.com/jooservices/xflickr/internal/sharing/adapters/postgres"
+	sharingapp "github.com/jooservices/xflickr/internal/sharing/app"
 	flickrclient "github.com/jooservices/xflickr/pkg/flickr"
 )
 
@@ -374,7 +377,11 @@ func buildConfiguredAPIHandler(pool *pgxpool.Pool, redisClient redisv9.Universal
 	if err != nil {
 		return nil, err
 	}
-	return newAPIRouterWithQuota(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg)), nil
+	sharing, err := buildSharingHandler(pool)
+	if err != nil {
+		return nil, err
+	}
+	return newAPIRouterWithQuota(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing), nil
 }
 
 func buildQuotaHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config) quotahttp.QuotaHandler {
@@ -418,7 +425,12 @@ type apiServer struct {
 	accountshttp.ConnectHandler
 	crawlhttp.CrawlHandler
 	quotahttp.QuotaHandler
+	Sharing sharinghttp.Handler
 	planHandler
+}
+
+func (s apiServer) PutMeSharing(ctx context.Context, request gen.PutMeSharingRequestObject) (gen.PutMeSharingResponseObject, error) {
+	return s.Sharing.PutMeSharing(ctx, request)
 }
 
 type planHandler struct{ schedulehttp.Handler }
@@ -433,16 +445,28 @@ func newAPIRouter(identity identityhttp.Handler, keys accountshttp.KeyHandler, c
 	return newAPIRouterWithQuota(identity, keys, connect, plans, crawl, quotahttp.QuotaHandler{})
 }
 
-func newAPIRouterWithQuota(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawl crawlhttp.CrawlHandler, quota quotahttp.QuotaHandler) http.Handler {
+func newAPIRouterWithQuota(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawl crawlhttp.CrawlHandler, quota quotahttp.QuotaHandler, sharings ...sharinghttp.Handler) http.Handler {
 	router := chi.NewRouter()
 	serveWebAssets(router, os.Getenv("XFLICKR_WEB_DIR"))
 	router.Use(identityhttp.RequestBodyLimit)
 	router.Use(identityhttp.CSRF)
 	router.Use(identityhttp.ProtectRoutes(identity.Sessions))
-	return gen.HandlerFromMux(gen.NewStrictHandler(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
+	var sharing sharinghttp.Handler
+	if len(sharings) > 0 {
+		sharing = sharings[0]
+	}
+	return gen.HandlerFromMux(gen.NewStrictHandler(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		identityhttp.MaintainSessionCookies(identity.Sessions),
 	}), router)
+}
+
+func buildSharingHandler(pool *pgxpool.Pool) (sharinghttp.Handler, error) {
+	repository, err := sharingpostgres.New(pool)
+	if err != nil {
+		return sharinghttp.Handler{}, err
+	}
+	return sharinghttp.Handler{Change: sharingapp.Change{Repository: repository}, ActorID: userIDFromPrincipal}, nil
 }
 
 func buildCrawlHandler(pool *pgxpool.Pool) (crawlhttp.CrawlHandler, error) {

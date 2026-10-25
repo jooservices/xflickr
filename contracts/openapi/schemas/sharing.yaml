@@ -1,0 +1,13 @@
+SharingSetting:
+  type: object
+  required: [enabled, changed_at]
+  properties:
+    enabled: { type: boolean }
+    changed_at: { type: string, format: date-time }
+
+UpdateSharingRequest:
+  type: object
+  required: [enabled]
+  additionalProperties: false
+  properties:
+    enabled: { type: boolean }

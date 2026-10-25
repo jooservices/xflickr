@@ -91,6 +91,12 @@ func (StrictHandler) ResumeCrawlContact(context.Context, gen.ResumeCrawlContactR
 
 var errQuotaServedByQuota = errors.New("identity: quota state is served by the quota module")
 
+var errSharingServedBySharing = errors.New("identity: sharing settings are served by the sharing module")
+
+func (StrictHandler) PutMeSharing(context.Context, gen.PutMeSharingRequestObject) (gen.PutMeSharingResponseObject, error) {
+	return nil, errSharingServedBySharing
+}
+
 func (StrictHandler) GetKeyQuota(context.Context, gen.GetKeyQuotaRequestObject) (gen.GetKeyQuotaResponseObject, error) {
 	return nil, errQuotaServedByQuota
 }

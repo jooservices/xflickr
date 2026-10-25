@@ -35,3 +35,16 @@ type PhotoRef struct {
 type PhotoSelector interface {
 	Select(ctx context.Context, limit, skip int) ([]PhotoRef, error)
 }
+
+// Observation identifies a record discovered through one connected Flickr account.
+type Observation struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+}
+
+// Observer records catalog provenance in the caller's transaction.
+type Observer interface {
+	Observe(context.Context, Observation) error
+}

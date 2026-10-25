@@ -10,3 +10,4 @@ export * from './crawl/crawl';
 export * from './default/default';
 export * from './flickr-accounts/flickr-accounts';
 export * from './keys/keys';
+export * from './sharing/sharing';
