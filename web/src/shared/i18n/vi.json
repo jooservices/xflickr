@@ -222,12 +222,14 @@
   "profile.title": "Hồ sơ",
   "profile.account.title": "Tài khoản",
   "profile.account.language": "Ngôn ngữ",
+  "profile.account.timezone": "Múi giờ",
   "profile.account.save": "Lưu thay đổi",
   "profile.password.title": "Mật khẩu",
   "profile.password.current": "Mật khẩu hiện tại",
   "profile.password.new": "Mật khẩu mới",
   "profile.password.confirm": "Nhập lại mật khẩu mới",
   "profile.password.help": "Các thiết bị khác sẽ đăng xuất sau khi bạn đổi mật khẩu.",
+  "profile.password.rules.email": "Hãy dùng mật khẩu khác với email của bạn.",
   "profile.password.submit": "Đổi mật khẩu",
   "profile.password.error.current": "Mật khẩu hiện tại chưa đúng.",
   "profile.sessions.title": "Phiên đang hoạt động",
@@ -251,5 +253,12 @@
   "profile.error.save": "Không thể lưu hồ sơ. Hãy thử lại.",
   "profile.error.action": "Không thể hoàn tất thao tác.",
   "profile.error.load": "Không thể tải {card}. Hãy kiểm tra kết nối và thử lại.",
-  "profile.signout": "Đăng xuất"
+  "profile.error.rate-limited": "Quá nhiều lần thử. Hãy thử lại sau {minutes} phút.",
+  "profile.stale": "Đang hiển thị dữ liệu tải lần cuối lúc {time}.",
+  "profile.changed-elsewhere": "Mục này đã đổi ở tab khác.",
+  "profile.signout": "Đăng xuất",
+  "profile.unsaved": "Bạn có thay đổi chưa lưu. Rời đi mà không lưu?",
+  "profile.unsaved.leave": "Rời khỏi trang",
+  "common.cancel": "Hủy",
+  "common.reload": "Tải lại"
 }

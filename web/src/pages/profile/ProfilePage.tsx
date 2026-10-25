@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router';
+import { useBlocker, useNavigate } from 'react-router';
 import { useSession } from '../../entities';
 import { SESSION_QUERY_KEY } from '../../entities/session/SessionProvider';
 import { useI18n } from '../../shared';
@@ -25,6 +25,7 @@ export function ProfilePage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [sessionsError, setSessionsError] = useState(false);
+  const [sessionsHasLoaded, setSessionsHasLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [passwordBusy, setPasswordBusy] = useState(false);
   const displayName = user?.email.split('@')[0] ?? '';
@@ -33,6 +34,13 @@ export function ProfilePage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [rateLimitedUntil, setRateLimitedUntil] = useState(0);
+  const [sessionsUpdatedAt, setSessionsUpdatedAt] = useState(0);
+  const [changedElsewhere, setChangedElsewhere] = useState(false);
+  const dirty =
+    language !== (user?.locale ?? locale) ||
+    Boolean(currentPassword || newPassword || confirmPassword);
+  const blocker = useBlocker(dirty);
   const [confirmAction, setConfirmAction] = useState<
     { kind: 'one'; session: Session } | { kind: 'others' } | null
   >(null);
@@ -41,22 +49,62 @@ export function ProfilePage() {
   const title = t('profile.title');
 
   useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'xf.profile.updated' && dirty) setChangedElsewhere(true);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [dirty]);
+
+  useEffect(() => {
     document.title = t('shell.document-title', { view: title });
   }, [t, title]);
 
-  async function loadSessions() {
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (!dirty) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', beforeUnload);
+    return () => window.removeEventListener('beforeunload', beforeUnload);
+  }, [dirty]);
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return;
+    const channel = new BroadcastChannel('xf-profile');
+    channel.onmessage = (event: MessageEvent) => {
+      if (event.data === 'account-updated' && dirty) setChangedElsewhere(true);
+    };
+    return () => channel.close();
+  }, [dirty]);
+
+  useEffect(() => {
+    if (!rateLimitedUntil) return;
+    const timer = window.setInterval(() => {
+      if (Date.now() >= rateLimitedUntil) {
+        setRateLimitedUntil(0);
+        window.clearInterval(timer);
+      }
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [rateLimitedUntil]);
+
+  const loadSessions = useCallback(async () => {
     try {
       const result = await listMySessions({ credentials: 'same-origin' });
       signalSessionExpired(result.status);
       if (result.status !== 200) throw new Error('Could not load sessions');
       setSessions(result.data.items ?? []);
+      setSessionsUpdatedAt(Date.now());
+      setSessionsHasLoaded(true);
       setSessionsError(false);
     } catch {
       setSessionsError(true);
     } finally {
       setSessionsLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -69,6 +117,8 @@ export function ProfilePage() {
           return;
         }
         setSessions(result.data.items ?? []);
+        setSessionsUpdatedAt(Date.now());
+        setSessionsHasLoaded(true);
         setSessionsError(false);
       })
       .catch(() => {
@@ -82,6 +132,14 @@ export function ProfilePage() {
     };
   }, []);
 
+  useEffect(() => {
+    const onFocus = () => {
+      if (sessionsHasLoaded && Date.now() - sessionsUpdatedAt > 60_000) void loadSessions();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [loadSessions, sessionsHasLoaded, sessionsUpdatedAt]);
+
   async function saveAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -93,6 +151,17 @@ export function ProfilePage() {
       if (result.data)
         client.setQueryData(SESSION_QUERY_KEY, { status: 'authenticated', user: result.data });
       setMessage(t('profile.toast.saved'));
+      setChangedElsewhere(false);
+      if (typeof BroadcastChannel !== 'undefined') {
+        const channel = new BroadcastChannel('xf-profile');
+        channel.postMessage('account-updated');
+        channel.close();
+      }
+      try {
+        window.localStorage.setItem('xf.profile.updated', String(Date.now()));
+      } catch {
+        // Cross-tab notices are optional when storage is unavailable.
+      }
     } catch {
       setMessage(t('profile.error.save'));
     } finally {
@@ -126,8 +195,22 @@ export function ProfilePage() {
         csrfFetchOptions('POST'),
       );
       if (result.status === 401) {
+        signalSessionExpired(result.status);
+        return;
+      }
+      if (
+        result.status === 400 &&
+        'code' in result.data &&
+        result.data.code === 'invalid_current_password'
+      ) {
         setPasswordError(t('profile.password.error.current'));
         setCurrentPassword('');
+        return;
+      }
+      if (result.status === 429) {
+        const retryAfter = Number(result.headers.get('Retry-After') ?? 60);
+        setRateLimitedUntil(Date.now() + retryAfter * 1000);
+        setPasswordError(t('profile.error.rate-limited', { minutes: Math.ceil(retryAfter / 60) }));
         return;
       }
       if (result.status !== 204) throw new Error('Could not change password');
@@ -235,6 +318,21 @@ export function ProfilePage() {
                 <option value="vi">{t('common.language.vi')}</option>
               </select>
             </label>
+            <label className={styles.field}>
+              {t('profile.account.timezone')}
+              <input
+                type="text"
+                list="profile-timezones"
+                defaultValue={Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'}
+                data-testid="profile-account-timezone"
+              />
+              <datalist id="profile-timezones">
+                <option value="UTC" />
+                <option value="Asia/Bangkok" />
+                <option value="America/Los_Angeles" />
+                <option value="Europe/London" />
+              </datalist>
+            </label>
             <button
               className={styles.primary}
               type="submit"
@@ -251,6 +349,11 @@ export function ProfilePage() {
           data-testid="profile-password-card"
         >
           <h2 id="profile-password-title">{t('profile.password.title')}</h2>
+          <ul className={styles.muted} data-testid="profile-password-rules">
+            <li>{t('auth.validation.password-short', { min: 8 })}</li>
+            <li>{t('auth.validation.password-long', { max: 128 })}</li>
+            <li>{t('profile.password.rules.email')}</li>
+          </ul>
           {passwordError && (
             <div className={styles.error} role="alert" data-testid="profile-password-error">
               {passwordError}
@@ -291,7 +394,7 @@ export function ProfilePage() {
             <button
               className={styles.primary}
               type="submit"
-              disabled={passwordBusy}
+              disabled={passwordBusy || rateLimitedUntil > 0}
               data-testid="profile-password-submit"
             >
               {passwordBusy ? t('profile.saving') : t('profile.password.submit')}
@@ -329,7 +432,7 @@ export function ProfilePage() {
               <i />
               <i />
             </div>
-          ) : sessionsError ? (
+          ) : sessionsError && !sessionsHasLoaded ? (
             <div className={styles.error} role="alert" data-testid="profile-error-sessions">
               {t('profile.error.load', { card: t('profile.sessions.title') })}
               <button
@@ -340,46 +443,72 @@ export function ProfilePage() {
                 {t('common.retry')}
               </button>
             </div>
-          ) : sessions.length === 0 ? (
-            <p>{t('profile.sessions.empty')}</p>
           ) : (
-            <ul className={styles.list}>
-              {sessions.map((item) => (
-                <li key={item.id} data-testid={`profile-session-row-${item.id}`}>
-                  <div>
-                    <strong>{item.user_agent_label || t('profile.sessions.unknown-device')}</strong>
-                    <p>
-                      {item.ip_masked} ·{' '}
-                      {t('profile.sessions.active', {
-                        time: new Date(item.last_seen_at).toLocaleString(locale),
-                      })}
-                    </p>
-                  </div>
-                  {item.current ? (
-                    <span className={styles.pill} data-testid="profile-session-current">
-                      {t('profile.sessions.current')}
-                    </span>
-                  ) : (
-                    <button
-                      className={styles.secondary}
-                      onClick={(event) => {
-                        confirmationTrigger.current = event.currentTarget;
-                        setConfirmAction({ kind: 'one', session: item });
-                      }}
-                      aria-label={t('profile.sessions.revoke-label', {
-                        device: item.user_agent_label || t('profile.sessions.unknown-device'),
-                      })}
-                      data-testid={`profile-session-revoke-${item.id}`}
-                    >
-                      {t('profile.sessions.revoke')}
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <>
+              {sessionsError && (
+                <p className={styles.muted} role="status" data-testid="profile-stale-note">
+                  {t('profile.stale', { time: new Date(sessionsUpdatedAt).toLocaleString(locale) })}{' '}
+                  <button className={styles.secondary} onClick={() => void loadSessions()}>
+                    {t('common.retry')}
+                  </button>
+                </p>
+              )}
+              {sessions.length === 0 ? (
+                <p className={styles.muted}>{t('profile.sessions.empty')}</p>
+              ) : (
+                <ul className={styles.list}>
+                  {sessions.map((item) => (
+                    <li key={item.id} data-testid={`profile-session-row-${item.id}`}>
+                      <div>
+                        <strong>
+                          {item.user_agent_label || t('profile.sessions.unknown-device')}
+                        </strong>
+                        <p>
+                          {item.ip_masked} ·{' '}
+                          {t('profile.sessions.active', {
+                            time: new Date(item.last_seen_at).toLocaleString(locale),
+                          })}
+                        </p>
+                      </div>
+                      {item.current ? (
+                        <span className={styles.pill} data-testid="profile-session-current">
+                          {t('profile.sessions.current')}
+                        </span>
+                      ) : (
+                        <button
+                          className={styles.secondary}
+                          onClick={(event) => {
+                            confirmationTrigger.current = event.currentTarget;
+                            setConfirmAction({ kind: 'one', session: item });
+                          }}
+                          aria-label={t('profile.sessions.revoke-label', {
+                            device: item.user_agent_label || t('profile.sessions.unknown-device'),
+                          })}
+                          data-testid={`profile-session-revoke-${item.id}`}
+                        >
+                          {t('profile.sessions.revoke')}
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
         </section>
       </div>
+      {changedElsewhere && (
+        <p className={styles.notice} role="status" data-testid="profile-changed-note">
+          {t('profile.changed-elsewhere')}{' '}
+          <button
+            type="button"
+            className={styles.secondary}
+            onClick={() => window.location.reload()}
+          >
+            {t('common.reload')}
+          </button>
+        </p>
+      )}
       <p className={styles.signout}>
         <button
           className={styles.secondary}
@@ -434,6 +563,32 @@ export function ProfilePage() {
                 data-testid="profile-confirm-ok"
               >
                 {t('profile.sessions.revoke')}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {blocker.state === 'blocked' && (
+        <div className={styles.modalBackdrop}>
+          <section
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profile-unsaved-title"
+            data-testid="profile-unsaved-dialog"
+          >
+            <h2 id="profile-unsaved-title">{t('profile.unsaved')}</h2>
+            <div className={styles.modalActions}>
+              <button
+                className={styles.secondary}
+                type="button"
+                autoFocus
+                onClick={() => blocker.reset()}
+              >
+                {t('common.cancel')}
+              </button>
+              <button className={styles.primary} type="button" onClick={() => blocker.proceed()}>
+                {t('profile.unsaved.leave')}
               </button>
             </div>
           </section>

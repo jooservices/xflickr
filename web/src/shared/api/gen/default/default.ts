@@ -25,6 +25,7 @@ import type {
   AuthConfig,
   AuthRequest,
   ChangePasswordRequest,
+  Error,
   LoginLocked,
   LoginRateLimited,
   RegisterConflict,
@@ -1137,7 +1138,7 @@ export type changeMyPasswordResponse204 = {
 };
 
 export type changeMyPasswordResponse400 = {
-  data: void;
+  data: Error;
   status: 400;
 };
 
@@ -1151,11 +1152,19 @@ export type changeMyPasswordResponse403 = {
   status: 403;
 };
 
+export type changeMyPasswordResponse429 = {
+  data: LoginRateLimited;
+  status: 429;
+};
+
 export type changeMyPasswordResponseSuccess = changeMyPasswordResponse204 & {
   headers: Headers;
 };
 export type changeMyPasswordResponseError = (
-  changeMyPasswordResponse400 | changeMyPasswordResponse401 | changeMyPasswordResponse403
+  | changeMyPasswordResponse400
+  | changeMyPasswordResponse401
+  | changeMyPasswordResponse403
+  | changeMyPasswordResponse429
 ) & {
   headers: Headers;
 };
@@ -1208,7 +1217,10 @@ export const changeMyPassword = async (
 
 export const getChangeMyPasswordMutationKey = () => ['changeMyPassword'] as const;
 
-export const getChangeMyPasswordMutationOptions = <TError = void, TContext = unknown>(options?: {
+export const getChangeMyPasswordMutationOptions = <
+  TError = Error | void | LoginRateLimited,
+  TContext = unknown,
+>(options?: {
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof changeMyPassword>>,
     TError,
@@ -1245,13 +1257,13 @@ export type ChangeMyPasswordMutationResult = NonNullable<
   Awaited<ReturnType<typeof changeMyPassword>>
 >;
 export type ChangeMyPasswordMutationBody = ChangePasswordRequest;
-export type ChangeMyPasswordMutationError = void;
+export type ChangeMyPasswordMutationError = Error | void | LoginRateLimited;
 export type ChangeMyPasswordMutationVariables = { data: ChangePasswordRequest };
 
 /**
  * @summary Change the current user's password
  */
-export const useChangeMyPassword = <TError = void, TContext = unknown>(
+export const useChangeMyPassword = <TError = Error | void | LoginRateLimited, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof changeMyPassword>>,

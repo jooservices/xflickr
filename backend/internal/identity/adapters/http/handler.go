@@ -289,17 +289,36 @@ func (h Handler) ChangeMyPassword(ctx context.Context, request gen.ChangeMyPassw
 		return gen.ChangeMyPassword401Response{}, nil
 	}
 	if request.Body == nil {
-		return gen.ChangeMyPassword400Response{}, nil
+		return gen.ChangeMyPassword400JSONResponse{Code: "validation_failed", Message: "Password is invalid"}, nil
 	}
 	if request.Body.CurrentPassword == nil || request.Body.NewPassword == nil {
-		return gen.ChangeMyPassword400Response{}, nil
+		return gen.ChangeMyPassword400JSONResponse{Code: "validation_failed", Message: "Password is invalid"}, nil
 	}
 	err := h.Password.Execute(ctx, principal.User.ID, *request.Body.CurrentPassword, *request.Body.NewPassword, principal.TokenHash)
-	if errors.Is(err, app.ErrInvalidCurrentPassword) || errors.Is(err, app.ErrUnauthenticated) {
+	if errors.Is(err, app.ErrUnauthenticated) {
 		return gen.ChangeMyPassword401Response{}, nil
 	}
+	if errors.Is(err, app.ErrInvalidCurrentPassword) {
+		return gen.ChangeMyPassword400JSONResponse{Code: "invalid_current_password", Message: "Current password is incorrect"}, nil
+	}
 	if errors.Is(err, app.ErrInvalidInput) {
-		return gen.ChangeMyPassword400Response{}, nil
+		return gen.ChangeMyPassword400JSONResponse{Code: "validation_failed", Message: "Password is invalid"}, nil
+	}
+	if errors.Is(err, app.ErrRateLimited) {
+		retryAfter, retryErr := h.Password.RetryAfter(ctx, principal.User.ID)
+		if retryErr != nil {
+			return nil, retryErr
+		}
+		seconds := int(math.Ceil(retryAfter.Seconds()))
+		if seconds < 1 {
+			seconds = 1
+		}
+		return gen.ChangeMyPassword429JSONResponse{
+			Body: gen.LoginRateLimited{Code: gen.RateLimited, Message: "Too many password change attempts", Details: struct {
+				RetryAfterSeconds int `json:"retry_after_seconds"`
+			}{RetryAfterSeconds: seconds}},
+			Headers: gen.ChangeMyPassword429ResponseHeaders{RetryAfter: &seconds},
+		}, nil
 	}
 	if err != nil {
 		return nil, err

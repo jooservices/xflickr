@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/jooservices/xflickr/internal/identity/domain"
 )
@@ -13,6 +14,19 @@ type passwordRepo struct {
 	err     error
 	hash    string
 	updated bool
+}
+
+type passwordAttemptLimiter struct {
+	allowed bool
+	err     error
+}
+
+func (l passwordAttemptLimiter) Allow(context.Context, string, string) (bool, error) {
+	return l.allowed, l.err
+}
+
+func (l passwordAttemptLimiter) RetryAfter(context.Context, string, string) (time.Duration, error) {
+	return time.Minute, nil
 }
 
 func (r *passwordRepo) FindByID(context.Context, int64) (domain.User, error) {
@@ -72,5 +86,22 @@ func TestChangePasswordValidationAndDependencyErrors(t *testing.T) {
 	repo.err = ErrUserNotFound
 	if err := usecase.Execute(ctx, 3, "current-pass", "new-password", []byte{1}); !errors.Is(err, ErrUserNotFound) {
 		t.Fatalf("lookup error=%v", err)
+	}
+}
+
+func TestChangePasswordRateLimit(t *testing.T) {
+	ctx := context.Background()
+	params := domain.Argon2Params{Memory: 8, Iterations: 1, Parallelism: 1, SaltLength: 8, KeyLength: 16}
+	hash, err := domain.HashPassword("current-pass", params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := &passwordRepo{user: domain.User{ID: 3, PasswordHash: hash}}
+	usecase := ChangePassword{Repository: repo, Sessions: &sessionMemory{}, Limiter: passwordAttemptLimiter{allowed: false}, Params: params}
+	if err := usecase.Execute(ctx, 3, "current-pass", "new-password", []byte{1}); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("rate limit error=%v", err)
+	}
+	if repo.updated {
+		t.Fatal("password updated despite rate limit")
 	}
 }

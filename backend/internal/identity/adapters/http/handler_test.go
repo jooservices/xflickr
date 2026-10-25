@@ -47,11 +47,38 @@ func (r repo) Register(_ context.Context, u domain.User, _ bool) (domain.User, e
 func (r repo) UsersExist(context.Context) (bool, error)                 { return r.usersExist, r.existErr }
 func (r repo) FindByEmail(context.Context, string) (domain.User, error) { return r.user, r.err }
 func (r repo) FindByID(context.Context, int64) (domain.User, error)     { return r.user, r.err }
+func (r repo) UpdatePassword(context.Context, int64, string) error      { return r.err }
 
 type rateLimit struct {
 	allowed   bool
 	err       error
 	remaining time.Duration
+}
+
+type passwordSessions struct{}
+
+func (passwordSessions) InsertSession(context.Context, int64, []byte, time.Time, time.Time, string, string) (domain.Session, error) {
+	return domain.Session{}, nil
+}
+
+func (passwordSessions) FindSessionByHash(context.Context, []byte, time.Time) (domain.Session, error) {
+	return domain.Session{}, nil
+}
+
+func (passwordSessions) TouchSession(context.Context, []byte, time.Time, time.Time) (bool, error) {
+	return false, nil
+}
+
+func (passwordSessions) DeleteOtherSessions(context.Context, int64, []byte) error { return nil }
+
+func (passwordSessions) DeleteSessionByHash(context.Context, []byte) error { return nil }
+
+func (passwordSessions) ListSessions(context.Context, int64) ([]domain.Session, error) {
+	return nil, nil
+}
+
+func (passwordSessions) DeleteSessionByID(context.Context, int64, int64) (bool, error) {
+	return false, nil
 }
 
 type openRegistration bool
@@ -328,6 +355,58 @@ func TestLoginResponses(t *testing.T) {
 				t.Fatalf("%s response %T", tc.name, got)
 			}
 		}
+	}
+}
+
+func TestChangeMyPasswordDistinguishesInvalidPasswordAndUnauthenticated(t *testing.T) {
+	params := domain.Argon2Params{Memory: 8, Iterations: 1, Parallelism: 1, SaltLength: 8, KeyLength: 16}
+	hash, err := domain.HashPassword("correct-password", params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, next := "wrong-password", "replacement-password"
+	request := gen.ChangeMyPasswordRequestObject{Body: &gen.ChangePasswordRequest{CurrentPassword: &current, NewPassword: &next}}
+	h := Handler{Password: app.ChangePassword{Repository: repo{user: domain.User{PasswordHash: hash}}, Sessions: passwordSessions{}, Params: params}}
+	ctx := WithPrincipal(context.Background(), Principal{User: domain.User{ID: 5}})
+	response, err := h.ChangeMyPassword(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalid, ok := response.(gen.ChangeMyPassword400JSONResponse)
+	if !ok || invalid.Code != "invalid_current_password" {
+		t.Fatalf("wrong password response = %#v", response)
+	}
+	response, err = h.ChangeMyPassword(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := response.(gen.ChangeMyPassword401Response); !ok {
+		t.Fatalf("unauthenticated response = %#v", response)
+	}
+}
+
+func TestChangeMyPasswordRateLimitResponse(t *testing.T) {
+	current, next := "correct-password", "replacement-password"
+	request := gen.ChangeMyPasswordRequestObject{Body: &gen.ChangePasswordRequest{CurrentPassword: &current, NewPassword: &next}}
+	params := domain.Argon2Params{Memory: 8, Iterations: 1, Parallelism: 1, SaltLength: 8, KeyLength: 16}
+	hash, err := domain.HashPassword(current, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := Handler{Password: app.ChangePassword{
+		Repository: repo{user: domain.User{PasswordHash: hash}},
+		Sessions:   passwordSessions{},
+		Limiter:    rateLimit{allowed: false, remaining: 45 * time.Second},
+		Params:     params,
+	}}
+	ctx := WithPrincipal(context.Background(), Principal{User: domain.User{ID: 5}})
+	response, err := h.ChangeMyPassword(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	limited, ok := response.(gen.ChangeMyPassword429JSONResponse)
+	if !ok || limited.Body.Details.RetryAfterSeconds != 45 || limited.Headers.RetryAfter == nil || *limited.Headers.RetryAfter != 45 {
+		t.Fatalf("rate limit response = %#v", response)
 	}
 }
 

@@ -69,14 +69,15 @@ export async function request<T>(
 }
 
 export function validatedReturnTo(value: string | null): string {
+  const path = value?.split(/[?#]/, 1)[0].replace(/\/+$/, '') || '/';
   if (
     value === null ||
     value.length > 2048 ||
     !value.startsWith('/') ||
     value.includes('//') ||
     value.includes('\\') ||
-    value === '/login' ||
-    value === '/register'
+    path === '/login' ||
+    path === '/register'
   ) {
     return '/';
   }

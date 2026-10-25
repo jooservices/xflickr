@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/jooservices/xflickr/internal/identity/domain"
 )
@@ -17,7 +19,15 @@ type PasswordRepository interface {
 type ChangePassword struct {
 	Repository PasswordRepository
 	Sessions   SessionRepository
+	Limiter    LoginLimiter
 	Params     domain.Argon2Params
+}
+
+func (u ChangePassword) RetryAfter(ctx context.Context, userID int64) (time.Duration, error) {
+	if u.Limiter == nil {
+		return 0, nil
+	}
+	return u.Limiter.RetryAfter(ctx, fmt.Sprintf("password:%d", userID), "")
 }
 
 func (u ChangePassword) Execute(ctx context.Context, userID int64, currentPassword, newPassword string, currentTokenHash []byte) error {
@@ -32,6 +42,15 @@ func (u ChangePassword) Execute(ctx context.Context, userID int64, currentPasswo
 	}
 	if u.Sessions == nil {
 		return errors.New("identity: session repository is required")
+	}
+	if u.Limiter != nil {
+		allowed, err := u.Limiter.Allow(ctx, fmt.Sprintf("password:%d", userID), "")
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return ErrRateLimited
+		}
 	}
 	user, err := u.Repository.FindByID(ctx, userID)
 	if err != nil {

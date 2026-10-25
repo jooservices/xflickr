@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw/http';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { server } from '../../test/server';
 import { renderApp, userSession } from '../../test/render';
 
@@ -140,8 +140,12 @@ describe('ProfilePage', () => {
     expect(screen.getByTestId('profile-password-current')).toHaveValue('');
   });
 
-  it('shows an error for the current password response', async () => {
-    server.use(http.post('*/me/password', () => new HttpResponse(null, { status: 401 })));
+  it('shows a current-password field error for invalid_current_password', async () => {
+    server.use(
+      http.post('*/me/password', () =>
+        HttpResponse.json({ code: 'invalid_current_password' }, { status: 400 }),
+      ),
+    );
     renderApp({ session: userSession, path: '/profile' });
     fireEvent.change(await screen.findByTestId('profile-password-current'), {
       target: { value: 'bad-password' },
@@ -157,6 +161,82 @@ describe('ProfilePage', () => {
       'current password is not right',
     );
     expect(screen.queryByTestId('shell-session-modal')).not.toBeInTheDocument();
+  });
+
+  it('opens the expired-session dialog when password change returns 401', async () => {
+    server.use(http.post('*/me/password', () => new HttpResponse(null, { status: 401 })));
+    renderApp({ session: userSession, path: '/profile' });
+    fireEvent.change(await screen.findByTestId('profile-password-current'), {
+      target: { value: 'old-password' },
+    });
+    fireEvent.change(screen.getByTestId('profile-password-new'), {
+      target: { value: 'new-password' },
+    });
+    fireEvent.change(screen.getByTestId('profile-password-confirm'), {
+      target: { value: 'new-password' },
+    });
+    fireEvent.click(screen.getByTestId('profile-password-submit'));
+    expect(await screen.findByTestId('shell-session-modal')).toBeInTheDocument();
+    expect(screen.queryByTestId('profile-password-error')).toBeNull();
+  });
+
+  it('blocks navigation while account edits are unsaved and allows discard', async () => {
+    const { router } = renderApp({ session: userSession, path: '/profile' });
+    fireEvent.change(await screen.findByTestId('profile-account-language'), {
+      target: { value: 'vi' },
+    });
+    await router.navigate('/library');
+    expect(await screen.findByTestId('profile-unsaved-dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Leave page'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/library'));
+  });
+
+  it('renders the required timezone and password guidance hooks', async () => {
+    renderApp({ session: userSession, path: '/profile' });
+    expect(await screen.findByTestId('profile-account-timezone')).toBeInTheDocument();
+    expect(screen.getByTestId('profile-password-rules')).toHaveTextContent('8 characters');
+  });
+
+  it('shows a changed-elsewhere notice when another tab updates the account', async () => {
+    renderApp({ session: userSession, path: '/profile' });
+    fireEvent.change(await screen.findByTestId('profile-account-language'), {
+      target: { value: 'vi' },
+    });
+    window.dispatchEvent(new StorageEvent('storage', { key: 'xf.profile.updated', newValue: '1' }));
+    expect(await screen.findByTestId('profile-changed-note')).toHaveTextContent(
+      'This changed in another tab.',
+    );
+  });
+
+  it('keeps the last sessions visible and marks them stale after a failed focus refresh', async () => {
+    let calls = 0;
+    server.use(
+      http.get('*/me/sessions', () => {
+        calls += 1;
+        return calls === 1
+          ? HttpResponse.json({
+              items: [
+                {
+                  id: '1',
+                  current: true,
+                  user_agent_label: 'Current browser',
+                  ip_masked: '203.0.113.x',
+                  last_seen_at: '2026-10-25T10:00:00Z',
+                  created_at: '2026-10-20T10:00:00Z',
+                },
+              ],
+            })
+          : new HttpResponse(null, { status: 500 });
+      }),
+    );
+    renderApp({ session: userSession, path: '/profile' });
+    await screen.findByTestId('profile-session-current');
+    const now = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(now + 61_000);
+    window.dispatchEvent(new Event('focus'));
+    expect(await screen.findByTestId('profile-stale-note')).toBeInTheDocument();
+    expect(screen.getByTestId('profile-session-row-1')).toBeInTheDocument();
+    vi.restoreAllMocks();
   });
 
   it('shows a general error when the password service fails', async () => {
@@ -354,8 +434,8 @@ describe('ProfilePage', () => {
     await screen.findByTestId('profile-session-row-2');
     fireEvent.click(await screen.findByTestId('profile-sessions-revoke-others'));
     fireEvent.click(await screen.findByTestId('profile-confirm-ok'));
-    expect(await screen.findByTestId('profile-error-sessions')).toHaveTextContent(
-      'Could not load Active sessions',
+    expect(await screen.findByTestId('profile-stale-note')).toHaveTextContent(
+      'Showing the last loaded data',
     );
   });
 

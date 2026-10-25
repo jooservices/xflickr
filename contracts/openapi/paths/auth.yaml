@@ -187,8 +187,24 @@ me/password:
       '204':
         description: Password changed and other sessions revoked
       '400':
-        description: Invalid password
+        description: Invalid password or current password
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
       '401':
-        description: Authentication required or current password is incorrect
+        description: Authentication required
       '403':
         description: CSRF token is missing or invalid
+      '429':
+        description: Password change attempts are rate limited
+        headers:
+          Retry-After:
+            description: Seconds until another password change attempt is allowed
+            schema:
+              type: integer
+              minimum: 1
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/auth.yaml#/LoginRateLimited

@@ -222,12 +222,14 @@
   "profile.title": "Profile",
   "profile.account.title": "Account",
   "profile.account.language": "Language",
+  "profile.account.timezone": "Time zone",
   "profile.account.save": "Save changes",
   "profile.password.title": "Password",
   "profile.password.current": "Current password",
   "profile.password.new": "New password",
   "profile.password.confirm": "Confirm new password",
   "profile.password.help": "Other devices are signed out after you change it.",
+  "profile.password.rules.email": "Use a password different from your email.",
   "profile.password.submit": "Change password",
   "profile.password.error.current": "That current password is not right.",
   "profile.sessions.title": "Active sessions",
@@ -251,5 +253,12 @@
   "profile.error.save": "Could not save your profile. Try again.",
   "profile.error.action": "That action could not be completed.",
   "profile.error.load": "Could not load {card}. Check your connection and try again.",
-  "profile.signout": "Sign out"
+  "profile.error.rate-limited": "Too many attempts. Try again in {minutes} min.",
+  "profile.stale": "Showing the last loaded data, updated {time}.",
+  "profile.changed-elsewhere": "This changed in another tab.",
+  "profile.signout": "Sign out",
+  "profile.unsaved": "You have unsaved changes. Leave without saving?",
+  "profile.unsaved.leave": "Leave page",
+  "common.cancel": "Cancel",
+  "common.reload": "Reload"
 }
