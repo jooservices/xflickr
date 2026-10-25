@@ -224,7 +224,9 @@ func cleanupCrawlFixture(pool *pgxpool.Pool, userID int64, suffix string) {
 
 type fixedCredits int
 
-func (c fixedCredits) Capacity(context.Context, int64, time.Duration) (int, error) { return int(c), nil }
+func (c fixedCredits) Capacity(context.Context, int64, time.Duration) (int, error) {
+	return int(c), nil
+}
 
 // TestRequeuedFailedItemRunsThroughPumpAndWorkerToDone proves a failed item
 // returns to pending on requeue, is dispatched only by the pump, and the crawl
