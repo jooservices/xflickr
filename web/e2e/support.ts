@@ -35,6 +35,8 @@ export async function mockApi(page: Page, role: Role | 'anonymous'): Promise<voi
   await page.route(
     (url) => endpoints.includes(url.pathname),
     async (route) => {
+      // A page navigation to /keys is the app itself, not the API call of the same path.
+      if (route.request().resourceType() === 'document') return route.fallback();
       const { pathname } = new URL(route.request().url());
       const json = (body: unknown, status = 200) =>
         route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });

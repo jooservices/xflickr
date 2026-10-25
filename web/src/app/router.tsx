@@ -10,12 +10,14 @@ import { ADMIN_NAV, USER_NAV } from './shells/nav';
 import { LoginPage } from '../pages/login/LoginPage';
 import { RegisterPage } from '../pages/register/RegisterPage';
 import { ProfilePage } from '../pages/profile/ProfilePage';
+import { KeysPage } from '../pages/keys';
 import { SetupPage } from '../pages/setup/SetupPage';
 import { CrawlPage } from '../pages/crawl';
 
 function userPageElement(path: string, labelKey: MessageKey) {
   if (path === '/profile') return <ProfilePage />;
   if (path === '/crawl') return <CrawlPage />;
+  if (path === '/keys') return <KeysPage />;
   return <PlaceholderPage scope="shell" titleKey={labelKey} />;
 }
 

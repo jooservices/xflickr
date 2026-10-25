@@ -33,6 +33,8 @@ describe('user shell', () => {
         expect(screen.getByTestId('profile-page')).toBeInTheDocument();
       } else if (item.id === 'crawl') {
         expect(screen.getByTestId('user-crawl-page')).toBeInTheDocument();
+      } else if (item.id === 'keys') {
+        expect(screen.getByTestId('keys-page')).toBeInTheDocument();
       } else {
         expect(screen.getByTestId('shell-page')).toBeInTheDocument();
       }
