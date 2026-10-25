@@ -76,6 +76,9 @@ type Pump struct {
 	QueueState         QueueStatePublisher
 	ChangeChecks       ChangeCheckScheduler
 	PhotoLane          PhotoLaneDispatcher
+	MediaPressure      interface {
+		Full(context.Context) (bool, error)
+	}
 	QueueStateInterval time.Duration
 }
 
@@ -111,7 +114,11 @@ func (p Pump) RunOnce(ctx context.Context) (int, error) {
 			return 0, err
 		}
 	}
-	dispatched, err := p.Store.Pump(ctx, p.Settings, p.Credits, p.Queue)
+	settings, err := p.settingsUnderPressure(ctx)
+	if err != nil {
+		return 0, err
+	}
+	dispatched, err := p.Store.Pump(ctx, settings, p.Credits, p.Queue)
 	if err != nil {
 		return dispatched, err
 	}
@@ -123,6 +130,21 @@ func (p Pump) RunOnce(ctx context.Context) (int, error) {
 		dispatched += len(photos)
 	}
 	return dispatched, nil
+}
+
+func (p Pump) settingsUnderPressure(ctx context.Context) (PumpSettings, error) {
+	settings := p.Settings
+	if p.MediaPressure == nil {
+		return settings, nil
+	}
+	full, err := p.MediaPressure.Full(ctx)
+	if err != nil {
+		return PumpSettings{}, err
+	}
+	if full {
+		settings.MediaReadyCap = 0
+	}
+	return settings, nil
 }
 
 // Run polls at the required two-second cadence. A transient error delays only

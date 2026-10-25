@@ -31,7 +31,7 @@ create:
             schema:
               $ref: ../schemas/common.yaml#/Error
       '409':
-        description: A valid Flickr key is required to confirm photo sizes
+        description: A valid Flickr key is required or temporary storage is full
         content:
           application/json:
             schema:

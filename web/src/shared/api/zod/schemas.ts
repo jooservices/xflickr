@@ -918,3 +918,13 @@ export const CreateDownloadResponse = zod.object({
   item_count: zod.int(),
   skipped: zod.int(),
 });
+
+/**
+ * Streams download progress, ready downloads, and crawl progress. Supports resuming with Last-Event-ID.
+ * @summary Stream user-scoped progress events
+ */
+export const StreamEventsHeader = zod.object({
+  'Last-Event-ID': zod.string().optional(),
+});
+
+export const StreamEventsResponse = zod.unknown();

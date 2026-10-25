@@ -60,6 +60,23 @@ func TestDownloadsCreateWaitingSizesAndRepositoryError(t *testing.T) {
 	}
 }
 
+func TestDownloadsRejectWhenTemporaryStorageIsFull(t *testing.T) {
+	repo := &downloadsFake{}
+	service := Downloads{
+		Catalog:    catalogapp.DownloadCatalog{Photos: repo},
+		Repository: repo,
+		Pressure:   interface{ Check(context.Context) error }(pressureFailure{}),
+	}
+	_, err := service.Create(context.Background(), CreateDownloadInput{UserID: 1, Kind: mediadomain.DownloadAlbum, Subject: "album"})
+	if !errors.Is(err, ErrTempStorageFull) || repo.calls != 0 {
+		t.Fatalf("Create() err=%v repository calls=%d", err, repo.calls)
+	}
+}
+
+type pressureFailure struct{}
+
+func (pressureFailure) Check(context.Context) error { return ErrTempStorageFull }
+
 func TestDownloadsRejectInvalidSelection(t *testing.T) {
 	for _, input := range []CreateDownloadInput{
 		{},

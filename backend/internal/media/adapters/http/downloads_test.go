@@ -82,4 +82,13 @@ func TestCreateDownloadMapsUseCaseErrors(t *testing.T) {
 	if !ok || response.Code != "flickr_key_required" || response.Message == "" {
 		t.Fatalf("missing key response=%#v", got)
 	}
+	h.Downloads = &downloadServiceFake{err: mediaapp.ErrTempStorageFull}
+	got, err = h.CreateDownload(context.Background(), gen.CreateDownloadRequestObject{Body: &gen.CreateDownloadRequest{Kind: gen.CreateDownloadRequestKindTray}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, ok = got.(gen.CreateDownload409JSONResponse)
+	if !ok || response.Code != "temp_storage_full" {
+		t.Fatalf("storage pressure response=%#v", got)
+	}
 }

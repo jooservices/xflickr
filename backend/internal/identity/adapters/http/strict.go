@@ -107,8 +107,14 @@ var errSharingServedBySharing = errors.New("identity: sharing settings are serve
 
 var errDownloadsServedByMedia = errors.New("identity: downloads are served by the media module")
 
+var errEventsServedByPlatform = errors.New("identity: events are served by the platform SSE adapter")
+
 func (StrictHandler) CreateDownload(context.Context, gen.CreateDownloadRequestObject) (gen.CreateDownloadResponseObject, error) {
 	return nil, errDownloadsServedByMedia
+}
+
+func (StrictHandler) StreamEvents(context.Context, gen.StreamEventsRequestObject) (gen.StreamEventsResponseObject, error) {
+	return nil, errEventsServedByPlatform
 }
 
 func (StrictHandler) PutMeSharing(context.Context, gen.PutMeSharingRequestObject) (gen.PutMeSharingResponseObject, error) {

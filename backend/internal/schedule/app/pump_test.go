@@ -190,6 +190,21 @@ func TestPumpRunPublishesQueueStateImmediatelyAndOnInterval(t *testing.T) {
 	}
 }
 
+func TestPumpBackPressureDisablesMediaDispatch(t *testing.T) {
+	store := &pumpFakeStore{}
+	pump := Pump{Store: store, Credits: fakeCredits{}, Queue: fakeQueue{}, Settings: validPumpSettings(), MediaPressure: pressureStub{full: true}}
+	if _, err := pump.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if store.lastSettings.MediaReadyCap != 0 || store.lastSettings.AIReadyCap != validPumpSettings().AIReadyCap || store.lastSettings.SyncReadyCap != validPumpSettings().SyncReadyCap {
+		t.Fatalf("pump settings under pressure = %+v", store.lastSettings)
+	}
+	pump.MediaPressure = pressureStub{err: errors.New("storage check failed")}
+	if _, err := pump.RunOnce(context.Background()); err == nil {
+		t.Fatal("pump ignored storage pressure check failure")
+	}
+}
+
 func TestPumpRunLogsQueueStatePublicationFailures(t *testing.T) {
 	var output bytes.Buffer
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
@@ -220,6 +235,7 @@ type pumpFakeStore struct {
 	pumps, reclaims     int
 	pumpErr, reclaimErr error
 	reclaimTime         time.Time
+	lastSettings        PumpSettings
 }
 
 type statePublisherStub struct {
@@ -232,10 +248,18 @@ func (s *statePublisherStub) PublishQueueState(context.Context) error {
 	return s.err
 }
 
-func (s *pumpFakeStore) Pump(context.Context, PumpSettings, CreditProvider, queue.JobQueue) (int, error) {
+func (s *pumpFakeStore) Pump(_ context.Context, settings PumpSettings, _ CreditProvider, _ queue.JobQueue) (int, error) {
 	s.pumps++
+	s.lastSettings = settings
 	return 3, s.pumpErr
 }
+
+type pressureStub struct {
+	full bool
+	err  error
+}
+
+func (s pressureStub) Full(context.Context) (bool, error) { return s.full, s.err }
 
 func (s *pumpFakeStore) Reclaim(_ context.Context, _ int, _ time.Duration, now time.Time) (int, error) {
 	s.reclaims++

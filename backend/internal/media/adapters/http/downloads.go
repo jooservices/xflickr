@@ -47,6 +47,9 @@ func (h DownloadHandler) CreateDownload(ctx context.Context, request gen.CreateD
 	if errors.Is(err, mediaapp.ErrNoFlickrKey) {
 		return gen.CreateDownload409JSONResponse(gen.Error{Code: "flickr_key_required", Message: "Connect a Flickr account with a valid API key to confirm photo sizes"}), nil
 	}
+	if errors.Is(err, mediaapp.ErrTempStorageFull) {
+		return gen.CreateDownload409JSONResponse(gen.Error{Code: "temp_storage_full", Message: "Temporary download storage is full"}), nil
+	}
 	if err != nil {
 		return nil, err
 	}

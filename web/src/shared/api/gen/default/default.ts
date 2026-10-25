@@ -1378,3 +1378,123 @@ export const useCreateDownload = <TError = Error, TContext = unknown>(
 > => {
   return useMutation(getCreateDownloadMutationOptions(options), queryClient);
 };
+export type streamEventsResponse200 = {
+  data: string;
+  status: 200;
+};
+
+export type streamEventsResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type streamEventsResponseSuccess = streamEventsResponse200 & {
+  headers: Headers;
+};
+export type streamEventsResponseError = streamEventsResponse401 & {
+  headers: Headers;
+};
+
+export type streamEventsResponse = streamEventsResponseSuccess | streamEventsResponseError;
+
+export const getStreamEventsUrl = () => {
+  return `/events`;
+};
+
+/**
+ * Streams download progress, ready downloads, and crawl progress. Supports resuming with Last-Event-ID.
+ * @summary Stream user-scoped progress events
+ */
+export const streamEvents = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<streamEventsResponse> => {
+  return customFetch<streamEventsResponse>(getStreamEventsUrl(), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getStreamEventsQueryKey = () => {
+  return [`/events`] as const;
+};
+
+export const getStreamEventsQueryOptions = <
+  TData = Awaited<ReturnType<typeof streamEvents>>,
+  TError = void,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof streamEvents>>, TError, TData>>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getStreamEventsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof streamEvents>>> = ({ signal }) =>
+    streamEvents({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof streamEvents>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type StreamEventsQueryResult = NonNullable<Awaited<ReturnType<typeof streamEvents>>>;
+export type StreamEventsQueryError = void;
+
+export function useStreamEvents<TData = Awaited<ReturnType<typeof streamEvents>>, TError = void>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof streamEvents>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof streamEvents>>,
+          TError,
+          Awaited<ReturnType<typeof streamEvents>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useStreamEvents<TData = Awaited<ReturnType<typeof streamEvents>>, TError = void>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof streamEvents>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof streamEvents>>,
+          TError,
+          Awaited<ReturnType<typeof streamEvents>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useStreamEvents<TData = Awaited<ReturnType<typeof streamEvents>>, TError = void>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof streamEvents>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Stream user-scoped progress events
+ */
+
+export function useStreamEvents<TData = Awaited<ReturnType<typeof streamEvents>>, TError = void>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof streamEvents>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getStreamEventsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}

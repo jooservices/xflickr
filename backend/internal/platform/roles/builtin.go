@@ -2,6 +2,7 @@ package roles
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -53,6 +54,7 @@ import (
 	opspostgres "github.com/jooservices/xflickr/internal/platform/ops/adapters/postgres"
 	"github.com/jooservices/xflickr/internal/platform/outbox"
 	"github.com/jooservices/xflickr/internal/platform/queue"
+	platformsse "github.com/jooservices/xflickr/internal/platform/sse"
 	quotahttp "github.com/jooservices/xflickr/internal/quota/adapters/http"
 	quotaPostgres "github.com/jooservices/xflickr/internal/quota/adapters/postgres"
 	quotaRedis "github.com/jooservices/xflickr/internal/quota/adapters/redis"
@@ -143,7 +145,11 @@ func (schedulerRole) Run(ctx context.Context) error {
 	defer quota.start(ctx, slog.Default())()
 	stopHealth := startCrawlHealth(ctx, opspostgres.Store{Pool: pool}, cfg, slog.Default())
 	defer stopHealth()
-	pump, err := newSchedulerPump(pool, quota.Governor, store, queueAdapter, settings)
+	blobs, err := newBlobStore(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	pump, err := newSchedulerPump(pool, quota.Governor, store, queueAdapter, settings, blobs)
 	if err != nil {
 		return err
 	}
@@ -272,23 +278,13 @@ func (mediaRole) Run(ctx context.Context) error {
 		return err
 	}
 	defer pool.Close()
+	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	defer redisClient.Close()
 	assets, err := catalogpostgres.New(pool)
 	if err != nil {
 		return err
 	}
-	var blobs mediaapp.BlobStore
-	switch cfg.Blob.Driver {
-	case "local":
-		blobs, err = medialocal.New(cfg.Blob.LocalDir, cfg.Blob.MaxBytes)
-	case "s3":
-		blobs, err = medias3.New(ctx, medias3.Config{
-			Endpoint: cfg.Blob.S3Endpoint, Region: cfg.Blob.S3Region, Bucket: cfg.Blob.S3Bucket,
-			AccessKey: cfg.Blob.S3AccessKey, SecretKey: cfg.Blob.S3SecretKey,
-			UsePathStyle: cfg.Blob.S3UsePathStyle, MaxBytes: cfg.Blob.MaxBytes, MaxTTL: cfg.Blob.MaxTTL,
-		})
-	default:
-		return fmt.Errorf("media: unsupported blob driver %q", cfg.Blob.Driver)
-	}
+	blobs, err := newBlobStore(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -296,7 +292,8 @@ func (mediaRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	packer := mediaapp.Packer{Blobs: blobs, Repo: mediapostgres.Downloads{Pool: pool}}
+	events := platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"}
+	packer := mediaapp.Packer{Blobs: blobs, Repo: mediapostgres.Downloads{Pool: pool, Events: events}}
 	if err := queueAdapter.RegisterWithOptions("media.pack", func(ctx context.Context, job queue.Job) error {
 		args, err := mediaapp.ParsePackJob(job.Args)
 		if err != nil {
@@ -363,7 +360,7 @@ func (c photoSizesClient) GetSizesClass(ctx context.Context, keyID int64, photoI
 	return sizes, callErr
 }
 
-func newSchedulerPump(pool *pgxpool.Pool, governor quotaRedis.Governor, store scheduleapp.PumpStore, queueAdapter queue.JobQueue, settings scheduleapp.PumpSettings) (scheduleapp.Pump, error) {
+func newSchedulerPump(pool *pgxpool.Pool, governor quotaRedis.Governor, store scheduleapp.PumpStore, queueAdapter queue.JobQueue, settings scheduleapp.PumpSettings, stores ...mediaapp.BlobStore) (scheduleapp.Pump, error) {
 	cycleRepository, err := crawlpostgres.NewCycleRepository(pool)
 	if err != nil {
 		return scheduleapp.Pump{}, err
@@ -373,6 +370,9 @@ func newSchedulerPump(pool *pgxpool.Pool, governor quotaRedis.Governor, store sc
 		return scheduleapp.Pump{}, err
 	}
 	pump := scheduleapp.Pump{Store: store, QueueState: queuepostgres.New(pool), Credits: governor, Queue: queueAdapter, Settings: settings}
+	if len(stores) > 0 && stores[0] != nil {
+		pump.MediaPressure = mediaapp.Pressure{Store: stores[0]}
+	}
 	pump.ChangeChecks = crawlapp.Cycle{Store: cycleRepository, Users: cycleRepository, Settings: settingsapp.New(effectiveSettingsRepository)}
 	keyPool := quotaapp.KeyPool{
 		Interests: personInterests{pool: pool},
@@ -388,6 +388,21 @@ func newSchedulerPump(pool *pgxpool.Pool, governor quotaRedis.Governor, store sc
 		},
 	}
 	return pump, nil
+}
+
+func newBlobStore(ctx context.Context, cfg config.Config) (mediaapp.BlobStore, error) {
+	switch cfg.Blob.Driver {
+	case "local":
+		return medialocal.New(cfg.Blob.LocalDir, cfg.Blob.MaxBytes)
+	case "s3":
+		return medias3.New(ctx, medias3.Config{
+			Endpoint: cfg.Blob.S3Endpoint, Region: cfg.Blob.S3Region, Bucket: cfg.Blob.S3Bucket,
+			AccessKey: cfg.Blob.S3AccessKey, SecretKey: cfg.Blob.S3SecretKey,
+			UsePathStyle: cfg.Blob.S3UsePathStyle, MaxBytes: cfg.Blob.MaxBytes, MaxTTL: cfg.Blob.MaxTTL,
+		})
+	default:
+		return nil, fmt.Errorf("media: unsupported blob driver %q", cfg.Blob.Driver)
+	}
 }
 
 func registerBuiltin(registry *Registry, role Role) {
@@ -443,14 +458,34 @@ func (r APIRole) Run(ctx context.Context) error {
 	defer pool.Close()
 	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	defer redisClient.Close()
-	handler, err := buildConfiguredAPIHandler(pool, redisClient, cfg, r.version)
+	hub := platformsse.NewHub(256)
+	go listenSSEEvents(ctx, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"}, hub)
+	handler, err := buildConfiguredAPIHandlerWithHub(pool, redisClient, cfg, r.version, hub)
 	if err != nil {
 		return err
 	}
 	return r.runServer(ctx, handler)
 }
 
+func listenSSEEvents(ctx context.Context, publisher platformsse.Publisher, hub *platformsse.Hub) {
+	logger := slog.Default()
+	for ctx.Err() == nil {
+		if err := publisher.Listen(ctx, hub); err != nil && ctx.Err() == nil {
+			logger.ErrorContext(ctx, "SSE Redis subscription failed", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+		}
+	}
+}
+
 func buildConfiguredAPIHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, version string) (http.Handler, error) {
+	return buildConfiguredAPIHandlerWithHub(pool, redisClient, cfg, version, platformsse.NewHub(256))
+}
+
+func buildConfiguredAPIHandlerWithHub(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, version string, hub *platformsse.Hub) (http.Handler, error) {
 	if pool == nil {
 		return nil, errors.New("api: postgres database is required")
 	}
@@ -478,12 +513,28 @@ func buildConfiguredAPIHandler(pool *pgxpool.Pool, redisClient redisv9.Universal
 	if err != nil {
 		return nil, err
 	}
-	downloads, err := buildDownloadHandler(pool)
+	var blobs mediaapp.BlobStore
+	if cfg.Blob.Driver != "" {
+		blobs, err = newBlobStore(context.Background(), cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
+	downloads, err := buildDownloadHandlerWithEvents(pool, blobs, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"})
 	if err != nil {
 		return nil, err
 	}
 	opsHandler := opshttp.Handler{Service: ops.Service{Store: opspostgres.Store{Pool: pool}}, ActorID: userIDFromPrincipal}
-	return newAPIRouterWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler), nil
+	eventPublisher := platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"}
+	return newAPIRouterWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}, eventPublisher), nil
+}
+
+func sseUserID(r *http.Request) (int64, bool) {
+	if r == nil {
+		return 0, false
+	}
+	principal, ok := identityhttp.PrincipalFrom(r.Context())
+	return principal.User.ID, ok && principal.User.ID > 0
 }
 
 func buildQuotaHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config) quotahttp.QuotaHandler {
@@ -530,6 +581,10 @@ type apiServer struct {
 	Sharing   sharinghttp.Handler
 	Downloads mediahttp.DownloadHandler
 	Ops       opshttp.Handler
+	Events    interface {
+		Publish(context.Context, platformsse.Event) error
+	}
+	Stream platformsse.Handler
 	planHandler
 }
 
@@ -543,6 +598,42 @@ func (s apiServer) GetAdminOpsStatus(ctx context.Context, request gen.GetAdminOp
 
 func (s apiServer) CreateDownload(ctx context.Context, request gen.CreateDownloadRequestObject) (gen.CreateDownloadResponseObject, error) {
 	return s.Downloads.CreateDownload(ctx, request)
+}
+
+func (s apiServer) GetMeCrawl(ctx context.Context, request gen.GetMeCrawlRequestObject) (gen.GetMeCrawlResponseObject, error) {
+	response, err := s.CrawlHandler.GetMeCrawl(ctx, request)
+	if err != nil || s.Events == nil {
+		return response, err
+	}
+	userID, ok := userIDFromPrincipal(ctx)
+	status, statusOK := response.(gen.GetMeCrawl200JSONResponse)
+	if !ok || !statusOK {
+		return response, nil
+	}
+	data, marshalErr := json.Marshal(status)
+	if marshalErr != nil {
+		return response, nil
+	}
+	if err := s.Events.Publish(ctx, platformsse.Event{UserID: userID, Type: "crawl.progress", Data: data}); err != nil {
+		slog.WarnContext(ctx, "publish crawl progress event failed", "error", err)
+	}
+	return response, nil
+}
+
+func (s apiServer) StreamEvents(ctx context.Context, request gen.StreamEventsRequestObject) (gen.StreamEventsResponseObject, error) {
+	userID, ok := userIDFromPrincipal(ctx)
+	if !ok {
+		return gen.StreamEvents401Response{}, nil
+	}
+	lastID := ""
+	if request.Params.LastEventID != nil {
+		lastID = *request.Params.LastEventID
+	}
+	body, err := s.Stream.Stream(ctx, userID, lastID)
+	if err != nil {
+		return nil, err
+	}
+	return streamResponse{Body: body}, nil
 }
 
 type planHandler struct{ schedulehttp.Handler }
@@ -565,11 +656,8 @@ func newAPIRouterWithQuota(identity identityhttp.Handler, keys accountshttp.KeyH
 	return newAPIRouterWithServices(identity, keys, connect, plans, crawl, quota, sharing, mediahttp.DownloadHandler{})
 }
 
-func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawl crawlhttp.CrawlHandler, quota quotahttp.QuotaHandler, sharing sharinghttp.Handler, downloads mediahttp.DownloadHandler, opsHandlers ...opshttp.Handler) http.Handler {
+func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawl crawlhttp.CrawlHandler, quota quotahttp.QuotaHandler, sharing sharinghttp.Handler, downloads mediahttp.DownloadHandler, options ...any) http.Handler {
 	var opsHandler opshttp.Handler
-	if len(opsHandlers) > 0 {
-		opsHandler = opsHandlers[0]
-	}
 	router := chi.NewRouter()
 	serveWebAssets(router, os.Getenv("XFLICKR_WEB_DIR"))
 	router.Use(func(next http.Handler) http.Handler {
@@ -580,7 +668,24 @@ func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.K
 	router.Use(identityhttp.RequestBodyLimit)
 	router.Use(identityhttp.CSRF)
 	router.Use(identityhttp.ProtectRoutes(identity.Sessions, accessResolver(router)))
-	strict := gen.NewStrictHandlerWithOptions(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, Ops: opsHandler, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
+	var streamHandler platformsse.Handler
+	var publisher interface {
+		Publish(context.Context, platformsse.Event) error
+	}
+	for _, option := range options {
+		if ops, ok := option.(opshttp.Handler); ok {
+			opsHandler = ops
+		}
+		if events, ok := option.(platformsse.Handler); ok {
+			streamHandler = events
+		}
+		if events, ok := option.(interface {
+			Publish(context.Context, platformsse.Event) error
+		}); ok {
+			publisher = events
+		}
+	}
+	strict := gen.NewStrictHandlerWithOptions(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, Ops: opsHandler, Events: publisher, Stream: streamHandler, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		identityhttp.MaintainSessionCookies(identity.Sessions),
 	}, gen.StrictHTTPServerOptions{RequestErrorHandlerFunc: badRequest, ResponseErrorHandlerFunc: internalError})
@@ -595,14 +700,30 @@ func buildSharingHandler(pool *pgxpool.Pool) (sharinghttp.Handler, error) {
 	return sharinghttp.Handler{Change: sharingapp.Change{Repository: repository}, ActorID: userIDFromPrincipal}, nil
 }
 
-func buildDownloadHandler(pool *pgxpool.Pool) (mediahttp.DownloadHandler, error) {
+func buildDownloadHandler(pool *pgxpool.Pool, stores ...mediaapp.BlobStore) (mediahttp.DownloadHandler, error) {
+	var store mediaapp.BlobStore
+	if len(stores) > 0 {
+		store = stores[0]
+	}
+	return buildDownloadHandlerWithEvents(pool, store, nil)
+}
+
+type downloadEventPublisher interface {
+	Publish(context.Context, platformsse.Event) error
+}
+
+func buildDownloadHandlerWithEvents(pool *pgxpool.Pool, store mediaapp.BlobStore, events downloadEventPublisher) (mediahttp.DownloadHandler, error) {
 	jobs, err := queue.NewRiver(pool, nil)
 	if err != nil {
 		return mediahttp.DownloadHandler{}, err
 	}
 	catalogRepository := catalogdownloadspostgres.Repository{Pool: pool}
-	repository := mediapostgres.Downloads{Pool: pool, Jobs: jobs}
-	return mediahttp.DownloadHandler{Downloads: mediaapp.Downloads{Catalog: catalogapp.DownloadCatalog{Photos: catalogRepository}, Repository: repository}, Principal: userIDFromPrincipal}, nil
+	repository := mediapostgres.Downloads{Pool: pool, Jobs: jobs, Events: events}
+	var pressure interface{ Check(context.Context) error }
+	if store != nil {
+		pressure = mediaapp.Pressure{Store: store}
+	}
+	return mediahttp.DownloadHandler{Downloads: mediaapp.Downloads{Catalog: catalogapp.DownloadCatalog{Photos: catalogRepository}, Repository: repository, Pressure: pressure}, Principal: userIDFromPrincipal}, nil
 }
 
 func buildCrawlHandler(pool *pgxpool.Pool) (crawlhttp.CrawlHandler, error) {

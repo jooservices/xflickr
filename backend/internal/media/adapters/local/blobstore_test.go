@@ -170,6 +170,21 @@ func TestBlobStoreUsageSkipsSymlinksAndFullWithoutCap(t *testing.T) {
 	}
 }
 
+func TestFilesystemPressureThreshold(t *testing.T) {
+	for _, test := range []struct {
+		available uint64
+		full      bool
+	}{
+		{available: 11, full: false},
+		{available: 10, full: false},
+		{available: 9, full: true},
+	} {
+		if got := filesystemUsageAbove90Percent(100, test.available); got != test.full {
+			t.Errorf("available blocks %d: full=%v, want %v", test.available, got, test.full)
+		}
+	}
+}
+
 type brokenReader struct{}
 
 func (brokenReader) Read([]byte) (int, error) { return 0, errors.New("read failed") }

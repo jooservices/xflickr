@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -13,12 +14,16 @@ import (
 	mediaapp "github.com/jooservices/xflickr/internal/media/app"
 	mediadomain "github.com/jooservices/xflickr/internal/media/domain"
 	"github.com/jooservices/xflickr/internal/platform/queue"
+	platformsse "github.com/jooservices/xflickr/internal/platform/sse"
 	quotadomain "github.com/jooservices/xflickr/internal/quota/domain"
 )
 
 type Downloads struct {
-	Pool *pgxpool.Pool
-	Jobs queue.JobQueue
+	Pool   *pgxpool.Pool
+	Jobs   queue.JobQueue
+	Events interface {
+		Publish(context.Context, platformsse.Event) error
+	}
 }
 
 var (
@@ -133,7 +138,23 @@ func (r Downloads) SettleItem(ctx context.Context, downloadID, photoID int64, st
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("media: commit item settlement: %w", err)
 	}
+	r.publishProgress(ctx, downloadID)
 	return nil
+}
+
+func (r Downloads) publishProgress(ctx context.Context, downloadID int64) {
+	if r.Events == nil {
+		return
+	}
+	var userID, total, settled int64
+	if err := r.Pool.QueryRow(ctx, `SELECT user_id,(SELECT count(*) FROM download_items WHERE download_id=$1),(SELECT count(*) FROM download_items WHERE download_id=$1 AND state IN ('ready','failed')) FROM downloads WHERE id=$1`, downloadID).Scan(&userID, &total, &settled); err != nil {
+		slog.WarnContext(ctx, "load download progress event failed", "download_id", downloadID, "error", err)
+		return
+	}
+	data, _ := json.Marshal(map[string]int64{"download_id": downloadID, "completed": settled, "total": total})
+	if err := r.Events.Publish(ctx, platformsse.Event{UserID: userID, Type: "download.progress", Data: data}); err != nil {
+		slog.WarnContext(ctx, "publish download progress event failed", "download_id", downloadID, "error", err)
+	}
 }
 
 // CompletePack records temporary part links and marks the download terminal
@@ -167,6 +188,16 @@ func (r Downloads) CompletePack(ctx context.Context, downloadID int64, status st
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("media: commit ZIP completion: %w", err)
 	}
+	if r.Events != nil {
+		var userID int64
+		if err := r.Pool.QueryRow(ctx, `SELECT user_id FROM downloads WHERE id=$1`, downloadID).Scan(&userID); err != nil {
+			return fmt.Errorf("media: load ready download owner: %w", err)
+		}
+		data, _ := json.Marshal(map[string]any{"download_id": downloadID, "status": status})
+		if err := r.Events.Publish(ctx, platformsse.Event{UserID: userID, Type: "download.ready", Data: data}); err != nil {
+			slog.WarnContext(ctx, "publish download ready event failed", "download_id", downloadID, "error", err)
+		}
+	}
 	return nil
 }
 
@@ -196,6 +227,12 @@ func (r Downloads) Create(ctx context.Context, download mediadomain.Download, ca
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return mediadomain.Download{}, fmt.Errorf("media: commit download: %w", err)
+	}
+	if r.Events != nil {
+		data, _ := json.Marshal(map[string]int64{"download_id": download.ID, "completed": 0, "total": int64(len(download.Items))})
+		if err := r.Events.Publish(ctx, platformsse.Event{UserID: download.UserID, Type: "download.progress", Data: data}); err != nil {
+			slog.WarnContext(ctx, "publish initial download progress event failed", "download_id", download.ID, "error", err)
+		}
 	}
 	return download, nil
 }

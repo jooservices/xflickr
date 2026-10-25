@@ -1,5 +1,7 @@
 # Documentation
 
+- [Download progress events](download-progress.md)
+
 - [Sharing settings and observations](sharing.md)
 - [Ops monitoring](ops-monitoring.md) — crawl health log line, admin status
   endpoint, OpenObserve stream and alerts.

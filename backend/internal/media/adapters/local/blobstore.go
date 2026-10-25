@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jooservices/xflickr/internal/media/app"
@@ -215,14 +216,30 @@ func (s *BlobStore) Usage(ctx context.Context) (int64, error) {
 }
 
 func (s *BlobStore) Full(ctx context.Context) (bool, error) {
-	if s == nil || s.maxBytes <= 0 {
-		return false, nil
+	if s == nil || s.root == "" || ctx == nil {
+		return false, errors.New("media: invalid capacity request")
 	}
-	usage, err := s.Usage(ctx)
-	if err != nil {
-		return false, err
+	if s.maxBytes > 0 {
+		usage, err := s.Usage(ctx)
+		if err != nil {
+			return false, err
+		}
+		if usage >= s.maxBytes {
+			return true, nil
+		}
 	}
-	return usage >= s.maxBytes, nil
+	var stats syscall.Statfs_t
+	if err := syscall.Statfs(s.root, &stats); err != nil {
+		return false, fmt.Errorf("media: inspect blob filesystem: %w", err)
+	}
+	if stats.Blocks == 0 {
+		return false, errors.New("media: blob filesystem has no blocks")
+	}
+	return filesystemUsageAbove90Percent(stats.Blocks, stats.Bavail), nil
+}
+
+func filesystemUsageAbove90Percent(totalBlocks, availableBlocks uint64) bool {
+	return totalBlocks > 0 && availableBlocks*10 < totalBlocks
 }
 
 type contextReader struct {

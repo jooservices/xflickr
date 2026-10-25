@@ -68,6 +68,8 @@ paths:
     $ref: ./paths/ops.yaml#/status
   /downloads:
     $ref: ./paths/downloads.yaml#/create
+  /events:
+    $ref: ./paths/events.yaml#/stream
 components:
   schemas:
     AuthConfig:

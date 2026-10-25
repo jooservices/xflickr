@@ -38,6 +38,7 @@ type CreateDownloadInput struct {
 type Downloads struct {
 	Catalog    catalogapp.DownloadCatalog
 	Repository DownloadRepository
+	Pressure   interface{ Check(context.Context) error }
 	Now        func() time.Time
 	TTL        time.Duration
 }
@@ -48,6 +49,11 @@ func (s Downloads) Create(ctx context.Context, input CreateDownloadInput) (media
 	}
 	if s.Catalog.Photos == nil {
 		return mediadomain.Download{}, ErrInvalidDownloadRequest
+	}
+	if s.Pressure != nil {
+		if err := s.Pressure.Check(ctx); err != nil {
+			return mediadomain.Download{}, err
+		}
 	}
 	candidates, err := s.Catalog.Candidates(ctx, string(input.Kind), input.Subject, input.PhotoIDs)
 	if err != nil {

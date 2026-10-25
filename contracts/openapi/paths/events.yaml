@@ -1,0 +1,22 @@
+stream:
+  get:
+    operationId: streamEvents
+    summary: Stream user-scoped progress events
+    description: Streams download progress, ready downloads, and crawl progress. Supports resuming with Last-Event-ID.
+    security:
+      - SessionCookie: []
+    parameters:
+      - in: header
+        name: Last-Event-ID
+        schema:
+          type: string
+        required: false
+    responses:
+      '200':
+        description: Server-sent event stream
+        content:
+          text/event-stream:
+            schema:
+              type: string
+      '401':
+        description: Authentication required

@@ -132,6 +132,13 @@ guide feature implementation; operational environment rules live in
 - Download originals only as temporary files on the configured BlobStore
   location. Use recorded size URLs so a download does not spend another Flickr
   API call.
+- Stream user-scoped `download.progress`, `download.ready`, and
+  `crawl.progress` events over authenticated `GET /events`. Event frames carry
+  IDs so clients can resume with `Last-Event-ID`; Redis pub/sub distributes
+  events to each API instance.
+- Apply download back-pressure when the BlobStore is full or its local
+  filesystem is more than 90% used. Reject newly requested downloads with
+  `temp_storage_full` and stop pumping media work until capacity is available.
 - Verify downloaded files before packaging or syncing. A ZIP link is temporary;
   delete its files when the link expires. For cloud sync, delete temporary files
   after upload completes or is abandoned.

@@ -53,6 +53,7 @@ components:
       - internal/platform/ops/**
       - internal/platform/outbox/**
       - internal/platform/queue/**
+      - internal/platform/sse/**
   # Standalone fake Flickr service used by contract and E2E tests.
   fakeflickr:        { in: internal/fakeflickr/** }
   # Composition root: wires module adapters into runnable roles.
