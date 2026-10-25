@@ -130,17 +130,18 @@ unset OPENOBSERVE_PASSWORD
 printf 'OpenObserve crawl health and per-key events: ok\n'
 # Sweep every route of the app in a real browser against the deployed container: any uncaught exception, console
 # error, failed request, HTML where JSON was expected or error page fails the deploy. The sweep only reads.
-# XFLICKR_SMOKE_EMAIL and XFLICKR_SMOKE_PASSWORD (an existing admin) enable the signed-in sweep of every screen;
-# without them the sweep covers the public screens and the sign-in redirect of every other route.
-rm -rf "$ROOT/web/.e2e-state"
-sweep_env=(E2E_BASE_URL="$BASE_URL")
-if [[ -n "${XFLICKR_SMOKE_EMAIL:-}" && -n "${XFLICKR_SMOKE_PASSWORD:-}" ]]; then
-	sweep_env+=(E2E_ADMIN_EMAIL="$XFLICKR_SMOKE_EMAIL" E2E_ADMIN_PASSWORD="$XFLICKR_SMOKE_PASSWORD")
-	printf 'Route sweep: signed in as the smoke admin.\n'
-else
-	sweep_env+=(E2E_ANONYMOUS=1)
-	printf 'Route sweep: anonymous (set XFLICKR_SMOKE_EMAIL and XFLICKR_SMOKE_PASSWORD for the signed-in sweep).\n'
+if [[ -z "${XFLICKR_SMOKE_EMAIL:-}" || -z "${XFLICKR_SMOKE_PASSWORD:-}" ]]; then
+	printf 'Route sweep requires XFLICKR_SMOKE_EMAIL and XFLICKR_SMOKE_PASSWORD for an existing develop admin.\n' >&2
+	exit 1
 fi
+
+rm -rf "$ROOT/web/.e2e-state"
+sweep_env=(
+	E2E_BASE_URL="$BASE_URL"
+	E2E_ADMIN_EMAIL="$XFLICKR_SMOKE_EMAIL"
+	E2E_ADMIN_PASSWORD="$XFLICKR_SMOKE_PASSWORD"
+)
+printf 'Route sweep: signed in as the smoke admin.\n'
 if ! env "${sweep_env[@]}" "$SCRIPT_DIR/playwright.sh" e2e/99-route-sweep.spec.ts; then
 	printf 'Route sweep failed: a screen of the deployed app is broken.\n' >&2
 	exit 1

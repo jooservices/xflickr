@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	redisv9 "github.com/redis/go-redis/v9"
@@ -101,10 +103,12 @@ func TestCrawlWorkerRunsSyncJobAgainstFakeFlickr(t *testing.T) {
 	// One job is one page: the photo probe advances the item to the favorite
 	// probe (pending), which the pump dispatches again as a second job.
 	waitItemState(t, ctx, pool, itemID, "pending")
+	waitRiverJobState(t, ctx, pool, itemID, "completed")
 	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready' WHERE id=$1`, itemID); err != nil {
 		t.Fatal(err)
 	}
 	enqueueCrawlJob(t, ctx, pool, adapter, itemID, person)
+	waitRiverJobState(t, ctx, pool, itemID, "completed")
 	waitItemState(t, ctx, pool, itemID, "done")
 	var followUps int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM work_items WHERE user_id=$1 AND kind='photos' AND subject_key=$2`, userID, person).Scan(&followUps); err != nil || followUps != 1 {
@@ -192,6 +196,25 @@ func waitItemState(t *testing.T, ctx context.Context, pool *pgxpool.Pool, itemID
 		var lastError *string
 		_ = pool.QueryRow(ctx, `SELECT last_error FROM work_items WHERE id=$1`, itemID).Scan(&lastError)
 		t.Fatalf("work item %d state = %q (last_error %v), want %q", itemID, state, lastError, want)
+	}
+}
+
+func waitRiverJobState(t *testing.T, ctx context.Context, pool *pgxpool.Pool, itemID int64, want string) {
+	t.Helper()
+	var state string
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		err := pool.QueryRow(ctx, `SELECT state FROM river_job WHERE args->'args'->>'work_item_id'=$1 ORDER BY id DESC LIMIT 1`, fmt.Sprint(itemID)).Scan(&state)
+		if err == nil && state == want {
+			return
+		}
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			t.Fatal(err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("River job for work item %d state = %q, want %q (query error %v)", itemID, state, want, err)
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
 }
 

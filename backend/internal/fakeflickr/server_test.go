@@ -100,6 +100,10 @@ func TestFakeFlickrContractForTypedMethods(t *testing.T) {
 	if err != nil || len(contacts.Items) != 2 || contacts.Items[0].NSID != "10000001@N00" {
 		t.Fatalf("root contacts=%+v err=%v", contacts, err)
 	}
+	contactPhotos, err := c.PhotosGetContactsPhotos(ctx, creds, flickr.ContactsPhotosOptions{Count: 50})
+	if err != nil || len(contactPhotos) != 1 || contactPhotos[0].Owner != "10000001@N00" {
+		t.Fatalf("root contacts photos=%+v err=%v, want a photo owned by direct contact 10000001@N00", contactPhotos, err)
+	}
 	frontier := []string{"10000000@N00"}
 	levels := [][]string{{"10000000@N00"}, {"10000001@N00", "10000002@N00"}, {"10000003@N00", "10000004@N00"}, {"10000005@N00", "10000006@N00"}}
 	for depth := 1; depth <= 3; depth++ {

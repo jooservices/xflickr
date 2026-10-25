@@ -15,13 +15,23 @@ test.describe.serial('crawl on the real stack', () => {
     watch.expectClean('/crawl');
   });
 
-  test('counts the connected account as the first contact of the crawl', async ({ page }) => {
+  test('shows crawl progress after account connection', async ({ page }) => {
     const watch = monitor(page);
     await page.goto('/crawl');
-    // The crawl starts when the Flickr account is connected; the Crawl screen reports the person it begins with.
-    await expect(page.getByTestId('user-crawl-depth-column-0')).toContainText('1', {
-      timeout: 30_000,
-    });
+    await expect(page.getByTestId('user-crawl-depth-column-0').locator('span').nth(1)).toHaveText(
+      '1',
+    );
+    // Account connection starts the crawl. Confirm the real worker completed work for this user.
+    await expect
+      .poll(async () => {
+        const response = await page.request.get('/me/crawl');
+        expect(response.status()).toBe(200);
+        const body = (await response.json()) as {
+          facets: Array<{ done: number }>;
+        };
+        return body.facets.reduce((sum, facet) => sum + facet.done, 0);
+      })
+      .toBeGreaterThan(0);
     watch.expectClean('/crawl progress');
   });
 
@@ -45,17 +55,15 @@ test.describe.serial('crawl on the real stack', () => {
     const watch = monitor(page);
     await page.goto('/crawl');
     await expect(page.getByTestId('user-crawl-page')).toBeVisible();
-    // The Crawl screen has no pause control yet, so the journey calls the endpoints the way a control will.
     const nsid = '10000000@N00';
     const paused = await apiWrite(page, 'PUT', '/me/crawl/pause', { nsid });
-    expect([204, 404], `pause answered ${String(paused.status)}`).toContain(paused.status);
+    expect(paused.status, 'pause endpoint must succeed').toBe(204);
     const resumed = await apiWrite(page, 'PUT', '/me/crawl/resume', { nsid });
-    expect([204, 404], `resume answered ${String(resumed.status)}`).toContain(resumed.status);
+    expect(resumed.status, 'resume endpoint must succeed').toBe(204);
+
     await page.reload();
     await expect(page.getByTestId('user-crawl-page')).toBeVisible();
     await expectNoErrorPage(page, '/crawl after pause and resume');
-    expect(
-      watch.problems.filter((problem) => !/HTTP PUT \/me\/crawl\/(pause|resume) 404/.test(problem)),
-    ).toEqual([]);
+    watch.expectClean('/crawl pause and resume');
   });
 });

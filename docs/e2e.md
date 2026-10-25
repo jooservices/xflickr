@@ -35,13 +35,14 @@ The first registered user is the admin. The stack hands the specs `E2E_BASE_URL`
 | `01-auth.spec.ts` | Register the first user, sign out and in, wrong password (clear error, email kept), session expiry. |
 | `02-keys.spec.ts` | Empty state, an invalid key (fakeflickr answers error 100; the dialog stays open with the input kept), a valid key and its usage. |
 | `03-flickr-account.spec.ts` | Connect through fakeflickr OAuth: authorize, callback, the account is shown. |
-| `04-crawl.spec.ts` | Progress by depth, the connected account counted, change depth (survives a reload), pause and resume. |
+| `04-crawl.spec.ts` | Confirms the connected account and completed crawl work appear in Crawl status, changes depth (survives a reload), and verifies pause/resume responses. |
 | `05-profile.spec.ts` | The profile page. |
 | `99-route-sweep.spec.ts` | Every route at desktop and 390 px; sign-in, keys and crawl in light and dark at both widths (no sideways scroll, no overlapping controls). |
 
-The Crawl screen has no start, pause or resume control yet, and the contract has no start endpoint: the crawl
-starts when the account is connected, and pause/resume are exercised through `PUT /me/crawl/pause|resume`.
-When the controls land, add their clicks to `04-crawl.spec.ts`.
+The Crawl screen has no start, pause or resume control yet, and the contract has no start endpoint. Connecting an
+account starts its crawl; the journey checks the account at depth 0 and completed work in the real crawl status.
+Contact pause and resume are covered through the existing `PUT /me/crawl/pause|resume` contract. When screen
+controls are delivered, move these actions into `04-crawl.spec.ts` through the UI.
 
 ## The monitor
 
@@ -73,8 +74,7 @@ anything the monitor collects. The `/login` and `/register` screens are visited 
 
 ## Deploy smoke
 
-`docker/scripts/develop-smoke.sh` (run after every `make develop-up`) ends with the route sweep against the
+`docker/scripts/develop-smoke.sh` (run after every `make develop-up`) ends with the signed-in route sweep against the
 deployed container, so a deploy with a broken screen fails. Set `XFLICKR_SMOKE_EMAIL` and
-`XFLICKR_SMOKE_PASSWORD` (an existing admin of the develop app) for the signed-in sweep of every screen. Without
-them it sweeps as a visitor: the public screens, and the other routes with their `401` answers tolerated. The
-sweep only reads; it creates nothing in the live database.
+`XFLICKR_SMOKE_PASSWORD` to an existing admin of the develop app before running the smoke; it fails loudly when
+either value is missing. The sweep only reads; it creates nothing in the live database.

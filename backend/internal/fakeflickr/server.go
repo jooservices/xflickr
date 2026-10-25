@@ -260,7 +260,16 @@ func (s *Server) response(method string, r *http.Request) (map[string]any, bool)
 	case "contacts.getList", "contacts.getPublicList":
 		return page("contacts", "contact", contacts, len(contacts)), true
 	case "photos.getContactsPhotos":
-		return photoPage("photos", photoRows), true
+		rows := make([]any, 0)
+		for _, contact := range s.dataset.Contacts {
+			if contact.Owner != person.NSID {
+				continue
+			}
+			for _, photo := range s.photosFor(contact.NSID) {
+				rows = append(rows, s.photoJSON(photo, r))
+			}
+		}
+		return photoPage("photos", rows), true
 	case "photos.getSizes":
 		return map[string]any{"stat": "ok", "sizes": map[string]any{"canblog": 0, "canprint": 0, "candownload": 1, "size": []any{s.sizeJSON(photo, r, "Square", 75, 75), s.sizeJSON(photo, r, "Small", 240, 160), s.sizeJSON(photo, r, "Large", 1200, 800), s.sizeJSON(photo, r, "Original", 2400, 1600)}}}, true
 	case "photos.getInfo":
