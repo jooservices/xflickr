@@ -103,7 +103,7 @@ func TestContactsPhotosFlagsSeveralPeopleForChecks(t *testing.T) {
 	}
 	for i, owner := range []string{"a", "b"} {
 		work := result.Work[i]
-		if work.Kind != "check" || work.Subject != owner || work.Method != "flickr.people.getPhotos" || work.CheckpointAt != 44 || work.Params["per_page"] != "1" {
+		if work.Kind != "check" || work.Subject != owner || work.Method != "flickr.people.getPhotos" || work.CheckpointAt != 44 || work.Params["per_page"] != "1" || !work.Reopen {
 			t.Fatalf("flagged check %d = %#v", i, work)
 		}
 	}

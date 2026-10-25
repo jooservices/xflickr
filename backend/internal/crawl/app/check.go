@@ -82,7 +82,7 @@ func (ContactsPhotos) Handle(_ context.Context, page domain.Page) (domain.Result
 	}
 	result := domain.Result{}
 	for _, person := range people {
-		result.Work = append(result.Work, domain.WorkSpec{Kind: "check", Subject: person, Method: "flickr.people.getPhotos", CheckpointAt: page.Item.Cursor.CheckpointAt, Params: map[string]string{
+		result.Work = append(result.Work, domain.WorkSpec{Kind: "check", Subject: person, Method: "flickr.people.getPhotos", CheckpointAt: page.Item.Cursor.CheckpointAt, Reopen: true, Params: map[string]string{
 			"user_id": person, "min_upload_date": "0", "min_fave_date": "0", "per_page": "1",
 		}})
 	}

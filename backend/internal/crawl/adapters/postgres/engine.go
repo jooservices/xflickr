@@ -176,6 +176,25 @@ func (w workTx) Lock(ctx context.Context, id int64) (domain.Item, error) {
 }
 
 func (w workTx) Enqueue(ctx context.Context, work app.NewWork) error {
+	if work.Kind == "check" && work.UserID > 0 {
+		var lastSeen, lastFavorite int64
+		err := w.tx.QueryRow(ctx, `SELECT
+			COALESCE(floor(extract(epoch FROM last_seen_at))::bigint, 0),
+			COALESCE(floor(extract(epoch FROM last_fave_at))::bigint, 0)
+			FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, work.UserID, work.Subject).Scan(&lastSeen, &lastFavorite)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("crawl: read check checkpoints: %w", err)
+		}
+		if err == nil {
+			if work.Cursor.Params == nil {
+				work.Cursor.Params = make(map[string]string)
+			}
+			work.Cursor.Params["user_id"] = work.Subject
+			work.Cursor.Params["min_upload_date"] = fmt.Sprint(lastSeen)
+			work.Cursor.Params["min_fave_date"] = fmt.Sprint(lastFavorite)
+			work.Cursor.Params["per_page"] = "1"
+		}
+	}
 	cursor, err := json.Marshal(work.Cursor)
 	if err != nil {
 		return fmt.Errorf("crawl: encode cursor: %w", err)
@@ -196,6 +215,11 @@ func (w workTx) Enqueue(ctx context.Context, work app.NewWork) error {
 	_, err = w.tx.Exec(ctx, query, work.Kind, work.Subject, userID, work.Depth, cursor)
 	if err != nil {
 		return fmt.Errorf("crawl: enqueue work item: %w", err)
+	}
+	if work.Kind == "check" && work.UserID > 0 {
+		if _, err := w.tx.Exec(ctx, `UPDATE crawl_interests SET last_checked_at=now() WHERE user_id=$1 AND person_nsid=$2`, work.UserID, work.Subject); err != nil {
+			return fmt.Errorf("crawl: mark change check queued: %w", err)
+		}
 	}
 	return nil
 }

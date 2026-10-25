@@ -38,6 +38,15 @@ type checkIncrementalFlickr struct {
 	nextID  int64
 }
 
+type contactsPhotosFlagFlickr struct{}
+
+func (contactsPhotosFlagFlickr) Call(_ context.Context, request crawlapp.Request) (json.RawMessage, error) {
+	if request.Method != "flickr.photos.getContactsPhotos" {
+		return nil, fmt.Errorf("unexpected Flickr request %s", request.Method)
+	}
+	return json.RawMessage(`{"photos":{"photo":[{"owner":"flagged-person"}]}}`), nil
+}
+
 func (f *checkIncrementalFlickr) Call(_ context.Context, request crawlapp.Request) (json.RawMessage, error) {
 	f.calls = append(f.calls, request)
 	if request.Params["per_page"] == "1" {
@@ -366,6 +375,83 @@ func TestChangeCheckFindsPhotoAndCrawlsOneIncrementalPage(t *testing.T) {
 	}
 	if !lastSeen.Equal(checkpoint) {
 		t.Fatalf("last seen checkpoint = %s, want %s", lastSeen, checkpoint)
+	}
+}
+
+func TestContactsPhotosReopensCheckWithStoredCheckpoints(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	person := "flagged-person"
+	account := "contacts-account-" + suffix
+	lastSeen := time.Date(2025, 4, 5, 6, 7, 8, 0, time.UTC)
+	lastFavorite := time.Date(2025, 5, 6, 7, 8, 9, 0, time.UTC)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, userID, person)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,last_seen_at,last_fave_at) VALUES($1,$2,0,'test',$3,$4)`, userID, person, lastSeen, lastFavorite); err != nil {
+		t.Fatal(err)
+	}
+	checkCursor, err := json.Marshal(domain.Cursor{Page: 1, Method: "flickr.people.getPhotos"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var checkItemID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,depth,cursor) VALUES('check',$1,$2,'done',0,$3) RETURNING id`, person, userID, checkCursor).Scan(&checkItemID); err != nil {
+		t.Fatal(err)
+	}
+	contactsCursor, err := json.Marshal(domain.Cursor{Page: 1, Method: "flickr.photos.getContactsPhotos", CheckpointAt: time.Now().Unix(), Params: map[string]string{"user_id": account, "count": "50"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contactsItemID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,depth,cursor) VALUES('contacts_photos',$1,$2,'ready',0,$3) RETURNING id`, account, userID, contactsCursor).Scan(&contactsItemID); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewEngine(pool, func(conn Conn) crawlapp.CatalogWriter {
+		repo, repoErr := catalogpg.New(conn)
+		if repoErr != nil {
+			t.Fatal(repoErr)
+		}
+		return repo
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := crawlapp.NewRegistry()
+	for _, facet := range []domain.Facet{crawlapp.ChangeCheck{}, crawlapp.ContactsPhotos{}} {
+		if err := registry.Register(facet); err != nil {
+			t.Fatal(err)
+		}
+	}
+	engine := &crawlapp.Engine{Registry: registry, Store: store, Units: store, Keys: intKeys{}, Governor: intGovernor{}, Flickr: contactsPhotosFlagFlickr{}, Settings: photosFavoritesSettings{maxDepth: 1}}
+	if err := engine.Handle(ctx, contactsItemID); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	var rawCursor []byte
+	if err := pool.QueryRow(ctx, `SELECT state,cursor FROM work_items WHERE id=$1`, checkItemID).Scan(&state, &rawCursor); err != nil {
+		t.Fatal(err)
+	}
+	var gotCursor domain.Cursor
+	if err := json.Unmarshal(rawCursor, &gotCursor); err != nil {
+		t.Fatal(err)
+	}
+	if state != domain.StatePending {
+		t.Fatalf("existing check state = %q, want pending", state)
+	}
+	if gotCursor.Params["min_upload_date"] != fmt.Sprint(lastSeen.Unix()) || gotCursor.Params["min_fave_date"] != fmt.Sprint(lastFavorite.Unix()) {
+		t.Fatalf("reopened check cursor params = %#v, want stored checkpoints", gotCursor.Params)
+	}
+	var lastChecked time.Time
+	if err := pool.QueryRow(ctx, `SELECT last_checked_at FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, userID, person).Scan(&lastChecked); err != nil {
+		t.Fatal(err)
+	}
+	if lastChecked.IsZero() {
+		t.Fatal("last_checked_at was not stamped when contacts photos flagged the person")
 	}
 }
 
