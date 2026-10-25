@@ -282,7 +282,7 @@ const maxSnooze = time.Hour
 // Snooze returns an error that makes River run the job again after d without
 // consuming an attempt.
 func Snooze(d time.Duration) error {
-	return river.JobSnooze(min(max(d, time.Second), maxSnooze))
+	return river.JobSnooze(min(max(d, time.Second), maxSnooze)) //nolint:wrapcheck // River recognises the snooze error by its concrete type.
 }
 
 type dispatchWorker struct {
