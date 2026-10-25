@@ -106,6 +106,15 @@ describe('KeysPage states', () => {
     await waitFor(() => expect(router.state.location.search).toBe(''));
   });
 
+  it('treats an unauthenticated callback as an expired sign-in', async () => {
+    world([apiKey(1)], [usageItem(1)], []);
+    open('/keys?connect_error=unauthenticated');
+
+    expect(await screen.findByTestId('keys-connect-notice')).toHaveTextContent(
+      'The Flickr sign-in expired. Start again.',
+    );
+  });
+
   it('shows the empty block and opens the Add modal from it', async () => {
     world([]);
     open();

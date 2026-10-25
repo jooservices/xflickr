@@ -249,6 +249,43 @@ func adminRequest(path string) bool {
 	return path == "/admin" || strings.HasPrefix(path, "/admin/")
 }
 
+// oauthCallbackNavigation reports the browser landing on the Flickr OAuth callback.
+func oauthCallbackNavigation(r *http.Request) bool {
+	return r.Method == http.MethodGet && r.URL.Path == "/flickr-accounts/callback" &&
+		strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/html")
+}
+
+// redirectUnauthenticated sends a browser without a valid session back to the
+// SPA with a readable error instead of a JSON 401 page.
+func redirectUnauthenticated(requireUser func(http.Handler) http.Handler, next http.Handler) http.Handler {
+	guarded := requireUser(next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		guarded.ServeHTTP(&unauthorizedRedirect{ResponseWriter: w}, r)
+	})
+}
+
+type unauthorizedRedirect struct {
+	http.ResponseWriter
+	redirected bool
+}
+
+func (w *unauthorizedRedirect) WriteHeader(status int) {
+	if status == http.StatusUnauthorized {
+		w.redirected = true
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Location", "/keys?connect_error=unauthenticated")
+		status = http.StatusFound
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *unauthorizedRedirect) Write(b []byte) (int, error) {
+	if w.redirected {
+		return len(b), nil
+	}
+	return w.ResponseWriter.Write(b)
+}
+
 // ProtectRoutes applies RequireUser to routes that need an authenticated
 // principal and RequireAdmin to everything under /admin.
 func ProtectRoutes(sessions SessionService) func(http.Handler) http.Handler {
@@ -261,6 +298,10 @@ func ProtectRoutes(sessions SessionService) func(http.Handler) http.Handler {
 				return
 			}
 			if authenticatedRequest(r.Method, r.URL.Path) {
+				if oauthCallbackNavigation(r) {
+					redirectUnauthenticated(requireUser, next).ServeHTTP(w, r)
+					return
+				}
 				requireUser(next).ServeHTTP(w, r)
 				return
 			}

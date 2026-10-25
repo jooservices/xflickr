@@ -146,6 +146,7 @@ func TestServeWebAssets(t *testing.T) {
 
 	router := chi.NewRouter()
 	serveWebAssets(router, root)
+	router.Get("/healthz", func(http.ResponseWriter, *http.Request) {}) // chi runs middleware only once a route exists
 	tests := []struct {
 		name, method, path, body string
 		status                   int
