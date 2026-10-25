@@ -19,6 +19,7 @@ import (
 	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
 	scheduleriver "github.com/jooservices/xflickr/internal/schedule/adapters/river"
 	"github.com/jooservices/xflickr/internal/schedule/app"
+	"github.com/jooservices/xflickr/internal/schedule/domain"
 )
 
 func TestPumpDispatchesExactlyOneHundredOfTenThousandRows(t *testing.T) {
@@ -302,8 +303,55 @@ func TestLoadPumpSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.RetryMax != 5 || settings.RetryBackoff != 30*time.Second || settings.LeaseTimeout != 2*time.Minute || settings.PerKeyReadyCap != 100 {
+	if settings.RetryMax != 5 || settings.RetryBackoff != 30*time.Second || settings.LeaseTimeout != 2*time.Minute || settings.PerKeyReadyCap != 100 || settings.AgingBatchSize != 500 || settings.MaxDepth != 2 || settings.ScoreWeights.PlanWeight != 10 || settings.ScoreWeights.AgeMinutes != .1 {
 		t.Fatalf("pump settings = %+v", settings)
+	}
+}
+
+func TestRecomputeScoresStoresFormulaResultInBatches(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run make test-integration to use the configured worktree database")
+	}
+	pool := integrationPool(t)
+	ctx := t.Context()
+	suffix := fmt.Sprintf("score-%d", time.Now().UnixNano())
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state,direct_action,starred,depth,created_at) VALUES('sync_person',$1,'pending',TRUE,TRUE,1,now()-interval '10 minutes')`, suffix); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
+	store := scheduleriver.Store{Pool: pool}
+	weights := domain.ScoreWeights{PlanWeight: 10, DirectAction: 100, Starred: 20, Depth: 5, AgeMinutes: .1}
+	// Other tests or application work may leave older pending rows in the shared
+	// worktree database. Keep the batch size small and let the rotating aging
+	// query reach this fixture instead of assuming it is the only eligible row.
+	for attempts := 0; attempts < 1000; attempts++ {
+		count, err := store.RecomputeScores(ctx, 1, weights, 4)
+		if err != nil {
+			t.Fatalf("RecomputeScores() error: %v", err)
+		}
+		var updated bool
+		if err := pool.QueryRow(ctx, `SELECT score_updated_at IS NOT NULL FROM work_items WHERE subject_key=$1`, suffix).Scan(&updated); err != nil {
+			t.Fatal(err)
+		}
+		if updated {
+			if count != 1 {
+				t.Fatalf("RecomputeScores() count = %d after updating fixture", count)
+			}
+			break
+		}
+		if count == 0 {
+			t.Fatal("RecomputeScores() found no rows before reaching fixture")
+		}
+		if attempts == 999 {
+			t.Fatal("RecomputeScores() did not reach fixture within 1000 batches")
+		}
+	}
+	var score float64
+	if err := pool.QueryRow(ctx, `SELECT score FROM work_items WHERE subject_key=$1`, suffix).Scan(&score); err != nil {
+		t.Fatal(err)
+	}
+	if score < 145.9 || score > 146.1 {
+		t.Fatalf("stored score = %v, want about 146", score)
 	}
 }
 

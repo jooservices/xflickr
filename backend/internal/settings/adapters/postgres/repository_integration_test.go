@@ -485,32 +485,38 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		min   *float64
 		max   *float64
 	}{
-		"max_depth":             {value: "2", min: &minimum, max: &maximum},
-		"change_check_interval": {value: "86400"},
-		"daily_call_limit":      {value: "0"},
-		"quota_reserve":         {value: "100"},
-		"per_second_rate":       {value: "4"},
-		"burst":                 {value: "5"},
-		"person_lane_share":     {value: "0.30"},
-		"zip_ttl":               {value: "86400"},
-		"retry_max":             {value: "5"},
-		"retry_backoff":         {value: "30"},
-		"node_cooldown":         {value: "2700"},
-		"group_pools_enabled":   {value: "false"},
-		"registration_open":     {value: "false"},
-		"per_key_ready_cap":     {value: "100", min: &zero},
-		"node_ready_cap":        {value: "500", min: &zero},
-		"media_ready_cap":       {value: "100", min: &zero},
-		"ai_ready_cap":          {value: "100", min: &zero},
-		"sync_ready_cap":        {value: "100", min: &zero},
-		"lease_timeout":         {value: "120", min: &minimum},
+		"max_depth":                  {value: "2", min: &minimum, max: &maximum},
+		"change_check_interval":      {value: "86400"},
+		"daily_call_limit":           {value: "0"},
+		"quota_reserve":              {value: "100"},
+		"per_second_rate":            {value: "4"},
+		"burst":                      {value: "5"},
+		"person_lane_share":          {value: "0.30"},
+		"zip_ttl":                    {value: "86400"},
+		"retry_max":                  {value: "5"},
+		"retry_backoff":              {value: "30"},
+		"node_cooldown":              {value: "2700"},
+		"group_pools_enabled":        {value: "false"},
+		"registration_open":          {value: "false"},
+		"per_key_ready_cap":          {value: "100", min: &zero},
+		"node_ready_cap":             {value: "500", min: &zero},
+		"media_ready_cap":            {value: "100", min: &zero},
+		"ai_ready_cap":               {value: "100", min: &zero},
+		"sync_ready_cap":             {value: "100", min: &zero},
+		"lease_timeout":              {value: "120", min: &minimum},
+		"score_weight_plan":          {value: "10", min: &zero},
+		"score_weight_direct_action": {value: "100", min: &zero},
+		"score_weight_starred":       {value: "20", min: &zero},
+		"score_weight_depth":         {value: "5", min: &zero},
+		"score_weight_age_minutes":   {value: "0.1", min: &zero},
+		"score_aging_batch_size":     {value: "500", min: &minimum},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("seeded settings = %d, want %d", len(got), len(want))
 	}
 	for key, expected := range want {
 		item, ok := got[key]
-		wantOverridable := key != "registration_open" && key != "per_key_ready_cap" && key != "node_ready_cap" && key != "media_ready_cap" && key != "ai_ready_cap" && key != "sync_ready_cap" && key != "lease_timeout"
+		wantOverridable := key != "registration_open" && key != "per_key_ready_cap" && key != "node_ready_cap" && key != "media_ready_cap" && key != "ai_ready_cap" && key != "sync_ready_cap" && key != "lease_timeout" && !strings.HasPrefix(key, "score_")
 		if !ok || item.overridable != wantOverridable || !jsonEqual(item.value, expected.value) || !floatPtrEqual(item.minimum, expected.min) || !floatPtrEqual(item.maximum, expected.max) {
 			t.Fatalf("seed %s = value %s overridable %v min %v max %v", key, item.value, item.overridable, item.minimum, item.maximum)
 		}
@@ -540,6 +546,8 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		AIReadyCap:          100,
 		SyncReadyCap:        100,
 		LeaseTimeout:        2 * time.Minute,
+		ScoreWeightPlan:     10, ScoreWeightDirectAction: 100, ScoreWeightStarred: 20,
+		ScoreWeightDepth: 5, ScoreWeightAgeMinutes: 0.1, ScoreAgingBatchSize: 500,
 	}
 	if effective != wantEffective {
 		t.Fatalf("effective seed = %+v, want %+v", effective, wantEffective)

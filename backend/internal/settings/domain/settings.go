@@ -17,48 +17,60 @@ import (
 type Key string
 
 const (
-	MaxDepth            Key = "max_depth"
-	ChangeCheckInterval Key = "change_check_interval"
-	DailyCallLimit      Key = "daily_call_limit"
-	QuotaReserve        Key = "quota_reserve"
-	PerSecondRate       Key = "per_second_rate"
-	Burst               Key = "burst"
-	PersonLaneShare     Key = "person_lane_share"
-	ZipTTL              Key = "zip_ttl"
-	RetryMax            Key = "retry_max"
-	RetryBackoff        Key = "retry_backoff"
-	NodeCooldown        Key = "node_cooldown"
-	GroupPoolsEnabled   Key = "group_pools_enabled"
-	RegistrationOpen    Key = "registration_open"
-	PerKeyReadyCap      Key = "per_key_ready_cap"
-	NodeReadyCap        Key = "node_ready_cap"
-	MediaReadyCap       Key = "media_ready_cap"
-	AIReadyCap          Key = "ai_ready_cap"
-	SyncReadyCap        Key = "sync_ready_cap"
-	LeaseTimeout        Key = "lease_timeout"
+	MaxDepth                Key = "max_depth"
+	ChangeCheckInterval     Key = "change_check_interval"
+	DailyCallLimit          Key = "daily_call_limit"
+	QuotaReserve            Key = "quota_reserve"
+	PerSecondRate           Key = "per_second_rate"
+	Burst                   Key = "burst"
+	PersonLaneShare         Key = "person_lane_share"
+	ZipTTL                  Key = "zip_ttl"
+	RetryMax                Key = "retry_max"
+	RetryBackoff            Key = "retry_backoff"
+	NodeCooldown            Key = "node_cooldown"
+	GroupPoolsEnabled       Key = "group_pools_enabled"
+	RegistrationOpen        Key = "registration_open"
+	PerKeyReadyCap          Key = "per_key_ready_cap"
+	NodeReadyCap            Key = "node_ready_cap"
+	MediaReadyCap           Key = "media_ready_cap"
+	AIReadyCap              Key = "ai_ready_cap"
+	SyncReadyCap            Key = "sync_ready_cap"
+	LeaseTimeout            Key = "lease_timeout"
+	ScoreWeightPlan         Key = "score_weight_plan"
+	ScoreWeightDirectAction Key = "score_weight_direct_action"
+	ScoreWeightStarred      Key = "score_weight_starred"
+	ScoreWeightDepth        Key = "score_weight_depth"
+	ScoreWeightAgeMinutes   Key = "score_weight_age_minutes"
+	ScoreAgingBatchSize     Key = "score_aging_batch_size"
 )
 
 // Effective contains the merged, validated settings for one user. Durations
 // are stored in JSON as integer seconds and converted to time.Duration here.
 type Effective struct {
-	MaxDepth            int
-	ChangeCheckInterval time.Duration
-	DailyCallLimit      int64 // zero means unlimited
-	QuotaReserve        int64
-	PerSecondRate       int
-	Burst               int
-	PersonLaneShare     float64
-	ZipTTL              time.Duration
-	RetryMax            int
-	RetryBackoff        time.Duration
-	NodeCooldown        time.Duration
-	GroupPoolsEnabled   bool
-	PerKeyReadyCap      int
-	NodeReadyCap        int
-	MediaReadyCap       int
-	AIReadyCap          int
-	SyncReadyCap        int
-	LeaseTimeout        time.Duration
+	MaxDepth                int
+	ChangeCheckInterval     time.Duration
+	DailyCallLimit          int64 // zero means unlimited
+	QuotaReserve            int64
+	PerSecondRate           int
+	Burst                   int
+	PersonLaneShare         float64
+	ZipTTL                  time.Duration
+	RetryMax                int
+	RetryBackoff            time.Duration
+	NodeCooldown            time.Duration
+	GroupPoolsEnabled       bool
+	PerKeyReadyCap          int
+	NodeReadyCap            int
+	MediaReadyCap           int
+	AIReadyCap              int
+	SyncReadyCap            int
+	LeaseTimeout            time.Duration
+	ScoreWeightPlan         float64
+	ScoreWeightDirectAction float64
+	ScoreWeightStarred      float64
+	ScoreWeightDepth        float64
+	ScoreWeightAgeMinutes   float64
+	ScoreAgingBatchSize     int
 }
 
 // Definition is the application-level value and policy for a setting.
@@ -141,25 +153,31 @@ var (
 )
 
 var schemas = map[Key]JSONSchema{
-	MaxDepth:            {Type: "integer", Minimum: minOne},
-	ChangeCheckInterval: {Type: "integer", Minimum: minOne, Maximum: maxDuration},
-	DailyCallLimit:      {Type: "integer", Minimum: minZero},
-	QuotaReserve:        {Type: "integer", Minimum: minZero},
-	PerSecondRate:       {Type: "integer", Minimum: minOne},
-	Burst:               {Type: "integer", Minimum: minOne},
-	PersonLaneShare:     {Type: "number", Minimum: minZero, Maximum: maxOne},
-	ZipTTL:              {Type: "integer", Minimum: minOne, Maximum: maxDuration},
-	RetryMax:            {Type: "integer", Minimum: minZero},
-	RetryBackoff:        {Type: "integer", Minimum: minZero, Maximum: maxDuration},
-	NodeCooldown:        {Type: "integer", Minimum: minZero, Maximum: maxDuration},
-	GroupPoolsEnabled:   {Type: "boolean"},
-	RegistrationOpen:    {Type: "boolean"},
-	PerKeyReadyCap:      {Type: "integer", Minimum: minZero},
-	NodeReadyCap:        {Type: "integer", Minimum: minZero},
-	MediaReadyCap:       {Type: "integer", Minimum: minZero},
-	AIReadyCap:          {Type: "integer", Minimum: minZero},
-	SyncReadyCap:        {Type: "integer", Minimum: minZero},
-	LeaseTimeout:        {Type: "integer", Minimum: minOne, Maximum: maxDuration},
+	MaxDepth:                {Type: "integer", Minimum: minOne},
+	ChangeCheckInterval:     {Type: "integer", Minimum: minOne, Maximum: maxDuration},
+	DailyCallLimit:          {Type: "integer", Minimum: minZero},
+	QuotaReserve:            {Type: "integer", Minimum: minZero},
+	PerSecondRate:           {Type: "integer", Minimum: minOne},
+	Burst:                   {Type: "integer", Minimum: minOne},
+	PersonLaneShare:         {Type: "number", Minimum: minZero, Maximum: maxOne},
+	ZipTTL:                  {Type: "integer", Minimum: minOne, Maximum: maxDuration},
+	RetryMax:                {Type: "integer", Minimum: minZero},
+	RetryBackoff:            {Type: "integer", Minimum: minZero, Maximum: maxDuration},
+	NodeCooldown:            {Type: "integer", Minimum: minZero, Maximum: maxDuration},
+	GroupPoolsEnabled:       {Type: "boolean"},
+	RegistrationOpen:        {Type: "boolean"},
+	PerKeyReadyCap:          {Type: "integer", Minimum: minZero},
+	NodeReadyCap:            {Type: "integer", Minimum: minZero},
+	MediaReadyCap:           {Type: "integer", Minimum: minZero},
+	AIReadyCap:              {Type: "integer", Minimum: minZero},
+	SyncReadyCap:            {Type: "integer", Minimum: minZero},
+	LeaseTimeout:            {Type: "integer", Minimum: minOne, Maximum: maxDuration},
+	ScoreWeightPlan:         {Type: "number", Minimum: minZero},
+	ScoreWeightDirectAction: {Type: "number", Minimum: minZero},
+	ScoreWeightStarred:      {Type: "number", Minimum: minZero},
+	ScoreWeightDepth:        {Type: "number", Minimum: minZero},
+	ScoreWeightAgeMinutes:   {Type: "number", Minimum: minZero},
+	ScoreAgingBatchSize:     {Type: "integer", Minimum: minOne},
 }
 
 // SchemaFor returns the JSON schema associated with a typed key.
@@ -190,6 +208,7 @@ func Keys() []Key {
 		AIReadyCap,
 		SyncReadyCap,
 		LeaseTimeout,
+		ScoreWeightPlan, ScoreWeightDirectAction, ScoreWeightStarred, ScoreWeightDepth, ScoreWeightAgeMinutes, ScoreAgingBatchSize,
 	}
 }
 
@@ -215,6 +234,12 @@ func Defaults() []Definition {
 		{Key: AIReadyCap, Value: json.RawMessage("100"), UserOverridable: false, Min: floatPointer(0)},
 		{Key: SyncReadyCap, Value: json.RawMessage("100"), UserOverridable: false, Min: floatPointer(0)},
 		{Key: LeaseTimeout, Value: json.RawMessage("120"), UserOverridable: false, Min: floatPointer(1)},
+		{Key: ScoreWeightPlan, Value: json.RawMessage("10"), UserOverridable: false, Min: floatPointer(0)},
+		{Key: ScoreWeightDirectAction, Value: json.RawMessage("100"), UserOverridable: false, Min: floatPointer(0)},
+		{Key: ScoreWeightStarred, Value: json.RawMessage("20"), UserOverridable: false, Min: floatPointer(0)},
+		{Key: ScoreWeightDepth, Value: json.RawMessage("5"), UserOverridable: false, Min: floatPointer(0)},
+		{Key: ScoreWeightAgeMinutes, Value: json.RawMessage("0.1"), UserOverridable: false, Min: floatPointer(0)},
+		{Key: ScoreAgingBatchSize, Value: json.RawMessage("500"), UserOverridable: false, Min: floatPointer(1)},
 	}
 }
 
@@ -466,6 +491,24 @@ func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
 	}
 	if result.LeaseTimeout, err = duration(values[LeaseTimeout]); err != nil {
 		return Effective{}, nil, invalidStored(LeaseTimeout, err)
+	}
+	if result.ScoreWeightPlan, err = decimal(values[ScoreWeightPlan]); err != nil {
+		return Effective{}, nil, invalidStored(ScoreWeightPlan, err)
+	}
+	if result.ScoreWeightDirectAction, err = decimal(values[ScoreWeightDirectAction]); err != nil {
+		return Effective{}, nil, invalidStored(ScoreWeightDirectAction, err)
+	}
+	if result.ScoreWeightStarred, err = decimal(values[ScoreWeightStarred]); err != nil {
+		return Effective{}, nil, invalidStored(ScoreWeightStarred, err)
+	}
+	if result.ScoreWeightDepth, err = decimal(values[ScoreWeightDepth]); err != nil {
+		return Effective{}, nil, invalidStored(ScoreWeightDepth, err)
+	}
+	if result.ScoreWeightAgeMinutes, err = decimal(values[ScoreWeightAgeMinutes]); err != nil {
+		return Effective{}, nil, invalidStored(ScoreWeightAgeMinutes, err)
+	}
+	if result.ScoreAgingBatchSize, err = integer(values[ScoreAgingBatchSize]); err != nil {
+		return Effective{}, nil, invalidStored(ScoreAgingBatchSize, err)
 	}
 	return result, dropped, nil
 }

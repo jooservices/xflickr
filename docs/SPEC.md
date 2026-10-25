@@ -117,6 +117,11 @@ guide feature implementation; operational environment rules live in
   are 1 and 4, and their resource shares are 0.2 and 0.8 respectively. An
   administrator can edit plan limits and assign a plan to a user; both actions
   are recorded in the audit trail.
+- Scheduler priority combines plan weight, direct action, starred status,
+  remaining depth, and age in minutes. Each coefficient is an application
+  setting. Plan resource shares allocate shared scheduler capacity in
+  proportion to eligible backlog, and unused allocation is lent to another
+  plan with remaining work so free users continue to progress.
 
 ## Definition of done
 

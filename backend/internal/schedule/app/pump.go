@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jooservices/xflickr/internal/platform/queue"
+	"github.com/jooservices/xflickr/internal/schedule/domain"
 )
 
 const PumpInterval = 2 * time.Second
@@ -21,11 +22,19 @@ type PumpSettings struct {
 	RetryMax       int
 	RetryBackoff   time.Duration
 	LeaseTimeout   time.Duration
+	AgingBatchSize int
+	MaxDepth       int
+	ScoreWeights   domain.ScoreWeights
 }
 
 func (s PumpSettings) Validate() error {
-	if s.PerKeyReadyCap < 0 || s.NodeReadyCap < 0 || s.MediaReadyCap < 0 || s.AIReadyCap < 0 || s.SyncReadyCap < 0 || s.RetryMax < 0 || s.RetryBackoff < 0 || s.LeaseTimeout < 0 {
+	if s.PerKeyReadyCap < 0 || s.NodeReadyCap < 0 || s.MediaReadyCap < 0 || s.AIReadyCap < 0 || s.SyncReadyCap < 0 || s.RetryMax < 0 || s.RetryBackoff < 0 || s.LeaseTimeout < 0 || s.AgingBatchSize < 0 || s.MaxDepth < 0 {
 		return errors.New("schedule: invalid pump settings")
+	}
+	if s.AgingBatchSize > 0 {
+		if _, err := domain.Score(domain.ScoreInput{MaxDepth: s.MaxDepth}, s.ScoreWeights); err != nil {
+			return errors.New("schedule: invalid score settings")
+		}
 	}
 	return nil
 }
@@ -63,6 +72,15 @@ func (p Pump) RunOnce(ctx context.Context) (int, error) {
 	}
 	if _, err := p.Store.Reclaim(ctx, p.Settings.RetryMax, p.Settings.RetryBackoff, time.Now()); err != nil {
 		return 0, err
+	}
+	if p.Settings.AgingBatchSize > 0 {
+		agingStore, ok := p.Store.(AgingStore)
+		if !ok {
+			return 0, errors.New("schedule: pump store does not support score aging")
+		}
+		if _, err := (Aging{Store: agingStore, BatchSize: p.Settings.AgingBatchSize, MaxDepth: p.Settings.MaxDepth, Weights: p.Settings.ScoreWeights}).RunBatch(ctx); err != nil {
+			return 0, err
+		}
 	}
 	return p.Store.Pump(ctx, p.Settings, p.Credits, p.Queue)
 }

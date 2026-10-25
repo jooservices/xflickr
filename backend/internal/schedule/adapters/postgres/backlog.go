@@ -15,20 +15,24 @@ import (
 
 const enqueueSQL = `
 INSERT INTO work_items (
-    kind, subject_key, user_id, key_id, state, cursor, priority_base,
+    kind, subject_key, user_id, key_id, state, cursor, priority_base, direct_action, starred, depth,
     attempts, not_before, last_error
 ) VALUES (
     $1, $2, $3, $4, COALESCE(NULLIF($5, ''), 'pending'),
-    COALESCE($6, '{}'::jsonb), $7, $8, COALESCE($9, now()), $10
+    COALESCE($6, '{}'::jsonb), $7, $8, $9, $10, $11, COALESCE($12, now()), $13
 )
 ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO UPDATE
-SET state = CASE WHEN work_items.state = 'done' AND $11 THEN 'pending' ELSE work_items.state END,
-    cursor = CASE WHEN work_items.state = 'done' AND $11 THEN '{}'::jsonb ELSE work_items.cursor END,
-    attempts = CASE WHEN work_items.state = 'done' AND $11 THEN 0 ELSE work_items.attempts END,
-    last_error = CASE WHEN work_items.state = 'done' AND $11 THEN NULL ELSE work_items.last_error END,
+SET state = CASE WHEN work_items.state = 'done' AND $14 THEN 'pending' ELSE work_items.state END,
+    cursor = CASE WHEN work_items.state = 'done' AND $14 THEN '{}'::jsonb ELSE work_items.cursor END,
+    attempts = CASE WHEN work_items.state = 'done' AND $14 THEN 0 ELSE work_items.attempts END,
+    last_error = CASE WHEN work_items.state = 'done' AND $14 THEN NULL ELSE work_items.last_error END,
     priority_base = GREATEST(work_items.priority_base, EXCLUDED.priority_base),
+    direct_action = work_items.direct_action OR EXCLUDED.direct_action,
+    starred = work_items.starred OR EXCLUDED.starred,
+    depth = CASE WHEN work_items.state = 'done' AND $14 THEN EXCLUDED.depth ELSE work_items.depth END,
+    created_at = CASE WHEN work_items.state = 'done' AND $14 THEN now() ELSE work_items.created_at END,
     updated_at = now()
-WHERE work_items.state <> 'done' OR $11
+WHERE work_items.state <> 'done' OR $14
 `
 
 const advanceSQL = `
@@ -59,7 +63,7 @@ func Enqueue(ctx context.Context, tx pgx.Tx, item domain.WorkItem) error {
 	}
 	_, err := tx.Exec(ctx, enqueueSQL,
 		item.Kind, item.SubjectKey, item.UserID, item.KeyID, string(item.State), cursor,
-		item.PriorityBase, item.Attempts, nullTime(item.NotBefore), item.LastError, item.Reopen,
+		item.PriorityBase, item.DirectAction, item.Starred, item.Depth, item.Attempts, nullTime(item.NotBefore), item.LastError, item.Reopen,
 	)
 	if err != nil {
 		return fmt.Errorf("schedule: enqueue work item: %w", err)

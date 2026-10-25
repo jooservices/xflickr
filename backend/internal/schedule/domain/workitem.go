@@ -17,6 +17,9 @@ type WorkItem struct {
 	State        State
 	Cursor       json.RawMessage
 	PriorityBase int
+	DirectAction bool
+	Starred      bool
+	Depth        int
 	Attempts     int
 	NotBefore    time.Time
 	CreatedAt    time.Time
@@ -38,6 +41,9 @@ func (item WorkItem) Validate() error {
 	}
 	if item.Attempts < 0 {
 		return errors.New("schedule: work item attempts cannot be negative")
+	}
+	if item.Depth < 0 {
+		return errors.New("schedule: work item depth cannot be negative")
 	}
 	if len(item.Cursor) > 0 && !json.Valid(item.Cursor) {
 		return errors.New("schedule: work item cursor must be valid JSON")

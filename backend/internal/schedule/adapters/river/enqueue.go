@@ -15,6 +15,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/outbox"
 	"github.com/jooservices/xflickr/internal/platform/queue"
 	"github.com/jooservices/xflickr/internal/schedule/app"
+	"github.com/jooservices/xflickr/internal/schedule/domain"
 )
 
 const pumpLockID int64 = 113
@@ -35,32 +36,50 @@ func LoadSettings(ctx context.Context, pool *pgxpool.Pool) (app.PumpSettings, er
 	if ctx == nil {
 		return app.PumpSettings{}, errors.New("schedule: settings context is required")
 	}
-	rows, err := pool.Query(ctx, `SELECT key, value #>> '{}' FROM app_settings WHERE key = ANY($1)`, []string{"per_key_ready_cap", "node_ready_cap", "media_ready_cap", "ai_ready_cap", "sync_ready_cap", "retry_max", "retry_backoff", "lease_timeout"})
+	settingKeys := []string{"per_key_ready_cap", "node_ready_cap", "media_ready_cap", "ai_ready_cap", "sync_ready_cap", "retry_max", "retry_backoff", "lease_timeout", "max_depth", "score_weight_plan", "score_weight_direct_action", "score_weight_starred", "score_weight_depth", "score_weight_age_minutes", "score_aging_batch_size"}
+	rows, err := pool.Query(ctx, `SELECT key, value #>> '{}' FROM app_settings WHERE key = ANY($1)`, settingKeys)
 	if err != nil {
 		return app.PumpSettings{}, fmt.Errorf("schedule: query pump settings: %w", err)
 	}
 	defer rows.Close()
-	values := make(map[string]int64, 8)
+	values := make(map[string]string, len(settingKeys))
 	for rows.Next() {
 		var key, raw string
 		if err := rows.Scan(&key, &raw); err != nil {
 			return app.PumpSettings{}, fmt.Errorf("schedule: scan pump setting: %w", err)
 		}
-		value, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil {
-			return app.PumpSettings{}, fmt.Errorf("schedule: parse pump setting %s: %w", key, err)
-		}
-		values[key] = value
+		values[key] = raw
 	}
 	if err := rows.Err(); err != nil {
 		return app.PumpSettings{}, fmt.Errorf("schedule: read pump settings: %w", err)
 	}
-	for _, key := range []string{"per_key_ready_cap", "node_ready_cap", "media_ready_cap", "ai_ready_cap", "sync_ready_cap", "retry_max", "retry_backoff", "lease_timeout"} {
+	for _, key := range settingKeys {
 		if _, ok := values[key]; !ok {
 			return app.PumpSettings{}, fmt.Errorf("schedule: pump setting %s is missing", key)
 		}
 	}
-	settings := app.PumpSettings{PerKeyReadyCap: int(values["per_key_ready_cap"]), NodeReadyCap: int(values["node_ready_cap"]), MediaReadyCap: int(values["media_ready_cap"]), AIReadyCap: int(values["ai_ready_cap"]), SyncReadyCap: int(values["sync_ready_cap"]), RetryMax: int(values["retry_max"]), RetryBackoff: time.Duration(values["retry_backoff"]) * time.Second, LeaseTimeout: time.Duration(values["lease_timeout"]) * time.Second}
+	integer := func(key string) (int64, error) { return strconv.ParseInt(values[key], 10, 64) }
+	decimal := func(key string) (float64, error) { return strconv.ParseFloat(values[key], 64) }
+	ints := make(map[string]int64, 10)
+	for _, key := range []string{"per_key_ready_cap", "node_ready_cap", "media_ready_cap", "ai_ready_cap", "sync_ready_cap", "retry_max", "retry_backoff", "lease_timeout", "max_depth", "score_aging_batch_size"} {
+		value, parseErr := integer(key)
+		if parseErr != nil {
+			return app.PumpSettings{}, fmt.Errorf("schedule: parse pump setting %s: %w", key, parseErr)
+		}
+		ints[key] = value
+	}
+	if ints["score_aging_batch_size"] < 1 {
+		return app.PumpSettings{}, errors.New("schedule: score aging batch size must be positive")
+	}
+	weights := make([]float64, 5)
+	for i, key := range []string{"score_weight_plan", "score_weight_direct_action", "score_weight_starred", "score_weight_depth", "score_weight_age_minutes"} {
+		value, parseErr := decimal(key)
+		if parseErr != nil {
+			return app.PumpSettings{}, fmt.Errorf("schedule: parse pump setting %s: %w", key, parseErr)
+		}
+		weights[i] = value
+	}
+	settings := app.PumpSettings{PerKeyReadyCap: int(ints["per_key_ready_cap"]), NodeReadyCap: int(ints["node_ready_cap"]), MediaReadyCap: int(ints["media_ready_cap"]), AIReadyCap: int(ints["ai_ready_cap"]), SyncReadyCap: int(ints["sync_ready_cap"]), RetryMax: int(ints["retry_max"]), RetryBackoff: time.Duration(ints["retry_backoff"]) * time.Second, LeaseTimeout: time.Duration(ints["lease_timeout"]) * time.Second, AgingBatchSize: int(ints["score_aging_batch_size"]), MaxDepth: int(ints["max_depth"]), ScoreWeights: domain.ScoreWeights{PlanWeight: weights[0], DirectAction: weights[1], Starred: weights[2], Depth: weights[3], AgeMinutes: weights[4]}}
 	if err := settings.Validate(); err != nil {
 		return app.PumpSettings{}, err
 	}
@@ -126,6 +145,58 @@ func (s Store) Pump(ctx context.Context, settings app.PumpSettings, credits app.
 		return 0, fmt.Errorf("schedule: commit pump: %w", err)
 	}
 	return dispatched, nil
+}
+
+// RecomputeScores refreshes stored scores for a bounded, rotating batch of
+// pending rows. Score math stays in the schedule domain.
+func (s Store) RecomputeScores(ctx context.Context, batchSize int, weights domain.ScoreWeights, maxDepth int) (int, error) {
+	if s.Pool == nil || ctx == nil || batchSize <= 0 || maxDepth < 0 {
+		return 0, errors.New("schedule: invalid score aging dependencies")
+	}
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("schedule: begin score aging: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	rows, err := tx.Query(ctx, `SELECT w.id, COALESCE(p.weight,1), w.direct_action, w.starred, w.depth, EXTRACT(EPOCH FROM (now()-w.created_at))/60.0 FROM work_items w LEFT JOIN users u ON u.id=w.user_id LEFT JOIN plans p ON p.id=u.plan_id WHERE w.state='pending' AND w.not_before <= now() ORDER BY w.score_updated_at NULLS FIRST, w.created_at, w.id LIMIT $1 FOR UPDATE OF w SKIP LOCKED`, batchSize)
+	if err != nil {
+		return 0, fmt.Errorf("schedule: select score aging batch: %w", err)
+	}
+	type scored struct {
+		id    int64
+		score float64
+	}
+	batch := make([]scored, 0, batchSize)
+	for rows.Next() {
+		var id int64
+		var planWeight, depth int
+		var direct, starred bool
+		var age float64
+		if err := rows.Scan(&id, &planWeight, &direct, &starred, &depth, &age); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("schedule: scan score aging row: %w", err)
+		}
+		score, err := domain.Score(domain.ScoreInput{PlanWeight: planWeight, DirectAction: direct, Starred: starred, Depth: depth, MaxDepth: maxDepth, AgeMinutes: age}, weights)
+		if err != nil {
+			rows.Close()
+			return 0, err
+		}
+		batch = append(batch, scored{id: id, score: score})
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, fmt.Errorf("schedule: read score aging rows: %w", err)
+	}
+	rows.Close()
+	for _, row := range batch {
+		if _, err := tx.Exec(ctx, `UPDATE work_items SET score=$2, score_updated_at=now() WHERE id=$1`, row.id, row.score); err != nil {
+			return 0, fmt.Errorf("schedule: store work score: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("schedule: commit score aging: %w", err)
+	}
+	return len(batch), nil
 }
 
 func (s Store) pumpKeys(ctx context.Context, tx pgx.Tx, keys []int64, settings app.PumpSettings, credits app.CreditProvider, jobs queue.JobQueue) (int, error) {
@@ -200,7 +271,45 @@ func (s Store) pumpKey(ctx context.Context, tx pgx.Tx, keyID int64, settings app
 }
 
 func (s Store) pumpQueue(ctx context.Context, tx pgx.Tx, keyID int64, cap queueCap, limit int, settings app.PumpSettings, jobs queue.JobQueue) (int, error) {
-	rows, err := tx.Query(ctx, `SELECT id, kind, subject_key, cursor FROM work_items WHERE state = 'pending' AND key_id = $1 AND worker_type = $2 AND not_before <= now() ORDER BY priority_base DESC, not_before, id LIMIT $3 FOR UPDATE SKIP LOCKED`, keyID, cap.name, limit)
+	rows, err := tx.Query(ctx, `SELECT COALESCE(p.id,(SELECT id FROM plans WHERE name='free')), COALESCE(p.resource_share,(SELECT resource_share FROM plans WHERE name='free')), count(*) FROM work_items w LEFT JOIN users u ON u.id=w.user_id LEFT JOIN plans p ON p.id=u.plan_id WHERE w.state='pending' AND w.key_id=$1 AND w.worker_type=$2 AND w.not_before<=now() GROUP BY 1,2 ORDER BY 1`, keyID, cap.name)
+	if err != nil {
+		return 0, fmt.Errorf("schedule: count plan backlog: %w", err)
+	}
+	groups := make([]app.ShareGroup, 0)
+	for rows.Next() {
+		var group app.ShareGroup
+		if err := rows.Scan(&group.ID, &group.Share, &group.Available); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("schedule: scan plan backlog: %w", err)
+		}
+		groups = append(groups, group)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, fmt.Errorf("schedule: read plan backlog: %w", err)
+	}
+	rows.Close()
+	allocations, err := app.SplitShare(limit, groups)
+	if err != nil {
+		return 0, err
+	}
+	total := 0
+	for _, group := range groups {
+		allocation := allocations[group.ID]
+		if allocation == 0 {
+			continue
+		}
+		queued, err := s.pumpQueuePlan(ctx, tx, keyID, cap, group.ID, allocation, settings, jobs)
+		if err != nil {
+			return 0, err
+		}
+		total += queued
+	}
+	return total, nil
+}
+
+func (s Store) pumpQueuePlan(ctx context.Context, tx pgx.Tx, keyID int64, cap queueCap, planID int64, limit int, settings app.PumpSettings, jobs queue.JobQueue) (int, error) {
+	rows, err := tx.Query(ctx, `SELECT w.id, w.kind, w.subject_key, w.cursor FROM work_items w LEFT JOIN users u ON u.id=w.user_id WHERE w.state = 'pending' AND w.key_id = $1 AND w.worker_type = $2 AND w.not_before <= now() AND COALESCE(u.plan_id,(SELECT id FROM plans WHERE name='free'))=$3 ORDER BY w.score DESC, w.not_before, w.id LIMIT $4 FOR UPDATE OF w SKIP LOCKED`, keyID, cap.name, planID, limit)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: select pending work: %w", err)
 	}

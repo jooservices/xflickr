@@ -52,6 +52,12 @@ func TestPumpRunOnceValidationAndDependencies(t *testing.T) {
 		t.Fatal("RunOnce accepted invalid settings")
 	}
 	pump.Settings = validPumpSettings()
+	pump.Settings.AgingBatchSize = 1
+	pump.Settings.ScoreWeights.AgeMinutes = -1
+	if _, err := pump.RunOnce(context.Background()); err == nil {
+		t.Fatal("RunOnce accepted invalid score settings")
+	}
+	pump.Settings = validPumpSettings()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := pump.RunOnce(ctx); !errors.Is(err, context.Canceled) {

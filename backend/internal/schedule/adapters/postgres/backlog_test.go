@@ -36,7 +36,7 @@ func TestEnqueue(t *testing.T) {
 			}
 			if test.name == "success" {
 				fake := test.tx.(*backlogFakeTx)
-				if !strings.Contains(fake.query, "ON CONFLICT ON CONSTRAINT work_items_dedupe_key") || len(fake.args) != 11 {
+				if !strings.Contains(fake.query, "ON CONFLICT ON CONSTRAINT work_items_dedupe_key") || len(fake.args) != 14 {
 					t.Fatalf("enqueue SQL/args not as expected: %q %#v", fake.query, fake.args)
 				}
 			}
