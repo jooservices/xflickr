@@ -36,23 +36,15 @@ export async function loadUsage(signal?: AbortSignal): Promise<UsageSnapshot> {
   return response.data;
 }
 
-/** Runs an unsafe call and repeats it once when the CSRF token was rejected. */
-async function unsafe(path: string, method: string, body?: unknown) {
-  const response = await request<{ code?: string }>(path, method, body);
-  if (response.status === 403 && response.data.code === 'csrf_rejected')
-    return request<{ code?: string }>(path, method, body);
-  return response;
-}
-
 /** Pauses or resumes scheduled calls of a key (`PUT /keys/{id}` with `paused`). */
 export async function setKeyPaused(id: number, paused: boolean): Promise<void> {
-  const response = await unsafe(`/keys/${String(id)}`, 'PUT', { paused });
+  const response = await request<{ code?: string }>(`/keys/${String(id)}`, 'PUT', { paused });
   if (response.status !== 200) throw failure('update the key', response.status);
 }
 
 /** Removes a key and its accounts (`DELETE /keys/{id}`); an already missing key counts as removed. */
 export async function removeKey(id: number): Promise<void> {
-  const response = await unsafe(`/keys/${String(id)}`, 'DELETE');
+  const response = await request<{ code?: string }>(`/keys/${String(id)}`, 'DELETE');
   if (response.status !== 204 && response.status !== 404)
     throw failure('remove the key', response.status);
 }

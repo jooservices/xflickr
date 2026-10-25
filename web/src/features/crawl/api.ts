@@ -146,17 +146,9 @@ async function call<T>(
   }
 }
 
-/** Sends an unsafe call; one `csrf_rejected` answer refreshes the token (`GET /me`) and repeats. */
+/** Sends an unsafe call; the shared fetch wrapper handles CSRF refresh and retry. */
 async function send<T>(path: string, method: string, body?: unknown): Promise<T> {
-  try {
-    return (await call<T>(path, method, body)).data;
-  } catch (error) {
-    if (error instanceof CrawlApiError && error.status === 403 && error.code === 'csrf_rejected') {
-      await request('/me');
-      return (await call<T>(path, method, body)).data;
-    }
-    throw error;
-  }
+  return (await call<T>(path, method, body)).data;
 }
 
 const get = async <T>(path: string, signal?: AbortSignal): Promise<T> =>

@@ -1,5 +1,7 @@
 import type { Locale } from '../../shared/i18n/catalog';
-import { SESSION_EXPIRED_EVENT } from '../../shared/api/sessionEvents';
+import { csrfFetch, readCsrfToken, signalSessionExpired } from '../../shared/api/mutator';
+
+export { signalSessionExpired };
 
 export type AuthUser = {
   id: number;
@@ -11,25 +13,14 @@ export type AuthUser = {
 
 type ApiResult<T = unknown> = { status: number; data: T; headers: Headers };
 
-function csrfToken(): string {
-  const match = document.cookie.match(/(?:^|;\s*)xf_csrf=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : '';
-}
-
 export function csrfFetchOptions(method = 'GET'): RequestInit {
   const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(method);
-  const token = csrfToken();
+  const token = readCsrfToken();
   return {
     method,
     credentials: 'same-origin',
     headers: unsafe && token ? { 'X-CSRF-Token': token } : {},
   };
-}
-
-export function signalSessionExpired(status: number): void {
-  if (status === 401 && typeof window !== 'undefined') {
-    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
-  }
 }
 
 export async function request<T>(
@@ -38,27 +29,15 @@ export async function request<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<ApiResult<T>> {
-  const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(method);
-  const response = await fetch(path, {
+  const response = await csrfFetch(path, {
     method,
-    credentials: 'same-origin',
     signal,
     headers: {
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-      ...(unsafe && csrfToken() ? { 'X-CSRF-Token': csrfToken() } : {}),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const text = response.status === 204 ? '' : await response.text();
-  if (
-    response.status === 401 &&
-    path !== '/auth/login' &&
-    path !== '/auth/register' &&
-    !path.startsWith('/auth/passkey/') &&
-    typeof window !== 'undefined'
-  ) {
-    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
-  }
   let data: T = {} as T;
   if (text) {
     try {

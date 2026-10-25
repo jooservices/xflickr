@@ -23,6 +23,10 @@ import type {
 
 import type { ApiKey, CreateKeyRequest, Error, KeyQuota, UpdateKeyRequest } from '../models';
 
+import { customFetch } from '../../mutator';
+
+type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
   const result = { queryKey } as T & { queryKey: K };
   for (const key of Object.keys(query)) {
@@ -65,16 +69,13 @@ export const getListKeysUrl = () => {
  * Returns every API key owned by the signed-in user. Secrets are never included.
  * @summary List the current user's API keys
  */
-export const listKeys = async (options?: RequestInit): Promise<listKeysResponse> => {
-  const res = await fetch(getListKeysUrl(), {
+export const listKeys = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<listKeysResponse> => {
+  return customFetch<listKeysResponse>(getListKeysUrl(), {
     ...options,
     method: 'GET',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listKeysResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as listKeysResponse;
 };
 
 export const getListKeysQueryKey = () => {
@@ -86,14 +87,14 @@ export const getListKeysQueryOptions = <
   TError = Error,
 >(options?: {
   query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listKeys>>, TError, TData>>;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey = queryOptions?.queryKey ?? getListKeysQueryKey();
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof listKeys>>> = ({ signal }) =>
-    listKeys({ signal, ...fetchOptions });
+    listKeys({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listKeys>>,
@@ -116,7 +117,7 @@ export function useListKeys<TData = Awaited<ReturnType<typeof listKeys>>, TError
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -131,14 +132,14 @@ export function useListKeys<TData = Awaited<ReturnType<typeof listKeys>>, TError
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function useListKeys<TData = Awaited<ReturnType<typeof listKeys>>, TError = Error>(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listKeys>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -149,7 +150,7 @@ export function useListKeys<TData = Awaited<ReturnType<typeof listKeys>>, TError
 export function useListKeys<TData = Awaited<ReturnType<typeof listKeys>>, TError = Error>(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listKeys>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -217,7 +218,7 @@ export const getCreateKeyUrl = () => {
  */
 export const createKey = async (
   createKeyRequest: CreateKeyRequest,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<createKeyResponse> => {
   const getHeaders = (
     h?: NonNullable<RequestInit['headers']>,
@@ -238,17 +239,12 @@ export const createKey = async (
     }
     return headers;
   };
-  const res = await fetch(getCreateKeyUrl(), {
+  return customFetch<createKeyResponse>(getCreateKeyUrl(), {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(createKeyRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: createKeyResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as createKeyResponse;
 };
 
 export const getCreateKeyMutationKey = () => ['createKey'] as const;
@@ -260,7 +256,7 @@ export const getCreateKeyMutationOptions = <TError = Error, TContext = unknown>(
     CreateKeyMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof createKey>>,
   TError,
@@ -268,11 +264,11 @@ export const getCreateKeyMutationOptions = <TError = Error, TContext = unknown>(
   TContext
 > => {
   const mutationKey = getCreateKeyMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof createKey>>,
@@ -280,7 +276,7 @@ export const getCreateKeyMutationOptions = <TError = Error, TContext = unknown>(
   > = (props) => {
     const { data } = props ?? {};
 
-    return createKey(data, fetchOptions);
+    return createKey(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -302,7 +298,7 @@ export const useCreateKey = <TError = Error, TContext = unknown>(
       CreateKeyMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
@@ -345,16 +341,14 @@ export const getGetKeyUrl = (id: number) => {
  * Returns one API key owned by the signed-in user. The secret is never included.
  * @summary Get one API key
  */
-export const getKey = async (id: number, options?: RequestInit): Promise<getKeyResponse> => {
-  const res = await fetch(getGetKeyUrl(id), {
+export const getKey = async (
+  id: number,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getKeyResponse> => {
+  return customFetch<getKeyResponse>(getGetKeyUrl(id), {
     ...options,
     method: 'GET',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getKeyResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as getKeyResponse;
 };
 
 export const getGetKeyQueryKey = (id: number) => {
@@ -365,15 +359,15 @@ export const getGetKeyQueryOptions = <TData = Awaited<ReturnType<typeof getKey>>
   id: number,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getKey>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
 ) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey = queryOptions?.queryKey ?? getGetKeyQueryKey(id);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getKey>>> = ({ signal }) =>
-    getKey(id, { signal, ...fetchOptions });
+    getKey(id, { signal, ...requestOptions });
 
   return {
     queryKey,
@@ -400,7 +394,7 @@ export function useGetKey<TData = Awaited<ReturnType<typeof getKey>>, TError = E
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -416,7 +410,7 @@ export function useGetKey<TData = Awaited<ReturnType<typeof getKey>>, TError = E
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -424,7 +418,7 @@ export function useGetKey<TData = Awaited<ReturnType<typeof getKey>>, TError = E
   id: number,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getKey>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -436,7 +430,7 @@ export function useGetKey<TData = Awaited<ReturnType<typeof getKey>>, TError = E
   id: number,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getKey>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -505,7 +499,7 @@ export const getUpdateKeyUrl = (id: number) => {
 export const updateKey = async (
   id: number,
   updateKeyRequest: UpdateKeyRequest,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<updateKeyResponse> => {
   const getHeaders = (
     h?: NonNullable<RequestInit['headers']>,
@@ -526,17 +520,12 @@ export const updateKey = async (
     }
     return headers;
   };
-  const res = await fetch(getUpdateKeyUrl(id), {
+  return customFetch<updateKeyResponse>(getUpdateKeyUrl(id), {
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(updateKeyRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateKeyResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as updateKeyResponse;
 };
 
 export const getUpdateKeyMutationKey = () => ['updateKey'] as const;
@@ -548,7 +537,7 @@ export const getUpdateKeyMutationOptions = <TError = Error, TContext = unknown>(
     UpdateKeyMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof updateKey>>,
   TError,
@@ -556,11 +545,11 @@ export const getUpdateKeyMutationOptions = <TError = Error, TContext = unknown>(
   TContext
 > => {
   const mutationKey = getUpdateKeyMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof updateKey>>,
@@ -568,7 +557,7 @@ export const getUpdateKeyMutationOptions = <TError = Error, TContext = unknown>(
   > = (props) => {
     const { id, data } = props ?? {};
 
-    return updateKey(id, data, fetchOptions);
+    return updateKey(id, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -590,7 +579,7 @@ export const useUpdateKey = <TError = Error, TContext = unknown>(
       UpdateKeyMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
@@ -633,16 +622,14 @@ export const getDeleteKeyUrl = (id: number) => {
  * Deletes the key and publishes key.deleted so queued work for that key stops.
  * @summary Delete an API key
  */
-export const deleteKey = async (id: number, options?: RequestInit): Promise<deleteKeyResponse> => {
-  const res = await fetch(getDeleteKeyUrl(id), {
+export const deleteKey = async (
+  id: number,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<deleteKeyResponse> => {
+  return customFetch<deleteKeyResponse>(getDeleteKeyUrl(id), {
     ...options,
     method: 'DELETE',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: deleteKeyResponse['data'] = body ? JSON.parse(body) : undefined;
-  return { data, status: res.status, headers: res.headers } as deleteKeyResponse;
 };
 
 export const getDeleteKeyMutationKey = () => ['deleteKey'] as const;
@@ -654,7 +641,7 @@ export const getDeleteKeyMutationOptions = <TError = Error, TContext = unknown>(
     DeleteKeyMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof deleteKey>>,
   TError,
@@ -662,11 +649,11 @@ export const getDeleteKeyMutationOptions = <TError = Error, TContext = unknown>(
   TContext
 > => {
   const mutationKey = getDeleteKeyMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof deleteKey>>,
@@ -674,7 +661,7 @@ export const getDeleteKeyMutationOptions = <TError = Error, TContext = unknown>(
   > = (props) => {
     const { id } = props ?? {};
 
-    return deleteKey(id, fetchOptions);
+    return deleteKey(id, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -696,7 +683,7 @@ export const useDeleteKey = <TError = Error, TContext = unknown>(
       DeleteKeyMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
@@ -741,17 +728,12 @@ export const getGetKeyQuotaUrl = (id: number) => {
  */
 export const getKeyQuota = async (
   id: number,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<getKeyQuotaResponse> => {
-  const res = await fetch(getGetKeyQuotaUrl(id), {
+  return customFetch<getKeyQuotaResponse>(getGetKeyQuotaUrl(id), {
     ...options,
     method: 'GET',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getKeyQuotaResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as getKeyQuotaResponse;
 };
 
 export const getGetKeyQuotaQueryKey = (id: number) => {
@@ -765,15 +747,15 @@ export const getGetKeyQuotaQueryOptions = <
   id: number,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getKeyQuota>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
 ) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey = queryOptions?.queryKey ?? getGetKeyQuotaQueryKey(id);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getKeyQuota>>> = ({ signal }) =>
-    getKeyQuota(id, { signal, ...fetchOptions });
+    getKeyQuota(id, { signal, ...requestOptions });
 
   return {
     queryKey,
@@ -800,7 +782,7 @@ export function useGetKeyQuota<TData = Awaited<ReturnType<typeof getKeyQuota>>, 
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -816,7 +798,7 @@ export function useGetKeyQuota<TData = Awaited<ReturnType<typeof getKeyQuota>>, 
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -824,7 +806,7 @@ export function useGetKeyQuota<TData = Awaited<ReturnType<typeof getKeyQuota>>, 
   id: number,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getKeyQuota>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -836,7 +818,7 @@ export function useGetKeyQuota<TData = Awaited<ReturnType<typeof getKeyQuota>>, 
   id: number,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getKeyQuota>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {

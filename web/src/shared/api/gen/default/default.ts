@@ -38,6 +38,10 @@ import type {
   User,
 } from '../models';
 
+import { customFetch } from '../../mutator';
+
+type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
   const result = { queryKey } as T & { queryKey: K };
   for (const key of Object.keys(query)) {
@@ -70,16 +74,13 @@ export const getGetAuthConfigUrl = () => {
 /**
  * @summary Get public authentication options
  */
-export const getAuthConfig = async (options?: RequestInit): Promise<getAuthConfigResponse> => {
-  const res = await fetch(getGetAuthConfigUrl(), {
+export const getAuthConfig = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getAuthConfigResponse> => {
+  return customFetch<getAuthConfigResponse>(getGetAuthConfigUrl(), {
     ...options,
     method: 'GET',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getAuthConfigResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as getAuthConfigResponse;
 };
 
 export const getGetAuthConfigQueryKey = () => {
@@ -91,14 +92,14 @@ export const getGetAuthConfigQueryOptions = <
   TError = unknown,
 >(options?: {
   query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAuthConfig>>, TError, TData>>;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey = queryOptions?.queryKey ?? getGetAuthConfigQueryKey();
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getAuthConfig>>> = ({ signal }) =>
-    getAuthConfig({ signal, ...fetchOptions });
+    getAuthConfig({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getAuthConfig>>,
@@ -124,7 +125,7 @@ export function useGetAuthConfig<
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -142,7 +143,7 @@ export function useGetAuthConfig<
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -152,7 +153,7 @@ export function useGetAuthConfig<
 >(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAuthConfig>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -166,7 +167,7 @@ export function useGetAuthConfig<
 >(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAuthConfig>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -212,7 +213,7 @@ export const getRegisterUrl = () => {
  */
 export const register = async (
   registerRequest: RegisterRequest,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<registerResponse> => {
   const getHeaders = (
     h?: NonNullable<RequestInit['headers']>,
@@ -233,17 +234,12 @@ export const register = async (
     }
     return headers;
   };
-  const res = await fetch(getRegisterUrl(), {
+  return customFetch<registerResponse>(getRegisterUrl(), {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(registerRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: registerResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as registerResponse;
 };
 
 export const getRegisterMutationKey = () => ['register'] as const;
@@ -258,7 +254,7 @@ export const getRegisterMutationOptions = <
     RegisterMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof register>>,
   TError,
@@ -266,11 +262,11 @@ export const getRegisterMutationOptions = <
   TContext
 > => {
   const mutationKey = getRegisterMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof register>>,
@@ -278,7 +274,7 @@ export const getRegisterMutationOptions = <
   > = (props) => {
     const { data } = props ?? {};
 
-    return register(data, fetchOptions);
+    return register(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -303,7 +299,7 @@ export const useRegister = <
       RegisterMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
@@ -359,7 +355,7 @@ export const getLoginUrl = () => {
  */
 export const login = async (
   authRequest: AuthRequest,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<loginResponse> => {
   const getHeaders = (
     h?: NonNullable<RequestInit['headers']>,
@@ -380,17 +376,12 @@ export const login = async (
     }
     return headers;
   };
-  const res = await fetch(getLoginUrl(), {
+  return customFetch<loginResponse>(getLoginUrl(), {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(authRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: loginResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as loginResponse;
 };
 
 export const getLoginMutationKey = () => ['login'] as const;
@@ -405,7 +396,7 @@ export const getLoginMutationOptions = <
     LoginMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof login>>,
   TError,
@@ -413,18 +404,18 @@ export const getLoginMutationOptions = <
   TContext
 > => {
   const mutationKey = getLoginMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<Awaited<ReturnType<typeof login>>, LoginMutationVariables> = (
     props,
   ) => {
     const { data } = props ?? {};
 
-    return login(data, fetchOptions);
+    return login(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -446,7 +437,7 @@ export const useLogin = <TError = void | LoginLocked | LoginRateLimited, TContex
       LoginMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
@@ -474,33 +465,30 @@ export const getLogoutUrl = () => {
 /**
  * @summary Log out the current session
  */
-export const logout = async (options?: RequestInit): Promise<logoutResponse> => {
-  const res = await fetch(getLogoutUrl(), {
+export const logout = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<logoutResponse> => {
+  return customFetch<logoutResponse>(getLogoutUrl(), {
     ...options,
     method: 'POST',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: logoutResponse['data'] = body ? JSON.parse(body) : undefined;
-  return { data, status: res.status, headers: res.headers } as logoutResponse;
 };
 
 export const getLogoutMutationKey = () => ['logout'] as const;
 
 export const getLogoutMutationOptions = <TError = unknown, TContext = unknown>(options?: {
   mutation?: UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError, void, TContext>;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError, void, TContext> => {
   const mutationKey = getLogoutMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<Awaited<ReturnType<typeof logout>>, void> = () => {
-    return logout(fetchOptions);
+    return logout(requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -516,7 +504,7 @@ export type LogoutMutationError = unknown;
 export const useLogout = <TError = unknown, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError, void, TContext>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<Awaited<ReturnType<typeof logout>>, TError, void, TContext> => {
@@ -558,17 +546,12 @@ export const getRevokeOtherSessionsUrl = () => {
  * @summary Revoke every session except the current one
  */
 export const revokeOtherSessions = async (
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<revokeOtherSessionsResponse> => {
-  const res = await fetch(getRevokeOtherSessionsUrl(), {
+  return customFetch<revokeOtherSessionsResponse>(getRevokeOtherSessionsUrl(), {
     ...options,
     method: 'DELETE',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: revokeOtherSessionsResponse['data'] = body ? JSON.parse(body) : undefined;
-  return { data, status: res.status, headers: res.headers } as revokeOtherSessionsResponse;
 };
 
 export const getRevokeOtherSessionsMutationKey = () => ['revokeOtherSessions'] as const;
@@ -580,20 +563,20 @@ export const getRevokeOtherSessionsMutationOptions = <TError = void, TContext = 
     void,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<Awaited<ReturnType<typeof revokeOtherSessions>>, TError, void, TContext> => {
   const mutationKey = getRevokeOtherSessionsMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof revokeOtherSessions>>,
     void
   > = () => {
-    return revokeOtherSessions(fetchOptions);
+    return revokeOtherSessions(requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -616,7 +599,7 @@ export const useRevokeOtherSessions = <TError = void, TContext = unknown>(
       void,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<Awaited<ReturnType<typeof revokeOtherSessions>>, TError, void, TContext> => {
@@ -648,16 +631,13 @@ export const getGetMeUrl = () => {
 /**
  * @summary Get the authenticated user
  */
-export const getMe = async (options?: RequestInit): Promise<getMeResponse> => {
-  const res = await fetch(getGetMeUrl(), {
+export const getMe = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getMeResponse> => {
+  return customFetch<getMeResponse>(getGetMeUrl(), {
     ...options,
     method: 'GET',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getMeResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as getMeResponse;
 };
 
 export const getGetMeQueryKey = () => {
@@ -669,14 +649,14 @@ export const getGetMeQueryOptions = <
   TError = void,
 >(options?: {
   query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey = queryOptions?.queryKey ?? getGetMeQueryKey();
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getMe>>> = ({ signal }) =>
-    getMe({ signal, ...fetchOptions });
+    getMe({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getMe>>,
@@ -699,7 +679,7 @@ export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = voi
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -714,14 +694,14 @@ export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = voi
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = void>(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -732,7 +712,7 @@ export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = voi
 export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = void>(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -786,7 +766,7 @@ export const getUpdateMeUrl = () => {
  */
 export const updateMe = async (
   updateMeRequest: UpdateMeRequest,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<updateMeResponse> => {
   const getHeaders = (
     h?: NonNullable<RequestInit['headers']>,
@@ -807,17 +787,12 @@ export const updateMe = async (
     }
     return headers;
   };
-  const res = await fetch(getUpdateMeUrl(), {
+  return customFetch<updateMeResponse>(getUpdateMeUrl(), {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(updateMeRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateMeResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as updateMeResponse;
 };
 
 export const getUpdateMeMutationKey = () => ['updateMe'] as const;
@@ -829,7 +804,7 @@ export const getUpdateMeMutationOptions = <TError = void, TContext = unknown>(op
     UpdateMeMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof updateMe>>,
   TError,
@@ -837,11 +812,11 @@ export const getUpdateMeMutationOptions = <TError = void, TContext = unknown>(op
   TContext
 > => {
   const mutationKey = getUpdateMeMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof updateMe>>,
@@ -849,7 +824,7 @@ export const getUpdateMeMutationOptions = <TError = void, TContext = unknown>(op
   > = (props) => {
     const { data } = props ?? {};
 
-    return updateMe(data, fetchOptions);
+    return updateMe(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -871,7 +846,7 @@ export const useUpdateMe = <TError = void, TContext = unknown>(
       UpdateMeMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
@@ -908,16 +883,13 @@ export const getListMySessionsUrl = () => {
 /**
  * @summary List the current user's active sessions
  */
-export const listMySessions = async (options?: RequestInit): Promise<listMySessionsResponse> => {
-  const res = await fetch(getListMySessionsUrl(), {
+export const listMySessions = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<listMySessionsResponse> => {
+  return customFetch<listMySessionsResponse>(getListMySessionsUrl(), {
     ...options,
     method: 'GET',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listMySessionsResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as listMySessionsResponse;
 };
 
 export const getListMySessionsQueryKey = () => {
@@ -929,14 +901,14 @@ export const getListMySessionsQueryOptions = <
   TError = void,
 >(options?: {
   query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySessions>>, TError, TData>>;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey = queryOptions?.queryKey ?? getListMySessionsQueryKey();
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof listMySessions>>> = ({ signal }) =>
-    listMySessions({ signal, ...fetchOptions });
+    listMySessions({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listMySessions>>,
@@ -962,7 +934,7 @@ export function useListMySessions<
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -980,7 +952,7 @@ export function useListMySessions<
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -990,7 +962,7 @@ export function useListMySessions<
 >(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySessions>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -1004,7 +976,7 @@ export function useListMySessions<
 >(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMySessions>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -1057,17 +1029,12 @@ export const getRevokeMySessionUrl = (id: number) => {
  */
 export const revokeMySession = async (
   id: number,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<revokeMySessionResponse> => {
-  const res = await fetch(getRevokeMySessionUrl(id), {
+  return customFetch<revokeMySessionResponse>(getRevokeMySessionUrl(id), {
     ...options,
     method: 'DELETE',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: revokeMySessionResponse['data'] = body ? JSON.parse(body) : undefined;
-  return { data, status: res.status, headers: res.headers } as revokeMySessionResponse;
 };
 
 export const getRevokeMySessionMutationKey = () => ['revokeMySession'] as const;
@@ -1079,7 +1046,7 @@ export const getRevokeMySessionMutationOptions = <TError = void, TContext = unkn
     RevokeMySessionMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof revokeMySession>>,
   TError,
@@ -1087,11 +1054,11 @@ export const getRevokeMySessionMutationOptions = <TError = void, TContext = unkn
   TContext
 > => {
   const mutationKey = getRevokeMySessionMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof revokeMySession>>,
@@ -1099,7 +1066,7 @@ export const getRevokeMySessionMutationOptions = <TError = void, TContext = unkn
   > = (props) => {
     const { id } = props ?? {};
 
-    return revokeMySession(id, fetchOptions);
+    return revokeMySession(id, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -1123,7 +1090,7 @@ export const useRevokeMySession = <TError = void, TContext = unknown>(
       RevokeMySessionMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
@@ -1183,7 +1150,7 @@ export const getChangeMyPasswordUrl = () => {
  */
 export const changeMyPassword = async (
   changePasswordRequest: ChangePasswordRequest,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<changeMyPasswordResponse> => {
   const getHeaders = (
     h?: NonNullable<RequestInit['headers']>,
@@ -1204,17 +1171,12 @@ export const changeMyPassword = async (
     }
     return headers;
   };
-  const res = await fetch(getChangeMyPasswordUrl(), {
+  return customFetch<changeMyPasswordResponse>(getChangeMyPasswordUrl(), {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(changePasswordRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: changeMyPasswordResponse['data'] = body ? JSON.parse(body) : undefined;
-  return { data, status: res.status, headers: res.headers } as changeMyPasswordResponse;
 };
 
 export const getChangeMyPasswordMutationKey = () => ['changeMyPassword'] as const;
@@ -1229,7 +1191,7 @@ export const getChangeMyPasswordMutationOptions = <
     ChangeMyPasswordMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof changeMyPassword>>,
   TError,
@@ -1237,11 +1199,11 @@ export const getChangeMyPasswordMutationOptions = <
   TContext
 > => {
   const mutationKey = getChangeMyPasswordMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof changeMyPassword>>,
@@ -1249,7 +1211,7 @@ export const getChangeMyPasswordMutationOptions = <
   > = (props) => {
     const { data } = props ?? {};
 
-    return changeMyPassword(data, fetchOptions);
+    return changeMyPassword(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -1273,7 +1235,7 @@ export const useChangeMyPassword = <TError = Error | void | LoginRateLimited, TC
       ChangeMyPasswordMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
@@ -1325,7 +1287,7 @@ export const getCreateDownloadUrl = () => {
  */
 export const createDownload = async (
   createDownloadRequest: CreateDownloadRequest,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<createDownloadResponse> => {
   const getHeaders = (
     h?: NonNullable<RequestInit['headers']>,
@@ -1346,17 +1308,12 @@ export const createDownload = async (
     }
     return headers;
   };
-  const res = await fetch(getCreateDownloadUrl(), {
+  return customFetch<createDownloadResponse>(getCreateDownloadUrl(), {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(createDownloadRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: createDownloadResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as createDownloadResponse;
 };
 
 export const getCreateDownloadMutationKey = () => ['createDownload'] as const;
@@ -1368,7 +1325,7 @@ export const getCreateDownloadMutationOptions = <TError = Error, TContext = unkn
     CreateDownloadMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof createDownload>>,
   TError,
@@ -1376,11 +1333,11 @@ export const getCreateDownloadMutationOptions = <TError = Error, TContext = unkn
   TContext
 > => {
   const mutationKey = getCreateDownloadMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof createDownload>>,
@@ -1388,7 +1345,7 @@ export const getCreateDownloadMutationOptions = <TError = Error, TContext = unkn
   > = (props) => {
     const { data } = props ?? {};
 
-    return createDownload(data, fetchOptions);
+    return createDownload(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -1410,7 +1367,7 @@ export const useCreateDownload = <TError = Error, TContext = unknown>(
       CreateDownloadMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<

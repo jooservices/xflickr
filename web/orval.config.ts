@@ -14,6 +14,12 @@ export default defineConfig({
       clean: true,
       formatter: 'prettier',
       indexFiles: true,
+      override: {
+        mutator: {
+          path: './src/shared/api/mutator.ts',
+          name: 'customFetch',
+        },
+      },
     },
   },
 });

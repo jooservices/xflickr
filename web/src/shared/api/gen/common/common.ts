@@ -20,6 +20,8 @@ import type {
 
 import type { Error, Health } from '../models';
 
+import { customFetch } from '../../mutator';
+
 export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
 export type HTTPStatusCode2xx = 200 | 201 | 202 | 203 | 204 | 205 | 206 | 207;
 export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
@@ -57,6 +59,8 @@ export type HTTPStatusCode4xx =
 export type HTTPStatusCode5xx = 500 | 501 | 502 | 503 | 504 | 505 | 507 | 511;
 export type HTTPStatusCodes =
   HTTPStatusCode1xx | HTTPStatusCode2xx | HTTPStatusCode3xx | HTTPStatusCode4xx | HTTPStatusCode5xx;
+
+type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
   const result = { queryKey } as T & { queryKey: K };
@@ -100,16 +104,13 @@ export const getGetHealthUrl = () => {
  * Returns the process status and build version.
  * @summary Report process health.
  */
-export const getHealth = async (options?: RequestInit): Promise<getHealthResponse> => {
-  const res = await fetch(getGetHealthUrl(), {
+export const getHealth = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getHealthResponse> => {
+  return customFetch<getHealthResponse>(getGetHealthUrl(), {
     ...options,
     method: 'GET',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getHealthResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as getHealthResponse;
 };
 
 export const getGetHealthQueryKey = () => {
@@ -121,14 +122,14 @@ export const getGetHealthQueryOptions = <
   TError = Error,
 >(options?: {
   query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getHealth>>, TError, TData>>;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey = queryOptions?.queryKey ?? getGetHealthQueryKey();
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getHealth>>> = ({ signal }) =>
-    getHealth({ signal, ...fetchOptions });
+    getHealth({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getHealth>>,
@@ -151,7 +152,7 @@ export function useGetHealth<TData = Awaited<ReturnType<typeof getHealth>>, TErr
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -166,14 +167,14 @@ export function useGetHealth<TData = Awaited<ReturnType<typeof getHealth>>, TErr
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function useGetHealth<TData = Awaited<ReturnType<typeof getHealth>>, TError = Error>(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getHealth>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -184,7 +185,7 @@ export function useGetHealth<TData = Awaited<ReturnType<typeof getHealth>>, TErr
 export function useGetHealth<TData = Awaited<ReturnType<typeof getHealth>>, TError = Error>(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getHealth>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {

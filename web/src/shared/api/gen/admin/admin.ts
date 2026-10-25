@@ -34,6 +34,10 @@ import type {
   UpdateUserPlanRequest,
 } from '../models';
 
+import { customFetch } from '../../mutator';
+
+type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
   const result = { queryKey } as T & { queryKey: K };
   for (const key of Object.keys(query)) {
@@ -95,17 +99,12 @@ export const getListAdminUsersUrl = (params?: ListAdminUsersParams) => {
  */
 export const listAdminUsers = async (
   params?: ListAdminUsersParams,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<listAdminUsersResponse> => {
-  const res = await fetch(getListAdminUsersUrl(params), {
+  return customFetch<listAdminUsersResponse>(getListAdminUsersUrl(params), {
     ...options,
     method: 'GET',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listAdminUsersResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as listAdminUsersResponse;
 };
 
 export const getListAdminUsersQueryKey = (params?: ListAdminUsersParams) => {
@@ -119,15 +118,15 @@ export const getListAdminUsersQueryOptions = <
   params?: ListAdminUsersParams,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listAdminUsers>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
 ) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey = queryOptions?.queryKey ?? getListAdminUsersQueryKey(params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof listAdminUsers>>> = ({ signal }) =>
-    listAdminUsers(params, { signal, ...fetchOptions });
+    listAdminUsers(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listAdminUsers>>,
@@ -154,7 +153,7 @@ export function useListAdminUsers<
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -173,7 +172,7 @@ export function useListAdminUsers<
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -184,7 +183,7 @@ export function useListAdminUsers<
   params?: ListAdminUsersParams,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listAdminUsers>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -199,7 +198,7 @@ export function useListAdminUsers<
   params?: ListAdminUsersParams,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listAdminUsers>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -268,7 +267,7 @@ export const getUpdateAdminUserUrl = (id: number) => {
 export const updateAdminUser = async (
   id: number,
   updateAdminUserRequest: UpdateAdminUserRequest,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<updateAdminUserResponse> => {
   const getHeaders = (
     h?: NonNullable<RequestInit['headers']>,
@@ -289,17 +288,12 @@ export const updateAdminUser = async (
     }
     return headers;
   };
-  const res = await fetch(getUpdateAdminUserUrl(id), {
+  return customFetch<updateAdminUserResponse>(getUpdateAdminUserUrl(id), {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(updateAdminUserRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateAdminUserResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as updateAdminUserResponse;
 };
 
 export const getUpdateAdminUserMutationKey = () => ['updateAdminUser'] as const;
@@ -311,7 +305,7 @@ export const getUpdateAdminUserMutationOptions = <TError = Error, TContext = unk
     UpdateAdminUserMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof updateAdminUser>>,
   TError,
@@ -319,11 +313,11 @@ export const getUpdateAdminUserMutationOptions = <TError = Error, TContext = unk
   TContext
 > => {
   const mutationKey = getUpdateAdminUserMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof updateAdminUser>>,
@@ -331,7 +325,7 @@ export const getUpdateAdminUserMutationOptions = <TError = Error, TContext = unk
   > = (props) => {
     const { id, data } = props ?? {};
 
-    return updateAdminUser(id, data, fetchOptions);
+    return updateAdminUser(id, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -355,7 +349,7 @@ export const useUpdateAdminUser = <TError = Error, TContext = unknown>(
       UpdateAdminUserMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
@@ -397,16 +391,13 @@ export const getGetAdminPlansUrl = () => {
 /**
  * @summary Get configured plans
  */
-export const getAdminPlans = async (options?: RequestInit): Promise<getAdminPlansResponse> => {
-  const res = await fetch(getGetAdminPlansUrl(), {
+export const getAdminPlans = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getAdminPlansResponse> => {
+  return customFetch<getAdminPlansResponse>(getGetAdminPlansUrl(), {
     ...options,
     method: 'GET',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getAdminPlansResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as getAdminPlansResponse;
 };
 
 export const getGetAdminPlansQueryKey = () => {
@@ -418,14 +409,14 @@ export const getGetAdminPlansQueryOptions = <
   TError = Error,
 >(options?: {
   query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminPlans>>, TError, TData>>;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey = queryOptions?.queryKey ?? getGetAdminPlansQueryKey();
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminPlans>>> = ({ signal }) =>
-    getAdminPlans({ signal, ...fetchOptions });
+    getAdminPlans({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getAdminPlans>>,
@@ -448,7 +439,7 @@ export function useGetAdminPlans<TData = Awaited<ReturnType<typeof getAdminPlans
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -463,14 +454,14 @@ export function useGetAdminPlans<TData = Awaited<ReturnType<typeof getAdminPlans
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function useGetAdminPlans<TData = Awaited<ReturnType<typeof getAdminPlans>>, TError = Error>(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminPlans>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -481,7 +472,7 @@ export function useGetAdminPlans<TData = Awaited<ReturnType<typeof getAdminPlans
 export function useGetAdminPlans<TData = Awaited<ReturnType<typeof getAdminPlans>>, TError = Error>(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminPlans>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -536,7 +527,7 @@ export const getUpdateAdminPlansUrl = () => {
  */
 export const updateAdminPlans = async (
   updateAdminPlansRequest: UpdateAdminPlansRequest,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<updateAdminPlansResponse> => {
   const getHeaders = (
     h?: NonNullable<RequestInit['headers']>,
@@ -557,17 +548,12 @@ export const updateAdminPlans = async (
     }
     return headers;
   };
-  const res = await fetch(getUpdateAdminPlansUrl(), {
+  return customFetch<updateAdminPlansResponse>(getUpdateAdminPlansUrl(), {
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(updateAdminPlansRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateAdminPlansResponse['data'] = body ? JSON.parse(body) : undefined;
-  return { data, status: res.status, headers: res.headers } as updateAdminPlansResponse;
 };
 
 export const getUpdateAdminPlansMutationKey = () => ['updateAdminPlans'] as const;
@@ -579,7 +565,7 @@ export const getUpdateAdminPlansMutationOptions = <TError = Error, TContext = un
     UpdateAdminPlansMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof updateAdminPlans>>,
   TError,
@@ -587,11 +573,11 @@ export const getUpdateAdminPlansMutationOptions = <TError = Error, TContext = un
   TContext
 > => {
   const mutationKey = getUpdateAdminPlansMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof updateAdminPlans>>,
@@ -599,7 +585,7 @@ export const getUpdateAdminPlansMutationOptions = <TError = Error, TContext = un
   > = (props) => {
     const { data } = props ?? {};
 
-    return updateAdminPlans(data, fetchOptions);
+    return updateAdminPlans(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -623,7 +609,7 @@ export const useUpdateAdminPlans = <TError = Error, TContext = unknown>(
       UpdateAdminPlansMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
@@ -685,7 +671,7 @@ export const getUpdateAdminUserPlanUrl = (id: number) => {
 export const updateAdminUserPlan = async (
   id: number,
   updateUserPlanRequest: UpdateUserPlanRequest,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<updateAdminUserPlanResponse> => {
   const getHeaders = (
     h?: NonNullable<RequestInit['headers']>,
@@ -706,17 +692,12 @@ export const updateAdminUserPlan = async (
     }
     return headers;
   };
-  const res = await fetch(getUpdateAdminUserPlanUrl(id), {
+  return customFetch<updateAdminUserPlanResponse>(getUpdateAdminUserPlanUrl(id), {
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(updateUserPlanRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateAdminUserPlanResponse['data'] = body ? JSON.parse(body) : undefined;
-  return { data, status: res.status, headers: res.headers } as updateAdminUserPlanResponse;
 };
 
 export const getUpdateAdminUserPlanMutationKey = () => ['updateAdminUserPlan'] as const;
@@ -731,7 +712,7 @@ export const getUpdateAdminUserPlanMutationOptions = <
     UpdateAdminUserPlanMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof updateAdminUserPlan>>,
   TError,
@@ -739,11 +720,11 @@ export const getUpdateAdminUserPlanMutationOptions = <
   TContext
 > => {
   const mutationKey = getUpdateAdminUserPlanMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof updateAdminUserPlan>>,
@@ -751,7 +732,7 @@ export const getUpdateAdminUserPlanMutationOptions = <
   > = (props) => {
     const { id, data } = props ?? {};
 
-    return updateAdminUserPlan(id, data, fetchOptions);
+    return updateAdminUserPlan(id, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -775,7 +756,7 @@ export const useUpdateAdminUserPlan = <TError = Error, TContext = unknown>(
       UpdateAdminUserPlanMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
@@ -817,16 +798,13 @@ export const getGetAdminQueueUrl = () => {
 /**
  * @summary Get aggregate queue state
  */
-export const getAdminQueue = async (options?: RequestInit): Promise<getAdminQueueResponse> => {
-  const res = await fetch(getGetAdminQueueUrl(), {
+export const getAdminQueue = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getAdminQueueResponse> => {
+  return customFetch<getAdminQueueResponse>(getGetAdminQueueUrl(), {
     ...options,
     method: 'GET',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getAdminQueueResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as getAdminQueueResponse;
 };
 
 export const getGetAdminQueueQueryKey = () => {
@@ -838,14 +816,14 @@ export const getGetAdminQueueQueryOptions = <
   TError = Error,
 >(options?: {
   query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminQueue>>, TError, TData>>;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey = queryOptions?.queryKey ?? getGetAdminQueueQueryKey();
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminQueue>>> = ({ signal }) =>
-    getAdminQueue({ signal, ...fetchOptions });
+    getAdminQueue({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getAdminQueue>>,
@@ -868,7 +846,7 @@ export function useGetAdminQueue<TData = Awaited<ReturnType<typeof getAdminQueue
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -883,14 +861,14 @@ export function useGetAdminQueue<TData = Awaited<ReturnType<typeof getAdminQueue
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function useGetAdminQueue<TData = Awaited<ReturnType<typeof getAdminQueue>>, TError = Error>(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminQueue>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -901,7 +879,7 @@ export function useGetAdminQueue<TData = Awaited<ReturnType<typeof getAdminQueue
 export function useGetAdminQueue<TData = Awaited<ReturnType<typeof getAdminQueue>>, TError = Error>(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminQueue>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -945,16 +923,13 @@ export const getGetAdminQuotaUrl = () => {
 /**
  * @summary Get the quota state of every API key
  */
-export const getAdminQuota = async (options?: RequestInit): Promise<getAdminQuotaResponse> => {
-  const res = await fetch(getGetAdminQuotaUrl(), {
+export const getAdminQuota = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getAdminQuotaResponse> => {
+  return customFetch<getAdminQuotaResponse>(getGetAdminQuotaUrl(), {
     ...options,
     method: 'GET',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getAdminQuotaResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as getAdminQuotaResponse;
 };
 
 export const getGetAdminQuotaQueryKey = () => {
@@ -966,14 +941,14 @@ export const getGetAdminQuotaQueryOptions = <
   TError = Error,
 >(options?: {
   query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminQuota>>, TError, TData>>;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey = queryOptions?.queryKey ?? getGetAdminQuotaQueryKey();
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminQuota>>> = ({ signal }) =>
-    getAdminQuota({ signal, ...fetchOptions });
+    getAdminQuota({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getAdminQuota>>,
@@ -996,7 +971,7 @@ export function useGetAdminQuota<TData = Awaited<ReturnType<typeof getAdminQuota
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -1011,14 +986,14 @@ export function useGetAdminQuota<TData = Awaited<ReturnType<typeof getAdminQuota
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function useGetAdminQuota<TData = Awaited<ReturnType<typeof getAdminQuota>>, TError = Error>(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminQuota>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -1029,7 +1004,7 @@ export function useGetAdminQuota<TData = Awaited<ReturnType<typeof getAdminQuota
 export function useGetAdminQuota<TData = Awaited<ReturnType<typeof getAdminQuota>>, TError = Error>(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminQuota>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {

@@ -49,6 +49,7 @@ async function fillAndSubmit(key = KEY, secret = SECRET) {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  document.cookie = 'xf_csrf=; Max-Age=0; path=/';
 });
 
 describe('setup wizard step 1', () => {
@@ -100,10 +101,17 @@ describe('setup wizard step 1', () => {
 
   it('trims spaces, posts the key once, announces it and moves to step 2', async () => {
     const bodies: unknown[] = [];
+    document.cookie = 'xf_csrf=wizard-token; path=/';
     server.use(
       keysReply(),
       accountsReply(),
       http.post('*/keys', async ({ request }) => {
+        if (request.headers.get('X-CSRF-Token') !== 'wizard-token') {
+          return HttpResponse.json(
+            { code: 'csrf_rejected', message: 'CSRF token is missing or invalid' },
+            { status: 403 },
+          );
+        }
         bodies.push(await request.json());
         return HttpResponse.json(acceptedKey, { status: 201 });
       }),
@@ -238,11 +246,18 @@ describe('setup wizard step 2', () => {
   it('redirects to Flickr with the selected key and offers a key select', async () => {
     const assign = vi.fn();
     vi.stubGlobal('location', { ...window.location, assign });
+    document.cookie = 'xf_csrf=wizard-token; path=/';
     const bodies: unknown[] = [];
     server.use(
       keysReply([acceptedKey, { ...acceptedKey, id: 6, label: 'Second' }]),
       accountsReply(),
       http.post('*/flickr-accounts/connect', async ({ request }) => {
+        if (request.headers.get('X-CSRF-Token') !== 'wizard-token') {
+          return HttpResponse.json(
+            { code: 'csrf_rejected', message: 'CSRF token is missing or invalid' },
+            { status: 403 },
+          );
+        }
         bodies.push(await request.json());
         return HttpResponse.json({ authorize_url: 'https://flickr.test/authorize' });
       }),

@@ -15,6 +15,10 @@ import type {
 
 import type { Error, SharingSetting, UpdateSharingRequest } from '../models';
 
+import { customFetch } from '../../mutator';
+
+type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
 export type putMeSharingResponse200 = {
   data: SharingSetting;
   status: 200;
@@ -48,7 +52,7 @@ export const getPutMeSharingUrl = () => {
  */
 export const putMeSharing = async (
   updateSharingRequest: UpdateSharingRequest,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<putMeSharingResponse> => {
   const getHeaders = (
     h?: NonNullable<RequestInit['headers']>,
@@ -69,17 +73,12 @@ export const putMeSharing = async (
     }
     return headers;
   };
-  const res = await fetch(getPutMeSharingUrl(), {
+  return customFetch<putMeSharingResponse>(getPutMeSharingUrl(), {
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(updateSharingRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: putMeSharingResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as putMeSharingResponse;
 };
 
 export const getPutMeSharingMutationKey = () => ['putMeSharing'] as const;
@@ -91,7 +90,7 @@ export const getPutMeSharingMutationOptions = <TError = Error, TContext = unknow
     PutMeSharingMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof putMeSharing>>,
   TError,
@@ -99,11 +98,11 @@ export const getPutMeSharingMutationOptions = <TError = Error, TContext = unknow
   TContext
 > => {
   const mutationKey = getPutMeSharingMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof putMeSharing>>,
@@ -111,7 +110,7 @@ export const getPutMeSharingMutationOptions = <TError = Error, TContext = unknow
   > = (props) => {
     const { data } = props ?? {};
 
-    return putMeSharing(data, fetchOptions);
+    return putMeSharing(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -133,7 +132,7 @@ export const usePutMeSharing = <TError = Error, TContext = unknown>(
       PutMeSharingMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<

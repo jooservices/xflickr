@@ -29,6 +29,10 @@ import type {
   StarContactRequest,
 } from '../models';
 
+import { customFetch } from '../../mutator';
+
+type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
   const result = { queryKey } as T & { queryKey: K };
   for (const key of Object.keys(query)) {
@@ -70,16 +74,13 @@ export const getGetMeCrawlQueueUrl = () => {
 /**
  * @summary Get the current user's crawl backlog and ETA
  */
-export const getMeCrawlQueue = async (options?: RequestInit): Promise<getMeCrawlQueueResponse> => {
-  const res = await fetch(getGetMeCrawlQueueUrl(), {
+export const getMeCrawlQueue = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getMeCrawlQueueResponse> => {
+  return customFetch<getMeCrawlQueueResponse>(getGetMeCrawlQueueUrl(), {
     ...options,
     method: 'GET',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getMeCrawlQueueResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as getMeCrawlQueueResponse;
 };
 
 export const getGetMeCrawlQueueQueryKey = () => {
@@ -91,14 +92,14 @@ export const getGetMeCrawlQueueQueryOptions = <
   TError = Error,
 >(options?: {
   query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeCrawlQueue>>, TError, TData>>;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey = queryOptions?.queryKey ?? getGetMeCrawlQueueQueryKey();
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getMeCrawlQueue>>> = ({ signal }) =>
-    getMeCrawlQueue({ signal, ...fetchOptions });
+    getMeCrawlQueue({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getMeCrawlQueue>>,
@@ -124,7 +125,7 @@ export function useGetMeCrawlQueue<
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -142,7 +143,7 @@ export function useGetMeCrawlQueue<
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -152,7 +153,7 @@ export function useGetMeCrawlQueue<
 >(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeCrawlQueue>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -166,7 +167,7 @@ export function useGetMeCrawlQueue<
 >(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeCrawlQueue>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -205,16 +206,13 @@ export const getGetMeCrawlUrl = () => {
 /**
  * @summary Get crawl progress by depth, facet, and lane
  */
-export const getMeCrawl = async (options?: RequestInit): Promise<getMeCrawlResponse> => {
-  const res = await fetch(getGetMeCrawlUrl(), {
+export const getMeCrawl = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getMeCrawlResponse> => {
+  return customFetch<getMeCrawlResponse>(getGetMeCrawlUrl(), {
     ...options,
     method: 'GET',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getMeCrawlResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as getMeCrawlResponse;
 };
 
 export const getGetMeCrawlQueryKey = () => {
@@ -226,14 +224,14 @@ export const getGetMeCrawlQueryOptions = <
   TError = Error,
 >(options?: {
   query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeCrawl>>, TError, TData>>;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey = queryOptions?.queryKey ?? getGetMeCrawlQueryKey();
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getMeCrawl>>> = ({ signal }) =>
-    getMeCrawl({ signal, ...fetchOptions });
+    getMeCrawl({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getMeCrawl>>,
@@ -256,7 +254,7 @@ export function useGetMeCrawl<TData = Awaited<ReturnType<typeof getMeCrawl>>, TE
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -271,14 +269,14 @@ export function useGetMeCrawl<TData = Awaited<ReturnType<typeof getMeCrawl>>, TE
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function useGetMeCrawl<TData = Awaited<ReturnType<typeof getMeCrawl>>, TError = Error>(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeCrawl>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -289,7 +287,7 @@ export function useGetMeCrawl<TData = Awaited<ReturnType<typeof getMeCrawl>>, TE
 export function useGetMeCrawl<TData = Awaited<ReturnType<typeof getMeCrawl>>, TError = Error>(
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeCrawl>>, TError, TData>>;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -343,7 +341,7 @@ export const getStarMyContactUrl = (nsid: string) => {
 export const starMyContact = async (
   nsid: string,
   starContactRequest: StarContactRequest,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<starMyContactResponse> => {
   const getHeaders = (
     h?: NonNullable<RequestInit['headers']>,
@@ -364,17 +362,12 @@ export const starMyContact = async (
     }
     return headers;
   };
-  const res = await fetch(getStarMyContactUrl(nsid), {
+  return customFetch<starMyContactResponse>(getStarMyContactUrl(nsid), {
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(starContactRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: starMyContactResponse['data'] = body ? JSON.parse(body) : undefined;
-  return { data, status: res.status, headers: res.headers } as starMyContactResponse;
 };
 
 export const getStarMyContactMutationKey = () => ['starMyContact'] as const;
@@ -386,7 +379,7 @@ export const getStarMyContactMutationOptions = <TError = Error, TContext = unkno
     StarMyContactMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof starMyContact>>,
   TError,
@@ -394,11 +387,11 @@ export const getStarMyContactMutationOptions = <TError = Error, TContext = unkno
   TContext
 > => {
   const mutationKey = getStarMyContactMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof starMyContact>>,
@@ -406,7 +399,7 @@ export const getStarMyContactMutationOptions = <TError = Error, TContext = unkno
   > = (props) => {
     const { nsid, data } = props ?? {};
 
-    return starMyContact(nsid, data, fetchOptions);
+    return starMyContact(nsid, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -428,7 +421,7 @@ export const useStarMyContact = <TError = Error, TContext = unknown>(
       StarMyContactMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
@@ -479,17 +472,12 @@ export const getSelectMyContactUrl = (nsid: string) => {
  */
 export const selectMyContact = async (
   nsid: string,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<selectMyContactResponse> => {
-  const res = await fetch(getSelectMyContactUrl(nsid), {
+  return customFetch<selectMyContactResponse>(getSelectMyContactUrl(nsid), {
     ...options,
     method: 'PUT',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: selectMyContactResponse['data'] = body ? JSON.parse(body) : undefined;
-  return { data, status: res.status, headers: res.headers } as selectMyContactResponse;
 };
 
 export const getSelectMyContactMutationKey = () => ['selectMyContact'] as const;
@@ -501,7 +489,7 @@ export const getSelectMyContactMutationOptions = <TError = Error, TContext = unk
     SelectMyContactMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof selectMyContact>>,
   TError,
@@ -509,11 +497,11 @@ export const getSelectMyContactMutationOptions = <TError = Error, TContext = unk
   TContext
 > => {
   const mutationKey = getSelectMyContactMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof selectMyContact>>,
@@ -521,7 +509,7 @@ export const getSelectMyContactMutationOptions = <TError = Error, TContext = unk
   > = (props) => {
     const { nsid } = props ?? {};
 
-    return selectMyContact(nsid, fetchOptions);
+    return selectMyContact(nsid, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -545,7 +533,7 @@ export const useSelectMyContact = <TError = Error, TContext = unknown>(
       SelectMyContactMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
@@ -597,7 +585,7 @@ export const getPauseCrawlContactUrl = () => {
  */
 export const pauseCrawlContact = async (
   crawlContactRequest: CrawlContactRequest,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<pauseCrawlContactResponse> => {
   const getHeaders = (
     h?: NonNullable<RequestInit['headers']>,
@@ -618,17 +606,12 @@ export const pauseCrawlContact = async (
     }
     return headers;
   };
-  const res = await fetch(getPauseCrawlContactUrl(), {
+  return customFetch<pauseCrawlContactResponse>(getPauseCrawlContactUrl(), {
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(crawlContactRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: pauseCrawlContactResponse['data'] = body ? JSON.parse(body) : undefined;
-  return { data, status: res.status, headers: res.headers } as pauseCrawlContactResponse;
 };
 
 export const getPauseCrawlContactMutationKey = () => ['pauseCrawlContact'] as const;
@@ -640,7 +623,7 @@ export const getPauseCrawlContactMutationOptions = <TError = Error, TContext = u
     PauseCrawlContactMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof pauseCrawlContact>>,
   TError,
@@ -648,11 +631,11 @@ export const getPauseCrawlContactMutationOptions = <TError = Error, TContext = u
   TContext
 > => {
   const mutationKey = getPauseCrawlContactMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof pauseCrawlContact>>,
@@ -660,7 +643,7 @@ export const getPauseCrawlContactMutationOptions = <TError = Error, TContext = u
   > = (props) => {
     const { data } = props ?? {};
 
-    return pauseCrawlContact(data, fetchOptions);
+    return pauseCrawlContact(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -684,7 +667,7 @@ export const usePauseCrawlContact = <TError = Error, TContext = unknown>(
       PauseCrawlContactMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
@@ -736,7 +719,7 @@ export const getResumeCrawlContactUrl = () => {
  */
 export const resumeCrawlContact = async (
   crawlContactRequest: CrawlContactRequest,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<resumeCrawlContactResponse> => {
   const getHeaders = (
     h?: NonNullable<RequestInit['headers']>,
@@ -757,17 +740,12 @@ export const resumeCrawlContact = async (
     }
     return headers;
   };
-  const res = await fetch(getResumeCrawlContactUrl(), {
+  return customFetch<resumeCrawlContactResponse>(getResumeCrawlContactUrl(), {
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(crawlContactRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: resumeCrawlContactResponse['data'] = body ? JSON.parse(body) : undefined;
-  return { data, status: res.status, headers: res.headers } as resumeCrawlContactResponse;
 };
 
 export const getResumeCrawlContactMutationKey = () => ['resumeCrawlContact'] as const;
@@ -779,7 +757,7 @@ export const getResumeCrawlContactMutationOptions = <TError = Error, TContext = 
     ResumeCrawlContactMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof resumeCrawlContact>>,
   TError,
@@ -787,11 +765,11 @@ export const getResumeCrawlContactMutationOptions = <TError = Error, TContext = 
   TContext
 > => {
   const mutationKey = getResumeCrawlContactMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof resumeCrawlContact>>,
@@ -799,7 +777,7 @@ export const getResumeCrawlContactMutationOptions = <TError = Error, TContext = 
   > = (props) => {
     const { data } = props ?? {};
 
-    return resumeCrawlContact(data, fetchOptions);
+    return resumeCrawlContact(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -823,7 +801,7 @@ export const useResumeCrawlContact = <TError = Error, TContext = unknown>(
       ResumeCrawlContactMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<

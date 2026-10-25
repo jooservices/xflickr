@@ -29,6 +29,10 @@ import type {
   FlickrAccountCallbackParams,
 } from '../models';
 
+import { customFetch } from '../../mutator';
+
+type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
   const result = { queryKey } as T & { queryKey: K };
   for (const key of Object.keys(query)) {
@@ -106,7 +110,7 @@ export const getConnectFlickrAccountUrl = () => {
  */
 export const connectFlickrAccount = async (
   connectFlickrAccountRequest: ConnectFlickrAccountRequest,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<connectFlickrAccountResponse> => {
   const getHeaders = (
     h?: NonNullable<RequestInit['headers']>,
@@ -127,17 +131,12 @@ export const connectFlickrAccount = async (
     }
     return headers;
   };
-  const res = await fetch(getConnectFlickrAccountUrl(), {
+  return customFetch<connectFlickrAccountResponse>(getConnectFlickrAccountUrl(), {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(connectFlickrAccountRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: connectFlickrAccountResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as connectFlickrAccountResponse;
 };
 
 export const getConnectFlickrAccountMutationKey = () => ['connectFlickrAccount'] as const;
@@ -152,7 +151,7 @@ export const getConnectFlickrAccountMutationOptions = <
     ConnectFlickrAccountMutationVariables,
     TContext
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof connectFlickrAccount>>,
   TError,
@@ -160,11 +159,11 @@ export const getConnectFlickrAccountMutationOptions = <
   TContext
 > => {
   const mutationKey = getConnectFlickrAccountMutationKey();
-  const { mutation: mutationOptions, fetch: fetchOptions } = options
+  const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
       ? options
       : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, fetch: undefined };
+    : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof connectFlickrAccount>>,
@@ -172,7 +171,7 @@ export const getConnectFlickrAccountMutationOptions = <
   > = (props) => {
     const { data } = props ?? {};
 
-    return connectFlickrAccount(data, fetchOptions);
+    return connectFlickrAccount(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -196,7 +195,7 @@ export const useConnectFlickrAccount = <TError = Error, TContext = unknown>(
       ConnectFlickrAccountMutationVariables,
       TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
@@ -275,17 +274,12 @@ export const getFlickrAccountCallbackUrl = (params: FlickrAccountCallbackParams)
  */
 export const flickrAccountCallback = async (
   params: FlickrAccountCallbackParams,
-  options?: RequestInit,
+  options?: Parameters<typeof customFetch>[1],
 ): Promise<flickrAccountCallbackResponse> => {
-  const res = await fetch(getFlickrAccountCallbackUrl(params), {
+  return customFetch<flickrAccountCallbackResponse>(getFlickrAccountCallbackUrl(params), {
     ...options,
     method: 'GET',
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: flickrAccountCallbackResponse['data'] = body ? JSON.parse(body) : {};
-  return { data, status: res.status, headers: res.headers } as flickrAccountCallbackResponse;
 };
 
 export const getFlickrAccountCallbackQueryKey = (params?: FlickrAccountCallbackParams) => {
@@ -301,15 +295,15 @@ export const getFlickrAccountCallbackQueryOptions = <
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof flickrAccountCallback>>, TError, TData>
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
 ) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey = queryOptions?.queryKey ?? getFlickrAccountCallbackQueryKey(params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof flickrAccountCallback>>> = ({ signal }) =>
-    flickrAccountCallback(params, { signal, ...fetchOptions });
+    flickrAccountCallback(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof flickrAccountCallback>>,
@@ -340,7 +334,7 @@ export function useFlickrAccountCallback<
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -361,7 +355,7 @@ export function useFlickrAccountCallback<
         >,
         'initialData'
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -374,7 +368,7 @@ export function useFlickrAccountCallback<
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof flickrAccountCallback>>, TError, TData>
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
@@ -391,7 +385,7 @@ export function useFlickrAccountCallback<
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof flickrAccountCallback>>, TError, TData>
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof customFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
