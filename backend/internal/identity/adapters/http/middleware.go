@@ -216,38 +216,17 @@ func requirePrincipal(sessions SessionService, admin bool) func(http.Handler) ht
 	}
 }
 
-var authenticatedRoutes = map[string]struct{}{
-	http.MethodGet + " /me":               {},
-	http.MethodGet + " /me/crawl/queue":   {},
-	http.MethodPut + " /me/sharing":       {},
-	http.MethodPatch + " /me":             {},
-	http.MethodDelete + " /auth/sessions": {},
-	http.MethodGet + " /me/sessions":      {},
-	http.MethodDelete + " /me/sessions/":  {},
-	http.MethodPost + " /me/password":     {},
-}
+// Access is the authentication requirement of one route.
+type Access int
 
-func authenticatedRequest(method, path string) bool {
-	if _, ok := authenticatedRoutes[method+" "+path]; ok {
-		return true
-	}
-	if method == http.MethodDelete && strings.HasPrefix(path, "/me/sessions/") {
-		return true
-	}
-	if path != "/keys" && !strings.HasPrefix(path, "/keys/") && !strings.HasPrefix(path, "/flickr-accounts/") {
-		return false
-	}
-	switch method {
-	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete:
-		return true
-	default:
-		return false
-	}
-}
-
-func adminRequest(path string) bool {
-	return path == "/admin" || strings.HasPrefix(path, "/admin/")
-}
+const (
+	// AccessPublic needs no session.
+	AccessPublic Access = iota
+	// AccessUser needs a valid session.
+	AccessUser
+	// AccessAdmin needs a valid session of an administrator.
+	AccessAdmin
+)
 
 // oauthCallbackNavigation reports the browser landing on the Flickr OAuth callback.
 func oauthCallbackNavigation(r *http.Request) bool {
@@ -286,26 +265,25 @@ func (w *unauthorizedRedirect) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
-// ProtectRoutes applies RequireUser to routes that need an authenticated
-// principal and RequireAdmin to everything under /admin.
-func ProtectRoutes(sessions SessionService) func(http.Handler) http.Handler {
+// ProtectRoutes applies the session middleware that matches the Access the
+// classifier declares for each request.
+func ProtectRoutes(sessions SessionService, access func(*http.Request) Access) func(http.Handler) http.Handler {
 	requireUser := RequireUser(sessions)
 	requireAdmin := RequireAdmin(sessions)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if adminRequest(r.URL.Path) {
+			switch access(r) {
+			case AccessAdmin:
 				requireAdmin(next).ServeHTTP(w, r)
-				return
-			}
-			if authenticatedRequest(r.Method, r.URL.Path) {
+			case AccessUser:
 				if oauthCallbackNavigation(r) {
 					redirectUnauthenticated(requireUser, next).ServeHTTP(w, r)
 					return
 				}
 				requireUser(next).ServeHTTP(w, r)
-				return
+			default:
+				next.ServeHTTP(w, r)
 			}
-			next.ServeHTTP(w, r)
 		})
 	}
 }

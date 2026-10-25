@@ -513,11 +513,12 @@ func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.K
 	})
 	router.Use(identityhttp.RequestBodyLimit)
 	router.Use(identityhttp.CSRF)
-	router.Use(identityhttp.ProtectRoutes(identity.Sessions))
-	return gen.HandlerFromMux(gen.NewStrictHandler(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
+	router.Use(identityhttp.ProtectRoutes(identity.Sessions, accessResolver(router)))
+	strict := gen.NewStrictHandlerWithOptions(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		identityhttp.MaintainSessionCookies(identity.Sessions),
-	}), router)
+	}, gen.StrictHTTPServerOptions{RequestErrorHandlerFunc: badRequest, ResponseErrorHandlerFunc: internalError})
+	return gen.HandlerWithOptions(strict, gen.ChiServerOptions{BaseRouter: router, ErrorHandlerFunc: badRequest})
 }
 
 func buildSharingHandler(pool *pgxpool.Pool) (sharinghttp.Handler, error) {

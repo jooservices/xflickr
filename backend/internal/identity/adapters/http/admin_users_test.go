@@ -122,13 +122,13 @@ func TestProtectRoutesRequiresAdminUnderAdmin(t *testing.T) {
 		req := httptest.NewRequest(method, "/admin/users/3", nil)
 		req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "present"})
 		rec := httptest.NewRecorder()
-		ProtectRoutes(user)(next).ServeHTTP(rec, req)
+		ProtectRoutes(user, testAccess)(next).ServeHTTP(rec, req)
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("%s as user status = %d", method, rec.Code)
 		}
 	}
 	anon := httptest.NewRecorder()
-	ProtectRoutes(&fakeSessions{authErr: app.ErrUnauthenticated})(next).ServeHTTP(anon, httptest.NewRequest(http.MethodGet, "/admin/users", nil))
+	ProtectRoutes(&fakeSessions{authErr: app.ErrUnauthenticated}, testAccess)(next).ServeHTTP(anon, httptest.NewRequest(http.MethodGet, "/admin/users", nil))
 	if anon.Code != http.StatusUnauthorized {
 		t.Fatalf("anonymous status = %d", anon.Code)
 	}
@@ -136,7 +136,7 @@ func TestProtectRoutesRequiresAdminUnderAdmin(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/admin/users", nil)
 	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "present"})
 	ok := httptest.NewRecorder()
-	ProtectRoutes(admin)(next).ServeHTTP(ok, req)
+	ProtectRoutes(admin, testAccess)(next).ServeHTTP(ok, req)
 	if ok.Code != http.StatusNoContent {
 		t.Fatalf("admin status = %d", ok.Code)
 	}

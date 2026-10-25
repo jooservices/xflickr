@@ -121,7 +121,12 @@ func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 
 	router := chi.NewRouter()
 	router.Use(identityhttp.CSRF)
-	router.Use(identityhttp.ProtectRoutes(service))
+	router.Use(identityhttp.ProtectRoutes(service, func(r *http.Request) identityhttp.Access {
+		if r.URL.Path == "/healthz" || r.URL.Path == "/auth/login" || r.URL.Path == "/auth/logout" {
+			return identityhttp.AccessPublic
+		}
+		return identityhttp.AccessUser
+	}))
 	server := httptest.NewServer(gen.HandlerFromMux(gen.NewStrictHandler(identityhttp.StrictHandler{Handler: identityhttp.Handler{Sessions: service, Users: repository, Version: "test"}}, nil), router))
 	t.Cleanup(server.Close)
 

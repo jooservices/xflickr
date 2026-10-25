@@ -258,9 +258,21 @@ func TestCSRFRejectsAndAcceptsUnsafeMethods(t *testing.T) {
 	}
 }
 
+// testAccess mirrors the production classifier for the paths these tests use.
+func testAccess(r *http.Request) Access {
+	switch {
+	case strings.HasPrefix(r.URL.Path, "/admin"):
+		return AccessAdmin
+	case r.URL.Path == "/healthz":
+		return AccessPublic
+	default:
+		return AccessUser
+	}
+}
+
 func TestProtectRoutesLeavesPublicRequestsOpen(t *testing.T) {
 	fake := &fakeSessions{authErr: app.ErrUnauthenticated}
-	router := ProtectRoutes(fake)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	router := ProtectRoutes(fake, testAccess)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		_, _ = io.WriteString(w, r.URL.Path)
 	}))
@@ -298,12 +310,6 @@ func TestProtectRoutesLeavesPublicRequestsOpen(t *testing.T) {
 		if accountResponse.Code != http.StatusUnauthorized {
 			t.Fatalf("%s status = %d", target, accountResponse.Code)
 		}
-	}
-	if !authenticatedRequest(http.MethodPost, "/keys") || !authenticatedRequest(http.MethodDelete, "/keys/9") {
-		t.Fatal("key mutations were left public")
-	}
-	if authenticatedRequest(http.MethodHead, "/keys") || authenticatedRequest(http.MethodGet, "/keysomething") {
-		t.Fatal("unrelated paths were treated as API keys")
 	}
 }
 
@@ -509,5 +515,26 @@ func TestLoginResponseWithoutUserDoesNotIssueASession(t *testing.T) {
 	}
 	if response.Header().Get("Set-Cookie") != "" {
 		t.Fatal("rejected login set a cookie")
+	}
+}
+
+func TestProtectRoutesRedirectsBrowserCallbackWithoutSession(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	request := func() *http.Request {
+		req := httptest.NewRequest(http.MethodGet, "/flickr-accounts/callback", nil)
+		req.Header.Set("Accept", "text/html")
+		return req
+	}
+	anonymous := httptest.NewRecorder()
+	ProtectRoutes(&fakeSessions{authErr: app.ErrUnauthenticated}, testAccess)(next).ServeHTTP(anonymous, request())
+	if anonymous.Code != http.StatusFound || anonymous.Header().Get("Location") != "/keys?connect_error=unauthenticated" || anonymous.Body.Len() != 0 {
+		t.Fatalf("anonymous callback = %d %q %q", anonymous.Code, anonymous.Header().Get("Location"), anonymous.Body.String())
+	}
+	signedIn := httptest.NewRecorder()
+	req := request()
+	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "present"})
+	ProtectRoutes(&fakeSessions{auth: app.Authenticated{User: domain.User{ID: 3, Role: domain.RoleUser}}}, testAccess)(next).ServeHTTP(signedIn, req)
+	if signedIn.Code != http.StatusNoContent {
+		t.Fatalf("signed-in callback = %d", signedIn.Code)
 	}
 }
