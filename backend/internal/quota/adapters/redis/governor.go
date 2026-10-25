@@ -83,6 +83,9 @@ func (g Governor) Capacity(ctx context.Context, keyID int64, window time.Duratio
 		return 0, domain.ErrGovernorOffline
 	}
 	budget, err := g.Budgets.Budget(ctx, keyID)
+	if errors.Is(err, app.ErrKeyUnavailable) {
+		return 0, app.ErrKeyUnavailable
+	}
 	if err != nil || budget.Validate() != nil {
 		return 0, domain.ErrGovernorOffline
 	}

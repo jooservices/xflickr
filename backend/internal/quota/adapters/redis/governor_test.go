@@ -11,6 +11,7 @@ import (
 	miniredis "github.com/alicebob/miniredis/v2"
 	redisv9 "github.com/redis/go-redis/v9"
 
+	"github.com/jooservices/xflickr/internal/quota/app"
 	"github.com/jooservices/xflickr/internal/quota/domain"
 	flickr "github.com/jooservices/xflickr/pkg/flickr"
 )
@@ -230,6 +231,20 @@ func TestCapacityFailsClosedWhenRedisIsOffline(t *testing.T) {
 	if _, err := governor.Capacity(context.Background(), 7, 2*time.Minute); !errors.Is(err, domain.ErrGovernorOffline) {
 		t.Fatalf("Capacity() error = %v, want offline", err)
 	}
+}
+
+func TestCapacityPreservesUnavailableKeyError(t *testing.T) {
+	governor, _, _ := setupGovernor(t, generousBudget())
+	governor.Budgets = missingBudget{}
+	if _, err := governor.Capacity(context.Background(), 1, 2*time.Minute); !errors.Is(err, app.ErrKeyUnavailable) {
+		t.Fatalf("Capacity() error = %v, want key unavailable", err)
+	}
+}
+
+type missingBudget struct{}
+
+func (missingBudget) Budget(context.Context, int64) (domain.Budget, error) {
+	return domain.Budget{}, app.ErrKeyUnavailable
 }
 
 func TestDoneFailsClosedWhenRedisIsUnavailable(t *testing.T) {

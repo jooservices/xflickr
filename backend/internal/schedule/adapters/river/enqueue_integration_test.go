@@ -16,6 +16,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 	"github.com/jooservices/xflickr/internal/platform/queue"
+	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
 	scheduleriver "github.com/jooservices/xflickr/internal/schedule/adapters/river"
 	"github.com/jooservices/xflickr/internal/schedule/app"
 )
@@ -61,6 +62,50 @@ func TestPumpDispatchesExactlyOneHundredOfTenThousandRows(t *testing.T) {
 	zeroCredits, err := (scheduleriver.Store{Pool: pool}).Pump(ctx, settings, fixedCapacity(0), adapter)
 	if err != nil || zeroCredits != 0 {
 		t.Fatalf("Pump() with no remaining credits = %d, %v", zeroCredits, err)
+	}
+}
+
+func TestPumpSkipsUnavailableKeyAndDispatchesValidKey(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run make test-integration to use the configured worktree database")
+	}
+	pool := integrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	suffix := fmt.Sprintf("unavailable-%d", time.Now().UnixNano())
+	unavailableID := seedKey(t, ctx, pool, suffix+"-revoked")
+	validID := seedKey(t, ctx, pool, suffix+"-valid")
+	t.Cleanup(func() {
+		cleanupPumpFixture(t, pool, suffix)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE email = ANY($1)`, []string{suffix + "-revoked@example.test", suffix + "-valid@example.test"})
+	})
+	if _, err := pool.Exec(ctx, `UPDATE api_keys SET status='revoked' WHERE id=$1`, unavailableID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,key_id,state,priority_base) VALUES ('sync_person',$1,$2,'pending',2),('sync_person',$3,$4,'pending',1)`, suffix+"-revoked-row", unavailableID, suffix+"-valid-row", validID); err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := queue.NewRiver(pool, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	dispatched, err := (scheduleriver.Store{Pool: pool}).Pump(ctx, settings, unavailableKeyCapacity{unavailableID: unavailableID}, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dispatched != 1 {
+		t.Fatalf("Pump() dispatched %d rows, want valid key's one row", dispatched)
+	}
+	var revokedState, validState string
+	if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE subject_key=$1`, suffix+"-revoked-row").Scan(&revokedState); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE subject_key=$1`, suffix+"-valid-row").Scan(&validState); err != nil {
+		t.Fatal(err)
+	}
+	if revokedState != "pending" || validState != "ready" {
+		t.Fatalf("row states: revoked=%q valid=%q; want pending and ready", revokedState, validState)
 	}
 }
 
@@ -427,6 +472,15 @@ type fixedCapacity int
 
 func (c fixedCapacity) Capacity(context.Context, int64, time.Duration) (int, error) {
 	return int(c), nil
+}
+
+type unavailableKeyCapacity struct{ unavailableID int64 }
+
+func (c unavailableKeyCapacity) Capacity(_ context.Context, keyID int64, _ time.Duration) (int, error) {
+	if keyID == c.unavailableID {
+		return 0, quotaapp.ErrKeyUnavailable
+	}
+	return 1, nil
 }
 
 type failingCapacity struct{}

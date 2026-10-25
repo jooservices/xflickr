@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/jooservices/xflickr/internal/quota/app"
 	"github.com/jooservices/xflickr/internal/quota/domain"
 )
 
@@ -26,6 +27,9 @@ func (b Budgets) Budget(ctx context.Context, keyID int64) (domain.Budget, error)
 	var reserveRaw, shareRaw []byte
 	err := b.Pool.QueryRow(ctx, `SELECT LEAST(k.per_hour_limit, CASE WHEN (daily.value #>> '{}')::bigint > 0 THEN (daily.value #>> '{}')::bigint ELSE k.per_hour_limit END), k.per_second_limit, k.burst, reserve.value, share.value FROM api_keys k CROSS JOIN app_settings reserve CROSS JOIN app_settings share CROSS JOIN app_settings daily WHERE k.id=$1 AND k.status='valid' AND reserve.key='quota_reserve' AND share.key='person_lane_share' AND daily.key='daily_call_limit'`, keyID).Scan(&hourly, &rate, &burst, &reserveRaw, &shareRaw)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Budget{}, fmt.Errorf("%w: %d", app.ErrKeyUnavailable, keyID)
+		}
 		return domain.Budget{}, fmt.Errorf("quota: load key budget: %w", err)
 	}
 	var reserve int64

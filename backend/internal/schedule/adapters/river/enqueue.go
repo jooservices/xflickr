@@ -118,20 +118,32 @@ func (s Store) Pump(ctx context.Context, settings app.PumpSettings, credits app.
 	if err != nil {
 		return 0, err
 	}
+	dispatched, err := s.pumpKeys(ctx, tx, keys, settings, credits, jobs)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("schedule: commit pump: %w", err)
+	}
+	return dispatched, nil
+}
+
+func (s Store) pumpKeys(ctx context.Context, tx pgx.Tx, keys []int64, settings app.PumpSettings, credits app.CreditProvider, jobs queue.JobQueue) (int, error) {
+	count := s.inflight
+	if count == nil {
+		count = countInflight
+	}
 	dispatched := 0
 	for _, keyID := range keys {
-		count := s.inflight
-		if count == nil {
-			count = countInflight
-		}
 		keyCount, err := s.pumpKey(ctx, tx, keyID, settings, credits, jobs, count)
+		var unavailable interface{ KeyUnavailable() bool }
+		if errors.As(err, &unavailable) && unavailable.KeyUnavailable() {
+			continue
+		}
 		if err != nil {
 			return 0, err
 		}
 		dispatched += keyCount
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("schedule: commit pump: %w", err)
 	}
 	return dispatched, nil
 }
