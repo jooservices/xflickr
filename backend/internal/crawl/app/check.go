@@ -10,7 +10,10 @@ import (
 	"github.com/jooservices/xflickr/internal/crawl/domain"
 )
 
-const incrementalPerPage = 500
+const (
+	incrementalPerPage     = 500
+	incrementalPhotoExtras = "url_sq,url_t,url_s,url_q,url_m,url_n,url_z,url_c,url_l,url_o,date_upload,last_update,owner_name,media,tags,description,license,o_dims,views"
+)
 
 // ChangeCheck handles both probes in one durable per-person work item.
 type ChangeCheck struct{}
@@ -38,16 +41,16 @@ func (ChangeCheck) Handle(_ context.Context, page domain.Page) (domain.Result, e
 			"user_id": page.Item.Subject, "min_fave_date": params["min_fave_date"], "per_page": "1",
 		}}}
 		if total > 0 {
-			result.Work = append(result.Work, domain.WorkSpec{Kind: "photos", Subject: page.Item.Subject, Method: "flickr.people.getPhotos", CheckpointAt: checkpoint, Params: map[string]string{
-				"user_id": page.Item.Subject, "min_upload_date": params["min_upload_date"], "per_page": strconv.Itoa(incrementalPerPage),
+			result.Work = append(result.Work, domain.WorkSpec{Kind: "photos", Subject: page.Item.Subject, Method: "flickr.people.getPhotos", CheckpointAt: checkpoint, Reopen: true, Params: map[string]string{
+				"user_id": page.Item.Subject, "min_upload_date": params["min_upload_date"], "per_page": strconv.Itoa(incrementalPerPage), "extras": incrementalPhotoExtras,
 			}})
 		}
 		return result, nil
 	case "flickr.favorites.getList":
 		result := domain.Result{}
 		if total > 0 {
-			result.Work = append(result.Work, domain.WorkSpec{Kind: "favorites", Subject: page.Item.Subject, Method: "flickr.favorites.getList", CheckpointAt: checkpoint, Params: map[string]string{
-				"user_id": page.Item.Subject, "min_fave_date": params["min_fave_date"], "per_page": strconv.Itoa(incrementalPerPage),
+			result.Work = append(result.Work, domain.WorkSpec{Kind: "favorites", Subject: page.Item.Subject, Method: "flickr.favorites.getList", CheckpointAt: checkpoint, Reopen: true, Params: map[string]string{
+				"user_id": page.Item.Subject, "min_fave_date": params["min_fave_date"], "per_page": strconv.Itoa(incrementalPerPage), "extras": incrementalPhotoExtras,
 			}})
 		}
 		return result, nil
@@ -118,13 +121,13 @@ func IncrementalWork(person string, lastSeen, lastFavorite int64, photos, favori
 	}
 	result := make([]domain.WorkSpec, 0, 2)
 	if photoCount > 0 {
-		result = append(result, domain.WorkSpec{Kind: "photos", Subject: person, Method: "flickr.people.getPhotos", Params: map[string]string{
-			"user_id": person, "min_upload_date": strconv.FormatInt(lastSeen, 10), "per_page": strconv.Itoa(incrementalPerPage),
+		result = append(result, domain.WorkSpec{Kind: "photos", Subject: person, Method: "flickr.people.getPhotos", Reopen: true, Params: map[string]string{
+			"user_id": person, "min_upload_date": strconv.FormatInt(lastSeen, 10), "per_page": strconv.Itoa(incrementalPerPage), "extras": incrementalPhotoExtras,
 		}})
 	}
 	if favoriteCount > 0 {
-		result = append(result, domain.WorkSpec{Kind: "favorites", Subject: person, Method: "flickr.favorites.getList", Params: map[string]string{
-			"user_id": person, "min_fave_date": strconv.FormatInt(lastFavorite, 10), "per_page": strconv.Itoa(incrementalPerPage),
+		result = append(result, domain.WorkSpec{Kind: "favorites", Subject: person, Method: "flickr.favorites.getList", Reopen: true, Params: map[string]string{
+			"user_id": person, "min_fave_date": strconv.FormatInt(lastFavorite, 10), "per_page": strconv.Itoa(incrementalPerPage), "extras": incrementalPhotoExtras,
 		}})
 	}
 	return result, nil

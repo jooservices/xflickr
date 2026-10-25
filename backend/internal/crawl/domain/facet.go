@@ -38,6 +38,8 @@ type WorkSpec struct {
 	Method       string
 	Params       map[string]string
 	CheckpointAt int64
+	// Reopen explicitly requests a completed or failed matching item be retried.
+	Reopen bool
 }
 
 // Validate checks that the spec can be stored as a work item.

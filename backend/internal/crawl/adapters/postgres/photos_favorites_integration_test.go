@@ -48,13 +48,17 @@ func (f *checkIncrementalFlickr) Call(_ context.Context, request crawlapp.Reques
 			return json.RawMessage(`{"photos":{"total":"0","pages":0,"photo":[]}}`), nil
 		}
 	}
-	if request.Method == "flickr.people.getPhotos" && request.Params["user_id"] == f.subject && request.Params["page"] == "1" {
+	if (request.Method == "flickr.people.getPhotos" || request.Method == "flickr.favorites.getList") && request.Params["page"] == "1" {
 		id := f.nextID
 		if id == 0 {
 			id = 710000000000002000
 		}
 		f.nextID++
-		return json.RawMessage(photoFavoritesPayload(1, 1, 1, id, f.owner, "New Photo Owner")), nil
+		payload := photoFavoritesPayload(1, 1, 1, id, f.owner, "New Photo Owner")
+		if request.Params["extras"] == "" {
+			payload = strings.ReplaceAll(payload, `,"lastupdate":"1700000100","dateupload":"1700000000"`, "")
+		}
+		return json.RawMessage(payload), nil
 	}
 	return nil, fmt.Errorf("unexpected Flickr request %s %#v", request.Method, request.Params)
 }
@@ -125,6 +129,13 @@ func TestIncrementalCheckReopensCompletedPhotoWorkOnLaterCycle(t *testing.T) {
 		var photoItemID int64
 		if err := pool.QueryRow(ctx, `SELECT id FROM work_items WHERE user_id=$1 AND kind='photos' AND subject_key=$2`, userID, subject).Scan(&photoItemID); err != nil {
 			t.Fatal(err)
+		}
+		var state string
+		if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE id=$1`, photoItemID).Scan(&state); err != nil {
+			t.Fatal(err)
+		}
+		if state != "pending" {
+			t.Fatalf("incremental photo item state after check = %q, want pending", state)
 		}
 		if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready' WHERE id=$1`, photoItemID); err != nil {
 			t.Fatal(err)

@@ -228,6 +228,25 @@ func TestDoWiresTransactionWriters(t *testing.T) {
 	}
 }
 
+func TestEnqueueDefaultsToDoNothingButSupportsExplicitReopen(t *testing.T) {
+	conn := &engConn{}
+	err := newTestEngine(conn).Do(t.Context(), func(w app.Writers) error {
+		if err := w.Work.Enqueue(t.Context(), app.NewWork{Kind: "photos", Subject: "person", Cursor: domain.Cursor{Page: 1, Method: "m"}}); err != nil {
+			return err
+		}
+		return w.Work.Enqueue(t.Context(), app.NewWork{Kind: "photos", Subject: "person", Reopen: true, Cursor: domain.Cursor{Page: 1, Method: "m"}})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(conn.execs[0].sql, "DO NOTHING") || strings.Contains(conn.execs[0].sql, "DO UPDATE") {
+		t.Fatalf("ordinary enqueue query = %s", conn.execs[0].sql)
+	}
+	if !strings.Contains(conn.execs[1].sql, "DO UPDATE") || !strings.Contains(conn.execs[1].sql, "WHERE work_items.state IN ('done','failed')") {
+		t.Fatalf("explicit reopen query = %s", conn.execs[1].sql)
+	}
+}
+
 func TestWritersWrapFailures(t *testing.T) {
 	for _, fragment := range []string{"INSERT INTO work_items", "SET cursor", "SET state = 'done'", "crawl_interests", "crawl_observations"} {
 		conn := &engConn{failExec: fragment}

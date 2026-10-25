@@ -92,6 +92,7 @@ type NewWork struct {
 	UserID  int64
 	Depth   int
 	Cursor  domain.Cursor
+	Reopen  bool
 }
 
 // WorkWriter changes work items inside the commit transaction.
@@ -363,7 +364,7 @@ func (e *Engine) enqueue(ctx context.Context, w Writers, item domain.Item, spec 
 	if err := spec.Validate(); err != nil {
 		return err
 	}
-	return w.Work.Enqueue(ctx, NewWork{Kind: spec.Kind, Subject: spec.Subject, UserID: item.UserID, Depth: depth, Cursor: domain.NewCursor(spec)})
+	return w.Work.Enqueue(ctx, NewWork{Kind: spec.Kind, Subject: spec.Subject, UserID: item.UserID, Depth: depth, Cursor: domain.NewCursor(spec), Reopen: spec.Reopen})
 }
 
 func (e *Engine) ready(ctx context.Context) error {

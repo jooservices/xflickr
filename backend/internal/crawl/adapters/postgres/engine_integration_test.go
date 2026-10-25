@@ -209,6 +209,45 @@ func TestEngineCrashBetweenCallAndCommitRerunsSafely(t *testing.T) {
 	}
 }
 
+func TestEnqueueDoesNotReopenCompletedFullCrawlWork(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	subject := fmt.Sprintf("done-full-crawl-%d", time.Now().UnixNano())
+	cursor, err := json.Marshal(domain.Cursor{Page: 1, Method: "flickr.people.getPhotos", Params: map[string]string{"user_id": subject}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,depth,attempts,last_error,cursor) VALUES('photos',$1,$2,'done',0,3,'previous failure',$3)`, subject, userID, cursor); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1`, userID) })
+	store, err := NewEngine(pool, func(conn Conn) app.CatalogWriter {
+		repo, repoErr := catalogpg.New(conn)
+		if repoErr != nil {
+			t.Fatal(repoErr)
+		}
+		return repo
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Do(ctx, func(w app.Writers) error {
+		return w.Work.Enqueue(ctx, app.NewWork{Kind: "photos", Subject: subject, UserID: userID, Cursor: domain.Cursor{Page: 1, Method: "flickr.people.getPhotos"}})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	var attempts int
+	if err := pool.QueryRow(ctx, `SELECT state,attempts FROM work_items WHERE user_id=$1 AND kind='photos' AND subject_key=$2`, userID, subject).Scan(&state, &attempts); err != nil {
+		t.Fatal(err)
+	}
+	if state != "done" || attempts != 3 {
+		t.Fatalf("completed full crawl item state=%q attempts=%d, want done and 3", state, attempts)
+	}
+}
+
 func TestEngineStopFailsOwnerItemsAndPublishes(t *testing.T) {
 	pool := openEngineTestPool(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
