@@ -1,6 +1,6 @@
 import { http, HttpResponse } from 'msw/http';
 import { describe, expect, it } from 'vitest';
-import { apiKeyBody } from '../../test/fixtures';
+import { apiKeyBody, flickrAccountBody } from '../../test/fixtures';
 import { server } from '../../test/server';
 import {
   checkAndSaveKey,
@@ -39,8 +39,8 @@ describe('key API', () => {
 
 describe('contract requests', () => {
   it('loads the account list and reports every failure', async () => {
-    server.use(http.get('*/flickr-accounts', () => HttpResponse.json([{ id: 1 }])));
-    await expect(loadAccounts()).resolves.toEqual([{ id: 1 }]);
+    server.use(http.get('*/flickr-accounts', () => HttpResponse.json([flickrAccountBody()])));
+    await expect(loadAccounts()).resolves.toEqual([flickrAccountBody()]);
 
     for (const status of [403, 404, 405, 501, 500]) {
       server.use(http.get('*/flickr-accounts', () => new HttpResponse(null, { status })));

@@ -683,7 +683,7 @@ describe('setup wizard step 3 crawl start', () => {
     stepThree(
       http.get('*/me/crawl/settings', () => {
         reads += 1;
-        return HttpResponse.json({ depth: null, depth_default: 2, depth_max: reads === 1 ? 4 : 2 });
+        return HttpResponse.json({ depth: 2, depth_default: 2, depth_max: reads === 1 ? 4 : 2 });
       }),
       crawlStart(422, { code: 'depth_above_cap' }),
     );

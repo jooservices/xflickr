@@ -26,7 +26,10 @@ describe('CrawlPage bad responses', () => {
     ],
     ['a null body', () => HttpResponse.json(null)],
   ])('shows the retryable error when every endpoint answers %s', async (_name, reply) => {
-    server.use(http.get('*/me/crawl/*', () => reply()));
+    server.use(
+      http.get('*/me/crawl', () => reply()),
+      http.get('*/me/crawl/*', () => reply()),
+    );
     open();
     expect(await screen.findByTestId('user-crawl-error')).toBeInTheDocument();
     expect(screen.getByTestId('user-crawl-error-retry')).toBeEnabled();

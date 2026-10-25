@@ -29,9 +29,7 @@ describe('validateBody', () => {
     ['/keys/7', 'GET', [key]],
     ['/flickr-accounts', 'GET', null],
     ['/flickr-accounts', 'GET', { items: [] }],
-    ['/keys/usage', 'GET', {}],
-    ['/shell/summary', 'GET', { attention: null }],
-    ['/me/crawl-settings', 'GET', { depth_max: 'x' }],
+    ['/me/crawl/settings', 'GET', { depth_max: 'x' }],
     ['/me', 'GET', {}],
     ['/unknown/path', 'GET', []],
     ['/unknown/path', 'GET', 'html'],
@@ -62,7 +60,6 @@ describe('validateBody', () => {
       .map(([, schema]) => schema);
     const registered = new Set<unknown>(ROUTES.map((route) => route.schema));
     const missing = generated.filter((schema) => !registered.has(schema));
-    // GET /me/crawl/queue is served with the richer shape the crawl screen reads.
-    expect(missing).toEqual([contract.GetMeCrawlQueueResponse]);
+    expect(missing).toEqual([]);
   });
 });

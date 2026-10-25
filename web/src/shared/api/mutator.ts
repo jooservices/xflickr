@@ -103,6 +103,7 @@ export async function customFetch<T>(input: RequestInfo | URL, init?: RequestIni
   const response = await csrfFetch(input, init);
   const path = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   const method = (init?.method ?? 'GET').toUpperCase();
-  const data = validateBody(path, method, response.status, await readJsonBody(response));
+  const body = validateBody(path, method, response.status, await readJsonBody(response));
+  const data = body ?? {};
   return { data, status: response.status, headers: response.headers } as T;
 }

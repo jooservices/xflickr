@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { apiKeyBody } from '../../test/fixtures';
+import { apiKeyBody, flickrAccountBody } from '../../test/fixtures';
 import { server } from '../../test/server';
 import { adminSession, renderApp, userSession } from '../../test/render';
 
@@ -246,14 +246,14 @@ describe('user shell global states', () => {
   it('shows key-revoked and token-expired banners with dismiss and a "more" link', async () => {
     server.use(
       http.get('*/keys', () =>
-        HttpResponse.json([{ id: 1, label: 'Main key', status: 'revoked' }]),
+        HttpResponse.json([apiKeyBody({ id: 1, label: 'Main key', status: 'revoked' })]),
       ),
       http.get('*/flickr-accounts', () =>
         HttpResponse.json([
-          { id: 1, key_id: 11, username: 'anna', status: 'reconnect_required' },
-          { id: 2, key_id: 12, username: 'bob', status: 'reconnect_required' },
-          { id: 3, key_id: 13, username: 'cy', status: 'reconnect_required' },
-          { id: 4, key_id: 14, username: 'dee', status: 'ok' },
+          flickrAccountBody({ id: 1, key_id: 11, username: 'anna', status: 'reconnect_required' }),
+          flickrAccountBody({ id: 2, key_id: 12, username: 'bob', status: 'reconnect_required' }),
+          flickrAccountBody({ id: 3, key_id: 13, username: 'cy', status: 'reconnect_required' }),
+          flickrAccountBody({ id: 4, key_id: 14, username: 'dee', status: 'ok' }),
         ]),
       ),
     );
@@ -274,7 +274,9 @@ describe('user shell global states', () => {
   it('starts the Flickr authorization of the key when reconnecting an account', async () => {
     server.use(
       http.get('*/flickr-accounts', () =>
-        HttpResponse.json([{ id: 1, key_id: 11, username: 'anna', status: 'reconnect_required' }]),
+        HttpResponse.json([
+          flickrAccountBody({ id: 1, key_id: 11, username: 'anna', status: 'reconnect_required' }),
+        ]),
       ),
       http.post('*/flickr-accounts/connect', async ({ request }) => {
         expect(await request.json()).toEqual({ key_id: 11 });
@@ -298,7 +300,12 @@ describe('user shell global states', () => {
       server.use(
         http.get('*/flickr-accounts', () =>
           HttpResponse.json([
-            { id: 1, key_id: 11, username: 'anna', status: 'reconnect_required' },
+            flickrAccountBody({
+              id: 1,
+              key_id: 11,
+              username: 'anna',
+              status: 'reconnect_required',
+            }),
           ]),
         ),
       );
@@ -469,13 +476,13 @@ describe('crawling-off banner', () => {
   it('keeps the offline banner first and the token cap of 2 with the banner shown', async () => {
     server.use(
       http.get('*/keys', () =>
-        HttpResponse.json([{ id: 1, label: 'Main key', status: 'revoked' }]),
+        HttpResponse.json([apiKeyBody({ id: 1, label: 'Main key', status: 'revoked' })]),
       ),
       http.get('*/flickr-accounts', () =>
         HttpResponse.json([
-          { id: 1, key_id: 11, username: 'anna', status: 'reconnect_required' },
-          { id: 2, key_id: 12, username: 'bob', status: 'reconnect_required' },
-          { id: 3, key_id: 13, username: 'cy', status: 'reconnect_required' },
+          flickrAccountBody({ id: 1, key_id: 11, username: 'anna', status: 'reconnect_required' }),
+          flickrAccountBody({ id: 2, key_id: 12, username: 'bob', status: 'reconnect_required' }),
+          flickrAccountBody({ id: 3, key_id: 13, username: 'cy', status: 'reconnect_required' }),
         ]),
       ),
     );

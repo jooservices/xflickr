@@ -392,6 +392,21 @@ export const ConnectFlickrAccountResponse = zod.object({
 });
 
 /**
+ * @summary List the current user's connected Flickr accounts
+ */
+export const ListFlickrAccountsResponseItem = zod
+  .object({
+    id: zod.int(),
+    key_id: zod.int(),
+    nsid: zod.string(),
+    username: zod.string(),
+    status: zod.enum(['ok', 'reconnect_required', 'revoked']),
+    created_at: zod.iso.datetime({ offset: true }),
+  })
+  .describe('A connected Flickr account. Tokens are never included.');
+export const ListFlickrAccountsResponse = zod.array(ListFlickrAccountsResponseItem);
+
+/**
  * Flickr redirects the browser here. The state must match a pending authorization of the signed-in user and is single use. On success the account is stored with sealed tokens and registered as a depth 0 person interest.
  * @summary Complete connecting a Flickr account
  */
@@ -637,6 +652,34 @@ export const GetMeCrawlResponse = zod.object({
 });
 
 /**
+ * @summary Get the crawl depth and its limits
+ */
+
+export const GetMeCrawlSettingsResponse = zod
+  .object({
+    depth: zod.int().min(1).describe('Effective depth for this user.'),
+    depth_default: zod.int().min(1),
+    depth_max: zod.int().min(1),
+  })
+  .describe("The current user's crawl depth and the administrator limits.");
+
+/**
+ * @summary Set the crawl depth
+ */
+
+export const UpdateMeCrawlSettingsBody = zod.object({
+  depth: zod.int().min(1),
+});
+
+export const UpdateMeCrawlSettingsResponse = zod
+  .object({
+    depth: zod.int().min(1).describe('Effective depth for this user.'),
+    depth_default: zod.int().min(1),
+    depth_max: zod.int().min(1),
+  })
+  .describe("The current user's crawl depth and the administrator limits.");
+
+/**
  * @summary Star or unstar a contact
  */
 export const starMyContactPathNsidMax = 255;
@@ -731,6 +774,101 @@ export const GetAdminQuotaResponse = zod.object({
         .describe('Current usage compared with the previous window at the same point in the hour.'),
     }),
   ),
+});
+
+/**
+ * Same numbers as the periodic "crawl health" log line. Large catalog counts may be planner estimates.
+ * @summary Get the crawl health report
+ */
+export const getAdminOpsStatusResponseCountsPeopleMin = 0;
+
+export const getAdminOpsStatusResponseCountsPhotosMin = 0;
+
+export const getAdminOpsStatusResponseCountsPhotoSizesMin = 0;
+
+export const getAdminOpsStatusResponseCountsFavoritesMin = 0;
+
+export const getAdminOpsStatusResponseCountsAlbumsMin = 0;
+
+export const getAdminOpsStatusResponseCountsGalleriesMin = 0;
+
+export const getAdminOpsStatusResponseCountsGroupsMin = 0;
+
+export const getAdminOpsStatusResponseWorkItemsMinOne = 0;
+
+export const getAdminOpsStatusResponseReadyJobsMin = 0;
+
+export const getAdminOpsStatusResponseRiverJobsMinOne = 0;
+
+export const getAdminOpsStatusResponseKeysItemCallsLastHourMin = 0;
+
+export const getAdminOpsStatusResponseKeysItemUsedMin = 0;
+
+export const getAdminOpsStatusResponseKeysItemRemainingMin = 0;
+
+export const getAdminOpsStatusResponseCallsLastHourMin = 0;
+
+export const getAdminOpsStatusResponseCallsLast10minMin = 0;
+
+export const getAdminOpsStatusResponsePendingItemsMin = 0;
+
+export const getAdminOpsStatusResponseOldestPendingAgeSecondsMin = 0;
+
+export const getAdminOpsStatusResponseFailedWorkItemsMin = 0;
+
+export const getAdminOpsStatusResponseDeadJobsMin = 0;
+
+export const GetAdminOpsStatusResponse = zod.object({
+  generated_at: zod.iso.datetime({ offset: true }),
+  counts: zod.object({
+    people: zod.int().min(getAdminOpsStatusResponseCountsPeopleMin),
+    photos: zod.int().min(getAdminOpsStatusResponseCountsPhotosMin),
+    photo_sizes: zod
+      .int()
+      .min(getAdminOpsStatusResponseCountsPhotoSizesMin)
+      .describe('Photos whose sizes are confirmed.'),
+    favorites: zod.int().min(getAdminOpsStatusResponseCountsFavoritesMin),
+    albums: zod.int().min(getAdminOpsStatusResponseCountsAlbumsMin),
+    galleries: zod.int().min(getAdminOpsStatusResponseCountsGalleriesMin),
+    groups: zod.int().min(getAdminOpsStatusResponseCountsGroupsMin),
+  }),
+  work_items: zod
+    .record(zod.string(), zod.int().min(getAdminOpsStatusResponseWorkItemsMinOne))
+    .describe('Work items by state.'),
+  ready_jobs: zod
+    .int()
+    .min(getAdminOpsStatusResponseReadyJobsMin)
+    .describe('Work items in the ready state.'),
+  river_jobs: zod
+    .record(zod.string(), zod.int().min(getAdminOpsStatusResponseRiverJobsMinOne))
+    .describe('River jobs by state.'),
+  keys: zod.array(
+    zod.object({
+      key_id: zod.int(),
+      label: zod.string(),
+      status: zod.enum(['valid', 'invalid', 'revoked']),
+      calls_last_hour: zod.int().min(getAdminOpsStatusResponseKeysItemCallsLastHourMin),
+      used: zod.int().min(getAdminOpsStatusResponseKeysItemUsedMin),
+      remaining: zod.int().min(getAdminOpsStatusResponseKeysItemRemainingMin),
+      limit: zod.int().min(1),
+    }),
+  ),
+  calls_last_hour: zod.int().min(getAdminOpsStatusResponseCallsLastHourMin),
+  calls_last_10min: zod.int().min(getAdminOpsStatusResponseCallsLast10minMin),
+  pending_items: zod.int().min(getAdminOpsStatusResponsePendingItemsMin),
+  oldest_pending_age_seconds: zod.int().min(getAdminOpsStatusResponseOldestPendingAgeSecondsMin),
+  failed_work_items: zod.int().min(getAdminOpsStatusResponseFailedWorkItemsMin),
+  dead_jobs: zod
+    .int()
+    .min(getAdminOpsStatusResponseDeadJobsMin)
+    .describe('River jobs discarded after their last attempt.'),
+  token_status: zod
+    .enum(['none', 'ok', 'reconnect_required', 'revoked'])
+    .describe('Worst Flickr account token state.'),
+  idle_reason: zod
+    .enum(['no_key', 'quota_exhausted', 'not_before_in_future', 'unknown'])
+    .optional()
+    .describe('Present when pending items exist but none is ready.'),
 });
 
 /**

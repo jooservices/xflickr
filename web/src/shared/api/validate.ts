@@ -1,6 +1,5 @@
 import type { ZodType } from 'zod';
 import * as contract from './zod/schemas';
-import * as client from './contractSchemas';
 
 export class ApiShapeError extends Error {
   readonly correlationId: string;
@@ -25,27 +24,9 @@ const route = (method: string, path: string, schema: ZodType): Route => ({
 });
 
 /**
- * Every 2xx body is checked against one of these. Client-contract requests come first so that
- * `/keys/usage` is not read as `/keys/{id}`. The rest are the OpenAPI-derived (Orval zod)
- * schemas; `responseSchemas.test.ts` fails when a generated response has no entry.
+ * Every 2xx body is checked against one of these, the OpenAPI-derived (Orval zod) schemas; `responseSchemas.test.ts` fails when a generated response has no entry.
  */
 export const ROUTES: Route[] = [
-  route('GET', '/keys/usage', client.usageSnapshot),
-  route('GET', '/flickr-accounts', client.flickrAccounts),
-  route('POST', '/crawl/start', client.anyObject),
-  route('GET', '/me/crawl-settings', client.wizardCrawlSettings),
-  route('GET', '/shell/summary', client.shellSummary),
-  route('GET', '/tray', client.itemList),
-  route('GET', '/notifications', client.itemList),
-  route('GET', '/admin/shell', client.adminShell),
-  route('GET', '/me/crawl/queue', client.crawlQueue),
-  route('GET', '/me/crawl/settings', client.crawlSettings),
-  route('PUT', '/me/crawl/settings', client.crawlSettings),
-  route('GET', '/me/crawl/depths', client.itemList),
-  route('GET', '/me/crawl/interests', client.itemList),
-  route('GET', '/me/crawl/jobs', client.itemList),
-  route('GET', '/me/crawl/jobs/{id}', client.crawlJob),
-  route('GET', '/me/crawl/summary', client.crawlSummary),
   route('GET', '/auth/config', contract.GetAuthConfigResponse),
   route('GET', '/healthz', contract.GetHealthResponse),
   route('POST', '/auth/register', contract.RegisterResponse),
@@ -71,13 +52,18 @@ export const ROUTES: Route[] = [
   route('GET', '/admin/plans', contract.GetAdminPlansResponse),
   route('PUT', '/admin/plans', contract.UpdateAdminPlansResponse),
   route('PUT', '/admin/users/{id}/plan', contract.UpdateAdminUserPlanResponse),
+  route('GET', '/flickr-accounts', contract.ListFlickrAccountsResponse),
   route('GET', '/me/crawl', contract.GetMeCrawlResponse),
+  route('GET', '/me/crawl/queue', contract.GetMeCrawlQueueResponse),
+  route('GET', '/me/crawl/settings', contract.GetMeCrawlSettingsResponse),
+  route('PUT', '/me/crawl/settings', contract.UpdateMeCrawlSettingsResponse),
   route('PUT', '/me/contacts/{nsid}/star', contract.StarMyContactResponse),
   route('PUT', '/me/contacts/{nsid}/select', contract.SelectMyContactResponse),
   route('PUT', '/me/crawl/pause', contract.PauseCrawlContactResponse),
   route('PUT', '/me/crawl/resume', contract.ResumeCrawlContactResponse),
   route('GET', '/admin/queue', contract.GetAdminQueueResponse),
   route('GET', '/admin/quota', contract.GetAdminQuotaResponse),
+  route('GET', '/admin/ops/status', contract.GetAdminOpsStatusResponse),
   route('POST', '/downloads', contract.CreateDownloadResponse),
 ];
 
