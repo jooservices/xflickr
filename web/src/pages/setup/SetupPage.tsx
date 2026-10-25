@@ -193,13 +193,17 @@ export function SetupPage() {
     document.title = `${t('user.wizard.title')} · XFlickr`;
   }, [t]);
 
+  // One effect so the banner always wins over the heading, whatever order the data arrives in.
+  const hasBanner = banner !== null;
+  const focusedFor = useRef<string>('');
   useEffect(() => {
-    if (view !== 'loading' && !keyBannerRef.current) heading.current?.focus();
-  }, [step, view]);
-
-  useEffect(() => {
-    if (banner) keyBannerRef.current?.focus();
-  }, [banner]);
+    if (view === 'loading') return;
+    const target = keyBannerRef.current;
+    const mark = `${step}:${view}:${hasBanner}`;
+    if (!target && focusedFor.current.startsWith(`${step}:${view}:`)) return;
+    focusedFor.current = mark;
+    (target ?? heading.current)?.focus();
+  }, [step, view, hasBanner]);
 
   // The account that was just connected is announced and focused once.
   const connectedAccount =
