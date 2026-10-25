@@ -23,6 +23,9 @@ components:
   schedule-domain:   { in: internal/schedule/domain/** }
   schedule-app:      { in: internal/schedule/app/** }
   schedule-adapters: { in: internal/schedule/adapters/** }
+  quota-domain:     { in: internal/quota/domain/** }
+  quota-app:        { in: internal/quota/app/** }
+  quota-adapters:   { in: internal/quota/adapters/** }
   platform:
     in:
       - internal/platform/adapters/**
@@ -57,6 +60,10 @@ deps:
     mayDependOn: [schedule-domain, platform]
   schedule-adapters:
     mayDependOn: [schedule-domain, schedule-app, platform, pkg]
+  quota-app:
+    mayDependOn: [quota-domain]
+  quota-adapters:
+    mayDependOn: [quota-domain, quota-app, pkg]
   platform:
     mayDependOn: [platform, pkg, migrations]
   wiring:
