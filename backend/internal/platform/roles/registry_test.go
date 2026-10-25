@@ -88,6 +88,19 @@ func TestBuildPlanHandler(t *testing.T) {
 	}
 }
 
+func TestBuildCrawlHandler(t *testing.T) {
+	if _, err := buildCrawlHandler(nil); err == nil {
+		t.Fatal("buildCrawlHandler accepted a nil database")
+	}
+	handler, err := buildCrawlHandler(&pgxpool.Pool{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if handler.Controls == nil || handler.ActorID == nil {
+		t.Fatal("crawl handler dependencies are missing")
+	}
+}
+
 func TestFeatureHandlerBuildersRequireDatabase(t *testing.T) {
 	client := redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:1"})
 	defer client.Close()

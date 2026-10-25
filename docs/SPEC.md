@@ -134,6 +134,10 @@ guide feature implementation; operational environment rules live in
   setting. Plan resource shares allocate shared scheduler capacity in
   proportion to eligible backlog, and unused allocation is lent to another
   plan with remaining work so free users continue to progress.
+- A user can star a contact, select it for seven days, or pause and resume its
+  crawl work. Star and selection changes invalidate scores on that user's
+  active backlog rows so the scheduler recomputes priority from the updated
+  flags.
 
 ## Definition of done
 

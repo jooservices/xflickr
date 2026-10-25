@@ -83,6 +83,24 @@ func (e FlickrAccountStatus) Valid() bool {
 	}
 }
 
+// Defines values for LaneStatusLane.
+const (
+	LaneStatusLanePerson LaneStatusLane = "person"
+	LaneStatusLaneSizes  LaneStatusLane = "sizes"
+)
+
+// Valid indicates whether the value is a known member of the LaneStatusLane enum.
+func (e LaneStatusLane) Valid() bool {
+	switch e {
+	case LaneStatusLanePerson:
+		return true
+	case LaneStatusLaneSizes:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LoginLockedCode.
 const (
 	AccountLocked LoginLockedCode = "account_locked"
@@ -424,9 +442,21 @@ type ConnectFlickrAccountResponse struct {
 	AuthorizeURL string `json:"authorize_url"`
 }
 
+// CrawlContactRequest defines model for CrawlContactRequest.
+type CrawlContactRequest struct {
+	Nsid string `json:"nsid"`
+}
+
 // CrawlQueue defines model for CrawlQueue.
 type CrawlQueue struct {
 	Lanes []QueueLane `json:"lanes"`
+}
+
+// CrawlStatus defines model for CrawlStatus.
+type CrawlStatus struct {
+	Depths []DepthProgress `json:"depths"`
+	Facets []FacetProgress `json:"facets"`
+	Lanes  []LaneStatus    `json:"lanes"`
 }
 
 // CreateKeyRequest defines model for CreateKeyRequest.
@@ -448,6 +478,12 @@ type CreateKeyRequest struct {
 	Secret *string `json:"secret,omitempty"`
 }
 
+// DepthProgress defines model for DepthProgress.
+type DepthProgress struct {
+	Contacts int64 `json:"contacts"`
+	Depth    int   `json:"depth"`
+}
+
 // Error Shared error body returned by the API.
 type Error struct {
 	// Code Stable machine-readable error code.
@@ -458,6 +494,15 @@ type Error struct {
 
 	// Message Human-readable explanation of the error.
 	Message string `json:"message"`
+}
+
+// FacetProgress defines model for FacetProgress.
+type FacetProgress struct {
+	Active int64  `json:"active"`
+	Done   int64  `json:"done"`
+	Facet  string `json:"facet"`
+	Failed int64  `json:"failed"`
+	Total  int64  `json:"total"`
 }
 
 // FlickrAccount A connected Flickr account. Tokens are never included.
@@ -481,6 +526,18 @@ type Health struct {
 	// Version Build version of the running process.
 	Version string `json:"version"`
 }
+
+// LaneStatus defines model for LaneStatus.
+type LaneStatus struct {
+	Lane    LaneStatusLane `json:"lane"`
+	Paused  int64          `json:"paused"`
+	Pending int64          `json:"pending"`
+	Running int64          `json:"running"`
+	Waiting int64          `json:"waiting"`
+}
+
+// LaneStatusLane defines model for LaneStatus.Lane.
+type LaneStatusLane string
 
 // LoginLocked defines model for LoginLocked.
 type LoginLocked struct {
@@ -612,6 +669,11 @@ type SessionList struct {
 	Items []Session `json:"items"`
 }
 
+// StarContactRequest defines model for StarContactRequest.
+type StarContactRequest struct {
+	Starred bool `json:"starred"`
+}
+
 // UpdateAdminPlansRequest defines model for UpdateAdminPlansRequest.
 type UpdateAdminPlansRequest struct {
 	Plans []Plan `json:"plans"`
@@ -708,6 +770,15 @@ type UpdateKeyJSONRequestBody = UpdateKeyRequest
 // UpdateMeJSONRequestBody defines body for UpdateMe for application/json ContentType.
 type UpdateMeJSONRequestBody = UpdateMeRequest
 
+// StarMyContactJSONRequestBody defines body for StarMyContact for application/json ContentType.
+type StarMyContactJSONRequestBody = StarContactRequest
+
+// PauseCrawlContactJSONRequestBody defines body for PauseCrawlContact for application/json ContentType.
+type PauseCrawlContactJSONRequestBody = CrawlContactRequest
+
+// ResumeCrawlContactJSONRequestBody defines body for ResumeCrawlContact for application/json ContentType.
+type ResumeCrawlContactJSONRequestBody = CrawlContactRequest
+
 // ChangeMyPasswordJSONRequestBody defines body for ChangeMyPassword for application/json ContentType.
 type ChangeMyPasswordJSONRequestBody = ChangePasswordRequest
 
@@ -776,9 +847,24 @@ type ServerInterface interface {
 	// UpdateMe Update the authenticated user's profile
 	// (PATCH /me)
 	UpdateMe(w http.ResponseWriter, r *http.Request)
+	// SelectMyContact Select a contact for seven days
+	// (PUT /me/contacts/{nsid}/select)
+	SelectMyContact(w http.ResponseWriter, r *http.Request, nsid string)
+	// StarMyContact Star or unstar a contact
+	// (PUT /me/contacts/{nsid}/star)
+	StarMyContact(w http.ResponseWriter, r *http.Request, nsid string)
+	// GetMeCrawl Get crawl progress by depth, facet, and lane
+	// (GET /me/crawl)
+	GetMeCrawl(w http.ResponseWriter, r *http.Request)
+	// PauseCrawlContact Pause crawl work for a contact
+	// (PUT /me/crawl/pause)
+	PauseCrawlContact(w http.ResponseWriter, r *http.Request)
 	// GetMeCrawlQueue Get the current user's crawl backlog and ETA
 	// (GET /me/crawl/queue)
 	GetMeCrawlQueue(w http.ResponseWriter, r *http.Request)
+	// ResumeCrawlContact Resume crawl work for a contact
+	// (PUT /me/crawl/resume)
+	ResumeCrawlContact(w http.ResponseWriter, r *http.Request)
 	// ChangeMyPassword Change the current user's password
 	// (POST /me/password)
 	ChangeMyPassword(w http.ResponseWriter, r *http.Request)
@@ -920,9 +1006,39 @@ func (_ Unimplemented) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// SelectMyContact Select a contact for seven days
+// (PUT /me/contacts/{nsid}/select)
+func (_ Unimplemented) SelectMyContact(w http.ResponseWriter, r *http.Request, nsid string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// StarMyContact Star or unstar a contact
+// (PUT /me/contacts/{nsid}/star)
+func (_ Unimplemented) StarMyContact(w http.ResponseWriter, r *http.Request, nsid string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetMeCrawl Get crawl progress by depth, facet, and lane
+// (GET /me/crawl)
+func (_ Unimplemented) GetMeCrawl(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// PauseCrawlContact Pause crawl work for a contact
+// (PUT /me/crawl/pause)
+func (_ Unimplemented) PauseCrawlContact(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // GetMeCrawlQueue Get the current user's crawl backlog and ETA
 // (GET /me/crawl/queue)
 func (_ Unimplemented) GetMeCrawlQueue(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ResumeCrawlContact Resume crawl work for a contact
+// (PUT /me/crawl/resume)
+func (_ Unimplemented) ResumeCrawlContact(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1397,11 +1513,105 @@ func (siw *ServerInterfaceWrapper) UpdateMe(w http.ResponseWriter, r *http.Reque
 	handler.ServeHTTP(w, r)
 }
 
+// SelectMyContact operation middleware
+func (siw *ServerInterfaceWrapper) SelectMyContact(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "nsid" -------------
+	var nsid string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "nsid", chi.URLParam(r, "nsid"), &nsid, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "nsid", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SelectMyContact(w, r, nsid)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StarMyContact operation middleware
+func (siw *ServerInterfaceWrapper) StarMyContact(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "nsid" -------------
+	var nsid string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "nsid", chi.URLParam(r, "nsid"), &nsid, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "nsid", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StarMyContact(w, r, nsid)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMeCrawl operation middleware
+func (siw *ServerInterfaceWrapper) GetMeCrawl(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMeCrawl(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PauseCrawlContact operation middleware
+func (siw *ServerInterfaceWrapper) PauseCrawlContact(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PauseCrawlContact(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetMeCrawlQueue operation middleware
 func (siw *ServerInterfaceWrapper) GetMeCrawlQueue(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetMeCrawlQueue(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResumeCrawlContact operation middleware
+func (siw *ServerInterfaceWrapper) ResumeCrawlContact(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResumeCrawlContact(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1649,6 +1859,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/me/crawl/queue", wrapper.GetMeCrawlQueue)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/me/crawl", wrapper.GetMeCrawl)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/me/contacts/{nsid}/star", wrapper.StarMyContact)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/me/contacts/{nsid}/select", wrapper.SelectMyContact)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/me/crawl/pause", wrapper.PauseCrawlContact)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/me/crawl/resume", wrapper.ResumeCrawlContact)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/admin/queue", wrapper.GetAdminQueue)
@@ -2847,6 +3072,202 @@ func (response UpdateMe403Response) VisitUpdateMeResponse(w http.ResponseWriter)
 	return nil
 }
 
+type SelectMyContactRequestObject struct {
+	Nsid string `json:"nsid"`
+}
+
+type SelectMyContactResponseObject interface {
+	VisitSelectMyContactResponse(w http.ResponseWriter) error
+}
+
+type SelectMyContact204Response struct {
+}
+
+func (response SelectMyContact204Response) VisitSelectMyContactResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SelectMyContact401JSONResponse Error
+
+func (response SelectMyContact401JSONResponse) VisitSelectMyContactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectMyContact404JSONResponse Error
+
+func (response SelectMyContact404JSONResponse) VisitSelectMyContactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StarMyContactRequestObject struct {
+	Nsid string `json:"nsid"`
+	Body *StarMyContactJSONRequestBody
+}
+
+type StarMyContactResponseObject interface {
+	VisitStarMyContactResponse(w http.ResponseWriter) error
+}
+
+type StarMyContact204Response struct {
+}
+
+func (response StarMyContact204Response) VisitStarMyContactResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type StarMyContact400JSONResponse Error
+
+func (response StarMyContact400JSONResponse) VisitStarMyContactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StarMyContact401JSONResponse Error
+
+func (response StarMyContact401JSONResponse) VisitStarMyContactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StarMyContact404JSONResponse Error
+
+func (response StarMyContact404JSONResponse) VisitStarMyContactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMeCrawlRequestObject struct {
+}
+
+type GetMeCrawlResponseObject interface {
+	VisitGetMeCrawlResponse(w http.ResponseWriter) error
+}
+
+type GetMeCrawl200JSONResponse CrawlStatus
+
+func (response GetMeCrawl200JSONResponse) VisitGetMeCrawlResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMeCrawl401JSONResponse Error
+
+func (response GetMeCrawl401JSONResponse) VisitGetMeCrawlResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PauseCrawlContactRequestObject struct {
+	Body *PauseCrawlContactJSONRequestBody
+}
+
+type PauseCrawlContactResponseObject interface {
+	VisitPauseCrawlContactResponse(w http.ResponseWriter) error
+}
+
+type PauseCrawlContact204Response struct {
+}
+
+func (response PauseCrawlContact204Response) VisitPauseCrawlContactResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type PauseCrawlContact400JSONResponse Error
+
+func (response PauseCrawlContact400JSONResponse) VisitPauseCrawlContactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PauseCrawlContact401JSONResponse Error
+
+func (response PauseCrawlContact401JSONResponse) VisitPauseCrawlContactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PauseCrawlContact404JSONResponse Error
+
+func (response PauseCrawlContact404JSONResponse) VisitPauseCrawlContactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetMeCrawlQueueRequestObject struct {
 }
 
@@ -2878,6 +3299,64 @@ func (response GetMeCrawlQueue401JSONResponse) VisitGetMeCrawlQueueResponse(w ht
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResumeCrawlContactRequestObject struct {
+	Body *ResumeCrawlContactJSONRequestBody
+}
+
+type ResumeCrawlContactResponseObject interface {
+	VisitResumeCrawlContactResponse(w http.ResponseWriter) error
+}
+
+type ResumeCrawlContact204Response struct {
+}
+
+func (response ResumeCrawlContact204Response) VisitResumeCrawlContactResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ResumeCrawlContact400JSONResponse Error
+
+func (response ResumeCrawlContact400JSONResponse) VisitResumeCrawlContactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResumeCrawlContact401JSONResponse Error
+
+func (response ResumeCrawlContact401JSONResponse) VisitResumeCrawlContactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResumeCrawlContact404JSONResponse Error
+
+func (response ResumeCrawlContact404JSONResponse) VisitResumeCrawlContactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3086,9 +3565,24 @@ type StrictServerInterface interface {
 	// UpdateMe Update the authenticated user's profile
 	// (PATCH /me)
 	UpdateMe(ctx context.Context, request UpdateMeRequestObject) (UpdateMeResponseObject, error)
+	// SelectMyContact Select a contact for seven days
+	// (PUT /me/contacts/{nsid}/select)
+	SelectMyContact(ctx context.Context, request SelectMyContactRequestObject) (SelectMyContactResponseObject, error)
+	// StarMyContact Star or unstar a contact
+	// (PUT /me/contacts/{nsid}/star)
+	StarMyContact(ctx context.Context, request StarMyContactRequestObject) (StarMyContactResponseObject, error)
+	// GetMeCrawl Get crawl progress by depth, facet, and lane
+	// (GET /me/crawl)
+	GetMeCrawl(ctx context.Context, request GetMeCrawlRequestObject) (GetMeCrawlResponseObject, error)
+	// PauseCrawlContact Pause crawl work for a contact
+	// (PUT /me/crawl/pause)
+	PauseCrawlContact(ctx context.Context, request PauseCrawlContactRequestObject) (PauseCrawlContactResponseObject, error)
 	// GetMeCrawlQueue Get the current user's crawl backlog and ETA
 	// (GET /me/crawl/queue)
 	GetMeCrawlQueue(ctx context.Context, request GetMeCrawlQueueRequestObject) (GetMeCrawlQueueResponseObject, error)
+	// ResumeCrawlContact Resume crawl work for a contact
+	// (PUT /me/crawl/resume)
+	ResumeCrawlContact(ctx context.Context, request ResumeCrawlContactRequestObject) (ResumeCrawlContactResponseObject, error)
 	// ChangeMyPassword Change the current user's password
 	// (POST /me/password)
 	ChangeMyPassword(ctx context.Context, request ChangeMyPasswordRequestObject) (ChangeMyPasswordResponseObject, error)
@@ -3720,6 +4214,120 @@ func (sh *strictHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// SelectMyContact operation middleware
+func (sh *strictHandler) SelectMyContact(w http.ResponseWriter, r *http.Request, nsid string) {
+	var request SelectMyContactRequestObject
+
+	request.Nsid = nsid
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SelectMyContact(ctx, request.(SelectMyContactRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SelectMyContact")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SelectMyContactResponseObject); ok {
+		if err := validResponse.VisitSelectMyContactResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StarMyContact operation middleware
+func (sh *strictHandler) StarMyContact(w http.ResponseWriter, r *http.Request, nsid string) {
+	var request StarMyContactRequestObject
+
+	request.Nsid = nsid
+
+	var body StarMyContactJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StarMyContact(ctx, request.(StarMyContactRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StarMyContact")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StarMyContactResponseObject); ok {
+		if err := validResponse.VisitStarMyContactResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMeCrawl operation middleware
+func (sh *strictHandler) GetMeCrawl(w http.ResponseWriter, r *http.Request) {
+	var request GetMeCrawlRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMeCrawl(ctx, request.(GetMeCrawlRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMeCrawl")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMeCrawlResponseObject); ok {
+		if err := validResponse.VisitGetMeCrawlResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PauseCrawlContact operation middleware
+func (sh *strictHandler) PauseCrawlContact(w http.ResponseWriter, r *http.Request) {
+	var request PauseCrawlContactRequestObject
+
+	var body PauseCrawlContactJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PauseCrawlContact(ctx, request.(PauseCrawlContactRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PauseCrawlContact")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PauseCrawlContactResponseObject); ok {
+		if err := validResponse.VisitPauseCrawlContactResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetMeCrawlQueue operation middleware
 func (sh *strictHandler) GetMeCrawlQueue(w http.ResponseWriter, r *http.Request) {
 	var request GetMeCrawlQueueRequestObject
@@ -3737,6 +4345,37 @@ func (sh *strictHandler) GetMeCrawlQueue(w http.ResponseWriter, r *http.Request)
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetMeCrawlQueueResponseObject); ok {
 		if err := validResponse.VisitGetMeCrawlQueueResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ResumeCrawlContact operation middleware
+func (sh *strictHandler) ResumeCrawlContact(w http.ResponseWriter, r *http.Request) {
+	var request ResumeCrawlContactRequestObject
+
+	var body ResumeCrawlContactJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ResumeCrawlContact(ctx, request.(ResumeCrawlContactRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ResumeCrawlContact")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ResumeCrawlContactResponseObject); ok {
+		if err := validResponse.VisitResumeCrawlContactResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -3830,88 +4469,95 @@ func (sh *strictHandler) RevokeMySession(w http.ResponseWriter, r *http.Request,
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"7D3bbhy3kr9C9C6Ql/FIcuyDRG+ONyfHiLzW8WVxgMAYcLprZhh1k22SrfE4ELDfsp+2X7KoItlX9lwk",
-	"zdhYGMhDNN1dLFYV6170X0mqilJJkNYkl38lJl1Bwel/X2SFkP+soAL8q9SqBG0F0LM5T29ytZzNN7My",
-	"5xJ/EhYKevbvGhbJZfJvZw3kMw/27Drn8opL+MV9n9xNErspIblMuNZ8g3+rPANjZwhuxpcwM5AqmRHk",
-	"hdIFt8llIqT927NkkhRCiqIqksvzGo6QFpagEZIGnm1mn3AHMyO+OMz3QvMtfklbfye+wBBLAv6pEhqy",
-	"5PKPATXGNxFD6mMNXc3/hNTickT7DwY0YsqzTFihJM+vW0xY8NzAJMnApFqU+Dy5TF6wyoBm3DADINl8",
-	"w7hkHIEJYzW3Sk/ZNTdmrXTGVtyswDCugUm4Bc2ETPMqg2yaTHr8TjVwC9mM2w4fMm7hiRUFJPUejNVC",
-	"EmMzYfg8Rwr9FR7OlcqBS3wKBRd5B5j7JQJIZFHmDxmeq5Tn0FqvgaGVewASxeWPhGiSTBIkV4sD4YMe",
-	"g0WWTGr8CFS9WGufkzaZtnL1mi9hJ2e7HKjldi8BrleKnbDSrz4kYEmyKr6MPLbKcuJZV+hwHcMKbtOV",
-	"kEtmV8AMcJ2uGE+1MobxPGcI2iST3Wzsk562G9b2yLcxjRK6FL/D5uCzY6zSkLG/5yK90ezF9St2A5sp",
-	"e08bSjVYJszOozKvtKFTUiuni5is3udE7X0QbmAzK6t5LtIht67pd9wZK7i5gYwtlGaZMGXO/WYXQhvL",
-	"/sbSFdc8taCdkrgVRsxzYFxmxGQNxtIDBwdJAZ95UeZIiD+S84unPz57/r///T8P/C9yPCdJzueQR096",
-	"CXq2UpWe5aIQezAC33fqed8vjOW2Mm1tcstzUhFChv/TcKtuINtTtbjddPg22EgE04kXthql3RqosquX",
-	"Si7E8kD1U3JjEDuQW3R66S3LrOCf9yB8/baQe7ytxS1PN7NKd61GpcUTDQvQINPoodGwdLZPKDlTJcg4",
-	"7hZ0YQ6F3uPlcKnJgHC9ffeINsazt/CpAmMPZNq4jS345yuQS7tKLp8+fxahWsCKGNO8fPH0J/K6wt8/",
-	"9T+dJGstLLyR+Sa5tLqCPo0CBvUCsS2/XHG5hOCo3G/zaaU1SDt7vJ1MEgnr2dEoM0C4t16UUEpKSK2z",
-	"WC/SVFXS3o9cKKMiG5oLMn7OLnqDSLrf20julmS8siul0Z11FsSqG3Q/IVdyaZhVzK6EIWt6DxfAo7b/",
-	"/k2ppDnUwaq3EJRAlw5+w+h3EAEKKOagGZ5y2uBSc6RDmoLxNNCOD54W8LkUGr3thQXNLs5ZIWRlwUx3",
-	"apUuYlEqaL7ORyK1nMsDAh8CggHazpjHwY1jgybod9jcTxBr/6lL/3crpS2jhwz9vil7UwhrIWO3PK/A",
-	"YOBDjOlEOyzl5TSZ7LAtN7AZLtj3Al+R95euIEWfaS3sii3olakFY6eQrhSbw0JpYIJedadm2te2zztq",
-	"4mKbb9P67qfznZ8NHZ/uhl7yPCdfXK0hY8DTFcPXH5OQMV+qx8bKWC4kZCwldErQzH3xmHg4b30rT90r",
-	"ga0GeA5Z4B9yji+do1t7/BpspeXhDN2p91vOX1KjHjtYv2qtDk0IvFtxVN2An7K5yjb1PjA5gOR9cf0q",
-	"Eu+rDCLMs+jDsIJjoAdPNPCMfnDQ8ZtpNBEAlovcjGOOVOkj/qZ07zFjdZXaCneRKmnhs6WAxa78utMk",
-	"QqoCjPFRbhfsP6qCyxbmnzFhQw4bU4so0BGtTBRqForxq2OVDg5GU2faIOvZ2il7jwbleHmbg6LMvV+W",
-	"RmTReG0YTakbCqA8AWY11bdFVS6TI3kRS//EQi6PvEes9fn+wdQ/gOd2dSBjr7VKwRi2oo+ZhlJp607j",
-	"b7++Z2fu9y9DVjZ06km0A+QeT5n7c8NKtw4YvwRTN9HDeQvaEKA+3F8qkWfMPw6HQ1dSYo7HQ999TGpa",
-	"hnVihLxSSyGvFBrWoQMTVFGqpLHJZeKPwSx372/XNz1fiD6ZVdKKfN/z0FfWbRAft2uegxRIg/Yohd5y",
-	"C1doVvchk+YWnBE+kEgarN7MyE1t5963GdxBGDyEcDpSXft6xCGuv5h9qpTlM/RfMr7p7DdaWthb7RX8",
-	"8wzNFk+t2Q0W386gtKtZysvdrwd113JH/vZsp5+owahKpzAz6Bv472veRlaUFYY6+OkaxHK1R4bsiyhn",
-	"1ubkju7cdkw7e03s1+sTpkfWyZCBfRQGux6TnHZxarTqRa7rPQpSGDO1DV0J2iiZTJJ+Iajl1Htp3n5A",
-	"fNWJ4E96aMZ22oR5j75HWCwgteIWHIRZiEq6+lZV8xzisBppA8sbCdrn2z/Cx5NEVnmefLwPzSNx7oCm",
-	"W7bZRjtG+l5pcUD/TyGMj5xbrBz+qeaHs6W3J7dGB2IcVUxngsaEcS5SO250AnEpuTez/IZSn510aJor",
-	"M+K53dcObMP5frkHTN+Udka54JYxdfHJITXMnfnVplRZ0w5JdiviWuBk2dhJlwY1otto/V9Y8yAu1xHq",
-	"dt/ktv5gtuAiP9BBWQjIs8jvfeYFwtb7jVG2ZuHg7XY1xyo1w1RmFMSQleHDXayMrIkrmZXSdvuqdwN2",
-	"9BjriXQ6t+sdmBBHPDwE9anweKVmJI4U5czVIaNPc27szADIg/DAoBD7NzDcGCk4xryXgH4EQBvPHlY7",
-	"401P4ithIqr4sP6AwK1dWV4HLIbMhxIpR30G6DeZ+ylcdFzMQd1DJMFCvnLvX+zA38HfgT/2L+yLPm63",
-	"9etFf0Pbm14O70IZwfuA7Hov/cC1FTxnFYFxhYqy6QhIuZTKsjlg7V8uIZuyF6H3wf3CCq5vTCs75eNx",
-	"w4YZm3s3RzxaBvzRS/91YvnBKeARzr6G+52kQxyKYU5jzMQ7nKhlKefy/md8LE94QFYhgImiuU+n3MPN",
-	"0v+fnrWtlgYhCblQkVzj+/fXrnriygq+hPAvn6HGIAlkRnWTNcxZmguQlpKEwuJekn81FZhWTvAyOZ+e",
-	"T89xz6oEyUuRXCY/Ti+m5+Sa2hVx7Iz2f1abjKU7iMhU8iVfZcll8hvYxia5sJ+KwfTF0/Nz74Za713w",
-	"ssxFSp+f/Wmc++KszcFGqWeH7vqa17XdUB3DbeFukjw7vzgIoW14ON87sjD2j4C0HiqrZYTW//EE63fq",
-	"dyiJLRxQp1ZFwfXGMY+lfTJNEsuXppF/DOrLKlLcc7rK0GeM9LlBAcVU0pT9egt6460eE85Y6QwyJqQr",
-	"MlaZsMxqLnKU165Q9X2dxJ00MPYXlW0ejYJjLtVd92j7XpSeZD+LdPohEL9nz+7z47P7lQt+HBsyWAhJ",
-	"Kvm7vGvIJsxXLl++e/t33xgiDCuEMVhVUZqF0LF7MJxk7HM27iZBT9aJpK168p91KugBenJnJ7JbJUIr",
-	"n2plS62q0hkUkhu0IJh5c30WlKditCHm0nbfZSmmO/lyqWGJkuJpZbmFrUKCrkTbmG5Z3bBcGEvzBYZJ",
-	"WIOxrlF4wpQE1xjFLeMMvScXWKhQw//ESq55ARY0uwEoDVMy33hY65UywMhToQo/F9LQIcFa/4SJpVTo",
-	"4LCUGxjqZoyG6yjOkL/gV8ItD3tgDDwR0oA0ArO3tAazii2ERFtgROaaThw6PMs0GEO5oOQS86Z6E6oT",
-	"l8mnZNLi746U392kj8sbCU/m3EDmaFenrmNL+a73ZrUMFrzKbbdkE3Wi4936Jbheti3rufb66KJPn09a",
-	"RaPz8x04fDy2fqlnKiJH6E0QTrVwAvddeQyUx1V9sndri7O/RHbnWsK3HDTkCPM98SRPdtVIF/3edWja",
-	"Yra7P/QjhQXpKtKiBDLz2sXSJAOmQfGAu+yF00uYdmOcyjeD7rKQ/wiJHDTKGRSKUh1+8AFLPsxJdGac",
-	"iXp2/jM9TlXm4M8IcHA83eoPcTyRoMf3O9upsL3cziMc5JgoI9e8I0tyejJvtt3IS+1zwjAoSrvpOGvf",
-	"FcoBni0i++z4yJIGwsO8UJX0y/58GoHxp32tqjxjOfBbYFJFFU5PD7u5B8ZJxn8wjsRKN8poT4+OdPRZ",
-	"6B34yoo6Fqs7rciNEUtZgLQP1YzXrgHieNqxnwK9b0xO5KYQ56vG5Q3lvyuvb1Z5KS8pLSXW0RYviImM",
-	"u7es8npjTD1UdnWW1rN/o1mBZkLwmMa+WSWyez+iyrsS46JJE4l7y53vu93naulGDUtlIrunJssjaZH2",
-	"EN+JHasxn6p1IDte1cVQawXd4aJilMvQxdCc3h5wPxgmTG286N2nj3fS213Dse01GFgoSqW5FvmG+bZh",
-	"wuXnx8Wl3Z8b8wyUYgWXiMJSSMYtomVNMklWwDOfh3kLVm+evFhYV9DqBzfUTMuo+5hxqewKdBccE/WI",
-	"Tzc7sS0+v+tFg2qJNpjiGp8HkVmL5e3zpCq79UDh833s4pVaLjHYqmwyREZV1sVdrq+CmdC9UGOifSvS",
-	"OC6hWelI57vfd7bXGb84+hnH35kv9j22pzHW/rXF92h3BPrY/LEd80HTYgSdt2000ubFttwFOMGoNrLm",
-	"pc+PYuRgI2NG/0G/Gwbk5xrQt6CfUHLRf13PMPGBFmbwOYXSSXx4u9RgQNqm5Pp5MQvPUqVuRCQz+paG",
-	"Zd6gjngXUN7nKNIXYWXD1qCBhcGbMQOx27nr5WEPq3+4rdTUdPtukSkoBiXBMcpNZj4JvSlnmLHB6vRo",
-	"qtvXpTVkQkNqXQJ6rtUaGbIC7TNHFH+xojLW3XeCzhfIDJEPY7qdYTJ00CB7IqTjrB8oxM3mgD9N2RvJ",
-	"TEVTw04cGqvlp65JDfv5ROsnv2Q4SoBvcMM4o+54ds5cfzMTEp8ZOxSLzlTay0CXQd48lhUO0ed4RBhJ",
-	"escAKSTWjHZzKLie3M3xWLD1CmR7KjuDNKchUz+PnUy2oHELWiwEWYbxlY+Zwu5wZKR1oNtsdbKg8Z31",
-	"9fJK3ki1lhM/x+5CJp67ylxlWjFUnAXfRph5ovwPdtKtuWHOOlAKWRgmFcNuXtCsiSWfPj0+RrVq+9PJ",
-	"EDKplvm7SfL8/MeTIZFSSsyn2DXOoA9qES8V3iDkqt0o9aRbezOwrRC3p+l9sDvQ/w5W2z3suwTkt5lm",
-	"qe71DcFcpytlQIZbASZOSRsm3FByc63DxCtpW2lfzQw78GYC2Ie3V86oBONEocqKHjADlgnnnGDF3wkz",
-	"gky51gLci84a2RW3zLbh0CUFZqj6Y7dlHMkf3nYxyYnj3613hIxokJpDJ9O0njgoA99UWeEEya7fYdPk",
-	"uJqT5n26JjFxQu1N6to6Re2PHRUGm9NbK5yvqca7PqcO5+ub0+nvLNf2QQrdj8WP+u9vW5rWD6f7kXhi",
-	"37w9zD5UjL+B9cP8R9RDfoURqQtIi3A1wGbqpqB8y8UpJD/g4IXdXxzg0JkOQjJ6WHauM5i2+JiqolAh",
-	"+XwDG7OTdy68C7dMqXXrkpJuHDVl76gPf+wOjGGH0O+4/im6gf3Nk3v0A/t91nHeuN77miZg2CbSx/EH",
-	"E1jWbh6hP6lVN+puvSQPhWCRs4wxrpIwvFGJWi3wBDeOFjV3UMTX6BAobQ0NR1ZqLYnQgxdGvRl074ds",
-	"FLuHK5XFy0sjPlO4zepYjlL/tqwTZw6DwMbNsr/Dyt9n5lCg6z69pm0mh5CWinqubX1d6vRk3tMVDgxh",
-	"nKW/UTfqJL6LMD7N5ONyr1no7r2GVV/VY6GgSWFWlTr0KYkHmRlcU81SXp7MkXnfhGc0BIfKqevWpD4o",
-	"zabsP52moADfH49+XTbLGgfH68ahagxmse6n25VLDsqSijHITbq9GxVeyDMY5Rp/M7ZW+sZbFG7pK2NV",
-	"GQkJHfCg3nalhlEl+MW+RyctK91hvyMpSvQo7yfbHSG0hHu5Qbtuph54uVFGn5/AmARSfJeaEanBPoYW",
-	"36Ou1LY+riAvJ2/lcqaXBjbczJWx3Hl0IqLTDVtoVTADFuNAM2XU8tZcG0+yfMiIcfQMtO9qjPWNHc+d",
-	"G4xnn7qLdvQEfvDts/WV9t/9ue9pscPTYr4S3E6KNbcFnMy1bB169MOCi3mAaxnvu72BzQ+G0fUDEwfG",
-	"EEy3VtyJK7ZO2b0+6nTdI/R27Rf6o3mKtyskd6PDGGEiFz/0qYKSbtPHqCTncllxHMn4IA1f1G32JqDA",
-	"uM+/Ns0CY/r8NRxVnTd3MnwjrXsfWqMQrNRqIXJo6eZ4840f/v9KLRwO5REZ+sE0u3BH6izFO813D7G+",
-	"htbl58csIjWrxAr0+NQPXXpXBfXjr+9foOeec9km+7eQyQvHuZfII6Izf9dd2EI7p4vPa7V31r7LKt51",
-	"5xTr6034pxyOlUSL/nsR956b93CCVXO+ULcrqtMQdcru/YCb0jXzus24Jznap++e7TGlbp+lEoBG1dJc",
-	"dvuwftoyvtJjdNZ6PyNy8rrdtQV0ugyjyg+T8a834519jyeU7XvHoo3WNNdUI/wwR2OsxsD7q/ToFEmj",
-	"xdoha4rtle/y736F9sc6xogjNDYS4jZJiQS1iJGxzaVYx99jJw3u7u7+bwA=",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

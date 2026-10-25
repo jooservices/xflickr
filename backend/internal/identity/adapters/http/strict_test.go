@@ -54,3 +54,22 @@ func TestStrictHandlerLeavesPlansToSchedule(t *testing.T) {
 		t.Fatalf("get admin queue error = %v", err)
 	}
 }
+
+func TestStrictHandlerLeavesCrawlControlsToCrawl(t *testing.T) {
+	handler := StrictHandler{}
+	if _, err := handler.GetMeCrawl(t.Context(), gen.GetMeCrawlRequestObject{}); !errors.Is(err, errCrawlServedByCrawl) {
+		t.Fatalf("crawl status error=%v", err)
+	}
+	if _, err := handler.StarMyContact(t.Context(), gen.StarMyContactRequestObject{}); !errors.Is(err, errCrawlServedByCrawl) {
+		t.Fatalf("star error=%v", err)
+	}
+	if _, err := handler.SelectMyContact(t.Context(), gen.SelectMyContactRequestObject{}); !errors.Is(err, errCrawlServedByCrawl) {
+		t.Fatalf("select error=%v", err)
+	}
+	if _, err := handler.PauseCrawlContact(t.Context(), gen.PauseCrawlContactRequestObject{}); !errors.Is(err, errCrawlServedByCrawl) {
+		t.Fatalf("pause error=%v", err)
+	}
+	if _, err := handler.ResumeCrawlContact(t.Context(), gen.ResumeCrawlContactRequestObject{}); !errors.Is(err, errCrawlServedByCrawl) {
+		t.Fatalf("resume error=%v", err)
+	}
+}

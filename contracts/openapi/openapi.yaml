@@ -42,6 +42,16 @@ paths:
     $ref: ./paths/plans.yaml#/user_plan
   /me/crawl/queue:
     $ref: ./paths/queue.yaml#/user_queue
+  /me/crawl:
+    $ref: ./paths/crawl.yaml#/status
+  /me/contacts/{nsid}/star:
+    $ref: ./paths/crawl.yaml#/star
+  /me/contacts/{nsid}/select:
+    $ref: ./paths/crawl.yaml#/select
+  /me/crawl/pause:
+    $ref: ./paths/crawl.yaml#/pause
+  /me/crawl/resume:
+    $ref: ./paths/crawl.yaml#/resume
   /admin/queue:
     $ref: ./paths/queue.yaml#/admin_queue
 components:
@@ -82,5 +92,11 @@ components:
       $ref: ./schemas/plans.yaml#/UpdateUserPlanRequest
     CrawlQueue:
       $ref: ./schemas/queue.yaml#/CrawlQueue
+    CrawlStatus:
+      $ref: ./schemas/queue.yaml#/CrawlStatus
+    StarContactRequest:
+      $ref: ./schemas/queue.yaml#/StarContactRequest
+    CrawlContactRequest:
+      $ref: ./schemas/queue.yaml#/CrawlContactRequest
     AdminQueue:
       $ref: ./schemas/queue.yaml#/AdminQueue

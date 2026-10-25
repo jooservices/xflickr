@@ -158,7 +158,7 @@ func (s Store) RecomputeScores(ctx context.Context, batchSize int, weights domai
 		return 0, fmt.Errorf("schedule: begin score aging: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	rows, err := tx.Query(ctx, `SELECT w.id, COALESCE(p.weight,1), w.direct_action, w.starred, w.depth, EXTRACT(EPOCH FROM (now()-w.created_at))/60.0 FROM work_items w LEFT JOIN users u ON u.id=w.user_id LEFT JOIN plans p ON p.id=u.plan_id WHERE w.state='pending' AND w.not_before <= now() ORDER BY w.score_updated_at NULLS FIRST, w.created_at, w.id LIMIT $1 FOR UPDATE OF w SKIP LOCKED`, batchSize)
+	rows, err := tx.Query(ctx, `SELECT w.id, COALESCE(p.weight,1), w.direct_action AND COALESCE(ci.selected_until IS NULL OR ci.selected_until > now(), TRUE), w.starred, w.depth, EXTRACT(EPOCH FROM (now()-w.created_at))/60.0 FROM work_items w LEFT JOIN users u ON u.id=w.user_id LEFT JOIN plans p ON p.id=u.plan_id LEFT JOIN crawl_interests ci ON ci.user_id=w.user_id AND ci.person_nsid=w.subject_key WHERE w.state='pending' AND w.not_before <= now() ORDER BY w.score_updated_at NULLS FIRST, w.created_at, w.id LIMIT $1 FOR UPDATE OF w SKIP LOCKED`, batchSize)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: select score aging batch: %w", err)
 	}
@@ -271,7 +271,7 @@ func (s Store) pumpKey(ctx context.Context, tx pgx.Tx, keyID int64, settings app
 }
 
 func (s Store) pumpQueue(ctx context.Context, tx pgx.Tx, keyID int64, cap queueCap, limit int, settings app.PumpSettings, jobs queue.JobQueue) (int, error) {
-	rows, err := tx.Query(ctx, `SELECT COALESCE(p.id,(SELECT id FROM plans WHERE name='free')), COALESCE(p.resource_share,(SELECT resource_share FROM plans WHERE name='free')), count(*) FROM work_items w LEFT JOIN users u ON u.id=w.user_id LEFT JOIN plans p ON p.id=u.plan_id WHERE w.state='pending' AND w.key_id=$1 AND w.worker_type=$2 AND w.not_before<=now() GROUP BY 1,2 ORDER BY 1`, keyID, cap.name)
+	rows, err := tx.Query(ctx, `SELECT COALESCE(p.id,(SELECT id FROM plans WHERE name='free')), COALESCE(p.resource_share,(SELECT resource_share FROM plans WHERE name='free')), count(*) FROM work_items w LEFT JOIN users u ON u.id=w.user_id LEFT JOIN plans p ON p.id=u.plan_id WHERE w.state='pending' AND w.key_id=$1 AND w.worker_type=$2 AND w.not_before<=now() AND NOT EXISTS (SELECT 1 FROM crawl_interests ci WHERE ci.user_id=w.user_id AND ci.person_nsid=w.subject_key AND ci.paused_at IS NOT NULL) GROUP BY 1,2 ORDER BY 1`, keyID, cap.name)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: count plan backlog: %w", err)
 	}
@@ -310,7 +310,7 @@ func (s Store) pumpQueue(ctx context.Context, tx pgx.Tx, keyID int64, cap queueC
 }
 
 func (s Store) pumpQueuePlan(ctx context.Context, tx pgx.Tx, keyID int64, cap queueCap, planID int64, limit int, settings app.PumpSettings, jobs queue.JobQueue) (int, error) {
-	rows, err := tx.Query(ctx, `SELECT w.id, w.kind, w.subject_key, w.cursor FROM work_items w LEFT JOIN users u ON u.id=w.user_id WHERE w.state = 'pending' AND w.key_id = $1 AND w.worker_type = $2 AND w.not_before <= now() AND COALESCE(u.plan_id,(SELECT id FROM plans WHERE name='free'))=$3 ORDER BY w.score DESC, w.not_before, w.id LIMIT $4 FOR UPDATE OF w SKIP LOCKED`, keyID, cap.name, planID, limit)
+	rows, err := tx.Query(ctx, `SELECT w.id, w.kind, w.subject_key, w.cursor FROM work_items w LEFT JOIN users u ON u.id=w.user_id WHERE w.state = 'pending' AND w.key_id = $1 AND w.worker_type = $2 AND w.not_before <= now() AND COALESCE(u.plan_id,(SELECT id FROM plans WHERE name='free'))=$3 AND NOT EXISTS (SELECT 1 FROM crawl_interests ci WHERE ci.user_id=w.user_id AND ci.person_nsid=w.subject_key AND ci.paused_at IS NOT NULL) ORDER BY w.score DESC, w.not_before, w.id LIMIT $4 FOR UPDATE OF w SKIP LOCKED`, keyID, cap.name, planID, limit)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: select pending work: %w", err)
 	}

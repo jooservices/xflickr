@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -107,6 +108,47 @@ func TestPumpSkipsUnavailableKeyAndDispatchesValidKey(t *testing.T) {
 	}
 	if revokedState != "pending" || validState != "ready" {
 		t.Fatalf("row states: revoked=%q valid=%q; want pending and ready", revokedState, validState)
+	}
+}
+
+func TestPumpDoesNotDispatchPausedContact(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run make test-integration to use the configured worktree database")
+	}
+	pool := integrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	suffix := fmt.Sprintf("paused-%d", time.Now().UnixNano())
+	keyID := seedKey(t, ctx, pool, suffix)
+	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
+	var userID int64
+	if err := pool.QueryRow(ctx, `SELECT user_id FROM api_keys WHERE id=$1`, keyID).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,paused_at) VALUES($1,$2,1,'contact',now())`, userID, suffix+"-contact"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state) VALUES('person',$1,$2,$3,'pending')`, suffix+"-contact", userID, keyID); err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := queue.NewRiver(pool, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	dispatched, err := (scheduleriver.Store{Pool: pool}).Pump(ctx, settings, fixedCapacity(10), adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dispatched != 0 {
+		t.Fatalf("Pump dispatched %d paused rows, want 0", dispatched)
+	}
+	var state string
+	if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE subject_key=$1`, suffix+"-contact").Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != "pending" {
+		t.Fatalf("paused backlog state=%q, want pending", state)
 	}
 }
 
@@ -352,6 +394,97 @@ func TestRecomputeScoresStoresFormulaResultInBatches(t *testing.T) {
 	}
 	if score < 145.9 || score > 146.1 {
 		t.Fatalf("stored score = %v, want about 146", score)
+	}
+}
+
+func TestRecomputeScoresStopsSelectionBonusAfterSevenDays(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run make test-integration to use the configured worktree database")
+	}
+	pool := integrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	suffix := fmt.Sprintf("selection-expiry-%d", time.Now().UnixNano())
+	keyID := seedKey(t, ctx, pool, suffix)
+	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
+	var userID int64
+	if err := pool.QueryRow(ctx, `SELECT user_id FROM api_keys WHERE id=$1`, keyID).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct {
+		suffix string
+		until  time.Time
+	}{{"active", time.Now().Add(time.Hour)}, {"expired", time.Now().Add(-time.Hour)}} {
+		subject := suffix + "-" + item.suffix
+		if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,selected_until) VALUES($1,$2,0,'contact',$3)`, userID, subject, item.until); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,direct_action,created_at) VALUES('person',$1,$2,$3,'pending',true,now())`, subject, userID, keyID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := scheduleriver.Store{Pool: pool}
+	if _, err := store.RecomputeScores(ctx, 100, domain.ScoreWeights{DirectAction: 100}, 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []struct {
+		suffix string
+		score  float64
+	}{{"active", 100}, {"expired", 0}} {
+		var score float64
+		if err := pool.QueryRow(ctx, `SELECT score FROM work_items WHERE subject_key=$1`, suffix+"-"+want.suffix).Scan(&score); err != nil {
+			t.Fatal(err)
+		}
+		if score != want.score {
+			t.Errorf("%s selection score=%v want %v", want.suffix, score, want.score)
+		}
+	}
+}
+
+func TestRecomputeScoresReturnsInvalidScoreError(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run make test-integration to use the configured worktree database")
+	}
+	pool := integrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	suffix := fmt.Sprintf("score-invalid-%d", time.Now().UnixNano())
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state) VALUES('person',$1,'pending')`, suffix); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE subject_key=$1`, suffix) })
+	if _, err := (scheduleriver.Store{Pool: pool}).RecomputeScores(ctx, 100, domain.ScoreWeights{PlanWeight: math.NaN()}, 2); err == nil {
+		t.Fatal("RecomputeScores accepted an invalid score weight")
+	}
+}
+
+func TestRecomputeScoresReturnsBacklogWriteFailure(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run make test-integration to use the configured worktree database")
+	}
+	pool := integrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	suffix := fmt.Sprintf("score-write-failure-%d", time.Now().UnixNano())
+	function := "fail_score_" + fmt.Sprint(time.Now().UnixNano())
+	trigger := "trigger_score_" + fmt.Sprint(time.Now().UnixNano())
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state) VALUES('person',$1,'pending')`, suffix); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE subject_key=$1`, suffix) })
+	statement := fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.subject_key = '%s' AND NEW.score_updated_at IS NOT NULL THEN RAISE EXCEPTION 'forced score write failure'; END IF; RETURN NEW; END $$`, function, suffix)
+	if _, err := pool.Exec(ctx, statement); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, fmt.Sprintf(`CREATE TRIGGER %s BEFORE UPDATE ON work_items FOR EACH ROW EXECUTE FUNCTION %s()`, trigger, function)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON work_items`, trigger))
+		_, _ = pool.Exec(context.Background(), fmt.Sprintf(`DROP FUNCTION IF EXISTS %s()`, function))
+	})
+	if _, err := (scheduleriver.Store{Pool: pool}).RecomputeScores(ctx, 100, domain.ScoreWeights{}, 2); err == nil {
+		t.Fatal("RecomputeScores ignored a backlog score write failure")
 	}
 }
 

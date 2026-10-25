@@ -11,6 +11,7 @@ import (
 
 	"github.com/jooservices/xflickr/internal/platform/queue"
 	"github.com/jooservices/xflickr/internal/schedule/app"
+	"github.com/jooservices/xflickr/internal/schedule/domain"
 )
 
 func TestLoadSettingsValidatesDependenciesAndDatabaseErrors(t *testing.T) {
@@ -23,6 +24,18 @@ func TestLoadSettingsValidatesDependenciesAndDatabaseErrors(t *testing.T) {
 	}
 	if _, err := LoadSettings(context.Background(), pool); err == nil {
 		t.Fatal("LoadSettings ignored database error")
+	}
+}
+
+func TestRecomputeScoresValidatesDependencies(t *testing.T) {
+	if _, err := (Store{}).RecomputeScores(context.Background(), 1, domain.ScoreWeights{}, 1); err == nil {
+		t.Fatal("RecomputeScores accepted nil pool")
+	}
+	if _, err := (Store{Pool: closedPool(t)}).RecomputeScores(nil, 1, domain.ScoreWeights{}, 1); err == nil {
+		t.Fatal("RecomputeScores accepted nil context")
+	}
+	if _, err := (Store{Pool: closedPool(t)}).RecomputeScores(context.Background(), 0, domain.ScoreWeights{}, 1); err == nil {
+		t.Fatal("RecomputeScores accepted empty batch")
 	}
 }
 

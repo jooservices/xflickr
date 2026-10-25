@@ -20,6 +20,7 @@ import (
 	accountsettings "github.com/jooservices/xflickr/internal/accounts/adapters/settings"
 	accountsapp "github.com/jooservices/xflickr/internal/accounts/app"
 	accountsdomain "github.com/jooservices/xflickr/internal/accounts/domain"
+	crawlhttp "github.com/jooservices/xflickr/internal/crawl/adapters/http"
 	crawlpostgres "github.com/jooservices/xflickr/internal/crawl/adapters/postgres"
 	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
@@ -214,7 +215,11 @@ func buildConfiguredAPIHandler(pool *pgxpool.Pool, redisClient redisv9.Universal
 	if err != nil {
 		return nil, err
 	}
-	return newAPIRouter(identity, keys, connect, plans), nil
+	crawl, err := buildCrawlHandler(pool)
+	if err != nil {
+		return nil, err
+	}
+	return newAPIRouter(identity, keys, connect, plans, crawl), nil
 }
 
 // apiServer composes identity and API key handlers. The two types expose
@@ -223,6 +228,7 @@ type apiServer struct {
 	identityhttp.Handler
 	accountshttp.KeyHandler
 	accountshttp.ConnectHandler
+	crawlhttp.CrawlHandler
 	planHandler
 }
 
@@ -230,15 +236,27 @@ type planHandler struct{ schedulehttp.Handler }
 
 var _ gen.StrictServerInterface = apiServer{}
 
-func newAPIRouter(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler) http.Handler {
+func newAPIRouter(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawlers ...crawlhttp.CrawlHandler) http.Handler {
+	var crawl crawlhttp.CrawlHandler
+	if len(crawlers) > 0 {
+		crawl = crawlers[0]
+	}
 	router := chi.NewRouter()
 	router.Use(identityhttp.RequestBodyLimit)
 	router.Use(identityhttp.CSRF)
 	router.Use(identityhttp.ProtectRoutes(identity.Sessions))
-	return gen.HandlerFromMux(gen.NewStrictHandler(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
+	return gen.HandlerFromMux(gen.NewStrictHandler(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		identityhttp.MaintainSessionCookies(identity.Sessions),
 	}), router)
+}
+
+func buildCrawlHandler(pool *pgxpool.Pool) (crawlhttp.CrawlHandler, error) {
+	repository, err := crawlpostgres.NewControls(pool)
+	if err != nil {
+		return crawlhttp.CrawlHandler{}, err
+	}
+	return crawlhttp.CrawlHandler{Controls: crawlapp.Controls{Repository: repository}, ActorID: userIDFromPrincipal}, nil
 }
 
 func buildKeyHandler(pool *pgxpool.Pool, cfg config.Config) (accountshttp.KeyHandler, error) {

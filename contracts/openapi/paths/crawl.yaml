@@ -1,0 +1,78 @@
+status:
+  get:
+    operationId: GetMeCrawl
+    tags: [crawl]
+    summary: Get crawl progress by depth, facet, and lane
+    responses:
+      '200':
+        description: Crawl progress snapshot
+        content:
+          application/json:
+            schema: { $ref: ../schemas/queue.yaml#/CrawlStatus }
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+
+star:
+  put:
+    operationId: StarMyContact
+    tags: [crawl]
+    summary: Star or unstar a contact
+    parameters:
+      - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: ../schemas/queue.yaml#/StarContactRequest }
+    responses:
+      '204': { description: Contact updated }
+      '400': { description: Invalid request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '404': { description: Contact not found, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+
+select:
+  put:
+    operationId: SelectMyContact
+    tags: [crawl]
+    summary: Select a contact for seven days
+    parameters:
+      - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+    responses:
+      '204': { description: Contact selected }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '404': { description: Contact not found, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+
+pause:
+  put:
+    operationId: PauseCrawlContact
+    tags: [crawl]
+    summary: Pause crawl work for a contact
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: ../schemas/queue.yaml#/CrawlContactRequest }
+    responses:
+      '204': { description: Contact paused }
+      '400': { description: Invalid request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '404': { description: Contact not found, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+
+resume:
+  put:
+    operationId: ResumeCrawlContact
+    tags: [crawl]
+    summary: Resume crawl work for a contact
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: ../schemas/queue.yaml#/CrawlContactRequest }
+    responses:
+      '204': { description: Contact resumed }
+      '400': { description: Invalid request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '404': { description: Contact not found, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }

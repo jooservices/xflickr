@@ -6,6 +6,62 @@ CrawlQueue:
       type: array
       items: { $ref: '#/QueueLane' }
 
+CrawlStatus:
+  type: object
+  additionalProperties: false
+  required: [depths, facets, lanes]
+  properties:
+    depths:
+      type: array
+      items: { $ref: '#/DepthProgress' }
+    facets:
+      type: array
+      items: { $ref: '#/FacetProgress' }
+    lanes:
+      type: array
+      items: { $ref: '#/LaneStatus' }
+
+DepthProgress:
+  type: object
+  required: [depth, contacts]
+  properties:
+    depth: { type: integer, minimum: 0 }
+    contacts: { type: integer, format: int64, minimum: 0 }
+
+FacetProgress:
+  type: object
+  required: [facet, total, done, active, failed]
+  properties:
+    facet: { type: string }
+    total: { type: integer, format: int64, minimum: 0 }
+    done: { type: integer, format: int64, minimum: 0 }
+    active: { type: integer, format: int64, minimum: 0 }
+    failed: { type: integer, format: int64, minimum: 0 }
+
+LaneStatus:
+  type: object
+  required: [lane, pending, running, waiting, paused]
+  properties:
+    lane: { type: string, enum: [person, sizes] }
+    pending: { type: integer, format: int64, minimum: 0 }
+    running: { type: integer, format: int64, minimum: 0 }
+    waiting: { type: integer, format: int64, minimum: 0 }
+    paused: { type: integer, format: int64, minimum: 0 }
+
+StarContactRequest:
+  type: object
+  additionalProperties: false
+  required: [starred]
+  properties:
+    starred: { type: boolean }
+
+CrawlContactRequest:
+  type: object
+  additionalProperties: false
+  required: [nsid]
+  properties:
+    nsid: { type: string, minLength: 1, maxLength: 255 }
+
 QueueLane:
   type: object
   required: [lane, backlog_calls, effective_calls_per_hour, eta_hours]

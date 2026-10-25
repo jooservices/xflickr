@@ -66,3 +66,25 @@ func (StrictHandler) GetMeCrawlQueue(context.Context, gen.GetMeCrawlQueueRequest
 func (StrictHandler) GetAdminQueue(context.Context, gen.GetAdminQueueRequestObject) (gen.GetAdminQueueResponseObject, error) {
 	return nil, errPlansServedBySchedule
 }
+
+var errCrawlServedByCrawl = errors.New("identity: crawl controls are served by the crawl module")
+
+func (StrictHandler) GetMeCrawl(context.Context, gen.GetMeCrawlRequestObject) (gen.GetMeCrawlResponseObject, error) {
+	return nil, errCrawlServedByCrawl
+}
+
+func (StrictHandler) StarMyContact(context.Context, gen.StarMyContactRequestObject) (gen.StarMyContactResponseObject, error) {
+	return nil, errCrawlServedByCrawl
+}
+
+func (StrictHandler) SelectMyContact(context.Context, gen.SelectMyContactRequestObject) (gen.SelectMyContactResponseObject, error) {
+	return nil, errCrawlServedByCrawl
+}
+
+func (StrictHandler) PauseCrawlContact(context.Context, gen.PauseCrawlContactRequestObject) (gen.PauseCrawlContactResponseObject, error) {
+	return nil, errCrawlServedByCrawl
+}
+
+func (StrictHandler) ResumeCrawlContact(context.Context, gen.ResumeCrawlContactRequestObject) (gen.ResumeCrawlContactResponseObject, error) {
+	return nil, errCrawlServedByCrawl
+}

@@ -5,20 +5,29 @@
  * HTTP API shared by the XFlickr backend and web client.
  * OpenAPI spec version: 0.0.0
  */
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
   DefinedUseQueryResult,
+  MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from '@tanstack/react-query';
 
-import type { CrawlQueue, Error } from '../models';
+import type {
+  CrawlContactRequest,
+  CrawlQueue,
+  CrawlStatus,
+  Error,
+  StarContactRequest,
+} from '../models';
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
   const result = { queryKey } as T & { queryKey: K };
@@ -169,3 +178,654 @@ export function useGetMeCrawlQueue<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+export type getMeCrawlResponse200 = {
+  data: CrawlStatus;
+  status: 200;
+};
+
+export type getMeCrawlResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type getMeCrawlResponseSuccess = getMeCrawlResponse200 & {
+  headers: Headers;
+};
+export type getMeCrawlResponseError = getMeCrawlResponse401 & {
+  headers: Headers;
+};
+
+export type getMeCrawlResponse = getMeCrawlResponseSuccess | getMeCrawlResponseError;
+
+export const getGetMeCrawlUrl = () => {
+  return `/me/crawl`;
+};
+
+/**
+ * @summary Get crawl progress by depth, facet, and lane
+ */
+export const getMeCrawl = async (options?: RequestInit): Promise<getMeCrawlResponse> => {
+  const res = await fetch(getGetMeCrawlUrl(), {
+    ...options,
+    method: 'GET',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getMeCrawlResponse['data'] = body ? JSON.parse(body) : {};
+  return { data, status: res.status, headers: res.headers } as getMeCrawlResponse;
+};
+
+export const getGetMeCrawlQueryKey = () => {
+  return [`/me/crawl`] as const;
+};
+
+export const getGetMeCrawlQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMeCrawl>>,
+  TError = Error,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeCrawl>>, TError, TData>>;
+  fetch?: RequestInit;
+}) => {
+  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetMeCrawlQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMeCrawl>>> = ({ signal }) =>
+    getMeCrawl({ signal, ...fetchOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMeCrawl>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetMeCrawlQueryResult = NonNullable<Awaited<ReturnType<typeof getMeCrawl>>>;
+export type GetMeCrawlQueryError = Error;
+
+export function useGetMeCrawl<TData = Awaited<ReturnType<typeof getMeCrawl>>, TError = Error>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeCrawl>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMeCrawl>>,
+          TError,
+          Awaited<ReturnType<typeof getMeCrawl>>
+        >,
+        'initialData'
+      >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetMeCrawl<TData = Awaited<ReturnType<typeof getMeCrawl>>, TError = Error>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeCrawl>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMeCrawl>>,
+          TError,
+          Awaited<ReturnType<typeof getMeCrawl>>
+        >,
+        'initialData'
+      >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetMeCrawl<TData = Awaited<ReturnType<typeof getMeCrawl>>, TError = Error>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeCrawl>>, TError, TData>>;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get crawl progress by depth, facet, and lane
+ */
+
+export function useGetMeCrawl<TData = Awaited<ReturnType<typeof getMeCrawl>>, TError = Error>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeCrawl>>, TError, TData>>;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMeCrawlQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type starMyContactResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type starMyContactResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type starMyContactResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type starMyContactResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type starMyContactResponseSuccess = starMyContactResponse204 & {
+  headers: Headers;
+};
+export type starMyContactResponseError = (
+  starMyContactResponse400 | starMyContactResponse401 | starMyContactResponse404
+) & {
+  headers: Headers;
+};
+
+export type starMyContactResponse = starMyContactResponseSuccess | starMyContactResponseError;
+
+export const getStarMyContactUrl = (nsid: string) => {
+  return `/me/contacts/${nsid}/star`;
+};
+
+/**
+ * @summary Star or unstar a contact
+ */
+export const starMyContact = async (
+  nsid: string,
+  starContactRequest: StarContactRequest,
+  options?: RequestInit,
+): Promise<starMyContactResponse> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit['headers']>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  const res = await fetch(getStarMyContactUrl(nsid), {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(starContactRequest),
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: starMyContactResponse['data'] = body ? JSON.parse(body) : undefined;
+  return { data, status: res.status, headers: res.headers } as starMyContactResponse;
+};
+
+export const getStarMyContactMutationKey = () => ['starMyContact'] as const;
+
+export const getStarMyContactMutationOptions = <TError = Error, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof starMyContact>>,
+    TError,
+    StarMyContactMutationVariables,
+    TContext
+  >;
+  fetch?: RequestInit;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof starMyContact>>,
+  TError,
+  StarMyContactMutationVariables,
+  TContext
+> => {
+  const mutationKey = getStarMyContactMutationKey();
+  const { mutation: mutationOptions, fetch: fetchOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, fetch: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof starMyContact>>,
+    StarMyContactMutationVariables
+  > = (props) => {
+    const { nsid, data } = props ?? {};
+
+    return starMyContact(nsid, data, fetchOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StarMyContactMutationResult = NonNullable<Awaited<ReturnType<typeof starMyContact>>>;
+export type StarMyContactMutationBody = StarContactRequest;
+export type StarMyContactMutationError = Error;
+export type StarMyContactMutationVariables = { nsid: string; data: StarContactRequest };
+
+/**
+ * @summary Star or unstar a contact
+ */
+export const useStarMyContact = <TError = Error, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof starMyContact>>,
+      TError,
+      StarMyContactMutationVariables,
+      TContext
+    >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof starMyContact>>,
+  TError,
+  StarMyContactMutationVariables,
+  TContext
+> => {
+  return useMutation(getStarMyContactMutationOptions(options), queryClient);
+};
+export type selectMyContactResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type selectMyContactResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type selectMyContactResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type selectMyContactResponseSuccess = selectMyContactResponse204 & {
+  headers: Headers;
+};
+export type selectMyContactResponseError = (
+  selectMyContactResponse401 | selectMyContactResponse404
+) & {
+  headers: Headers;
+};
+
+export type selectMyContactResponse = selectMyContactResponseSuccess | selectMyContactResponseError;
+
+export const getSelectMyContactUrl = (nsid: string) => {
+  return `/me/contacts/${nsid}/select`;
+};
+
+/**
+ * @summary Select a contact for seven days
+ */
+export const selectMyContact = async (
+  nsid: string,
+  options?: RequestInit,
+): Promise<selectMyContactResponse> => {
+  const res = await fetch(getSelectMyContactUrl(nsid), {
+    ...options,
+    method: 'PUT',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: selectMyContactResponse['data'] = body ? JSON.parse(body) : undefined;
+  return { data, status: res.status, headers: res.headers } as selectMyContactResponse;
+};
+
+export const getSelectMyContactMutationKey = () => ['selectMyContact'] as const;
+
+export const getSelectMyContactMutationOptions = <TError = Error, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof selectMyContact>>,
+    TError,
+    SelectMyContactMutationVariables,
+    TContext
+  >;
+  fetch?: RequestInit;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof selectMyContact>>,
+  TError,
+  SelectMyContactMutationVariables,
+  TContext
+> => {
+  const mutationKey = getSelectMyContactMutationKey();
+  const { mutation: mutationOptions, fetch: fetchOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, fetch: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof selectMyContact>>,
+    SelectMyContactMutationVariables
+  > = (props) => {
+    const { nsid } = props ?? {};
+
+    return selectMyContact(nsid, fetchOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SelectMyContactMutationResult = NonNullable<
+  Awaited<ReturnType<typeof selectMyContact>>
+>;
+
+export type SelectMyContactMutationError = Error;
+export type SelectMyContactMutationVariables = { nsid: string };
+
+/**
+ * @summary Select a contact for seven days
+ */
+export const useSelectMyContact = <TError = Error, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof selectMyContact>>,
+      TError,
+      SelectMyContactMutationVariables,
+      TContext
+    >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof selectMyContact>>,
+  TError,
+  SelectMyContactMutationVariables,
+  TContext
+> => {
+  return useMutation(getSelectMyContactMutationOptions(options), queryClient);
+};
+export type pauseCrawlContactResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type pauseCrawlContactResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type pauseCrawlContactResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type pauseCrawlContactResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type pauseCrawlContactResponseSuccess = pauseCrawlContactResponse204 & {
+  headers: Headers;
+};
+export type pauseCrawlContactResponseError = (
+  pauseCrawlContactResponse400 | pauseCrawlContactResponse401 | pauseCrawlContactResponse404
+) & {
+  headers: Headers;
+};
+
+export type pauseCrawlContactResponse =
+  pauseCrawlContactResponseSuccess | pauseCrawlContactResponseError;
+
+export const getPauseCrawlContactUrl = () => {
+  return `/me/crawl/pause`;
+};
+
+/**
+ * @summary Pause crawl work for a contact
+ */
+export const pauseCrawlContact = async (
+  crawlContactRequest: CrawlContactRequest,
+  options?: RequestInit,
+): Promise<pauseCrawlContactResponse> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit['headers']>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  const res = await fetch(getPauseCrawlContactUrl(), {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(crawlContactRequest),
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: pauseCrawlContactResponse['data'] = body ? JSON.parse(body) : undefined;
+  return { data, status: res.status, headers: res.headers } as pauseCrawlContactResponse;
+};
+
+export const getPauseCrawlContactMutationKey = () => ['pauseCrawlContact'] as const;
+
+export const getPauseCrawlContactMutationOptions = <TError = Error, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pauseCrawlContact>>,
+    TError,
+    PauseCrawlContactMutationVariables,
+    TContext
+  >;
+  fetch?: RequestInit;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pauseCrawlContact>>,
+  TError,
+  PauseCrawlContactMutationVariables,
+  TContext
+> => {
+  const mutationKey = getPauseCrawlContactMutationKey();
+  const { mutation: mutationOptions, fetch: fetchOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, fetch: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pauseCrawlContact>>,
+    PauseCrawlContactMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return pauseCrawlContact(data, fetchOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PauseCrawlContactMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pauseCrawlContact>>
+>;
+export type PauseCrawlContactMutationBody = CrawlContactRequest;
+export type PauseCrawlContactMutationError = Error;
+export type PauseCrawlContactMutationVariables = { data: CrawlContactRequest };
+
+/**
+ * @summary Pause crawl work for a contact
+ */
+export const usePauseCrawlContact = <TError = Error, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pauseCrawlContact>>,
+      TError,
+      PauseCrawlContactMutationVariables,
+      TContext
+    >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pauseCrawlContact>>,
+  TError,
+  PauseCrawlContactMutationVariables,
+  TContext
+> => {
+  return useMutation(getPauseCrawlContactMutationOptions(options), queryClient);
+};
+export type resumeCrawlContactResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type resumeCrawlContactResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type resumeCrawlContactResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type resumeCrawlContactResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type resumeCrawlContactResponseSuccess = resumeCrawlContactResponse204 & {
+  headers: Headers;
+};
+export type resumeCrawlContactResponseError = (
+  resumeCrawlContactResponse400 | resumeCrawlContactResponse401 | resumeCrawlContactResponse404
+) & {
+  headers: Headers;
+};
+
+export type resumeCrawlContactResponse =
+  resumeCrawlContactResponseSuccess | resumeCrawlContactResponseError;
+
+export const getResumeCrawlContactUrl = () => {
+  return `/me/crawl/resume`;
+};
+
+/**
+ * @summary Resume crawl work for a contact
+ */
+export const resumeCrawlContact = async (
+  crawlContactRequest: CrawlContactRequest,
+  options?: RequestInit,
+): Promise<resumeCrawlContactResponse> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit['headers']>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  const res = await fetch(getResumeCrawlContactUrl(), {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(crawlContactRequest),
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: resumeCrawlContactResponse['data'] = body ? JSON.parse(body) : undefined;
+  return { data, status: res.status, headers: res.headers } as resumeCrawlContactResponse;
+};
+
+export const getResumeCrawlContactMutationKey = () => ['resumeCrawlContact'] as const;
+
+export const getResumeCrawlContactMutationOptions = <TError = Error, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resumeCrawlContact>>,
+    TError,
+    ResumeCrawlContactMutationVariables,
+    TContext
+  >;
+  fetch?: RequestInit;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resumeCrawlContact>>,
+  TError,
+  ResumeCrawlContactMutationVariables,
+  TContext
+> => {
+  const mutationKey = getResumeCrawlContactMutationKey();
+  const { mutation: mutationOptions, fetch: fetchOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, fetch: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resumeCrawlContact>>,
+    ResumeCrawlContactMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return resumeCrawlContact(data, fetchOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ResumeCrawlContactMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resumeCrawlContact>>
+>;
+export type ResumeCrawlContactMutationBody = CrawlContactRequest;
+export type ResumeCrawlContactMutationError = Error;
+export type ResumeCrawlContactMutationVariables = { data: CrawlContactRequest };
+
+/**
+ * @summary Resume crawl work for a contact
+ */
+export const useResumeCrawlContact = <TError = Error, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof resumeCrawlContact>>,
+      TError,
+      ResumeCrawlContactMutationVariables,
+      TContext
+    >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof resumeCrawlContact>>,
+  TError,
+  ResumeCrawlContactMutationVariables,
+  TContext
+> => {
+  return useMutation(getResumeCrawlContactMutationOptions(options), queryClient);
+};
