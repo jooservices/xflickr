@@ -33,6 +33,7 @@ components:
   crawl-domain:     { in: internal/crawl/domain/** }
   crawl-app:        { in: internal/crawl/app/** }
   crawl-adapters:   { in: internal/crawl/adapters/** }
+  crawl-facets:     { in: internal/crawl/facets/** }
   platform:
     in:
       - internal/platform/adapters/**
@@ -79,6 +80,8 @@ deps:
     mayDependOn: [catalog-domain]
   crawl-app:
     mayDependOn: [crawl-domain, settings-domain, catalog-domain, pkg]
+  crawl-facets:
+    mayDependOn: [crawl-domain, catalog-domain, pkg]
   crawl-adapters:
     mayDependOn: [crawl-domain, crawl-app, platform]
   platform:

@@ -275,12 +275,18 @@ func TestHandleLastPageFinishes(t *testing.T) {
 func TestHandleDiscoveriesBeyondMaxDepthAreIgnored(t *testing.T) {
 	r := newRig(t)
 	r.engine.Settings = fakeSettings{max: 1}
-	r.facet.result = domain.Result{Discoveries: []domain.Discovery{{NSID: "200@N01", Via: "contact"}}}
+	r.facet.result = domain.Result{
+		Photos:      []catalog.Photo{{ID: 1, OwnerNSID: "100@N01"}},
+		Discoveries: []domain.Discovery{{NSID: "200@N01", Via: "favorite"}},
+	}
 	if err := r.engine.Handle(t.Context(), 7); err != nil {
 		t.Fatal(err)
 	}
 	if len(r.tx.interests) != 0 || len(r.tx.enqueued) != 0 || !r.tx.finished {
 		t.Fatalf("tx = %+v", r.tx)
+	}
+	if len(r.tx.log) == 0 || r.tx.log[0] != "photos" {
+		t.Fatalf("max-depth page did not store its photos: %v", r.tx.log)
 	}
 }
 

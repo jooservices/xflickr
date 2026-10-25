@@ -42,3 +42,14 @@ page.
 
 New work items are created without a key; assigning one is left to the
 scheduler.
+
+## Photos and favorites facets
+
+The `photos` facet pages `flickr.people.getPhotos`; `favorites` pages
+`flickr.favorites.getList`. Both request up to 500 photos with Flickr's URL
+size extras. The page commit upserts the photos and records the returned URL
+sizes as provisional. The favorites facet also upserts each photo owner and
+reports that owner as a discovery. The engine records that interest at
+`depth + 1` only when it is within that user's effective maximum depth. Photos
+on a maximum-depth page are still stored; their owners do not create deeper
+interests.
