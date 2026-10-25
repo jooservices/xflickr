@@ -141,6 +141,12 @@ type UnitOfWork interface {
 	Do(ctx context.Context, fn func(Writers) error) error
 }
 
+// ProgressNotifier is told that a user's crawl state changed after a page was
+// processed, so live progress can be pushed to that user.
+type ProgressNotifier interface {
+	CrawlChanged(ctx context.Context, userID int64) error
+}
+
 // Engine runs work items for every registered facet: one task is one API page.
 type Engine struct {
 	Registry *Registry
@@ -150,6 +156,7 @@ type Engine struct {
 	Governor Governor
 	Flickr   Flickr
 	Health   NodeHealth
+	Progress ProgressNotifier
 	Settings EffectiveSettings
 	Timing   Timing
 	Logger   *slog.Logger
@@ -193,7 +200,22 @@ func (e *Engine) Handle(ctx context.Context, id int64) error {
 	if err != nil || !started {
 		return err
 	}
-	return e.run(ctx, item, facet)
+	if err := e.run(ctx, item, facet); err != nil {
+		return err
+	}
+	e.notifyProgress(ctx, item.UserID)
+	return nil
+}
+
+// notifyProgress reports a crawl state change; a failed notification never
+// fails the page, which is already committed.
+func (e *Engine) notifyProgress(ctx context.Context, userID int64) {
+	if e.Progress == nil || userID <= 0 {
+		return
+	}
+	if err := e.Progress.CrawlChanged(ctx, userID); err != nil {
+		e.logger().WarnContext(ctx, "crawl progress notification failed", "user_id", userID, "error", err)
+	}
 }
 
 func (e *Engine) run(ctx context.Context, item domain.Item, facet domain.Facet) error {

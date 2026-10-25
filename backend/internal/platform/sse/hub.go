@@ -82,19 +82,16 @@ func (h *Hub) Subscribe(userID int64, lastID string) (<-chan Event, func(), erro
 	if h == nil || userID <= 0 {
 		return nil, nil, errors.New("sse: positive user id and hub are required")
 	}
-	client := make(chan Event, defaultBuffer)
 	h.mu.Lock()
+	// Size the queue so a full history replay never drops events.
+	client := make(chan Event, defaultBuffer+len(h.history))
 	if h.clients[userID] == nil {
 		h.clients[userID] = make(map[chan Event]struct{})
 	}
 	h.clients[userID][client] = struct{}{}
 	for _, event := range h.history {
 		if event.UserID == userID && event.ID > lastID {
-			select {
-			case client <- event:
-			default:
-				break
-			}
+			client <- event
 		}
 	}
 	h.mu.Unlock()

@@ -3,6 +3,7 @@ package sse
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -193,5 +194,29 @@ func TestStreamReturnsResumableEventReader(t *testing.T) {
 	}
 	if _, err := (Handler{}).Stream(context.Background(), 44, ""); err == nil {
 		t.Fatal("stream accepted missing hub")
+	}
+}
+
+func TestHubReplaysEveryRetainedEventAcrossLongGap(t *testing.T) {
+	hub := NewHub(64)
+	for i := 1; i <= 40; i++ {
+		if err := hub.Publish(Event{UserID: 5, ID: fmt.Sprintf("%03d", i), Type: "download.progress", Data: []byte(`{}`)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, cancel, err := hub.Subscribe(5, "000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	for i := 1; i <= 40; i++ {
+		select {
+		case event := <-events:
+			if want := fmt.Sprintf("%03d", i); event.ID != want {
+				t.Fatalf("replayed event %d has id %s, want %s", i, event.ID, want)
+			}
+		default:
+			t.Fatalf("replay lost event %d of 40", i)
+		}
 	}
 }

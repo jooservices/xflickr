@@ -144,6 +144,7 @@ func TestBuildConfiguredAPIHandler(t *testing.T) {
 		Crypto:   config.CryptoConfig{MasterKeys: "test:" + encoded, ActiveMasterKeyID: "test"},
 		Identity: config.IdentityConfig{Argon2Memory: 32 * 1024, Argon2Iterations: 1, Argon2Parallelism: 1, Argon2SaltLength: 16, Argon2KeyLength: 32},
 		Redis:    config.RedisConfig{Prefix: "handler-test:"},
+		Blob:     config.BlobConfig{Driver: "local", LocalDir: t.TempDir()},
 	}
 	handler, err := buildConfiguredAPIHandler(&pgxpool.Pool{}, client, cfg, "configured-test")
 	if err != nil {

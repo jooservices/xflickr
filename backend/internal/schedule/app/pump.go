@@ -68,15 +68,15 @@ type PhotoLaneDispatcher interface {
 
 // Pump coordinates a single bounded scheduling pass.
 type Pump struct {
-	Store              PumpStore
-	Credits            CreditProvider
-	Queue              queue.JobQueue
-	Settings           PumpSettings
-	Logger             *slog.Logger
-	QueueState         QueueStatePublisher
-	ChangeChecks       ChangeCheckScheduler
-	PhotoLane          PhotoLaneDispatcher
-	MediaPressure      interface {
+	Store         PumpStore
+	Credits       CreditProvider
+	Queue         queue.JobQueue
+	Settings      PumpSettings
+	Logger        *slog.Logger
+	QueueState    QueueStatePublisher
+	ChangeChecks  ChangeCheckScheduler
+	PhotoLane     PhotoLaneDispatcher
+	MediaPressure interface {
 		Full(context.Context) (bool, error)
 	}
 	QueueStateInterval time.Duration
@@ -114,10 +114,7 @@ func (p Pump) RunOnce(ctx context.Context) (int, error) {
 			return 0, err
 		}
 	}
-	settings, err := p.settingsUnderPressure(ctx)
-	if err != nil {
-		return 0, err
-	}
+	settings := p.settingsUnderPressure(ctx)
 	dispatched, err := p.Store.Pump(ctx, settings, p.Credits, p.Queue)
 	if err != nil {
 		return dispatched, err
@@ -132,19 +129,27 @@ func (p Pump) RunOnce(ctx context.Context) (int, error) {
 	return dispatched, nil
 }
 
-func (p Pump) settingsUnderPressure(ctx context.Context) (PumpSettings, error) {
+// settingsUnderPressure stops pumping media jobs when temporary storage is
+// full. A failing pressure check is logged and treated as full for media only,
+// so the other queues keep running.
+func (p Pump) settingsUnderPressure(ctx context.Context) PumpSettings {
 	settings := p.Settings
 	if p.MediaPressure == nil {
-		return settings, nil
+		return settings
 	}
 	full, err := p.MediaPressure.Full(ctx)
 	if err != nil {
-		return PumpSettings{}, err
+		logger := p.Logger
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.ErrorContext(ctx, "scheduler media pressure check failed; holding media jobs", "error", err)
+		full = true
 	}
 	if full {
 		settings.MediaReadyCap = 0
 	}
-	return settings, nil
+	return settings
 }
 
 // Run polls at the required two-second cadence. A transient error delays only

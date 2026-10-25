@@ -2,7 +2,6 @@ package roles
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -513,20 +512,18 @@ func buildConfiguredAPIHandlerWithHub(pool *pgxpool.Pool, redisClient redisv9.Un
 	if err != nil {
 		return nil, err
 	}
-	var blobs mediaapp.BlobStore
-	if cfg.Blob.Driver != "" {
-		blobs, err = newBlobStore(context.Background(), cfg)
-		if err != nil {
-			return nil, err
-		}
+	// The store always exists so download creation always applies the
+	// temp-storage back-pressure check; an empty driver fails fast.
+	blobs, err := newBlobStore(context.Background(), cfg)
+	if err != nil {
+		return nil, err
 	}
 	downloads, err := buildDownloadHandlerWithEvents(pool, blobs, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"})
 	if err != nil {
 		return nil, err
 	}
 	opsHandler := opshttp.Handler{Service: ops.Service{Store: opspostgres.Store{Pool: pool}}, ActorID: userIDFromPrincipal}
-	eventPublisher := platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"}
-	return newAPIRouterWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}, eventPublisher), nil
+	return newAPIRouterWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}), nil
 }
 
 func sseUserID(r *http.Request) (int64, bool) {
@@ -581,10 +578,7 @@ type apiServer struct {
 	Sharing   sharinghttp.Handler
 	Downloads mediahttp.DownloadHandler
 	Ops       opshttp.Handler
-	Events    interface {
-		Publish(context.Context, platformsse.Event) error
-	}
-	Stream platformsse.Handler
+	Stream    platformsse.Handler
 	planHandler
 }
 
@@ -598,26 +592,6 @@ func (s apiServer) GetAdminOpsStatus(ctx context.Context, request gen.GetAdminOp
 
 func (s apiServer) CreateDownload(ctx context.Context, request gen.CreateDownloadRequestObject) (gen.CreateDownloadResponseObject, error) {
 	return s.Downloads.CreateDownload(ctx, request)
-}
-
-func (s apiServer) GetMeCrawl(ctx context.Context, request gen.GetMeCrawlRequestObject) (gen.GetMeCrawlResponseObject, error) {
-	response, err := s.CrawlHandler.GetMeCrawl(ctx, request)
-	if err != nil || s.Events == nil {
-		return response, err
-	}
-	userID, ok := userIDFromPrincipal(ctx)
-	status, statusOK := response.(gen.GetMeCrawl200JSONResponse)
-	if !ok || !statusOK {
-		return response, nil
-	}
-	data, marshalErr := json.Marshal(status)
-	if marshalErr != nil {
-		return response, nil
-	}
-	if err := s.Events.Publish(ctx, platformsse.Event{UserID: userID, Type: "crawl.progress", Data: data}); err != nil {
-		slog.WarnContext(ctx, "publish crawl progress event failed", "error", err)
-	}
-	return response, nil
 }
 
 func (s apiServer) StreamEvents(ctx context.Context, request gen.StreamEventsRequestObject) (gen.StreamEventsResponseObject, error) {
@@ -669,9 +643,6 @@ func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.K
 	router.Use(identityhttp.CSRF)
 	router.Use(identityhttp.ProtectRoutes(identity.Sessions, accessResolver(router)))
 	var streamHandler platformsse.Handler
-	var publisher interface {
-		Publish(context.Context, platformsse.Event) error
-	}
 	for _, option := range options {
 		if ops, ok := option.(opshttp.Handler); ok {
 			opsHandler = ops
@@ -679,13 +650,8 @@ func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.K
 		if events, ok := option.(platformsse.Handler); ok {
 			streamHandler = events
 		}
-		if events, ok := option.(interface {
-			Publish(context.Context, platformsse.Event) error
-		}); ok {
-			publisher = events
-		}
 	}
-	strict := gen.NewStrictHandlerWithOptions(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, Ops: opsHandler, Events: publisher, Stream: streamHandler, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
+	strict := gen.NewStrictHandlerWithOptions(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, Ops: opsHandler, Stream: streamHandler, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		identityhttp.MaintainSessionCookies(identity.Sessions),
 	}, gen.StrictHTTPServerOptions{RequestErrorHandlerFunc: badRequest, ResponseErrorHandlerFunc: internalError})

@@ -712,3 +712,30 @@ func TestDefaultsAndDelays(t *testing.T) {
 		t.Fatal("backoff must double per attempt")
 	}
 }
+
+type progressSpy struct {
+	users []int64
+	err   error
+}
+
+func (p *progressSpy) CrawlChanged(_ context.Context, userID int64) error {
+	p.users = append(p.users, userID)
+	return p.err
+}
+
+func TestHandleNotifiesCrawlProgressAfterPage(t *testing.T) {
+	r := newRig(t)
+	spy := &progressSpy{}
+	r.engine.Progress = spy
+	if err := r.engine.Handle(t.Context(), 7); err != nil {
+		t.Fatal(err)
+	}
+	if len(spy.users) != 1 || spy.users[0] != 3 {
+		t.Fatalf("progress notifications = %v, want one for user 3", spy.users)
+	}
+	failing := newRig(t)
+	failing.engine.Progress = &progressSpy{err: errors.New("redis down")}
+	if err := failing.engine.Handle(t.Context(), 7); err != nil {
+		t.Fatalf("notification failure failed the page: %v", err)
+	}
+}

@@ -199,9 +199,17 @@ func TestPumpBackPressureDisablesMediaDispatch(t *testing.T) {
 	if store.lastSettings.MediaReadyCap != 0 || store.lastSettings.AIReadyCap != validPumpSettings().AIReadyCap || store.lastSettings.SyncReadyCap != validPumpSettings().SyncReadyCap {
 		t.Fatalf("pump settings under pressure = %+v", store.lastSettings)
 	}
+	var output bytes.Buffer
+	pump.Logger = slog.New(slog.NewTextHandler(&output, nil))
 	pump.MediaPressure = pressureStub{err: errors.New("storage check failed")}
-	if _, err := pump.RunOnce(context.Background()); err == nil {
-		t.Fatal("pump ignored storage pressure check failure")
+	if _, err := pump.RunOnce(context.Background()); err != nil {
+		t.Fatalf("pressure check failure stopped the pump: %v", err)
+	}
+	if store.lastSettings.MediaReadyCap != 0 || store.lastSettings.AIReadyCap != validPumpSettings().AIReadyCap || store.lastSettings.SyncReadyCap != validPumpSettings().SyncReadyCap {
+		t.Fatalf("pump settings after pressure error = %+v", store.lastSettings)
+	}
+	if !strings.Contains(output.String(), "storage check failed") {
+		t.Fatalf("pressure error not logged: %q", output.String())
 	}
 }
 

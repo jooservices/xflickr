@@ -41,6 +41,12 @@ func (h CrawlHandler) GetMeCrawl(ctx context.Context, _ gen.GetMeCrawlRequestObj
 	if err != nil {
 		return nil, err
 	}
+	return gen.GetMeCrawl200JSONResponse(StatusResponse(status)), nil
+}
+
+// StatusResponse converts crawl progress to its API representation, shared by
+// GET /me/crawl and the crawl.progress event.
+func StatusResponse(status app.CrawlStatus) gen.CrawlStatus {
 	out := gen.CrawlStatus{Depths: make([]gen.DepthProgress, 0, len(status.Depths)), Facets: make([]gen.FacetProgress, 0, len(status.Facets)), Lanes: make([]gen.LaneStatus, 0, len(status.Lanes))}
 	for _, v := range status.Depths {
 		out.Depths = append(out.Depths, gen.DepthProgress{Depth: v.Depth, Contacts: v.Contacts})
@@ -51,7 +57,7 @@ func (h CrawlHandler) GetMeCrawl(ctx context.Context, _ gen.GetMeCrawlRequestObj
 	for _, v := range status.Lanes {
 		out.Lanes = append(out.Lanes, gen.LaneStatus{Lane: gen.LaneStatusLane(v.Lane), Pending: v.Pending, Running: v.Running, Waiting: v.Waiting, Paused: v.Paused})
 	}
-	return gen.GetMeCrawl200JSONResponse(out), nil
+	return out
 }
 
 func (h CrawlHandler) StarMyContact(ctx context.Context, request gen.StarMyContactRequestObject) (gen.StarMyContactResponseObject, error) {

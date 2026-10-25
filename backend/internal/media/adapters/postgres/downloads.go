@@ -178,21 +178,18 @@ func (r Downloads) CompletePack(ctx context.Context, downloadID int64, status st
 			return fmt.Errorf("media: save ZIP part: %w", err)
 		}
 	}
-	tag, err := tx.Exec(ctx, `UPDATE downloads SET status=$2 WHERE id=$1`, downloadID, status)
+	var userID int64
+	err = tx.QueryRow(ctx, `UPDATE downloads SET status=$2 WHERE id=$1 RETURNING user_id`, downloadID, status).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errors.New("media: download not found")
+	}
 	if err != nil {
 		return fmt.Errorf("media: update packed download: %w", err)
-	}
-	if tag.RowsAffected() != 1 {
-		return errors.New("media: download not found")
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("media: commit ZIP completion: %w", err)
 	}
 	if r.Events != nil {
-		var userID int64
-		if err := r.Pool.QueryRow(ctx, `SELECT user_id FROM downloads WHERE id=$1`, downloadID).Scan(&userID); err != nil {
-			return fmt.Errorf("media: load ready download owner: %w", err)
-		}
 		data, _ := json.Marshal(map[string]any{"download_id": downloadID, "status": status})
 		if err := r.Events.Publish(ctx, platformsse.Event{UserID: userID, Type: "download.ready", Data: data}); err != nil {
 			slog.WarnContext(ctx, "publish download ready event failed", "download_id", downloadID, "error", err)
