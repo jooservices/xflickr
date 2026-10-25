@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/jooservices/xflickr/internal/platform/audit"
 	"github.com/jooservices/xflickr/internal/schedule/app"
 	"github.com/jooservices/xflickr/internal/schedule/domain"
 )
@@ -29,6 +31,7 @@ type pgxPool interface {
 
 type transaction interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	QueryRow(context.Context, string, ...any) row
 	Commit(context.Context) error
 	Rollback(context.Context) error
 }
@@ -72,6 +75,10 @@ func (p poolAdapter) QueryRow(ctx context.Context, query string, args ...any) ro
 func (t txAdapter) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
 	return t.tx.Exec(ctx, query, args...)
 }
+
+func (t txAdapter) QueryRow(ctx context.Context, query string, args ...any) row {
+	return t.tx.QueryRow(ctx, query, args...)
+}
 func (t txAdapter) Commit(ctx context.Context) error   { return t.tx.Commit(ctx) }
 func (t txAdapter) Rollback(ctx context.Context) error { return t.tx.Rollback(ctx) }
 
@@ -96,7 +103,7 @@ func (s *Store) ListPlans(ctx context.Context) ([]domain.Plan, error) {
 	return plans, rows.Err()
 }
 
-func (s *Store) SavePlans(ctx context.Context, plans []domain.Plan) error {
+func (s *Store) SavePlans(ctx context.Context, plans []domain.Plan, event audit.Event) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -107,6 +114,9 @@ func (s *Store) SavePlans(ctx context.Context, plans []domain.Plan) error {
 		if err != nil {
 			return fmt.Errorf("schedule: save plan %q: %w", p.Name, err)
 		}
+	}
+	if err := recordAudit(ctx, tx, event); err != nil {
+		return fmt.Errorf("schedule: audit plan update: %w", err)
 	}
 	return tx.Commit(ctx)
 }
@@ -122,20 +132,39 @@ func (s *Store) PlanForUser(ctx context.Context, userID int64) (domain.Plan, err
 	return p, nil
 }
 
-func (s *Store) AssignUserPlan(ctx context.Context, userID, planID int64) error {
+func (s *Store) AssignUserPlan(ctx context.Context, userID, planID int64, event audit.Event) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 	var exists bool
-	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM plans WHERE id=$1)`, planID).Scan(&exists); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM plans WHERE id=$1)`, planID).Scan(&exists); err != nil {
 		return err
 	}
 	if !exists {
 		return app.ErrPlanNotFound
 	}
-	tag, err := s.pool.Exec(ctx, `UPDATE users SET plan_id=$2 WHERE id=$1`, userID, planID)
+	tag, err := tx.Exec(ctx, `UPDATE users SET plan_id=$2 WHERE id=$1`, userID, planID)
 	if err != nil {
 		return fmt.Errorf("schedule: assign user plan: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return app.ErrUserNotFound
+	}
+	if err := recordAudit(ctx, tx, event); err != nil {
+		return fmt.Errorf("schedule: audit plan assignment: %w", err)
+	}
+	return tx.Commit(ctx)
+}
+
+func recordAudit(ctx context.Context, tx transaction, event audit.Event) error {
+	encoded, err := json.Marshal(event.Detail)
+	if err != nil {
+		return fmt.Errorf("encode detail: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO audit_events(actor,action,target,detail) VALUES($1,$2,$3,$4::jsonb)`, event.Actor, event.Action, event.Target, string(encoded)); err != nil {
+		return fmt.Errorf("insert event: %w", err)
 	}
 	return nil
 }

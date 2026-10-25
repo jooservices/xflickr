@@ -4,7 +4,6 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sort"
 	"strconv"
 	"sync"
@@ -23,9 +22,9 @@ var (
 
 type Store interface {
 	ListPlans(context.Context) ([]domain.Plan, error)
-	SavePlans(context.Context, []domain.Plan) error
+	SavePlans(context.Context, []domain.Plan, audit.Event) error
 	PlanForUser(context.Context, int64) (domain.Plan, error)
-	AssignUserPlan(context.Context, int64, int64) error
+	AssignUserPlan(context.Context, int64, int64, audit.Event) error
 }
 
 type cachedPlan struct {
@@ -36,7 +35,6 @@ type cachedPlan struct {
 // Plans provides admin plan management and a short lived per-user lookup cache.
 type Plans struct {
 	Store Store
-	Audit audit.Recorder
 	Now   func() time.Time
 
 	mu    sync.Mutex
@@ -59,8 +57,8 @@ func (s *Plans) List(ctx context.Context) ([]domain.Plan, error) {
 
 // Replace updates plan definitions as one catalog operation and invalidates cached entitlements.
 func (s *Plans) Replace(ctx context.Context, actorID int64, plans []domain.Plan) error {
-	if s.Store == nil || s.Audit == nil {
-		return errors.New("schedule: plan store and audit recorder are required")
+	if s.Store == nil {
+		return errors.New("schedule: plan store is required")
 	}
 	if len(plans) == 0 {
 		return domain.ErrInvalidPlan
@@ -75,13 +73,14 @@ func (s *Plans) Replace(ctx context.Context, actorID int64, plans []domain.Plan)
 		}
 		seen[p.Name] = struct{}{}
 	}
-	if err := s.Store.SavePlans(ctx, plans); err != nil {
+	values := append([]domain.Plan(nil), plans...)
+	sort.Slice(values, func(i, j int) bool { return values[i].Name < values[j].Name })
+	event := audit.Event{Actor: userRef(actorID), Action: "plans.update", Target: "plans", Detail: map[string]any{"plans": values}}
+	if err := s.Store.SavePlans(ctx, plans, event); err != nil {
 		return err
 	}
 	s.invalidate()
-	values := append([]domain.Plan(nil), plans...)
-	sort.Slice(values, func(i, j int) bool { return values[i].Name < values[j].Name })
-	return s.Audit.Record(ctx, userRef(actorID), "plans.update", "plans", map[string]any{"plans": values})
+	return nil
 }
 
 // ForUser returns the user's plan, keeping a successful result for 30 seconds.
@@ -111,21 +110,19 @@ func (s *Plans) ForUser(ctx context.Context, userID int64) (domain.Plan, error) 
 
 // Assign changes a user's plan and records the assignment in the audit trail.
 func (s *Plans) Assign(ctx context.Context, actorID, userID, planID int64) error {
-	if s.Store == nil || s.Audit == nil {
-		return errors.New("schedule: plan store and audit recorder are required")
+	if s.Store == nil {
+		return errors.New("schedule: plan store is required")
 	}
 	if planID <= 0 || userID <= 0 {
 		return domain.ErrInvalidPlan
 	}
-	if err := s.Store.AssignUserPlan(ctx, userID, planID); err != nil {
+	event := audit.Event{Actor: userRef(actorID), Action: "user.plan.assign", Target: userRef(userID), Detail: map[string]any{"plan_id": planID}}
+	if err := s.Store.AssignUserPlan(ctx, userID, planID, event); err != nil {
 		return err
 	}
 	s.mu.Lock()
 	delete(s.cache, userID)
 	s.mu.Unlock()
-	if err := s.Audit.Record(ctx, userRef(actorID), "user.plan.assign", userRef(userID), map[string]any{"plan_id": planID}); err != nil {
-		return fmt.Errorf("schedule: audit plan assignment: %w", err)
-	}
 	return nil
 }
 

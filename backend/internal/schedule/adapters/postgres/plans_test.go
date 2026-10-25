@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/jooservices/xflickr/internal/platform/audit"
 	"github.com/jooservices/xflickr/internal/schedule/app"
 	"github.com/jooservices/xflickr/internal/schedule/domain"
 )
@@ -71,11 +72,23 @@ type fakeTx struct {
 	execErr, commitErr            error
 	rollbackErr                   error
 	execCount, commits, rollbacks int
+	queryRow                      row
+	execTag                       pgconn.CommandTag
 }
 
 func (tx *fakeTx) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
 	tx.execCount++
+	if tx.execTag.String() != "" {
+		return tx.execTag, tx.execErr
+	}
 	return pgconn.NewCommandTag("INSERT 0 1"), tx.execErr
+}
+
+func (tx *fakeTx) QueryRow(context.Context, string, ...any) row {
+	if tx.queryRow != nil {
+		return tx.queryRow
+	}
+	return fakeRow{values: []any{true}}
 }
 func (tx *fakeTx) Commit(context.Context) error   { tx.commits++; return tx.commitErr }
 func (tx *fakeTx) Rollback(context.Context) error { tx.rollbacks++; return tx.rollbackErr }
@@ -183,32 +196,33 @@ func TestListPlans(t *testing.T) {
 
 func TestSavePlans(t *testing.T) {
 	plan := domain.Plan{Name: "free", Weight: 1, MaxDepthCap: 1, MaxContacts: 100, ZipTTLHours: 24, ResourceShare: .2}
+	event := audit.Event{Actor: "user:7", Action: "plans.update", Target: "plans", Detail: map[string]any{"plans": []domain.Plan{plan}}}
 	tx := &fakeTx{}
-	if err := (&Store{pool: &fakePool{tx: tx}}).SavePlans(context.Background(), []domain.Plan{plan}); err != nil {
+	if err := (&Store{pool: &fakePool{tx: tx}}).SavePlans(context.Background(), []domain.Plan{plan}, event); err != nil {
 		t.Fatal(err)
 	}
-	if tx.execCount != 1 || tx.commits != 1 || tx.rollbacks != 1 {
+	if tx.execCount != 2 || tx.commits != 1 || tx.rollbacks != 1 {
 		t.Fatalf("transaction calls=%+v", tx)
 	}
 	tx = &fakeTx{}
-	if err := (&Store{pool: &fakePool{tx: tx}}).SavePlans(context.Background(), nil); err != nil {
+	if err := (&Store{pool: &fakePool{tx: tx}}).SavePlans(context.Background(), nil, event); err != nil {
 		t.Fatal(err)
 	}
-	if tx.execCount != 0 || tx.commits != 1 {
+	if tx.execCount != 1 || tx.commits != 1 {
 		t.Fatalf("empty catalog transaction=%+v", tx)
 	}
-	if err := (&Store{pool: &fakePool{beginErr: errors.New("begin")}}).SavePlans(context.Background(), nil); err == nil {
+	if err := (&Store{pool: &fakePool{beginErr: errors.New("begin")}}).SavePlans(context.Background(), nil, event); err == nil {
 		t.Fatal("SavePlans swallowed begin error")
 	}
 	tx = &fakeTx{execErr: errors.New("exec")}
-	if err := (&Store{pool: &fakePool{tx: tx}}).SavePlans(context.Background(), []domain.Plan{plan}); err == nil {
+	if err := (&Store{pool: &fakePool{tx: tx}}).SavePlans(context.Background(), []domain.Plan{plan}, event); err == nil {
 		t.Fatal("SavePlans swallowed exec error")
 	}
 	if tx.rollbacks != 1 {
 		t.Fatalf("failed save did not roll back: %+v", tx)
 	}
 	tx = &fakeTx{commitErr: errors.New("commit")}
-	if err := (&Store{pool: &fakePool{tx: tx}}).SavePlans(context.Background(), nil); err == nil {
+	if err := (&Store{pool: &fakePool{tx: tx}}).SavePlans(context.Background(), nil, event); err == nil {
 		t.Fatal("SavePlans swallowed commit error")
 	}
 }
@@ -230,26 +244,31 @@ func TestPlanForUser(t *testing.T) {
 }
 
 func TestAssignUserPlan(t *testing.T) {
-	pool := &fakePool{queryRow: fakeRow{values: []any{true}}, execTag: pgconn.NewCommandTag("UPDATE 1")}
-	if err := (&Store{pool: pool}).AssignUserPlan(context.Background(), 7, 2); err != nil {
+	event := audit.Event{Actor: "user:1", Action: "user.plan.assign", Target: "user:7", Detail: map[string]any{"plan_id": int64(2)}}
+	tx := &fakeTx{}
+	pool := &fakePool{tx: tx}
+	if err := (&Store{pool: pool}).AssignUserPlan(context.Background(), 7, 2, event); err != nil {
 		t.Fatal(err)
 	}
-	pool.queryRow = fakeRow{values: []any{false}}
-	if err := (&Store{pool: pool}).AssignUserPlan(context.Background(), 7, 2); !errors.Is(err, app.ErrPlanNotFound) {
+	if tx.execCount != 2 || tx.commits != 1 {
+		t.Fatalf("assignment transaction=%+v", tx)
+	}
+	tx.queryRow = fakeRow{values: []any{false}}
+	if err := (&Store{pool: pool}).AssignUserPlan(context.Background(), 7, 2, event); !errors.Is(err, app.ErrPlanNotFound) {
 		t.Fatalf("missing plan error=%v", err)
 	}
-	pool.queryRow = fakeRow{err: errors.New("query")}
-	if err := (&Store{pool: pool}).AssignUserPlan(context.Background(), 7, 2); err == nil {
+	tx.queryRow = fakeRow{err: errors.New("query")}
+	if err := (&Store{pool: pool}).AssignUserPlan(context.Background(), 7, 2, event); err == nil {
 		t.Fatal("AssignUserPlan swallowed query error")
 	}
-	pool.queryRow = fakeRow{values: []any{true}}
-	pool.execErr = errors.New("update")
-	if err := (&Store{pool: pool}).AssignUserPlan(context.Background(), 7, 2); err == nil {
+	tx.queryRow = fakeRow{values: []any{true}}
+	tx.execErr = errors.New("update")
+	if err := (&Store{pool: pool}).AssignUserPlan(context.Background(), 7, 2, event); err == nil {
 		t.Fatal("AssignUserPlan swallowed update error")
 	}
-	pool.execErr = nil
-	pool.execTag = pgconn.NewCommandTag("UPDATE 0")
-	if err := (&Store{pool: pool}).AssignUserPlan(context.Background(), 7, 2); !errors.Is(err, app.ErrUserNotFound) {
+	tx.execErr = nil
+	tx.execTag = pgconn.NewCommandTag("UPDATE 0")
+	if err := (&Store{pool: pool}).AssignUserPlan(context.Background(), 7, 2, event); !errors.Is(err, app.ErrUserNotFound) {
 		t.Fatalf("missing user error=%v", err)
 	}
 }

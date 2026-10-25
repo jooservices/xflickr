@@ -3,6 +3,15 @@ package audit
 
 import "context"
 
+// Event is the data for one administrative action. Stores can persist it in
+// the same transaction as the change they audit.
+type Event struct {
+	Actor  string
+	Action string
+	Target string
+	Detail map[string]any
+}
+
 // Recorder stores one audit entry. The real adapter arrives with the audit
 // trail ticket (JOOXF-14); until then Discard is the stub.
 type Recorder interface {

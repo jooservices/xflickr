@@ -16,6 +16,7 @@ type fakeStore struct {
 	listErr, saveErr, userErr, assignErr error
 	listCalls, userCalls, assignCalls    int
 	assignedUser, assignedPlan           int64
+	event                                audit.Event
 }
 
 func (f *fakeStore) ListPlans(context.Context) ([]domain.Plan, error) {
@@ -23,7 +24,8 @@ func (f *fakeStore) ListPlans(context.Context) ([]domain.Plan, error) {
 	return append([]domain.Plan(nil), f.plans...), f.listErr
 }
 
-func (f *fakeStore) SavePlans(_ context.Context, p []domain.Plan) error {
+func (f *fakeStore) SavePlans(_ context.Context, p []domain.Plan, event audit.Event) error {
+	f.event = event
 	f.plans = append([]domain.Plan(nil), p...)
 	return f.saveErr
 }
@@ -33,30 +35,13 @@ func (f *fakeStore) PlanForUser(context.Context, int64) (domain.Plan, error) {
 	return f.userPlan, f.userErr
 }
 
-func (f *fakeStore) AssignUserPlan(_ context.Context, u, p int64) error {
+func (f *fakeStore) AssignUserPlan(_ context.Context, u, p int64, event audit.Event) error {
 	f.assignCalls++
 	f.assignedUser = u
 	f.assignedPlan = p
+	f.event = event
 	return f.assignErr
 }
-
-type fakeAudit struct {
-	err                   error
-	count                 int
-	actor, action, target string
-	detail                map[string]any
-}
-
-func (f *fakeAudit) Record(_ context.Context, actor, action, target string, detail map[string]any) error {
-	f.count++
-	f.actor = actor
-	f.action = action
-	f.target = target
-	f.detail = detail
-	return f.err
-}
-
-var _ audit.Recorder = (*fakeAudit)(nil)
 
 func TestPlansListAndMissingStore(t *testing.T) {
 	if _, err := (&Plans{}).List(context.Background()); err == nil {
@@ -75,9 +60,8 @@ func TestPlansListAndMissingStore(t *testing.T) {
 
 func TestReplaceValidatesPersistsAuditsAndInvalidatesCache(t *testing.T) {
 	store := &fakeStore{userPlan: domain.Plan{Name: "old", Weight: 1}}
-	rec := &fakeAudit{}
 	now := time.Unix(100, 0)
-	svc := &Plans{Store: store, Audit: rec, Now: func() time.Time { return now }}
+	svc := &Plans{Store: store, Now: func() time.Time { return now }}
 	if _, err := svc.ForUser(context.Background(), 10); err != nil {
 		t.Fatal(err)
 	}
@@ -85,8 +69,8 @@ func TestReplaceValidatesPersistsAuditsAndInvalidatesCache(t *testing.T) {
 	if err := svc.Replace(context.Background(), 7, plans); err != nil {
 		t.Fatal(err)
 	}
-	if rec.count != 1 || rec.actor != "user:7" || rec.action != "plans.update" || rec.target != "plans" {
-		t.Fatalf("audit = %+v", rec)
+	if store.event.Actor != "user:7" || store.event.Action != "plans.update" || store.event.Target != "plans" {
+		t.Fatalf("audit event = %+v", store.event)
 	}
 	if len(store.plans) != 2 {
 		t.Fatalf("saved plans = %+v", store.plans)
@@ -102,8 +86,8 @@ func TestReplaceRejectsBadInputAndPropagatesFailures(t *testing.T) {
 	if err := (&Plans{}).Replace(context.Background(), 1, []domain.Plan{plan}); err == nil {
 		t.Fatal("Replace accepted missing dependencies")
 	}
-	store, rec := &fakeStore{}, &fakeAudit{}
-	svc := &Plans{Store: store, Audit: rec}
+	store := &fakeStore{}
+	svc := &Plans{Store: store}
 	for _, plans := range [][]domain.Plan{nil, {{Name: "", Weight: 1}}, {{Name: "same", Weight: 1}, {Name: "same", Weight: 2}}} {
 		if err := svc.Replace(context.Background(), 1, plans); !errors.Is(err, domain.ErrInvalidPlan) {
 			t.Errorf("Replace(%+v) error=%v", plans, err)
@@ -114,10 +98,6 @@ func TestReplaceRejectsBadInputAndPropagatesFailures(t *testing.T) {
 		t.Fatal("Replace swallowed save error")
 	}
 	store.saveErr = nil
-	rec.err = errors.New("audit")
-	if err := svc.Replace(context.Background(), 1, []domain.Plan{plan}); err == nil {
-		t.Fatal("Replace swallowed audit error")
-	}
 }
 
 func TestForUserCachesExpiresAndPropagatesErrors(t *testing.T) {
@@ -149,16 +129,16 @@ func TestForUserCachesExpiresAndPropagatesErrors(t *testing.T) {
 }
 
 func TestAssignInvalidatesAndAudits(t *testing.T) {
-	store, rec := &fakeStore{userPlan: domain.Plan{Name: "free", Weight: 1}}, &fakeAudit{}
-	svc := &Plans{Store: store, Audit: rec}
+	store := &fakeStore{userPlan: domain.Plan{Name: "free", Weight: 1}}
+	svc := &Plans{Store: store}
 	if _, err := svc.ForUser(context.Background(), 9); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.Assign(context.Background(), 2, 9, 4); err != nil {
 		t.Fatal(err)
 	}
-	if store.assignedUser != 9 || store.assignedPlan != 4 || rec.count != 1 || rec.action != "user.plan.assign" {
-		t.Fatalf("assignment=%+v audit=%+v", store, rec)
+	if store.assignedUser != 9 || store.assignedPlan != 4 || store.event.Action != "user.plan.assign" || store.event.Actor != "user:2" || store.event.Target != "user:9" {
+		t.Fatalf("assignment=%+v", store)
 	}
 	store.userPlan = domain.Plan{Name: "pro", Weight: 4}
 	if got, err := svc.ForUser(context.Background(), 9); err != nil || got.Name != "pro" || store.userCalls != 2 {
@@ -177,8 +157,4 @@ func TestAssignInvalidatesAndAudits(t *testing.T) {
 		t.Fatalf("Assign store error=%v", err)
 	}
 	store.assignErr = nil
-	rec.err = errors.New("audit")
-	if err := svc.Assign(context.Background(), 1, 9, 4); err == nil {
-		t.Fatal("Assign swallowed audit error")
-	}
 }

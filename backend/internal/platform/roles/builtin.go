@@ -214,7 +214,7 @@ func buildPlanHandler(pool *pgxpool.Pool) (schedulehttp.Handler, error) {
 	}
 	store := schedulepostgres.New(pool)
 	return schedulehttp.Handler{
-		Plans: &scheduleapp.Plans{Store: store, Audit: auditpostgres.New(pool)},
+		Plans: &scheduleapp.Plans{Store: store},
 		ActorID: func(ctx context.Context) (int64, bool) {
 			principal, ok := identityhttp.PrincipalFrom(ctx)
 			if !ok || principal.User.ID <= 0 {
