@@ -129,6 +129,7 @@ deps:
       - crawl-domain
       - crawl-app
       - crawl-adapters
+      - crawl-facets
       - sharing-domain
       - sharing-app
       - sharing-adapters

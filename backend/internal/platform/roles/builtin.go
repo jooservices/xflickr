@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	redisv9 "github.com/redis/go-redis/v9"
+	"golang.org/x/sync/errgroup"
 
 	accountsflickr "github.com/jooservices/xflickr/internal/accounts/adapters/flickr"
 	accountshttp "github.com/jooservices/xflickr/internal/accounts/adapters/http"
@@ -165,10 +166,34 @@ func (crawlRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	defer redisClient.Close()
+	queueAdapter, err := queue.NewRiver(pool, map[string]int{scheduleriver.PhotoQueue: crawlWorkers})
+	if err != nil {
+		return err
+	}
+	client := flickrclient.NewClient("", nil)
+	engine, err := newCrawlEngine(pool, redisClient, cfg, client)
+	if err != nil {
+		return err
+	}
+	if err := registerCrawlJobs(queueAdapter, engine); err != nil {
+		return err
+	}
+	if err := registerPhotoSizes(queueAdapter, pool, redisClient, cfg, client); err != nil {
+		return err
+	}
 	service := crawlapp.Interests{Repository: interestsRepository, Settings: settingsapp.New(settingsRepository)}
-	return outbox.NewConsumer(pool).Consume(ctx, accountsdomain.ConnectedTopic, func(ctx context.Context, event outbox.Event) error {
-		return service.HandleConnected(ctx, event.Payload)
+	// The River worker and the interest consumer run side by side; if either
+	// fails the role fails, so a dead worker cannot leave the process idling.
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.Go(func() error { return queue.Worker{Queue: queueAdapter}.Run(groupCtx) })
+	group.Go(func() error {
+		return outbox.NewConsumer(pool).Consume(groupCtx, accountsdomain.ConnectedTopic, func(ctx context.Context, event outbox.Event) error {
+			return service.HandleConnected(ctx, event.Payload)
+		})
 	})
+	return group.Wait()
 }
 
 type syncRole struct{}
@@ -194,26 +219,30 @@ func (syncRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := registerPhotoSizes(queueAdapter, pool, redisClient, cfg, flickrclient.NewClient("", nil)); err != nil {
+		return err
+	}
+	return queue.Worker{Queue: queueAdapter}.Run(ctx)
+}
+
+// registerPhotoSizes registers the photo-size job on the sync queue.
+func registerPhotoSizes(queueAdapter *queue.River, pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, client *flickrclient.Client) error {
 	catalogRepository, err := catalogpostgres.New(pool)
 	if err != nil {
 		return err
 	}
 	quota := quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Recorder: quotaPostgres.CallLog{Pool: pool}}
-	client := flickrclient.NewClient("", nil)
 	handler := crawlapp.Sizes{
 		Store:  catalogRepository,
 		Flickr: photoSizesClient{Pool: pool, Client: client, Quota: quota},
 	}
-	if err := queueAdapter.RegisterWithOptions(scheduleriver.PhotoJobKind, func(ctx context.Context, job queue.Job) error {
+	return queueAdapter.RegisterWithOptions(scheduleriver.PhotoJobKind, func(ctx context.Context, job queue.Job) error {
 		args, err := crawlapp.ParseSizesJob(job.Args)
 		if err != nil {
 			return err
 		}
 		return handler.Handle(ctx, args)
-	}, queue.Options{Queue: scheduleriver.PhotoQueue}); err != nil {
-		return err
-	}
-	return queueAdapter.Start(ctx)
+	}, queue.Options{Queue: scheduleriver.PhotoQueue})
 }
 
 type mediaRole struct{}
@@ -271,7 +300,7 @@ func (mediaRole) Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	results := make(chan error, 2)
-	go func() { results <- queueAdapter.Start(runCtx) }()
+	go func() { results <- queue.Worker{Queue: queueAdapter}.Run(runCtx) }()
 	go func() { results <- (mediaapp.Cleaner{Assets: assets, Blobs: blobs}).Run(runCtx) }()
 	first := <-results
 	cancel()

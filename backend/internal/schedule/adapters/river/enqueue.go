@@ -447,7 +447,14 @@ func countInflight(ctx context.Context, tx pgx.Tx, keyID int64, worker string) (
 	return count, nil
 }
 
-// Reclaim applies exponential delay based on the already-incremented attempt.
+// liveRiverStates are the River job states in which a job still waits for or
+// holds a worker. River owns such a job (its timeout and rescuer), so the lease
+// reaper leaves the work item alone: a lease cannot expire while the job waits
+// in the queue, and a live job is never cancelled.
+const liveRiverStates = `('available','pending','retryable','scheduled','running')`
+
+// Reclaim returns work items with an expired lease and no live River job to
+// pending, with exponential delay based on the already-incremented attempt.
 func (s Store) Reclaim(ctx context.Context, retryMax int, base time.Duration, now time.Time) (int, error) {
 	if s.Pool == nil {
 		return 0, errors.New("schedule: reclaim database is required")
@@ -457,7 +464,9 @@ func (s Store) Reclaim(ctx context.Context, retryMax int, base time.Duration, no
 		return 0, fmt.Errorf("schedule: begin reclaim: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	rows, err := tx.Query(ctx, `SELECT id, attempts, kind FROM work_items WHERE state IN ('ready','running') AND lease_expires_at <= $1 ORDER BY lease_expires_at, id FOR UPDATE SKIP LOCKED`, now)
+	rows, err := tx.Query(ctx, `SELECT id, attempts, kind FROM work_items WHERE state IN ('ready','running') AND lease_expires_at <= $1
+		AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.state IN `+liveRiverStates+` AND j.args->'args'->>'work_item_id' = work_items.id::text)
+		ORDER BY lease_expires_at, id FOR UPDATE SKIP LOCKED`, now)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: select expired leases: %w", err)
 	}
@@ -487,9 +496,6 @@ func (s Store) Reclaim(ctx context.Context, retryMax int, base time.Duration, no
 func applyExpiredLeases(ctx context.Context, tx pgx.Tx, expiredRows []expiredLease, retryMax int, base time.Duration, now time.Time) error {
 	for _, row := range expiredRows {
 		attempts := row.attempts + 1
-		if err := cancelExpiredRiverJob(ctx, tx, row.id, now); err != nil {
-			return err
-		}
 		if attempts >= retryMax {
 			if _, err := tx.Exec(ctx, `UPDATE work_items SET state='failed', attempts=$2, last_error='lease expired', lease_expires_at=NULL, updated_at=$3 WHERE id=$1`, row.id, attempts, now); err != nil {
 				return fmt.Errorf("schedule: fail exhausted lease: %w", err)
@@ -506,13 +512,6 @@ func applyExpiredLeases(ctx context.Context, tx pgx.Tx, expiredRows []expiredLea
 		if _, err := tx.Exec(ctx, `UPDATE work_items SET state='pending', attempts=$2, not_before=$3, lease_expires_at=NULL, last_error='lease expired', updated_at=$4 WHERE id=$1`, row.id, attempts, now.Add(delay), now); err != nil {
 			return fmt.Errorf("schedule: return expired lease to pending: %w", err)
 		}
-	}
-	return nil
-}
-
-func cancelExpiredRiverJob(ctx context.Context, tx pgx.Tx, workItemID int64, now time.Time) error {
-	if _, err := tx.Exec(ctx, `UPDATE river_job SET state='cancelled', finalized_at=$2 WHERE state IN ('available','pending','retryable','scheduled','running') AND args->'args'->>'work_item_id'=$1`, fmt.Sprint(workItemID), now); err != nil {
-		return fmt.Errorf("schedule: cancel expired River job: %w", err)
 	}
 	return nil
 }

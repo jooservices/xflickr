@@ -208,7 +208,7 @@ func TestExpiredLeaseReturnsToPendingThenExhausts(t *testing.T) {
 	}
 }
 
-func TestReclaimCancelsExpiredRiverJobBeforeReenqueue(t *testing.T) {
+func TestReclaimLeavesItemWithLiveRiverJobAlone(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("run make test-integration to use the configured worktree database")
 	}
@@ -242,22 +242,32 @@ func TestReclaimCancelsExpiredRiverJobBeforeReenqueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := scheduleriver.Store{Pool: pool}
-	if count, err := store.Reclaim(ctx, 5, 30*time.Second, time.Now()); err != nil || count < 1 {
-		t.Fatalf("Reclaim() = %d, %v; want at least the expired fixture", count, err)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE work_items SET not_before=now() WHERE id=$1`, workID); err != nil {
+	// The job still waits in the queue: the expired lease must not be reaped
+	// and the River job must stay live.
+	if _, err := store.Reclaim(ctx, 5, 30*time.Second, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
-	if _, err := store.Pump(ctx, settings, fixedCapacity(1), adapter); err != nil {
+	var state string
+	var attempts int
+	var jobState string
+	if err := pool.QueryRow(ctx, `SELECT w.state, w.attempts, (SELECT j.state FROM river_job j WHERE j.args->'args'->>'work_item_id'=$1) FROM work_items w WHERE w.id=$1::bigint`, fmt.Sprint(workID)).Scan(&state, &attempts, &jobState); err != nil {
 		t.Fatal(err)
 	}
-	var active, cancelled int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE state <> 'cancelled'), count(*) FILTER (WHERE state = 'cancelled') FROM river_job WHERE args->'args'->>'work_item_id'=$1`, fmt.Sprint(workID)).Scan(&active, &cancelled); err != nil {
+	if state != "ready" || attempts != 0 || jobState != "available" {
+		t.Fatalf("live job: item state=%s attempts=%d job=%s, want ready/0/available", state, attempts, jobState)
+	}
+	// Once the job is no longer live the lease is reaped as before.
+	if _, err := pool.Exec(ctx, `UPDATE river_job SET state='cancelled', finalized_at=now() WHERE args->'args'->>'work_item_id'=$1`, fmt.Sprint(workID)); err != nil {
 		t.Fatal(err)
 	}
-	if active != 1 || cancelled != 1 {
-		t.Fatalf("River job states: active=%d cancelled=%d, want 1 each", active, cancelled)
+	if _, err := store.Reclaim(ctx, 5, 30*time.Second, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT state, attempts FROM work_items WHERE id=$1`, workID).Scan(&state, &attempts); err != nil {
+		t.Fatal(err)
+	}
+	if state != "pending" || attempts != 1 {
+		t.Fatalf("orphan lease: item state=%s attempts=%d, want pending/1", state, attempts)
 	}
 }
 

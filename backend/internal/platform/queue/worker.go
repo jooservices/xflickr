@@ -19,8 +19,13 @@ type Worker struct {
 	Queue workerQueue
 }
 
+// ErrStoppedUnexpectedly means the queue client stopped while the process was
+// still running, so the role must fail instead of idling without a worker.
+var ErrStoppedUnexpectedly = errors.New("queue: River client stopped unexpectedly")
+
 // Run starts River's subscribed queues and waits until the process context is
-// canceled or the client stops.
+// canceled. It returns an error when the client fails to start or stops on its
+// own, so the process exits instead of silently working nothing.
 func (w Worker) Run(ctx context.Context) error {
 	if w.Queue == nil {
 		return errors.New("queue: worker queue is required")
@@ -37,6 +42,9 @@ func (w Worker) Run(ctx context.Context) error {
 		defer cancel()
 		return w.Queue.Stop(stopCtx)
 	case <-w.Queue.Stopped():
-		return nil
+		if ctx.Err() != nil {
+			return nil
+		}
+		return ErrStoppedUnexpectedly
 	}
 }

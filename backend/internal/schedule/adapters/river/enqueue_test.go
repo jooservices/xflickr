@@ -3,11 +3,13 @@ package river
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river/rivertype"
 
 	"github.com/jooservices/xflickr/internal/platform/queue"
 	"github.com/jooservices/xflickr/internal/schedule/app"
@@ -96,4 +98,15 @@ func closedPool(t *testing.T) *pgxpool.Pool {
 	}
 	pool.Close()
 	return pool
+}
+
+// A lease must not expire while the job waits in the River queue, and a live
+// job must never be reaped: every non-final River state counts as live.
+func TestLiveRiverStatesCoverEveryNonFinalState(t *testing.T) {
+	for _, state := range rivertype.JobStates() {
+		final := state == rivertype.JobStateCancelled || state == rivertype.JobStateCompleted || state == rivertype.JobStateDiscarded
+		if got := strings.Contains(liveRiverStates, "'"+string(state)+"'"); got == final {
+			t.Errorf("state %q: live=%v, want %v", state, got, !final)
+		}
+	}
 }

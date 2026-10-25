@@ -372,11 +372,18 @@ func TestWorkerRunReturnsWhenQueueStops(t *testing.T) {
 		<-queue.startReturned
 		close(queue.stopped)
 	}()
-	if err := (Worker{Queue: queue}).Run(context.Background()); err != nil {
-		t.Fatalf("Worker.Run() error = %v", err)
+	if err := (Worker{Queue: queue}).Run(context.Background()); !errors.Is(err, ErrStoppedUnexpectedly) {
+		t.Fatalf("Worker.Run() error = %v, want ErrStoppedUnexpectedly", err)
 	}
 	if queue.stopCalls != 0 {
 		t.Fatalf("Worker.Run() called Stop() %d times after queue stopped", queue.stopCalls)
+	}
+}
+
+func TestWorkerRunReturnsStartError(t *testing.T) {
+	queue := &fakeWorkerQueue{stopped: make(chan struct{}), startReturned: make(chan struct{}), startErr: errors.New("pool closed")}
+	if err := (Worker{Queue: queue}).Run(context.Background()); !errors.Is(err, queue.startErr) {
+		t.Fatalf("Worker.Run() error = %v, want start error", err)
 	}
 }
 
