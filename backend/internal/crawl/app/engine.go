@@ -110,6 +110,11 @@ type WorkWriter interface {
 type CatalogWriter interface {
 	UpsertPeople(ctx context.Context, people []catalog.Person) error
 	UpsertPhotos(ctx context.Context, photos []catalog.Photo) error
+	UpsertFavorites(ctx context.Context, favorites []catalog.Favorite) error
+	UpsertAlbums(ctx context.Context, albums []catalog.Album) error
+	UpsertGalleries(ctx context.Context, galleries []catalog.Gallery) error
+	UpsertGroups(ctx context.Context, groups []catalog.Group) error
+	UpsertPersonGroups(ctx context.Context, groups []catalog.PersonGroup) error
 }
 
 // InterestWriter records interests inside the commit transaction.
@@ -320,15 +325,8 @@ func sameCursor(left, right domain.Cursor) bool {
 }
 
 func (e *Engine) write(ctx context.Context, w Writers, item domain.Item, result domain.Result, maxDepth int) error {
-	if len(result.People) > 0 {
-		if err := w.Catalog.UpsertPeople(ctx, result.People); err != nil {
-			return err
-		}
-	}
-	if len(result.Photos) > 0 {
-		if err := w.Catalog.UpsertPhotos(ctx, result.Photos); err != nil {
-			return err
-		}
+	if err := writeCatalog(ctx, w.Catalog, result); err != nil {
+		return err
 	}
 	if len(result.Observations) > 0 {
 		if err := w.Observations.Record(ctx, item.ID, item.Cursor.Page, result.Observations); err != nil {
@@ -340,6 +338,45 @@ func (e *Engine) write(ctx context.Context, w Writers, item domain.Item, result 
 	}
 	for _, spec := range result.Work {
 		if err := e.enqueue(ctx, w, item, spec, item.Depth); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeCatalog(ctx context.Context, writer CatalogWriter, result domain.Result) error {
+	if len(result.People) > 0 {
+		if err := writer.UpsertPeople(ctx, result.People); err != nil {
+			return err
+		}
+	}
+	if len(result.Photos) > 0 {
+		if err := writer.UpsertPhotos(ctx, result.Photos); err != nil {
+			return err
+		}
+	}
+	if len(result.Favorites) > 0 {
+		if err := writer.UpsertFavorites(ctx, result.Favorites); err != nil {
+			return err
+		}
+	}
+	if len(result.Albums) > 0 {
+		if err := writer.UpsertAlbums(ctx, result.Albums); err != nil {
+			return err
+		}
+	}
+	if len(result.Galleries) > 0 {
+		if err := writer.UpsertGalleries(ctx, result.Galleries); err != nil {
+			return err
+		}
+	}
+	if len(result.Groups) > 0 {
+		if err := writer.UpsertGroups(ctx, result.Groups); err != nil {
+			return err
+		}
+	}
+	if len(result.PersonGroups) > 0 {
+		if err := writer.UpsertPersonGroups(ctx, result.PersonGroups); err != nil {
 			return err
 		}
 	}

@@ -59,11 +59,12 @@ func TestPhotosFacetStoresPageWithProvisionalSizes(t *testing.T) {
 }
 
 func TestFavoritesFacetStoresPhotosAndUniqueOwnerDiscoveries(t *testing.T) {
-	result, err := (Favorites{}).Handle(t.Context(), domain.Page{Number: 2, Payload: []byte(pagePayload(2, 2, 3))})
+	payload := strings.Replace(pagePayload(2, 2, 3), `"dateupload":"1700000000"`, `"dateupload":"1700000000","date_faved":"1700000200"`, 1)
+	result, err := (Favorites{}).Handle(t.Context(), domain.Page{Item: domain.Item{Subject: "person"}, Number: 2, Payload: []byte(payload)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.HasMore || len(result.Photos) != 3 || len(result.People) != 2 || len(result.Discoveries) != 2 {
+	if result.HasMore || len(result.Photos) != 3 || len(result.Favorites) != 1 || len(result.People) != 3 || len(result.Discoveries) != 2 {
 		t.Fatalf("favorites result sizes = photos:%d people:%d discoveries:%d more:%v", len(result.Photos), len(result.People), len(result.Discoveries), result.HasMore)
 	}
 	if result.Discoveries[0].Via != "favorite" || result.Discoveries[1].Via != "favorite" {
@@ -71,6 +72,37 @@ func TestFavoritesFacetStoresPhotosAndUniqueOwnerDiscoveries(t *testing.T) {
 	}
 	if result.Photos[1].Visibility != catalog.VisibilityFriends || result.Photos[2].Visibility != catalog.VisibilityFamily {
 		t.Fatalf("visibility mapping = %q, %q", result.Photos[1].Visibility, result.Photos[2].Visibility)
+	}
+}
+
+func TestCatalogFacetsMapReturnedRecordsAndHandleEmptyPages(t *testing.T) {
+	cases := []struct {
+		facet   domain.Facet
+		payload string
+		check   func(domain.Result) bool
+	}{
+		{Albums{}, `{"photosets":{"pages":1,"photoset":[{"id":"a1","primary":"12","photos":2,"title":{"_content":"Album"},"description":{"_content":"desc"},"date_create":"1700000000","date_update":"1700000100"}]}}`, func(r domain.Result) bool {
+			return len(r.Albums) == 1 && r.Albums[0].ID == "a1" && r.Albums[0].OwnerNSID == "person" && r.Albums[0].PrimaryPhotoID != nil
+		}},
+		{Galleries{}, `{"galleries":{"pages":1,"gallery":[{"id":"g1","owner":"owner","primary_photo_id":"13","count_photos":3,"title":{"_content":"Gallery"}}]}}`, func(r domain.Result) bool {
+			return len(r.Galleries) == 1 && r.Galleries[0].OwnerNSID == "owner" && r.Galleries[0].PhotosCount == 3
+		}},
+		{Groups{}, `{"groups":{"pages":1,"group":[{"nsid":"grp","name":"Group","members":4,"pool_count":5,"description":"desc"}]}}`, func(r domain.Result) bool {
+			return len(r.Groups) == 1 && len(r.PersonGroups) == 1 && r.PersonGroups[0].PersonNSID == "person"
+		}},
+	}
+	for _, tc := range cases {
+		got, err := tc.facet.Handle(t.Context(), domain.Page{Item: domain.Item{Subject: "person"}, Number: 1, Payload: []byte(tc.payload)})
+		if err != nil || !tc.check(got) {
+			t.Errorf("%s mapping result=%+v err=%v", tc.facet.Name(), got, err)
+		}
+		empty, err := tc.facet.Handle(t.Context(), domain.Page{Number: 1, Payload: []byte(`{}`)})
+		if err != nil || empty.HasMore {
+			t.Errorf("%s empty page=%+v err=%v", tc.facet.Name(), empty, err)
+		}
+		if _, err := tc.facet.Handle(t.Context(), domain.Page{Payload: []byte("{")}); err == nil {
+			t.Errorf("%s accepted malformed JSON", tc.facet.Name())
+		}
 	}
 }
 

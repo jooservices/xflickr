@@ -10,6 +10,7 @@ import (
 
 	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
 	crawldomain "github.com/jooservices/xflickr/internal/crawl/domain"
+	"github.com/jooservices/xflickr/internal/crawl/facets"
 	"github.com/jooservices/xflickr/internal/platform/queue"
 	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
 	quotadomain "github.com/jooservices/xflickr/internal/quota/domain"
@@ -94,8 +95,10 @@ func TestRegisterCrawlJobsRegistersEveryFacetOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := crawlapp.NewRegistry()
-	if err := registry.Register(crawlapp.ChangeCheck{}); err != nil {
-		t.Fatal(err)
+	for _, facet := range []crawldomain.Facet{crawlapp.ChangeCheck{}, crawlapp.ContactsPhotos{}, facets.Photos{}, facets.Favorites{}, facets.Albums{}, facets.Galleries{}, facets.Groups{}} {
+		if err := registry.Register(facet); err != nil {
+			t.Fatal(err)
+		}
 	}
 	engine := &crawlapp.Engine{Registry: registry}
 	if err := registerCrawlJobs(adapter, engine); err != nil {

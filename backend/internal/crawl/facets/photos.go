@@ -75,7 +75,13 @@ func parsePhotoPage(page domain.Page, discoverOwners bool) (domain.Result, error
 		return domain.Result{}, fmt.Errorf("crawl facets: decode photo page: %w", err)
 	}
 	result := domain.Result{Photos: make([]catalog.Photo, 0, len(envelope.Photos.Photo))}
+	if discoverOwners {
+		result.Favorites = make([]catalog.Favorite, 0, len(envelope.Photos.Photo))
+	}
 	people := make(map[string]catalog.Person)
+	if discoverOwners && page.Item.Subject != "" {
+		people[page.Item.Subject] = catalog.Person{NSID: page.Item.Subject, Username: page.Item.Subject}
+	}
 	seenOwners := make(map[string]bool)
 	for i, raw := range envelope.Photos.Photo {
 		var photo flickr.Photo
@@ -87,17 +93,12 @@ func parsePhotoPage(page domain.Page, discoverOwners bool) (domain.Result, error
 			return domain.Result{}, fmt.Errorf("crawl facets: convert photo %d: %w", i, err)
 		}
 		result.Photos = append(result.Photos, converted)
-		if converted.OwnerNSID != "" {
-			username := strings.TrimSpace(photo.OwnerName)
-			if username == "" {
-				username = converted.OwnerNSID
-			}
-			people[converted.OwnerNSID] = catalog.Person{NSID: converted.OwnerNSID, Username: username}
-			if discoverOwners && !seenOwners[converted.OwnerNSID] {
-				result.Discoveries = append(result.Discoveries, domain.Discovery{NSID: converted.OwnerNSID, Via: "favorite"})
-				seenOwners[converted.OwnerNSID] = true
+		if discoverOwners {
+			if favorite, ok := favoriteFromPhoto(raw, page.Item.Subject, converted.ID); ok {
+				result.Favorites = append(result.Favorites, favorite)
 			}
 		}
+		addPhotoOwner(&result, people, seenOwners, photo, converted, discoverOwners)
 	}
 	result.People = make([]catalog.Person, 0, len(people))
 	for _, person := range people {
@@ -105,6 +106,52 @@ func parsePhotoPage(page domain.Page, discoverOwners bool) (domain.Result, error
 	}
 	result.HasMore = page.Number < envelope.Photos.Pages && len(envelope.Photos.Photo) > 0
 	return result, nil
+}
+
+func addPhotoOwner(result *domain.Result, people map[string]catalog.Person, seen map[string]bool, photo flickr.Photo, converted catalog.Photo, discover bool) {
+	if converted.OwnerNSID == "" {
+		return
+	}
+	username := strings.TrimSpace(photo.OwnerName)
+	if username == "" {
+		username = converted.OwnerNSID
+	}
+	people[converted.OwnerNSID] = catalog.Person{NSID: converted.OwnerNSID, Username: username}
+	if discover && !seen[converted.OwnerNSID] {
+		result.Discoveries = append(result.Discoveries, domain.Discovery{NSID: converted.OwnerNSID, Via: "favorite"})
+		seen[converted.OwnerNSID] = true
+	}
+}
+
+func favoriteFromPhoto(raw []byte, person string, photoID int64) (catalog.Favorite, bool) {
+	var fave struct {
+		DateFaved    json.RawMessage `json:"date_faved"`
+		DateFavorite json.RawMessage `json:"date_favorite"`
+	}
+	if json.Unmarshal(raw, &fave) != nil {
+		return catalog.Favorite{}, false
+	}
+	date := rawInt(fave.DateFaved)
+	if date == 0 {
+		date = rawInt(fave.DateFavorite)
+	}
+	if date <= 0 {
+		return catalog.Favorite{}, false
+	}
+	return catalog.Favorite{PersonNSID: person, PhotoID: photoID, FaveDate: time.Unix(date, 0).UTC()}, true
+}
+
+func rawInt(raw json.RawMessage) int64 {
+	var n int64
+	if len(raw) > 0 {
+		if json.Unmarshal(raw, &n) != nil {
+			var s string
+			if json.Unmarshal(raw, &s) == nil {
+				n, _ = strconv.ParseInt(s, 10, 64)
+			}
+		}
+	}
+	return n
 }
 
 func toCatalogPhoto(photo flickr.Photo, raw []byte) (catalog.Photo, error) {

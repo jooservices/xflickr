@@ -74,7 +74,7 @@ func newCrawlEngine(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg
 		return nil, err
 	}
 	registry := crawlapp.NewRegistry()
-	for _, facet := range []crawldomain.Facet{crawlapp.ChangeCheck{}, crawlapp.ContactsPhotos{}, facets.Photos{}, facets.Favorites{}} {
+	for _, facet := range []crawldomain.Facet{crawlapp.ChangeCheck{}, crawlapp.ContactsPhotos{}, facets.Photos{}, facets.Favorites{}, facets.Albums{}, facets.Galleries{}, facets.Groups{}} {
 		if err := registry.Register(facet); err != nil {
 			return nil, err
 		}

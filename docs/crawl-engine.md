@@ -48,8 +48,9 @@ scheduler.
 The `photos` facet pages `flickr.people.getPhotos`; `favorites` pages
 `flickr.favorites.getList`. Both request up to 500 photos with Flickr's URL
 size extras. The page commit upserts the photos and records the returned URL
-sizes as provisional. The favorites facet also upserts each photo owner and
-reports that owner as a discovery. The engine records that interest at
+sizes as provisional. The favorites facet also stores each favorite
+relationship with Flickr's `date_faved`, upserts each photo owner, and reports
+that owner as a discovery. The engine records that interest at
 `depth + 1` only when it is within that user's effective maximum depth. Photos
 on a maximum-depth page are still stored; their owners do not create deeper
 interests.
@@ -60,9 +61,13 @@ The `check` facet probes a person's photo and favorite lists with
 `per_page=1`, using that user's stored upload and favorite checkpoints. A
 positive Flickr `photos.total` produces only the matching `photos` or
 `favorites` work item, carrying the same minimum date and the normal 500-item
-page size. A zero total produces no incremental work. Finishing that work
-advances its corresponding checkpoint. Completed or failed incremental items
-reopen with the new cursor; pending and running items keep their current work.
+page size. The final favorite probe also reopens album, gallery, and group
+refresh work for the person. These facets call `flickr.photosets.getList`,
+`flickr.galleries.getList`, and `flickr.people.getGroups`; page commits upsert
+metadata and group membership idempotently. A zero total produces no
+incremental photo or favorite work. Finishing that work advances its
+corresponding checkpoint. Completed or failed items reopen with the new cursor;
+pending and running items keep their current work.
 The settings interval defaults to 24 hours when no positive effective interval
 is supplied.
 

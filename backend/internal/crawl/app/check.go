@@ -47,7 +47,7 @@ func (ChangeCheck) Handle(_ context.Context, page domain.Page) (domain.Result, e
 		}
 		return result, nil
 	case "flickr.favorites.getList":
-		result := domain.Result{}
+		result := domain.Result{Work: catalogRefreshWork(page.Item.Subject)}
 		if total > 0 {
 			result.Work = append(result.Work, domain.WorkSpec{Kind: "favorites", Subject: page.Item.Subject, Method: "flickr.favorites.getList", CheckpointAt: checkpoint, Reopen: true, Params: map[string]string{
 				"user_id": page.Item.Subject, "min_fave_date": params["min_fave_date"], "per_page": strconv.Itoa(incrementalPerPage), "extras": incrementalPhotoExtras,
@@ -56,6 +56,14 @@ func (ChangeCheck) Handle(_ context.Context, page domain.Page) (domain.Result, e
 		return result, nil
 	default:
 		return domain.Result{}, fmt.Errorf("crawl: unsupported check method %q", page.Item.Cursor.Method)
+	}
+}
+
+func catalogRefreshWork(person string) []domain.WorkSpec {
+	return []domain.WorkSpec{
+		{Kind: "albums", Subject: person, Method: "flickr.photosets.getList", Reopen: true, Params: map[string]string{"user_id": person, "per_page": strconv.Itoa(incrementalPerPage)}},
+		{Kind: "galleries", Subject: person, Method: "flickr.galleries.getList", Reopen: true, Params: map[string]string{"user_id": person, "per_page": strconv.Itoa(incrementalPerPage)}},
+		{Kind: "groups", Subject: person, Method: "flickr.people.getGroups", Reopen: true, Params: map[string]string{"user_id": person, "per_page": strconv.Itoa(incrementalPerPage)}},
 	}
 }
 

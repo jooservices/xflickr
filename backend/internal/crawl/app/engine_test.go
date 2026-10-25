@@ -116,6 +116,18 @@ func (t *fakeTx) Finish(context.Context, int64) error {
 
 func (t *fakeTx) UpsertPeople(context.Context, []catalog.Person) error { return t.fail("people") }
 func (t *fakeTx) UpsertPhotos(context.Context, []catalog.Photo) error  { return t.fail("photos") }
+func (t *fakeTx) UpsertFavorites(context.Context, []catalog.Favorite) error {
+	return t.fail("favorites")
+}
+func (t *fakeTx) UpsertAlbums(context.Context, []catalog.Album) error { return t.fail("albums") }
+func (t *fakeTx) UpsertGalleries(context.Context, []catalog.Gallery) error {
+	return t.fail("galleries")
+}
+func (t *fakeTx) UpsertGroups(context.Context, []catalog.Group) error { return t.fail("groups") }
+func (t *fakeTx) UpsertPersonGroups(context.Context, []catalog.PersonGroup) error {
+	return t.fail("person_groups")
+}
+
 func (t *fakeTx) Add(_ context.Context, i domain.Interest) error {
 	t.interests = append(t.interests, i)
 	return t.fail("interest")

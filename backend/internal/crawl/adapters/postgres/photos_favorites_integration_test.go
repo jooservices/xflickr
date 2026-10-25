@@ -21,6 +21,15 @@ type photosFavoritesFlickr struct {
 	pages map[string]map[int]json.RawMessage
 }
 
+type catalogFacetsFlickr map[string]json.RawMessage
+
+func (f catalogFacetsFlickr) Call(_ context.Context, request crawlapp.Request) (json.RawMessage, error) {
+	if payload, ok := f[request.Method]; ok {
+		return payload, nil
+	}
+	return nil, fmt.Errorf("unexpected catalog facet method %s", request.Method)
+}
+
 func (f photosFavoritesFlickr) Call(_ context.Context, request crawlapp.Request) (json.RawMessage, error) {
 	page := 1
 	fmt.Sscan(request.Params["page"], &page)
@@ -115,7 +124,7 @@ func TestIncrementalCheckReopensCompletedPhotoWorkOnLaterCycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := crawlapp.NewRegistry()
-	for _, facet := range []domain.Facet{crawlapp.ChangeCheck{}, crawlapp.ContactsPhotos{}, facets.Photos{}, facets.Favorites{}} {
+	for _, facet := range []domain.Facet{crawlapp.ChangeCheck{}, crawlapp.ContactsPhotos{}, facets.Photos{}, facets.Favorites{}, facets.Albums{}, facets.Galleries{}, facets.Groups{}} {
 		if err := registry.Register(facet); err != nil {
 			t.Fatal(err)
 		}
@@ -202,12 +211,15 @@ func TestPhotosAndFavoritesFacetsCommitPagesAndGateOwnerDiscovery(t *testing.T) 
 	photoSubject := "facet-photos-" + suffix
 	favoritesSubject := "facet-favorites-" + suffix
 	maxDepthFavoritesSubject := "facet-favorites-max-" + suffix
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1),($2,$2)`, favoritesSubject, maxDepthFavoritesSubject); err != nil {
+		t.Fatal(err)
+	}
 	photoItem := insertPhotosFavoritesWork(t, ctx, pool, userID, "photos", photoSubject, 3, facets.Photos{})
 	favoritesItem := insertPhotosFavoritesWork(t, ctx, pool, userID, "favorites", favoritesSubject, 2, facets.Favorites{})
 	maxFavoritesItem := insertPhotosFavoritesWork(t, ctx, pool, userID, "favorites", maxDepthFavoritesSubject, 3, facets.Favorites{})
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id BETWEEN $1 AND $2`, int64(710000000000000000), int64(710000000000001999))
-		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid = ANY($1)`, []string{owner0, owner1})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid = ANY($1)`, []string{owner0, owner1, favoritesSubject, maxDepthFavoritesSubject})
 		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id = $1`, userID)
 	})
 
@@ -266,6 +278,9 @@ func TestPhotosAndFavoritesFacetsCommitPagesAndGateOwnerDiscovery(t *testing.T) 
 	if got := count(t, ctx, pool, `SELECT count(*) FROM photos WHERE id BETWEEN $1 AND $2 AND sizes_status='provisional'`, int64(710000000000001000), int64(710000000000001999)); got != 1000 {
 		t.Fatalf("favorites facets stored %d provisional photos, want 1000", got)
 	}
+	if got := count(t, ctx, pool, `SELECT count(*) FROM favorites WHERE (person_nsid=$1 AND photo_id BETWEEN $3 AND $4) OR (person_nsid=$2 AND photo_id BETWEEN $5 AND $6)`, favoritesSubject, maxDepthFavoritesSubject, int64(710000000000001000), int64(710000000000001499), int64(710000000000001500), int64(710000000000001999)); got != 1000 {
+		t.Fatalf("favorites facet persisted %d favorite records, want 1000", got)
+	}
 	if got := count(t, ctx, pool, `SELECT count(*) FROM crawl_interests WHERE user_id=$1 AND person_nsid LIKE $2 AND depth=3 AND via='favorite'`, userID, "facet-owner-"+suffix+"-%"); got != 2 {
 		t.Fatalf("favorites at max_depth-1 recorded %d depth-3 interests, want 2", got)
 	}
@@ -283,6 +298,64 @@ func TestPhotosAndFavoritesFacetsCommitPagesAndGateOwnerDiscovery(t *testing.T) 
 	}
 	if username != "Known Person" || realname != "Known Person" || string(profile) != `{"bio": "keep"}` || icon != "known-icon" || photosCount != 42 || !strings.Contains(string(state), "contacts") {
 		t.Fatalf("sparse owner upsert clobbered catalog fields: username=%q realname=%q profile=%s icon=%q photos=%d state=%s", username, realname, profile, icon, photosCount, state)
+	}
+}
+
+func TestCatalogFacetsPersistReturnedRecordsAndEmptyResponses(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	suffix := fmt.Sprintf("catalog-facets-%d", time.Now().UnixNano())
+	person := suffix + "@N01"
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM person_groups WHERE person_nsid=$1`, person)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM groups WHERE nsid=$1`, suffix+"-group")
+		_, _ = pool.Exec(context.Background(), `DELETE FROM galleries WHERE id=$1`, suffix+"-gallery")
+		_, _ = pool.Exec(context.Background(), `DELETE FROM albums WHERE id=$1`, suffix+"-album")
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, person)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1`, userID)
+	})
+	facetsToRun := []struct {
+		facet   domain.Facet
+		payload string
+	}{{facets.Albums{}, fmt.Sprintf(`{"photosets":{"pages":1,"photoset":[{"id":%q,"primary":"999999999999","photos":2,"title":{"_content":"Album"}}]}}`, suffix+"-album")}, {facets.Galleries{}, fmt.Sprintf(`{"galleries":{"pages":1,"gallery":[{"id":%q,"primary_photo_id":"999999999999","count_photos":1,"title":{"_content":"Gallery"}}]}}`, suffix+"-gallery")}, {facets.Groups{}, fmt.Sprintf(`{"groups":{"pages":1,"group":[{"nsid":%q,"name":"Group","members":3,"pool_count":4}]}}`, suffix+"-group")}}
+	registry := crawlapp.NewRegistry()
+	ids := make([]int64, 0, len(facetsToRun))
+	responses := catalogFacetsFlickr{}
+	for _, item := range facetsToRun {
+		if err := registry.Register(item.facet); err != nil {
+			t.Fatal(err)
+		}
+		spec := item.facet.Plan(ctx, domain.Person{NSID: person})[0]
+		responses[spec.Method] = json.RawMessage(item.payload)
+		ids = append(ids, insertPhotosFavoritesWork(t, ctx, pool, userID, item.facet.Name(), person, 0, item.facet))
+	}
+	store, err := NewEngine(pool, func(conn Conn) crawlapp.CatalogWriter {
+		repo, e := catalogpg.New(conn)
+		if e != nil {
+			t.Fatal(e)
+		}
+		return repo
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := &crawlapp.Engine{Registry: registry, Store: store, Units: store, Keys: intKeys{}, Governor: intGovernor{}, Flickr: responses, Settings: photosFavoritesSettings{maxDepth: 1}}
+	for _, id := range ids {
+		if err := engine.Handle(ctx, id); err != nil {
+			t.Fatalf("handle catalog facet: %v", err)
+		}
+	}
+	checks := []struct {
+		name, query string
+		args        []any
+	}{{"albums", `SELECT count(*) FROM albums WHERE id=$1`, []any{suffix + "-album"}}, {"galleries", `SELECT count(*) FROM galleries WHERE id=$1`, []any{suffix + "-gallery"}}, {"groups", `SELECT count(*) FROM groups WHERE nsid=$1`, []any{suffix + "-group"}}, {"person_groups", `SELECT count(*) FROM person_groups WHERE person_nsid=$1 AND group_nsid=$2`, []any{person, suffix + "-group"}}}
+	for _, check := range checks {
+		var n int
+		if err := pool.QueryRow(ctx, check.query, check.args...).Scan(&n); err != nil || n != 1 {
+			t.Fatalf("%s count=%d err=%v", check.name, n, err)
+		}
 	}
 }
 
@@ -328,7 +401,7 @@ func TestChangeCheckFindsPhotoAndCrawlsOneIncrementalPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := crawlapp.NewRegistry()
-	for _, facet := range []domain.Facet{crawlapp.ChangeCheck{}, facets.Photos{}, facets.Favorites{}} {
+	for _, facet := range []domain.Facet{crawlapp.ChangeCheck{}, facets.Photos{}, facets.Favorites{}, facets.Albums{}, facets.Galleries{}, facets.Groups{}} {
 		if err := registry.Register(facet); err != nil {
 			t.Fatal(err)
 		}
@@ -476,7 +549,7 @@ func photoFavoritesPayload(pages, page, count int, firstID int64, owner0, owner1
 		if i%2 == 1 {
 			owner, username = owner1, "Other Person"
 		}
-		items[i] = fmt.Sprintf(`{"id":"%d","owner":%q,"ownername":%q,"secret":"s","server":"1","lastupdate":"1700000100","dateupload":"1700000000","ispublic":1,"url_m":"https://example.invalid/medium"}`, firstID+int64(i), owner, username)
+		items[i] = fmt.Sprintf(`{"id":"%d","owner":%q,"ownername":%q,"secret":"s","server":"1","lastupdate":"1700000100","dateupload":"1700000000","date_faved":"1700000200","ispublic":1,"url_m":"https://example.invalid/medium"}`, firstID+int64(i), owner, username)
 	}
 	return fmt.Sprintf(`{"photos":{"page":%d,"pages":%d,"perpage":500,"photo":[%s]}}`, page, pages, strings.Join(items, ","))
 }

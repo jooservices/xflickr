@@ -68,12 +68,12 @@ func TestChangeCheckUsesOneItemForBothProbesAndPlansOnlyChangedWork(t *testing.T
 	}
 	item.Cursor = *result.NextCursor
 	result, err = checker.Handle(context.Background(), domain.Page{Item: item, Payload: json.RawMessage(`{"photos":{"total":0}}`)})
-	if err != nil || result.NextCursor != nil || len(result.Work) != 0 {
+	if err != nil || result.NextCursor != nil || len(result.Work) != 3 {
 		t.Fatalf("unchanged favorite result = %#v, %v", result, err)
 	}
 	item.Cursor.Method = "flickr.favorites.getList"
 	result, err = checker.Handle(context.Background(), domain.Page{Item: item, Payload: json.RawMessage(`{"photos":{"total":1}}`)})
-	if err != nil || len(result.Work) != 1 || result.Work[0].Kind != "favorites" || result.Work[0].Params["min_fave_date"] != "20" || result.Work[0].Params["extras"] != incrementalPhotoExtras || !result.Work[0].Reopen {
+	if err != nil || len(result.Work) != 4 || result.Work[0].Kind != "albums" || result.Work[3].Kind != "favorites" || result.Work[3].Params["min_fave_date"] != "20" || result.Work[3].Params["extras"] != incrementalPhotoExtras || !result.Work[3].Reopen {
 		t.Fatalf("changed favorite result = %#v, %v", result, err)
 	}
 	item.Cursor.Method = "unsupported"
