@@ -5,9 +5,25 @@ test('accepts a Flickr key, returns from authorization and shows crawl progress'
   page,
 }) => {
   await mockApi(page, 'user');
+  const created = {
+    id: 5,
+    label: 'My Flickr key',
+    key_public: '012345••••',
+    per_hour_limit: 3600,
+    per_second_limit: 4,
+    burst: 8,
+    status: 'valid',
+    created_at: '2026-10-25T00:00:00Z',
+  };
+  let keyCreated = false;
   await page.route('**/keys', async (route) => {
     if (route.request().method() === 'GET')
-      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(keyCreated ? [created] : []),
+      });
+    keyCreated = true;
     expect(route.request().postDataJSON()).toMatchObject({
       label: 'My Flickr key',
       key: '0123456789abcdef0123456789abcdef',
@@ -16,16 +32,7 @@ test('accepts a Flickr key, returns from authorization and shows crawl progress'
     return route.fulfill({
       status: 201,
       contentType: 'application/json',
-      body: JSON.stringify({
-        id: 5,
-        label: 'My Flickr key',
-        key_public: '012345••••',
-        per_hour_limit: 3600,
-        per_second_limit: 4,
-        burst: 8,
-        status: 'valid',
-        created_at: '2026-10-25T00:00:00Z',
-      }),
+      body: JSON.stringify(created),
     });
   });
   await page.route('**/flickr-accounts/connect', (route) =>
