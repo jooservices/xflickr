@@ -111,6 +111,12 @@ func TestCreateAlbumDownloadWithPostgres(t *testing.T) {
 	if waiting != 1 || pending != 1 {
 		t.Fatalf("item states waiting=%d pending=%d", waiting, pending)
 	}
+	if _, _, err := (Downloads{Pool: pool}).PackItems(ctx, created.ID); err == nil {
+		t.Fatal("PackItems accepted unsettled items")
+	}
+	if originals, complete, err := (Downloads{Pool: pool}).PackedOriginals(ctx, created.ID); err != nil || complete || len(originals) != 0 {
+		t.Fatalf("PackedOriginals before completion = %v, %v, %v", originals, complete, err)
+	}
 	if len(jobs.jobs) != 2 {
 		t.Fatalf("queued jobs=%+v", jobs.jobs)
 	}
@@ -148,6 +154,35 @@ func TestCreateAlbumDownloadWithPostgres(t *testing.T) {
 	if _, err := (Downloads{Pool: pool, Jobs: jobs}).Create(ctx, failed, []app.DownloadItemCandidate{{PhotoID: photoIDs[1], OwnerNSID: owner}}); !errors.Is(err, app.ErrNoFlickrKey) {
 		t.Fatalf("missing valid user key error = %v", err)
 	}
+	packJobsBefore := countJobs(jobs.jobs, "media.pack")
+	if err := (Downloads{Pool: pool, Jobs: jobs}).SettleItem(ctx, created.ID, photoIDs[0], "failed", nil, "first failed"); err != nil {
+		t.Fatal(err)
+	}
+	if countJobs(jobs.jobs, "media.pack") != packJobsBefore {
+		t.Fatal("enqueued pack job before the final item settled")
+	}
+	if err := (Downloads{Pool: pool, Jobs: failingQueue{}}).SettleItem(ctx, created.ID, photoIDs[1], "failed", nil, "second failed"); err == nil {
+		t.Fatal("settlement did not roll back when pack enqueue failed")
+	}
+	if err := (Downloads{Pool: pool, Jobs: jobs}).SettleItem(ctx, created.ID, photoIDs[1], "failed", nil, "second failed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Downloads{Pool: pool, Jobs: jobs}).SettleItem(ctx, created.ID, photoIDs[1], "failed", nil, "second failed"); err != nil {
+		t.Fatalf("repeated terminal settlement failed: %v", err)
+	}
+	if countJobs(jobs.jobs, "media.pack") != packJobsBefore+1 {
+		t.Fatalf("pack jobs after final settlement = %d, want %d", countJobs(jobs.jobs, "media.pack"), packJobsBefore+1)
+	}
+}
+
+func countJobs(jobs []queue.Job, kind string) int {
+	count := 0
+	for _, job := range jobs {
+		if job.Kind == kind {
+			count++
+		}
+	}
+	return count
 }
 
 type recordingQueue struct {

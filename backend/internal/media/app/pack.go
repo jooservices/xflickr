@@ -54,6 +54,7 @@ type ZIPPart struct {
 // parts and final status. Implementations enqueue this operation via media.pack.
 type PackRepository interface {
 	PackItems(context.Context, int64) ([]PackItem, time.Duration, error)
+	PackedOriginals(context.Context, int64) ([]string, bool, error)
 	CompletePack(context.Context, int64, string, []ZIPPart) error
 }
 
@@ -72,6 +73,15 @@ type Packer struct {
 func (p Packer) Pack(ctx context.Context, downloadID int64) error {
 	if ctx == nil || p.Blobs == nil || p.Repo == nil || downloadID <= 0 {
 		return errors.New("media: packer requires context, blob store, repository, and download id")
+	}
+	// Completion is committed before source cleanup. On a retry, avoid reading
+	// originals that may already have been deleted and finish cleanup instead.
+	originals, complete, err := p.Repo.PackedOriginals(ctx, downloadID)
+	if err != nil {
+		return fmt.Errorf("media: check existing ZIP parts: %w", err)
+	}
+	if complete {
+		return deletePackedOriginals(ctx, p.Blobs, originals)
 	}
 	items, ttl, err := p.Repo.PackItems(ctx, downloadID)
 	if err != nil {
@@ -113,15 +123,17 @@ func (p Packer) Pack(ctx context.Context, downloadID int64) error {
 		key := fmt.Sprintf("downloads/%d/part-%03d.zip", downloadID, i+1)
 		includeManifest := i == len(groups)-1
 		if err := p.writePart(ctx, key, group, manifest, checksums, includeManifest, limit); err != nil {
-			return fmt.Errorf("media: write part %d: %w", i+1, err)
+			parts = append(parts, ZIPPart{BlobKey: key})
+			return errors.Join(fmt.Errorf("media: write part %d: %w", i+1, err), deleteZIPParts(ctx, p.Blobs, parts))
 		}
 		info, err := p.Blobs.Stat(ctx, key)
 		if err != nil {
-			return fmt.Errorf("media: inspect ZIP part %d: %w", i+1, err)
+			parts = append(parts, ZIPPart{BlobKey: key})
+			return errors.Join(fmt.Errorf("media: inspect ZIP part %d: %w", i+1, err), deleteZIPParts(ctx, p.Blobs, parts))
 		}
 		if info.Size > limit {
-			_ = p.Blobs.Delete(ctx, key)
-			return fmt.Errorf("media: ZIP part %d exceeds size limit", i+1)
+			parts = append(parts, ZIPPart{BlobKey: key})
+			return errors.Join(fmt.Errorf("media: ZIP part %d exceeds size limit", i+1), deleteZIPParts(ctx, p.Blobs, parts))
 		}
 		parts = append(parts, ZIPPart{Number: i + 1, BlobKey: key, Bytes: info.Size, ExpiresAt: now().Add(ttl)})
 	}
@@ -133,14 +145,32 @@ func (p Packer) Pack(ctx context.Context, downloadID int64) error {
 		}
 	}
 	if err := p.Repo.CompletePack(ctx, downloadID, status, parts); err != nil {
-		return fmt.Errorf("media: record ZIP parts: %w", err)
+		return errors.Join(fmt.Errorf("media: record ZIP parts: %w", err), deleteZIPParts(ctx, p.Blobs, parts))
 	}
+	originalKeys := make([]string, 0, len(files))
 	for _, item := range files {
-		if err := p.Blobs.Delete(ctx, item.BlobKey); err != nil {
-			return fmt.Errorf("media: delete packed original %q: %w", item.BlobKey, err)
+		originalKeys = append(originalKeys, item.BlobKey)
+	}
+	return deletePackedOriginals(ctx, p.Blobs, originalKeys)
+}
+
+func deletePackedOriginals(ctx context.Context, blobs BlobStore, originals []string) error {
+	for _, key := range originals {
+		if err := blobs.Delete(ctx, key); err != nil && !errors.Is(err, ErrNotFound) {
+			return fmt.Errorf("media: delete packed original %q: %w", key, err)
 		}
 	}
 	return nil
+}
+
+func deleteZIPParts(ctx context.Context, blobs BlobStore, parts []ZIPPart) error {
+	var cleanupErr error
+	for _, part := range parts {
+		if err := blobs.Delete(ctx, part.BlobKey); err != nil && !errors.Is(err, ErrNotFound) {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("media: remove incomplete ZIP part %q: %w", part.BlobKey, err))
+		}
+	}
+	return cleanupErr
 }
 
 func splitPackItems(items []PackItem, limit int64) ([][]PackItem, error) {

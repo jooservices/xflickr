@@ -68,6 +68,9 @@ func TestPackTwentyFilesIntoThreePartsWithPostgres(t *testing.T) {
 		}
 	}
 	packer := app.Packer{Blobs: blobs, Repo: Downloads{Pool: pool}, Limit: 3000}
+	if err := (Downloads{Pool: pool}).CompletePack(ctx, downloadID, "ready", []app.ZIPPart{{Number: 0, BlobKey: "invalid", ExpiresAt: time.Now()}}); err == nil {
+		t.Fatal("CompletePack accepted invalid part metadata")
+	}
 	if err := packer.Pack(ctx, downloadID); err != nil {
 		t.Fatal(err)
 	}

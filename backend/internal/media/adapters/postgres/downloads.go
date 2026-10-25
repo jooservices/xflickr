@@ -64,6 +64,78 @@ func (r Downloads) PackItems(ctx context.Context, downloadID int64) ([]mediaapp.
 	return items, time.Duration(ttlHours) * time.Hour, nil
 }
 
+// PackedOriginals detects a committed package and lists its source blobs so a
+// retry can finish cleanup without attempting to read already deleted files.
+func (r Downloads) PackedOriginals(ctx context.Context, downloadID int64) ([]string, bool, error) {
+	if r.Pool == nil || ctx == nil || downloadID <= 0 {
+		return nil, false, errors.New("media: pack database, context, and download id are required")
+	}
+	var complete bool
+	if err := r.Pool.QueryRow(ctx, `SELECT d.status IN ('ready','ready_with_errors') OR EXISTS (SELECT 1 FROM download_parts dp WHERE dp.download_id=d.id) FROM downloads d WHERE d.id=$1`, downloadID).Scan(&complete); err != nil {
+		return nil, false, fmt.Errorf("media: check existing ZIP parts: %w", err)
+	}
+	if !complete {
+		return nil, false, nil
+	}
+	rows, err := r.Pool.Query(ctx, `SELECT a.blob_key FROM download_items di JOIN assets a ON a.id=di.asset_id WHERE di.download_id=$1 AND di.state='ready' AND a.blob_key<>'' ORDER BY di.photo_id`, downloadID)
+	if err != nil {
+		return nil, false, fmt.Errorf("media: load originals for ZIP cleanup: %w", err)
+	}
+	defer rows.Close()
+	var originals []string
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, false, fmt.Errorf("media: scan original for ZIP cleanup: %w", err)
+		}
+		originals = append(originals, key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, fmt.Errorf("media: read originals for ZIP cleanup: %w", err)
+	}
+	return originals, true, nil
+}
+
+// SettleItem records the final result from a download worker and enqueues the
+// packer in the same transaction when this was the last unsettled item.
+//
+//nolint:cyclop // Settlement validates the terminal state and commits item plus queue job atomically.
+func (r Downloads) SettleItem(ctx context.Context, downloadID, photoID int64, state string, assetID *int64, failure string) error {
+	if r.Pool == nil || r.Jobs == nil || ctx == nil || downloadID <= 0 || photoID <= 0 || (state != "ready" && state != "failed") || (state == "ready" && (assetID == nil || *assetID <= 0)) || (state == "failed" && failure == "") {
+		return errors.New("media: invalid settled download item")
+	}
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("media: begin item settlement: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	var lockedID int64
+	if err := tx.QueryRow(ctx, `SELECT id FROM downloads WHERE id=$1 FOR UPDATE`, downloadID).Scan(&lockedID); err != nil {
+		return fmt.Errorf("media: lock download for item settlement: %w", err)
+	}
+	tag, err := tx.Exec(ctx, `UPDATE download_items SET state=$3,asset_id=$4,error=$5 WHERE download_id=$1 AND photo_id=$2 AND state NOT IN ('ready','failed')`, downloadID, photoID, state, assetID, failure)
+	if err != nil {
+		return fmt.Errorf("media: settle download item: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return tx.Commit(ctx)
+	}
+	var unsettled int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM download_items WHERE download_id=$1 AND state NOT IN ('ready','failed')`, downloadID).Scan(&unsettled); err != nil {
+		return fmt.Errorf("media: check unsettled download items: %w", err)
+	}
+	if unsettled == 0 {
+		args, _ := json.Marshal(map[string]int64{"download_id": downloadID})
+		if err := r.Jobs.Enqueue(ctx, tx, queue.Job{Kind: "media.pack", Args: args}, queue.Options{Queue: "media", MaxAttempts: 3, LeaseTimeout: 2 * time.Hour}); err != nil {
+			return fmt.Errorf("media: enqueue pack job: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("media: commit item settlement: %w", err)
+	}
+	return nil
+}
+
 // CompletePack records temporary part links and marks the download terminal
 // in one transaction.
 //

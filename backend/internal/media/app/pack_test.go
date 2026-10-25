@@ -13,8 +13,10 @@ import (
 )
 
 type packBlobStore struct {
-	objects map[string][]byte
-	putErr  error
+	objects   map[string][]byte
+	putErr    error
+	deleteErr string
+	deleteKey string
 }
 
 func (s *packBlobStore) Put(ctx context.Context, key string, src io.Reader) error {
@@ -47,6 +49,11 @@ func (s *packBlobStore) Get(ctx context.Context, key string) (io.ReadCloser, err
 }
 
 func (s *packBlobStore) Delete(_ context.Context, key string) error {
+	if key == s.deleteKey && s.deleteErr != "" {
+		err := errors.New(s.deleteErr)
+		s.deleteErr = ""
+		return err
+	}
 	delete(s.objects, key)
 	return nil
 }
@@ -75,6 +82,19 @@ type packRepo struct {
 
 func (r *packRepo) PackItems(context.Context, int64) ([]PackItem, time.Duration, error) {
 	return r.items, r.ttl, nil
+}
+
+func (r *packRepo) PackedOriginals(context.Context, int64) ([]string, bool, error) {
+	if r.status != "" || len(r.parts) > 0 {
+		var keys []string
+		for _, item := range r.items {
+			if item.Failure == "" {
+				keys = append(keys, item.BlobKey)
+			}
+		}
+		return keys, true, nil
+	}
+	return nil, false, nil
 }
 
 func (r *packRepo) CompletePack(_ context.Context, _ int64, status string, parts []ZIPPart) error {
@@ -212,4 +232,53 @@ func TestPackerPropagatesStorageAndRepositoryErrors(t *testing.T) {
 			t.Fatal("deleted original before persistence")
 		}
 	})
+}
+
+func TestPackerRetryAfterPartialOriginalCleanup(t *testing.T) {
+	blobs := &packBlobStore{objects: map[string][]byte{"original": []byte("abc")}, deleteKey: "original", deleteErr: "temporary delete failure"}
+	repo := &packRepo{items: []PackItem{{PhotoID: 1, Name: "one", BlobKey: "original", Size: 3}}}
+	packer := Packer{Blobs: blobs, Repo: repo, Limit: 1000}
+	if err := packer.Pack(context.Background(), 9); err == nil {
+		t.Fatal("expected first cleanup attempt to fail")
+	}
+	if repo.status != "ready" || len(repo.parts) != 1 {
+		t.Fatalf("completion was not committed before cleanup: status=%q parts=%d", repo.status, len(repo.parts))
+	}
+	if err := packer.Pack(context.Background(), 9); err != nil {
+		t.Fatalf("retry failed: %v", err)
+	}
+	if _, ok := blobs.objects["original"]; ok {
+		t.Fatal("retry did not remove remaining original")
+	}
+	if len(repo.parts) != 1 {
+		t.Fatalf("retry repacked existing output: parts=%d", len(repo.parts))
+	}
+}
+
+func TestPackerCleansEarlierPartsAfterLaterPartFailure(t *testing.T) {
+	items := []PackItem{{PhotoID: 1, Name: "one", BlobKey: "one", Size: 1}, {PhotoID: 2, Name: "two", BlobKey: "two", Size: 1}}
+	blobs := &packBlobStore{objects: map[string][]byte{"one": []byte("1"), "two": []byte("2")}}
+	repo := &packRepo{items: items}
+	// The first part is emitted, then Stat of the second part fails.
+	packer := Packer{Blobs: &statFailPackBlobStore{packBlobStore: blobs, failKey: "downloads/4/part-002.zip"}, Repo: repo, Limit: 200}
+	if err := packer.Pack(context.Background(), 4); err == nil {
+		t.Fatal("expected later part inspection to fail")
+	}
+	for key := range blobs.objects {
+		if strings.HasPrefix(key, "downloads/") {
+			t.Errorf("orphan ZIP part remains: %q", key)
+		}
+	}
+}
+
+type statFailPackBlobStore struct {
+	*packBlobStore
+	failKey string
+}
+
+func (s *statFailPackBlobStore) Stat(ctx context.Context, key string) (BlobInfo, error) {
+	if key == s.failKey {
+		return BlobInfo{}, errors.New("stat failed")
+	}
+	return s.packBlobStore.Stat(ctx, key)
 }
