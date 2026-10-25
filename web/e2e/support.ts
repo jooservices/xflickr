@@ -90,7 +90,7 @@ export async function mockApi(page: Page, role: Role | 'anonymous'): Promise<voi
         case '/me/crawl/settings':
           return json({ depth: 2, depth_default: 2, depth_max: 4 });
         default:
-          return json({ status: 'ok' });
+          return json({ status: 'ok', version: 'test' });
       }
     },
   );
