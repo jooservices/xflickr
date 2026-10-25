@@ -24,6 +24,7 @@ import (
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/config"
+	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
 )
 
 func TestBuildIdentityHandlerWiresSettingsAndDummyHash(t *testing.T) {
@@ -50,6 +51,53 @@ func TestBuildIdentityHandlerRejectsInvalidArgonConfiguration(t *testing.T) {
 	cfg := config.Config{Identity: config.IdentityConfig{Argon2Parallelism: 1}}
 	if _, err := buildIdentityHandler(&pgxpool.Pool{}, redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:1"}), cfg, "test"); err == nil {
 		t.Fatal("buildIdentityHandler() succeeded with invalid Argon2 configuration")
+	}
+}
+
+func TestBuildPlanHandler(t *testing.T) {
+	if _, err := buildPlanHandler(nil); err == nil {
+		t.Fatal("buildPlanHandler accepted a nil database")
+	}
+	handler, err := buildPlanHandler(&pgxpool.Pool{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if handler.Plans == nil {
+		t.Fatal("plan service is missing")
+	}
+	ctx := identityhttp.WithPrincipal(t.Context(), identityhttp.Principal{User: domain.User{ID: 17}})
+	if actor, ok := handler.ActorID(ctx); !ok || actor != 17 {
+		t.Fatalf("actor = %d %v", actor, ok)
+	}
+	if _, ok := handler.ActorID(t.Context()); ok {
+		t.Fatal("missing principal was accepted")
+	}
+	if _, ok := handler.ActorID(identityhttp.WithPrincipal(t.Context(), identityhttp.Principal{})); ok {
+		t.Fatal("zero user was accepted")
+	}
+}
+
+func TestBuildConfiguredAPIHandler(t *testing.T) {
+	client := redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:1"})
+	defer client.Close()
+	if _, err := buildConfiguredAPIHandler(nil, client, config.Config{}, "test"); err == nil {
+		t.Fatal("handler builder accepted a nil database")
+	}
+	encoded := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
+	cfg := config.Config{
+		Crypto:   config.CryptoConfig{MasterKeys: "test:" + encoded, ActiveMasterKeyID: "test"},
+		Identity: config.IdentityConfig{Argon2Memory: 32 * 1024, Argon2Iterations: 1, Argon2Parallelism: 1, Argon2SaltLength: 16, Argon2KeyLength: 32},
+		Redis:    config.RedisConfig{Prefix: "handler-test:"},
+	}
+	handler, err := buildConfiguredAPIHandler(&pgxpool.Pool{}, client, cfg, "configured-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"version":"configured-test"`) {
+		t.Fatalf("health status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -401,7 +449,7 @@ func TestBuildKeyHandlerWiresEncryptionAndPrincipal(t *testing.T) {
 }
 
 func TestAPIRouterRequiresSessionAndCSRF(t *testing.T) {
-	router := newAPIRouter(identityhttp.Handler{Version: "router-test", Sessions: stubSessions{}}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{})
+	router := newAPIRouter(identityhttp.Handler{Version: "router-test", Sessions: stubSessions{}}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{})
 	health := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	healthResponse := httptest.NewRecorder()
 	router.ServeHTTP(healthResponse, health)

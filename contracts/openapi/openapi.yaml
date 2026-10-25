@@ -28,6 +28,10 @@ paths:
     $ref: ./paths/admin_users.yaml#/collection
   /admin/users/{id}:
     $ref: ./paths/admin_users.yaml#/item
+  /admin/plans:
+    $ref: ./paths/plans.yaml#/collection
+  /admin/users/{id}/plan:
+    $ref: ./paths/plans.yaml#/user_plan
 components:
   schemas:
     Error:
@@ -56,3 +60,9 @@ components:
       $ref: ./schemas/admin_users.yaml#/AdminUserPage
     UpdateAdminUserRequest:
       $ref: ./schemas/admin_users.yaml#/UpdateAdminUserRequest
+    Plan:
+      $ref: ./schemas/plans.yaml#/Plan
+    UpdateAdminPlansRequest:
+      $ref: ./schemas/plans.yaml#/UpdateAdminPlansRequest
+    UpdateUserPlanRequest:
+      $ref: ./schemas/plans.yaml#/UpdateUserPlanRequest

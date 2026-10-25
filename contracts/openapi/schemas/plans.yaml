@@ -1,0 +1,28 @@
+Plan:
+  type: object
+  additionalProperties: false
+  required: [id, name, weight, max_depth_cap, max_contacts, ai_quota_per_day, zip_ttl_hours, resource_share]
+  properties:
+    id: { type: integer, format: int64 }
+    name: { type: string, minLength: 1, maxLength: 64 }
+    weight: { type: integer, minimum: 1 }
+    max_depth_cap: { type: integer, minimum: 0 }
+    max_contacts: { type: integer, minimum: 0 }
+    ai_quota_per_day: { type: integer, minimum: 0 }
+    zip_ttl_hours: { type: integer, minimum: 0 }
+    resource_share: { type: number, minimum: 0, maximum: 1 }
+UpdateAdminPlansRequest:
+  type: object
+  additionalProperties: false
+  required: [plans]
+  properties:
+    plans:
+      type: array
+      minItems: 1
+      items: { $ref: '#/Plan' }
+UpdateUserPlanRequest:
+  type: object
+  additionalProperties: false
+  required: [plan_id]
+  properties:
+    plan_id: { type: integer, format: int64, minimum: 1 }

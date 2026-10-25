@@ -20,6 +20,9 @@ components:
   settings-domain:   { in: internal/settings/domain/** }
   settings-app:      { in: internal/settings/app/** }
   settings-adapters: { in: internal/settings/adapters/** }
+  schedule-domain:   { in: internal/schedule/domain/** }
+  schedule-app:      { in: internal/schedule/app/** }
+  schedule-adapters: { in: internal/schedule/adapters/** }
   platform:
     in:
       - internal/platform/adapters/**
@@ -49,6 +52,10 @@ deps:
     mayDependOn: [settings-domain, platform, pkg, identity-app]
   settings-adapters:
     mayDependOn: [settings-domain, settings-app, platform, pkg, identity-app]
+  schedule-app:
+    mayDependOn: [schedule-domain, platform]
+  schedule-adapters:
+    mayDependOn: [schedule-domain, schedule-app, platform]
   platform:
     mayDependOn: [platform, pkg, migrations]
   wiring:
@@ -62,6 +69,9 @@ deps:
       - settings-domain
       - settings-app
       - settings-adapters
+      - schedule-domain
+      - schedule-app
+      - schedule-adapters
       - platform
       - pkg
   pkg:

@@ -35,3 +35,16 @@ func TestStrictHandlerLeavesFlickrAccountsToAccounts(t *testing.T) {
 		t.Fatalf("callback error = %v", err)
 	}
 }
+
+func TestStrictHandlerLeavesPlansToSchedule(t *testing.T) {
+	handler := StrictHandler{}
+	if _, err := handler.GetAdminPlans(t.Context(), gen.GetAdminPlansRequestObject{}); !errors.Is(err, errPlansServedBySchedule) {
+		t.Fatalf("get plans error = %v", err)
+	}
+	if _, err := handler.UpdateAdminPlans(t.Context(), gen.UpdateAdminPlansRequestObject{}); !errors.Is(err, errPlansServedBySchedule) {
+		t.Fatalf("update plans error = %v", err)
+	}
+	if _, err := handler.UpdateAdminUserPlan(t.Context(), gen.UpdateAdminUserPlanRequestObject{}); !errors.Is(err, errPlansServedBySchedule) {
+		t.Fatalf("assign plan error = %v", err)
+	}
+}

@@ -44,3 +44,17 @@ func (StrictHandler) ConnectFlickrAccount(context.Context, gen.ConnectFlickrAcco
 func (StrictHandler) FlickrAccountCallback(context.Context, gen.FlickrAccountCallbackRequestObject) (gen.FlickrAccountCallbackResponseObject, error) {
 	return nil, errFlickrAccountsServedByAccounts
 }
+
+var errPlansServedBySchedule = errors.New("identity: plans are served by the schedule module")
+
+func (StrictHandler) GetAdminPlans(context.Context, gen.GetAdminPlansRequestObject) (gen.GetAdminPlansResponseObject, error) {
+	return nil, errPlansServedBySchedule
+}
+
+func (StrictHandler) UpdateAdminPlans(context.Context, gen.UpdateAdminPlansRequestObject) (gen.UpdateAdminPlansResponseObject, error) {
+	return nil, errPlansServedBySchedule
+}
+
+func (StrictHandler) UpdateAdminUserPlan(context.Context, gen.UpdateAdminUserPlanRequestObject) (gen.UpdateAdminUserPlanResponseObject, error) {
+	return nil, errPlansServedBySchedule
+}

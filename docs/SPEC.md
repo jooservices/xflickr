@@ -105,6 +105,10 @@ guide feature implementation; operational environment rules live in
   of shared records and other users' entitlements.
 - Keep plan definitions and numeric limits configurable. This specification does
   not establish prices or a fixed plan catalog.
+- The initial catalog contains `free` and `pro` plans. Their scheduler weights
+  are 1 and 4, and their resource shares are 0.2 and 0.8 respectively. An
+  administrator can edit plan limits and assign a plan to a user; both actions
+  are recorded in the audit trail.
 
 ## Definition of done
 

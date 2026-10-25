@@ -26,7 +26,10 @@ import type {
   AdminUserPage,
   Error,
   ListAdminUsersParams,
+  Plan,
+  UpdateAdminPlansRequest,
   UpdateAdminUserRequest,
+  UpdateUserPlanRequest,
 } from '../models';
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
@@ -360,4 +363,424 @@ export const useUpdateAdminUser = <TError = Error, TContext = unknown>(
   TContext
 > => {
   return useMutation(getUpdateAdminUserMutationOptions(options), queryClient);
+};
+export type getAdminPlansResponse200 = {
+  data: Plan[];
+  status: 200;
+};
+
+export type getAdminPlansResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type getAdminPlansResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type getAdminPlansResponseSuccess = getAdminPlansResponse200 & {
+  headers: Headers;
+};
+export type getAdminPlansResponseError = (getAdminPlansResponse401 | getAdminPlansResponse403) & {
+  headers: Headers;
+};
+
+export type getAdminPlansResponse = getAdminPlansResponseSuccess | getAdminPlansResponseError;
+
+export const getGetAdminPlansUrl = () => {
+  return `/admin/plans`;
+};
+
+/**
+ * @summary Get configured plans
+ */
+export const getAdminPlans = async (options?: RequestInit): Promise<getAdminPlansResponse> => {
+  const res = await fetch(getGetAdminPlansUrl(), {
+    ...options,
+    method: 'GET',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAdminPlansResponse['data'] = body ? JSON.parse(body) : {};
+  return { data, status: res.status, headers: res.headers } as getAdminPlansResponse;
+};
+
+export const getGetAdminPlansQueryKey = () => {
+  return [`/admin/plans`] as const;
+};
+
+export const getGetAdminPlansQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminPlans>>,
+  TError = Error,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminPlans>>, TError, TData>>;
+  fetch?: RequestInit;
+}) => {
+  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminPlansQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminPlans>>> = ({ signal }) =>
+    getAdminPlans({ signal, ...fetchOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminPlans>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetAdminPlansQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminPlans>>>;
+export type GetAdminPlansQueryError = Error;
+
+export function useGetAdminPlans<TData = Awaited<ReturnType<typeof getAdminPlans>>, TError = Error>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminPlans>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminPlans>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminPlans>>
+        >,
+        'initialData'
+      >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAdminPlans<TData = Awaited<ReturnType<typeof getAdminPlans>>, TError = Error>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminPlans>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminPlans>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminPlans>>
+        >,
+        'initialData'
+      >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAdminPlans<TData = Awaited<ReturnType<typeof getAdminPlans>>, TError = Error>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminPlans>>, TError, TData>>;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get configured plans
+ */
+
+export function useGetAdminPlans<TData = Awaited<ReturnType<typeof getAdminPlans>>, TError = Error>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminPlans>>, TError, TData>>;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminPlansQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type updateAdminPlansResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type updateAdminPlansResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type updateAdminPlansResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type updateAdminPlansResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type updateAdminPlansResponseSuccess = updateAdminPlansResponse204 & {
+  headers: Headers;
+};
+export type updateAdminPlansResponseError = (
+  updateAdminPlansResponse400 | updateAdminPlansResponse401 | updateAdminPlansResponse403
+) & {
+  headers: Headers;
+};
+
+export type updateAdminPlansResponse =
+  updateAdminPlansResponseSuccess | updateAdminPlansResponseError;
+
+export const getUpdateAdminPlansUrl = () => {
+  return `/admin/plans`;
+};
+
+/**
+ * Updates plan limits by name. Every update is recorded in the audit trail.
+ * @summary Update configured plans
+ */
+export const updateAdminPlans = async (
+  updateAdminPlansRequest: UpdateAdminPlansRequest,
+  options?: RequestInit,
+): Promise<updateAdminPlansResponse> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit['headers']>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  const res = await fetch(getUpdateAdminPlansUrl(), {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateAdminPlansRequest),
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateAdminPlansResponse['data'] = body ? JSON.parse(body) : undefined;
+  return { data, status: res.status, headers: res.headers } as updateAdminPlansResponse;
+};
+
+export const getUpdateAdminPlansMutationKey = () => ['updateAdminPlans'] as const;
+
+export const getUpdateAdminPlansMutationOptions = <TError = Error, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAdminPlans>>,
+    TError,
+    UpdateAdminPlansMutationVariables,
+    TContext
+  >;
+  fetch?: RequestInit;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAdminPlans>>,
+  TError,
+  UpdateAdminPlansMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUpdateAdminPlansMutationKey();
+  const { mutation: mutationOptions, fetch: fetchOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, fetch: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAdminPlans>>,
+    UpdateAdminPlansMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateAdminPlans(data, fetchOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateAdminPlansMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAdminPlans>>
+>;
+export type UpdateAdminPlansMutationBody = UpdateAdminPlansRequest;
+export type UpdateAdminPlansMutationError = Error;
+export type UpdateAdminPlansMutationVariables = { data: UpdateAdminPlansRequest };
+
+/**
+ * @summary Update configured plans
+ */
+export const useUpdateAdminPlans = <TError = Error, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateAdminPlans>>,
+      TError,
+      UpdateAdminPlansMutationVariables,
+      TContext
+    >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateAdminPlans>>,
+  TError,
+  UpdateAdminPlansMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateAdminPlansMutationOptions(options), queryClient);
+};
+export type updateAdminUserPlanResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type updateAdminUserPlanResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type updateAdminUserPlanResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type updateAdminUserPlanResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type updateAdminUserPlanResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type updateAdminUserPlanResponseSuccess = updateAdminUserPlanResponse204 & {
+  headers: Headers;
+};
+export type updateAdminUserPlanResponseError = (
+  | updateAdminUserPlanResponse400
+  | updateAdminUserPlanResponse401
+  | updateAdminUserPlanResponse403
+  | updateAdminUserPlanResponse404
+) & {
+  headers: Headers;
+};
+
+export type updateAdminUserPlanResponse =
+  updateAdminUserPlanResponseSuccess | updateAdminUserPlanResponseError;
+
+export const getUpdateAdminUserPlanUrl = (id: number) => {
+  return `/admin/users/${id}/plan`;
+};
+
+/**
+ * Every assignment is recorded in the audit trail.
+ * @summary Assign a plan to a user
+ */
+export const updateAdminUserPlan = async (
+  id: number,
+  updateUserPlanRequest: UpdateUserPlanRequest,
+  options?: RequestInit,
+): Promise<updateAdminUserPlanResponse> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit['headers']>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  const res = await fetch(getUpdateAdminUserPlanUrl(id), {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateUserPlanRequest),
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateAdminUserPlanResponse['data'] = body ? JSON.parse(body) : undefined;
+  return { data, status: res.status, headers: res.headers } as updateAdminUserPlanResponse;
+};
+
+export const getUpdateAdminUserPlanMutationKey = () => ['updateAdminUserPlan'] as const;
+
+export const getUpdateAdminUserPlanMutationOptions = <
+  TError = Error,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAdminUserPlan>>,
+    TError,
+    UpdateAdminUserPlanMutationVariables,
+    TContext
+  >;
+  fetch?: RequestInit;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAdminUserPlan>>,
+  TError,
+  UpdateAdminUserPlanMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUpdateAdminUserPlanMutationKey();
+  const { mutation: mutationOptions, fetch: fetchOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, fetch: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAdminUserPlan>>,
+    UpdateAdminUserPlanMutationVariables
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateAdminUserPlan(id, data, fetchOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateAdminUserPlanMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAdminUserPlan>>
+>;
+export type UpdateAdminUserPlanMutationBody = UpdateUserPlanRequest;
+export type UpdateAdminUserPlanMutationError = Error;
+export type UpdateAdminUserPlanMutationVariables = { id: number; data: UpdateUserPlanRequest };
+
+/**
+ * @summary Assign a plan to a user
+ */
+export const useUpdateAdminUserPlan = <TError = Error, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateAdminUserPlan>>,
+      TError,
+      UpdateAdminUserPlanMutationVariables,
+      TContext
+    >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateAdminUserPlan>>,
+  TError,
+  UpdateAdminUserPlanMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateAdminUserPlanMutationOptions(options), queryClient);
 };

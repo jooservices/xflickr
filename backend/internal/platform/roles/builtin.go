@@ -25,11 +25,14 @@ import (
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
-	"github.com/jooservices/xflickr/internal/platform/audit"
+	auditpostgres "github.com/jooservices/xflickr/internal/platform/audit/adapters/postgres"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/crypto"
 	"github.com/jooservices/xflickr/internal/platform/db"
 	"github.com/jooservices/xflickr/internal/platform/httpx"
+	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
+	schedulepostgres "github.com/jooservices/xflickr/internal/schedule/adapters/postgres"
+	scheduleapp "github.com/jooservices/xflickr/internal/schedule/app"
 	settingspostgres "github.com/jooservices/xflickr/internal/settings/adapters/postgres"
 	settingsapp "github.com/jooservices/xflickr/internal/settings/app"
 )
@@ -100,19 +103,34 @@ func (r APIRole) Run(ctx context.Context) error {
 	defer pool.Close()
 	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	defer redisClient.Close()
-	identity, err := buildIdentityHandler(pool, redisClient, cfg, r.version)
+	handler, err := buildConfiguredAPIHandler(pool, redisClient, cfg, r.version)
 	if err != nil {
 		return err
+	}
+	return r.runServer(ctx, handler)
+}
+
+func buildConfiguredAPIHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, version string) (http.Handler, error) {
+	if pool == nil {
+		return nil, errors.New("api: postgres database is required")
+	}
+	identity, err := buildIdentityHandler(pool, redisClient, cfg, version)
+	if err != nil {
+		return nil, err
 	}
 	keys, err := buildKeyHandler(pool, cfg)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	connect, err := buildConnectHandler(pool, redisClient, cfg)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return r.runServer(ctx, newAPIRouter(identity, keys, connect))
+	plans, err := buildPlanHandler(pool)
+	if err != nil {
+		return nil, err
+	}
+	return newAPIRouter(identity, keys, connect, plans), nil
 }
 
 // apiServer composes identity and API key handlers. The two types expose
@@ -121,16 +139,19 @@ type apiServer struct {
 	identityhttp.Handler
 	accountshttp.KeyHandler
 	accountshttp.ConnectHandler
+	planHandler
 }
+
+type planHandler struct{ schedulehttp.Handler }
 
 var _ gen.StrictServerInterface = apiServer{}
 
-func newAPIRouter(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler) http.Handler {
+func newAPIRouter(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler) http.Handler {
 	router := chi.NewRouter()
 	router.Use(identityhttp.RequestBodyLimit)
 	router.Use(identityhttp.CSRF)
 	router.Use(identityhttp.ProtectRoutes(identity.Sessions))
-	return gen.HandlerFromMux(gen.NewStrictHandler(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect}, []gen.StrictMiddlewareFunc{
+	return gen.HandlerFromMux(gen.NewStrictHandler(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		identityhttp.MaintainSessionCookies(identity.Sessions),
 	}), router)
@@ -187,6 +208,23 @@ func buildConnectHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient
 	}, nil
 }
 
+func buildPlanHandler(pool *pgxpool.Pool) (schedulehttp.Handler, error) {
+	if pool == nil {
+		return schedulehttp.Handler{}, errors.New("schedule: postgres database is required")
+	}
+	store := schedulepostgres.New(pool)
+	return schedulehttp.Handler{
+		Plans: &scheduleapp.Plans{Store: store, Audit: auditpostgres.New(pool)},
+		ActorID: func(ctx context.Context) (int64, bool) {
+			principal, ok := identityhttp.PrincipalFrom(ctx)
+			if !ok || principal.User.ID <= 0 {
+				return 0, false
+			}
+			return principal.User.ID, true
+		},
+	}, nil
+}
+
 func keyringFromConfig(cfg config.Config) (*crypto.Keyring, error) {
 	if strings.TrimSpace(cfg.Crypto.MasterKeys) == "" || strings.TrimSpace(cfg.Crypto.ActiveMasterKeyID) == "" {
 		return nil, errors.New("accounts: master key configuration is required")
@@ -223,7 +261,7 @@ func buildIdentityHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClien
 		LoginUseCase:    identityapp.Login{Repository: users, Limiter: identityredis.Limiter{Client: redisClient, Prefix: cfg.Redis.Prefix}, DummyPasswordHash: dummyHash},
 		Users:           users,
 		Sessions:        identityapp.Sessions{Repository: users, Users: users},
-		AdminUsers:      identityapp.AdminUsers{Store: users, Audit: audit.Discard},
+		AdminUsers:      identityapp.AdminUsers{Store: users, Audit: auditpostgres.New(pool)},
 		Version:         version,
 	}, nil
 }

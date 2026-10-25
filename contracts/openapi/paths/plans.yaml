@@ -1,0 +1,90 @@
+collection:
+  get:
+    operationId: GetAdminPlans
+    tags: [admin]
+    summary: Get configured plans
+    responses:
+      '200':
+        description: Configured plans
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: ../schemas/plans.yaml#/Plan }
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '403':
+        description: Administrator role required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+  put:
+    operationId: UpdateAdminPlans
+    tags: [admin]
+    summary: Update configured plans
+    description: Updates plan limits by name. Every update is recorded in the audit trail.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: ../schemas/plans.yaml#/UpdateAdminPlansRequest }
+    responses:
+      '204': { description: Plans updated }
+      '400':
+        description: Invalid plan definitions
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '403':
+        description: Administrator role required, or the CSRF token is missing or invalid
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+
+user_plan:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      description: User id
+      schema: { type: integer, format: int64 }
+  put:
+    operationId: UpdateAdminUserPlan
+    tags: [admin]
+    summary: Assign a plan to a user
+    description: Every assignment is recorded in the audit trail.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: ../schemas/plans.yaml#/UpdateUserPlanRequest }
+    responses:
+      '204': { description: User plan updated }
+      '400':
+        description: Invalid plan assignment
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '403':
+        description: Administrator role required, or the CSRF token is missing or invalid
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '404':
+        description: User or plan not found
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
