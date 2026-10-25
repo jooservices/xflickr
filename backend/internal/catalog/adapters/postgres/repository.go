@@ -2,10 +2,13 @@
 package postgres
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jooservices/xflickr/internal/catalog/adapters/postgres/gen"
@@ -64,4 +67,25 @@ func pgTime(value *time.Time) pgtype.Timestamptz {
 
 func toPgTime(value time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: value, Valid: true}
+}
+
+func seenAt(value time.Time) time.Time {
+	if value.IsZero() {
+		return time.Now().UTC()
+	}
+	return value
+}
+
+func executeBatch(ctx context.Context, db gen.DBTX, batch *pgx.Batch, facet string) error {
+	if batch.Len() == 0 {
+		return nil
+	}
+	results := db.SendBatch(ctx, batch)
+	defer results.Close()
+	for i := 0; i < batch.Len(); i++ {
+		if _, err := results.Exec(); err != nil {
+			return fmt.Errorf("catalog: upsert %s batch: %w", facet, err)
+		}
+	}
+	return nil
 }
