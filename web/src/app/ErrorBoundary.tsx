@@ -16,13 +16,15 @@ function ErrorPage({
   error,
   correlationId: given,
   reset,
+  onHome,
 }: {
   error?: unknown;
   correlationId?: string;
   reset?: () => void;
+  /** Router-independent so the app-level fallback renders outside any Router. */
+  onHome: () => void;
 }) {
   const { t } = useI18n();
-  const navigate = useNavigate();
   const correlationId = useMemo(
     () => given ?? (error instanceof ApiShapeError ? error.correlationId : newCorrelationId()),
     [given, error],
@@ -42,7 +44,7 @@ function ErrorPage({
             {t('common.retry')}
           </button>
         ) : null}
-        <button className={`${styles.button} ${styles.primary}`} onClick={() => void navigate('/')}>
+        <button className={`${styles.button} ${styles.primary}`} onClick={onHome}>
           {t('shell.notfound.home')}
         </button>
       </div>
@@ -51,7 +53,8 @@ function ErrorPage({
 }
 
 export function RouteErrorPage() {
-  return <ErrorPage error={useRouteError()} />;
+  const navigate = useNavigate();
+  return <ErrorPage error={useRouteError()} onHome={() => void navigate('/')} />;
 }
 
 type BoundaryState = { failed: boolean; error?: unknown; correlationId?: string };
@@ -76,6 +79,7 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, Boundar
       <ErrorPage
         error={this.state.error}
         correlationId={this.state.correlationId}
+        onHome={() => window.location.assign('/')}
         reset={() => this.setState({ failed: false, error: undefined, correlationId: undefined })}
       />
     ) : (

@@ -12,22 +12,45 @@ function BrokenPage(): never {
 }
 
 describe('global error handling', () => {
-  it('shows a safe fallback with support id and recovery navigation', async () => {
+  it('shows a safe fallback outside any Router, as the app level renders it', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     render(
       <I18nProvider>
-        <MemoryRouter>
-          <AppErrorBoundary>
-            <BrokenPage />
-          </AppErrorBoundary>
-        </MemoryRouter>
+        <AppErrorBoundary>
+          <BrokenPage />
+        </AppErrorBoundary>
       </I18nProvider>,
     );
 
     expect(await screen.findByTestId('global-error')).toBeInTheDocument();
     expect(screen.getByText(/Support reference:/)).toBeInTheDocument();
     expect(screen.queryByText('private stack detail')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Go to home' }));
+    expect(screen.getByRole('button', { name: 'Go to home' })).toBeInTheDocument();
+  });
+
+  it('navigates home from a route error through the router', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const router = createMemoryRouter(
+      [
+        { path: '/', element: <p>Home page</p> },
+        {
+          path: '/broken',
+          loader: () => {
+            throw new Error('private route stack');
+          },
+          element: <p>Page</p>,
+          errorElement: <RouteErrorPage />,
+        },
+      ],
+      { initialEntries: ['/broken'] },
+    );
+    render(
+      <I18nProvider>
+        <RouterProvider router={router} />
+      </I18nProvider>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Go to home' }));
+    expect(await screen.findByText('Home page')).toBeInTheDocument();
   });
 
   it('replaces router errors without exposing their message', async () => {
