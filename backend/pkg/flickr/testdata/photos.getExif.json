@@ -1,0 +1,1 @@
+{"photo":{"id":"52000000001","secret":"abc123def4","server":"65535","farm":66,"camera":"Fake Camera","exif":[{"tagspace":"EXIF","tagspaceid":0,"tag":"Model","label":"Camera Model","raw":{"_content":"Fake Camera"},"clean":{"_content":"Fake Camera"}}]},"stat":"ok"}

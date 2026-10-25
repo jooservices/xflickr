@@ -61,6 +61,48 @@ func TestTypedMethodsDecodeFixtures(t *testing.T) {
 	opts := ListOptions{PerPage: 500}
 
 	tests := map[string]func(t *testing.T, c *Client){
+		"photos.getSizes": func(t *testing.T, c *Client) {
+			sizes, err := c.PhotosGetSizes(ctx, creds, "52000000001")
+			if err != nil || len(sizes) != 3 || sizes[0].Label != "Square" || sizes[0].Width != 75 || sizes[0].Height != 75 || sizes[0].Source == "" || sizes[0].Media != "photo" {
+				t.Fatalf("sizes = %+v, err = %v", sizes, err)
+			}
+		},
+		"photos.getInfo": func(t *testing.T, c *Client) {
+			photo, err := c.PhotosGetInfo(ctx, creds, "52000000001", "abc123def4")
+			if err != nil || photo.ID != "52000000001" || photo.Owner.NSID != "00000000@N00" || photo.Title != "Sample photo" || photo.Description != "A fake description" || len(photo.Tags.Items) != 1 || len(photo.URLs.Items) != 1 {
+				t.Fatalf("photo = %+v, err = %v", photo, err)
+			}
+		},
+		"photos.getExif": func(t *testing.T, c *Client) {
+			exif, err := c.PhotosGetExif(ctx, creds, "52000000001", "")
+			if err != nil || exif.ID != "52000000001" || exif.Camera != "Fake Camera" || len(exif.Entries) != 1 || exif.Entries[0].Clean != "Fake Camera" {
+				t.Fatalf("exif = %+v, err = %v", exif, err)
+			}
+		},
+		"photos.getAllContexts": func(t *testing.T, c *Client) {
+			contexts, err := c.PhotosGetAllContexts(ctx, creds, "52000000001")
+			if err != nil || len(contexts.Sets) != 1 || contexts.Sets[0].ID != "72177720000000001" || len(contexts.Pools) != 1 {
+				t.Fatalf("contexts = %+v, err = %v", contexts, err)
+			}
+		},
+		"photos.comments.getList": func(t *testing.T, c *Client) {
+			comments, err := c.PhotosCommentsGetList(ctx, creds, "52000000001", ListOptions{Page: 1, PerPage: 100})
+			if err != nil || len(comments.Items) != 1 || comments.Total != 1 || comments.Items[0].Text != "Nice photo" {
+				t.Fatalf("comments = %+v, err = %v", comments, err)
+			}
+		},
+		"photos.getFavorites": func(t *testing.T, c *Client) {
+			favorites, err := c.PhotosGetFavorites(ctx, creds, "52000000001", ListOptions{})
+			if err != nil || len(favorites.Items) != 1 || favorites.Items[0].NSID != "00000001@N00" || favorites.Items[0].FaveDate != "1700000400" {
+				t.Fatalf("favorites = %+v, err = %v", favorites, err)
+			}
+		},
+		"photos.people.getList": func(t *testing.T, c *Client) {
+			people, err := c.PhotosPeopleGetList(ctx, creds, "52000000001")
+			if err != nil || len(people) != 1 || people[0].NSID != "00000001@N00" || people[0].IsPro != 0 {
+				t.Fatalf("people = %+v, err = %v", people, err)
+			}
+		},
 		"people.getInfo": func(t *testing.T, c *Client) {
 			p, err := c.PeopleGetInfo(ctx, creds, "00000000@N00")
 			if err != nil || p.NSID != "00000000@N00" || p.Username != "fakeuser" || p.IsPro != 1 || p.Photos.Count != "1234" || p.PathAlias != "fakeuser" {
@@ -182,6 +224,65 @@ func TestTypedMethodsDecodeFixtures(t *testing.T) {
 			t.Parallel()
 			client, _ := fixtureClient(t)
 			run(t, client)
+		})
+	}
+}
+
+func TestLargestAllowed(t *testing.T) {
+	t.Parallel()
+	t.Run("empty", func(t *testing.T) {
+		if got := LargestAllowed(nil); got != (PhotoSize{}) {
+			t.Fatalf("LargestAllowed(nil) = %+v", got)
+		}
+	})
+	t.Run("largest pixel area", func(t *testing.T) {
+		sizes := []PhotoSize{{Label: "Wide", Width: 200, Height: 100}, {Label: "Tall", Width: 100, Height: 300}, {Label: "Tiny", Width: 1, Height: 1}}
+		if got := LargestAllowed(sizes); got.Label != "Tall" {
+			t.Fatalf("LargestAllowed() = %+v, want Tall", got)
+		}
+	})
+	t.Run("original preferred", func(t *testing.T) {
+		sizes := []PhotoSize{{Label: "Original", Width: 50, Height: 50}, {Label: "Large", Width: 5000, Height: 5000}}
+		if got := LargestAllowed(sizes); got.Label != "Original" {
+			t.Fatalf("LargestAllowed() = %+v, want Original", got)
+		}
+	})
+}
+
+func TestPhotoMethodRequestParams(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	creds := Credentials{APIKey: "k"}
+	checks := map[string]struct {
+		call func(*Client) error
+		want map[string]string
+	}{
+		"photos.getSizes":       {call: func(c *Client) error { _, err := c.PhotosGetSizes(ctx, creds, "p"); return err }, want: map[string]string{"method": "flickr.photos.getSizes", "photo_id": "p"}},
+		"photos.getInfo":        {call: func(c *Client) error { _, err := c.PhotosGetInfo(ctx, creds, "p", "s"); return err }, want: map[string]string{"method": "flickr.photos.getInfo", "photo_id": "p", "secret": "s"}},
+		"photos.getExif":        {call: func(c *Client) error { _, err := c.PhotosGetExif(ctx, creds, "p", "s"); return err }, want: map[string]string{"method": "flickr.photos.getExif", "photo_id": "p", "secret": "s"}},
+		"photos.getAllContexts": {call: func(c *Client) error { _, err := c.PhotosGetAllContexts(ctx, creds, "p"); return err }, want: map[string]string{"method": "flickr.photos.getAllContexts", "photo_id": "p"}},
+		"photos.comments.getList": {call: func(c *Client) error {
+			_, err := c.PhotosCommentsGetList(ctx, creds, "p", ListOptions{Page: 2, PerPage: 50})
+			return err
+		}, want: map[string]string{"method": "flickr.photos.comments.getList", "photo_id": "p", "page": "2", "per_page": "50"}},
+		"photos.getFavorites": {call: func(c *Client) error {
+			_, err := c.PhotosGetFavorites(ctx, creds, "p", ListOptions{Page: 3, PerPage: 25})
+			return err
+		}, want: map[string]string{"method": "flickr.photos.getFavorites", "photo_id": "p", "page": "3", "per_page": "25"}},
+		"photos.people.getList": {call: func(c *Client) error { _, err := c.PhotosPeopleGetList(ctx, creds, "p"); return err }, want: map[string]string{"method": "flickr.photos.people.getList", "photo_id": "p"}},
+	}
+	for name, check := range checks {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			client, last := fixtureClient(t)
+			if err := check.call(client); err != nil {
+				t.Fatal(err)
+			}
+			for key, value := range check.want {
+				if (*last)[key] != value {
+					t.Errorf("%s = %q, want %q", key, (*last)[key], value)
+				}
+			}
 		})
 	}
 }
