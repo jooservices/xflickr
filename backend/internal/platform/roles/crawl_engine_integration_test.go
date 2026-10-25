@@ -68,12 +68,64 @@ func TestCrawlWorkerRunsSyncJobAgainstFakeFlickr(t *testing.T) {
 	pool := dbtest.Open(t, cfg.DB)
 	redisClient := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	defer redisClient.Close()
-	userID, keyID, itemID, person := seedCrawlFixture(t, ctx, pool, cfg, "ready", time.Now().Add(2*time.Minute))
+	ring, err := keyringFromConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	suffix := fmt.Sprintf("crawl-%d", time.Now().UnixNano())
+	// Use a unique seeded person so another test user's interest in a shared
+	// seed account cannot make the key pool select a key sealed with another
+	// test's master key.
+	person := suffix + "@N00"
+	var userID, keyID, accountID, itemID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'unused','user') RETURNING id`, suffix+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupCrawlFixture(pool, userID, suffix) })
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'crawl test',$2,'{}',3600,10,10) RETURNING id`, userID, suffix).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	sealedSecret, err := ring.Seal([]byte("key-secret"), accountsdomain.SecretAAD(keyID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE api_keys SET secret_sealed=$2 WHERE id=$1`, keyID, sealedSecret); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed) VALUES($1,$2,$3,'owner','{}','{}') RETURNING id`, userID, keyID, person).Scan(&accountID); err != nil {
+		t.Fatal(err)
+	}
+	sealedToken, err := ring.Seal([]byte("token"), accountsdomain.TokenAAD(accountID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealedTokenSecret, err := ring.Seal([]byte("token-secret"), accountsdomain.TokenSecretAAD(accountID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE flickr_accounts SET token_sealed=$2, secret_sealed=$3 WHERE id=$1`, accountID, sealedToken, sealedTokenSecret); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via) VALUES($1,$2,0,'test')`, userID, person); err != nil {
+		t.Fatal(err)
+	}
+	cursor, err := json.Marshal(map[string]any{"page": 1, "method": "flickr.people.getPhotos", "checkpoint_at": time.Now().Unix(), "params": map[string]string{
+		"user_id": person, "min_upload_date": "0", "min_fave_date": "0", "per_page": "1",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,cursor,lease_expires_at) VALUES('check',$1,$2,$3,'ready',$4,now()+interval '2 minutes') RETURNING id`, person, userID, keyID, cursor).Scan(&itemID); err != nil {
+		t.Fatal(err)
+	}
 
 	dataset, err := fakeflickr.LoadDataset("")
 	if err != nil {
 		t.Fatal(err)
 	}
+	dataset.People = append(dataset.People, fakeflickr.Person{NSID: person, Username: suffix, RealName: "Crawl Integration Test"})
+	dataset.Photos = append(dataset.Photos, fakeflickr.Photo{ID: suffix, Owner: person, Title: "Crawl integration photo", Shape: "landscape"})
 	fake := httptest.NewServer(fakeflickr.NewServer(dataset, nil))
 	defer fake.Close()
 	engine, err := newCrawlEngine(pool, redisClient, cfg, flickrclient.NewClient(fake.URL+"/services/rest", nil))
@@ -195,7 +247,10 @@ func waitItemState(t *testing.T, ctx context.Context, pool *pgxpool.Pool, itemID
 	if state != want {
 		var lastError *string
 		_ = pool.QueryRow(ctx, `SELECT last_error FROM work_items WHERE id=$1`, itemID).Scan(&lastError)
-		t.Fatalf("work item %d state = %q (last_error %v), want %q", itemID, state, lastError, want)
+		if lastError == nil {
+			t.Fatalf("work item %d state = %q (last_error <nil>), want %q", itemID, state, want)
+		}
+		t.Fatalf("work item %d state = %q (last_error %q), want %q", itemID, state, *lastError, want)
 	}
 }
 
