@@ -289,7 +289,8 @@ func (s Store) pumpQueue(ctx context.Context, tx pgx.Tx, keyID int64, cap queueC
 		return 0, fmt.Errorf("schedule: read plan backlog: %w", err)
 	}
 	rows.Close()
-	allocations, err := app.SplitShare(limit, groups)
+	rotation := int(time.Now().Unix() / int64(app.PumpInterval/time.Second))
+	allocations, err := app.SplitShare(limit, groups, rotation)
 	if err != nil {
 		return 0, err
 	}
