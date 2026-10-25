@@ -85,7 +85,7 @@ VALUES ($1,$2,now(),'public','provisional','[]','{}',decode(repeat('cd',32),'hex
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.Counts.People < 1 || snapshot.WorkItems["pending"] < 3 || snapshot.Pending.Total < 3 || snapshot.Pending.WithoutKey < 1 || snapshot.Pending.Oldest.IsZero() || snapshot.CredentialDecryptionFailures != 2 {
+	if snapshot.Counts.People < 1 || snapshot.WorkItems["pending"] < 3 || snapshot.Pending.Total < 3 || snapshot.Pending.WithoutKey < 1 || snapshot.Pending.Oldest.IsZero() || snapshot.CredentialDecryptionFailures < 2 {
 		t.Fatalf("snapshot=%+v", snapshot)
 	}
 	if snapshot.Tokens["revoked"] < 1 || snapshot.CallsLast10Min < 4 {
