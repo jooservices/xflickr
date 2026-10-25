@@ -67,8 +67,10 @@ if [[ -n "${XFLICKR_ADMIN_COOKIE:-}" ]]; then
 fi
 printf 'Admin ops status endpoint: ok\n'
 
-if ! "${compose[@]}" logs --no-color --tail 500 xflickr 2>/dev/null | grep -q 'crawl health'; then
+container_logs="$("${compose[@]}" logs --no-color --tail 500 xflickr 2>/dev/null)"
+if ! grep -q 'crawl health' <<<"$container_logs"; then
 	printf 'No "crawl health" log line found; the scheduler role logs one at start and every minute.\n' >&2
 	exit 1
 fi
+unset container_logs
 printf 'Crawl health log line: ok\n'

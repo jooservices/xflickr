@@ -42,7 +42,7 @@ func (s Sink) Send(ctx context.Context, events []ops.Event) error {
 	endpoint := strings.TrimRight(s.URL, "/") + "/api/" + url.PathEscape(s.Org) + "/" + url.PathEscape(s.Stream) + "/_json"
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("ops: build openobserve request: %w", err)
+		return errors.New("ops: build openobserve request failed")
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.SetBasicAuth(s.Username, s.Password)
@@ -52,12 +52,39 @@ func (s Sink) Send(ctx context.Context, events []ops.Event) error {
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("ops: send events: %w", err)
+		// Transport errors may include the full request URL, including any
+		// credentials embedded in a privately configured URL. Keep logs useful
+		// without exposing that configuration.
+		return errors.New("ops: send events failed")
 	}
 	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<16))
+	ackBody, readErr := io.ReadAll(io.LimitReader(response.Body, 1<<16))
+	if readErr != nil {
+		return errors.New("ops: read openobserve acknowledgement failed")
+	}
 	if response.StatusCode < 200 || response.StatusCode > 299 {
 		return fmt.Errorf("ops: openobserve responded %d", response.StatusCode)
+	}
+	return checkAcknowledgement(ackBody)
+}
+
+func checkAcknowledgement(body []byte) error {
+	if len(body) == 0 {
+		return nil
+	}
+	var ack struct {
+		Code   int `json:"code"`
+		Status []struct {
+			Failed int `json:"failed"`
+		} `json:"status"`
+	}
+	if json.Unmarshal(body, &ack) != nil || ack.Code >= 400 {
+		return errors.New("ops: openobserve rejected events")
+	}
+	for _, result := range ack.Status {
+		if result.Failed > 0 {
+			return errors.New("ops: openobserve rejected events")
+		}
 	}
 	return nil
 }

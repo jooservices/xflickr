@@ -47,6 +47,7 @@ ensure_env() {
 	ensure_setting HTTP_PORT 8080
 	ensure_setting BLOB_LOCAL_DIR /app/data
 	ensure_setting XFLICKR_ROLES api,scheduler,indexer,crawl,media,node-agent
+	configure_openobserve
 	chmod 600 "$ENV_FILE"
 }
 
@@ -55,6 +56,52 @@ ensure_setting() {
 	if ! grep -q "^${key}=" "$ENV_FILE"; then
 		printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
 	fi
+}
+
+configure_openobserve() {
+	local workspaces_env="$workspaces_root/.env"
+	local -a credentials=()
+	if [[ ! -f "$workspaces_env" ]]; then
+		printf 'Shared Workspaces private configuration is missing.\n' >&2
+		return 1
+	fi
+	mapfile -t credentials < <(
+		(
+			# shellcheck disable=SC1090
+			. "$workspaces_env"
+			printf '%s\n%s\n' "${WORKSPACES_ZO_ROOT_USER_EMAIL:-}" "${WORKSPACES_ZO_ROOT_USER_PASSWORD:-}"
+		)
+	)
+	if [[ -z "${credentials[0]:-}" || -z "${credentials[1]:-}" ]]; then
+		printf 'Shared OpenObserve credentials are not configured in private Workspaces settings.\n' >&2
+		return 1
+	fi
+	set_private_setting OPENOBSERVE_URL http://openobserve:5080
+	set_private_setting OPENOBSERVE_ORG default
+	set_private_setting OPENOBSERVE_STREAM xflickr
+	set_private_setting OPENOBSERVE_USERNAME "${credentials[0]}"
+	set_private_setting OPENOBSERVE_PASSWORD "${credentials[1]}"
+	unset credentials
+}
+
+set_private_setting() {
+	local key="$1" value="$2" tmp replaced=0
+	tmp="$(mktemp "$ROOT/.env.develop.XXXXXX")"
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		if [[ "$line" == "$key="* ]]; then
+			if (( replaced == 0 )); then
+				printf '%s=%s\n' "$key" "$value" >> "$tmp"
+				replaced=1
+			fi
+		else
+			printf '%s\n' "$line" >> "$tmp"
+		fi
+	done < "$ENV_FILE"
+	if (( replaced == 0 )); then
+		printf '%s=%s\n' "$key" "$value" >> "$tmp"
+	fi
+	chmod 600 "$tmp"
+	mv "$tmp" "$ENV_FILE"
 }
 
 compose() {

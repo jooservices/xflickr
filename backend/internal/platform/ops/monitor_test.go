@@ -65,8 +65,22 @@ func TestTickLogsHealthLine(t *testing.T) {
 	if health["event"] != HealthEvent || health["work_items_ready"] != int64(2) || health["river_jobs_available"] != int64(4) || health["photo_sizes_pending"] != int64(5) || health["photo_sizes_ready"] != int64(2) || health["photo_sizes_running"] != int64(1) || health["failed_total"] != int64(0) || health["credential_decryption_failures"] != int64(2) || health["node"] != "node-1" {
 		t.Fatalf("health event=%v", health)
 	}
+	for _, field := range []string{"_timestamp", "pending_items", "ready_jobs", "calls_last_10min", "failed_total", "tokens_revoked", "token_status"} {
+		if _, ok := health[field]; !ok {
+			t.Errorf("health event missing %q: %v", field, health)
+		}
+	}
 	if key := sink.events[0][1]; key["event"] != HealthKeyEvent || key["remaining"] != int64(90) || key["key_id"] != int64(3) {
 		t.Fatalf("key event=%v", key)
+	}
+	key := sink.events[0][1]
+	for _, field := range []string{"_timestamp", "key_id", "used", "remaining", "limit"} {
+		if _, ok := key[field]; !ok {
+			t.Errorf("key event missing %q: %v", field, key)
+		}
+	}
+	if _, ok := key["label"]; ok {
+		t.Errorf("key event must not carry the private key label: %v", key)
 	}
 }
 

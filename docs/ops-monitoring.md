@@ -50,6 +50,8 @@ OpenObserve (`OPENOBSERVE_URL`, org `OPENOBSERVE_ORG`, stream
 - one `event = crawl.health.key` record per key (`key_id`, `used`, `remaining`, `limit`).
 
 Shipping failures are logged as warnings and never stop the crawl.
+The develop helper sources its account from private Workspaces configuration;
+credentials remain in the ignored `.env.develop` and are not written to logs.
 
 ### Alerts
 
@@ -62,9 +64,11 @@ Alert definitions live in `deploy/openobserve/alerts/`:
 | `xflickr-token-revoked` | `tokens_revoked > 0`. |
 
 Apply them with `docker/scripts/openobserve-alerts.sh [env-file]` (defaults to
-`.env.develop`). The alerts have no destination; attach one in the OpenObserve
-UI. The script uses the v1 per-stream alert API and has to be re-checked after
-an OpenObserve upgrade.
+`.env.develop`). The tracked alerts have no destination. The shared OpenObserve
+API currently requires a destination or workflow to save an alert, so configure
+an XFlickr notification route before applying them. The helper uses the v2
+organization alert API and verifies each saved definition; re-check it after an
+OpenObserve upgrade.
 
 ## Smoke check
 

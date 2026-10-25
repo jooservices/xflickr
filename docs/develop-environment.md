@@ -43,5 +43,7 @@ default role list does not start the AI worker.
 ## Monitoring
 
 The scheduler role logs a `crawl health` line every minute and ships it to the
-OpenObserve stream `xflickr`; `GET /admin/ops/status` returns the same numbers
-to administrators. See [ops-monitoring.md](ops-monitoring.md).
+shared OpenObserve stream `xflickr`; `GET /admin/ops/status` returns the same
+numbers to administrators. `make develop-up` reads the OpenObserve account from
+the private Workspaces `.env` and stores runtime settings in the ignored,
+permission-restricted `.env.develop`. See [ops-monitoring.md](ops-monitoring.md).

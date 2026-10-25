@@ -211,7 +211,6 @@ func Events(s Status, node string) []Event {
 			"event":           HealthKeyEvent,
 			"node":            node,
 			"key_id":          key.KeyID,
-			"label":           key.Label,
 			"key_status":      key.Status,
 			"calls_last_hour": key.CallsLastHour,
 			"used":            key.Used(),
