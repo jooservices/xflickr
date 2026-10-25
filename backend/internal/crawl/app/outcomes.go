@@ -23,6 +23,9 @@ const (
 	OutcomeDone
 	// OutcomeStop stops the owner's items and notifies; the credential is bad.
 	OutcomeStop
+	// OutcomeUnavailable ends the item as failed with a stored reason: Flickr
+	// denied access to this one resource, so retrying cannot help.
+	OutcomeUnavailable
 	// OutcomeRequeueBlocked reports the node as blocked and requeues the item.
 	OutcomeRequeueBlocked
 )
@@ -34,8 +37,8 @@ func Classify(err error) Outcome {
 		return OutcomeWaitQuota
 	case errors.Is(err, flickr.ErrTokenRevoked), errors.Is(err, flickr.ErrInvalidKey):
 		return OutcomeStop
-	case errors.Is(err, flickr.ErrPermission):
-		return OutcomeDone
+	case errors.Is(err, flickr.ErrResourceDenied):
+		return OutcomeUnavailable
 	case errors.Is(err, flickr.ErrNotFound):
 		return OutcomeDone
 	case errors.Is(err, flickr.ErrIPBlocked):
@@ -49,21 +52,38 @@ func isRecoverableFlickrFailure(err error) bool {
 	return errors.Is(err, flickr.ErrRateLimited) || errors.Is(err, flickr.ErrServiceUnavailable)
 }
 
+// UnavailableReason is the terminal reason stored for a resource Flickr denied.
+func UnavailableReason(err error) string {
+	return "unavailable: " + err.Error()
+}
+
+// MaxRetryDelay caps the backoff between attempts of a recoverable failure.
+const MaxRetryDelay = 5 * time.Minute
+
 // Timing configures how long deferred items wait.
 type Timing struct {
-	MaxAttempts    int
-	Backoff        time.Duration
-	QuotaWait      time.Duration
-	BlockedWait    time.Duration
-	CredentialWait time.Duration
+	MaxAttempts int
+	// RecoverableMaxAttempts bounds attempts for 429/105 style failures. It is
+	// larger than MaxAttempts because the failure is Flickr's, not the item's.
+	RecoverableMaxAttempts int
+	Backoff                time.Duration
+	QuotaWait              time.Duration
+	BlockedWait            time.Duration
+	CredentialWait         time.Duration
 }
 
 // DefaultTiming is used for zero fields.
-var DefaultTiming = Timing{MaxAttempts: 5, Backoff: 30 * time.Second, QuotaWait: time.Minute, BlockedWait: 5 * time.Minute, CredentialWait: 15 * time.Minute}
+var DefaultTiming = Timing{MaxAttempts: 5, RecoverableMaxAttempts: 20, Backoff: 30 * time.Second, QuotaWait: time.Minute, BlockedWait: 5 * time.Minute, CredentialWait: 15 * time.Minute}
 
 func (t Timing) withDefaults() Timing {
 	if t.MaxAttempts <= 0 {
 		t.MaxAttempts = DefaultTiming.MaxAttempts
+	}
+	if t.RecoverableMaxAttempts <= 0 {
+		t.RecoverableMaxAttempts = DefaultTiming.RecoverableMaxAttempts
+	}
+	if t.RecoverableMaxAttempts < t.MaxAttempts {
+		t.RecoverableMaxAttempts = t.MaxAttempts
 	}
 	if t.Backoff <= 0 {
 		t.Backoff = DefaultTiming.Backoff

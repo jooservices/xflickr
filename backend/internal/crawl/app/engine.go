@@ -247,6 +247,9 @@ func (e *Engine) fail(ctx context.Context, item domain.Item, keyID int64, cause 
 		return e.hold(ctx, item, timing.QuotaWait, cause.Error())
 	case OutcomeDone:
 		return e.Store.Finish(ctx, item.ID)
+	case OutcomeUnavailable:
+		e.logger().WarnContext(ctx, "crawl resource unavailable", "work_item_id", item.ID, "kind", item.Kind, "error", cause)
+		return e.Store.Fail(ctx, item.ID, UnavailableReason(cause))
 	case OutcomeStop:
 		return e.Store.Stop(ctx, StopRequest{ItemID: item.ID, UserID: item.UserID, KeyID: keyID, Reason: stopReason(cause)})
 	case OutcomeRequeueBlocked:
@@ -258,9 +261,11 @@ func (e *Engine) fail(ctx context.Context, item domain.Item, keyID int64, cause 
 		return e.hold(ctx, item, timing.BlockedWait, cause.Error())
 	default:
 		if isRecoverableFlickrFailure(cause) {
-			consume := item.Attempts+1 < timing.MaxAttempts
-			delay := min(timing.retryDelay(item.Attempts), 5*time.Minute)
-			return e.Store.Defer(ctx, item.ID, Deferral{NotBefore: e.now().Add(delay), ConsumeAttempt: consume, Reason: cause.Error()})
+			if item.Attempts+1 >= timing.RecoverableMaxAttempts {
+				return e.Store.Fail(ctx, item.ID, "flickr unavailable after "+strconv.Itoa(timing.RecoverableMaxAttempts)+" attempts: "+cause.Error())
+			}
+			delay := min(timing.retryDelay(item.Attempts), MaxRetryDelay)
+			return e.Store.Defer(ctx, item.ID, Deferral{NotBefore: e.now().Add(delay), ConsumeAttempt: true, Reason: cause.Error()})
 		}
 		if item.Attempts+1 >= timing.MaxAttempts {
 			return e.Store.Fail(ctx, item.ID, cause.Error())

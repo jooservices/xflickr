@@ -299,10 +299,11 @@ func flickrError(envelope responseEnvelope, status int) error {
 		kind = ErrRateLimited
 	case code == 1 || code == 2:
 		kind = ErrNotFound
-	case code == 98 && invalidTokenMessage(message):
-		kind = ErrTokenRevoked
+	case code == 98 && resourceDeniedMessage(message):
+		kind = errors.Join(ErrResourceDenied, ErrPermission)
 	case code == 98:
-		kind = ErrPermission
+		// An ambiguous login failure is treated as a bad credential.
+		kind = ErrTokenRevoked
 	case code == 99:
 		kind = ErrTokenRevoked
 		if strings.Contains(strings.ToLower(message), "permission") {
@@ -316,9 +317,14 @@ func flickrError(envelope responseEnvelope, status int) error {
 	return &CallError{Kind: kind, Code: code, Status: status, Message: message}
 }
 
-func invalidTokenMessage(message string) bool {
+// resourceDeniedMessage reports a code-98 message that names a denied
+// resource rather than a failed login.
+func resourceDeniedMessage(message string) bool {
 	lower := strings.ToLower(message)
-	return strings.Contains(lower, "invalid auth token") || strings.Contains(lower, "token is invalid") || strings.Contains(lower, "token revoked")
+	if strings.Contains(lower, "token") || strings.Contains(lower, "login") {
+		return false
+	}
+	return strings.Contains(lower, "permission denied") || strings.Contains(lower, "not allowed") || strings.Contains(lower, "private")
 }
 
 func isQuotaError(code int, message string) bool {

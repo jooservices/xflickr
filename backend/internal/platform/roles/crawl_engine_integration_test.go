@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -172,6 +173,91 @@ func TestCrawlWorkerRunsSyncJobAgainstFakeFlickr(t *testing.T) {
 	}
 	if calls < 2 {
 		t.Fatalf("api_call_log rows = %d, want a photo probe and a favorite probe", calls)
+	}
+}
+
+// TestCrawlWorkerKeepsRiverJobCompletedOnRecoverableFlickrFailure runs the
+// real River worker against a Flickr that answers 429 and 105: the job must
+// complete (not retry, not discard, no job.dead event) while the work item
+// stays pending with an attempt consumed and a later not_before.
+func TestCrawlWorkerKeepsRiverJobCompletedOnRecoverableFlickrFailure(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use the shared worktree database")
+	}
+	for _, tc := range []struct {
+		name string
+		code int
+		text string
+	}{
+		{name: "429", code: 429, text: "Too many requests"},
+		{name: "105", code: 105, text: "Service currently unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := crawlIntegrationConfig(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+			defer cancel()
+			pool := dbtest.Open(t, cfg.DB)
+			redisClient := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+			defer redisClient.Close()
+			_, _, itemID, person := seedCrawlFixture(t, ctx, pool, cfg, "ready", time.Now().Add(2*time.Minute))
+
+			fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = fmt.Fprintf(w, `{"stat":"fail","code":%d,"message":%q}`, tc.code, tc.text)
+			}))
+			defer fake.Close()
+			engine, err := newCrawlEngine(pool, redisClient, cfg, flickrclient.NewClient(fake.URL+"/services/rest", nil))
+			if err != nil {
+				t.Fatal(err)
+			}
+			adapter, err := queue.NewRiver(pool, map[string]int{"sync": 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := registerCrawlJobs(adapter, engine); err != nil {
+				t.Fatal(err)
+			}
+			enqueueCrawlJob(t, ctx, pool, adapter, itemID, person)
+			runCtx, stop := context.WithCancel(ctx)
+			done := make(chan error, 1)
+			go func() { done <- (queue.Worker{Queue: adapter}).Run(runCtx) }()
+			defer func() {
+				stop()
+				if err := <-done; err != nil {
+					t.Errorf("worker stopped with error: %v", err)
+				}
+			}()
+
+			waitItemState(t, ctx, pool, itemID, "pending")
+			var attempts int
+			var notBefore time.Time
+			var lastError string
+			if err := pool.QueryRow(ctx, `SELECT attempts, not_before, COALESCE(last_error,'') FROM work_items WHERE id=$1`, itemID).Scan(&attempts, &notBefore, &lastError); err != nil {
+				t.Fatal(err)
+			}
+			if attempts != 1 || !notBefore.After(time.Now()) || lastError == "" {
+				t.Fatalf("work item attempts=%d not_before=%s last_error=%q; want 1 attempt, a future not_before and a reason", attempts, notBefore, lastError)
+			}
+			var state string
+			var riverAttempt int
+			deadline := time.Now().Add(20 * time.Second)
+			for {
+				err := pool.QueryRow(ctx, `SELECT state, attempt FROM river_job WHERE args->'args'->>'work_item_id'=$1`, fmt.Sprint(itemID)).Scan(&state, &riverAttempt)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if state == "completed" || time.Now().After(deadline) {
+					break
+				}
+				time.Sleep(200 * time.Millisecond)
+			}
+			if state != "completed" || riverAttempt != 1 {
+				t.Fatalf("river job state=%s attempt=%d; want completed after one attempt, not retryable or discarded", state, riverAttempt)
+			}
+			var dead int
+			if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE topic='job.dead' AND payload->'args'->>'work_item_id'=$1`, fmt.Sprint(itemID)).Scan(&dead); err != nil || dead != 0 {
+				t.Fatalf("job.dead events = %d, err %v; want none", dead, err)
+			}
+		})
 	}
 }
 

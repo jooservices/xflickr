@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -217,12 +218,17 @@ func TestRecoverableFlickrFailureKeepsWorkItemPending(t *testing.T) {
 	cases := []struct {
 		name      string
 		cause     error
+		start     int
 		wantState string
 		wantTries int
+		wantWait  time.Duration
+		wantError string
 	}{
-		{name: "rate limit", cause: flickr.ErrRateLimited, wantState: "pending", wantTries: 4},
-		{name: "service unavailable", cause: flickr.ErrServiceUnavailable, wantState: "pending", wantTries: 4},
-		{name: "permission denied", cause: flickr.ErrPermission, wantState: "done", wantTries: 4},
+		{name: "first rate limit", cause: flickr.ErrRateLimited, start: 0, wantState: "pending", wantTries: 1, wantWait: 30 * time.Second, wantError: "rate limited"},
+		{name: "second service unavailable", cause: flickr.ErrServiceUnavailable, start: 1, wantState: "pending", wantTries: 2, wantWait: time.Minute, wantError: "service unavailable"},
+		{name: "backoff is capped", cause: flickr.ErrRateLimited, start: 6, wantState: "pending", wantTries: 7, wantWait: app.MaxRetryDelay, wantError: "rate limited"},
+		{name: "budget exhausted fails with a reason", cause: flickr.ErrRateLimited, start: 19, wantState: "failed", wantTries: 19, wantError: "after 20 attempts"},
+		{name: "resource denied 98 is terminal", cause: &flickr.CallError{Kind: errors.Join(flickr.ErrResourceDenied, flickr.ErrPermission), Code: 98, Message: "Permission denied"}, start: 2, wantState: "failed", wantTries: 2, wantError: "unavailable: flickr: Permission denied (code 98)"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -235,7 +241,7 @@ func TestRecoverableFlickrFailureKeepsWorkItemPending(t *testing.T) {
 			kind := "retry_" + suffix
 			cursor, _ := json.Marshal(domain.Cursor{Page: 3, Method: "flickr.people.getPhotos", Params: map[string]string{"user_id": subject}})
 			var itemID int64
-			if err := pool.QueryRow(ctx, `INSERT INTO work_items (kind, subject_key, user_id, state, depth, attempts, cursor) VALUES ($1, $2, $3, 'ready', 0, 4, $4) RETURNING id`, kind, subject, userID, cursor).Scan(&itemID); err != nil {
+			if err := pool.QueryRow(ctx, `INSERT INTO work_items (kind, subject_key, user_id, state, depth, attempts, cursor) VALUES ($1, $2, $3, 'ready', 0, $5, $4) RETURNING id`, kind, subject, userID, cursor, tc.start).Scan(&itemID); err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE id=$1`, itemID) })
@@ -253,19 +259,30 @@ func TestRecoverableFlickrFailureKeepsWorkItemPending(t *testing.T) {
 			if err := registry.Register(intFacet{name: kind}); err != nil {
 				t.Fatal(err)
 			}
-			engine := &app.Engine{Registry: registry, Store: store, Units: store, Keys: intKeys{}, Governor: intGovernor{}, Flickr: &intFlickr{err: tc.cause}, Settings: intSettings{}, Timing: app.Timing{MaxAttempts: 5, Backoff: 30 * time.Second}}
+			engine := &app.Engine{Registry: registry, Store: store, Units: store, Keys: intKeys{}, Governor: intGovernor{}, Flickr: &intFlickr{err: tc.cause}, Settings: intSettings{}, Timing: app.Timing{MaxAttempts: 5, RecoverableMaxAttempts: 20, Backoff: 30 * time.Second}}
+			before := time.Now()
 			if err := engine.Handle(ctx, itemID); err != nil {
 				t.Fatal(err)
 			}
 			var state string
 			var attempts int
 			var gotCursor []byte
-			if err := pool.QueryRow(ctx, `SELECT state, attempts, cursor FROM work_items WHERE id=$1`, itemID).Scan(&state, &attempts, &gotCursor); err != nil {
+			var lastError *string
+			var notBefore time.Time
+			if err := pool.QueryRow(ctx, `SELECT state, attempts, cursor, last_error, not_before FROM work_items WHERE id=$1`, itemID).Scan(&state, &attempts, &gotCursor, &lastError, &notBefore); err != nil {
 				t.Fatal(err)
 			}
 			parsed, err := domain.ParseCursor(gotCursor)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if lastError == nil || !strings.Contains(*lastError, tc.wantError) {
+				t.Fatalf("last_error = %v, want it to contain %q", lastError, tc.wantError)
+			}
+			if tc.wantWait > 0 {
+				if wait := notBefore.Sub(before); wait < tc.wantWait-time.Second || wait > tc.wantWait+10*time.Second {
+					t.Fatalf("not_before is %s ahead, want about %s", wait, tc.wantWait)
+				}
 			}
 			if state != tc.wantState || attempts != tc.wantTries || parsed.Page != 3 || parsed.Params["user_id"] != subject {
 				t.Fatalf("state=%s attempts=%d cursor=%+v; want %s/%d with original page/subject", state, attempts, parsed, tc.wantState, tc.wantTries)

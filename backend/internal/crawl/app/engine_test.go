@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -383,9 +384,11 @@ func TestHandleErrorOutcomes(t *testing.T) {
 	}{
 		{name: "quota waits without an attempt", err: flickr.ErrQuotaExceeded, call: "defer", wait: time.Minute},
 		{name: "rate limited backs off", err: flickr.ErrRateLimited, call: "defer", consume: true, wait: time.Minute},
+		{name: "service unavailable backs off", err: flickr.ErrServiceUnavailable, call: "defer", consume: true, wait: time.Minute},
 		{name: "credential decryption holds without an attempt", err: fmt.Errorf("%w: API key secret could not be opened", ErrCredentialDecryption), call: "defer", wait: 15 * time.Minute},
 		{name: "not found is done", err: flickr.ErrNotFound, call: "finish"},
-		{name: "permission denied is terminal for resource", err: flickr.ErrPermission, call: "finish"},
+		{name: "resource denied is unavailable", err: &flickr.CallError{Kind: errors.Join(flickr.ErrResourceDenied, flickr.ErrPermission), Code: 98, Message: "Permission denied"}, call: "fail"},
+		{name: "plain permission error still retries", err: flickr.ErrPermission, call: "defer", consume: true, wait: 60 * time.Second},
 		{name: "revoked token stops", err: flickr.ErrTokenRevoked, call: "stop"},
 		{name: "invalid key stops", err: flickr.ErrInvalidKey, call: "stop"},
 		{name: "ip blocked is reported and requeued", err: flickr.ErrIPBlocked, call: "defer", wait: 5 * time.Minute, blocked: true},
@@ -424,23 +427,73 @@ func TestHandleErrorOutcomes(t *testing.T) {
 	}
 }
 
-func TestRecoverableFlickrFailuresStayBufferedAfterAttemptLimit(t *testing.T) {
+func TestRecoverableFlickrFailureBackoffGrowsAndCaps(t *testing.T) {
+	cases := []struct {
+		attempts int
+		wait     time.Duration
+	}{
+		{attempts: 0, wait: 30 * time.Second},
+		{attempts: 1, wait: time.Minute},
+		{attempts: 2, wait: 2 * time.Minute},
+		{attempts: 3, wait: 4 * time.Minute},
+		{attempts: 4, wait: MaxRetryDelay},
+		{attempts: 12, wait: MaxRetryDelay},
+	}
 	for _, cause := range []error{flickr.ErrRateLimited, flickr.ErrServiceUnavailable} {
-		t.Run(cause.Error(), func(t *testing.T) {
-			r := newRig(t)
-			r.store.item.Attempts = 4
-			r.engine.Timing = Timing{MaxAttempts: 5, Backoff: 30 * time.Second}
-			r.flickr.err = cause
-			if err := r.engine.Handle(t.Context(), 7); err != nil {
-				t.Fatal(err)
-			}
-			if r.store.calls[len(r.store.calls)-1] != "defer" || r.store.deferral.ConsumeAttempt {
-				t.Fatalf("failure must remain pending without consuming past limit: %+v; calls=%v", r.store.deferral, r.store.calls)
-			}
-			if !r.store.deferral.NotBefore.Equal(epoch.Add(5 * time.Minute)) {
-				t.Fatalf("retry must use capped backoff, got %s", r.store.deferral.NotBefore.Sub(epoch))
-			}
-		})
+		for _, tc := range cases {
+			t.Run(fmt.Sprintf("%s/%d", cause, tc.attempts), func(t *testing.T) {
+				r := newRig(t)
+				r.store.item.Attempts = tc.attempts
+				r.engine.Timing = Timing{MaxAttempts: 5, RecoverableMaxAttempts: 20, Backoff: 30 * time.Second}
+				r.flickr.err = cause
+				if err := r.engine.Handle(t.Context(), 7); err != nil {
+					t.Fatal(err)
+				}
+				if r.store.calls[len(r.store.calls)-1] != "defer" || !r.store.deferral.ConsumeAttempt {
+					t.Fatalf("recoverable failure must defer and consume an attempt: %+v; calls=%v", r.store.deferral, r.store.calls)
+				}
+				if !r.store.deferral.NotBefore.Equal(epoch.Add(tc.wait)) {
+					t.Fatalf("backoff = %s, want %s", r.store.deferral.NotBefore.Sub(epoch), tc.wait)
+				}
+			})
+		}
+	}
+}
+
+func TestRecoverableFlickrFailureOutlivesOrdinaryAttemptLimit(t *testing.T) {
+	r := newRig(t)
+	r.store.item.Attempts = 4
+	r.engine.Timing = Timing{MaxAttempts: 5, RecoverableMaxAttempts: 20}
+	r.flickr.err = flickr.ErrRateLimited
+	if err := r.engine.Handle(t.Context(), 7); err != nil {
+		t.Fatal(err)
+	}
+	if r.store.calls[len(r.store.calls)-1] != "defer" {
+		t.Fatalf("calls = %v; a 429 must stay pending past MaxAttempts", r.store.calls)
+	}
+}
+
+func TestRecoverableFlickrFailureFailsAfterItsBudget(t *testing.T) {
+	r := newRig(t)
+	r.store.item.Attempts = 19
+	r.engine.Timing = Timing{MaxAttempts: 5, RecoverableMaxAttempts: 20}
+	r.flickr.err = flickr.ErrServiceUnavailable
+	if err := r.engine.Handle(t.Context(), 7); err != nil {
+		t.Fatal(err)
+	}
+	if r.store.calls[len(r.store.calls)-1] != "fail" || !strings.Contains(r.store.reason, "after 20 attempts") || !strings.Contains(r.store.reason, "service unavailable") {
+		t.Fatalf("calls=%v reason=%q; want a clear terminal reason", r.store.calls, r.store.reason)
+	}
+}
+
+func TestResourceDeniedRecordsUnavailableReason(t *testing.T) {
+	r := newRig(t)
+	r.flickr.err = &flickr.CallError{Kind: errors.Join(flickr.ErrResourceDenied, flickr.ErrPermission), Code: 98, Message: "Permission denied"}
+	if err := r.engine.Handle(t.Context(), 7); err != nil {
+		t.Fatal(err)
+	}
+	if r.store.calls[len(r.store.calls)-1] != "fail" || r.store.reason != "unavailable: flickr: Permission denied (code 98)" {
+		t.Fatalf("calls=%v reason=%q", r.store.calls, r.store.reason)
 	}
 }
 

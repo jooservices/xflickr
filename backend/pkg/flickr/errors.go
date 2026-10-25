@@ -13,10 +13,13 @@ var (
 	ErrIPBlocked          = errors.New("flickr: IP blocked")
 	ErrNotFound           = errors.New("flickr: resource not found")
 	ErrPermission         = errors.New("flickr: permission denied")
-	ErrTokenRevoked       = errors.New("flickr: authentication token invalid or revoked")
-	ErrTransient          = errors.New("flickr: transient failure")
-	ErrMalformedResponse  = errors.New("flickr: malformed JSON response")
-	ErrHTTPStatus         = errors.New("flickr: unexpected HTTP status")
+	// ErrResourceDenied marks a permission failure scoped to one resource
+	// (a private or restricted subject), so the credential is still good.
+	ErrResourceDenied    = errors.New("flickr: resource access denied")
+	ErrTokenRevoked      = errors.New("flickr: authentication token invalid or revoked")
+	ErrTransient         = errors.New("flickr: transient failure")
+	ErrMalformedResponse = errors.New("flickr: malformed JSON response")
+	ErrHTTPStatus        = errors.New("flickr: unexpected HTTP status")
 )
 
 // CallError describes a failed Flickr call. Its unwrap targets allow callers
