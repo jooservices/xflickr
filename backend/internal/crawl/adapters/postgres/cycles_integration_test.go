@@ -29,8 +29,24 @@ func TestCycleSchedulesPeopleInOrderBeforeWrapping(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	for _, want := range people {
+	if _, err := pool.Exec(ctx, `UPDATE crawl_interests SET last_checked_at=$3 WHERE user_id=$1 AND person_nsid=$2`, userID, people[1], now); err != nil {
+		t.Fatal(err)
+	}
+	for index, want := range people {
 		queued, err := repository.ScheduleNext(ctx, userID, now, 24*time.Hour)
+		if index == 1 {
+			if err != nil || queued {
+				t.Fatalf("ScheduleNext() for not-yet-due %q = %v, %v; want cursor visit only", want, queued, err)
+			}
+			var cursor string
+			if err := pool.QueryRow(ctx, `SELECT cursor_person_nsid FROM crawl_cycles WHERE user_id=$1`, userID).Scan(&cursor); err != nil {
+				t.Fatal(err)
+			}
+			if cursor != want {
+				t.Fatalf("cursor after not-yet-due visit = %q, want %q", cursor, want)
+			}
+			continue
+		}
 		if err != nil || !queued {
 			t.Fatalf("ScheduleNext() = %v, %v; want queued", queued, err)
 		}

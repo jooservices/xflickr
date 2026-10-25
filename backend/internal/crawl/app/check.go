@@ -56,6 +56,36 @@ func (ChangeCheck) Handle(_ context.Context, page domain.Page) (domain.Result, e
 	}
 }
 
+// ContactsPhotos handles one account's recent contacts response and queues a
+// cheap change check for every distinct owner in that response.
+type ContactsPhotos struct{}
+
+func (ContactsPhotos) Name() string {
+	return "contacts_photos"
+}
+
+func (ContactsPhotos) Lane() domain.Lane {
+	return domain.LanePerson
+}
+
+func (ContactsPhotos) Plan(context.Context, domain.Person) []domain.WorkSpec {
+	return nil
+}
+
+func (ContactsPhotos) Handle(_ context.Context, page domain.Page) (domain.Result, error) {
+	people, err := FlaggedPeopleFromContactsPhotos(page.Payload)
+	if err != nil {
+		return domain.Result{}, err
+	}
+	result := domain.Result{}
+	for _, person := range people {
+		result.Work = append(result.Work, domain.WorkSpec{Kind: "check", Subject: person, Method: "flickr.people.getPhotos", CheckpointAt: page.Item.Cursor.CheckpointAt, Params: map[string]string{
+			"user_id": person, "min_upload_date": "0", "min_fave_date": "0", "per_page": "1",
+		}})
+	}
+	return result, nil
+}
+
 // CheckRequests returns the two inexpensive Flickr probes for one person.
 // lastSeen and lastFavorite are Unix seconds from that user's crawl checkpoint.
 func CheckRequests(person string, lastSeen, lastFavorite int64) []RequestSpec {
@@ -130,7 +160,7 @@ func resultTotal(payload json.RawMessage) (int64, error) {
 // ContactsPhotosRequest asks Flickr to return recent photos from the signed-in
 // user's direct contacts. One response can identify many people to check.
 func ContactsPhotosRequest(accountNSID string) RequestSpec {
-	return RequestSpec{Kind: "contacts_photos", Subject: accountNSID, Method: "flickr.photos.getContactsPhotos", Params: map[string]string{"user_id": accountNSID, "count": "1"}}
+	return RequestSpec{Kind: "contacts_photos", Subject: accountNSID, Method: "flickr.photos.getContactsPhotos", Params: map[string]string{"user_id": accountNSID, "count": "50"}}
 }
 
 // FlaggedPeopleFromContactsPhotos returns the distinct owners represented in

@@ -185,7 +185,10 @@ func (w workTx) Enqueue(ctx context.Context, work app.NewWork) error {
 		userID = work.UserID
 	}
 	_, err = w.tx.Exec(ctx, `INSERT INTO work_items (kind, subject_key, user_id, depth, cursor) VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO NOTHING`, work.Kind, work.Subject, userID, work.Depth, cursor)
+		ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO UPDATE SET
+			state='pending', cursor=EXCLUDED.cursor, attempts=0, last_error=NULL,
+			not_before=now(), lease_expires_at=NULL, updated_at=now()
+		WHERE work_items.state IN ('done','failed')`, work.Kind, work.Subject, userID, work.Depth, cursor)
 	if err != nil {
 		return fmt.Errorf("crawl: enqueue work item: %w", err)
 	}

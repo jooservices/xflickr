@@ -84,8 +84,28 @@ func TestChangeCheckUsesOneItemForBothProbesAndPlansOnlyChangedWork(t *testing.T
 
 func TestContactsPhotosRequestCanFlagAccountContacts(t *testing.T) {
 	request := ContactsPhotosRequest("account-nsid")
-	if request.Method != "flickr.photos.getContactsPhotos" || request.Subject != "account-nsid" || !reflect.DeepEqual(request.Params, map[string]string{"user_id": "account-nsid", "count": "1"}) {
+	if request.Kind != "contacts_photos" || request.Method != "flickr.photos.getContactsPhotos" || request.Subject != "account-nsid" || !reflect.DeepEqual(request.Params, map[string]string{"user_id": "account-nsid", "count": "50"}) {
 		t.Fatalf("contacts photos request = %#v", request)
+	}
+}
+
+func TestContactsPhotosFlagsSeveralPeopleForChecks(t *testing.T) {
+	facet := ContactsPhotos{}
+	if facet.Name() != "contacts_photos" || facet.Lane() != domain.LanePerson || len(facet.Plan(context.Background(), domain.Person{})) != 0 {
+		t.Fatal("contacts photos facet metadata is invalid")
+	}
+	result, err := facet.Handle(context.Background(), domain.Page{
+		Item:    domain.Item{Cursor: domain.Cursor{CheckpointAt: 44}},
+		Payload: json.RawMessage(`{"photos":{"photo":[{"owner":"a"},{"owner":"b"},{"owner":"a"}]}}`),
+	})
+	if err != nil || len(result.Work) != 2 {
+		t.Fatalf("contacts result = %#v, %v", result, err)
+	}
+	for i, owner := range []string{"a", "b"} {
+		work := result.Work[i]
+		if work.Kind != "check" || work.Subject != owner || work.Method != "flickr.people.getPhotos" || work.CheckpointAt != 44 || work.Params["per_page"] != "1" {
+			t.Fatalf("flagged check %d = %#v", i, work)
+		}
 	}
 }
 

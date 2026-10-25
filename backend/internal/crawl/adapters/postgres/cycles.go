@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jooservices/xflickr/internal/crawl/app"
@@ -87,17 +88,8 @@ func (repository *CycleRepository) UsersWithInterests(ctx context.Context) ([]in
 // queues a check item, marks that interest checked, and persists the cursor.
 // It wraps to the first due person only after reaching the end of the cycle.
 func (repository *CycleRepository) ScheduleNext(ctx context.Context, userID int64, now time.Time, interval time.Duration) (bool, error) {
-	if repository == nil || repository.begin == nil {
-		return false, errDatabaseRequired
-	}
-	if ctx == nil {
-		return false, errContextRequired
-	}
-	if err := ctx.Err(); err != nil {
+	if err := validateCycleSchedule(ctx, repository, userID, interval); err != nil {
 		return false, err
-	}
-	if userID <= 0 || interval <= 0 {
-		return false, errors.New("crawl: valid user and interval are required")
 	}
 	tx, err := repository.begin(ctx)
 	if err != nil {
@@ -112,6 +104,9 @@ func (repository *CycleRepository) ScheduleNext(ctx context.Context, userID int6
 	if err != nil || !found {
 		return false, err
 	}
+	if !candidate.due {
+		return false, commitCycleVisit(ctx, tx, userID, now, candidate)
+	}
 	enqueued, err := enqueueCycleCheck(ctx, tx, userID, now, candidate)
 	if err != nil || !enqueued {
 		return false, err
@@ -125,12 +120,39 @@ func (repository *CycleRepository) ScheduleNext(ctx context.Context, userID int6
 	return true, nil
 }
 
+func validateCycleSchedule(ctx context.Context, repository *CycleRepository, userID int64, interval time.Duration) error {
+	if repository == nil || repository.begin == nil {
+		return errDatabaseRequired
+	}
+	if ctx == nil {
+		return errContextRequired
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if userID <= 0 || interval <= 0 {
+		return errors.New("crawl: valid user and interval are required")
+	}
+	return nil
+}
+
+func commitCycleVisit(ctx context.Context, tx cycleTx, userID int64, now time.Time, candidate cycleCandidate) error {
+	if err := advanceCycle(ctx, tx, userID, now, candidate); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("crawl: commit cycle cursor: %w", err)
+	}
+	return nil
+}
+
 type cycleCandidate struct {
 	person       string
 	depth        int
 	lastSeen     int64
 	lastFavorite int64
 	wrapped      bool
+	due          bool
 }
 
 func loadCycleCursor(ctx context.Context, tx cycleTx, userID int64) (string, error) {
@@ -145,21 +167,21 @@ func loadCycleCursor(ctx context.Context, tx cycleTx, userID int64) (string, err
 }
 
 func selectCycleCandidate(ctx context.Context, tx cycleTx, userID int64, cursor string, cutoff time.Time) (cycleCandidate, bool, error) {
-	person, depth, lastSeen, lastFavorite, found, err := selectDueInterest(ctx, tx, userID, cursor, cutoff, false)
+	person, depth, lastSeen, lastFavorite, lastChecked, found, err := selectNextInterest(ctx, tx, userID, cursor, false)
 	if err != nil {
 		return cycleCandidate{}, false, err
 	}
 	if found {
-		return cycleCandidate{person: person, depth: depth, lastSeen: lastSeen, lastFavorite: lastFavorite}, true, nil
+		return cycleCandidate{person: person, depth: depth, lastSeen: lastSeen, lastFavorite: lastFavorite, due: !lastChecked.Valid || !lastChecked.Time.After(cutoff)}, true, nil
 	}
 	if cursor == "" {
 		return cycleCandidate{}, false, nil
 	}
-	person, depth, lastSeen, lastFavorite, found, err = selectDueInterest(ctx, tx, userID, cursor, cutoff, true)
+	person, depth, lastSeen, lastFavorite, lastChecked, found, err = selectNextInterest(ctx, tx, userID, cursor, true)
 	if err != nil || !found {
 		return cycleCandidate{}, false, err
 	}
-	return cycleCandidate{person: person, depth: depth, lastSeen: lastSeen, lastFavorite: lastFavorite, wrapped: true}, true, nil
+	return cycleCandidate{person: person, depth: depth, lastSeen: lastSeen, lastFavorite: lastFavorite, wrapped: true, due: !lastChecked.Valid || !lastChecked.Time.After(cutoff)}, true, nil
 }
 
 func enqueueCycleCheck(ctx context.Context, tx cycleTx, userID int64, now time.Time, candidate cycleCandidate) (bool, error) {
@@ -186,36 +208,56 @@ func enqueueCycleCheck(ctx context.Context, tx cycleTx, userID int64, now time.T
 }
 
 func advanceCycle(ctx context.Context, tx cycleTx, userID int64, now time.Time, candidate cycleCandidate) error {
-	if _, err := tx.Exec(ctx, `UPDATE crawl_interests SET last_checked_at=$3 WHERE user_id=$1 AND person_nsid=$2`, userID, candidate.person, now); err != nil {
-		return fmt.Errorf("crawl: mark change check scheduled: %w", err)
+	if candidate.due {
+		if _, err := tx.Exec(ctx, `UPDATE crawl_interests SET last_checked_at=$3 WHERE user_id=$1 AND person_nsid=$2`, userID, candidate.person, now); err != nil {
+			return fmt.Errorf("crawl: mark change check scheduled: %w", err)
+		}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE crawl_cycles SET cursor_person_nsid=$2, started_at=CASE WHEN $3 THEN $4 ELSE COALESCE(started_at,$4) END, updated_at=$4 WHERE user_id=$1`, userID, candidate.person, candidate.wrapped, now); err != nil {
 		return fmt.Errorf("crawl: advance cycle cursor: %w", err)
 	}
+	if candidate.wrapped {
+		cursorJSON, err := json.Marshal(map[string]any{
+			"page": 1, "method": "flickr.photos.getContactsPhotos", "checkpoint_at": now.Unix(),
+			"params": map[string]string{"user_id": "", "count": "50"},
+		})
+		if err != nil {
+			return fmt.Errorf("crawl: encode contacts photos cursor: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO work_items (kind, subject_key, user_id, depth, cursor)
+			SELECT 'contacts_photos', nsid, user_id, 0, jsonb_set($2::jsonb, '{params,user_id}', to_jsonb(nsid))
+			FROM flickr_accounts WHERE user_id=$1 AND status='ok'
+			ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO UPDATE SET
+				state='pending', cursor=EXCLUDED.cursor, attempts=0, last_error=NULL,
+				not_before=$3, lease_expires_at=NULL, updated_at=$3
+			WHERE work_items.state IN ('done','failed')`, userID, cursorJSON, now); err != nil {
+			return fmt.Errorf("crawl: enqueue contacts photos probes: %w", err)
+		}
+	}
 	return nil
 }
 
-func selectDueInterest(ctx context.Context, tx cycleTx, userID int64, cursor string, cutoff time.Time, wrap bool) (string, int, int64, int64, bool, error) {
+func selectNextInterest(ctx context.Context, tx cycleTx, userID int64, cursor string, wrap bool) (string, int, int64, int64, pgtype.Timestamptz, bool, error) {
 	comparison := ">"
 	if wrap {
 		comparison = "<="
 	}
 	query := `SELECT person_nsid, depth,
 		COALESCE(floor(extract(epoch FROM last_seen_at))::bigint,0),
-		COALESCE(floor(extract(epoch FROM last_fave_at))::bigint,0)
+		COALESCE(floor(extract(epoch FROM last_fave_at))::bigint,0), last_checked_at
 		FROM crawl_interests
 		WHERE user_id=$1 AND person_nsid ` + comparison + ` $2
-		AND (last_checked_at IS NULL OR last_checked_at <= $3)
 		ORDER BY person_nsid LIMIT 1 FOR UPDATE`
 	var person string
 	var depth int
 	var lastSeen, lastFavorite int64
-	err := tx.QueryRow(ctx, query, userID, cursor, cutoff).Scan(&person, &depth, &lastSeen, &lastFavorite)
+	var lastChecked pgtype.Timestamptz
+	err := tx.QueryRow(ctx, query, userID, cursor).Scan(&person, &depth, &lastSeen, &lastFavorite, &lastChecked)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", 0, 0, 0, false, nil
+		return "", 0, 0, 0, pgtype.Timestamptz{}, false, nil
 	}
 	if err != nil {
-		return "", 0, 0, 0, false, fmt.Errorf("crawl: select due interest: %w", err)
+		return "", 0, 0, 0, pgtype.Timestamptz{}, false, fmt.Errorf("crawl: select next interest: %w", err)
 	}
-	return person, depth, lastSeen, lastFavorite, true, nil
+	return person, depth, lastSeen, lastFavorite, lastChecked, true, nil
 }

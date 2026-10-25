@@ -56,16 +56,21 @@ interests.
 
 ## Change checks and incremental work
 
-`crawl/app.CheckRequests` builds one-item probes for a person's photo and
-favorite lists using their stored upload and favorite checkpoints. A positive
-Flickr `photos.total` produces only the matching `photos` or `favorites` work
-spec, carrying the same `min_upload_date` or `min_fave_date` and the normal
-500-item page size. A zero total produces no incremental work. The settings
-interval defaults to 24 hours when no positive effective interval is supplied.
+The `check` facet probes a person's photo and favorite lists with
+`per_page=1`, using that user's stored upload and favorite checkpoints. A
+positive Flickr `photos.total` produces only the matching `photos` or
+`favorites` work item, carrying the same minimum date and the normal 500-item
+page size. A zero total produces no incremental work. Finishing that work
+advances its corresponding checkpoint. Completed or failed incremental items
+reopen with the new cursor; pending and running items keep their current work.
+The settings interval defaults to 24 hours when no positive effective interval
+is supplied.
 
-`SelectCyclePerson` sorts the interested people by NSID and advances beyond
-the stored cursor. It wraps to the first person only after exhausting the
-ordered list. `crawl_cycles` stores that cursor per user, while
-`crawl_interests` stores per-person photo, favorite, and check checkpoints.
-One `flickr.photos.getContactsPhotos` response can flag several distinct
-contact owners for checks.
+`crawl_cycles` stores each user's cursor through the full NSID-ordered list.
+The cursor advances over people who are not yet due without marking them
+checked, and wraps only after visiting the end of the list. At a wrap, one
+`flickr.photos.getContactsPhotos` probe is scheduled per connected account.
+The `contacts_photos` facet queues a check for each distinct owner in the
+response. `crawl_interests` stores per-person photo, favorite, and check
+checkpoints. The settings interval is enforced by the scheduler, not a cron
+job.

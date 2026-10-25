@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type cycleRowFake struct {
@@ -28,6 +29,10 @@ func (r cycleRowFake) Scan(dest ...any) error {
 			*target = value.(int)
 		case *int64:
 			*target = value.(int64)
+		case *pgtype.Timestamptz:
+			if value != nil {
+				*target = pgtype.Timestamptz{Time: value.(time.Time), Valid: true}
+			}
 		default:
 			return errors.New("unexpected scan target")
 		}
@@ -37,7 +42,7 @@ func (r cycleRowFake) Scan(dest ...any) error {
 
 type cycleTxFake struct {
 	cursor      string
-	due         [][4]any
+	due         [][5]any
 	queries     int
 	execs       int
 	queryErrAt  int
@@ -103,7 +108,7 @@ func (tx *cycleTxFake) Commit(context.Context) error   { return tx.commitErr }
 func (tx *cycleTxFake) Rollback(context.Context) error { return tx.rollbackErr }
 
 func TestScheduleNextAdvancesAndPersistsCycle(t *testing.T) {
-	tx := &cycleTxFake{cursor: "a", due: [][4]any{{"b", 1, int64(11), int64(22)}}}
+	tx := &cycleTxFake{cursor: "a", due: [][5]any{{"b", 1, int64(11), int64(22), nil}}}
 	repository := &CycleRepository{begin: func(context.Context) (cycleTx, error) { return tx, nil }}
 	now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 	queued, err := repository.ScheduleNext(context.Background(), 4, now, time.Hour)
@@ -116,20 +121,26 @@ func TestScheduleNextAdvancesAndPersistsCycle(t *testing.T) {
 }
 
 func TestScheduleNextWrapsAfterCursorAndHandlesNoDuePerson(t *testing.T) {
-	tx := &cycleTxFake{cursor: "z", due: [][4]any{{nil, nil, nil, nil}, {"a", 0, int64(0), int64(0)}}}
+	tx := &cycleTxFake{cursor: "z", due: [][5]any{{nil, nil, nil, nil, nil}, {"a", 0, int64(0), int64(0), nil}}}
 	repository := &CycleRepository{begin: func(context.Context) (cycleTx, error) { return tx, nil }}
 	queued, err := repository.ScheduleNext(context.Background(), 4, time.Now(), time.Hour)
 	if err != nil || !queued {
 		t.Fatalf("wrap ScheduleNext() = %v, %v", queued, err)
 	}
-	if tx.execArgs[1] != "a" {
-		t.Fatalf("wrap cursor args = %#v", tx.execArgs)
+	if tx.execs != 5 || !strings.Contains(tx.lastExec, "INSERT INTO work_items") {
+		t.Fatalf("cycle wrap did not enqueue contacts probe: execs=%d query=%s", tx.execs, tx.lastExec)
 	}
 	noDue := &cycleTxFake{cursor: ""}
 	repository.begin = func(context.Context) (cycleTx, error) { return noDue, nil }
 	queued, err = repository.ScheduleNext(context.Background(), 4, time.Now(), time.Hour)
 	if err != nil || queued || noDue.execs != 1 {
 		t.Fatalf("no due ScheduleNext() = %v, %v; execs=%d", queued, err, noDue.execs)
+	}
+	notDue := &cycleTxFake{cursor: "a", due: [][5]any{{"b", 1, int64(0), int64(0), time.Now()}}}
+	repository.begin = func(context.Context) (cycleTx, error) { return notDue, nil }
+	queued, err = repository.ScheduleNext(context.Background(), 4, time.Now(), time.Hour)
+	if err != nil || queued || notDue.execArgs[1] != "b" {
+		t.Fatalf("not due person was not visited: queued=%v err=%v cursor args=%#v", queued, err, notDue.execArgs)
 	}
 }
 
@@ -167,10 +178,10 @@ func TestScheduleNextPropagatesDatabaseFailures(t *testing.T) {
 		{execErrAt: 1},
 		{queryErrAt: 1},
 		{cursor: "a", queryErrAt: 2},
-		{cursor: "a", due: [][4]any{{"b", 0, int64(0), int64(0)}}, execErrAt: 2},
-		{cursor: "a", due: [][4]any{{"b", 0, int64(0), int64(0)}}, execErrAt: 3},
-		{cursor: "a", due: [][4]any{{"b", 0, int64(0), int64(0)}}, execErrAt: 4},
-		{cursor: "a", due: [][4]any{{"b", 0, int64(0), int64(0)}}, commitErr: errors.New("commit failed")},
+		{cursor: "a", due: [][5]any{{"b", 0, int64(0), int64(0), nil}}, execErrAt: 2},
+		{cursor: "a", due: [][5]any{{"b", 0, int64(0), int64(0), nil}}, execErrAt: 3},
+		{cursor: "a", due: [][5]any{{"b", 0, int64(0), int64(0), nil}}, execErrAt: 4},
+		{cursor: "a", due: [][5]any{{"b", 0, int64(0), int64(0), nil}}, commitErr: errors.New("commit failed")},
 	} {
 		repository.begin = func(context.Context) (cycleTx, error) { return tx, nil }
 		if _, err := repository.ScheduleNext(context.Background(), 1, time.Now(), time.Hour); err == nil {
