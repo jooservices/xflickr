@@ -13,10 +13,11 @@ REST calls use `/services/rest`; OAuth uses
 
 Set scenarios at startup with `FAKEFLICKR_QUOTA_PER_HOUR`,
 `FAKEFLICKR_RATE_LIMIT_AFTER`, `FAKEFLICKR_BAN_IP`,
-`FAKEFLICKR_LATENCY_MS`, and `FAKEFLICKR_REVOKED_TOKEN`. IP bans match the
+`FAKEFLICKR_LATENCY_MS`, `FAKEFLICKR_REVOKED_TOKEN`, and `FAKEFLICKR_INVALID_KEY`
+(answers Flickr error 100, "Invalid API Key", for that `api_key`). IP bans match the
 `X-Client-IP` request header. At runtime, POST JSON to `/__admin/scenarios` with
 the corresponding fields (`quota_per_hour`, `rate_limit_after`, `ban_ips`,
-`latency_ms`, and `revoked_tokens`); applying a new configuration resets
+`latency_ms`, `revoked_tokens`, and `invalid_keys`); applying a new configuration resets
 per-key call counters.
 
 `make gen` generates the embedded JPEG from fixed dimensions, colors, and

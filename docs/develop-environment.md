@@ -21,7 +21,9 @@ ends container startup.
 
 Use `make develop-status` to inspect container health and `make develop-logs`
 to follow application logs. `docker/scripts/develop-smoke.sh` checks container
-health, `/healthz`, applied migrations, and the index and registration pages.
+health, `/healthz`, applied migrations, and the index and registration pages,
+then runs the browser route sweep against the container (see [e2e.md](e2e.md));
+a broken screen fails the deploy.
 
 ## Update and stop
 

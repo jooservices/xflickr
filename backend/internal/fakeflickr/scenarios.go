@@ -16,6 +16,8 @@ type ScenarioConfig struct {
 	BanIPs         []string `json:"ban_ips"`
 	LatencyMS      int      `json:"latency_ms"`
 	RevokedTokens  []string `json:"revoked_tokens"`
+	// InvalidKeys are API keys Flickr answers with error 100, "Invalid API Key".
+	InvalidKeys []string `json:"invalid_keys"`
 }
 
 type keyUsage struct {
@@ -96,6 +98,18 @@ func (s *Scenarios) revoked(token string) bool {
 	return false
 }
 
+func (s *Scenarios) invalidKey(key string) bool {
+	if key == "" {
+		return false
+	}
+	for _, candidate := range s.snapshot().InvalidKeys {
+		if candidate == key {
+			return true
+		}
+	}
+	return false
+}
+
 // ScenarioConfigFromEnvironment reads optional FAKEFLICKR_* scenario switches.
 func ScenarioConfigFromEnvironment() ScenarioConfig {
 	c := ScenarioConfig{QuotaPerHour: envInt("FAKEFLICKR_QUOTA_PER_HOUR"), RateLimitAfter: envInt("FAKEFLICKR_RATE_LIMIT_AFTER"), LatencyMS: envInt("FAKEFLICKR_LATENCY_MS")}
@@ -104,6 +118,9 @@ func ScenarioConfigFromEnvironment() ScenarioConfig {
 	}
 	if token := strings.TrimSpace(getenv("FAKEFLICKR_REVOKED_TOKEN")); token != "" {
 		c.RevokedTokens = []string{token}
+	}
+	if key := strings.TrimSpace(getenv("FAKEFLICKR_INVALID_KEY")); key != "" {
+		c.InvalidKeys = []string{key}
 	}
 	return c
 }

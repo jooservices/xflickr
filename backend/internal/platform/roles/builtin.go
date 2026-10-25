@@ -71,14 +71,23 @@ import (
 	flickrclient "github.com/jooservices/xflickr/pkg/flickr"
 )
 
-const apiAddress = ":8080"
+const defaultAPIAddress = ":8080"
+
+// apiAddress is the API listener: HTTP_PORT when it is a valid port (the E2E stack picks a free one), else :8080.
+func apiAddress() string {
+	port, err := strconv.Atoi(strings.TrimSpace(os.Getenv("HTTP_PORT")))
+	if err != nil || port < 1 || port > 65535 {
+		return defaultAPIAddress
+	}
+	return ":" + strconv.Itoa(port)
+}
 
 var builtinRoleNames = []string{"api", "scheduler", "indexer", "node-agent", "crawl", "media", "sync", "ai-worker"}
 
 // NewBuiltinRegistry creates the role set supported by the xflickr binary.
 func NewBuiltinRegistry(version string) *Registry {
 	registry := NewRegistry()
-	registerBuiltin(registry, newConfiguredAPIRole(apiAddress, version))
+	registerBuiltin(registry, newConfiguredAPIRole(apiAddress(), version))
 	for _, name := range builtinRoleNames[1:] {
 		if name == "scheduler" {
 			registerBuiltin(registry, schedulerRole{})
@@ -172,7 +181,7 @@ func (crawlRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	client := flickrclient.NewClient("", nil)
+	client := flickrclient.NewClient(flickrRESTURL(cfg), nil)
 	engine, err := newCrawlEngine(pool, redisClient, cfg, client)
 	if err != nil {
 		return err
@@ -219,7 +228,7 @@ func (syncRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := registerPhotoSizes(queueAdapter, pool, redisClient, cfg, flickrclient.NewClient("", nil)); err != nil {
+	if err := registerPhotoSizes(queueAdapter, pool, redisClient, cfg, flickrclient.NewClient(flickrRESTURL(cfg), nil)); err != nil {
 		return err
 	}
 	return queue.Worker{Queue: queueAdapter}.Run(ctx)
@@ -609,6 +618,23 @@ func buildCrawlHandler(pool *pgxpool.Pool) (crawlhttp.CrawlHandler, error) {
 	return crawlhttp.CrawlHandler{Controls: crawlapp.Controls{Repository: repository, Rescorer: scheduleriver.PersonRescorer{Pool: pool}}, Depth: depth, ActorID: userIDFromPrincipal}, nil
 }
 
+// flickrRESTURL is the REST endpoint; empty selects Flickr's own.
+func flickrRESTURL(cfg config.Config) string {
+	if cfg.Flickr.UpstreamURL == "" {
+		return ""
+	}
+	return cfg.Flickr.UpstreamURL + "/services/rest"
+}
+
+// flickrOAuthEndpoints overrides the OAuth URLs only when an upstream is set.
+func flickrOAuthEndpoints(cfg config.Config) accountsflickr.Endpoints {
+	if cfg.Flickr.UpstreamURL == "" {
+		return accountsflickr.Endpoints{}
+	}
+	base := cfg.Flickr.UpstreamURL + "/services/oauth/"
+	return accountsflickr.Endpoints{RequestToken: base + "request_token", Authorize: base + "authorize", AccessToken: base + "access_token"}
+}
+
 func buildKeyHandler(pool *pgxpool.Pool, cfg config.Config) (accountshttp.KeyHandler, error) {
 	if pool == nil {
 		return accountshttp.KeyHandler{}, errors.New("accounts: postgres database is required")
@@ -628,7 +654,7 @@ func buildKeyHandler(pool *pgxpool.Pool, cfg config.Config) (accountshttp.KeyHan
 	return accountshttp.KeyHandler{
 		Keys: accountsapp.Keys{
 			Repository: repository,
-			Probe:      accountsflickr.NewProbe("", nil),
+			Probe:      accountsflickr.NewProbe(flickrRESTURL(cfg), nil),
 			Sealer:     ring,
 			Settings:   accountsettings.Reader{Settings: settingsapp.New(settingsRepository)},
 		},
@@ -651,7 +677,7 @@ func buildConnectHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient
 	return accountshttp.ConnectHandler{
 		Accounts: accountsapp.Connect{
 			Repository:  repository,
-			Authorizer:  accountsflickr.NewAuthorizer(nil, accountsflickr.Endpoints{}),
+			Authorizer:  accountsflickr.NewAuthorizer(nil, flickrOAuthEndpoints(cfg)),
 			States:      accountsredis.States{Client: redisClient, Prefix: cfg.Redis.Prefix},
 			Cipher:      ring,
 			CallbackURL: cfg.Flickr.CallbackURL,

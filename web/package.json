@@ -14,7 +14,8 @@
     "format": "prettier --write .",
     "gen:api": "redocly bundle ../contracts/openapi/openapi.yaml --output ../.tmp/openapi.bundle.yaml && orval --config orval.config.ts && prettier --write src/shared/api/gen src/shared/api/zod",
     "test": "vitest run --coverage",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "e2e:mocked": "playwright test --config playwright.mocked.config.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "5.104.5",

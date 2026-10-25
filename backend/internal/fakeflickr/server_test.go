@@ -421,8 +421,9 @@ func TestScenarioLatencyCancellationAndEnvironment(t *testing.T) {
 	t.Setenv("FAKEFLICKR_LATENCY_MS", "9")
 	t.Setenv("FAKEFLICKR_BAN_IP", "192.0.2.9")
 	t.Setenv("FAKEFLICKR_REVOKED_TOKEN", "token-x")
+	t.Setenv("FAKEFLICKR_INVALID_KEY", "dead-key")
 	c := ScenarioConfigFromEnvironment()
-	if c.QuotaPerHour != 7 || c.RateLimitAfter != 3 || c.LatencyMS != 9 || len(c.BanIPs) != 1 || len(c.RevokedTokens) != 1 {
+	if c.QuotaPerHour != 7 || c.RateLimitAfter != 3 || c.LatencyMS != 9 || len(c.BanIPs) != 1 || len(c.RevokedTokens) != 1 || len(c.InvalidKeys) != 1 {
 		t.Fatalf("env config=%+v", c)
 	}
 	if envInt("missing") != 0 {
@@ -459,5 +460,31 @@ func TestUnknownMethodsAndWrongMethods(t *testing.T) {
 		if body["stat"] != "fail" {
 			t.Fatalf("method %q response=%v", name, body)
 		}
+	}
+}
+
+func TestInvalidKeyScenarioAnswersFlickrError100(t *testing.T) {
+	server := httptest.NewServer(NewServer(Dataset{}, NewScenarios(ScenarioConfig{InvalidKeys: []string{"dead-key"}})))
+	defer server.Close()
+	echo := func(key string) map[string]any {
+		res, err := server.Client().Post(server.URL+"/services/rest", "application/x-www-form-urlencoded", strings.NewReader("method=flickr.test.echo&format=json&nojsoncallback=1&api_key="+key))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var body map[string]any
+		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		return body
+	}
+	if body := echo("dead-key"); body["stat"] != "fail" || body["code"] != float64(100) {
+		t.Fatalf("invalid key answer = %v", body)
+	}
+	if body := echo("good-key"); body["stat"] != "ok" {
+		t.Fatalf("valid key answer = %v", body)
+	}
+	if body := echo(""); body["stat"] != "ok" {
+		t.Fatalf("empty key answer = %v", body)
 	}
 }

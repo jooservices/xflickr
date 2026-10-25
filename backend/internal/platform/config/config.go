@@ -124,6 +124,9 @@ type IdentityConfig struct {
 // entered in the application UI and never configured here.
 type FlickrConfig struct {
 	CallbackURL string `env:"FLICKR_OAUTH_CALLBACK_URL" envDefault:"http://127.0.0.1:8080/flickr-accounts/callback"`
+	// UpstreamURL points the REST and OAuth calls at another Flickr-compatible
+	// server such as fakeflickr. Empty keeps Flickr's own endpoints.
+	UpstreamURL string `env:"FLICKR_UPSTREAM_URL"`
 }
 
 var requiredEnvironment = []string{
@@ -321,6 +324,13 @@ func (cfg *Config) validate() error {
 		return fmt.Errorf("FLICKR_OAUTH_CALLBACK_URL must be an absolute http or https URL")
 	}
 	cfg.Flickr.CallbackURL = callback.String()
+	if upstream := strings.TrimSpace(cfg.Flickr.UpstreamURL); upstream != "" {
+		parsed, err := url.Parse(upstream)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return fmt.Errorf("FLICKR_UPSTREAM_URL must be an absolute http or https URL")
+		}
+		cfg.Flickr.UpstreamURL = strings.TrimRight(parsed.String(), "/")
+	}
 	if cfg.HTTPPort < 1 || cfg.HTTPPort > 65535 {
 		return fmt.Errorf("HTTP_PORT must be between 1 and 65535")
 	}

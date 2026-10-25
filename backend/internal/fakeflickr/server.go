@@ -66,6 +66,10 @@ func (s *Server) rest(w http.ResponseWriter, r *http.Request) {
 	if !s.scenarios.before(w, r) {
 		return
 	}
+	if s.scenarios.invalidKey(r.Form.Get("api_key")) {
+		flickrError(w, 100, "Invalid API Key (Key not found)")
+		return
+	}
 	method := r.Form.Get("method")
 	if !strings.HasPrefix(method, "flickr.") {
 		flickrError(w, 1, "Unknown method")

@@ -352,3 +352,19 @@ func TestLoadFromEnvValidatesTheFlickrCallbackURL(t *testing.T) {
 		t.Fatalf("callback = %q %v", cfg.Flickr.CallbackURL, err)
 	}
 }
+
+func TestLoadFromEnvValidatesTheFlickrUpstreamURL(t *testing.T) {
+	for _, bad := range []string{"/services", "ftp://example.com", "http://"} {
+		values := requiredEnv()
+		values["FLICKR_UPSTREAM_URL"] = bad
+		if _, err := LoadFromEnv(values); err == nil || !strings.Contains(err.Error(), "FLICKR_UPSTREAM_URL") {
+			t.Errorf("upstream %q error = %v", bad, err)
+		}
+	}
+	values := requiredEnv()
+	values["FLICKR_UPSTREAM_URL"] = " http://127.0.0.1:8088/ "
+	cfg, err := LoadFromEnv(values)
+	if err != nil || cfg.Flickr.UpstreamURL != "http://127.0.0.1:8088" {
+		t.Fatalf("upstream = %q %v", cfg.Flickr.UpstreamURL, err)
+	}
+}

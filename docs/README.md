@@ -55,6 +55,7 @@
 - [Internationalisation and copy](ui/i18n.md) — key naming, English and
   Vietnamese rules, formatting, and plurals.
 - [Photo lane selection](photo-lane.md) — catalog-driven getSizes selection, ordering and dedupe.
+- [Browser E2E](e2e.md) — the real full-stack Playwright suite, the route sweep and how to add a journey.
 - [Fake Flickr server](fake-flickr.md) — seeded REST and OAuth responses, scenarios, and generated images.
 # API reconciliation
 

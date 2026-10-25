@@ -1,0 +1,11 @@
+{
+  "comment": "Responses the E2E monitor tolerates. Only 401 and 404 may be listed, and only with a reason: a screen for a feature that is not built yet, or an endpoint that answers anonymous visitors with 401 by design. Remove an entry when its ticket lands.",
+  "responses": [
+    {
+      "method": "GET",
+      "path": "/me",
+      "status": 401,
+      "reason": "The sign-in and registration pages ask who is signed in; anonymous visitors get 401 by design."
+    }
+  ]
+}

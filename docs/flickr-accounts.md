@@ -58,4 +58,7 @@ Payloads carry no token material.
 
 `FLICKR_OAUTH_CALLBACK_URL` (default `http://127.0.0.1:8080/flickr-accounts/callback`)
 must be an absolute http or https URL that the member's browser can reach.
-The Flickr API key and secret are entered only in the UI.
+`FLICKR_UPSTREAM_URL` (empty by default) sends the REST and OAuth calls to a
+Flickr-compatible server such as `fakeflickr` (`<url>/services/rest` and
+`<url>/services/oauth/...`). It is for tests and `make e2e`; leave it empty in
+production. The Flickr API key and secret are entered only in the UI.

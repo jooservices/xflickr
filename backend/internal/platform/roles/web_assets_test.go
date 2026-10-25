@@ -196,3 +196,32 @@ func TestServeWebAssetsDisabled(t *testing.T) {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
 	}
 }
+
+func TestSharedPageAndAPIURLIsNotCachedAcrossAccept(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "index.html"), []byte("<html>app</html>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	router := chi.NewRouter()
+	serveWebAssets(router, root)
+	router.Get("/keys", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("[]")) })
+
+	for name, accept := range map[string]string{"page": "text/html", "api": "application/json"} {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/keys", nil)
+		request.Header.Set("Accept", accept)
+		router.ServeHTTP(response, request)
+		if got := response.Header().Values("Vary"); len(got) == 0 || !strings.Contains(strings.Join(got, ","), "Accept") {
+			t.Errorf("%s: Vary = %v, want it to include Accept", name, got)
+		}
+		if name == "page" && response.Header().Get("Cache-Control") != "no-cache" {
+			t.Errorf("page: Cache-Control = %q, want no-cache", response.Header().Get("Cache-Control"))
+		}
+	}
+
+	fallback := httptest.NewRecorder()
+	router.ServeHTTP(fallback, httptest.NewRequest(http.MethodGet, "/register", nil))
+	if !strings.Contains(strings.Join(fallback.Header().Values("Vary"), ","), "Accept") || fallback.Header().Get("Cache-Control") != "no-cache" {
+		t.Errorf("fallback headers = %v", fallback.Header())
+	}
+}

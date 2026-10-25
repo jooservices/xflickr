@@ -1,26 +1,24 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const port = Number(process.env.E2E_PORT ?? 4173);
-const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${port}`;
+// The real stack: `make e2e` (docker/scripts/e2e.sh) starts the backend, fakeflickr and the built web bundle and sets
+// E2E_BASE_URL. Nothing here starts a server or mocks a route.
+const baseURL = process.env.E2E_BASE_URL;
 const channel = process.env.PLAYWRIGHT_CHROME_CHANNEL;
 
 export default defineConfig({
   testDir: './e2e',
-  fullyParallel: true,
+  // The journeys build on each other's state (first user, keys, accounts), so the suite runs in file order.
+  fullyParallel: false,
+  workers: 1,
   forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 2 : 0,
+  retries: 0,
   reporter: 'list',
+  timeout: 60_000,
   use: {
     ...devices['Desktop Chrome'],
-    baseURL,
+    ...(baseURL === undefined ? {} : { baseURL }),
     colorScheme: 'light',
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
     ...(channel === undefined ? {} : { channel }),
-  },
-  webServer: {
-    command: `npm run dev -- --host 127.0.0.1 --port ${port} --strictPort`,
-    url: baseURL,
-    reuseExistingServer: false,
-    timeout: 120_000,
   },
 });

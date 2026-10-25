@@ -11,3 +11,4 @@ playwright-report/
 test-results/
 blob-report/
 __pycache__/
+.e2e-state/

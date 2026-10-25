@@ -19,10 +19,13 @@ func serveWebAssets(router *chi.Mux, root string) {
 	// would otherwise win over the NotFound fallback for browser navigations.
 	router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// A page and its API route share one URL (/keys). Without Vary the browser cache hands the page to a
+			// fetch for JSON, so every shell-served and API answer varies on Accept.
+			w.Header().Add("Vary", "Accept")
 			if isSPANavigation(r) &&
 				path.Ext(r.URL.Path) == "" &&
 				!strings.HasPrefix(r.URL.Path, "/assets/") {
-				http.ServeFile(w, r, filepath.Join(root, "index.html")) // #nosec G703 -- this path uses a fixed index filename beneath the configured asset root.
+				serveIndex(w, r, root)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -34,7 +37,7 @@ func serveWebAssets(router *chi.Mux, root string) {
 			return
 		}
 		if isSPANavigation(r) || isPageFallback(r) {
-			http.ServeFile(w, r, filepath.Join(root, "index.html")) // #nosec G703 -- this path uses a fixed index filename beneath the configured asset root.
+			serveIndex(w, r, root)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -43,6 +46,12 @@ func serveWebAssets(router *chi.Mux, root string) {
 			_ = json.NewEncoder(w).Encode(map[string]string{"code": "not_found"})
 		}
 	})
+}
+
+// serveIndex answers with the SPA shell, which must always be revalidated: it names the current hashed assets.
+func serveIndex(w http.ResponseWriter, r *http.Request, root string) {
+	w.Header().Set("Cache-Control", "no-cache")
+	http.ServeFile(w, r, filepath.Join(root, "index.html")) // #nosec G703 -- this path uses a fixed index filename beneath the configured asset root.
 }
 
 // isSPANavigation reports a browser page navigation that the SPA should answer.
