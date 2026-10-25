@@ -8,6 +8,7 @@ import (
 	"time"
 
 	catalog "github.com/jooservices/xflickr/internal/catalog/domain"
+	quotadomain "github.com/jooservices/xflickr/internal/quota/domain"
 	"github.com/jooservices/xflickr/pkg/flickr"
 )
 
@@ -22,6 +23,10 @@ type SizesClient interface {
 	GetSizes(ctx context.Context, keyID int64, photoID string) ([]flickr.PhotoSize, error)
 }
 
+type ClassifiedSizesClient interface {
+	GetSizesClass(ctx context.Context, keyID int64, photoID string, class quotadomain.Class) ([]flickr.PhotoSize, error)
+}
+
 // Sizes handles one photo.sizes River job.
 type Sizes struct {
 	Store  SizesStore
@@ -31,8 +36,9 @@ type Sizes struct {
 
 // SizesJob is the relevant portion of the photo lane's durable job args.
 type SizesJob struct {
-	PhotoID int64 `json:"photo_id"`
-	KeyID   int64 `json:"key_id"`
+	PhotoID int64  `json:"photo_id"`
+	KeyID   int64  `json:"key_id"`
+	Class   string `json:"class,omitempty"`
 }
 
 // ParseSizesJob validates a photo.sizes job payload.
@@ -40,6 +46,9 @@ func ParseSizesJob(args []byte) (SizesJob, error) {
 	var job SizesJob
 	if err := json.Unmarshal(args, &job); err != nil || job.PhotoID <= 0 || job.KeyID <= 0 {
 		return SizesJob{}, errors.New("crawl: photo.sizes job needs photo_id and key_id")
+	}
+	if job.Class != "" && job.Class != string(quotadomain.Photo) && job.Class != string(quotadomain.Interactive) {
+		return SizesJob{}, errors.New("crawl: photo.sizes job has an invalid quota class")
 	}
 	return job, nil
 }
@@ -57,7 +66,12 @@ func (s Sizes) Handle(ctx context.Context, job SizesJob) error {
 	if shouldSkipSizes(photo, exists) {
 		return nil
 	}
-	sizes, err := s.Flickr.GetSizes(ctx, job.KeyID, fmt.Sprint(job.PhotoID))
+	var sizes []flickr.PhotoSize
+	if classified, ok := s.Flickr.(ClassifiedSizesClient); ok && job.Class != "" {
+		sizes, err = classified.GetSizesClass(ctx, job.KeyID, fmt.Sprint(job.PhotoID), quotadomain.Class(job.Class))
+	} else {
+		sizes, err = s.Flickr.GetSizes(ctx, job.KeyID, fmt.Sprint(job.PhotoID))
+	}
 	if err != nil {
 		return s.recordFlickrError(ctx, job.PhotoID, err)
 	}

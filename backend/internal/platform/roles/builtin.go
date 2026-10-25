@@ -24,7 +24,9 @@ import (
 	accountsettings "github.com/jooservices/xflickr/internal/accounts/adapters/settings"
 	accountsapp "github.com/jooservices/xflickr/internal/accounts/app"
 	accountsdomain "github.com/jooservices/xflickr/internal/accounts/domain"
+	catalogdownloadspostgres "github.com/jooservices/xflickr/internal/catalog/adapters/downloads/postgres"
 	catalogpostgres "github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
+	catalogapp "github.com/jooservices/xflickr/internal/catalog/app"
 	crawlhttp "github.com/jooservices/xflickr/internal/crawl/adapters/http"
 	crawlpostgres "github.com/jooservices/xflickr/internal/crawl/adapters/postgres"
 	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
@@ -33,7 +35,9 @@ import (
 	identityredis "github.com/jooservices/xflickr/internal/identity/adapters/redis"
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
+	mediahttp "github.com/jooservices/xflickr/internal/media/adapters/http"
 	medialocal "github.com/jooservices/xflickr/internal/media/adapters/local"
+	mediapostgres "github.com/jooservices/xflickr/internal/media/adapters/postgres"
 	medias3 "github.com/jooservices/xflickr/internal/media/adapters/s3"
 	mediaapp "github.com/jooservices/xflickr/internal/media/app"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
@@ -255,6 +259,10 @@ type photoSizesClient struct {
 }
 
 func (c photoSizesClient) GetSizes(ctx context.Context, keyID int64, photoID string) ([]flickrclient.PhotoSize, error) {
+	return c.GetSizesClass(ctx, keyID, photoID, quotadomain.Photo)
+}
+
+func (c photoSizesClient) GetSizesClass(ctx context.Context, keyID int64, photoID string, class quotadomain.Class) ([]flickrclient.PhotoSize, error) {
 	if c.Pool == nil || c.Client == nil || c.Quota == nil || keyID <= 0 {
 		return nil, errors.New("crawl: photo sizes client dependencies are required")
 	}
@@ -265,7 +273,10 @@ func (c photoSizesClient) GetSizes(ctx context.Context, keyID int64, photoID str
 	if status != "valid" {
 		return nil, errors.New("crawl: photo sizes key is not valid")
 	}
-	permit, _, err := c.Quota.Acquire(ctx, keyID, quotadomain.Photo)
+	if !class.Valid() {
+		return nil, quotadomain.ErrInvalidClass
+	}
+	permit, _, err := c.Quota.Acquire(ctx, keyID, class)
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +392,11 @@ func buildConfiguredAPIHandler(pool *pgxpool.Pool, redisClient redisv9.Universal
 	if err != nil {
 		return nil, err
 	}
-	return newAPIRouterWithQuota(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing), nil
+	downloads, err := buildDownloadHandler(pool)
+	if err != nil {
+		return nil, err
+	}
+	return newAPIRouterWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads), nil
 }
 
 func buildQuotaHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config) quotahttp.QuotaHandler {
@@ -425,12 +440,17 @@ type apiServer struct {
 	accountshttp.ConnectHandler
 	crawlhttp.CrawlHandler
 	quotahttp.QuotaHandler
-	Sharing sharinghttp.Handler
+	Sharing   sharinghttp.Handler
+	Downloads mediahttp.DownloadHandler
 	planHandler
 }
 
 func (s apiServer) PutMeSharing(ctx context.Context, request gen.PutMeSharingRequestObject) (gen.PutMeSharingResponseObject, error) {
 	return s.Sharing.PutMeSharing(ctx, request)
+}
+
+func (s apiServer) CreateDownload(ctx context.Context, request gen.CreateDownloadRequestObject) (gen.CreateDownloadResponseObject, error) {
+	return s.Downloads.CreateDownload(ctx, request)
 }
 
 type planHandler struct{ schedulehttp.Handler }
@@ -446,16 +466,20 @@ func newAPIRouter(identity identityhttp.Handler, keys accountshttp.KeyHandler, c
 }
 
 func newAPIRouterWithQuota(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawl crawlhttp.CrawlHandler, quota quotahttp.QuotaHandler, sharings ...sharinghttp.Handler) http.Handler {
+	var sharing sharinghttp.Handler
+	if len(sharings) > 0 {
+		sharing = sharings[0]
+	}
+	return newAPIRouterWithServices(identity, keys, connect, plans, crawl, quota, sharing, mediahttp.DownloadHandler{})
+}
+
+func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawl crawlhttp.CrawlHandler, quota quotahttp.QuotaHandler, sharing sharinghttp.Handler, downloads mediahttp.DownloadHandler) http.Handler {
 	router := chi.NewRouter()
 	serveWebAssets(router, os.Getenv("XFLICKR_WEB_DIR"))
 	router.Use(identityhttp.RequestBodyLimit)
 	router.Use(identityhttp.CSRF)
 	router.Use(identityhttp.ProtectRoutes(identity.Sessions))
-	var sharing sharinghttp.Handler
-	if len(sharings) > 0 {
-		sharing = sharings[0]
-	}
-	return gen.HandlerFromMux(gen.NewStrictHandler(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
+	return gen.HandlerFromMux(gen.NewStrictHandler(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		identityhttp.MaintainSessionCookies(identity.Sessions),
 	}), router)
@@ -467,6 +491,16 @@ func buildSharingHandler(pool *pgxpool.Pool) (sharinghttp.Handler, error) {
 		return sharinghttp.Handler{}, err
 	}
 	return sharinghttp.Handler{Change: sharingapp.Change{Repository: repository}, ActorID: userIDFromPrincipal}, nil
+}
+
+func buildDownloadHandler(pool *pgxpool.Pool) (mediahttp.DownloadHandler, error) {
+	jobs, err := queue.NewRiver(pool, nil)
+	if err != nil {
+		return mediahttp.DownloadHandler{}, err
+	}
+	catalogRepository := catalogdownloadspostgres.Repository{Pool: pool}
+	repository := mediapostgres.Downloads{Pool: pool, Jobs: jobs}
+	return mediahttp.DownloadHandler{Downloads: mediaapp.Downloads{Catalog: catalogapp.DownloadCatalog{Photos: catalogRepository}, Repository: repository}, Principal: userIDFromPrincipal}, nil
 }
 
 func buildCrawlHandler(pool *pgxpool.Pool) (crawlhttp.CrawlHandler, error) {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	catalog "github.com/jooservices/xflickr/internal/catalog/domain"
+	quotadomain "github.com/jooservices/xflickr/internal/quota/domain"
 	"github.com/jooservices/xflickr/pkg/flickr"
 )
 
@@ -39,12 +40,18 @@ type sizesClientFake struct {
 	calls   int
 	keyID   int64
 	photoID string
+	class   quotadomain.Class
 }
 
 func (f *sizesClientFake) GetSizes(_ context.Context, keyID int64, photoID string) ([]flickr.PhotoSize, error) {
 	f.calls++
 	f.keyID, f.photoID = keyID, photoID
 	return f.sizes, f.err
+}
+
+func (f *sizesClientFake) GetSizesClass(ctx context.Context, keyID int64, photoID string, class quotadomain.Class) ([]flickr.PhotoSize, error) {
+	f.class = class
+	return f.GetSizes(ctx, keyID, photoID)
 }
 
 func sizesRig() (Sizes, *sizesStoreFake, *sizesClientFake) {
@@ -66,6 +73,23 @@ func TestParseSizesJob(t *testing.T) {
 		if _, err := ParseSizesJob([]byte(raw)); err == nil {
 			t.Errorf("ParseSizesJob(%s) succeeded", raw)
 		}
+	}
+	job, err = ParseSizesJob([]byte(`{"photo_id":40,"key_id":12,"class":"interactive"}`))
+	if err != nil || job.Class != "interactive" {
+		t.Fatalf("ParseSizesJob interactive = %+v, %v", job, err)
+	}
+	if _, err := ParseSizesJob([]byte(`{"photo_id":40,"key_id":12,"class":"unknown"}`)); err == nil {
+		t.Fatal("accepted unsupported quota class")
+	}
+}
+
+func TestSizesUsesDirectActionQuotaClass(t *testing.T) {
+	handler, _, client := sizesRig()
+	if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12, Class: string(quotadomain.Interactive)}); err != nil {
+		t.Fatal(err)
+	}
+	if client.class != quotadomain.Interactive {
+		t.Fatalf("class = %q", client.class)
 	}
 }
 

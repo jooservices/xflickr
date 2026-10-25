@@ -1,0 +1,32 @@
+create:
+  post:
+    operationId: createDownload
+    summary: Create a download request
+    description: Creates download items only for photos visible to the signed-in user. Hidden photos are skipped and counted.
+    security:
+      - SessionCookie: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/downloads.yaml#/CreateDownloadRequest
+    responses:
+      '201':
+        description: Download request created
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/downloads.yaml#/Download
+      '400':
+        description: The download request is invalid
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error

@@ -93,6 +93,12 @@ var errQuotaServedByQuota = errors.New("identity: quota state is served by the q
 
 var errSharingServedBySharing = errors.New("identity: sharing settings are served by the sharing module")
 
+var errDownloadsServedByMedia = errors.New("identity: downloads are served by the media module")
+
+func (StrictHandler) CreateDownload(context.Context, gen.CreateDownloadRequestObject) (gen.CreateDownloadResponseObject, error) {
+	return nil, errDownloadsServedByMedia
+}
+
 func (StrictHandler) PutMeSharing(context.Context, gen.PutMeSharingRequestObject) (gen.PutMeSharingResponseObject, error) {
 	return nil, errSharingServedBySharing
 }

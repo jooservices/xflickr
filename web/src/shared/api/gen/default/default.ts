@@ -25,6 +25,8 @@ import type {
   AuthConfig,
   AuthRequest,
   ChangePasswordRequest,
+  CreateDownloadRequest,
+  Download,
   Error,
   LoginLocked,
   LoginRateLimited,
@@ -1281,4 +1283,136 @@ export const useChangeMyPassword = <TError = Error | void | LoginRateLimited, TC
   TContext
 > => {
   return useMutation(getChangeMyPasswordMutationOptions(options), queryClient);
+};
+export type createDownloadResponse201 = {
+  data: Download;
+  status: 201;
+};
+
+export type createDownloadResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type createDownloadResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type createDownloadResponseSuccess = createDownloadResponse201 & {
+  headers: Headers;
+};
+export type createDownloadResponseError = (
+  createDownloadResponse400 | createDownloadResponse401
+) & {
+  headers: Headers;
+};
+
+export type createDownloadResponse = createDownloadResponseSuccess | createDownloadResponseError;
+
+export const getCreateDownloadUrl = () => {
+  return `/downloads`;
+};
+
+/**
+ * Creates download items only for photos visible to the signed-in user. Hidden photos are skipped and counted.
+ * @summary Create a download request
+ */
+export const createDownload = async (
+  createDownloadRequest: CreateDownloadRequest,
+  options?: RequestInit,
+): Promise<createDownloadResponse> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit['headers']>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  const res = await fetch(getCreateDownloadUrl(), {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createDownloadRequest),
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createDownloadResponse['data'] = body ? JSON.parse(body) : {};
+  return { data, status: res.status, headers: res.headers } as createDownloadResponse;
+};
+
+export const getCreateDownloadMutationKey = () => ['createDownload'] as const;
+
+export const getCreateDownloadMutationOptions = <TError = Error, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDownload>>,
+    TError,
+    CreateDownloadMutationVariables,
+    TContext
+  >;
+  fetch?: RequestInit;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createDownload>>,
+  TError,
+  CreateDownloadMutationVariables,
+  TContext
+> => {
+  const mutationKey = getCreateDownloadMutationKey();
+  const { mutation: mutationOptions, fetch: fetchOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, fetch: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createDownload>>,
+    CreateDownloadMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createDownload(data, fetchOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateDownloadMutationResult = NonNullable<Awaited<ReturnType<typeof createDownload>>>;
+export type CreateDownloadMutationBody = CreateDownloadRequest;
+export type CreateDownloadMutationError = Error;
+export type CreateDownloadMutationVariables = { data: CreateDownloadRequest };
+
+/**
+ * @summary Create a download request
+ */
+export const useCreateDownload = <TError = Error, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createDownload>>,
+      TError,
+      CreateDownloadMutationVariables,
+      TContext
+    >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createDownload>>,
+  TError,
+  CreateDownloadMutationVariables,
+  TContext
+> => {
+  return useMutation(getCreateDownloadMutationOptions(options), queryClient);
 };

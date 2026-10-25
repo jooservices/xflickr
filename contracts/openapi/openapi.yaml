@@ -60,6 +60,8 @@ paths:
     $ref: ./paths/queue.yaml#/admin_queue
   /admin/quota:
     $ref: ./paths/quota.yaml#/admin
+  /downloads:
+    $ref: ./paths/downloads.yaml#/create
 components:
   schemas:
     AuthConfig:
@@ -114,3 +116,7 @@ components:
       $ref: ./schemas/quota.yaml#/KeyQuota
     AdminQuota:
       $ref: ./schemas/quota.yaml#/AdminQuota
+    CreateDownloadRequest:
+      $ref: ./schemas/downloads.yaml#/CreateDownloadRequest
+    Download:
+      $ref: ./schemas/downloads.yaml#/Download

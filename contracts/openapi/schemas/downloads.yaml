@@ -1,0 +1,29 @@
+CreateDownloadRequest:
+  type: object
+  additionalProperties: false
+  properties:
+    kind:
+      type: string
+      enum: [contact, album, tray]
+    subject:
+      type: string
+      minLength: 1
+    photo_ids:
+      type: array
+      items:
+        type: integer
+        format: int64
+      minItems: 1
+  required: [kind]
+Download:
+  type: object
+  properties:
+    id: { type: integer, format: int64 }
+    kind: { type: string, enum: [contact, album, tray] }
+    subject: { type: string }
+    status: { type: string }
+    created_at: { type: string, format: date-time }
+    expires_at: { type: string, format: date-time }
+    item_count: { type: integer }
+    skipped: { type: integer }
+  required: [id, kind, subject, status, created_at, expires_at, item_count, skipped]

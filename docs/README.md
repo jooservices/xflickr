@@ -23,6 +23,8 @@
   idempotent upserts, compressed source payloads, and size status.
 - [Temporary media storage](media.md) — blob storage port, local storage cap,
   and five-minute expiry cleanup.
+- [Downloads](downloads.md) — visible-photo requests, per-item state, and media
+  queue handoff.
 - [Crawl interests](crawl-interests.md) — per-user person depth, lowest-depth
   deduplication, progress reporting, contact priority controls, and pause/resume.
 - [Crawl engine](crawl-engine.md) — facet interface, registry, page job flow

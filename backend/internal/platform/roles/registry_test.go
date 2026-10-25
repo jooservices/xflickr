@@ -29,6 +29,10 @@ import (
 	identityredis "github.com/jooservices/xflickr/internal/identity/adapters/redis"
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
+	mediahttp "github.com/jooservices/xflickr/internal/media/adapters/http"
+	mediaapp "github.com/jooservices/xflickr/internal/media/app"
+	mediadomain "github.com/jooservices/xflickr/internal/media/domain"
+	"github.com/jooservices/xflickr/internal/platform/api/gen"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
 	quotadomain "github.com/jooservices/xflickr/internal/quota/domain"
@@ -281,9 +285,41 @@ func TestPhotoSizesClientUsesValidKeyAndPhotoQuota(t *testing.T) {
 	}))
 	defer server.Close()
 	client := photoSizesClient{Pool: pool, Client: flickrclient.NewClient(server.URL, server.Client()), Quota: governor}
-	sizes, err := client.GetSizes(t.Context(), 4, "9")
-	if err != nil || len(sizes) != 1 || gotMethod != "flickr.photos.getSizes" || gotPhoto != "9" || governor.class != quotadomain.Photo || permit.meta.Err != nil {
+	if _, err := client.GetSizesClass(t.Context(), 4, "9", "unknown"); !errors.Is(err, quotadomain.ErrInvalidClass) {
+		t.Fatalf("invalid quota class error = %v", err)
+	}
+	sizes, err := client.GetSizesClass(t.Context(), 4, "9", quotadomain.Interactive)
+	if err != nil || len(sizes) != 1 || gotMethod != "flickr.photos.getSizes" || gotPhoto != "9" || governor.class != quotadomain.Interactive || permit.meta.Err != nil {
 		t.Fatalf("GetSizes() = %#v, %v; method=%q photo=%q class=%q meta=%+v", sizes, err, gotMethod, gotPhoto, governor.class, permit.meta)
+	}
+}
+
+type rolesDownloadService struct{}
+
+func (rolesDownloadService) Create(_ context.Context, input mediaapp.CreateDownloadInput) (mediadomain.Download, error) {
+	return mediadomain.Download{ID: 4, UserID: input.UserID, Kind: input.Kind, Subject: "album", Status: "pending", CreatedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}, nil
+}
+
+func TestAPIServerForwardsDownloadRequest(t *testing.T) {
+	handler := mediahttp.DownloadHandler{
+		Downloads: rolesDownloadService{},
+		Principal: func(context.Context) (int64, bool) { return 7, true },
+	}
+	server := apiServer{Downloads: handler}
+	subject := "album-1"
+	response, err := server.CreateDownload(t.Context(), gen.CreateDownloadRequestObject{Body: &gen.CreateDownloadRequest{Kind: gen.CreateDownloadRequestKindAlbum, Subject: &subject}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, ok := response.(gen.CreateDownload201JSONResponse)
+	if !ok || created.ID != 4 {
+		t.Fatalf("CreateDownload() = %#v", response)
+	}
+}
+
+func TestBuildDownloadHandlerRejectsMissingPool(t *testing.T) {
+	if _, err := buildDownloadHandler(nil); err == nil {
+		t.Fatal("accepted missing database pool")
 	}
 }
 
