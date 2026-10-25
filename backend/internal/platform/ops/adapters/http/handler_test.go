@@ -27,6 +27,7 @@ func TestGetAdminOpsStatus(t *testing.T) {
 		Counts:           ops.Counts{People: 1, Photos: 2, PhotoSizes: 3, Favorites: 4, Albums: 5, Galleries: 6, Groups: 7},
 		WorkItems:        map[string]int64{"pending": 2},
 		ReadyJobs:        0,
+		PhotoSizesJobs:   ops.LaneJobs{Pending: 8, Ready: 2, Running: 1},
 		Keys:             []ops.KeyStatus{{KeyID: 9, Label: "k", Status: "valid", CallsLastHour: 40, Limit: 100}},
 		OldestPendingAge: 2 * time.Minute,
 		TokenStatus:      ops.TokenOK,
@@ -41,7 +42,7 @@ func TestGetAdminOpsStatus(t *testing.T) {
 	if !isOK {
 		t.Fatalf("response=%T", response)
 	}
-	if ok.Counts.PhotoSizes != 3 || ok.OldestPendingAgeSeconds != 120 || ok.TokenStatus != gen.OpsStatusTokenStatusOk || ok.PendingItems != 2 {
+	if ok.Counts.PhotoSizes != 3 || ok.PhotoSizesPending != 8 || ok.PhotoSizesReady != 2 || ok.PhotoSizesRunning != 1 || ok.OldestPendingAgeSeconds != 120 || ok.TokenStatus != gen.OpsStatusTokenStatusOk || ok.PendingItems != 2 {
 		t.Fatalf("body=%+v", ok)
 	}
 	if len(ok.Keys) != 1 || ok.Keys[0].Remaining != 60 || ok.Keys[0].Used != 40 || ok.IdleReason == nil || *ok.IdleReason != gen.NoKey {

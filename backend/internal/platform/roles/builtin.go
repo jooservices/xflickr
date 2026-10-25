@@ -365,6 +365,19 @@ func newSchedulerPump(pool *pgxpool.Pool, governor quotaRedis.Governor, store sc
 	}
 	pump := scheduleapp.Pump{Store: store, QueueState: queuepostgres.New(pool), Credits: governor, Queue: queueAdapter, Settings: settings}
 	pump.ChangeChecks = crawlapp.Cycle{Store: cycleRepository, Users: cycleRepository, Settings: settingsapp.New(effectiveSettingsRepository)}
+	keyPool := quotaapp.KeyPool{
+		Interests: personInterests{pool: pool},
+		Keys:      usableKeys{pool: pool},
+		Quota:     governor,
+	}
+	pump.PhotoLane = scheduleapp.PhotoLane{
+		Selector: catalogpostgres.PhotoLane{Pool: pool},
+		Keys:     keyPool,
+		Queue: scheduleriver.PhotoEnqueuer{
+			Pool: pool, Jobs: queueAdapter, ReadyCap: settings.SyncReadyCap,
+			Options: queue.Options{Queue: scheduleriver.PhotoQueue, MaxAttempts: max(1, settings.RetryMax), LeaseTimeout: settings.LeaseTimeout, Backoff: settings.RetryBackoff},
+		},
+	}
 	return pump, nil
 }
 

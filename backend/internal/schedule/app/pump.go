@@ -61,6 +61,11 @@ type ChangeCheckScheduler interface {
 	RunOnce(context.Context) error
 }
 
+// PhotoLaneDispatcher creates durable size jobs from provisional catalog photos.
+type PhotoLaneDispatcher interface {
+	Next(context.Context, int) ([]int64, error)
+}
+
 // Pump coordinates a single bounded scheduling pass.
 type Pump struct {
 	Store              PumpStore
@@ -70,9 +75,11 @@ type Pump struct {
 	Logger             *slog.Logger
 	QueueState         QueueStatePublisher
 	ChangeChecks       ChangeCheckScheduler
+	PhotoLane          PhotoLaneDispatcher
 	QueueStateInterval time.Duration
 }
 
+//nolint:cyclop // One scheduling pass validates prerequisites, recovers durable work, and dispatches both lanes.
 func (p Pump) RunOnce(ctx context.Context) (int, error) {
 	if ctx == nil || p.Store == nil || p.Credits == nil || p.Queue == nil {
 		return 0, errors.New("schedule: pump dependencies are required")
@@ -104,7 +111,18 @@ func (p Pump) RunOnce(ctx context.Context) (int, error) {
 			return 0, err
 		}
 	}
-	return p.Store.Pump(ctx, p.Settings, p.Credits, p.Queue)
+	dispatched, err := p.Store.Pump(ctx, p.Settings, p.Credits, p.Queue)
+	if err != nil {
+		return dispatched, err
+	}
+	if p.PhotoLane != nil && p.Settings.SyncReadyCap > 0 {
+		photos, err := p.PhotoLane.Next(ctx, p.Settings.SyncReadyCap)
+		if err != nil {
+			return dispatched, err
+		}
+		dispatched += len(photos)
+	}
+	return dispatched, nil
 }
 
 // Run polls at the required two-second cadence. A transient error delays only

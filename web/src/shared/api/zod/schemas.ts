@@ -800,6 +800,12 @@ export const getAdminOpsStatusResponseReadyJobsMin = 0;
 
 export const getAdminOpsStatusResponseRiverJobsMinOne = 0;
 
+export const getAdminOpsStatusResponsePhotoSizesPendingMin = 0;
+
+export const getAdminOpsStatusResponsePhotoSizesReadyMin = 0;
+
+export const getAdminOpsStatusResponsePhotoSizesRunningMin = 0;
+
 export const getAdminOpsStatusResponseKeysItemCallsLastHourMin = 0;
 
 export const getAdminOpsStatusResponseKeysItemUsedMin = 0;
@@ -842,6 +848,18 @@ export const GetAdminOpsStatusResponse = zod.object({
   river_jobs: zod
     .record(zod.string(), zod.int().min(getAdminOpsStatusResponseRiverJobsMinOne))
     .describe('River jobs by state.'),
+  photo_sizes_pending: zod
+    .int()
+    .min(getAdminOpsStatusResponsePhotoSizesPendingMin)
+    .describe('Provisional photos not yet queued plus queued jobs waiting for execution.'),
+  photo_sizes_ready: zod
+    .int()
+    .min(getAdminOpsStatusResponsePhotoSizesReadyMin)
+    .describe('Photo size jobs available to a worker.'),
+  photo_sizes_running: zod
+    .int()
+    .min(getAdminOpsStatusResponsePhotoSizesRunningMin)
+    .describe('Photo size jobs currently running.'),
   keys: zod.array(
     zod.object({
       key_id: zod.int(),

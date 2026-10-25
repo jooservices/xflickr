@@ -648,7 +648,7 @@ func TestNewSchedulerPumpWiresQueueStatePublisher(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newSchedulerPump() error = %v", err)
 	}
-	if pump.QueueState == nil || pump.ChangeChecks == nil || pump.Settings.RetryMax != settings.RetryMax {
+	if pump.QueueState == nil || pump.ChangeChecks == nil || pump.PhotoLane == nil || pump.Settings.RetryMax != settings.RetryMax {
 		t.Fatalf("scheduler pump wiring = %+v", pump)
 	}
 }

@@ -70,12 +70,20 @@ type Snapshot struct {
 	Counts          Counts
 	WorkItems       map[string]int64
 	RiverJobs       map[string]int64
+	PhotoSizesJobs  LaneJobs
 	Keys            []KeyStatus
 	CallsLast10Min  int64
 	Pending         Pending
 	FailedWorkItems int64
 	DeadJobs        int64
 	Tokens          map[string]int64
+}
+
+// LaneJobs reports durable size work waiting for execution, ready to run, and running.
+type LaneJobs struct {
+	Pending int64
+	Ready   int64
+	Running int64
 }
 
 // Store reads a Snapshot.
@@ -90,6 +98,7 @@ type Status struct {
 	WorkItems        map[string]int64
 	ReadyJobs        int64
 	RiverJobs        map[string]int64
+	PhotoSizesJobs   LaneJobs
 	Keys             []KeyStatus
 	CallsLastHour    int64
 	CallsLast10Min   int64
@@ -131,6 +140,7 @@ func (s Service) Status(ctx context.Context) (Status, error) {
 		WorkItems:       copyMap(snapshot.WorkItems),
 		ReadyJobs:       snapshot.WorkItems["ready"],
 		RiverJobs:       copyMap(snapshot.RiverJobs),
+		PhotoSizesJobs:  snapshot.PhotoSizesJobs,
 		Keys:            append([]KeyStatus(nil), snapshot.Keys...),
 		CallsLast10Min:  snapshot.CallsLast10Min,
 		PendingItems:    snapshot.Pending.Total,

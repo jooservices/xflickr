@@ -24,6 +24,21 @@ export interface OpsStatus {
   ready_jobs: number;
   /** River jobs by state. */
   river_jobs: OpsStatusRiverJobs;
+  /**
+   * Provisional photos not yet queued plus queued jobs waiting for execution.
+   * @minimum 0
+   */
+  photo_sizes_pending: number;
+  /**
+   * Photo size jobs available to a worker.
+   * @minimum 0
+   */
+  photo_sizes_ready: number;
+  /**
+   * Photo size jobs currently running.
+   * @minimum 0
+   */
+  photo_sizes_running: number;
   keys: OpsKey[];
   /** @minimum 0 */
   calls_last_hour: number;

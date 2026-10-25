@@ -23,20 +23,20 @@ func TestPhotoEnqueuerDedupesReadyJobs(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	base := time.Now().UnixNano() % 1_000_000_000_000
+	photo := base*10 + 1
+	testQueue := fmt.Sprintf("sizes_%d", base)
 	dedupe := func(id int64) string { return app.PhotoDedupeKey(id, app.PhotoFacet) }
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM river_job WHERE args->'args'->>'dedupe_key' LIKE $1`, fmt.Sprintf("photo:%d%%", base))
+		_, _ = pool.Exec(context.Background(), `DELETE FROM river_job WHERE args->'args'->>'dedupe_key' = ANY($1)`, []string{dedupe(photo), dedupe(photo + 1)})
 	})
 	adapter, err := queue.NewRiver(pool, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	enqueuer := scheduleriver.PhotoEnqueuer{Pool: pool, Jobs: adapter, Options: queue.Options{Queue: "sync", MaxAttempts: 3}}
+	enqueuer := scheduleriver.PhotoEnqueuer{Pool: pool, Jobs: adapter, ReadyCap: 1, Options: queue.Options{Queue: testQueue, MaxAttempts: 3}}
 	job := func(id int64) app.PhotoJob {
 		return app.PhotoJob{PhotoID: id, OwnerNSID: "owner", Facet: app.PhotoFacet, KeyID: 7, Class: quotadomain.Photo, DedupeKey: dedupe(id)}
 	}
-	photo := base*10 + 1
-
 	var inserted atomic.Int32
 	var wait sync.WaitGroup
 	for i := 0; i < 8; i++ {
@@ -56,8 +56,8 @@ func TestPhotoEnqueuerDedupesReadyJobs(t *testing.T) {
 	if inserted.Load() != 1 {
 		t.Fatalf("concurrent EnqueuePhoto inserted %d jobs, want 1", inserted.Load())
 	}
-	if ok, err := enqueuer.EnqueuePhoto(ctx, job(photo+1)); err != nil || !ok {
-		t.Fatalf("EnqueuePhoto(other photo) = %v, %v, want true", ok, err)
+	if ok, err := enqueuer.EnqueuePhoto(ctx, job(photo+1)); err != nil || ok {
+		t.Fatalf("EnqueuePhoto(over ready cap) = %v, %v, want false", ok, err)
 	}
 	var count int
 	var class string
@@ -68,6 +68,12 @@ func TestPhotoEnqueuerDedupesReadyJobs(t *testing.T) {
 		t.Fatalf("river rows = %d class %q, want one photo job", count, class)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE river_job SET state='completed', finalized_at=now() WHERE args->'args'->>'dedupe_key' = $1`, dedupe(photo)); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := enqueuer.EnqueuePhoto(ctx, job(photo+1)); err != nil || !ok {
+		t.Fatalf("EnqueuePhoto(after capacity frees) = %v, %v, want true", ok, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE river_job SET state='completed', finalized_at=now() WHERE args->'args'->>'dedupe_key' = $1`, dedupe(photo+1)); err != nil {
 		t.Fatal(err)
 	}
 	if ok, err := enqueuer.EnqueuePhoto(ctx, job(photo)); err != nil || !ok {

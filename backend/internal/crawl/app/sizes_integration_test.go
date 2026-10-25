@@ -18,7 +18,10 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 	"github.com/jooservices/xflickr/internal/platform/queue"
+	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
+	quotadomain "github.com/jooservices/xflickr/internal/quota/domain"
 	scheduleriver "github.com/jooservices/xflickr/internal/schedule/adapters/river"
+	scheduleapp "github.com/jooservices/xflickr/internal/schedule/app"
 	"github.com/jooservices/xflickr/pkg/flickr"
 )
 
@@ -35,18 +38,28 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 	}
 
 	base := time.Now().UnixNano()
+	testQueue := fmt.Sprintf("sizes_%d", base)
+	photoIDs := []int64{base, base + 1, base + 2}
 	owner := fmt.Sprintf("sizes-integration-%d@example.invalid", base)
 	if _, err := pool.Exec(ctx, `INSERT INTO people (nsid, username) VALUES ($1, $1)`, owner); err != nil {
 		t.Fatal(err)
 	}
+	var userID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'test','user') RETURNING id`, owner+"@integration.invalid").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via) VALUES($1,$2,0,'integration')`, userID, owner); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM river_job WHERE args->'args'->>'photo_id' = ANY($1)`, []string{fmt.Sprint(photoIDs[0]), fmt.Sprint(photoIDs[1]), fmt.Sprint(photoIDs[2])})
 		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE owner_nsid=$1`, owner)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, owner)
 	})
 
 	checkedAt := time.Now().UTC().Truncate(time.Microsecond)
 	lastUpdate := checkedAt.Add(-time.Hour)
-	photoIDs := []int64{base, base + 1, base + 2}
 	insertPhoto := func(id int64, status catalog.SizesStatus, checked *time.Time) {
 		t.Helper()
 		if _, err := pool.Exec(ctx, `INSERT INTO photos (id, owner_nsid, last_update, visibility, sizes, sizes_status, sizes_checked_at, raw, content_hash)
@@ -55,10 +68,6 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 		}
 	}
 	insertPhoto(photoIDs[0], catalog.SizesProvisional, nil)
-	unchangedChecked := lastUpdate
-	insertPhoto(photoIDs[1], catalog.SizesConfirmed, &unchangedChecked)
-	staleChecked := lastUpdate.Add(-time.Minute)
-	insertPhoto(photoIDs[2], catalog.SizesConfirmed, &staleChecked)
 
 	var mu sync.Mutex
 	calls := map[string]int{}
@@ -86,7 +95,7 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 	flickrClient := flickr.NewClient(server.URL, server.Client(), flickr.EventObserverFunc(func(string, map[string]any) {}))
 	client := riverSizesClient{client: flickrClient}
 	handler := Sizes{Store: repository, Flickr: client, Now: func() time.Time { return checkedAt }}
-	adapter, err := queue.NewRiver(pool, map[string]int{scheduleriver.PhotoQueue: 1})
+	adapter, err := queue.NewRiver(pool, map[string]int{testQueue: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +107,7 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 		}
 		processed <- err
 		return err
-	}, queue.Options{Queue: scheduleriver.PhotoQueue, MaxAttempts: 1}); err != nil {
+	}, queue.Options{Queue: testQueue, MaxAttempts: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if err := adapter.Start(ctx); err != nil {
@@ -110,10 +119,12 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 		}
 		<-adapter.Stopped()
 	})
+	enqueuer := scheduleriver.PhotoEnqueuer{Pool: pool, Jobs: adapter, ReadyCap: 2, Options: queue.Options{Queue: testQueue, MaxAttempts: 1}}
+	lane := scheduleapp.PhotoLane{Selector: catalogpostgres.PhotoLane{Pool: pool}, Keys: integrationPhotoKeys{}, Queue: enqueuer}
 
 	enqueue := func(photoID int64) {
 		t.Helper()
-		args, err := json.Marshal(SizesJob{PhotoID: photoID, KeyID: 99})
+		args, err := json.Marshal(SizesJob{PhotoID: photoID, KeyID: 99, Class: string(quotadomain.Photo)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -121,7 +132,7 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := adapter.Enqueue(ctx, tx, queue.Job{Kind: scheduleriver.PhotoJobKind, Args: args}, queue.Options{Queue: scheduleriver.PhotoQueue, MaxAttempts: 1}); err != nil {
+		if err := adapter.Enqueue(ctx, tx, queue.Job{Kind: scheduleriver.PhotoJobKind, Args: args}, queue.Options{Queue: testQueue, MaxAttempts: 1}); err != nil {
 			_ = tx.Rollback(context.Background())
 			t.Fatal(err)
 		}
@@ -141,7 +152,10 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 		}
 	}
 
-	enqueue(photoIDs[0])
+	ids, err := lane.Next(ctx, 1)
+	if err != nil || len(ids) != 1 || ids[0] != photoIDs[0] {
+		t.Fatalf("photo lane Next() = %v, %v; want provisional photo %d", ids, err, photoIDs[0])
+	}
 	waitJob(false)
 	var storedSizes []byte
 	var storedStatus string
@@ -156,6 +170,13 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 	if storedStatus != string(catalog.SizesConfirmed) || !storedChecked.Equal(checkedAt) {
 		t.Fatalf("stored outcome = %s at %s", storedStatus, storedChecked)
 	}
+	if ids, err := lane.Next(ctx, 1); err != nil || len(ids) != 0 {
+		t.Fatalf("photo lane after confirmation = %v, %v; want no work", ids, err)
+	}
+	unchangedChecked := lastUpdate
+	insertPhoto(photoIDs[1], catalog.SizesConfirmed, &unchangedChecked)
+	staleChecked := lastUpdate.Add(-time.Minute)
+	insertPhoto(photoIDs[2], catalog.SizesConfirmed, &staleChecked)
 
 	enqueue(photoIDs[1])
 	waitJob(false)
@@ -177,8 +198,24 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 
 type riverSizesClient struct{ client *flickr.Client }
 
+type integrationPhotoKeys struct{}
+
+func (integrationPhotoKeys) Choose(_ context.Context, _ string, class quotadomain.Class) (quotaapp.KeyID, error) {
+	if class != quotadomain.Photo {
+		return 0, fmt.Errorf("photo lane class = %q", class)
+	}
+	return 99, nil
+}
+
 func (c riverSizesClient) GetSizes(ctx context.Context, _ int64, photoID string) ([]flickr.PhotoSize, error) {
 	return c.client.PhotosGetSizes(ctx, flickr.Credentials{APIKey: "integration-key"}, photoID)
+}
+
+func (c riverSizesClient) GetSizesClass(ctx context.Context, keyID int64, photoID string, class quotadomain.Class) ([]flickr.PhotoSize, error) {
+	if class != quotadomain.Photo {
+		return nil, fmt.Errorf("sizes quota class = %q", class)
+	}
+	return c.GetSizes(ctx, keyID, photoID)
 }
 
 func sizesIntegrationDatabase(t *testing.T) config.DBConfig {

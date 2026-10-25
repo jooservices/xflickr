@@ -34,9 +34,10 @@ type photoArgs struct {
 // PhotoEnqueuer inserts one River job per photo and skips a photo whose dedupe
 // key is already waiting in the ready queue.
 type PhotoEnqueuer struct {
-	Pool    photoTxBeginner
-	Jobs    queue.JobQueue
-	Options queue.Options
+	Pool     photoTxBeginner
+	Jobs     queue.JobQueue
+	Options  queue.Options
+	ReadyCap int
 }
 
 var _ app.PhotoEnqueuer = PhotoEnqueuer{}
@@ -44,6 +45,8 @@ var _ app.PhotoEnqueuer = PhotoEnqueuer{}
 // EnqueuePhoto reports whether a job was inserted. A transaction-scoped
 // advisory lock on the dedupe key serialises concurrent producers, so the
 // existence check and the insert cannot interleave.
+//
+//nolint:cyclop // Transaction setup, dedupe, ready-cap, insertion, and commit must remain atomic here.
 func (e PhotoEnqueuer) EnqueuePhoto(ctx context.Context, job app.PhotoJob) (bool, error) {
 	if e.Pool == nil || e.Jobs == nil || ctx == nil {
 		return false, errors.New("schedule: photo enqueuer dependencies are required")
@@ -73,6 +76,18 @@ func (e PhotoEnqueuer) EnqueuePhoto(ctx context.Context, job app.PhotoJob) (bool
 	}
 	if queued {
 		return false, nil
+	}
+	if e.ReadyCap > 0 {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('photo.sizes.ready-cap', 0))`); err != nil {
+			return false, fmt.Errorf("schedule: lock photo size capacity: %w", err)
+		}
+		var active int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE args->>'kind'=$1 AND args->>'queue'=$2 AND state IN ('available','pending','scheduled','retryable','running')`, PhotoJobKind, opts.Queue).Scan(&active); err != nil {
+			return false, fmt.Errorf("schedule: count photo size jobs: %w", err)
+		}
+		if active >= e.ReadyCap {
+			return false, nil
+		}
 	}
 	if err := e.Jobs.Enqueue(ctx, tx, queue.Job{Kind: PhotoJobKind, Args: args}, opts); err != nil {
 		return false, err

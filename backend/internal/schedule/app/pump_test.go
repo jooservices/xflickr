@@ -18,6 +18,17 @@ type changeCheckFake struct{ err error }
 
 func (f changeCheckFake) RunOnce(context.Context) error { return f.err }
 
+type photoLaneFake struct {
+	limit int
+	ids   []int64
+	err   error
+}
+
+func (f *photoLaneFake) Next(_ context.Context, limit int) ([]int64, error) {
+	f.limit = limit
+	return f.ids, f.err
+}
+
 func TestCreditsBoundsAllCapacitySources(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -84,6 +95,25 @@ func TestPumpRunOnceReclaimsAndDispatches(t *testing.T) {
 	store.pumpErr = errors.New("pump")
 	if _, err := pump.RunOnce(context.Background()); err == nil {
 		t.Fatal("RunOnce ignored pump error")
+	}
+}
+
+func TestPumpDispatchesPhotoLaneWithinSyncCap(t *testing.T) {
+	lane := &photoLaneFake{ids: []int64{41, 42}}
+	pump := Pump{Store: &pumpFakeStore{}, Credits: fakeCredits{}, Queue: fakeQueue{}, Settings: validPumpSettings(), PhotoLane: lane}
+	got, err := pump.RunOnce(context.Background())
+	if err != nil || got != 5 || lane.limit != 10 {
+		t.Fatalf("RunOnce() = %d, %v; photo limit = %d", got, err, lane.limit)
+	}
+	pump.Settings.SyncReadyCap = 0
+	lane.limit = -1
+	if _, err := pump.RunOnce(context.Background()); err != nil || lane.limit != -1 {
+		t.Fatalf("RunOnce() with zero sync cap = %v; photo limit = %d", err, lane.limit)
+	}
+	pump.Settings.SyncReadyCap = 10
+	lane.err = errors.New("photo lane failed")
+	if got, err := pump.RunOnce(context.Background()); got != 3 || !errors.Is(err, lane.err) {
+		t.Fatalf("RunOnce() with photo failure = %d, %v", got, err)
 	}
 }
 

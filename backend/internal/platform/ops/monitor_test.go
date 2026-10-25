@@ -38,17 +38,18 @@ func newMonitor(snapshot Snapshot, sink Sink) (*Monitor, *bytes.Buffer, *clock) 
 func TestTickLogsHealthLine(t *testing.T) {
 	sink := &recordSink{}
 	monitor, logs, _ := newMonitor(Snapshot{
-		Counts:    Counts{People: 7, Photos: 9},
-		WorkItems: map[string]int64{"pending": 1, "ready": 2},
-		RiverJobs: map[string]int64{"available": 4},
-		Keys:      []KeyStatus{{KeyID: 3, Label: "lbl-secret", Status: "valid", CallsLastHour: 10, Limit: 100}},
-		Tokens:    map[string]int64{"ok": 1},
+		Counts:         Counts{People: 7, Photos: 9},
+		WorkItems:      map[string]int64{"pending": 1, "ready": 2},
+		RiverJobs:      map[string]int64{"available": 4},
+		PhotoSizesJobs: LaneJobs{Pending: 5, Ready: 2, Running: 1},
+		Keys:           []KeyStatus{{KeyID: 3, Label: "lbl-secret", Status: "valid", CallsLastHour: 10, Limit: 100}},
+		Tokens:         map[string]int64{"ok": 1},
 	}, sink)
 	if err := monitor.Tick(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	line := logs.String()
-	for _, want := range []string{"crawl health", "people=7", "photos=9", "work_items.ready=2", "river_jobs.available=4", "keys.key_3.remaining=90", "token_status=ok", "ready_jobs=2", "calls_last_10min=0"} {
+	for _, want := range []string{"crawl health", "people=7", "photos=9", "photo_sizes_pending=5", "photo_sizes_ready=2", "photo_sizes_running=1", "work_items.ready=2", "river_jobs.available=4", "keys.key_3.remaining=90", "token_status=ok", "ready_jobs=2", "calls_last_10min=0"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("log line misses %q: %s", want, line)
 		}
@@ -60,7 +61,7 @@ func TestTickLogsHealthLine(t *testing.T) {
 		t.Fatalf("events=%v", sink.events)
 	}
 	health := sink.events[0][0]
-	if health["event"] != HealthEvent || health["work_items_ready"] != int64(2) || health["river_jobs_available"] != int64(4) || health["failed_total"] != int64(0) || health["node"] != "node-1" {
+	if health["event"] != HealthEvent || health["work_items_ready"] != int64(2) || health["river_jobs_available"] != int64(4) || health["photo_sizes_pending"] != int64(5) || health["photo_sizes_ready"] != int64(2) || health["photo_sizes_running"] != int64(1) || health["failed_total"] != int64(0) || health["node"] != "node-1" {
 		t.Fatalf("health event=%v", health)
 	}
 	if key := sink.events[0][1]; key["event"] != HealthKeyEvent || key["remaining"] != int64(90) || key["key_id"] != int64(3) {

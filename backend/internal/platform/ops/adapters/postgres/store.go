@@ -41,6 +41,9 @@ func (s Store) Snapshot(ctx context.Context) (ops.Snapshot, error) {
 	if snap.RiverJobs, err = s.grouped(ctx, riverStates, `SELECT state::text, count(*) FROM river_job GROUP BY state`); err != nil {
 		return ops.Snapshot{}, err
 	}
+	if snap.PhotoSizesJobs, err = s.photoSizesJobs(ctx); err != nil {
+		return ops.Snapshot{}, err
+	}
 	if snap.Tokens, err = s.grouped(ctx, nil, `SELECT status, count(*) FROM flickr_accounts GROUP BY status`); err != nil {
 		return ops.Snapshot{}, err
 	}
@@ -61,6 +64,24 @@ FROM work_items WHERE state = 'pending'`).Scan(&snap.Pending.Total, &snap.Pendin
 		snap.Pending.Oldest = *oldest
 	}
 	return snap, nil
+}
+
+func (s Store) photoSizesJobs(ctx context.Context) (ops.LaneJobs, error) {
+	var jobs ops.LaneJobs
+	err := s.Pool.QueryRow(ctx, `SELECT
+  (SELECT count(*) FROM photos p WHERE p.tombstoned_at IS NULL
+    AND (p.sizes_status <> 'confirmed' OR p.sizes_checked_at < p.last_update)
+    AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.args->>'kind'='photo.sizes'
+      AND j.state IN ('available','pending','scheduled','retryable','running')
+      AND (j.args->'args'->>'photo_id')::bigint=p.id))
+    + count(*) FILTER (WHERE state IN ('pending','scheduled','retryable')),
+  count(*) FILTER (WHERE state='available'),
+  count(*) FILTER (WHERE state='running')
+FROM river_job WHERE args->>'kind'='photo.sizes' AND state IN ('available','pending','scheduled','retryable','running')`).Scan(&jobs.Pending, &jobs.Ready, &jobs.Running)
+	if err != nil {
+		return ops.LaneJobs{}, fmt.Errorf("ops: count photo size lane: %w", err)
+	}
+	return jobs, nil
 }
 
 // estimateSQL reads a table size. Partitioned catalog tables hold millions of
