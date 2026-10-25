@@ -19,6 +19,7 @@ that serve it, or `MISSING`.
 | `/auth/register` | `/auth/register` | `/auth/register` |
 | `/auth/sessions` | `/auth/sessions` | `/auth/sessions` |
 | `/downloads` | `/downloads` | `/downloads` |
+| `/events` | `/events` | `/events` |
 | `/flickr-accounts` | `/flickr-accounts` | `/flickr-accounts` |
 | `/flickr-accounts/callback` | `/flickr-accounts/callback` | `/flickr-accounts/callback` |
 | `/flickr-accounts/connect` | `/flickr-accounts/connect` | `/flickr-accounts/connect` |

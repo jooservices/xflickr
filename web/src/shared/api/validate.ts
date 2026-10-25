@@ -65,6 +65,7 @@ export const ROUTES: Route[] = [
   route('GET', '/admin/quota', contract.GetAdminQuotaResponse),
   route('GET', '/admin/ops/status', contract.GetAdminOpsStatusResponse),
   route('POST', '/downloads', contract.CreateDownloadResponse),
+  route('GET', '/events', contract.StreamEventsResponse),
 ];
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

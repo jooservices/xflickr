@@ -70,6 +70,7 @@ func TestRoutesWithSessionIntegration(t *testing.T) {
 	cfg := config.Config{
 		DB:       dbCfg,
 		Redis:    config.RedisConfig{Host: env["REDIS_HOST"], Port: redisPort, DB: redisDB, Password: env["REDIS_PASSWORD"], Prefix: env["REDIS_PREFIX"]},
+		Blob:     config.BlobConfig{Driver: "local", LocalDir: t.TempDir()},
 		Crypto:   config.CryptoConfig{MasterKeys: "integration:" + base64.StdEncoding.EncodeToString(make([]byte, 32)), ActiveMasterKeyID: "integration"},
 		Identity: config.IdentityConfig{Argon2Memory: params.Memory, Argon2Iterations: params.Iterations, Argon2Parallelism: params.Parallelism, Argon2SaltLength: params.SaltLength, Argon2KeyLength: params.KeyLength},
 	}
@@ -82,7 +83,14 @@ func TestRoutesWithSessionIntegration(t *testing.T) {
 
 	csrf := strings.Repeat("c", 43)
 	send := func(method, path, body string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		ctx := context.Background()
+		if path == "/events" {
+			// The SSE stream only returns once the request ends.
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, 500*time.Millisecond)
+			defer cancel()
+		}
+		req := httptest.NewRequest(method, path, strings.NewReader(body)).WithContext(ctx)
 		req.Header.Set("Content-Type", "application/json")
 		req.AddCookie(&http.Cookie{Name: identityhttp.CSRFCookieName, Value: csrf})
 		req.Header.Set(identityhttp.CSRFHeaderName, csrf)
