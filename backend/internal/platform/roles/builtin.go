@@ -19,6 +19,9 @@ import (
 	accountsredis "github.com/jooservices/xflickr/internal/accounts/adapters/redis"
 	accountsettings "github.com/jooservices/xflickr/internal/accounts/adapters/settings"
 	accountsapp "github.com/jooservices/xflickr/internal/accounts/app"
+	accountsdomain "github.com/jooservices/xflickr/internal/accounts/domain"
+	crawlpostgres "github.com/jooservices/xflickr/internal/crawl/adapters/postgres"
+	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identitypostgres "github.com/jooservices/xflickr/internal/identity/adapters/postgres"
 	identityredis "github.com/jooservices/xflickr/internal/identity/adapters/redis"
@@ -30,6 +33,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/crypto"
 	"github.com/jooservices/xflickr/internal/platform/db"
 	"github.com/jooservices/xflickr/internal/platform/httpx"
+	"github.com/jooservices/xflickr/internal/platform/outbox"
 	"github.com/jooservices/xflickr/internal/platform/queue"
 	quotaPostgres "github.com/jooservices/xflickr/internal/quota/adapters/postgres"
 	quotaRedis "github.com/jooservices/xflickr/internal/quota/adapters/redis"
@@ -53,6 +57,10 @@ func NewBuiltinRegistry(version string) *Registry {
 	for _, name := range builtinRoleNames[1:] {
 		if name == "scheduler" {
 			registerBuiltin(registry, schedulerRole{})
+			continue
+		}
+		if name == "crawl" {
+			registerBuiltin(registry, crawlRole{})
 			continue
 		}
 		registerBuiltin(registry, idleRole{name: name})
@@ -89,6 +97,37 @@ func (schedulerRole) Run(ctx context.Context) error {
 	}
 	store := scheduleriver.Store{Pool: pool}
 	return newSchedulerPump(pool, redisClient, cfg, store, queueAdapter, settings).Run(ctx)
+}
+
+type crawlRole struct{}
+
+func (crawlRole) Name() string { return "crawl" }
+
+func (crawlRole) Run(ctx context.Context) error {
+	if ctx == nil || ctx.Err() != nil {
+		return nil
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	pool, err := db.NewPool(ctx, cfg.DB)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	settingsRepository, err := settingspostgres.New(pool)
+	if err != nil {
+		return err
+	}
+	interestsRepository, err := crawlpostgres.New(pool)
+	if err != nil {
+		return err
+	}
+	service := crawlapp.Interests{Repository: interestsRepository, Settings: settingsapp.New(settingsRepository)}
+	return outbox.NewConsumer(pool).Consume(ctx, accountsdomain.ConnectedTopic, func(ctx context.Context, event outbox.Event) error {
+		return service.HandleConnected(ctx, event.Payload)
+	})
 }
 
 func newSchedulerPump(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, store scheduleapp.PumpStore, queueAdapter queue.JobQueue, settings scheduleapp.PumpSettings) scheduleapp.Pump {

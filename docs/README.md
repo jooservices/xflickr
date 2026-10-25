@@ -17,6 +17,8 @@
   account status, and events.
 - [Catalog people and photos](catalog.md) — partitioned photo metadata,
   idempotent upserts, compressed source payloads, and size status.
+- [Crawl interests](crawl-interests.md) — per-user person depth, lowest-depth
+  deduplication, expandability, and connected-account registration.
 - [Web app shells](web-shells.md) — user and admin shells, route guard, tokens,
   state components, and EN/VI i18n.
 - [Schedule backlog](schedule.md) — deduplicated work items, cursors, and state

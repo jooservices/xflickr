@@ -30,6 +30,9 @@ components:
   catalog-app:      { in: internal/catalog/app/** }
   catalog-adapters: { in: internal/catalog/adapters/** }
   catalog-adapters-gen: { in: internal/catalog/adapters/postgres/gen/** }
+  crawl-domain:     { in: internal/crawl/domain/** }
+  crawl-app:        { in: internal/crawl/app/** }
+  crawl-adapters:   { in: internal/crawl/adapters/** }
   platform:
     in:
       - internal/platform/adapters/**
@@ -72,6 +75,10 @@ deps:
     mayDependOn: [catalog-domain]
   catalog-adapters:
     mayDependOn: [catalog-domain, catalog-app, catalog-adapters-gen]
+  crawl-app:
+    mayDependOn: [crawl-domain, settings-domain]
+  crawl-adapters:
+    mayDependOn: [crawl-domain, crawl-app, platform]
   platform:
     mayDependOn: [platform, pkg, migrations]
   wiring:
@@ -94,6 +101,9 @@ deps:
       - catalog-domain
       - catalog-app
       - catalog-adapters
+      - crawl-domain
+      - crawl-app
+      - crawl-adapters
       - platform
       - pkg
   pkg:

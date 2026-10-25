@@ -56,6 +56,12 @@ guide feature implementation; operational environment rules live in
 
 - Depth is configured per XFlickr user, with an administrator-defined default
   and maximum.
+- Store each person's interest depth per user. When another path finds the same
+  person for that user, keep the lowest depth; ignore discoveries beyond that
+  user's effective maximum depth. A person can be expanded when at least one
+  interested user has not reached their own maximum depth.
+- Connecting a Flickr account registers its owner as a depth 0 interest for
+  that XFlickr user.
 - Depth 1 follows contacts of that user's connected Flickr accounts. Further
   levels discover owners of photos favorited by contacts at the prior level.
 - A user's depth setting bounds that user's discovery. Do not crawl deeper on

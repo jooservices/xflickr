@@ -173,6 +173,52 @@ func TestConfiguredAPIRoleReturnsConfigurationError(t *testing.T) {
 	}
 }
 
+func TestCrawlRoleStopsForCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := (crawlRole{}).Run(ctx); err != nil {
+		t.Fatalf("crawlRole.Run() error = %v", err)
+	}
+}
+
+func TestCrawlRoleReturnsConfigurationError(t *testing.T) {
+	t.Setenv("DB_HOST", "")
+	if err := (crawlRole{}).Run(context.Background()); err == nil {
+		t.Fatal("crawl role started with missing database configuration")
+	}
+}
+
+func TestCrawlAndSchedulerRolesReturnDatabaseErrors(t *testing.T) {
+	for key, value := range map[string]string{
+		"DB_HOST":                   "127.0.0.1",
+		"DB_PORT":                   "1",
+		"DB_NAME":                   "xflickr_wt_roles_unit",
+		"DB_USER":                   "xflickr_roles_test",
+		"REDIS_PREFIX":              "roles_unit:",
+		"OPENSEARCH_INDEX_PREFIX":   "roles_unit_",
+		"NODE_ID":                   "roles-unit-test",
+		"XFLICKR_MASTER_KEYS":       "test:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{5}, 32)),
+		"XFLICKR_MASTER_KEY_ACTIVE": "test",
+	} {
+		t.Setenv(key, value)
+	}
+	if err := (crawlRole{}).Run(context.Background()); err == nil {
+		t.Fatal("crawl role started without a reachable database")
+	}
+	if err := (schedulerRole{}).Run(context.Background()); err == nil {
+		t.Fatal("scheduler role started without a reachable database")
+	}
+}
+
+func TestFeatureHandlerBuildersReturnKeyringErrors(t *testing.T) {
+	if _, err := buildKeyHandler(&pgxpool.Pool{}, config.Config{}); err == nil {
+		t.Fatal("key handler accepted missing keyring configuration")
+	}
+	if _, err := buildConnectHandler(&pgxpool.Pool{}, nil, config.Config{}); err == nil {
+		t.Fatal("connect handler accepted missing keyring configuration")
+	}
+}
+
 func TestConfiguredAPIRoleReturnsDatabaseConnectionError(t *testing.T) {
 	for key, value := range map[string]string{
 		"DB_HOST":                   "127.0.0.1",
