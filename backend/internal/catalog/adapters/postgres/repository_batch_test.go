@@ -92,6 +92,41 @@ func TestRepositoryBatchWritesAndFailures(t *testing.T) {
 	}
 }
 
+func TestCrawlCatalogWritersMapDomainRecordsToBatchUpserts(t *testing.T) {
+	db := &repositoryTestDB{batch: &repositoryTestBatch{}}
+	repository, err := New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	now := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
+	photoID := int64(12)
+	if err := repository.UpsertFavorites(ctx, []catalog.Favorite{{PersonNSID: "person", PhotoID: photoID, FaveDate: now}}); err != nil {
+		t.Fatalf("upsert crawl favorites: %v", err)
+	}
+	if err := repository.UpsertAlbums(ctx, []catalog.Album{{ID: "album", OwnerNSID: "person", PrimaryPhotoID: &photoID, PhotosCount: 1}}); err != nil {
+		t.Fatalf("upsert crawl albums: %v", err)
+	}
+	if err := repository.UpsertGalleries(ctx, []catalog.Gallery{{ID: "gallery", OwnerNSID: "person", PrimaryPhotoID: &photoID, PhotosCount: 1}}); err != nil {
+		t.Fatalf("upsert crawl galleries: %v", err)
+	}
+	if err := repository.UpsertGroups(ctx, []catalog.Group{{NSID: "group", Name: "Group", MembersCount: 2, PoolCount: 3}}); err != nil {
+		t.Fatalf("upsert crawl groups: %v", err)
+	}
+	if err := repository.UpsertPersonGroups(ctx, []catalog.PersonGroup{{PersonNSID: "person", GroupNSID: "group"}}); err != nil {
+		t.Fatalf("upsert crawl person groups: %v", err)
+	}
+	if err := repository.UpsertAlbumsBatch(ctx, []Album{{ID: "batch-album", OwnerNSID: "person", PrimaryPhotoID: &photoID, PhotosCount: 1}}); err != nil {
+		t.Fatalf("upsert album batch: %v", err)
+	}
+	if err := repository.UpsertGalleriesBatch(ctx, []Gallery{{ID: "batch-gallery", OwnerNSID: "person", PrimaryPhotoID: &photoID, PhotosCount: 1}}); err != nil {
+		t.Fatalf("upsert gallery batch: %v", err)
+	}
+	if db.batch.index != 7 {
+		t.Fatalf("catalog batch statements = %d, want 7", db.batch.index)
+	}
+}
+
 func TestRepositoryValidatesBeforeWriting(t *testing.T) {
 	repository, err := New(&repositoryTestDB{batch: &repositoryTestBatch{}})
 	if err != nil {

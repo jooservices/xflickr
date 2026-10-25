@@ -359,6 +359,68 @@ func TestCatalogFacetsPersistReturnedRecordsAndEmptyResponses(t *testing.T) {
 	}
 }
 
+func TestCatalogFacetsCompleteEmptyRepliesAndRetryMalformedReplies(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	suffix := fmt.Sprintf("catalog-empty-error-%d", time.Now().UnixNano())
+	person := suffix + "@N01"
+	emptySubject := suffix + "-empty"
+	errorSubject := suffix + "-error"
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{person, emptySubject, errorSubject})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1`, userID)
+	})
+	registry := crawlapp.NewRegistry()
+	if err := registry.Register(facets.Albums{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Register(facets.Galleries{}); err != nil {
+		t.Fatal(err)
+	}
+	responses := catalogFacetsFlickr{
+		"flickr.photosets.getList": json.RawMessage(`{"photosets":{"pages":1,"photoset":[]}}`),
+		"flickr.galleries.getList": json.RawMessage(`{`),
+	}
+	items := []int64{
+		insertPhotosFavoritesWork(t, ctx, pool, userID, "albums", emptySubject, 0, facets.Albums{}),
+		insertPhotosFavoritesWork(t, ctx, pool, userID, "galleries", errorSubject, 0, facets.Galleries{}),
+	}
+	store, err := NewEngine(pool, func(conn Conn) crawlapp.CatalogWriter {
+		repo, e := catalogpg.New(conn)
+		if e != nil {
+			t.Fatal(e)
+		}
+		return repo
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := &crawlapp.Engine{Registry: registry, Store: store, Units: store, Keys: intKeys{}, Governor: intGovernor{}, Flickr: responses, Settings: photosFavoritesSettings{maxDepth: 1}}
+	for _, id := range items {
+		if err := engine.Handle(ctx, id); err != nil {
+			t.Fatalf("handle catalog facet %d: %v", id, err)
+		}
+	}
+	var emptyState, errorState string
+	if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE id=$1`, items[0]).Scan(&emptyState); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE id=$1`, items[1]).Scan(&errorState); err != nil {
+		t.Fatal(err)
+	}
+	if emptyState != "done" || errorState != "pending" {
+		t.Fatalf("catalog work states for empty and malformed replies = %q/%q, want done/pending", emptyState, errorState)
+	}
+	if got := count(t, ctx, pool, `SELECT count(*) FROM albums WHERE owner_nsid=$1`, emptySubject); got != 0 {
+		t.Fatalf("empty album reply persisted %d albums, want 0", got)
+	}
+	if got := count(t, ctx, pool, `SELECT count(*) FROM galleries WHERE owner_nsid=$1`, errorSubject); got != 0 {
+		t.Fatalf("malformed gallery reply persisted %d galleries, want 0", got)
+	}
+}
+
 func TestChangeCheckFindsPhotoAndCrawlsOneIncrementalPage(t *testing.T) {
 	pool := openEngineTestPool(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)

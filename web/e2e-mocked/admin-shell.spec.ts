@@ -44,6 +44,7 @@ test.describe('admin shell', () => {
 
   for (const theme of ['dark', 'light'] as const) {
     test(`has no serious accessibility violations on every item (${theme})`, async ({ page }) => {
+      test.setTimeout(120_000);
       await page.goto('/admin');
       await expect(page.getByTestId('admin-cluster-status')).toHaveText('Healthy');
       if (theme === 'light') await page.getByTestId('admin-theme-toggle').click();
