@@ -96,7 +96,7 @@ func (repository *CycleRepository) ScheduleNext(ctx context.Context, userID int6
 		return false, fmt.Errorf("crawl: begin cycle scheduling: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	cursor, err := loadCycleCursor(ctx, tx, userID)
+	cursor, startedAt, err := loadCycleCursor(ctx, tx, userID)
 	if err != nil {
 		return false, err
 	}
@@ -104,12 +104,19 @@ func (repository *CycleRepository) ScheduleNext(ctx context.Context, userID int6
 	if err != nil || !found {
 		return false, err
 	}
+	candidate.cycleDue = app.CycleDue(startedAt, now, interval)
 	if !candidate.due {
 		return false, commitCycleVisit(ctx, tx, userID, now, candidate)
 	}
 	enqueued, err := enqueueCycleCheck(ctx, tx, userID, now, candidate)
-	if err != nil || !enqueued {
+	if err != nil {
 		return false, err
+	}
+	if !enqueued {
+		// An existing pending or running check already represents this visit.
+		// Move on without refreshing last_checked_at or holding the cursor here.
+		candidate.due = false
+		return false, commitCycleVisit(ctx, tx, userID, now, candidate)
 	}
 	if err := advanceCycle(ctx, tx, userID, now, candidate); err != nil {
 		return false, err
@@ -153,17 +160,22 @@ type cycleCandidate struct {
 	lastFavorite int64
 	wrapped      bool
 	due          bool
+	cycleDue     bool
 }
 
-func loadCycleCursor(ctx context.Context, tx cycleTx, userID int64) (string, error) {
+func loadCycleCursor(ctx context.Context, tx cycleTx, userID int64) (string, time.Time, error) {
 	if _, err := tx.Exec(ctx, `INSERT INTO crawl_cycles (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`, userID); err != nil {
-		return "", fmt.Errorf("crawl: initialize cycle: %w", err)
+		return "", time.Time{}, fmt.Errorf("crawl: initialize cycle: %w", err)
 	}
 	var cursor string
-	if err := tx.QueryRow(ctx, `SELECT cursor_person_nsid FROM crawl_cycles WHERE user_id=$1 FOR UPDATE`, userID).Scan(&cursor); err != nil {
-		return "", fmt.Errorf("crawl: read cycle cursor: %w", err)
+	var startedAt pgtype.Timestamptz
+	if err := tx.QueryRow(ctx, `SELECT cursor_person_nsid, started_at FROM crawl_cycles WHERE user_id=$1 FOR UPDATE`, userID).Scan(&cursor, &startedAt); err != nil {
+		return "", time.Time{}, fmt.Errorf("crawl: read cycle cursor: %w", err)
 	}
-	return cursor, nil
+	if !startedAt.Valid {
+		return cursor, time.Time{}, nil
+	}
+	return cursor, startedAt.Time, nil
 }
 
 func selectCycleCandidate(ctx context.Context, tx cycleTx, userID int64, cursor string, cutoff time.Time) (cycleCandidate, bool, error) {
@@ -213,10 +225,10 @@ func advanceCycle(ctx context.Context, tx cycleTx, userID int64, now time.Time, 
 			return fmt.Errorf("crawl: mark change check scheduled: %w", err)
 		}
 	}
-	if _, err := tx.Exec(ctx, `UPDATE crawl_cycles SET cursor_person_nsid=$2, started_at=CASE WHEN $3 THEN $4 ELSE COALESCE(started_at,$4) END, updated_at=$4 WHERE user_id=$1`, userID, candidate.person, candidate.wrapped, now); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE crawl_cycles SET cursor_person_nsid=$2, updated_at=$3 WHERE user_id=$1`, userID, candidate.person, now); err != nil {
 		return fmt.Errorf("crawl: advance cycle cursor: %w", err)
 	}
-	if candidate.wrapped {
+	if candidate.wrapped && candidate.cycleDue {
 		cursorJSON, err := json.Marshal(map[string]any{
 			"page": 1, "method": "flickr.photos.getContactsPhotos", "checkpoint_at": now.Unix(),
 			"params": map[string]string{"user_id": "", "count": "50"},
@@ -224,14 +236,20 @@ func advanceCycle(ctx context.Context, tx cycleTx, userID int64, now time.Time, 
 		if err != nil {
 			return fmt.Errorf("crawl: encode contacts photos cursor: %w", err)
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO work_items (kind, subject_key, user_id, depth, cursor)
+		tag, err := tx.Exec(ctx, `INSERT INTO work_items (kind, subject_key, user_id, depth, cursor)
 			SELECT 'contacts_photos', nsid, user_id, 0, jsonb_set($2::jsonb, '{params,user_id}', to_jsonb(nsid))
 			FROM flickr_accounts WHERE user_id=$1 AND status='ok'
 			ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO UPDATE SET
 				state='pending', cursor=EXCLUDED.cursor, attempts=0, last_error=NULL,
 				not_before=$3, lease_expires_at=NULL, updated_at=$3
-			WHERE work_items.state IN ('done','failed')`, userID, cursorJSON, now); err != nil {
+			WHERE work_items.state IN ('done','failed')`, userID, cursorJSON, now)
+		if err != nil {
 			return fmt.Errorf("crawl: enqueue contacts photos probes: %w", err)
+		}
+		if tag.RowsAffected() > 0 {
+			if _, err := tx.Exec(ctx, `UPDATE crawl_cycles SET started_at=$2 WHERE user_id=$1`, userID, now); err != nil {
+				return fmt.Errorf("crawl: mark contacts photos cycle started: %w", err)
+			}
 		}
 	}
 	return nil

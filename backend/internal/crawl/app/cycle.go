@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sort"
 	"time"
 
@@ -40,6 +41,7 @@ type Cycle struct {
 	Users    CycleUserReader
 	Settings EffectiveSettings
 	Now      func() time.Time
+	Logger   *slog.Logger
 }
 
 // RunOnce schedules the next due person for each user with crawl interests.
@@ -56,7 +58,14 @@ func (c Cycle) RunOnce(ctx context.Context) error {
 	}
 	for _, userID := range users {
 		if _, err := c.RunUser(ctx, userID); err != nil {
-			return err
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+			logger := c.Logger
+			if logger == nil {
+				logger = slog.Default()
+			}
+			logger.ErrorContext(ctx, "change check scheduling failed", "user_id", userID, "error", err)
 		}
 	}
 	return nil
@@ -108,6 +117,6 @@ func EffectiveCheckInterval(settings settingsdomain.Effective) time.Duration {
 }
 
 // CycleDue checks whether the user's next full cycle may start.
-func CycleDue(lastCycle, now time.Time, settings settingsdomain.Effective) bool {
-	return CheckIntervalDue(lastCycle, now, EffectiveCheckInterval(settings))
+func CycleDue(lastCycle, now time.Time, interval time.Duration) bool {
+	return CheckIntervalDue(lastCycle, now, interval)
 }

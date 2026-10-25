@@ -85,7 +85,11 @@ func (p Pump) RunOnce(ctx context.Context) (int, error) {
 	}
 	if p.ChangeChecks != nil {
 		if err := p.ChangeChecks.RunOnce(ctx); err != nil {
-			return 0, err
+			logger := p.Logger
+			if logger == nil {
+				logger = slog.Default()
+			}
+			logger.ErrorContext(ctx, "scheduler change check pass failed", "error", err)
 		}
 	}
 	if _, err := p.Store.Reclaim(ctx, p.Settings.RetryMax, p.Settings.RetryBackoff, time.Now()); err != nil {

@@ -30,8 +30,13 @@ func (r cycleRowFake) Scan(dest ...any) error {
 		case *int64:
 			*target = value.(int64)
 		case *pgtype.Timestamptz:
-			if value != nil {
-				*target = pgtype.Timestamptz{Time: value.(time.Time), Valid: true}
+			switch typed := value.(type) {
+			case time.Time:
+				*target = pgtype.Timestamptz{Time: typed, Valid: true}
+			case *time.Time:
+				if typed != nil {
+					*target = pgtype.Timestamptz{Time: *typed, Valid: true}
+				}
 			}
 		default:
 			return errors.New("unexpected scan target")
@@ -41,18 +46,20 @@ func (r cycleRowFake) Scan(dest ...any) error {
 }
 
 type cycleTxFake struct {
-	cursor      string
-	due         [][5]any
-	queries     int
-	execs       int
-	queryErrAt  int
-	execErrAt   int
-	commitErr   error
-	rollbackErr error
-	lastQuery   string
-	lastArgs    []any
-	lastExec    string
-	execArgs    []any
+	cursor          string
+	startedAt       *time.Time
+	due             [][5]any
+	queries         int
+	execs           int
+	queryErrAt      int
+	execErrAt       int
+	commitErr       error
+	rollbackErr     error
+	lastQuery       string
+	lastArgs        []any
+	lastExec        string
+	execArgs        []any
+	zeroEnqueueRows bool
 }
 
 type cycleRowsFake struct {
@@ -81,6 +88,9 @@ func (tx *cycleTxFake) Exec(_ context.Context, query string, args ...any) (pgcon
 	if tx.execErrAt == tx.execs {
 		return pgconn.CommandTag{}, errors.New("exec failed")
 	}
+	if strings.Contains(query, "INSERT INTO work_items") && tx.zeroEnqueueRows {
+		return pgconn.NewCommandTag("INSERT 0 0"), nil
+	}
 	return pgconn.NewCommandTag("UPDATE 1"), nil
 }
 
@@ -92,7 +102,7 @@ func (tx *cycleTxFake) QueryRow(_ context.Context, query string, args ...any) pg
 		return cycleRowFake{err: errors.New("query failed")}
 	}
 	if strings.Contains(query, "cursor_person_nsid") {
-		return cycleRowFake{values: []any{tx.cursor}}
+		return cycleRowFake{values: []any{tx.cursor, tx.startedAt}}
 	}
 	index := tx.queries - 2
 	if index < 0 || index >= len(tx.due) {
@@ -127,8 +137,21 @@ func TestScheduleNextWrapsAfterCursorAndHandlesNoDuePerson(t *testing.T) {
 	if err != nil || !queued {
 		t.Fatalf("wrap ScheduleNext() = %v, %v", queued, err)
 	}
-	if tx.execs != 5 || !strings.Contains(tx.lastExec, "INSERT INTO work_items") {
+	if tx.execs != 6 || !strings.Contains(tx.lastExec, "UPDATE crawl_cycles SET started_at") {
 		t.Fatalf("cycle wrap did not enqueue contacts probe: execs=%d query=%s", tx.execs, tx.lastExec)
+	}
+	recent := time.Now().Add(-30 * time.Minute)
+	noProbe := &cycleTxFake{cursor: "z", startedAt: &recent, due: [][5]any{{nil, nil, nil, nil, nil}, {"a", 0, int64(0), int64(0), time.Now()}}}
+	repository.begin = func(context.Context) (cycleTx, error) { return noProbe, nil }
+	queued, err = repository.ScheduleNext(context.Background(), 4, time.Now(), time.Hour)
+	if err != nil || queued || noProbe.execs != 2 || strings.Contains(noProbe.lastExec, "INSERT INTO work_items") {
+		t.Fatalf("not-due wrapped cycle queued contacts probe: queued=%v err=%v execs=%d last=%q", queued, err, noProbe.execs, noProbe.lastExec)
+	}
+	active := &cycleTxFake{cursor: "a", due: [][5]any{{"b", 1, int64(0), int64(0), nil}}, zeroEnqueueRows: true}
+	repository.begin = func(context.Context) (cycleTx, error) { return active, nil }
+	queued, err = repository.ScheduleNext(context.Background(), 4, time.Now(), time.Hour)
+	if err != nil || queued || active.execs != 3 || active.execArgs[1] != "b" {
+		t.Fatalf("active check did not count as visited: queued=%v err=%v execs=%d cursor_args=%#v", queued, err, active.execs, active.execArgs)
 	}
 	noDue := &cycleTxFake{cursor: ""}
 	repository.begin = func(context.Context) (cycleTx, error) { return noDue, nil }

@@ -95,8 +95,14 @@ func TestPumpRunOnceSchedulesChecksBeforeDispatch(t *testing.T) {
 	}
 	checkErr := errors.New("change check scheduling failed")
 	pump.ChangeChecks = changeCheckFake{err: checkErr}
-	if _, err := pump.RunOnce(context.Background()); !errors.Is(err, checkErr) || store.pumps != 1 {
-		t.Fatalf("RunOnce() error = %v, pumps=%d", err, store.pumps)
+	var output bytes.Buffer
+	pump.Logger = slog.New(slog.NewTextHandler(&output, nil))
+	got, err := pump.RunOnce(context.Background())
+	if err != nil || got != 3 || store.pumps != 2 || store.reclaims != 2 {
+		t.Fatalf("RunOnce() after auxiliary error = %d, %v; pumps=%d reclaims=%d", got, err, store.pumps, store.reclaims)
+	}
+	if !strings.Contains(output.String(), "scheduler change check pass failed") || !strings.Contains(output.String(), checkErr.Error()) {
+		t.Fatalf("RunOnce() log = %q, want change check failure", output.String())
 	}
 }
 

@@ -185,6 +185,11 @@ func (w workTx) Enqueue(ctx context.Context, work app.NewWork) error {
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("crawl: read check checkpoints: %w", err)
 		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Contacts photos can include people outside this user's crawl scope.
+			// Never create uncapped incremental work for an unknown interest.
+			return nil
+		}
 		if err == nil {
 			if work.Cursor.Params == nil {
 				work.Cursor.Params = make(map[string]string)

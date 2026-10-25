@@ -35,9 +35,13 @@ func (f *cycleStoreFake) ScheduleNext(_ context.Context, userID int64, now time.
 type cycleSettingsFake struct {
 	effective settingsdomain.Effective
 	err       error
+	errByUser map[int64]error
 }
 
-func (f cycleSettingsFake) Effective(context.Context, int64) (settingsdomain.Effective, error) {
+func (f cycleSettingsFake) Effective(_ context.Context, userID int64) (settingsdomain.Effective, error) {
+	if err := f.errByUser[userID]; err != nil {
+		return settingsdomain.Effective{}, err
+	}
 	return f.effective, f.err
 }
 
@@ -79,9 +83,13 @@ func TestCycleRunUserValidatesDependenciesAndErrors(t *testing.T) {
 
 func TestCycleRunOnceSchedulesEveryUser(t *testing.T) {
 	store := &cycleStoreFake{result: true}
-	cycle := Cycle{Store: store, Users: cycleUsersFake{users: []int64{7}}, Settings: cycleSettingsFake{}}
-	if err := cycle.RunOnce(context.Background()); err != nil || !store.called || store.userID != 7 {
+	checkSettings := &cycleSettingsTracker{errors: map[int64]error{7: errors.New("settings unavailable")}}
+	cycle := Cycle{Store: store, Users: cycleUsersFake{users: []int64{7, 8}}, Settings: checkSettings}
+	if err := cycle.RunOnce(context.Background()); err != nil || !store.called || store.userID != 8 {
 		t.Fatalf("RunOnce() = %v, store=%+v", err, store)
+	}
+	if !reflect.DeepEqual(checkSettings.visited, []int64{7, 8}) || store.userID != 8 {
+		t.Fatalf("RunOnce did not continue after user failure: users=%v final_user=%d", checkSettings.visited, store.userID)
 	}
 	if err := (Cycle{Store: store, Settings: cycleSettingsFake{}}).RunOnce(context.Background()); !errors.Is(err, errCycleIncomplete) {
 		t.Fatalf("missing user reader error = %v", err)
@@ -91,6 +99,16 @@ func TestCycleRunOnceSchedulesEveryUser(t *testing.T) {
 	if err := cycle.RunOnce(context.Background()); !errors.Is(err, usersErr) {
 		t.Fatalf("user query error = %v", err)
 	}
+}
+
+type cycleSettingsTracker struct {
+	visited []int64
+	errors  map[int64]error
+}
+
+func (f *cycleSettingsTracker) Effective(_ context.Context, userID int64) (settingsdomain.Effective, error) {
+	f.visited = append(f.visited, userID)
+	return settingsdomain.Effective{}, f.errors[userID]
 }
 
 func TestSelectCyclePersonWalksInOrderAndWrapsAfterLast(t *testing.T) {
@@ -133,8 +151,7 @@ func TestEffectiveCheckIntervalUsesConfiguredOrDefault(t *testing.T) {
 		t.Fatalf("default interval = %s", got)
 	}
 	now := time.Now()
-	settings := settingsdomain.Effective{ChangeCheckInterval: time.Hour}
-	if CycleDue(now.Add(-time.Hour), now, settings) != true || CycleDue(now, now, settings) {
+	if CycleDue(now.Add(-time.Hour), now, time.Hour) != true || CycleDue(now, now, time.Hour) {
 		t.Fatal("cycle due check did not follow interval")
 	}
 }

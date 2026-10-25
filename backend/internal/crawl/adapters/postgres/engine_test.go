@@ -247,6 +247,20 @@ func TestEnqueueDefaultsToDoNothingButSupportsExplicitReopen(t *testing.T) {
 	}
 }
 
+func TestEnqueueDropsCheckForUnknownOwner(t *testing.T) {
+	conn := &engConn{row: engRow{err: pgx.ErrNoRows}}
+	err := (workTx{tx: conn}).Enqueue(t.Context(), app.NewWork{
+		Kind: "check", Subject: "outside-scope", UserID: 7,
+		Cursor: domain.Cursor{Page: 1, Method: "flickr.people.getPhotos", Params: map[string]string{"min_upload_date": "0", "min_fave_date": "0"}},
+	})
+	if err != nil {
+		t.Fatalf("Enqueue() = %v", err)
+	}
+	if len(conn.execs) != 0 {
+		t.Fatalf("unknown owner enqueued work: %#v", conn.execs)
+	}
+}
+
 func TestWritersWrapFailures(t *testing.T) {
 	for _, fragment := range []string{"INSERT INTO work_items", "SET cursor", "SET state = 'done'", "crawl_interests", "crawl_observations"} {
 		conn := &engConn{failExec: fragment}
