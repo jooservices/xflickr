@@ -74,3 +74,57 @@ if ! grep -q 'crawl health' <<<"$container_logs"; then
 fi
 unset container_logs
 printf 'Crawl health log line: ok\n'
+
+# Query OpenObserve directly so the smoke check proves ingestion, not only local
+# logging. Response bodies stay in a temporary file and event values are not printed.
+set -a
+# shellcheck disable=SC1090
+. "$ENV_FILE"
+set +a
+observe_url="${OPENOBSERVE_URL:-http://127.0.0.1:15080}"
+if [[ "$observe_url" == http://openobserve:5080* ]]; then
+	observe_url="${observe_url/http:\/\/openobserve:5080/http:\/\/127.0.0.1:15080}"
+fi
+if [[ -z "${OPENOBSERVE_USERNAME:-}" || -z "${OPENOBSERVE_PASSWORD:-}" ]]; then
+	printf 'OpenObserve credentials are unavailable; cannot verify stream ingestion.\n' >&2
+	exit 1
+fi
+if [[ -z "${OPENOBSERVE_ALERT_DESTINATION:-}" ]]; then
+	printf 'OpenObserve notification destination is not configured.\n' >&2
+	exit 1
+fi
+observe_host="${observe_url#*://}"
+observe_host="${observe_host%%/*}"
+observe_host="${observe_host%%:*}"
+now_us="$(($(date +%s) * 1000000))"
+start_us="$((now_us - 900000000))"
+sql='SELECT * FROM "'"${OPENOBSERVE_STREAM:-xflickr}"'" WHERE event IN ('"'crawl.health'"', '"'crawl.health.key'"') ORDER BY _timestamp DESC LIMIT 100'
+query="$(jq -nc --arg sql "$sql" --argjson start "$start_us" --argjson end "$now_us" \
+	'{query:{sql:$sql,start_time:$start,end_time:$end,from:0,size:100}}')"
+response="$(mktemp)"
+trap 'rm -f "$response"' EXIT
+if ! curl --silent --show-error --fail \
+	--netrc-file <(printf 'machine %s login %s password %s\n' "$observe_host" "$OPENOBSERVE_USERNAME" "$OPENOBSERVE_PASSWORD") \
+	--header 'Content-Type: application/json' --data "$query" \
+	"${observe_url%/}/api/${OPENOBSERVE_ORG:-default}/_search" > "$response"; then
+	printf 'OpenObserve stream query failed.\n' >&2
+	exit 1
+fi
+if ! jq -e '
+	.hits as $hits
+	| ([$hits[]? | select(.event == "crawl.health")]
+		| any((has("pending_items") and has("ready_jobs") and has("calls_last_10min")
+			and has("failed_total") and has("tokens_revoked") and has("token_status")
+			and has("people") and has("photos") and has("photo_sizes")
+			and has("favorites") and has("albums") and has("galleries") and has("groups")
+			and has("work_items_pending") and has("river_jobs_available"))))
+	and ([$hits[]? | select(.event == "crawl.health.key")]
+		| any((has("key_id") and has("used") and has("remaining") and has("limit"))))
+' "$response" >/dev/null; then
+	printf 'Recent OpenObserve results are missing crawl.health or crawl.health.key events/fields.\n' >&2
+	exit 1
+fi
+rm -f "$response"
+trap - EXIT
+unset OPENOBSERVE_PASSWORD
+printf 'OpenObserve crawl health and per-key events: ok\n'

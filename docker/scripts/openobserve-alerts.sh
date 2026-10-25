@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Creates or updates the XFlickr crawl-health alerts in the shared OpenObserve.
-# Reads OPENOBSERVE_URL, OPENOBSERVE_USERNAME, OPENOBSERVE_PASSWORD, OPENOBSERVE_ORG
-# and OPENOBSERVE_STREAM from the environment file given as $1 (default .env.develop).
+# Reads OPENOBSERVE_URL, OPENOBSERVE_USERNAME, OPENOBSERVE_PASSWORD, OPENOBSERVE_ORG,
+# OPENOBSERVE_STREAM, and OPENOBSERVE_ALERT_DESTINATION from the environment file
+# given as $1 (default .env.develop).
 # The password is passed to curl through a netrc file on stdin, never on the command line.
 set -euo pipefail
 
@@ -24,8 +25,13 @@ if [[ "$URL" == http://openobserve:5080* ]]; then
 fi
 ORG="${OPENOBSERVE_ORG:-default}"
 STREAM="${OPENOBSERVE_STREAM:-xflickr}"
+DESTINATION="${OPENOBSERVE_ALERT_DESTINATION:-}"
 if [[ -z "${OPENOBSERVE_USERNAME:-}" || -z "${OPENOBSERVE_PASSWORD:-}" ]]; then
 	printf 'OPENOBSERVE_USERNAME and OPENOBSERVE_PASSWORD are required in %s.\n' "$ENV_FILE" >&2
+	exit 1
+fi
+if [[ -z "$DESTINATION" ]]; then
+	printf 'OPENOBSERVE_ALERT_DESTINATION must name an existing notification destination.\n' >&2
 	exit 1
 fi
 if ! command -v jq >/dev/null 2>&1; then
@@ -39,10 +45,9 @@ alerts_url="${URL%/}/api/v2/${ORG}/alerts"
 
 for file in "$ALERT_DIR"/*.json; do
 	name="$(basename "$file" .json)"
-	if ! jq -e '((.destinations // []) | length > 0) or ((.workflows // []) | length > 0)' "$file" >/dev/null; then
-		printf 'Alert %s cannot be applied: this OpenObserve API requires a configured destination or workflow.\n' "$name" >&2
-		exit 1
-	fi
+	payload="$(mktemp)"
+	trap 'rm -f "$payload"' EXIT
+	jq --arg destination "$DESTINATION" '.destinations = [$destination]' "$file" > "$payload"
 	alert_id="$(curl --silent --show-error --fail \
 		--netrc-file <(printf 'machine %s login %s password %s\n' "$host" "$OPENOBSERVE_USERNAME" "$OPENOBSERVE_PASSWORD") \
 		"$alerts_url" | jq -r --arg name "$name" '.list[]? | select(.name == $name) | .alert_id // empty' | head -n 1)"
@@ -54,7 +59,7 @@ for file in "$ALERT_DIR"/*.json; do
 	fi
 	status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
 		--netrc-file <(printf 'machine %s login %s password %s\n' "$host" "$OPENOBSERVE_USERNAME" "$OPENOBSERVE_PASSWORD") \
-		--request "$method" --header 'Content-Type: application/json' --data-binary "@$file" \
+		--request "$method" --header 'Content-Type: application/json' --data-binary "@$payload" \
 		"$endpoint")"
 	if [[ "$status" != 2* ]]; then
 		printf 'Alert %s was not applied (HTTP %s).\n' "$name" "$status" >&2
@@ -72,10 +77,13 @@ for file in "$ALERT_DIR"/*.json; do
 		--netrc-file <(printf 'machine %s login %s password %s\n' "$host" "$OPENOBSERVE_USERNAME" "$OPENOBSERVE_PASSWORD") \
 		"$alerts_url/$alert_id")"
 	if ! jq -e --arg name "$name" --arg stream "$STREAM" --slurpfile expected "$file" \
-		'.name == $name and .enabled == true and .stream_name == $stream and .stream_type == "logs" and .query_condition.sql == $expected[0].query_condition.sql' \
+		--arg destination "$DESTINATION" \
+		'.name == $name and .enabled == true and .stream_name == $stream and .stream_type == "logs" and .query_condition.sql == $expected[0].query_condition.sql and (.destinations | index($destination)) != null' \
 		<<<"$definition" >/dev/null; then
 		printf 'Alert %s was applied but its active configuration does not match the tracked definition.\n' "$name" >&2
 		exit 1
 	fi
 	printf 'Alert %s: applied and verified enabled\n' "$name"
+	rm -f "$payload"
+	trap - EXIT
 done

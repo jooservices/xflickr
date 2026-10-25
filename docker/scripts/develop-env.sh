@@ -47,7 +47,6 @@ ensure_env() {
 	ensure_setting HTTP_PORT 8080
 	ensure_setting BLOB_LOCAL_DIR /app/data
 	ensure_setting XFLICKR_ROLES api,scheduler,indexer,crawl,media,node-agent
-	configure_openobserve
 	chmod 600 "$ENV_FILE"
 }
 
@@ -62,8 +61,8 @@ configure_openobserve() {
 	local workspaces_env="$workspaces_root/.env"
 	local -a credentials=()
 	if [[ ! -f "$workspaces_env" ]]; then
-		printf 'Shared Workspaces private configuration is missing.\n' >&2
-		return 1
+		printf 'Warning: shared Workspaces private configuration is missing; leaving existing OpenObserve settings unchanged.\n' >&2
+		return 0
 	fi
 	mapfile -t credentials < <(
 		(
@@ -73,19 +72,23 @@ configure_openobserve() {
 		)
 	)
 	if [[ -z "${credentials[0]:-}" || -z "${credentials[1]:-}" ]]; then
-		printf 'Shared OpenObserve credentials are not configured in private Workspaces settings.\n' >&2
-		return 1
+		printf 'Warning: shared OpenObserve credentials are not configured in private Workspaces settings; leaving existing OpenObserve settings unchanged.\n' >&2
+		return 0
 	fi
 	set_private_setting OPENOBSERVE_URL http://openobserve:5080
 	set_private_setting OPENOBSERVE_ORG default
 	set_private_setting OPENOBSERVE_STREAM xflickr
 	set_private_setting OPENOBSERVE_USERNAME "${credentials[0]}"
 	set_private_setting OPENOBSERVE_PASSWORD "${credentials[1]}"
+	set_private_setting OPENOBSERVE_ALERT_DESTINATION javmeta_telegram
 	unset credentials
 }
 
 set_private_setting() {
 	local key="$1" value="$2" tmp replaced=0
+	if grep -Fqx -- "$key=$value" "$ENV_FILE"; then
+		return 0
+	fi
 	tmp="$(mktemp "$ROOT/.env.develop.XXXXXX")"
 	while IFS= read -r line || [[ -n "$line" ]]; do
 		if [[ "$line" == "$key="* ]]; then
@@ -111,6 +114,8 @@ compose() {
 case "${1:-}" in
 	up)
 		ensure_env
+		configure_openobserve
+		chmod 600 "$ENV_FILE"
 		compose up --build -d
 		;;
 	down)

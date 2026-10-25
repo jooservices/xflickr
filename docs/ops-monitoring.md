@@ -52,6 +52,10 @@ OpenObserve (`OPENOBSERVE_URL`, org `OPENOBSERVE_ORG`, stream
 Shipping failures are logged as warnings and never stop the crawl.
 The develop helper sources its account from private Workspaces configuration;
 credentials remain in the ignored `.env.develop` and are not written to logs.
+The notification destination name is also stored there as
+`OPENOBSERVE_ALERT_DESTINATION` (`javmeta_telegram` in the shared XFlickr
+environment); it is a reference to an existing OpenObserve destination, not a
+credential.
 
 ### Alerts
 
@@ -64,14 +68,15 @@ Alert definitions live in `deploy/openobserve/alerts/`:
 | `xflickr-token-revoked` | `tokens_revoked > 0`. |
 
 Apply them with `docker/scripts/openobserve-alerts.sh [env-file]` (defaults to
-`.env.develop`). The tracked alerts have no destination. The shared OpenObserve
-API currently requires a destination or workflow to save an alert, so configure
-an XFlickr notification route before applying them. The helper uses the v2
-organization alert API and verifies each saved definition; re-check it after an
-OpenObserve upgrade.
+`.env.develop`). The helper merges the configured destination name into each
+tracked definition at apply time, then verifies that the saved alert is enabled,
+uses the `xflickr` stream and query, and references that destination. It uses
+the v2 organization alert API; re-check it after an OpenObserve upgrade.
 
 ## Smoke check
 
-`docker/scripts/develop-smoke.sh` verifies that `/admin/ops/status` is protected
-and that a `crawl health` line is in the container log. Set
+`docker/scripts/develop-smoke.sh` verifies that `/admin/ops/status` is protected,
+that a `crawl health` line is in the container log, and that recent
+`crawl.health` and `crawl.health.key` events with their documented fields are
+queryable in the shared stream. Set
 `XFLICKR_ADMIN_COOKIE` to an admin session cookie to also read the JSON report.
