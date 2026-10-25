@@ -74,6 +74,23 @@ func TestFavoritesFacetStoresPhotosAndUniqueOwnerDiscoveries(t *testing.T) {
 	}
 }
 
+func TestFavoritesFacetHandlesMissingOwnerNameWithoutPersonUpsert(t *testing.T) {
+	payload := []byte(`{"photos":{"pages":1,"photo":[{"id":"101","owner":"deleted@N01","ownername":"","lastupdate":"1700000100"}]}}`)
+	result, err := (Favorites{}).Handle(t.Context(), domain.Page{Number: 1, Payload: payload})
+	if err != nil {
+		t.Fatalf("handle favorite with missing ownername: %v", err)
+	}
+	if len(result.Photos) != 1 || len(result.People) != 1 || len(result.Discoveries) != 1 {
+		t.Fatalf("missing ownername result = photos:%d people:%d discoveries:%d", len(result.Photos), len(result.People), len(result.Discoveries))
+	}
+	if result.Discoveries[0].NSID != "deleted@N01" {
+		t.Fatalf("discovery NSID = %q, want owner NSID", result.Discoveries[0].NSID)
+	}
+	if result.People[0].Username != "deleted@N01" {
+		t.Fatalf("fallback username = %q, want owner NSID", result.People[0].Username)
+	}
+}
+
 func TestFacetHandlesMalformedPayloadAndInvalidPhoto(t *testing.T) {
 	for _, facet := range []domain.Facet{Photos{}, Favorites{}} {
 		if _, err := facet.Handle(t.Context(), domain.Page{Payload: []byte("{")}); err == nil {

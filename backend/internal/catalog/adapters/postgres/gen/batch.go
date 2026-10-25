@@ -22,15 +22,21 @@ INSERT INTO people (nsid, username, realname, profile, icon, photos_count, last_
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (nsid) DO UPDATE SET
     username = EXCLUDED.username,
-    realname = EXCLUDED.realname,
-    profile = EXCLUDED.profile,
-    icon = EXCLUDED.icon,
-    photos_count = EXCLUDED.photos_count,
-    last_seen_at = EXCLUDED.last_seen_at,
-    facet_state = EXCLUDED.facet_state
+    realname = COALESCE(NULLIF(EXCLUDED.realname, ''), people.realname),
+    profile = CASE WHEN EXCLUDED.profile <> '{}'::jsonb THEN EXCLUDED.profile ELSE people.profile END,
+    icon = COALESCE(NULLIF(EXCLUDED.icon, ''), people.icon),
+    photos_count = CASE WHEN EXCLUDED.photos_count > 0 THEN EXCLUDED.photos_count ELSE people.photos_count END,
+    last_seen_at = COALESCE(EXCLUDED.last_seen_at, people.last_seen_at),
+    facet_state = CASE WHEN EXCLUDED.facet_state <> '{}'::jsonb THEN EXCLUDED.facet_state ELSE people.facet_state END
 WHERE (people.username, people.realname, people.profile, people.icon, people.photos_count, people.last_seen_at, people.facet_state)
     IS DISTINCT FROM
-    (EXCLUDED.username, EXCLUDED.realname, EXCLUDED.profile, EXCLUDED.icon, EXCLUDED.photos_count, EXCLUDED.last_seen_at, EXCLUDED.facet_state)
+    (EXCLUDED.username,
+     COALESCE(NULLIF(EXCLUDED.realname, ''), people.realname),
+     CASE WHEN EXCLUDED.profile <> '{}'::jsonb THEN EXCLUDED.profile ELSE people.profile END,
+     COALESCE(NULLIF(EXCLUDED.icon, ''), people.icon),
+     CASE WHEN EXCLUDED.photos_count > 0 THEN EXCLUDED.photos_count ELSE people.photos_count END,
+     COALESCE(EXCLUDED.last_seen_at, people.last_seen_at),
+     CASE WHEN EXCLUDED.facet_state <> '{}'::jsonb THEN EXCLUDED.facet_state ELSE people.facet_state END)
 `
 
 type UpsertPersonBatchResults struct {

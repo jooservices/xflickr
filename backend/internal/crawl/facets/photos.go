@@ -88,7 +88,11 @@ func parsePhotoPage(page domain.Page, discoverOwners bool) (domain.Result, error
 		}
 		result.Photos = append(result.Photos, converted)
 		if converted.OwnerNSID != "" {
-			people[converted.OwnerNSID] = catalog.Person{NSID: converted.OwnerNSID, Username: photo.OwnerName}
+			username := strings.TrimSpace(photo.OwnerName)
+			if username == "" {
+				username = converted.OwnerNSID
+			}
+			people[converted.OwnerNSID] = catalog.Person{NSID: converted.OwnerNSID, Username: username}
 			if discoverOwners && !seenOwners[converted.OwnerNSID] {
 				result.Discoveries = append(result.Discoveries, domain.Discovery{NSID: converted.OwnerNSID, Via: "favorite"})
 				seenOwners[converted.OwnerNSID] = true
