@@ -23,7 +23,7 @@ describe('user shell', () => {
   });
 
   it.each(USER_NAV.filter((item) => item.path !== '/'))(
-    'routes $id to a placeholder page and marks the tab current',
+    'routes $id to a page and marks the tab current',
     async (item) => {
       renderApp({ session: userSession, path: item.path });
 
@@ -31,6 +31,8 @@ describe('user shell', () => {
       expect(screen.getByTestId(`shell-nav-${item.id}`)).toHaveAttribute('aria-current', 'page');
       if (item.id === 'profile') {
         expect(screen.getByTestId('profile-page')).toBeInTheDocument();
+      } else if (item.id === 'crawl') {
+        expect(screen.getByTestId('user-crawl-page')).toBeInTheDocument();
       } else {
         expect(screen.getByTestId('shell-page')).toBeInTheDocument();
       }

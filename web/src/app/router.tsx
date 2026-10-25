@@ -2,6 +2,7 @@ import { createBrowserRouter, useNavigate } from 'react-router';
 import type { RouteObject } from 'react-router';
 import { PlaceholderPage } from '../pages';
 import { NotFoundState } from '../shared';
+import type { MessageKey } from '../shared';
 import { AdminGuard } from './guards';
 import { AdminGuardFailed, AdminGuardLoading, AdminShell } from './shells/AdminShell';
 import { UserShell } from './shells/UserShell';
@@ -10,6 +11,13 @@ import { LoginPage } from '../pages/login/LoginPage';
 import { RegisterPage } from '../pages/register/RegisterPage';
 import { ProfilePage } from '../pages/profile/ProfilePage';
 import { SetupPage } from '../pages/setup/SetupPage';
+import { CrawlPage } from '../pages/crawl';
+
+function userPageElement(path: string, labelKey: MessageKey) {
+  if (path === '/profile') return <ProfilePage />;
+  if (path === '/crawl') return <CrawlPage />;
+  return <PlaceholderPage scope="shell" titleKey={labelKey} />;
+}
 
 const userPages: RouteObject[] = [
   {
@@ -26,12 +34,7 @@ const userPages: RouteObject[] = [
   },
   ...USER_NAV.filter((item) => item.path !== '/').map((item): RouteObject => ({
     path: item.path.slice(1),
-    element:
-      item.path === '/profile' ? (
-        <ProfilePage />
-      ) : (
-        <PlaceholderPage scope="shell" titleKey={item.labelKey} />
-      ),
+    element: userPageElement(item.path, item.labelKey),
   })),
   {
     path: 'contacts/:id',

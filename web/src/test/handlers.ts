@@ -1,4 +1,5 @@
 import { http, HttpResponse } from 'msw/http';
+import { crawlHandlers } from './crawl';
 
 export const adminShellFixture = {
   open_issues: 3,
@@ -14,6 +15,7 @@ export const adminShellFixture = {
 };
 
 export const handlers = [
+  ...crawlHandlers,
   http.get('http://localhost/api/health', () => HttpResponse.json({ status: 'ok' })),
   http.get('*/healthz', () => HttpResponse.json({ status: 'ok' })),
   http.get('*/auth/config', () =>
