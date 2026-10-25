@@ -35,6 +35,11 @@ export function ProfilePage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const title = t('profile.title');
+
+  useEffect(() => {
+    document.title = t('shell.document-title', { view: title });
+  }, [t, title]);
 
   async function loadSessions() {
     try {
@@ -147,7 +152,9 @@ export function ProfilePage() {
 
   return (
     <div className={styles.page} data-testid="profile-page">
-      <h1 data-testid="profile-title">{t('profile.title')}</h1>
+      <h1 tabIndex={-1} data-testid="profile-title">
+        {title}
+      </h1>
       {message && (
         <p className={styles.notice} role="status">
           {message}
