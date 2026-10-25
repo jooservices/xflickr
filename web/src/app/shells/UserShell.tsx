@@ -13,6 +13,7 @@ import {
   useLoadingTiming,
   useTheme,
 } from '../../shared';
+import type { MessageKey } from '../../shared/i18n';
 import { AvatarMenu } from './AvatarMenu';
 import { Banners } from './Banners';
 import { LangToggle, LiveToggle, ThemeToggle } from './Controls';
@@ -146,7 +147,15 @@ function Shell({ forbidden }: UserShellProps) {
     retry: false,
   });
   const maintenance = useMaintenance(authenticated);
-  const { toggleLive } = useShellRuntime();
+  const { toggleLive, toast } = useShellRuntime();
+
+  // A page can hand the shell a toast to show after it navigates (setup wizard to Home).
+  useEffect(() => {
+    const key = (location.state as { toast?: MessageKey } | null)?.toast;
+    if (!key) return;
+    toast(t(key));
+    void navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, [location, navigate, t, toast]);
   const loading = session.status === 'loading';
   const showSkeleton = useLoadingTiming(loading);
   const onboarding = location.pathname === '/onboarding';

@@ -1,16 +1,25 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { FormEvent, RefObject } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import {
   connectFlickrAccount,
   flickrAccountCallback,
 } from '../../shared/api/gen/flickr-accounts/flickr-accounts';
-import { getMeCrawlQueue } from '../../shared/api/gen/crawl/crawl';
 import type { ApiKey, FlickrAccount } from '../../shared/api/gen/models';
 import { Icon, useI18n, useLoadingTiming } from '../../shared';
 import type { MessageKey } from '../../shared/i18n';
-import { checkAndSaveKey, loadAccounts, loadKeys } from '../../features/keys/api';
+import { AddKeyModal } from '../../features/keys/AddKeyModal';
+import {
+  clean,
+  keyPattern,
+  loadAccounts,
+  loadCrawlSettings,
+  loadKeys,
+  saveKey,
+  secretPattern,
+  startCrawl,
+} from '../../features/keys/api';
 import styles from './SetupPage.module.css';
 
 type Step = 1 | 2 | 3;
@@ -18,8 +27,6 @@ type KeyBanner = 'invalid' | 'network' | 'node';
 type FieldError = 'format' | 'duplicate';
 type ConnectError = 'denied' | 'expired' | 'start';
 
-const keyPattern = /^[a-f\d]{32}$/i;
-const secretPattern = /^[a-f\d]{16}$/i;
 const SKELETON_DELAY = 150;
 /** Polling on step 3 while the live stream is not available: 10, 20, 40, 60 s. */
 const POLL_MS = [10_000, 20_000, 40_000, 60_000];
@@ -41,12 +48,20 @@ export function tileBackground(palette: readonly string[], index: number): strin
   return `linear-gradient(135deg,${palette[index % palette.length]})`;
 }
 
-const clean = (value: string) => value.replace(/\s/g, '');
+/** The demo build (and dev server) offers Fill example; production does not. */
+const DEMO = import.meta.env.DEV || import.meta.env.VITE_DEMO === 'true';
+const DEFAULT_DEPTH = 2;
+
+function randomHex(length: number): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(length / 2));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 const statusOf = (error: unknown) => (error as { status?: number } | null)?.status;
 
 const accountStatusCopy: Record<FlickrAccount['status'], MessageKey> = {
   ok: 'user.wizard.done.account.ok',
-  reconnect_required: 'user.wizard.done.account.reconnect',
+  reconnect_required: 'shell.banner.reconnect',
   revoked: 'user.wizard.done.account.revoked',
 };
 
@@ -75,6 +90,7 @@ export function SetupPage() {
   const callbackStarted = useRef<string | null>(null);
   const announced = useRef<number | null>(null);
   const abort = useRef<AbortController | null>(null);
+  const finishing = useRef(false);
 
   const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const hintStep = params.get('step');
@@ -95,6 +111,10 @@ export function SetupPage() {
   const [callbackAccount, setCallbackAccount] = useState<FlickrAccount | null>(null);
   const [callbackPending, setCallbackPending] = useState(callback !== null);
   const [liveText, setLiveText] = useState('');
+  const [addKeyOpen, setAddKeyOpen] = useState(false);
+  const [depthChoice, setDepthChoice] = useState<number | null>(null);
+  const [finishError, setFinishError] = useState<'finish' | 'depth' | null>(null);
+  const [starting, setStarting] = useState(false);
 
   const [key, setKey] = useState('');
   const [secret, setSecret] = useState('');
@@ -153,18 +173,21 @@ export function SetupPage() {
         ? 'error'
         : 'steps';
 
-  const queueQuery = useQuery({
-    queryKey: ['/me/crawl/queue'],
-    queryFn: async ({ signal }) => {
-      const response = await getMeCrawlQueue({ signal });
-      if (response.status !== 200)
-        throw Object.assign(new Error('Could not load progress'), { status: response.status });
-      return response.data;
-    },
+  const settingsQuery = useQuery({
+    queryKey: ['/me/crawl-settings'],
+    queryFn: ({ signal }) => loadCrawlSettings(signal),
     enabled: view === 'steps' && step === 3 && hasAccount,
     retry: false,
   });
-  const backlog = queueQuery.data?.lanes.reduce((sum, lane) => sum + lane.backlog_calls, 0) ?? 0;
+  const settings = settingsQuery.data;
+  const settingsFailed = settingsQuery.isError;
+  // The slider runs from 1 to the administrator cap and never starts above it.
+  const depthMax = settings ? Math.max(1, settings.depth_max) : DEFAULT_DEPTH;
+  const depthStart = Math.min(
+    settings ? (settings.depth ?? settings.depth_default) : DEFAULT_DEPTH,
+    depthMax,
+  );
+  const depth = Math.min(Math.max(depthChoice ?? depthStart, 1), depthMax);
 
   useEffect(() => {
     if (!callback || callbackStarted.current === callback.state) return;
@@ -215,7 +238,6 @@ export function SetupPage() {
 
   // Step 3 is live; without a stream it polls with backoff and pauses while hidden.
   const refetchAccounts = accountsQuery.refetch;
-  const refetchQueue = queueQuery.refetch;
   useEffect(() => {
     if (view !== 'steps' || step !== 3) return undefined;
     let failures = 0;
@@ -226,8 +248,8 @@ export function SetupPage() {
     };
     const tick = async () => {
       if (!document.hidden) {
-        const [accounts, queue] = await Promise.all([refetchAccounts(), refetchQueue()]);
-        failures = accounts.isError || queue.isError ? failures + 1 : 0;
+        const accounts = await refetchAccounts();
+        failures = accounts.isError ? failures + 1 : 0;
       }
       if (!stopped) schedule();
     };
@@ -236,7 +258,7 @@ export function SetupPage() {
       stopped = true;
       window.clearTimeout(timer);
     };
-  }, [view, step, refetchAccounts, refetchQueue]);
+  }, [view, step, refetchAccounts]);
 
   const keyFormatInvalid = !keyPattern.test(clean(key));
   const secretFormatInvalid = !secretPattern.test(clean(secret));
@@ -244,6 +266,11 @@ export function SetupPage() {
     serverErrors.key ?? ((touched.key || submitted) && keyFormatInvalid ? 'format' : null);
   const secretError: FieldError | null =
     serverErrors.secret ?? ((touched.secret || submitted) && secretFormatInvalid ? 'format' : null);
+
+  // Focus after the click has finished moving focus to the button.
+  const focusField = (field: RefObject<HTMLInputElement | null>) => {
+    window.setTimeout(() => field.current?.focus(), 0);
+  };
 
   const goTo = (next: Step) => {
     setConnectError(null);
@@ -257,54 +284,75 @@ export function SetupPage() {
     setSubmitted(true);
     setBanner(null);
     setServerErrors({});
-    if (keyFormatInvalid) {
-      keyField.current?.focus();
-      return;
-    }
-    if (secretFormatInvalid) {
-      secretField.current?.focus();
+    if (keyFormatInvalid || secretFormatInvalid) {
+      focusField(keyFormatInvalid ? keyField : secretField);
       return;
     }
     setSending(true);
+    const result = await saveKey({
+      label: t('user.wizard.key.default-label'),
+      key: clean(key),
+      secret: clean(secret),
+    });
+    setSending(false);
+    if ('key' in result) {
+      queryClient.setQueryData<ApiKey[]>(['/keys'], [...keys, result.key]);
+      setSelectedKeyId(result.key.id);
+      setKey('');
+      setSecret('');
+      setShowSecret(false);
+      setTouched({ key: false, secret: false });
+      setSubmitted(false);
+      setLiveText(t('user.wizard.key.ok'));
+      goTo(2);
+      void queryClient.invalidateQueries({ queryKey: ['/keys'] });
+      return;
+    }
+    const { banner: failedBanner, fields } = result.failure;
+    if (failedBanner) setBanner(failedBanner);
+    if (fields) {
+      setServerErrors(fields);
+      focusField(fields.key ? keyField : secretField);
+    }
+  };
+
+  const fillExample = () => {
+    setKey(randomHex(32));
+    setSecret(randomHex(16));
+    setServerErrors({});
+    setBanner(null);
+  };
+
+  const addedKey = (added: ApiKey) => {
+    queryClient.setQueryData<ApiKey[]>(['/keys'], [...keys, added]);
+    void queryClient.invalidateQueries({ queryKey: ['/keys'] });
+    setSelectedKeyId(added.id);
+    setAddKeyOpen(false);
+    setLiveText(t('user.wizard.addkey.toast'));
+    goTo(2);
+  };
+
+  const finish = async () => {
+    if (finishing.current) return;
+    finishing.current = true;
+    setStarting(true);
+    setFinishError(null);
     try {
-      const response = await checkAndSaveKey({
-        label: t('user.wizard.key.default-label'),
-        key: clean(key),
-        secret: clean(secret),
-      });
-      if (response.status === 201) {
-        queryClient.setQueryData<ApiKey[]>(['/keys'], [...keys, response.data]);
-        setSelectedKeyId(response.data.id);
-        setKey('');
-        setSecret('');
-        setShowSecret(false);
-        setTouched({ key: false, secret: false });
-        setSubmitted(false);
-        setLiveText(t('user.wizard.key.ok'));
-        goTo(2);
-        void queryClient.invalidateQueries({ queryKey: ['/keys'] });
-      } else if (response.status === 400) {
-        const fields = (response.data.details as { fields?: Record<string, unknown> } | undefined)
-          ?.fields;
-        const next = {
-          ...(fields && 'key' in fields ? { key: 'format' as const } : {}),
-          ...(fields && 'secret' in fields ? { secret: 'format' as const } : {}),
-        };
-        if (next.key || next.secret) {
-          setServerErrors(next);
-          (next.key ? keyField : secretField).current?.focus();
-        } else setBanner('network');
-      } else if (response.status === 409) {
-        setServerErrors({ key: 'duplicate' });
-        keyField.current?.focus();
-      } else if (response.status === 422 && response.data.code === 'key_invalid')
-        setBanner('invalid');
-      else if (response.status === 503) setBanner('node');
-      else setBanner('network');
+      const result = await startCrawl(depth);
+      if (result.status === 202) {
+        void navigate('/', { state: { toast: 'user.wizard.done.toast' } });
+        return;
+      }
+      if (result.status === 422 && result.code === 'depth_out_of_range') {
+        setDepthChoice(null);
+        void settingsQuery.refetch();
+        setFinishError('depth');
+      } else setFinishError('finish');
     } catch {
-      setBanner('network');
+      setFinishError('finish');
     } finally {
-      setSending(false);
+      finishing.current = false;
+      setStarting(false);
     }
   };
 
@@ -416,12 +464,18 @@ export function SetupPage() {
               <p className={styles.eyebrow} data-testid="wizard-eyebrow">
                 {stepText}
               </p>
-              {staleAccounts ? (
+              {staleAccounts || (step === 3 && settingsFailed) ? (
                 <div role="status" className={styles.warn} data-testid="wizard-stale-banner">
-                  <span>{t('user.wizard.stale.accounts')}</span>
+                  <span>
+                    {t(staleAccounts ? 'user.wizard.stale.accounts' : 'user.wizard.stale.settings')}
+                  </span>
                   <button
+                    type="button"
                     className={styles.ghost}
-                    onClick={() => void accountsQuery.refetch()}
+                    onClick={() => {
+                      if (staleAccounts) void accountsQuery.refetch();
+                      if (settingsFailed) void settingsQuery.refetch();
+                    }}
                     data-testid="wizard-stale-retry"
                   >
                     {t('common.retry')}
@@ -545,6 +599,11 @@ export function SetupPage() {
                     >
                       {t('user.wizard.key.create-link')}
                     </a>
+                    {sending ? (
+                      <p role="status" className={styles.note} data-testid="wizard-key-checking">
+                        {t('user.wizard.key.checking')}
+                      </p>
+                    ) : null}
                     <div className={styles.actions}>
                       <button
                         className={styles.primary}
@@ -554,6 +613,16 @@ export function SetupPage() {
                       >
                         {sending ? t('user.wizard.key.checking') : t('user.wizard.key.submit')}
                       </button>
+                      {DEMO ? (
+                        <button
+                          type="button"
+                          className={styles.ghost}
+                          onClick={fillExample}
+                          data-testid="wizard-key-fill"
+                        >
+                          {t('user.wizard.key.fill')}
+                        </button>
+                      ) : null}
                       {hasAccount ? (
                         <button
                           type="button"
@@ -593,7 +662,7 @@ export function SetupPage() {
                         onClick={() => void authorize()}
                         data-testid="wizard-connect-retry"
                       >
-                        {t('user.wizard.connect.retry')}
+                        {t('common.retry')}
                       </button>
                     </div>
                   ) : null}
@@ -606,7 +675,7 @@ export function SetupPage() {
                       <li>{t('user.wizard.connect.perm.read')}</li>
                       <li>{t('user.wizard.connect.perm.private')}</li>
                     </ul>
-                    <p>{t('user.wizard.connect.perm.cannot')}</p>
+                    <p>{t('user.wizard.connect.perm.none')}</p>
                   </div>
                   {validKeys.length > 1 ? (
                     <label>
@@ -625,7 +694,7 @@ export function SetupPage() {
                     </label>
                   ) : null}
                   <p id="wizard-leave" className={styles.note}>
-                    {t('user.wizard.connect.leave-warning')}
+                    {t('user.wizard.connect.leave')}
                   </p>
                   {waiting ? (
                     <p role="status" className={styles.note} data-testid="wizard-connect-waiting">
@@ -640,7 +709,7 @@ export function SetupPage() {
                       onClick={() => void authorize()}
                       data-testid="wizard-connect-allow"
                     >
-                      {t('user.wizard.connect.authorize')}
+                      {t('user.wizard.connect.allow')}
                     </button>
                     {waiting ? (
                       <button
@@ -685,7 +754,7 @@ export function SetupPage() {
                   <h1 ref={heading} tabIndex={-1} data-testid="wizard-title">
                     {t('user.wizard.done.title')}
                   </h1>
-                  <p className={styles.lead}>{t('user.wizard.progress.note')}</p>
+                  <p className={styles.lead}>{t('user.wizard.done.lead')}</p>
                   <ul
                     className={styles.accounts}
                     aria-label={t('user.wizard.done.accounts')}
@@ -717,45 +786,67 @@ export function SetupPage() {
                       </li>
                     ))}
                   </ul>
-                  {queueQuery.isError ? (
-                    <div role="alert" className={styles.error} data-testid="wizard-done-error">
-                      {t('user.wizard.progress.error')}{' '}
-                      <button className={styles.ghost} onClick={() => void queueQuery.refetch()}>
-                        {t('common.retry')}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className={styles.progressCard} data-testid="wizard-crawl-progress">
-                      <span className={styles.liveDot} /> <b>{t('user.wizard.progress.title')}</b>
-                      <p>
-                        {queueQuery.data
-                          ? t(
-                              backlog > 0
-                                ? 'user.wizard.progress.backlog'
-                                : 'user.wizard.progress.starting',
-                              { count: backlog },
-                            )
-                          : t('user.wizard.progress.loading')}
-                      </p>
-                      <div className={styles.track}>
-                        <i style={{ width: `${backlog > 0 ? 18 : 5}%` }} />
-                      </div>
-                    </div>
-                  )}
                   <div className={styles.actions}>
-                    {canFinish ? (
-                      <Link className={styles.primary} to="/" data-testid="wizard-finish">
-                        {t('user.wizard.done.home')}
-                      </Link>
-                    ) : null}
                     <button
-                      className={styles.ghost}
+                      type="button"
+                      className={styles.secondary}
                       onClick={() => goTo(2)}
                       data-testid="wizard-add-account"
                     >
                       {t('user.wizard.done.add')}
                     </button>
                     <button
+                      type="button"
+                      className={styles.ghost}
+                      onClick={() => setAddKeyOpen(true)}
+                      data-testid="wizard-add-key"
+                    >
+                      {t('user.wizard.done.add-key')}
+                    </button>
+                  </div>
+                  <div className={styles.depth}>
+                    <label htmlFor="wizard-depth" data-testid="wizard-depth-value">
+                      {t('user.wizard.done.depth.label', { depth })}
+                    </label>
+                    <input
+                      id="wizard-depth"
+                      type="range"
+                      min={1}
+                      max={depthMax}
+                      step={1}
+                      value={depth}
+                      onChange={(event) => setDepthChoice(Number(event.target.value))}
+                      aria-valuetext={String(depth)}
+                      aria-describedby="wizard-depth-help"
+                      data-testid="wizard-depth"
+                    />
+                    <small id="wizard-depth-help">
+                      {t('user.wizard.done.depth.help', { max: depthMax })}
+                    </small>
+                  </div>
+                  {finishError ? (
+                    <div role="alert" className={styles.error} data-testid="wizard-done-error">
+                      {t(
+                        finishError === 'depth'
+                          ? 'user.wizard.done.error.depth'
+                          : 'user.wizard.done.error.finish',
+                      )}
+                    </div>
+                  ) : null}
+                  <div className={styles.actions}>
+                    {canFinish ? (
+                      <button
+                        type="button"
+                        className={styles.primary}
+                        disabled={starting}
+                        onClick={() => void finish()}
+                        data-testid="wizard-finish"
+                      >
+                        {starting ? t('user.wizard.done.finishing') : t('user.wizard.done.finish')}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
                       className={styles.ghost}
                       onClick={() => goTo(2)}
                       data-testid="wizard-done-back"
@@ -772,7 +863,7 @@ export function SetupPage() {
                 data-testid="wizard-live-region"
               >
                 {connectedAccount
-                  ? t('user.wizard.done.announce', { name: connectedAccount.username })
+                  ? `${connectedAccount.username} · ${t('user.wizard.done.account.ok')}`
                   : liveText}
               </div>
               <Link className={styles.keysLink} to="/keys">
@@ -782,6 +873,7 @@ export function SetupPage() {
           )}
         </div>
       </div>
+      {addKeyOpen ? <AddKeyModal onAdded={addedKey} onClose={() => setAddKeyOpen(false)} /> : null}
     </section>
   );
 }

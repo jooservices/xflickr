@@ -75,8 +75,7 @@
   color: var(--muted);
 }
 .callout,
-.consent,
-.progressCard {
+.consent {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -87,8 +86,7 @@
   background: color-mix(in srgb, var(--accent) 7%, var(--surface));
 }
 .callout p,
-.consent p,
-.progressCard p {
+.consent p {
   margin: 4px 0 0;
   color: var(--muted);
 }
@@ -147,6 +145,7 @@
   color: var(--muted);
 }
 .primary,
+.secondary,
 .ghost {
   min-height: 42px;
   display: inline-flex;
@@ -164,6 +163,11 @@
   border: 1px solid var(--accent);
   background: var(--accent);
   color: var(--accent-ink);
+}
+.secondary {
+  border: 1px solid var(--line2);
+  background: var(--surface);
+  color: var(--ink);
 }
 .ghost {
   border: 1px solid transparent;
@@ -193,32 +197,6 @@
   border-radius: 10px;
   background: color-mix(in srgb, var(--bad) 8%, transparent);
   color: var(--bad);
-}
-.progressCard {
-  background: var(--surface);
-}
-.liveDot {
-  width: 9px;
-  height: 9px;
-  margin-right: 8px;
-  display: inline-block;
-  border-radius: 50%;
-  background: var(--ok);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent);
-}
-.track {
-  height: 8px;
-  margin-top: 14px;
-  overflow: hidden;
-  border-radius: 8px;
-  background: var(--sunken);
-}
-.track i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-  transition: width var(--motion-progress);
 }
 .note {
   margin: 0;
@@ -372,9 +350,20 @@
     min-height: 44px;
   }
 }
+.depth {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.depth input {
+  min-height: 24px;
+  padding: 0;
+  accent-color: var(--accent);
+}
 @media (prefers-reduced-motion: reduce) {
-  .loading i,
-  .track i {
+  .loading i {
     animation: none;
     transition: none;
   }

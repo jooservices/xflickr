@@ -36,11 +36,13 @@ export async function request<T>(
   path: string,
   method = 'GET',
   body?: unknown,
+  signal?: AbortSignal,
 ): Promise<ApiResult<T>> {
   const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(method);
   const response = await fetch(path, {
     method,
     credentials: 'same-origin',
+    signal,
     headers: {
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
       ...(unsafe && csrfToken() ? { 'X-CSRF-Token': csrfToken() } : {}),

@@ -30,14 +30,11 @@ const account = {
 const keysReply = (keys: unknown[] = []) => http.get('*/keys', () => HttpResponse.json(keys));
 const accountsReply = (accounts: unknown[] = []) =>
   http.get('*/flickr-accounts', () => HttpResponse.json(accounts));
-const queueReply = (backlog = 0) =>
-  http.get('*/me/crawl/queue', () =>
-    HttpResponse.json({
-      lanes: backlog
-        ? [{ lane: 'person', backlog_calls: backlog, effective_calls_per_hour: 3600, eta_hours: 0 }]
-        : [],
-    }),
-  );
+const settingsReply = (
+  settings: Record<string, unknown> = { depth: null, depth_default: 2, depth_max: 4 },
+) => http.get('*/me/crawl-settings', () => HttpResponse.json(settings));
+const crawlStart = (status: number, body: Record<string, unknown> = {}) =>
+  http.post('*/crawl/start', () => HttpResponse.json(body, { status }));
 const postKey = (status: number, body: unknown) =>
   http.post('*/keys', () => HttpResponse.json(body as Record<string, unknown>, { status }));
 
@@ -86,14 +83,14 @@ describe('setup wizard step 1', () => {
     expect(key).toHaveAttribute('aria-invalid', 'true');
 
     fireEvent.click(screen.getByTestId('wizard-key-submit'));
-    expect(key).toHaveFocus();
+    await waitFor(() => expect(key).toHaveFocus());
     fireEvent.change(key, { target: { value: KEY } });
     expect(screen.queryByTestId('wizard-key-error-key')).toBeNull();
 
     fireEvent.change(screen.getByTestId('wizard-key-secret'), { target: { value: 'short' } });
     fireEvent.click(screen.getByTestId('wizard-key-submit'));
     expect(await screen.findByTestId('wizard-key-error-secret')).toBeInTheDocument();
-    expect(screen.getByTestId('wizard-key-secret')).toHaveFocus();
+    await waitFor(() => expect(screen.getByTestId('wizard-key-secret')).toHaveFocus());
     expect(create).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId('wizard-key-secret-toggle'));
@@ -145,7 +142,7 @@ describe('setup wizard step 1', () => {
       'already in your account',
     );
     expect(screen.queryByTestId('wizard-key-error')).toBeNull();
-    expect(screen.getByTestId('wizard-key-input')).toHaveFocus();
+    await waitFor(() => expect(screen.getByTestId('wizard-key-input')).toHaveFocus());
     fireEvent.change(screen.getByTestId('wizard-key-input'), { target: { value: 'f'.repeat(32) } });
     expect(screen.queryByTestId('wizard-key-error-key')).toBeNull();
   });
@@ -165,7 +162,7 @@ describe('setup wizard step 1', () => {
 
     expect(await screen.findByTestId('wizard-key-error-secret')).toBeInTheDocument();
     expect(screen.queryByTestId('wizard-key-error')).toBeNull();
-    expect(screen.getByTestId('wizard-key-secret')).toHaveFocus();
+    await waitFor(() => expect(screen.getByTestId('wizard-key-secret')).toHaveFocus());
   });
 
   it('maps validation_failed without known fields to the network banner', async () => {
@@ -204,7 +201,7 @@ describe('setup wizard step 1', () => {
 
     const banner = await screen.findByTestId('wizard-key-error');
     expect(banner).toHaveTextContent('could not reach Flickr');
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByTestId('wizard-step-connect')).toBeInTheDocument();
   });
 
@@ -348,7 +345,7 @@ describe('OAuth return', () => {
     server.use(
       keysReply([acceptedKey]),
       accountsReply(),
-      queueReply(4),
+      settingsReply(),
       http.get('*/flickr-accounts/callback', async ({ request }) => {
         calls += 1;
         expect(new URL(request.url).searchParams.get('state')).toBe('state-1');
@@ -362,16 +359,15 @@ describe('OAuth return', () => {
     expect(await screen.findByTestId('wizard-step-done')).toBeInTheDocument();
     expect(calls).toBe(1);
     expect(router.state.location.search).toBe('?step=3&connected=9');
-    await waitFor(() => expect(screen.getByTestId('wizard-crawl-progress')).toHaveTextContent('4'));
   });
 
   it('focuses and announces the new account row, in English and Vietnamese', async () => {
-    server.use(keysReply([acceptedKey]), accountsReply([account]), queueReply());
+    server.use(keysReply([acceptedKey]), accountsReply([account]), settingsReply());
     open('/onboarding?step=3&connected=9');
 
     const row = await screen.findByTestId('wizard-account-u-1');
     await waitFor(() => expect(row).toHaveFocus());
-    expect(screen.getByTestId('wizard-live-region')).toHaveTextContent('Anna is connected.');
+    expect(screen.getByTestId('wizard-live-region')).toHaveTextContent('Anna · Connected');
     expect(screen.getByTestId('wizard-account-status-u-1')).toHaveTextContent('Connected');
     expect(row).toHaveTextContent('Key My Flickr key · read permission');
     expect(screen.getByTestId('wizard-accounts')).toBeInTheDocument();
@@ -408,26 +404,25 @@ describe('OAuth return', () => {
 
 describe('setup wizard step 3 and resume', () => {
   it('resumes at step 3 for a user with accounts, whatever the URL says', async () => {
-    server.use(keysReply([acceptedKey]), accountsReply([account]), queueReply());
+    server.use(keysReply([acceptedKey]), accountsReply([account]), settingsReply());
     open('/onboarding?step=1');
     expect(await screen.findByTestId('wizard-step-done')).toBeInTheDocument();
   });
 
-  it('opens step 3 from the server data and shows progress and actions', async () => {
-    server.use(keysReply([acceptedKey]), accountsReply([account]), queueReply(7));
+  it('opens step 3 from the server data with the accounts, depth and actions', async () => {
+    server.use(keysReply([acceptedKey]), accountsReply([account]), settingsReply());
     open();
     expect(await screen.findByTestId('wizard-step-done')).toBeInTheDocument();
-    expect(await screen.findByTestId('wizard-crawl-progress')).toHaveTextContent(
-      '7 calls are queued',
-    );
-    expect(screen.getByTestId('wizard-finish')).toHaveAttribute('href', '/');
+    expect(screen.getByTestId('wizard-title')).toHaveTextContent('You are connected');
+    expect(screen.getByTestId('wizard-finish')).toHaveTextContent('Start crawling and go to Home');
+    expect(screen.getByTestId('wizard-add-key')).toHaveTextContent('Use another API key');
 
     fireEvent.click(screen.getByTestId('wizard-add-account'));
     expect(await screen.findByTestId('wizard-step-connect')).toBeInTheDocument();
   });
 
   it('goes Back from step 3 to step 2 and from step 1 back to step 3', async () => {
-    server.use(keysReply([acceptedKey]), accountsReply([account]), queueReply());
+    server.use(keysReply([acceptedKey]), accountsReply([account]), settingsReply());
     open();
     fireEvent.click(await screen.findByTestId('wizard-done-back'));
     fireEvent.click(await screen.findByTestId('wizard-connect-back'));
@@ -458,7 +453,7 @@ describe('setup wizard step 3 and resume', () => {
     server.use(
       keysReply([acceptedKey]),
       accountsReply([{ ...account, status: 'revoked' }]),
-      queueReply(),
+      settingsReply(),
     );
     open();
     expect(await screen.findByTestId('wizard-account-status-u-1')).toHaveTextContent(
@@ -467,28 +462,12 @@ describe('setup wizard step 3 and resume', () => {
     expect(screen.queryByTestId('wizard-finish')).toBeNull();
   });
 
-  it('reports a progress failure and retries only the progress request', async () => {
-    let fail = true;
-    server.use(
-      keysReply([acceptedKey]),
-      accountsReply([account]),
-      http.get('*/me/crawl/queue', () =>
-        fail ? HttpResponse.json({ code: 'x' }, { status: 500 }) : HttpResponse.json({ lanes: [] }),
-      ),
-    );
-    open();
-    const error = await screen.findByTestId('wizard-done-error');
-    fail = false;
-    fireEvent.click(error.querySelector('button') as HTMLElement);
-    expect(await screen.findByTestId('wizard-crawl-progress')).toHaveTextContent('getting ready');
-  });
-
   it('keeps the list with a stale banner when a refetch fails, and retries', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let calls = 0;
     server.use(
       keysReply([acceptedKey]),
-      queueReply(),
+      settingsReply(),
       http.get('*/flickr-accounts', () => {
         calls += 1;
         return calls === 2
@@ -512,7 +491,7 @@ describe('setup wizard step 3 and resume', () => {
     let list: unknown[] = [account];
     server.use(
       keysReply([acceptedKey]),
-      queueReply(),
+      settingsReply(),
       http.get('*/flickr-accounts', () => HttpResponse.json(list)),
     );
     open();
@@ -582,13 +561,14 @@ describe('setup wizard states', () => {
     expect(await screen.findByTestId('wizard-error')).toBeInTheDocument();
   });
 
-  it('treats a missing account list endpoint as unknown accounts', async () => {
+  it('shows a missing account list endpoint as the load error, not as an empty list', async () => {
     server.use(
       keysReply([acceptedKey]),
       http.get('*/flickr-accounts', () => new HttpResponse(null, { status: 404 })),
     );
     open();
-    expect(await screen.findByTestId('wizard-step-connect')).toBeInTheDocument();
+    expect(await screen.findByTestId('wizard-error')).toBeInTheDocument();
+    expect(screen.queryByTestId('wizard-step-connect')).toBeNull();
   });
 
   it('switches between English and Vietnamese on the wizard', async () => {
@@ -607,5 +587,281 @@ describe('setup wizard states', () => {
   it('draws mosaic tiles from the palette and falls back when it is empty', () => {
     expect(tileBackground(['#111,#222'], 3)).toBe('linear-gradient(135deg,#111,#222)');
     expect(tileBackground([], 3)).toBe('var(--sunken)');
+  });
+});
+
+describe('setup wizard step 3 crawl start', () => {
+  const stepThree = (...extra: Parameters<typeof server.use>) => {
+    server.use(keysReply([acceptedKey]), accountsReply([account]), ...extra);
+    return open();
+  };
+
+  it('defaults the depth to 2 and caps the slider at depth_max', async () => {
+    stepThree(settingsReply({ depth: null, depth_default: 2, depth_max: 4 }));
+    const slider = await screen.findByTestId('wizard-depth');
+    await waitFor(() => expect(slider).toHaveAttribute('max', '4'));
+    expect(slider).toHaveAttribute('min', '1');
+    expect(slider).toHaveValue('2');
+    expect(screen.getByTestId('wizard-depth-value')).toHaveTextContent('Crawl depth: 2');
+    fireEvent.change(slider, { target: { value: '4' } });
+    expect(screen.getByTestId('wizard-depth-value')).toHaveTextContent('Crawl depth: 4');
+  });
+
+  it('starts at the saved depth but never above the cap', async () => {
+    stepThree(settingsReply({ depth: 9, depth_default: 2, depth_max: 3 }));
+    await waitFor(() => expect(screen.getByTestId('wizard-depth')).toHaveValue('3'));
+  });
+
+  it('posts the chosen depth, goes Home after 202 and shows the toast there', async () => {
+    const start = vi.fn(async ({ request }: { request: Request }) => {
+      expect(await request.json()).toEqual({ depth: 3 });
+      return HttpResponse.json({ started: true }, { status: 202 });
+    });
+    const { router } = stepThree(settingsReply(), http.post('*/crawl/start', start));
+    await waitFor(() => expect(screen.getByTestId('wizard-depth')).toHaveAttribute('max', '4'));
+    fireEvent.change(screen.getByTestId('wizard-depth'), { target: { value: '3' } });
+    fireEvent.click(screen.getByTestId('wizard-finish'));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'));
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('Crawling has started')).toBeInTheDocument();
+  });
+
+  it('stays on step 3 with a banner when starting fails, and keeps the depth', async () => {
+    stepThree(settingsReply(), crawlStart(500, { code: 'x' }));
+    await waitFor(() => expect(screen.getByTestId('wizard-depth')).toHaveAttribute('max', '4'));
+    fireEvent.change(screen.getByTestId('wizard-depth'), { target: { value: '3' } });
+    fireEvent.click(screen.getByTestId('wizard-finish'));
+    expect(await screen.findByTestId('wizard-done-error')).toHaveTextContent(
+      'could not start the crawl',
+    );
+    expect(screen.getByTestId('wizard-depth')).toHaveValue('3');
+    expect(screen.getByTestId('wizard-finish')).not.toBeDisabled();
+  });
+
+  it('reports a network failure of the start call', async () => {
+    stepThree(
+      settingsReply(),
+      http.post('*/crawl/start', () => HttpResponse.error()),
+    );
+    fireEvent.click(await screen.findByTestId('wizard-finish'));
+    expect(await screen.findByTestId('wizard-done-error')).toBeInTheDocument();
+  });
+
+  it('re-reads the settings and explains depth_out_of_range', async () => {
+    let reads = 0;
+    stepThree(
+      http.get('*/me/crawl-settings', () => {
+        reads += 1;
+        return HttpResponse.json({ depth: null, depth_default: 2, depth_max: reads === 1 ? 4 : 2 });
+      }),
+      crawlStart(422, { code: 'depth_out_of_range' }),
+    );
+    await waitFor(() => expect(screen.getByTestId('wizard-depth')).toHaveAttribute('max', '4'));
+    fireEvent.change(screen.getByTestId('wizard-depth'), { target: { value: '4' } });
+    fireEvent.click(screen.getByTestId('wizard-finish'));
+    expect(await screen.findByTestId('wizard-done-error')).toHaveTextContent('above the limit');
+    await waitFor(() => expect(screen.getByTestId('wizard-depth')).toHaveAttribute('max', '2'));
+    expect(reads).toBe(2);
+  });
+
+  it('works with depth 2 and a stale banner when the settings fail, and retries them', async () => {
+    let fail = true;
+    stepThree(
+      http.get('*/me/crawl-settings', () =>
+        fail
+          ? HttpResponse.json({ code: 'x' }, { status: 500 })
+          : HttpResponse.json({ depth: null, depth_default: 2, depth_max: 4 }),
+      ),
+      crawlStart(202, { started: true }),
+    );
+    const banner = await screen.findByTestId('wizard-stale-banner');
+    expect(banner).toHaveTextContent('Depth 2 is used');
+    expect(screen.getByTestId('wizard-depth')).toHaveValue('2');
+    fail = false;
+    fireEvent.click(screen.getByTestId('wizard-stale-retry'));
+    await waitFor(() => expect(screen.queryByTestId('wizard-stale-banner')).toBeNull());
+    expect(screen.getByTestId('wizard-depth')).toHaveAttribute('max', '4');
+  });
+
+  it('shows the Vietnamese copy for step 3', async () => {
+    stepThree(settingsReply());
+    await screen.findByTestId('wizard-step-done');
+    fireEvent.click(screen.getByTestId('shell-lang-toggle'));
+    await waitFor(() =>
+      expect(screen.getByTestId('wizard-finish')).toHaveTextContent(
+        'Bắt đầu thu thập và về Trang chủ',
+      ),
+    );
+    expect(screen.getByTestId('wizard-depth-value')).toHaveTextContent('Độ sâu thu thập: 2');
+  });
+});
+
+describe('Add API key modal', () => {
+  const newKey = { ...acceptedKey, id: 6, label: 'Second key' };
+  const openModal = async () => {
+    server.use(keysReply([acceptedKey]), accountsReply([account]), settingsReply());
+    open();
+    const opener = await screen.findByTestId('wizard-add-key');
+    opener.focus();
+    fireEvent.click(opener);
+    return { opener, dialog: await screen.findByTestId('wizard-addkey-modal') };
+  };
+  const fillModal = (label = 'Second key', key = KEY, secret = SECRET) => {
+    fireEvent.change(screen.getByTestId('wizard-addkey-label'), { target: { value: label } });
+    fireEvent.change(screen.getByTestId('wizard-addkey-key'), { target: { value: key } });
+    fireEvent.change(screen.getByTestId('wizard-addkey-secret'), { target: { value: secret } });
+  };
+
+  it('opens as a labelled modal dialog with focus inside, and Esc restores focus', async () => {
+    const { opener, dialog } = await openModal();
+    expect(dialog).toHaveAttribute('role', 'dialog');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAccessibleName('Add API key');
+    expect(screen.getByTestId('wizard-addkey-label')).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByTestId('wizard-addkey-modal')).toBeNull();
+    expect(opener).toHaveFocus();
+  });
+
+  it('closes on Cancel and traps Tab inside the dialog', async () => {
+    await openModal();
+    const cancel = screen.getByTestId('wizard-addkey-cancel');
+    const label = screen.getByTestId('wizard-addkey-label');
+    const submit = screen.getByTestId('wizard-addkey-submit');
+    submit.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(label).toHaveFocus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(submit).toHaveFocus();
+    fireEvent.click(cancel);
+    expect(screen.queryByTestId('wizard-addkey-modal')).toBeNull();
+  });
+
+  it('toggles the secret and validates the label (1 to 80), key and secret on submit', async () => {
+    await openModal();
+    const secret = screen.getByTestId('wizard-addkey-secret');
+    expect(secret).toHaveAttribute('type', 'password');
+    fireEvent.click(screen.getByTestId('wizard-addkey-secret-toggle'));
+    expect(secret).toHaveAttribute('type', 'text');
+    expect(screen.getByTestId('wizard-addkey-secret-toggle')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    fireEvent.click(screen.getByTestId('wizard-addkey-submit'));
+    expect(screen.getByText('Enter a label of 1 to 80 characters.')).toBeInTheDocument();
+    expect(screen.getByTestId('wizard-addkey-label')).toHaveFocus();
+
+    fillModal('x'.repeat(81), 'nope');
+    fireEvent.click(screen.getByTestId('wizard-addkey-submit'));
+    expect(screen.getByText('Enter a label of 1 to 80 characters.')).toBeInTheDocument();
+
+    fillModal('Second key', 'nope');
+    fireEvent.click(screen.getByTestId('wizard-addkey-submit'));
+    expect(screen.getByTestId('wizard-addkey-key')).toHaveFocus();
+    expect(screen.getByText(/The key should be 32 characters/)).toBeInTheDocument();
+
+    fillModal('Second key', KEY, 'bad');
+    fireEvent.click(screen.getByTestId('wizard-addkey-submit'));
+    expect(screen.getByTestId('wizard-addkey-secret')).toHaveFocus();
+    expect(screen.getByText(/The secret should be 16 characters/)).toBeInTheDocument();
+  });
+
+  it('adds the key, closes, and returns to step 2 with the new key selected', async () => {
+    const create = vi.fn(async ({ request }: { request: Request }) => {
+      expect(await request.json()).toEqual({ label: 'Second key', key: KEY, secret: SECRET });
+      return HttpResponse.json(newKey, { status: 201 });
+    });
+    await openModal();
+    let added = false;
+    server.use(
+      http.get('*/keys', () => HttpResponse.json(added ? [acceptedKey, newKey] : [acceptedKey])),
+      http.post('*/keys', (info) => {
+        added = true;
+        return create(info);
+      }),
+    );
+    fillModal();
+    fireEvent.click(screen.getByTestId('wizard-addkey-submit'));
+
+    expect(await screen.findByTestId('wizard-step-connect')).toBeInTheDocument();
+    expect(screen.queryByTestId('wizard-addkey-modal')).toBeNull();
+    expect(screen.getByTestId('wizard-live-region')).toHaveTextContent('Key added');
+    expect(screen.getByTestId('wizard-key-select')).toHaveValue('6');
+  });
+
+  it.each([
+    [422, { code: 'key_invalid' }, 'wizard-addkey-error', 'Flickr rejected this key'],
+    [503, { code: 'no_node_available' }, 'wizard-addkey-error', 'No healthy node'],
+    [500, { code: 'x' }, 'wizard-addkey-error', 'could not reach Flickr'],
+  ])('shows status %s as a banner and keeps the values', async (status, body, testId, text) => {
+    server.use(http.post('*/keys', () => HttpResponse.json(body, { status })));
+    await openModal();
+    fillModal();
+    fireEvent.click(screen.getByTestId('wizard-addkey-submit'));
+    expect(await screen.findByTestId(testId)).toHaveTextContent(text);
+    expect(screen.getByTestId(testId)).toHaveFocus();
+    expect(screen.getByTestId('wizard-addkey-key')).toHaveValue(KEY);
+  });
+
+  it('shows key_duplicate and server field errors under the fields', async () => {
+    server.use(
+      http.post('*/keys', () => HttpResponse.json({ code: 'key_duplicate' }, { status: 409 })),
+    );
+    await openModal();
+    fillModal();
+    fireEvent.click(screen.getByTestId('wizard-addkey-submit'));
+    expect(await screen.findByText('This key is already in your account.')).toBeInTheDocument();
+    expect(screen.getByTestId('wizard-addkey-key')).toHaveFocus();
+
+    server.use(
+      http.post('*/keys', () =>
+        HttpResponse.json(
+          { code: 'validation_failed', details: { fields: { secret: 'bad' } } },
+          { status: 400 },
+        ),
+      ),
+    );
+    fireEvent.change(screen.getByTestId('wizard-addkey-key'), { target: { value: KEY } });
+    fireEvent.click(screen.getByTestId('wizard-addkey-submit'));
+    expect(await screen.findByText(/The secret should be 16 characters/)).toBeInTheDocument();
+    expect(screen.getByTestId('wizard-addkey-secret')).toHaveFocus();
+  });
+});
+
+describe('setup wizard step 1 extras', () => {
+  it('shows the Checking with Flickr status while sending', async () => {
+    server.use(
+      keysReply(),
+      accountsReply(),
+      http.post('*/keys', async () => {
+        await delay(60);
+        return HttpResponse.json(acceptedKey, { status: 201 });
+      }),
+    );
+    open();
+    await fillAndSubmit();
+    expect(await screen.findByTestId('wizard-key-checking')).toHaveTextContent(
+      'Checking with Flickr…',
+    );
+    expect(await screen.findByTestId('wizard-step-connect')).toBeInTheDocument();
+  });
+
+  it('fills a random valid-looking pair in the demo build without any call', async () => {
+    const create = vi.fn(() => HttpResponse.json(acceptedKey, { status: 201 }));
+    server.use(keysReply(), accountsReply(), http.post('*/keys', create));
+    open();
+    fireEvent.click(await screen.findByTestId('wizard-key-fill'));
+    expect((screen.getByTestId('wizard-key-input') as HTMLInputElement).value).toMatch(
+      /^[a-f\d]{32}$/,
+    );
+    expect((screen.getByTestId('wizard-key-secret') as HTMLInputElement).value).toMatch(
+      /^[a-f\d]{16}$/,
+    );
+    expect(create).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('wizard-key-submit'));
+    expect(await screen.findByTestId('wizard-step-connect')).toBeInTheDocument();
   });
 });
