@@ -444,6 +444,11 @@ export type selectMyContactResponse204 = {
   status: 204;
 };
 
+export type selectMyContactResponse400 = {
+  data: Error;
+  status: 400;
+};
+
 export type selectMyContactResponse401 = {
   data: Error;
   status: 401;
@@ -458,7 +463,7 @@ export type selectMyContactResponseSuccess = selectMyContactResponse204 & {
   headers: Headers;
 };
 export type selectMyContactResponseError = (
-  selectMyContactResponse401 | selectMyContactResponse404
+  selectMyContactResponse400 | selectMyContactResponse401 | selectMyContactResponse404
 ) & {
   headers: Headers;
 };

@@ -256,7 +256,7 @@ func buildCrawlHandler(pool *pgxpool.Pool) (crawlhttp.CrawlHandler, error) {
 	if err != nil {
 		return crawlhttp.CrawlHandler{}, err
 	}
-	return crawlhttp.CrawlHandler{Controls: crawlapp.Controls{Repository: repository}, ActorID: userIDFromPrincipal}, nil
+	return crawlhttp.CrawlHandler{Controls: crawlapp.Controls{Repository: repository, Rescorer: scheduleriver.PersonRescorer{Pool: pool}}, ActorID: userIDFromPrincipal}, nil
 }
 
 func buildKeyHandler(pool *pgxpool.Pool, cfg config.Config) (accountshttp.KeyHandler, error) {

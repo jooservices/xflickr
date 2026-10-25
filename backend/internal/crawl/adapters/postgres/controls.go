@@ -137,7 +137,7 @@ func (r *Controls) laneStatus(ctx context.Context, userID int64) ([]app.LaneStat
 }
 
 func (r *Controls) SetStarred(ctx context.Context, userID int64, person string, starred bool) error {
-	return r.update(ctx, userID, person, `WITH changed AS (UPDATE crawl_interests SET starred=$3 WHERE user_id=$1 AND person_nsid=$2 RETURNING user_id,person_nsid,starred,selected_until) UPDATE work_items w SET starred=changed.starred,direct_action=COALESCE(changed.selected_until>now(),FALSE),score_updated_at=NULL,updated_at=now() FROM changed WHERE w.user_id=changed.user_id AND w.subject_key=changed.person_nsid AND w.state IN ('pending','ready','running','waiting')`, starred)
+	return r.update(ctx, userID, person, `WITH changed AS (UPDATE crawl_interests SET starred=$3 WHERE user_id=$1 AND person_nsid=$2 RETURNING user_id,person_nsid,starred,selected_until) UPDATE work_items w SET starred=changed.starred,score_updated_at=NULL,updated_at=now() FROM changed WHERE w.user_id=changed.user_id AND w.subject_key=changed.person_nsid AND w.state IN ('pending','ready','running','waiting')`, starred)
 }
 
 func (r *Controls) Select(ctx context.Context, userID int64, person string, until time.Time) error {

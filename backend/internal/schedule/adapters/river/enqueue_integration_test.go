@@ -441,6 +441,53 @@ func TestRecomputeScoresStopsSelectionBonusAfterSevenDays(t *testing.T) {
 	}
 }
 
+func TestRescorePersonReordersBacklog(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run make test-integration to use the configured worktree database")
+	}
+	pool := integrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	suffix := fmt.Sprintf("rescore-person-%d", time.Now().UnixNano())
+	keyID := seedKey(t, ctx, pool, suffix)
+	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
+	var userID int64
+	if err := pool.QueryRow(ctx, `SELECT user_id FROM api_keys WHERE id=$1`, keyID).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	for _, subject := range []string{suffix + "-a", suffix + "-b"} {
+		if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via) VALUES($1,$2,0,'contact')`, userID, subject); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,score,created_at) VALUES('person',$1,$2,$3,'pending',5,now())`, subject, userID, keyID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Star and select "b" the way the controls adapter does, then rescore only it.
+	if _, err := pool.Exec(ctx, `UPDATE crawl_interests SET starred=TRUE,selected_until=now()+interval '7 days' WHERE user_id=$1 AND person_nsid=$2`, userID, suffix+"-b"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET starred=TRUE,direct_action=TRUE,score_updated_at=NULL WHERE user_id=$1 AND subject_key=$2`, userID, suffix+"-b"); err != nil {
+		t.Fatal(err)
+	}
+	weights := domain.ScoreWeights{DirectAction: 100, Starred: 20}
+	count, err := (scheduleriver.Store{Pool: pool}).RescorePerson(ctx, userID, suffix+"-b", weights, 0)
+	if err != nil || count != 1 {
+		t.Fatalf("RescorePerson() count=%d err=%v", count, err)
+	}
+	var a, b float64
+	if err := pool.QueryRow(ctx, `SELECT (SELECT score FROM work_items WHERE subject_key=$1),(SELECT score FROM work_items WHERE subject_key=$2)`, suffix+"-a", suffix+"-b").Scan(&a, &b); err != nil {
+		t.Fatal(err)
+	}
+	if a != 5 || b != 120 {
+		t.Fatalf("scores a=%v b=%v, want 5 and 120", a, b)
+	}
+	var first string
+	if err := pool.QueryRow(ctx, `SELECT subject_key FROM work_items WHERE user_id=$1 AND state='pending' ORDER BY score DESC, not_before, id LIMIT 1`, userID).Scan(&first); err != nil || first != suffix+"-b" {
+		t.Fatalf("dispatch order first=%q err=%v", first, err)
+	}
+}
+
 func TestRecomputeScoresReturnsInvalidScoreError(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("run make test-integration to use the configured worktree database")

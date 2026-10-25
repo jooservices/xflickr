@@ -27,6 +27,22 @@ func TestLoadSettingsValidatesDependenciesAndDatabaseErrors(t *testing.T) {
 	}
 }
 
+func TestRescorePersonValidatesDependencies(t *testing.T) {
+	if _, err := (Store{}).RescorePerson(context.Background(), 1, "p", domain.ScoreWeights{}, 1); err == nil {
+		t.Fatal("RescorePerson accepted nil pool")
+	}
+	pool := closedPool(t)
+	if _, err := (Store{Pool: pool}).RescorePerson(context.Background(), 0, "p", domain.ScoreWeights{}, 1); err == nil {
+		t.Fatal("RescorePerson accepted invalid user")
+	}
+	if err := (PersonRescorer{}).RescorePerson(context.Background(), 1, "p"); err == nil {
+		t.Fatal("PersonRescorer accepted nil pool")
+	}
+	if err := (PersonRescorer{Pool: pool}).RescorePerson(context.Background(), 1, "p"); err == nil {
+		t.Fatal("PersonRescorer ignored settings failure")
+	}
+}
+
 func TestRecomputeScoresValidatesDependencies(t *testing.T) {
 	if _, err := (Store{}).RecomputeScores(context.Background(), 1, domain.ScoreWeights{}, 1); err == nil {
 		t.Fatal("RecomputeScores accepted nil pool")

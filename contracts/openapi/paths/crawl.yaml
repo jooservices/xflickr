@@ -42,6 +42,7 @@ select:
       - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
     responses:
       '204': { description: Contact selected }
+      '400': { description: Invalid request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
       '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
       '404': { description: Contact not found, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
 

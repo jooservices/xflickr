@@ -56,6 +56,8 @@ func (h CrawlHandler) StarMyContact(ctx context.Context, request gen.StarMyConta
 		return nil, err
 	}
 	switch status {
+	case 400:
+		return gen.StarMyContact400JSONResponse(gen.Error{Code: "invalid_request", Message: "Contact NSID is required"}), nil
 	case 401:
 		return gen.StarMyContact401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
 	case 404:
@@ -74,6 +76,9 @@ func (h CrawlHandler) SelectMyContact(ctx context.Context, request gen.SelectMyC
 	user, nsid, status, err := h.prepare(ctx, request.Nsid)
 	if err != nil {
 		return nil, err
+	}
+	if status == 400 {
+		return gen.SelectMyContact400JSONResponse(gen.Error{Code: "invalid_request", Message: "Contact NSID is required"}), nil
 	}
 	if status == 401 {
 		return gen.SelectMyContact401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
@@ -98,6 +103,9 @@ func (h CrawlHandler) PauseCrawlContact(ctx context.Context, request gen.PauseCr
 	if err != nil {
 		return nil, err
 	}
+	if status == 400 {
+		return gen.PauseCrawlContact400JSONResponse(gen.Error{Code: "invalid_request", Message: "Contact NSID is required"}), nil
+	}
 	if status == 401 {
 		return gen.PauseCrawlContact401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
 	}
@@ -120,6 +128,9 @@ func (h CrawlHandler) ResumeCrawlContact(ctx context.Context, request gen.Resume
 	user, nsid, status, err := h.prepare(ctx, request.Body.Nsid)
 	if err != nil {
 		return nil, err
+	}
+	if status == 400 {
+		return gen.ResumeCrawlContact400JSONResponse(gen.Error{Code: "invalid_request", Message: "Contact NSID is required"}), nil
 	}
 	if status == 401 {
 		return gen.ResumeCrawlContact401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
@@ -146,7 +157,7 @@ func (h CrawlHandler) prepare(ctx context.Context, person string) (int64, string
 	}
 	person = strings.TrimSpace(person)
 	if person == "" {
-		return 0, "", 0, app.ErrInvalidPerson
+		return 0, "", 400, nil
 	}
 	return user, person, 0, nil
 }

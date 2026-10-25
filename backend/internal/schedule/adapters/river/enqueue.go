@@ -153,12 +153,25 @@ func (s Store) RecomputeScores(ctx context.Context, batchSize int, weights domai
 	if s.Pool == nil || ctx == nil || batchSize <= 0 || maxDepth < 0 {
 		return 0, errors.New("schedule: invalid score aging dependencies")
 	}
+	return s.rescore(ctx, `WHERE w.state='pending' AND w.not_before <= now() ORDER BY w.score_updated_at NULLS FIRST, w.created_at, w.id LIMIT $1`, []any{batchSize}, weights, maxDepth)
+}
+
+// RescorePerson immediately refreshes the stored scores of one user's pending
+// backlog for a person, so star/select changes affect dispatch order at once.
+func (s Store) RescorePerson(ctx context.Context, userID int64, person string, weights domain.ScoreWeights, maxDepth int) (int, error) {
+	if s.Pool == nil || ctx == nil || userID <= 0 || person == "" || maxDepth < 0 {
+		return 0, errors.New("schedule: invalid person rescore dependencies")
+	}
+	return s.rescore(ctx, `WHERE w.state='pending' AND w.user_id=$1 AND w.subject_key=$2 ORDER BY w.id`, []any{userID, person}, weights, maxDepth)
+}
+
+func (s Store) rescore(ctx context.Context, selection string, args []any, weights domain.ScoreWeights, maxDepth int) (int, error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: begin score aging: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	rows, err := tx.Query(ctx, `SELECT w.id, COALESCE(p.weight,1), w.direct_action AND COALESCE(ci.selected_until IS NULL OR ci.selected_until > now(), TRUE), w.starred, w.depth, EXTRACT(EPOCH FROM (now()-w.created_at))/60.0 FROM work_items w LEFT JOIN users u ON u.id=w.user_id LEFT JOIN plans p ON p.id=u.plan_id LEFT JOIN crawl_interests ci ON ci.user_id=w.user_id AND ci.person_nsid=w.subject_key WHERE w.state='pending' AND w.not_before <= now() ORDER BY w.score_updated_at NULLS FIRST, w.created_at, w.id LIMIT $1 FOR UPDATE OF w SKIP LOCKED`, batchSize)
+	rows, err := tx.Query(ctx, `SELECT w.id, COALESCE(p.weight,1), w.direct_action AND COALESCE(ci.selected_until IS NULL OR ci.selected_until > now(), TRUE), w.starred, w.depth, EXTRACT(EPOCH FROM (now()-w.created_at))/60.0 FROM work_items w LEFT JOIN users u ON u.id=w.user_id LEFT JOIN plans p ON p.id=u.plan_id LEFT JOIN crawl_interests ci ON ci.user_id=w.user_id AND ci.person_nsid=w.subject_key `+selection+` FOR UPDATE OF w SKIP LOCKED`, args...)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: select score aging batch: %w", err)
 	}
@@ -166,7 +179,7 @@ func (s Store) RecomputeScores(ctx context.Context, batchSize int, weights domai
 		id    int64
 		score float64
 	}
-	batch := make([]scored, 0, batchSize)
+	var batch []scored
 	for rows.Next() {
 		var id int64
 		var planWeight, depth int
@@ -197,6 +210,21 @@ func (s Store) RecomputeScores(ctx context.Context, batchSize int, weights domai
 		return 0, fmt.Errorf("schedule: commit score aging: %w", err)
 	}
 	return len(batch), nil
+}
+
+// PersonRescorer rescores a person's backlog using the stored pump settings.
+type PersonRescorer struct{ Pool *pgxpool.Pool }
+
+func (r PersonRescorer) RescorePerson(ctx context.Context, userID int64, person string) error {
+	if r.Pool == nil || ctx == nil {
+		return errors.New("schedule: person rescorer dependencies are required")
+	}
+	settings, err := LoadSettings(ctx, r.Pool)
+	if err != nil {
+		return err
+	}
+	_, err = Store{Pool: r.Pool}.RescorePerson(ctx, userID, person, settings.ScoreWeights, settings.MaxDepth)
+	return err
 }
 
 func (s Store) pumpKeys(ctx context.Context, tx pgx.Tx, keys []int64, settings app.PumpSettings, credits app.CreditProvider, jobs queue.JobQueue) (int, error) {

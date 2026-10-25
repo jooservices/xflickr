@@ -78,4 +78,11 @@ func TestCrawlControlsIntegration(t *testing.T) {
 	if err := repo.SetStarred(ctx, userID, suffix, false); err != nil {
 		t.Fatal(err)
 	}
+	// Unstarring must not clear direct_action, which selection owns.
+	if err := pool.QueryRow(ctx, `SELECT starred,direct_action FROM work_items WHERE user_id=$1 AND subject_key=$2 LIMIT 1`, userID, suffix).Scan(&starred, &direct); err != nil {
+		t.Fatal(err)
+	}
+	if starred || !direct {
+		t.Fatalf("after unstar starred=%t direct=%t", starred, direct)
+	}
 }

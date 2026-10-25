@@ -9,6 +9,7 @@ import (
 
 var (
 	ErrControlRepositoryRequired = errors.New("crawl: control repository is required")
+	ErrRescorerRequired          = errors.New("crawl: backlog rescorer is required")
 	ErrInvalidPerson             = errors.New("crawl: person NSID is required")
 	ErrPersonNotFound            = errors.New("crawl: person interest not found")
 )
@@ -45,9 +46,15 @@ type ControlRepository interface {
 	SetPaused(context.Context, int64, string, bool) error
 }
 
+// Rescorer refreshes the stored priority of a person's pending backlog.
+type Rescorer interface {
+	RescorePerson(context.Context, int64, string) error
+}
+
 // Controls exposes crawl progress and contact-level controls.
 type Controls struct {
 	Repository ControlRepository
+	Rescorer   Rescorer
 	Now        func() time.Time
 }
 
@@ -62,7 +69,11 @@ func (service Controls) Star(ctx context.Context, userID int64, person string, s
 	if err := service.ready(ctx, userID, person); err != nil {
 		return err
 	}
-	return service.Repository.SetStarred(ctx, userID, strings.TrimSpace(person), starred)
+	person = strings.TrimSpace(person)
+	if err := service.Repository.SetStarred(ctx, userID, person, starred); err != nil {
+		return err
+	}
+	return service.Rescorer.RescorePerson(ctx, userID, person)
 }
 
 func (service Controls) Select(ctx context.Context, userID int64, person string) error {
@@ -73,7 +84,11 @@ func (service Controls) Select(ctx context.Context, userID int64, person string)
 	if service.Now != nil {
 		now = service.Now().UTC()
 	}
-	return service.Repository.Select(ctx, userID, strings.TrimSpace(person), now.Add(7*24*time.Hour))
+	person = strings.TrimSpace(person)
+	if err := service.Repository.Select(ctx, userID, person, now.Add(7*24*time.Hour)); err != nil {
+		return err
+	}
+	return service.Rescorer.RescorePerson(ctx, userID, person)
 }
 
 func (service Controls) Pause(ctx context.Context, userID int64, person string) error {
@@ -105,6 +120,9 @@ func (service Controls) ready(ctx context.Context, userID int64, person string) 
 	}
 	if person != "" && strings.TrimSpace(person) == "" {
 		return ErrInvalidPerson
+	}
+	if service.Rescorer == nil {
+		return ErrRescorerRequired
 	}
 	return nil
 }

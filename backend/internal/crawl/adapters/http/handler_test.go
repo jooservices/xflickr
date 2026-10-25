@@ -115,8 +115,27 @@ func TestContactControls(t *testing.T) {
 	if _, err := h.SelectMyContact(ctx, gen.SelectMyContactRequestObject{Nsid: "a"}); err == nil {
 		t.Fatal("service error swallowed")
 	}
-	if _, err := h.SelectMyContact(ctx, gen.SelectMyContactRequestObject{Nsid: " "}); !errors.Is(err, app.ErrInvalidPerson) {
-		t.Fatalf("blank nsid error=%v", err)
+	for _, nsid := range []string{"", " \t"} {
+		if response, err := h.SelectMyContact(ctx, gen.SelectMyContactRequestObject{Nsid: nsid}); err != nil {
+			t.Fatal(err)
+		} else if _, ok := response.(gen.SelectMyContact400JSONResponse); !ok {
+			t.Fatalf("select nsid %q not rejected: %T", nsid, response)
+		}
+		if response, err := h.StarMyContact(ctx, gen.StarMyContactRequestObject{Nsid: nsid, Body: &gen.StarContactRequest{}}); err != nil {
+			t.Fatal(err)
+		} else if _, ok := response.(gen.StarMyContact400JSONResponse); !ok {
+			t.Fatalf("star nsid %q not rejected: %T", nsid, response)
+		}
+		if response, err := h.PauseCrawlContact(ctx, gen.PauseCrawlContactRequestObject{Body: &gen.CrawlContactRequest{Nsid: nsid}}); err != nil {
+			t.Fatal(err)
+		} else if _, ok := response.(gen.PauseCrawlContact400JSONResponse); !ok {
+			t.Fatalf("pause nsid %q not rejected: %T", nsid, response)
+		}
+		if response, err := h.ResumeCrawlContact(ctx, gen.ResumeCrawlContactRequestObject{Body: &gen.CrawlContactRequest{Nsid: nsid}}); err != nil {
+			t.Fatal(err)
+		} else if _, ok := response.(gen.ResumeCrawlContact400JSONResponse); !ok {
+			t.Fatalf("resume nsid %q not rejected: %T", nsid, response)
+		}
 	}
 	if _, err := (CrawlHandler{ActorID: testActor}).PauseCrawlContact(ctx, gen.PauseCrawlContactRequestObject{Body: &gen.CrawlContactRequest{Nsid: "a"}}); err == nil {
 		t.Fatal("missing service accepted")
