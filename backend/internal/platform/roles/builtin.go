@@ -260,6 +260,7 @@ func buildIdentityHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClien
 		RegisterUseCase: identityapp.Register{Repository: users, Policy: settings, Params: params},
 		LoginUseCase:    identityapp.Login{Repository: users, Limiter: identityredis.Limiter{Client: redisClient, Prefix: cfg.Redis.Prefix}, DummyPasswordHash: dummyHash},
 		Users:           users,
+		Profile:         identityapp.UpdateProfile{Repository: users},
 		Sessions:        identityapp.Sessions{Repository: users, Users: users},
 		AdminUsers:      identityapp.AdminUsers{Store: users, Audit: auditpostgres.New(pool)},
 		Version:         version,

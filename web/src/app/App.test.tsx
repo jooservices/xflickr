@@ -74,7 +74,7 @@ describe('App', () => {
     const router = createMemoryRouter(routes, { initialEntries: ['/admin/users'] });
     render(<App router={router} />);
 
-    expect(await screen.findByTestId('login-page')).toBeInTheDocument();
+    expect(await screen.findByTestId('auth-page')).toBeInTheDocument();
     expect(router.state.location.search).toBe('?next=%2Fadmin%2Fusers');
   });
 });

@@ -25,6 +25,7 @@ import { USER_NAV } from './nav';
 import { ShellRuntimeProvider, useShellRuntime } from './runtime';
 import { useRouteFocus } from './useRouteFocus';
 import styles from './shells.module.css';
+import { SESSION_EXPIRED_EVENT } from '../../shared/api/sessionEvents';
 
 type UserShellProps = {
   /** Renders the 403 page in the content area (a non-admin on an admin route). */
@@ -133,6 +134,7 @@ function Shell({ forbidden }: UserShellProps) {
   const location = useLocation();
   const client = useQueryClient();
   const [shortcuts, setShortcuts] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const authenticated = session.status === 'authenticated';
   const summary = useShellSummary(authenticated);
   const maintenance = useMaintenance(authenticated);
@@ -141,6 +143,12 @@ function Shell({ forbidden }: UserShellProps) {
   const showSkeleton = useLoadingTiming(loading);
   const onboarding = location.pathname === '/onboarding';
   useRouteFocus();
+
+  useEffect(() => {
+    const onExpired = () => setSessionExpired(true);
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, []);
 
   // `l` toggles Live; `g` then `h` goes home; `?` opens the shortcut list.
   const lastKey = useRef<{ key: string; at: number } | null>(null);
@@ -181,7 +189,7 @@ function Shell({ forbidden }: UserShellProps) {
 
   const signIn = () => {
     const returnTo = location.pathname + location.search;
-    window.location.assign(`/login?return_to=${encodeURIComponent(returnTo)}`);
+    window.location.assign(`/login?reason=expired&return_to=${encodeURIComponent(returnTo)}`);
   };
 
   const signOut = () => {
@@ -312,7 +320,9 @@ function Shell({ forbidden }: UserShellProps) {
         <Crumb />
         {content}
       </main>
-      {session.status === 'unauthenticated' ? <SessionModal onSignIn={signIn} /> : null}
+      {session.status === 'unauthenticated' || sessionExpired ? (
+        <SessionModal onSignIn={signIn} />
+      ) : null}
       {shortcuts ? (
         <ShortcutsDialog
           onClose={() => {

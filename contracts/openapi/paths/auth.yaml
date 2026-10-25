@@ -1,3 +1,15 @@
+config:
+  get:
+    operationId: GetAuthConfig
+    summary: Get public authentication options
+    responses:
+      '200':
+        description: Public authentication options
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/auth.yaml#/AuthConfig
+
 register:
   post:
     operationId: Register
@@ -7,7 +19,7 @@ register:
       content:
         application/json:
           schema:
-            $ref: ../schemas/auth.yaml#/AuthRequest
+            $ref: ../schemas/auth.yaml#/RegisterRequest
     responses:
       '201':
         description: User created
@@ -76,3 +88,26 @@ me:
               $ref: ../schemas/auth.yaml#/User
       '401':
         description: Authentication required
+  patch:
+    operationId: UpdateMe
+    summary: Update the authenticated user's profile
+    description: Updates the user's preferred language. Unsafe requests require a valid CSRF token.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/auth.yaml#/UpdateMeRequest
+    responses:
+      '200':
+        description: Updated user profile
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/auth.yaml#/User
+      '400':
+        description: Invalid locale
+      '401':
+        description: Authentication required
+      '403':
+        description: CSRF token is missing or invalid

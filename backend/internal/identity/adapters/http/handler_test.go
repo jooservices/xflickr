@@ -24,6 +24,16 @@ type repo struct {
 	existErr   error
 }
 
+type localeRepo struct {
+	user domain.User
+	err  error
+}
+
+func (r localeRepo) UpdateLocale(_ context.Context, _ int64, locale string) (domain.User, error) {
+	r.user.Locale = locale
+	return r.user, r.err
+}
+
 func (r repo) Register(_ context.Context, u domain.User, _ bool) (domain.User, error) {
 	if r.err != nil {
 		return domain.User{}, r.err
@@ -65,7 +75,7 @@ func TestRegisterResponses(t *testing.T) {
 		name string
 		body *gen.RegisterJSONRequestBody
 		want any
-	}{{"created", &gen.AuthRequest{Email: email, Password: &password}, gen.Register201JSONResponse{}}, {"missing body", nil, gen.Register400Response{}}, {"missing password", &gen.AuthRequest{Email: email}, gen.Register400Response{}}, {"invalid input", &gen.AuthRequest{Email: email, Password: &short}, gen.Register400Response{}}, {"closed", &gen.AuthRequest{Email: email, Password: &password}, gen.Register409Response{}}, {"duplicate", &gen.AuthRequest{Email: email, Password: &password}, gen.Register409Response{}}} {
+	}{{"created", registerBody(email, &password), gen.Register201JSONResponse{}}, {"missing body", nil, gen.Register400Response{}}, {"missing password", registerBody(email, nil), gen.Register400Response{}}, {"invalid input", registerBody(email, &short), gen.Register400Response{}}, {"closed", registerBody(email, &password), gen.Register409Response{}}, {"duplicate", registerBody(email, &password), gen.Register409Response{}}} {
 		h := good
 		if tc.name == "closed" {
 			h.RegisterUseCase.Repository = repo{err: app.ErrRegistrationClosed}
@@ -94,9 +104,87 @@ func TestRegisterResponses(t *testing.T) {
 	}
 }
 
+func TestGetAuthConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		policy app.RegistrationPolicy
+		open   bool
+		fails  bool
+	}{
+		{name: "open", policy: openRegistration(true), open: true},
+		{name: "closed", policy: openRegistration(false)},
+		{name: "policy failure", policy: registrationFailure{err: errors.New("settings unavailable")}, fails: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := Handler{RegisterUseCase: app.Register{Policy: tc.policy}}
+			response, err := h.GetAuthConfig(context.Background(), gen.GetAuthConfigRequestObject{})
+			if tc.fails {
+				if err == nil {
+					t.Fatal("GetAuthConfig() error = nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			config := gen.AuthConfig(response.(gen.GetAuthConfig200JSONResponse))
+			if config.RegistrationOpen != tc.open || config.PasskeyEnabled || config.PasswordMin != app.MinPasswordBytes || config.PasswordMax != app.MaxPasswordBytes {
+				t.Fatalf("GetAuthConfig() = %#v", config)
+			}
+		})
+	}
+	if _, err := (Handler{}).GetAuthConfig(context.Background(), gen.GetAuthConfigRequestObject{}); err == nil {
+		t.Fatal("GetAuthConfig() without a policy succeeded")
+	}
+}
+
+func TestUpdateMeResponses(t *testing.T) {
+	h := Handler{Profile: app.UpdateProfile{Repository: localeRepo{user: domain.User{ID: 3, Email: "u@example.test", Role: domain.RoleUser}}}}
+	body := &gen.UpdateMeRequest{Locale: gen.UpdateMeRequestLocaleVi}
+	got, err := h.UpdateMe(WithUserID(context.Background(), 3), gen.UpdateMeRequestObject{Body: body})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response, ok := got.(gen.UpdateMe200JSONResponse); !ok || response.Locale != "vi" {
+		t.Fatalf("UpdateMe() = %#v, want updated user", got)
+	}
+
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+		body *gen.UpdateMeRequest
+		want any
+	}{
+		{name: "unauthenticated", ctx: context.Background(), body: body, want: gen.UpdateMe401Response{}},
+		{name: "missing body", ctx: WithUserID(context.Background(), 3), want: gen.UpdateMe400Response{}},
+		{name: "invalid locale", ctx: WithUserID(context.Background(), 3), body: &gen.UpdateMeRequest{Locale: "fr"}, want: gen.UpdateMe400Response{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response, err := h.UpdateMe(tc.ctx, gen.UpdateMeRequestObject{Body: tc.body})
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch tc.want.(type) {
+			case gen.UpdateMe401Response:
+				if _, ok := response.(gen.UpdateMe401Response); !ok {
+					t.Fatalf("response = %#v", response)
+				}
+			case gen.UpdateMe400Response:
+				if _, ok := response.(gen.UpdateMe400Response); !ok {
+					t.Fatalf("response = %#v", response)
+				}
+			}
+		})
+	}
+}
+
+func registerBody(email openapi_types.Email, password *string) *gen.RegisterJSONRequestBody {
+	return &gen.RegisterRequest{Email: email, Password: password, AcceptTerms: true, Locale: gen.RegisterRequestLocaleEn}
+}
+
 func TestRegisterInfrastructureErrorsAreServerErrors(t *testing.T) {
 	params := domain.Argon2Params{Memory: 32 * 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
-	body := `{"email":"user@example.com","password":"secret12"}`
+	body := `{"email":"user@example.com","password":"secret12","accept_terms":true,"locale":"en"}`
 	for _, tc := range []struct {
 		name    string
 		handler Handler

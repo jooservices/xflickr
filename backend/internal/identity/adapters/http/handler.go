@@ -28,7 +28,31 @@ type Handler struct {
 	Users           UserLookup
 	Sessions        SessionService
 	AdminUsers      AdminUserService
+	Profile         app.UpdateProfile
 	Version         string
+}
+
+func (h Handler) GetAuthConfig(ctx context.Context, _ gen.GetAuthConfigRequestObject) (gen.GetAuthConfigResponseObject, error) {
+	if h.RegisterUseCase.Policy == nil {
+		return nil, errors.New("identity: registration policy is required")
+	}
+	open, err := h.RegisterUseCase.Policy.RegistrationOpen(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !open && h.RegisterUseCase.Repository != nil {
+		exists, err := h.RegisterUseCase.Repository.UsersExist(ctx)
+		if err != nil {
+			return nil, err
+		}
+		open = !exists
+	}
+	return gen.GetAuthConfig200JSONResponse(gen.AuthConfig{
+		RegistrationOpen: open,
+		PasskeyEnabled:   false,
+		PasswordMin:      app.MinPasswordBytes,
+		PasswordMax:      app.MaxPasswordBytes,
+	}), nil
 }
 
 func (h Handler) Register(ctx context.Context, request gen.RegisterRequestObject) (gen.RegisterResponseObject, error) {
@@ -38,7 +62,10 @@ func (h Handler) Register(ctx context.Context, request gen.RegisterRequestObject
 	if request.Body.Password == nil {
 		return gen.Register400Response{}, nil
 	}
-	u, err := h.RegisterUseCase.Execute(ctx, string(request.Body.Email), *request.Body.Password, "")
+	if !bool(request.Body.AcceptTerms) {
+		return gen.Register400Response{}, nil
+	}
+	u, err := h.RegisterUseCase.Execute(ctx, string(request.Body.Email), *request.Body.Password, string(request.Body.Locale))
 	if err != nil {
 		if errors.Is(err, app.ErrInvalidInput) {
 			return gen.Register400Response{}, nil
@@ -49,6 +76,27 @@ func (h Handler) Register(ctx context.Context, request gen.RegisterRequestObject
 		return nil, err
 	}
 	return gen.Register201JSONResponse(apiUser(u)), nil
+}
+
+func (h Handler) UpdateMe(ctx context.Context, request gen.UpdateMeRequestObject) (gen.UpdateMeResponseObject, error) {
+	id, ok := ctx.Value(contextKey{}).(int64)
+	if !ok || id == 0 {
+		return gen.UpdateMe401Response{}, nil
+	}
+	if request.Body == nil {
+		return gen.UpdateMe400Response{}, nil
+	}
+	user, err := h.Profile.UpdateLocale(ctx, id, string(request.Body.Locale))
+	if errors.Is(err, app.ErrInvalidLocale) {
+		return gen.UpdateMe400Response{}, nil
+	}
+	if errors.Is(err, app.ErrUserNotFound) {
+		return gen.UpdateMe401Response{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return gen.UpdateMe200JSONResponse(apiUser(user)), nil
 }
 
 func (h Handler) Login(ctx context.Context, request gen.LoginRequestObject) (gen.LoginResponseObject, error) {

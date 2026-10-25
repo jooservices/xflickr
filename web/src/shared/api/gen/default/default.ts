@@ -21,7 +21,7 @@ import type {
   UseQueryResult,
 } from '@tanstack/react-query';
 
-import type { AuthRequest, User } from '../models';
+import type { AuthConfig, AuthRequest, RegisterRequest, UpdateMeRequest, User } from '../models';
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
   const result = { queryKey } as T & { queryKey: K };
@@ -37,6 +37,132 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export type getAuthConfigResponse200 = {
+  data: AuthConfig;
+  status: 200;
+};
+
+export type getAuthConfigResponseSuccess = getAuthConfigResponse200 & {
+  headers: Headers;
+};
+export type getAuthConfigResponse = getAuthConfigResponseSuccess;
+
+export const getGetAuthConfigUrl = () => {
+  return `/auth/config`;
+};
+
+/**
+ * @summary Get public authentication options
+ */
+export const getAuthConfig = async (options?: RequestInit): Promise<getAuthConfigResponse> => {
+  const res = await fetch(getGetAuthConfigUrl(), {
+    ...options,
+    method: 'GET',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAuthConfigResponse['data'] = body ? JSON.parse(body) : {};
+  return { data, status: res.status, headers: res.headers } as getAuthConfigResponse;
+};
+
+export const getGetAuthConfigQueryKey = () => {
+  return [`/auth/config`] as const;
+};
+
+export const getGetAuthConfigQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAuthConfig>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAuthConfig>>, TError, TData>>;
+  fetch?: RequestInit;
+}) => {
+  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAuthConfigQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAuthConfig>>> = ({ signal }) =>
+    getAuthConfig({ signal, ...fetchOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAuthConfig>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetAuthConfigQueryResult = NonNullable<Awaited<ReturnType<typeof getAuthConfig>>>;
+export type GetAuthConfigQueryError = unknown;
+
+export function useGetAuthConfig<
+  TData = Awaited<ReturnType<typeof getAuthConfig>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAuthConfig>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAuthConfig>>,
+          TError,
+          Awaited<ReturnType<typeof getAuthConfig>>
+        >,
+        'initialData'
+      >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAuthConfig<
+  TData = Awaited<ReturnType<typeof getAuthConfig>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAuthConfig>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAuthConfig>>,
+          TError,
+          Awaited<ReturnType<typeof getAuthConfig>>
+        >,
+        'initialData'
+      >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAuthConfig<
+  TData = Awaited<ReturnType<typeof getAuthConfig>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAuthConfig>>, TError, TData>>;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get public authentication options
+ */
+
+export function useGetAuthConfig<
+  TData = Awaited<ReturnType<typeof getAuthConfig>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAuthConfig>>, TError, TData>>;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAuthConfigQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 export type registerResponse201 = {
   data: User;
@@ -70,7 +196,7 @@ export const getRegisterUrl = () => {
  * @summary Register a user
  */
 export const register = async (
-  authRequest: AuthRequest,
+  registerRequest: RegisterRequest,
   options?: RequestInit,
 ): Promise<registerResponse> => {
   const getHeaders = (
@@ -96,7 +222,7 @@ export const register = async (
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(authRequest),
+    body: JSON.stringify(registerRequest),
   });
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
@@ -141,9 +267,9 @@ export const getRegisterMutationOptions = <TError = void, TContext = unknown>(op
 };
 
 export type RegisterMutationResult = NonNullable<Awaited<ReturnType<typeof register>>>;
-export type RegisterMutationBody = AuthRequest;
+export type RegisterMutationBody = RegisterRequest;
 export type RegisterMutationError = void;
-export type RegisterMutationVariables = { data: AuthRequest };
+export type RegisterMutationVariables = { data: RegisterRequest };
 
 /**
  * @summary Register a user
@@ -582,3 +708,141 @@ export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = voi
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+export type updateMeResponse200 = {
+  data: User;
+  status: 200;
+};
+
+export type updateMeResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type updateMeResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type updateMeResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type updateMeResponseSuccess = updateMeResponse200 & {
+  headers: Headers;
+};
+export type updateMeResponseError = (
+  updateMeResponse400 | updateMeResponse401 | updateMeResponse403
+) & {
+  headers: Headers;
+};
+
+export type updateMeResponse = updateMeResponseSuccess | updateMeResponseError;
+
+export const getUpdateMeUrl = () => {
+  return `/me`;
+};
+
+/**
+ * Updates the user's preferred language. Unsafe requests require a valid CSRF token.
+ * @summary Update the authenticated user's profile
+ */
+export const updateMe = async (
+  updateMeRequest: UpdateMeRequest,
+  options?: RequestInit,
+): Promise<updateMeResponse> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit['headers']>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  const res = await fetch(getUpdateMeUrl(), {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateMeRequest),
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateMeResponse['data'] = body ? JSON.parse(body) : {};
+  return { data, status: res.status, headers: res.headers } as updateMeResponse;
+};
+
+export const getUpdateMeMutationKey = () => ['updateMe'] as const;
+
+export const getUpdateMeMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateMe>>,
+    TError,
+    UpdateMeMutationVariables,
+    TContext
+  >;
+  fetch?: RequestInit;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateMe>>,
+  TError,
+  UpdateMeMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUpdateMeMutationKey();
+  const { mutation: mutationOptions, fetch: fetchOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, fetch: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateMe>>,
+    UpdateMeMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateMe(data, fetchOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateMeMutationResult = NonNullable<Awaited<ReturnType<typeof updateMe>>>;
+export type UpdateMeMutationBody = UpdateMeRequest;
+export type UpdateMeMutationError = void;
+export type UpdateMeMutationVariables = { data: UpdateMeRequest };
+
+/**
+ * @summary Update the authenticated user's profile
+ */
+export const useUpdateMe = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateMe>>,
+      TError,
+      UpdateMeMutationVariables,
+      TContext
+    >;
+    fetch?: RequestInit;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateMe>>,
+  TError,
+  UpdateMeMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateMeMutationOptions(options), queryClient);
+};

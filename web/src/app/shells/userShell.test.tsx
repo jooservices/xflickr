@@ -29,7 +29,11 @@ describe('user shell', () => {
 
       expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
       expect(screen.getByTestId(`shell-nav-${item.id}`)).toHaveAttribute('aria-current', 'page');
-      expect(screen.getByTestId('shell-page')).toBeInTheDocument();
+      if (item.id === 'profile') {
+        expect(screen.getByTestId('profile-page')).toBeInTheDocument();
+      } else {
+        expect(screen.getByTestId('shell-page')).toBeInTheDocument();
+      }
       expect(document.title).toMatch(/ · XFlickr$/);
     },
   );
@@ -223,7 +227,7 @@ describe('user shell global states', () => {
     const modal = screen.getByTestId('shell-session-modal');
     expect(modal).toHaveAttribute('role', 'alertdialog');
     fireEvent.click(screen.getByTestId('shell-session-sign-in'));
-    expect(assign).toHaveBeenCalledWith('/login?return_to=%2Flibrary%3Fx%3D1');
+    expect(assign).toHaveBeenCalledWith('/login?reason=expired&return_to=%2Flibrary%3Fx%3D1');
     vi.unstubAllGlobals();
   });
 

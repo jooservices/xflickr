@@ -1,11 +1,14 @@
 import { createBrowserRouter, useNavigate } from 'react-router';
 import type { RouteObject } from 'react-router';
 import { PlaceholderPage } from '../pages';
-import { NotFoundState, useI18n } from '../shared';
+import { NotFoundState } from '../shared';
 import { AdminGuard } from './guards';
 import { AdminGuardFailed, AdminGuardLoading, AdminShell } from './shells/AdminShell';
 import { UserShell } from './shells/UserShell';
 import { ADMIN_NAV, USER_NAV } from './shells/nav';
+import { LoginPage } from '../pages/login/LoginPage';
+import { RegisterPage } from '../pages/register/RegisterPage';
+import { ProfilePage } from '../pages/profile/ProfilePage';
 
 const userPages: RouteObject[] = [
   {
@@ -22,7 +25,12 @@ const userPages: RouteObject[] = [
   },
   ...USER_NAV.filter((item) => item.path !== '/').map((item): RouteObject => ({
     path: item.path.slice(1),
-    element: <PlaceholderPage scope="shell" titleKey={item.labelKey} />,
+    element:
+      item.path === '/profile' ? (
+        <ProfilePage />
+      ) : (
+        <PlaceholderPage scope="shell" titleKey={item.labelKey} />
+      ),
   })),
   {
     path: 'contacts/:id',
@@ -67,18 +75,9 @@ function UserNotFound() {
   );
 }
 
-function LoginPlaceholder() {
-  const { t } = useI18n();
-
-  return (
-    <main id="main" data-role="user" data-theme="light" data-testid="login-page">
-      <h1>{t('login.placeholder.title')}</h1>
-    </main>
-  );
-}
-
 export const routes: RouteObject[] = [
-  { path: '/login', element: <LoginPlaceholder /> },
+  { path: '/login', element: <LoginPage /> },
+  { path: '/register', element: <RegisterPage /> },
   {
     path: '/admin',
     element: (

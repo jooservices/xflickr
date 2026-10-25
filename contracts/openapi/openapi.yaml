@@ -4,6 +4,8 @@ info:
   version: 0.0.0
   description: HTTP API shared by the XFlickr backend and web client.
 paths:
+  /auth/config:
+    $ref: ./paths/auth.yaml#/config
   /healthz:
     $ref: ./paths/common.yaml#/healthz
   /auth/register:
@@ -34,6 +36,8 @@ paths:
     $ref: ./paths/plans.yaml#/user_plan
 components:
   schemas:
+    AuthConfig:
+      $ref: ./schemas/auth.yaml#/AuthConfig
     Error:
       $ref: ./schemas/common.yaml#/Error
     Health:

@@ -37,6 +37,9 @@ func (usecase Register) Execute(ctx context.Context, email, password, locale str
 	if locale == "" {
 		locale = "en"
 	}
+	if locale != "en" && locale != "vi" {
+		return domain.User{}, ErrInvalidInput
+	}
 	if usecase.Policy == nil {
 		return domain.User{}, errors.New("identity: registration policy is required")
 	}

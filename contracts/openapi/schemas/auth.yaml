@@ -1,3 +1,25 @@
+AuthConfig:
+  type: object
+  additionalProperties: false
+  required: [registration_open, passkey_enabled, password_min, password_max]
+  properties:
+    registration_open:
+      type: boolean
+    passkey_enabled:
+      type: boolean
+    terms_url:
+      type: string
+      format: uri-reference
+    privacy_url:
+      type: string
+      format: uri-reference
+    password_min:
+      type: integer
+      minimum: 1
+    password_max:
+      type: integer
+      minimum: 1
+
 AuthRequest:
   type: object
   additionalProperties: false
@@ -12,6 +34,34 @@ AuthRequest:
       minLength: 8
       maxLength: 128
       writeOnly: true
+RegisterRequest:
+  type: object
+  additionalProperties: false
+  required: [email, password, accept_terms, locale]
+  properties:
+    email:
+      type: string
+      format: email
+      maxLength: 254
+    password:
+      type: string
+      minLength: 8
+      maxLength: 128
+      writeOnly: true
+    accept_terms:
+      type: boolean
+      const: true
+    locale:
+      type: string
+      enum: [en, vi]
+UpdateMeRequest:
+  type: object
+  additionalProperties: false
+  required: [locale]
+  properties:
+    locale:
+      type: string
+      enum: [en, vi]
 User:
   type: object
   additionalProperties: false

@@ -30,7 +30,11 @@ if [[ -n "${WORKSPACES_RUNTIME:-}" ]]; then
 	fi
 	npm_dir="$(dirname "$npm_bin")"
 	export PATH="${npm_dir}:${PATH}"
-	PLAYWRIGHT_CHROME_CHANNEL=chrome "$npm_bin" run e2e
+	if [[ -n "${PLAYWRIGHT_CHROME_PATH:-}" ]]; then
+		"$npm_bin" run e2e
+	else
+		PLAYWRIGHT_CHROME_CHANNEL=chrome "$npm_bin" run e2e
+	fi
 	exit 0
 fi
 

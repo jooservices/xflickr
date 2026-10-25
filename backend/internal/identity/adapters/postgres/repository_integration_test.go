@@ -94,6 +94,13 @@ func TestRepositoryRegistrationAndLookup(t *testing.T) {
 	if err != nil || byID.Email != email {
 		t.Fatalf("FindByID() = %#v, %v", byID, err)
 	}
+	updated, err := repository.UpdateLocale(ctx, user.ID, "vi")
+	if err != nil || updated.Locale != "vi" {
+		t.Fatalf("UpdateLocale() = %#v, %v", updated, err)
+	}
+	if _, err := repository.UpdateLocale(ctx, user.ID+9_000_000_000, "en"); !errors.Is(err, app.ErrUserNotFound) {
+		t.Fatalf("UpdateLocale() for missing user = %v", err)
+	}
 	values, err := godotenv.Read(filepath.Join(root, ".env"))
 	if err != nil {
 		t.Fatal("read shared worktree environment")
@@ -150,6 +157,9 @@ func TestRepositoryRegistrationAndLookup(t *testing.T) {
 	}
 	if _, err := repository.FindByID(canceled, user.ID); err == nil {
 		t.Fatal("FindByID() succeeded with canceled context")
+	}
+	if _, err := repository.UpdateLocale(canceled, user.ID, "en"); err == nil {
+		t.Fatal("UpdateLocale() succeeded with canceled context")
 	}
 	if _, err := repository.UsersExist(canceled); err == nil {
 		t.Fatal("UsersExist() succeeded with canceled context")

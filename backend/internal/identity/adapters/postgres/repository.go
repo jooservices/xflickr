@@ -85,3 +85,15 @@ func (repo *Repository) FindByID(ctx context.Context, id int64) (domain.User, er
 	user.Disabled = disabledAt != nil
 	return user, nil
 }
+
+func (repo *Repository) UpdateLocale(ctx context.Context, id int64, locale string) (domain.User, error) {
+	var user domain.User
+	err := repo.pool.QueryRow(ctx, `UPDATE users SET locale=$2 WHERE id=$1 AND disabled_at IS NULL RETURNING id,email,role,locale,created_at`, id, locale).Scan(&user.ID, &user.Email, &user.Role, &user.Locale, &user.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.User{}, app.ErrUserNotFound
+		}
+		return domain.User{}, fmt.Errorf("identity: update user locale: %w", err)
+	}
+	return user, nil
+}

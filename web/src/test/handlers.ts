@@ -16,6 +16,10 @@ export const adminShellFixture = {
 export const handlers = [
   http.get('http://localhost/api/health', () => HttpResponse.json({ status: 'ok' })),
   http.get('*/healthz', () => HttpResponse.json({ status: 'ok' })),
+  http.get('*/auth/config', () =>
+    HttpResponse.json({ registration_open: true, passkey_enabled: false }),
+  ),
+  http.get('*/me/sessions', () => HttpResponse.json({ items: [] })),
   http.get('*/shell/summary', () =>
     HttpResponse.json({
       unread_notifications: 3,
