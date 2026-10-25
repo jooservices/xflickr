@@ -38,7 +38,17 @@ func TestHubFansOutByUserAndResumes(t *testing.T) {
 		t.Fatalf("user 2 received user 1 event: %+v", got)
 	default:
 	}
-	replay, stopReplay, err := hub.Subscribe(1, "")
+	fresh, stopFresh, err := hub.Subscribe(1, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stopFresh()
+	select {
+	case got := <-fresh:
+		t.Fatalf("fresh connection replayed history: %+v", got)
+	default:
+	}
+	replay, stopReplay, err := hub.Subscribe(1, "0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +184,7 @@ func TestStreamReturnsResumableEventReader(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stream, err := (Handler{Hub: hub}).Stream(ctx, 44, "")
+	stream, err := (Handler{Hub: hub}).Stream(ctx, 44, "0")
 	if err != nil {
 		t.Fatal(err)
 	}

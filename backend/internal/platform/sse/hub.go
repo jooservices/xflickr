@@ -77,7 +77,7 @@ func (h *Hub) Publish(event Event) error {
 	return nil
 }
 
-// Subscribe registers a client and replays retained events newer than lastID.
+// Subscribe registers a client and replays retained events newer than lastID; a fresh client (empty lastID) gets live events only.
 func (h *Hub) Subscribe(userID int64, lastID string) (<-chan Event, func(), error) {
 	if h == nil || userID <= 0 {
 		return nil, nil, errors.New("sse: positive user id and hub are required")
@@ -89,9 +89,11 @@ func (h *Hub) Subscribe(userID int64, lastID string) (<-chan Event, func(), erro
 		h.clients[userID] = make(map[chan Event]struct{})
 	}
 	h.clients[userID][client] = struct{}{}
-	for _, event := range h.history {
-		if event.UserID == userID && event.ID > lastID {
-			client <- event
+	if lastID != "" {
+		for _, event := range h.history {
+			if event.UserID == userID && event.ID > lastID {
+				client <- event
+			}
 		}
 	}
 	h.mu.Unlock()

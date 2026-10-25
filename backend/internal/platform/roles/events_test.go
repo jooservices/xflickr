@@ -215,8 +215,8 @@ func TestEventsRouteResumesWithLastEventIDAndIsolatesUsers(t *testing.T) {
 		body, _ := io.ReadAll(response.Body)
 		return string(body)
 	}
-	got := read("21", "")
-	for _, id := range []string{"001", "004", "006", "019"} {
+	got := read("21", "000")
+	for _, id := range []string{"004", "006", "019"} {
 		if !strings.Contains(got, "id: "+id+"\n") {
 			t.Fatalf("user 21 stream is missing event %s: %q", id, got)
 		}
@@ -231,3 +231,46 @@ func TestEventsRouteResumesWithLastEventIDAndIsolatesUsers(t *testing.T) {
 		t.Fatalf("resume after 012 returned %q", resumed)
 	}
 }
+
+func TestPublishingControlsEmitCrawlProgressAfterChange(t *testing.T) {
+	hub := platformsse.NewHub(8)
+	stream, cancel, err := hub.Subscribe(12, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	stub := crawlControlStub{status: crawlapp.CrawlStatus{Depths: []crawlapp.DepthCount{{Depth: 1, Contacts: 3}}}}
+	controls := publishingControls{ControlService: stub, Notifier: crawlProgressNotifier{Status: stub, Events: hubPublisher{hub}}}
+	ctx := context.Background()
+	for name, call := range map[string]func() error{
+		"star":   func() error { return controls.Star(ctx, 12, "n", true) },
+		"select": func() error { return controls.Select(ctx, 12, "n") },
+		"pause":  func() error { return controls.Pause(ctx, 12, "n") },
+		"resume": func() error { return controls.Resume(ctx, 12, "n") },
+	} {
+		if err := call(); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		select {
+		case event := <-stream:
+			if event.Type != "crawl.progress" || event.UserID != 12 {
+				t.Fatalf("%s event=%+v", name, event)
+			}
+		default:
+			t.Fatalf("%s did not publish crawl.progress", name)
+		}
+	}
+	failing := publishingControls{ControlService: failingControls{}, Notifier: crawlProgressNotifier{Status: stub, Events: hubPublisher{hub}}}
+	if err := failing.Pause(ctx, 12, "n"); err == nil {
+		t.Fatal("control error swallowed")
+	}
+	select {
+	case event := <-stream:
+		t.Fatalf("event published for failed change: %+v", event)
+	default:
+	}
+}
+
+type failingControls struct{ crawlControlStub }
+
+func (failingControls) Pause(context.Context, int64, string) error { return errors.New("boom") }

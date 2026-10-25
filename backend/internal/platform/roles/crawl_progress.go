@@ -38,3 +38,35 @@ func (n crawlProgressNotifier) CrawlChanged(ctx context.Context, userID int64) e
 	}
 	return n.Events.Publish(ctx, platformsse.Event{UserID: userID, Type: "crawl.progress", Data: data})
 }
+
+// publishingControls publishes crawl.progress after every successful crawl
+// control change (star, select, pause, resume) made through the API.
+type publishingControls struct {
+	crawlhttp.ControlService
+	Notifier crawlapp.ProgressNotifier
+}
+
+func (c publishingControls) Star(ctx context.Context, user int64, nsid string, starred bool) error {
+	return c.notify(ctx, user, c.ControlService.Star(ctx, user, nsid, starred))
+}
+
+func (c publishingControls) Select(ctx context.Context, user int64, nsid string) error {
+	return c.notify(ctx, user, c.ControlService.Select(ctx, user, nsid))
+}
+
+func (c publishingControls) Pause(ctx context.Context, user int64, nsid string) error {
+	return c.notify(ctx, user, c.ControlService.Pause(ctx, user, nsid))
+}
+
+func (c publishingControls) Resume(ctx context.Context, user int64, nsid string) error {
+	return c.notify(ctx, user, c.ControlService.Resume(ctx, user, nsid))
+}
+
+// notify never fails the control change: the event is best-effort and the
+// next status read still returns the committed state.
+func (c publishingControls) notify(ctx context.Context, user int64, err error) error {
+	if err == nil && c.Notifier != nil {
+		_ = c.Notifier.CrawlChanged(ctx, user)
+	}
+	return err
+}

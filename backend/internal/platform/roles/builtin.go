@@ -504,7 +504,7 @@ func buildConfiguredAPIHandlerWithHub(pool *pgxpool.Pool, redisClient redisv9.Un
 	if err != nil {
 		return nil, err
 	}
-	crawl, err := buildCrawlHandler(pool)
+	crawl, err := buildCrawlHandlerWithEvents(pool, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"})
 	if err != nil {
 		return nil, err
 	}
@@ -693,6 +693,10 @@ func buildDownloadHandlerWithEvents(pool *pgxpool.Pool, store mediaapp.BlobStore
 }
 
 func buildCrawlHandler(pool *pgxpool.Pool) (crawlhttp.CrawlHandler, error) {
+	return buildCrawlHandlerWithEvents(pool, nil)
+}
+
+func buildCrawlHandlerWithEvents(pool *pgxpool.Pool, events downloadEventPublisher) (crawlhttp.CrawlHandler, error) {
 	repository, err := crawlpostgres.NewControls(pool)
 	if err != nil {
 		return crawlhttp.CrawlHandler{}, err
@@ -702,7 +706,11 @@ func buildCrawlHandler(pool *pgxpool.Pool) (crawlhttp.CrawlHandler, error) {
 		return crawlhttp.CrawlHandler{}, err
 	}
 	depth := crawlapp.Depth{Store: crawlsettings.Depth{Settings: settingsapp.New(settingsRepository)}}
-	return crawlhttp.CrawlHandler{Controls: crawlapp.Controls{Repository: repository, Rescorer: scheduleriver.PersonRescorer{Pool: pool}}, Depth: depth, ActorID: userIDFromPrincipal}, nil
+	var controls crawlhttp.ControlService = crawlapp.Controls{Repository: repository, Rescorer: scheduleriver.PersonRescorer{Pool: pool}}
+	if events != nil {
+		controls = publishingControls{ControlService: controls, Notifier: crawlProgressNotifier{Status: controls, Events: events}}
+	}
+	return crawlhttp.CrawlHandler{Controls: controls, Depth: depth, ActorID: userIDFromPrincipal}, nil
 }
 
 // flickrRESTURL is the REST endpoint; empty selects Flickr's own.
