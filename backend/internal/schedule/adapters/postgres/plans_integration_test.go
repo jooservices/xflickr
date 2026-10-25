@@ -13,7 +13,7 @@ import (
 
 	"github.com/jooservices/xflickr/internal/platform/audit"
 	"github.com/jooservices/xflickr/internal/platform/config"
-	"github.com/jooservices/xflickr/internal/platform/db"
+	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 	"github.com/jooservices/xflickr/internal/schedule/adapters/postgres"
 	"github.com/jooservices/xflickr/internal/schedule/app"
 	"github.com/jooservices/xflickr/internal/schedule/domain"
@@ -31,11 +31,8 @@ func TestPlanStoreIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pool, err := db.NewPool(ctx, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
+	cfg = dbtest.EmptyDatabase(t, cfg)
+	pool := dbtest.Open(t, cfg)
 	store := postgres.New(pool)
 	plans, err := store.ListPlans(ctx)
 	if err != nil {
@@ -106,11 +103,8 @@ func TestPlanUpdateRollsBackWhenAuditCannotBeWritten(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pool, err := db.NewPool(ctx, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
+	cfg = dbtest.EmptyDatabase(t, cfg)
+	pool := dbtest.Open(t, cfg)
 	store := postgres.New(pool)
 	var original int
 	if err := pool.QueryRow(ctx, `SELECT max_depth_cap FROM plans WHERE name='free'`).Scan(&original); err != nil {
