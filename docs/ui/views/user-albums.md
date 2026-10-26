@@ -55,7 +55,7 @@ not current endpoints. The authenticated `/events` operation already exists.
 | Element | Source | Fields used |
 | --- | --- | --- |
 | Album cards and list metadata | `GET /me/albums?contact_nsid={nsid}` **contract request** | `items[]`: `id`, `title`, `owner_nsid`, `owner_name`, `stored_count`, `total_count`, `cover_photo_urls[]`, `updated_at`; response `total`, `updated_at` |
-| Contact filter options | `GET /me/crawl/interests?filter=all&limit=100` **contract request/extension** | `items[]`: `nsid`, `name`; only contacts represented in the album result need to be selectable. Return all matching contacts for this filter, independent of album page size. |
+| Contact filter options | Derived from the complete `items[]` album response | Distinct `owner_nsid` and `owner_name` pairs. Include only contacts that own at least one returned album; fall back to the NSID when the name is empty. |
 | Stacked covers | `cover_photo_urls[]` in album response | Up to three stored Flickr size URLs ordered by album position. Omit unavailable covers. The server selects stored sizes; the client never constructs Flickr URLs. |
 | Live refresh | `GET /events` (exists) | Authenticated SSE. `albums.updated` **event contract request** with optional `contact_nsid`, `total`, and `updated_at`. |
 
@@ -70,10 +70,10 @@ another user. No response may contain Flickr credentials, private media, or
 secret values. Do not persist results in browser storage.
 
 Contract requests: add `GET /me/albums`, its response and `contact_nsid` query
-filter; extend the existing interests list response with the contact `nsid` and
-`name` data needed for the filter if not already present; and define the
-`albums.updated` event payload. The album-detail route `/albums/{id}` belongs
-to the album view contract and is not added here.
+filter, and define the `albums.updated` event payload. Contact filter options
+are derived from the complete album list, so no contact-list endpoint or
+additional interest fields are needed. The album-detail route `/albums/{id}`
+belongs to the album view contract and is not added here.
 
 ## Actions
 
