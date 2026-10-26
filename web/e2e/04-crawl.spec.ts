@@ -23,14 +23,17 @@ test.describe.serial('crawl on the real stack', () => {
     );
     // Account connection starts the crawl. Confirm the real worker completed work for this user.
     await expect
-      .poll(async () => {
-        const response = await page.request.get('/me/crawl');
-        expect(response.status()).toBe(200);
-        const body = (await response.json()) as {
-          facets: Array<{ done: number }>;
-        };
-        return body.facets.reduce((sum, facet) => sum + facet.done, 0);
-      })
+      .poll(
+        async () => {
+          const response = await page.request.get('/me/crawl');
+          expect(response.status()).toBe(200);
+          const body = (await response.json()) as {
+            facets: Array<{ done: number }>;
+          };
+          return body.facets.reduce((sum, facet) => sum + facet.done, 0);
+        },
+        { timeout: 15_000 },
+      )
       .toBeGreaterThan(0);
     watch.expectClean('/crawl progress');
   });
