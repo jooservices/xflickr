@@ -54,7 +54,7 @@ credential or a URL the user cannot access.
 | --- | --- |
 | Stage and position | `GET /me/photos/{photo_id}` **contract request**: `id`, `title`, `owner_nsid`, `owner_name`, `position`, `total`, `display_url`, `alt_text`, `visibility`, `removed`. `position` and `total` come from the invoking gallery; preserve its list order when stepping. `display_url` is a server-selected recorded size URL. |
 | Owner link | Same response: `owner_nsid`, `owner_name`; link to `/contacts/{owner_nsid}`. |
-| Sizes | Same response: `sizes[]: label, width, height, url, source, confirmed_at`. `source` is `provisional` or `confirmed`; provisional entries are the photo-list sizes, confirmed entries are from `flickr.photos.getSizes`. `confirmed_at` is null for provisional entries. Dimensions are pixels. |
+| Sizes | Same response: `sizes_status` (`pending`, `confirmed`, or `unavailable`), `sizes_checked_at`, and `sizes[]: label, width, height, url, source, confirmed_at`. `source` is `provisional` or `confirmed`; provisional entries are the photo-list sizes, confirmed entries are from `flickr.photos.getSizes`. `confirmed_at` is null for provisional entries. Dimensions are pixels. The status fields distinguish a sizes lookup that has not run from a successful lookup with no available sizes. |
 | EXIF | Same response: `exif[]: label, value`; server provides camera, lens, exposure, ISO, taken date, and original dimensions only when known. Omit absent values. |
 | AI caption and tags | Same response: `ai_caption: {text, model, status}` (`status`: queued, ready, failed); `tags[]: id, name`. Caption model details are helper text; tags link to the existing search route with the tag as the query. |
 | Flickr page | Same response: `flickr_url`; render a descriptive external link and open a new tab with `rel="noopener noreferrer"`. |
@@ -120,9 +120,11 @@ loads. Reduced motion uses static skeletons.
 
 ### Empty
 
-If the invoking gallery has no photo at the requested index, close the overlay
-and return to that gallery's own empty state. Do not show a blank viewer or
-invent an alternate photo. This guard state has no separate retry action.
+If the invoking gallery has no photo at the requested index, show “No photo to
+show”, “Return to the gallery and choose a photo.”, and a “Return to gallery”
+action. Activating the action closes the overlay, restores the gallery route
+and scroll position, and returns focus to the gallery heading. Do not show a
+blank viewer or invent an alternate photo. This guard state has no retry.
 
 ### Error
 
@@ -143,10 +145,10 @@ without moving focus or replacing the current photo unexpectedly.
 
 ### Forbidden
 
-A 403 clears photo data and shows the shared access-denied copy and home action.
-Never retain the previous photo after access is denied. The 404/not-found copy
-is the same for unknown and inaccessible IDs. A 401 follows shell expiry and
-stops live updates.
+A 403 clears photo data and shows the shared access-denied copy and a `Go home`
+action to `/`. Never retain the previous photo after access is denied. The
+404/not-found copy is the same for unknown and inaccessible IDs. A 401 follows
+shell expiry and stops live updates.
 
 ### Sizes not yet fetched
 
@@ -232,6 +234,7 @@ remain owned by those specifications.
 | `user.lightbox.next` | Next photo | Ảnh tiếp theo |
 | `user.lightbox.owner` | Open contact {owner_name} | Mở liên hệ {owner_name} |
 | `user.lightbox.tray.add` | Add to download tray | Thêm vào khay tải xuống |
+| `user.lightbox.tray.remove` | Remove from download tray | Xóa khỏi khay tải xuống |
 | `user.lightbox.tray.added` | Added to tray | Đã thêm vào khay |
 | `user.lightbox.download` | Download photo | Tải ảnh xuống |
 | `user.lightbox.loading.label` | Loading photo | Đang tải ảnh |
@@ -241,8 +244,10 @@ remain owned by those specifications.
 | `user.lightbox.error.title` | Could not load this photo | Không thể tải ảnh này |
 | `user.lightbox.error.body` | Check your connection, then try again. | Kiểm tra kết nối rồi thử lại. |
 | `user.lightbox.error.preview` | Photo preview unavailable | Không thể xem trước ảnh |
+| `user.lightbox.error.download` | Could not start the download. Try again. | Không thể bắt đầu tải xuống. Hãy thử lại. |
 | `user.lightbox.retry` | Retry | Thử lại |
 | `user.lightbox.stale` | Showing saved details | Đang hiển thị thông tin đã lưu |
+| `user.lightbox.stale.updated` | Last updated {relative_time} | Cập nhật lần cuối {relative_time} |
 | `user.lightbox.sizes` | Sizes | Kích thước |
 | `user.lightbox.size.provisional` | Provisional | Tạm tính |
 | `user.lightbox.size.confirmed` | Confirmed | Đã xác nhận |
@@ -251,20 +256,26 @@ remain owned by those specifications.
 | `user.lightbox.size.unavailable` | Sizes are not available yet. | Chưa có kích thước ảnh. |
 | `user.lightbox.size.fetch-first` | Fetch sizes first | Tải kích thước trước |
 | `user.lightbox.size.queued` | Size lookup queued. | Đã thêm yêu cầu tải kích thước vào hàng đợi. |
+| `user.lightbox.size.fetch-error` | Could not request sizes. Try again. | Không thể yêu cầu tải kích thước. Hãy thử lại. |
 | `user.lightbox.download-size` | Download {size} | Tải {size} xuống |
 | `user.lightbox.exif` | Camera details | Thông tin máy ảnh |
 | `user.lightbox.exif.camera` | Camera | Máy ảnh |
 | `user.lightbox.exif.lens` | Lens | Ống kính |
 | `user.lightbox.exif.exposure` | Exposure | Phơi sáng |
+| `user.lightbox.exif.iso` | ISO | ISO |
+| `user.lightbox.exif.taken` | Date taken | Ngày chụp |
 | `user.lightbox.exif.original` | Original dimensions | Kích thước bản gốc |
 | `user.lightbox.caption` | AI caption | Chú thích AI |
 | `user.lightbox.caption.queued` | Caption is waiting to be generated. | Đang chờ tạo chú thích. |
+| `user.lightbox.caption.failed` | Caption is unavailable. | Không có chú thích. |
 | `user.lightbox.tags` | Tags | Thẻ |
+| `user.lightbox.tags.search` | Search tag {tag} | Tìm thẻ {tag} |
 | `user.lightbox.flickr` | View on Flickr | Xem trên Flickr |
 | `user.lightbox.favorited-by` | Favorited by | Được yêu thích bởi |
 | `user.lightbox.favorited-more` | and {count} more | và {count} người khác |
 | `user.lightbox.removed` | This photo is no longer available on Flickr. | Ảnh này không còn trên Flickr. |
 | `user.lightbox.forbidden` | This photo is private or unavailable. | Ảnh này ở chế độ riêng tư hoặc không khả dụng. |
+| `user.lightbox.forbidden.home` | Go home | Về trang chủ |
 
 ## Test IDs
 
@@ -288,10 +299,13 @@ Stable E2E hooks:
 - `data-testid="lightbox-favorited-by"`
 - `data-testid="lightbox-loading"`
 - `data-testid="lightbox-empty"`
+- `data-testid="lightbox-empty-action"`
 - `data-testid="lightbox-error"`
 - `data-testid="lightbox-stale"`
 - `data-testid="lightbox-tombstone"`
 - `data-testid="lightbox-forbidden"`
+- `data-testid="lightbox-forbidden-home"`
+- `data-testid="lightbox-size-fetch"`
 - `data-testid="lightbox-retry"`
 
 ## Out of scope

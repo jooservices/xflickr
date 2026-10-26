@@ -14,14 +14,14 @@
     .theme { --bg: #f6f7fa; --surface: #fff; --sunken: #eef0f5; --line: #e2e5ec; --ink: #161a22; --muted: #5d6574; --accent: #2457d6; --accent-soft: #e6edfd; --focus: #2457d6; margin: 0 auto 28px; max-width: 1440px; padding: 0 24px 24px; }
     .theme.dark { --bg: #0f1116; --surface: #171a21; --sunken: #1e222b; --line: #2a2f3a; --ink: #e8eaf0; --muted: #a0a7b4; --accent: #7d9cff; --accent-soft: #1f2a47; --focus: #7d9cff; }
     .theme-title { margin: 0 0 12px; font-size: 19px; }
-    .samples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .samples { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
     .sample { min-width: 0; }
     .sample h3 { padding: 8px 10px; font-size: 14px; }
-    .viewer { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 460px; overflow: hidden; background: #0c0e12; color: #eef0f4; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,.22); }
-    .stage { min-width: 0; min-height: 460px; position: relative; display: grid; place-items: center; padding: 46px 42px 22px; background: radial-gradient(ellipse at 50% 48%, #3e4b5d, #171b23 68%, #0c0e12); }
+    .viewer { display: grid; grid-template-columns: minmax(0, 1fr) 400px; min-height: 100vh; overflow: hidden; background: #0c0e12; color: #eef0f4; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,.22); }
+    .stage { min-width: 0; min-height: 100vh; position: relative; display: grid; place-items: center; padding: 46px 42px 22px; background: radial-gradient(ellipse at 50% 48%, #3e4b5d, #171b23 68%, #0c0e12); }
     .toolbar { position: absolute; inset: 0 0 auto; height: 48px; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; }
     .actions { display: flex; gap: 6px; }
-    button { min-height: 40px; border: 1px solid #626b79; border-radius: 999px; padding: 7px 12px; background: rgba(255,255,255,.10); color: #fff; font: inherit; cursor: default; }
+    button { min-height: 44px; border: 1px solid #626b79; border-radius: 999px; padding: 7px 12px; background: rgba(255,255,255,.10); color: #fff; font: inherit; cursor: default; }
     button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
     .photo { position: relative; width: min(100%, 470px); aspect-ratio: 4 / 3; overflow: hidden; border-radius: 4px; background: linear-gradient(180deg, #e2a87a 0 37%, #746c75 38% 55%, #52625f 56% 100%); box-shadow: 0 20px 60px rgba(0,0,0,.5); }
     .sun { position: absolute; top: 13%; right: 18%; width: 15%; aspect-ratio: 1; border-radius: 50%; background: #ffdfa0; box-shadow: 0 0 35px #ffdfa0; }
@@ -30,7 +30,7 @@
     .nav { position: absolute; top: 50%; width: 42px; height: 42px; padding: 0; border: 0; border-radius: 50%; font-size: 24px; transform: translateY(-50%); }
     .prev { left: 10px; }
     .next { right: 10px; }
-    .panel { min-width: 0; max-height: 620px; overflow: auto; padding: 20px; background: var(--surface); color: var(--ink); }
+    .panel { min-width: 0; max-height: 720px; overflow: auto; padding: 20px; background: var(--surface); color: var(--ink); }
     .panel section { padding: 0 0 14px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
     .panel section:last-child { border-bottom: 0; }
     .panel h2 { font-size: 20px; line-height: 1.2; }
@@ -66,9 +66,11 @@
       .theme { padding: 0 16px 18px; }
       .theme-title { font-size: 17px; }
       .viewer { border-radius: 10px; }
-      .stage { min-height: 310px; padding: 52px 36px 16px; }
+      .viewer { min-height: 0; }
+      .stage { min-height: min(50vh, 390px); padding: 52px 36px 16px; }
+      .photo { width: min(100%, calc(50vh * 4 / 3)); }
       .toolbar { padding: 6px 8px; }
-      .toolbar button { min-height: 42px; padding: 6px 9px; font-size: 13px; }
+      .toolbar button { min-height: 44px; padding: 6px 9px; font-size: 13px; }
       .panel { padding: 16px; }
     }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }
@@ -149,6 +151,6 @@
       </div>
     </section>
   </main>
-  <p class="note">Static illustration and example metadata only. Resize this page to 390px to inspect the mobile stack; no network or build step is used.</p>
+  <p class="note">Static illustration and example metadata only. The full-width viewers show the 1440px desktop composition and stack at a 390px mobile viewport. No network or build step is used.</p>
 </body>
 </html>
