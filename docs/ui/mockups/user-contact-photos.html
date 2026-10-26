@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contact photos — XFlickr mockup</title>
+  <style>
+    :root { color-scheme: light dark; font: 15px/1.5 system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; background: #e7eaf1; color: #161a22; }
+    h1 { margin: 0 0 6px; font-size: 28px; }
+    h2 { margin: 0; font-size: 18px; }
+    p { margin: 0; }
+    .intro { max-width: 960px; margin: 0 auto 24px; }
+    .showcase { display: grid; gap: 24px; max-width: 1488px; margin: auto; }
+    article { padding: 16px; border-radius: 14px; background: #fff; }
+    article > h2 { margin-bottom: 12px; }
+    .samples { display: grid; gap: 16px; }
+    .frame { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); color: var(--ink); }
+    .frame.desktop { width: 100%; }
+    .frame.mobile { width: 390px; max-width: 100%; }
+    .view { max-width: 1200px; margin: auto; padding: 18px 24px 24px; }
+    .crumb { margin-bottom: 12px; color: var(--muted); font-size: 13px; }
+    .cover { min-height: 170px; display: flex; align-items: end; gap: 16px; padding: 18px; border-radius: 14px; color: white; background: linear-gradient(135deg,#193d64,#5791a7 55%,#253044); }
+    .avatar { width: 64px; height: 64px; flex: 0 0 auto; display: grid; place-items: center; border: 3px solid rgba(255,255,255,.8); border-radius: 50%; background: #d93c74; font-weight: 700; font-size: 22px; }
+    .identity { min-width: 160px; flex: 1; }
+    .identity h2 { font-size: 25px; }
+    .meta { opacity: .92; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    button { min-height: 38px; padding: 7px 13px; border: 1px solid var(--line2); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; }
+    button.primary { border-color: #2457d6; background: #2457d6; color: white; }
+    .crawl { display: grid; grid-template-columns: 110px minmax(200px,1fr) minmax(300px,1.3fr); align-items: center; gap: 14px; padding: 16px 0; }
+    .pill { display: inline-block; padding: 3px 9px; border-radius: 999px; background: var(--soft); color: var(--accent); font-size: 13px; font-weight: 600; }
+    .bar { height: 7px; overflow: hidden; border-radius: 9px; background: var(--sunken); }
+    .bar i { display: block; height: 100%; width: 62%; background: #2457d6; }
+    .bar.sizes i { width: 78%; background: #187244; }
+    .summary { display: grid; gap: 7px; color: var(--muted); font-size: 13px; }
+    .facets { display: grid; grid-template-columns: repeat(5,1fr); gap: 8px; }
+    .facet { padding: 7px; border: 1px solid var(--line); border-radius: 8px; }
+    .facet b { display: block; color: var(--ink); font-size: 12px; }
+    .facet .bar { margin-top: 5px; height: 5px; }
+    .tabs { display: flex; gap: 8px; overflow: hidden; margin: 0 0 14px; border-bottom: 1px solid var(--line); }
+    .tab { flex: 0 0 auto; padding: 8px 10px; color: var(--muted); font-size: 14px; }
+    .tab.active { border-bottom: 2px solid var(--accent); color: var(--accent); font-weight: 700; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 120px; gap: 8px; }
+    .photo { display: grid; place-items: end start; padding: 10px; border-radius: 10px; color: white; background: linear-gradient(145deg,#305b72,#a4b6a0 45%,#384854); }
+    .photo:nth-child(2n) { background: linear-gradient(145deg,#a3744c,#d5c18d 48%,#405b66); }
+    .photo:nth-child(3n) { background: linear-gradient(145deg,#324b6a,#8e7184 48%,#d1a578); }
+    .photo.tall { grid-row: span 2; }
+    .photo.wide { grid-column: span 2; }
+    .empty, .error { min-height: 190px; display: grid; align-content: center; justify-items: center; gap: 8px; text-align: center; }
+    .empty .art { width: 54px; height: 40px; border: 2px solid var(--line2); border-radius: 8px; background: linear-gradient(145deg,transparent 50%,var(--soft) 50%); }
+    .error .art { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; background: color-mix(in srgb, #c12824 15%, var(--surface)); color: #c12824; font-weight: 700; }
+    .muted { color: var(--muted); }
+    .skeleton { border-radius: 8px; background: linear-gradient(90deg,var(--sunken),var(--surface),var(--sunken)); }
+    .sk-cover { height: 150px; margin-bottom: 14px; }
+    .sk-row { height: 12px; margin: 8px 0; }
+    .sk-photo { height: 120px; }
+    .state-loading .grid { grid-auto-rows: auto; }
+    [data-theme="light"] { --bg:#f6f7fa; --surface:#fff; --sunken:#eef0f5; --line:#e2e5ec; --line2:#747b88; --ink:#161a22; --muted:#5d6574; --accent:#2457d6; --soft:#e6edfd; }
+    [data-theme="dark"] { --bg:#0f1116; --surface:#171a21; --sunken:#1e222b; --line:#2a2f3a; --line2:#778396; --ink:#e8eaf0; --muted:#a0a7b4; --accent:#7d9cff; --soft:#1f2a47; }
+    @media (min-width: 800px) { .samples { grid-template-columns: minmax(0,1fr) 390px; align-items: start; } }
+    @media (max-width: 600px) {
+      body { padding: 12px; }
+      article { padding: 12px; }
+      .view { padding: 12px 12px 18px; }
+      .cover { align-items: start; flex-wrap: wrap; gap: 10px; padding: 14px; }
+      .avatar { width: 52px; height: 52px; }
+      .identity { min-width: 180px; }
+      .identity h2 { font-size: 22px; }
+      .actions { width: 100%; }
+      .actions button { flex: 1 1 42%; }
+      .crawl { grid-template-columns: 1fr; gap: 10px; }
+      .facets { grid-template-columns: repeat(2,minmax(0,1fr)); }
+      .grid { grid-template-columns: repeat(2,1fr); grid-auto-rows: 110px; }
+      .photo.wide { grid-column: span 2; }
+    }
+  </style>
+</head>
+<body>
+  <header class="intro">
+    <h1>Contact page · Header and Photos tab</h1>
+    <p class="muted">Static USER-role mockup. Each sample includes 1440px desktop and 390px mobile previews. All artwork is CSS; no network or build step is used.</p>
+  </header>
+  <main class="showcase">
+    <article data-theme="light">
+      <h2>Light gallery · Normal</h2>
+      <div class="samples">
+        <section class="frame desktop" data-state="ready" aria-label="Normal desktop, light theme"><div class="view">
+          <div class="crumb">‹ Contacts</div><div class="cover"><div class="avatar">LT</div><div class="identity"><h2>Linh Tran</h2><div class="meta">@linhtran · Hội An, Vietnam · Depth 2</div><small>Found via Minh Nguyen → Aiko Sato</small></div><div class="actions"><button>☆ Star</button><button>Prioritise sizes</button><button>Pause crawl</button><button class="primary">↓ Download all</button></div></div>
+          <div class="crawl"><div><small class="muted">CRAWL</small><br><span class="pill">Crawling</span></div><div class="summary"><b>Photo records 1,248 / 2,016</b><div class="bar"><i></i></div><span>Sizes 78%</span><div class="bar sizes"><i></i></div></div><div class="facets"><div class="facet"><b>Photos</b>1248 / 2016<div class="bar"><i></i></div></div><div class="facet"><b>Favorites</b>340 / 480<div class="bar"><i></i></div></div><div class="facet"><b>Albums</b>8 / 12<div class="bar"><i></i></div></div><div class="facet"><b>Galleries</b>4 / 4<div class="bar"><i></i></div></div><div class="facet"><b>Groups</b>6 / 9<div class="bar"><i></i></div></div></div></div>
+          <nav class="tabs"><span class="tab active">Photos 1,248</span><span class="tab">Favorites 340</span><span class="tab">Albums 12</span><span class="tab">Galleries 4</span><span class="tab">Groups 9</span><span class="tab">About</span></nav>
+          <div class="grid"><div class="photo tall">After the rain</div><div class="photo">Hoi An at dusk</div><div class="photo wide">River boats</div><div class="photo">Old town</div><div class="photo">Lanterns</div><div class="photo">Morning light</div></div>
+        </div></section>
+        <section class="frame mobile" data-state="ready" aria-label="Normal mobile, light theme"><div class="view">
+          <div class="crumb">‹ Contacts</div><div class="cover"><div class="avatar">LT</div><div class="identity"><h2>Linh Tran</h2><div class="meta">@linhtran · Hội An · Depth 2</div><small>Found via Minh → Aiko</small></div><div class="actions"><button>☆ Star</button><button>Prioritise sizes</button><button>Pause crawl</button><button class="primary">↓ Download all</button></div></div>
+          <div class="crawl"><div><small class="muted">CRAWL</small> <span class="pill">Crawling</span></div><div class="summary"><b>Photo records 1,248 / 2,016</b><div class="bar"><i></i></div><span>Sizes 78%</span><div class="bar sizes"><i></i></div></div><div class="facets"><div class="facet"><b>Photos</b>1248 / 2016<div class="bar"><i></i></div></div><div class="facet"><b>Favorites</b>340 / 480<div class="bar"><i></i></div></div><div class="facet"><b>Albums</b>8 / 12<div class="bar"><i></i></div></div><div class="facet"><b>Galleries</b>4 / 4<div class="bar"><i></i></div></div><div class="facet"><b>Groups</b>6 / 9<div class="bar"><i></i></div></div></div></div>
+          <nav class="tabs"><span class="tab active">Photos 1,248</span><span class="tab">Favorites 340</span><span class="tab">Albums 12</span><span class="tab">Galleries 4</span><span class="tab">Groups 9</span><span class="tab">About</span></nav><div class="grid"><div class="photo tall">After rain</div><div class="photo">Dusk</div><div class="photo wide">River boats</div><div class="photo">Old town</div><div class="photo">Lanterns</div><div class="photo">Morning</div></div>
+        </div></section>
+      </div>
+    </article>
+    <article data-theme="dark">
+      <h2>Dark gallery · Normal</h2>
+      <div class="samples">
+        <section class="frame desktop" data-state="ready" aria-label="Normal desktop, dark theme"><div class="view"><div class="crumb">‹ Contacts</div><div class="cover"><div class="avatar">LT</div><div class="identity"><h2>Linh Tran</h2><div class="meta">@linhtran · Hội An, Vietnam · Depth 2</div><small>Found via Minh Nguyen → Aiko Sato</small></div><div class="actions"><button>☆ Star</button><button>Prioritise sizes</button><button>Pause crawl</button><button class="primary">↓ Download all</button></div></div><div class="crawl"><div><small class="muted">CRAWL</small><br><span class="pill">Crawling</span></div><div class="summary"><b>Photo records 1,248 / 2,016</b><div class="bar"><i></i></div><span>Sizes 78%</span><div class="bar sizes"><i></i></div></div><div class="facets"><div class="facet"><b>Photos</b>1248 / 2016<div class="bar"><i></i></div></div><div class="facet"><b>Favorites</b>340 / 480<div class="bar"><i></i></div></div><div class="facet"><b>Albums</b>8 / 12<div class="bar"><i></i></div></div><div class="facet"><b>Galleries</b>4 / 4<div class="bar"><i></i></div></div><div class="facet"><b>Groups</b>6 / 9<div class="bar"><i></i></div></div></div></div><nav class="tabs"><span class="tab active">Photos 1,248</span><span class="tab">Favorites 340</span><span class="tab">Albums 12</span><span class="tab">Galleries 4</span><span class="tab">Groups 9</span><span class="tab">About</span></nav><div class="grid"><div class="photo tall">After the rain</div><div class="photo">Hoi An at dusk</div><div class="photo wide">River boats</div><div class="photo">Old town</div><div class="photo">Lanterns</div><div class="photo">Morning light</div></div></div></section>
+        <section class="frame mobile" data-state="ready" aria-label="Normal mobile, dark theme"><div class="view"><div class="crumb">‹ Contacts</div><div class="cover"><div class="avatar">LT</div><div class="identity"><h2>Linh Tran</h2><div class="meta">@linhtran · Hội An · Depth 2</div><small>Found via Minh → Aiko</small></div><div class="actions"><button>☆ Star</button><button>Prioritise sizes</button><button>Pause crawl</button><button class="primary">↓ Download all</button></div></div><div class="crawl"><div><small class="muted">CRAWL</small> <span class="pill">Crawling</span></div><div class="summary"><b>Photo records 1,248 / 2,016</b><div class="bar"><i></i></div><span>Sizes 78%</span><div class="bar sizes"><i></i></div></div><div class="facets"><div class="facet"><b>Photos</b>1248 / 2016<div class="bar"><i></i></div></div><div class="facet"><b>Favorites</b>340 / 480<div class="bar"><i></i></div></div><div class="facet"><b>Albums</b>8 / 12<div class="bar"><i></i></div></div><div class="facet"><b>Galleries</b>4 / 4<div class="bar"><i></i></div></div><div class="facet"><b>Groups</b>6 / 9<div class="bar"><i></i></div></div></div></div><nav class="tabs"><span class="tab active">Photos 1,248</span><span class="tab">Favorites 340</span><span class="tab">Albums 12</span><span class="tab">Galleries 4</span><span class="tab">Groups 9</span><span class="tab">About</span></nav><div class="grid"><div class="photo tall">After rain</div><div class="photo">Dusk</div><div class="photo wide">River boats</div><div class="photo">Old town</div><div class="photo">Lanterns</div><div class="photo">Morning</div></div></div></section>
+      </div>
+    </article>
+    <article data-theme="light">
+      <h2>Light gallery · Loading</h2>
+      <div class="samples">
+        <section class="frame desktop state-loading" data-state="loading" aria-label="Loading desktop, light theme"><div class="view"><div class="skeleton sk-cover"></div><div class="skeleton sk-row" style="width:35%"></div><div class="skeleton sk-row" style="width:75%"></div><div class="skeleton sk-row" style="width:55%"></div><div class="grid"><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div></div><p class="muted" aria-live="polite">Loading contact photos…</p></div></section>
+        <section class="frame mobile state-loading" data-state="loading" aria-label="Loading mobile, light theme"><div class="view"><div class="skeleton sk-cover"></div><div class="skeleton sk-row" style="width:75%"></div><div class="skeleton sk-row" style="width:55%"></div><div class="grid"><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div></div><p class="muted" aria-live="polite">Loading contact photos…</p></div></section>
+      </div>
+    </article>
+    <article data-theme="dark">
+      <h2>Dark gallery · Loading</h2>
+      <div class="samples">
+        <section class="frame desktop state-loading" data-state="loading" aria-label="Loading desktop, dark theme"><div class="view"><div class="skeleton sk-cover"></div><div class="skeleton sk-row" style="width:35%"></div><div class="skeleton sk-row" style="width:75%"></div><div class="skeleton sk-row" style="width:55%"></div><div class="grid"><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div></div><p class="muted" aria-live="polite">Loading contact photos…</p></div></section>
+        <section class="frame mobile state-loading" data-state="loading" aria-label="Loading mobile, dark theme"><div class="view"><div class="skeleton sk-cover"></div><div class="skeleton sk-row" style="width:75%"></div><div class="skeleton sk-row" style="width:55%"></div><div class="grid"><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div></div><p class="muted" aria-live="polite">Loading contact photos…</p></div></section>
+      </div>
+    </article>
+    <article data-theme="light">
+      <h2>Light gallery · Empty</h2>
+      <div class="samples">
+        <section class="frame desktop" data-state="empty" aria-label="Empty desktop, light theme"><div class="view"><div class="crumb">‹ Contacts</div><div class="cover"><div class="avatar">LT</div><div class="identity"><h2>Linh Tran</h2><div class="meta">@linhtran · Hội An · Depth 2</div></div><div class="actions"><button>☆ Star</button><button>Prioritise sizes</button><button>Pause crawl</button><button class="primary">↓ Download all</button></div></div><div class="crawl"><div><span class="pill">Complete</span></div><div class="summary"><b>Photo records 0 / 0 · Sizes 0%</b><div class="bar"><i style="width:0"></i></div></div><div class="facets"><div class="facet"><b>Photos</b>0 / 0</div><div class="facet"><b>Favorites</b>0 / 0</div><div class="facet"><b>Albums</b>0 / 0</div><div class="facet"><b>Galleries</b>0 / 0</div><div class="facet"><b>Groups</b>0 / 0</div></div></div><nav class="tabs"><span class="tab active">Photos 0</span><span class="tab">Favorites 0</span><span class="tab">Albums 0</span><span class="tab">Galleries 0</span><span class="tab">Groups 0</span><span class="tab">About</span></nav><div class="empty"><div class="art"></div><h2>No photos yet</h2><p>Photos from this contact will appear here after XFlickr crawls them.</p><button>Browse contacts</button></div></div></section>
+        <section class="frame mobile" data-state="empty" aria-label="Empty mobile, light theme"><div class="view"><div class="crumb">‹ Contacts</div><div class="cover"><div class="avatar">LT</div><div class="identity"><h2>Linh Tran</h2><div class="meta">@linhtran · Hội An · Depth 2</div></div><div class="actions"><button>☆ Star</button><button>Prioritise sizes</button><button>Pause crawl</button><button class="primary">↓ Download all</button></div></div><div class="crawl"><div><span class="pill">Complete</span></div><div class="summary"><b>Photo records 0 / 0 · Sizes 0%</b><div class="bar"><i style="width:0"></i></div></div><div class="facets"><div class="facet"><b>Photos</b>0 / 0</div><div class="facet"><b>Favorites</b>0 / 0</div><div class="facet"><b>Albums</b>0 / 0</div><div class="facet"><b>Galleries</b>0 / 0</div><div class="facet"><b>Groups</b>0 / 0</div></div></div><nav class="tabs"><span class="tab active">Photos 0</span><span class="tab">Favorites</span><span class="tab">Albums</span><span class="tab">Galleries</span><span class="tab">Groups</span></nav><div class="empty"><div class="art"></div><h2>No photos yet</h2><p>Photos from this contact will appear here after XFlickr crawls them.</p><button>Browse contacts</button></div></div></section>
+      </div>
+    </article>
+    <article data-theme="dark">
+      <h2>Dark gallery · Empty</h2>
+      <div class="samples">
+        <section class="frame desktop" data-state="empty" aria-label="Empty desktop, dark theme"><div class="view"><div class="crumb">‹ Contacts</div><div class="cover"><div class="avatar">LT</div><div class="identity"><h2>Linh Tran</h2><div class="meta">@linhtran · Hội An · Depth 2</div></div><div class="actions"><button>☆ Star</button><button>Prioritise sizes</button><button>Pause crawl</button><button class="primary">↓ Download all</button></div></div><div class="crawl"><div><span class="pill">Complete</span></div><div class="summary"><b>Photo records 0 / 0 · Sizes 0%</b><div class="bar"><i style="width:0"></i></div></div><div class="facets"><div class="facet"><b>Photos</b>0 / 0</div><div class="facet"><b>Favorites</b>0 / 0</div><div class="facet"><b>Albums</b>0 / 0</div><div class="facet"><b>Galleries</b>0 / 0</div><div class="facet"><b>Groups</b>0 / 0</div></div></div><nav class="tabs"><span class="tab active">Photos 0</span><span class="tab">Favorites 0</span><span class="tab">Albums 0</span><span class="tab">Galleries 0</span><span class="tab">Groups 0</span><span class="tab">About</span></nav><div class="empty"><div class="art"></div><h2>No photos yet</h2><p>Photos from this contact will appear here after XFlickr crawls them.</p><button>Browse contacts</button></div></div></section>
+        <section class="frame mobile" data-state="empty" aria-label="Empty mobile, dark theme"><div class="view"><div class="crumb">‹ Contacts</div><div class="cover"><div class="avatar">LT</div><div class="identity"><h2>Linh Tran</h2><div class="meta">@linhtran · Hội An · Depth 2</div></div><div class="actions"><button>☆ Star</button><button>Prioritise sizes</button><button>Pause crawl</button><button class="primary">↓ Download all</button></div></div><div class="crawl"><div><span class="pill">Complete</span></div><div class="summary"><b>Photo records 0 / 0 · Sizes 0%</b><div class="bar"><i style="width:0"></i></div></div><div class="facets"><div class="facet"><b>Photos</b>0 / 0</div><div class="facet"><b>Favorites</b>0 / 0</div><div class="facet"><b>Albums</b>0 / 0</div><div class="facet"><b>Galleries</b>0 / 0</div><div class="facet"><b>Groups</b>0 / 0</div></div></div><nav class="tabs"><span class="tab active">Photos 0</span><span class="tab">Favorites</span><span class="tab">Albums</span><span class="tab">Galleries</span><span class="tab">Groups</span></nav><div class="empty"><div class="art"></div><h2>No photos yet</h2><p>Photos from this contact will appear here after XFlickr crawls them.</p><button>Browse contacts</button></div></div></section>
+      </div>
+    </article>
+    <article data-theme="light">
+      <h2>Light gallery · Error</h2>
+      <div class="samples">
+        <section class="frame desktop" data-state="error" aria-label="Error desktop, light theme"><div class="view"><div class="crumb">‹ Contacts</div><div class="cover"><div class="avatar">LT</div><div class="identity"><h2>Linh Tran</h2><div class="meta">@linhtran · Hội An · Depth 2</div></div><div class="actions"><button>☆ Star</button><button>Prioritise sizes</button><button>Pause crawl</button><button class="primary">↓ Download all</button></div></div><div class="crawl"><div><span class="pill">Crawling</span></div><div class="summary"><b>Photo records 1,248 / 2,016 · Sizes 78%</b><div class="bar"><i></i></div></div><div class="facets"><div class="facet"><b>Photos</b>1248 / 2016</div><div class="facet"><b>Favorites</b>340 / 480</div><div class="facet"><b>Albums</b>8 / 12</div><div class="facet"><b>Galleries</b>4 / 4</div><div class="facet"><b>Groups</b>6 / 9</div></div></div><nav class="tabs"><span class="tab active">Photos 1,248</span><span class="tab">Favorites 340</span><span class="tab">Albums 12</span><span class="tab">Galleries 4</span><span class="tab">Groups 9</span><span class="tab">About</span></nav><div class="error" role="alert"><div class="art">!</div><h2>Could not load contact photos</h2><p>Check your connection, then try again.</p><button>Retry</button></div></div></section>
+        <section class="frame mobile" data-state="error" aria-label="Error mobile, light theme"><div class="view"><div class="crumb">‹ Contacts</div><div class="cover"><div class="avatar">LT</div><div class="identity"><h2>Linh Tran</h2><div class="meta">@linhtran · Hội An · Depth 2</div></div><div class="actions"><button>☆ Star</button><button>Prioritise sizes</button><button>Pause crawl</button><button class="primary">↓ Download all</button></div></div><div class="crawl"><div><span class="pill">Crawling</span></div><div class="summary"><b>Photo records 1,248 / 2,016 · Sizes 78%</b><div class="bar"><i></i></div></div><div class="facets"><div class="facet"><b>Photos</b>1248 / 2016</div><div class="facet"><b>Favorites</b>340 / 480</div><div class="facet"><b>Albums</b>8 / 12</div><div class="facet"><b>Galleries</b>4 / 4</div><div class="facet"><b>Groups</b>6 / 9</div></div></div><nav class="tabs"><span class="tab active">Photos 1,248</span><span class="tab">Favorites</span><span class="tab">Albums</span><span class="tab">Galleries</span><span class="tab">Groups</span></nav><div class="error" role="alert"><div class="art">!</div><h2>Could not load contact photos</h2><p>Check your connection, then try again.</p><button>Retry</button></div></div></section>
+      </div>
+    </article>
+    <article data-theme="dark">
+      <h2>Dark gallery · Error</h2>
+      <div class="samples">
+        <section class="frame desktop" data-state="error" aria-label="Error desktop, dark theme"><div class="view"><div class="crumb">‹ Contacts</div><div class="cover"><div class="avatar">LT</div><div class="identity"><h2>Linh Tran</h2><div class="meta">@linhtran · Hội An · Depth 2</div></div><div class="actions"><button>☆ Star</button><button>Prioritise sizes</button><button>Pause crawl</button><button class="primary">↓ Download all</button></div></div><div class="crawl"><div><span class="pill">Crawling</span></div><div class="summary"><b>Photo records 1,248 / 2,016 · Sizes 78%</b><div class="bar"><i></i></div></div><div class="facets"><div class="facet"><b>Photos</b>1248 / 2016</div><div class="facet"><b>Favorites</b>340 / 480</div><div class="facet"><b>Albums</b>8 / 12</div><div class="facet"><b>Galleries</b>4 / 4</div><div class="facet"><b>Groups</b>6 / 9</div></div></div><nav class="tabs"><span class="tab active">Photos 1,248</span><span class="tab">Favorites 340</span><span class="tab">Albums 12</span><span class="tab">Galleries 4</span><span class="tab">Groups 9</span><span class="tab">About</span></nav><div class="error" role="alert"><div class="art">!</div><h2>Could not load contact photos</h2><p>Check your connection, then try again.</p><button>Retry</button></div></div></section>
+        <section class="frame mobile" data-state="error" aria-label="Error mobile, dark theme"><div class="view"><div class="crumb">‹ Contacts</div><div class="cover"><div class="avatar">LT</div><div class="identity"><h2>Linh Tran</h2><div class="meta">@linhtran · Hội An · Depth 2</div></div><div class="actions"><button>☆ Star</button><button>Prioritise sizes</button><button>Pause crawl</button><button class="primary">↓ Download all</button></div></div><div class="crawl"><div><span class="pill">Crawling</span></div><div class="summary"><b>Photo records 1,248 / 2,016 · Sizes 78%</b><div class="bar"><i></i></div></div><div class="facets"><div class="facet"><b>Photos</b>1248 / 2016</div><div class="facet"><b>Favorites</b>340 / 480</div><div class="facet"><b>Albums</b>8 / 12</div><div class="facet"><b>Galleries</b>4 / 4</div><div class="facet"><b>Groups</b>6 / 9</div></div></div><nav class="tabs"><span class="tab active">Photos 1,248</span><span class="tab">Favorites</span><span class="tab">Albums</span><span class="tab">Galleries</span><span class="tab">Groups</span></nav><div class="error" role="alert"><div class="art">!</div><h2>Could not load contact photos</h2><p>Check your connection, then try again.</p><button>Retry</button></div></div></section>
+      </div>
+    </article>
+  </main>
+</body>
+</html>
