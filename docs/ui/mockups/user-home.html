@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XFlickr · Home mockup</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #e9ebf1; color: #161a22; font: 14px/1.45 system-ui, sans-serif; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: clamp(23px, 3vw, 34px); line-height: 1.12; letter-spacing: -.03em; }
+    h2 { font-size: 17px; }
+    h3 { font-size: 14px; }
+    button, input { font: inherit; }
+    .guide { max-width: 1440px; margin: auto; padding: 22px; }
+    .guide > header { margin: 0 auto 22px; max-width: 900px; }
+    .guide > header p { color: #596272; margin-top: 6px; }
+    .theme { --bg:#f6f7fa; --surface:#fff; --sunken:#eef0f5; --line:#e2e5ec; --ink:#161a22; --muted:#5d6574; --accent:#2457d6; --soft:#e6edfd; --ok:#187244; --warn:#875300; background:var(--bg); color:var(--ink); border-radius:16px; padding:20px; margin:20px auto; }
+    .theme.dark { --bg:#0f1116; --surface:#171a21; --sunken:#1e222b; --line:#2a2f3a; --ink:#e8eaf0; --muted:#a0a7b4; --accent:#7d9cff; --soft:#1f2a47; --ok:#4fc887; --warn:#f0b04a; }
+    .theme > h2 { margin:0 0 12px; }
+    .states { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+    .state { min-width:0; overflow:hidden; background:var(--surface); border:1px solid var(--line); border-radius:14px; }
+    .state-label { padding:8px 12px; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; border-bottom:1px solid var(--line); }
+    .app { padding:16px; }
+    .hero { display:grid; grid-template-columns:1.1fr 1fr; gap:16px; align-items:center; padding:18px; border:1px solid var(--line); border-radius:14px; background:linear-gradient(120deg,var(--soft),var(--surface) 66%); }
+    .hero-copy { display:grid; gap:9px; min-width:0; }
+    .eyebrow { color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+    .muted { color:var(--muted); }
+    .search { display:flex; gap:8px; align-items:center; min-width:0; border:1px solid var(--line); background:var(--surface); border-radius:14px; padding:6px 6px 6px 12px; }
+    .search input { width:100%; min-width:0; border:0; outline:0; background:transparent; color:var(--ink); }
+    .btn { border:0; border-radius:999px; padding:9px 14px; background:var(--accent); color:var(--surface); font-weight:700; white-space:nowrap; }
+    .btn.secondary { border:1px solid var(--line); background:var(--surface); color:var(--ink); }
+    .chips { display:flex; flex-wrap:wrap; gap:5px; }
+    .chip { border:1px solid var(--line); border-radius:999px; padding:4px 8px; color:var(--muted); font-size:11px; }
+    .mosaic { display:grid; grid-template-columns:1.2fr .8fr 1fr; grid-template-rows:70px 70px; gap:5px; min-height:145px; }
+    .scene { border-radius:8px; background:linear-gradient(160deg,#9cc9f0 0 44%,#4f8a3c 45% 100%); }
+    .scene:nth-child(2) { grid-row:span 2; background:linear-gradient(155deg,#f08a5d 0 42%,#f9d38a 43% 62%,#3b2c3d 63%); }
+    .scene:nth-child(3) { background:linear-gradient(145deg,#9fd0d8 0 45%,#3c7d8c 46% 100%); }
+    .scene:nth-child(4) { background:linear-gradient(160deg,#dfe6f0 0 48%,#5b6270 49% 100%); }
+    .stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1px; margin:12px 0; background:var(--line); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+    .stat { padding:10px 12px; background:var(--surface); }
+    .stat b { display:block; font-size:20px; }
+    .stat span { color:var(--muted); font-size:11px; }
+    .content { display:grid; grid-template-columns:2fr 1fr; gap:12px; }
+    .card { min-width:0; border:1px solid var(--line); border-radius:14px; background:var(--surface); padding:13px; margin-bottom:10px; }
+    .card-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; }
+    .photos { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
+    .photo { height:76px; border-radius:8px; background:linear-gradient(160deg,#bfe0c4 0 46%,#2f6b3a 47% 100%); }
+    .photo:nth-child(2) { background:linear-gradient(160deg,#7cc3e8 0 48%,#e9cf98 49% 100%); }
+    .photo:nth-child(3) { background:linear-gradient(155deg,#f3dcb2 0 48%,#a7c27a 49% 100%); }
+    .photo:nth-child(4) { background:linear-gradient(150deg,#a7c2e6 0 45%,#6f7f6a 46% 100%); }
+    .photo:nth-child(5) { background:linear-gradient(155deg,#141b3a 0 55%,#1d2238 56%); }
+    .photo:nth-child(6) { background:linear-gradient(160deg,#d9c7e8 0 50%,#b9a3c9 51%); }
+    .person { display:flex; align-items:center; gap:8px; padding:6px 0; }
+    .avatar { display:grid; width:30px; height:30px; place-items:center; border-radius:50%; background:#526b8a; color:#fff; font-weight:700; }
+    .person small { color:var(--muted); display:block; }
+    .badge { margin-left:auto; border-radius:999px; padding:3px 7px; background:var(--soft); color:var(--accent); font-size:10px; }
+    .quota { margin:10px 0; }
+    .quota-top,.quota-foot { display:flex; justify-content:space-between; gap:6px; font-size:11px; }
+    .quota-foot { color:var(--muted); margin-top:4px; }
+    .bar { height:6px; margin-top:5px; background:var(--sunken); border-radius:9px; overflow:hidden; }
+    .bar i { display:block; width:63%; height:100%; background:var(--accent); border-radius:9px; }
+    .bar.high i { width:88%; background:var(--warn); }
+    .activity { padding:7px 0; border-top:1px solid var(--line); font-size:12px; }
+    .activity small { display:block; color:var(--muted); }
+    .empty,.error { display:grid; justify-items:center; text-align:center; gap:9px; min-height:190px; align-content:center; padding:22px; }
+    .illustration { display:grid; place-items:center; width:44px; height:44px; border-radius:14px; background:var(--soft); color:var(--accent); font-size:22px; }
+    .error .illustration { background:#fde8e6; color:#b42318; }
+    .skeleton { height:12px; border-radius:8px; background:linear-gradient(90deg,var(--sunken),var(--line),var(--sunken)); background-size:200% 100%; margin:8px 0; }
+    .skeleton.wide { width:70%; height:20px; }
+    .skeleton.tile { height:62px; }
+    .state[data-state="loading"] .hero { min-height:170px; }
+    .state[data-state="loading"] .mosaic { opacity:.45; }
+    .error-note { color:var(--muted); max-width:34ch; }
+    @media (max-width:720px) {
+      .guide { padding:10px; }
+      .theme { padding:12px; border-radius:12px; margin:12px auto; }
+      .states { grid-template-columns:minmax(0,1fr); }
+      .app { padding:10px; }
+      .hero,.content { grid-template-columns:minmax(0,1fr); }
+      .mosaic { grid-row:1; grid-template-rows:46px 46px; min-height:97px; }
+      .stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .search { flex-wrap:wrap; }
+      .search input { flex-basis:65%; min-height:38px; }
+      .search .btn { width:100%; min-height:42px; }
+      .chips { flex-wrap:nowrap; overflow:auto; padding-bottom:4px; }
+      .chip { flex:none; }
+      .photos { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .photo { height:84px; }
+    }
+    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; scroll-behavior:auto!important; } }
+  </style>
+</head>
+<body>
+  <main class="guide">
+    <header>
+      <h1>Home · USER role</h1>
+      <p>Static design review board. Four view states are shown in both gallery themes. The same responsive frame is 1440 px wide on desktop and reflows at a 390 px viewport; no scripts, fonts, images, or network requests are used.</p>
+    </header>
+
+    <section class="theme" aria-labelledby="light-title">
+      <h2 id="light-title">Light gallery · default</h2>
+      <div class="states">
+        <article class="state" data-state="ready">
+          <div class="state-label">Normal · ready</div>
+          <div class="app">
+            <div class="hero"><div class="hero-copy"><span class="eyebrow">Good morning, Viet</span><h1>Your Flickr circle, searchable down to every photo.</h1><p class="muted">Find a photo from your contacts by describing it.</p><div class="search"><input aria-label="Search photos" placeholder="Describe a photo, in English or Vietnamese"><button class="btn">Search</button></div><div class="chips"><span class="chip">trees, a person and a dog</span><span class="chip">ảnh có cây và chó</span><span class="chip">snowy mountains</span><span class="chip">thành phố về đêm</span></div></div><div class="mosaic" aria-hidden="true"><i class="scene"></i><i class="scene"></i><i class="scene"></i><i class="scene"></i></div></div>
+            <div class="stats"><div class="stat"><b>284</b><span>Contacts · 42 direct · 242 discovered</span></div><div class="stat"><b>48,210</b><span>Photo records</span></div><div class="stat"><b>86%</b><span>Sizes ready</span></div><div class="stat"><b>31,482</b><span>Captioned</span></div></div>
+            <div class="content"><section class="card"><div class="card-head"><h2>New from your contacts</h2><span class="muted">View library →</span></div><div class="photos"><i class="photo"></i><i class="photo"></i><i class="photo"></i><i class="photo"></i><i class="photo"></i><i class="photo"></i></div></section><aside><section class="card"><div class="card-head"><h3>Starred contacts</h3><span class="muted">All</span></div><div class="person"><span class="avatar">L</span><span>Linh<small>1,240 photos · sizes 92%</small></span><span class="badge">Crawling</span></div><div class="person"><span class="avatar">M</span><span>Minh<small>832 photos · sizes 100%</small></span><span class="badge">Ready</span></div></section><section class="card"><div class="card-head"><h3>API quota</h3><span class="muted">Details</span></div><div class="quota"><div class="quota-top"><b>Personal key</b><span>ok</span></div><div class="bar"><i></i></div><div class="quota-foot"><span>2,270 / 3,600 calls</span><span>Resets in 24:18</span></div></div></section><section class="card"><div class="card-head"><h3>Crawl activity</h3><span class="muted">View crawl</span></div><div class="activity">Found 18 new photos from Linh<small>2 minutes ago</small></div><div class="activity">Sizes confirmed for 42 photos<small>8 minutes ago</small></div></section></aside></div>
+          </div>
+        </article>
+        <article class="state" data-state="loading">
+          <div class="state-label">Loading · skeleton</div>
+          <div class="app"><div class="hero"><div class="hero-copy"><span class="eyebrow">Good morning, Viet</span><div class="skeleton wide"></div><div class="skeleton"></div><div class="skeleton" style="width:55%"></div><div class="search"><input disabled placeholder="Loading your photos…"><button class="btn" disabled>Search</button></div></div><div class="mosaic" aria-hidden="true"><i class="scene"></i><i class="scene"></i><i class="scene"></i><i class="scene"></i></div></div><div class="stats"><div class="stat"><div class="skeleton"></div><div class="skeleton"></div></div><div class="stat"><div class="skeleton"></div><div class="skeleton"></div></div><div class="stat"><div class="skeleton"></div><div class="skeleton"></div></div><div class="stat"><div class="skeleton"></div><div class="skeleton"></div></div></div><div class="content"><section class="card"><div class="skeleton wide"></div><div class="photos"><i class="skeleton tile"></i><i class="skeleton tile"></i><i class="skeleton tile"></i><i class="skeleton tile"></i><i class="skeleton tile"></i><i class="skeleton tile"></i></div></section><aside><section class="card"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></section><section class="card"><div class="skeleton"></div><div class="skeleton tile"></div></section><section class="card"><div class="skeleton"></div><div class="skeleton"></div></section></aside></div></div>
+        </article>
+        <article class="state" data-state="empty">
+          <div class="state-label">Empty · first run</div>
+          <div class="app"><div class="hero"><div class="hero-copy"><span class="eyebrow">Good morning, Viet</span><h1>Your Flickr circle, searchable down to every photo.</h1><p class="muted">Start with your own Flickr account. Contacts and photos appear as they are discovered.</p></div><div class="mosaic" aria-hidden="true"><i class="scene"></i><i class="scene"></i><i class="scene"></i><i class="scene"></i></div></div><section class="card empty"><div class="illustration" aria-hidden="true">▧</div><h2>Nothing crawled yet</h2><p class="muted">Connect a Flickr account to start discovering contacts and photos.</p><button class="btn">Open setup wizard</button></section></div>
+        </article>
+        <article class="state" data-state="error">
+          <div class="state-label">Error · retry</div>
+          <div class="app"><div class="hero"><div class="hero-copy"><span class="eyebrow">Good morning, Viet</span><h1>Your Flickr circle, searchable down to every photo.</h1><div class="search"><input aria-label="Search photos" placeholder="Describe a photo"><button class="btn">Search</button></div></div><div class="mosaic" aria-hidden="true"><i class="scene"></i><i class="scene"></i><i class="scene"></i><i class="scene"></i></div></div><section class="card error" role="alert"><div class="illustration" aria-hidden="true">!</div><h2>Home could not load</h2><p class="error-note">Check your connection and try again. Your data is safe.</p><button class="btn">Try again</button></section></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="theme dark" aria-labelledby="dark-title">
+      <h2 id="dark-title">Dark gallery · optional</h2>
+      <div class="states">
+        <article class="state" data-state="ready">
+          <div class="state-label">Normal · ready</div>
+          <div class="app"><div class="hero"><div class="hero-copy"><span class="eyebrow">Good evening, Viet</span><h1>Your Flickr circle, searchable down to every photo.</h1><p class="muted">Find a photo from your contacts by describing it.</p><div class="search"><input aria-label="Search photos" placeholder="Describe a photo, in English or Vietnamese"><button class="btn">Search</button></div><div class="chips"><span class="chip">trees, a person and a dog</span><span class="chip">ảnh có cây và chó</span></div></div><div class="mosaic" aria-hidden="true"><i class="scene"></i><i class="scene"></i><i class="scene"></i><i class="scene"></i></div></div><div class="stats"><div class="stat"><b>284</b><span>Contacts · 42 direct · 242 discovered</span></div><div class="stat"><b>48,210</b><span>Photo records</span></div><div class="stat"><b>86%</b><span>Sizes ready</span></div><div class="stat"><b>31,482</b><span>Captioned</span></div></div><div class="content"><section class="card"><div class="card-head"><h2>New from your contacts</h2><span class="muted">View library →</span></div><div class="photos"><i class="photo"></i><i class="photo"></i><i class="photo"></i><i class="photo"></i><i class="photo"></i><i class="photo"></i></div></section><aside><section class="card"><div class="card-head"><h3>Starred contacts</h3><span class="muted">All</span></div><div class="person"><span class="avatar">L</span><span>Linh<small>1,240 photos · sizes 92%</small></span><span class="badge">Crawling</span></div></section><section class="card"><div class="card-head"><h3>API quota</h3><span class="muted">Details</span></div><div class="quota"><div class="quota-top"><b>Personal key</b><span>ok</span></div><div class="bar"><i></i></div><div class="quota-foot"><span>2,270 / 3,600 calls</span><span>Resets in 24:18</span></div></div></section><section class="card"><div class="card-head"><h3>Crawl activity</h3><span class="muted">View crawl</span></div><div class="activity">Found 18 new photos from Linh<small>2 minutes ago</small></div></section></aside></div></div>
+        </article>
+        <article class="state" data-state="loading"><div class="state-label">Loading · skeleton</div><div class="app"><div class="hero"><div class="hero-copy"><span class="eyebrow">Good evening, Viet</span><div class="skeleton wide"></div><div class="skeleton"></div><div class="search"><input disabled placeholder="Loading your photos…"><button class="btn" disabled>Search</button></div></div><div class="mosaic"><i class="scene"></i><i class="scene"></i><i class="scene"></i><i class="scene"></i></div></div><div class="stats"><div class="stat"><div class="skeleton"></div><div class="skeleton"></div></div><div class="stat"><div class="skeleton"></div><div class="skeleton"></div></div><div class="stat"><div class="skeleton"></div><div class="skeleton"></div></div><div class="stat"><div class="skeleton"></div><div class="skeleton"></div></div></div><div class="content"><section class="card"><div class="skeleton wide"></div><div class="photos"><i class="skeleton tile"></i><i class="skeleton tile"></i><i class="skeleton tile"></i><i class="skeleton tile"></i></div></section><aside><section class="card"><div class="skeleton"></div><div class="skeleton"></div></section><section class="card"><div class="skeleton"></div><div class="skeleton tile"></div></section></aside></div></div></article>
+        <article class="state" data-state="empty"><div class="state-label">Empty · first run</div><div class="app"><div class="hero"><div class="hero-copy"><span class="eyebrow">Good evening, Viet</span><h1>Your Flickr circle, searchable down to every photo.</h1><p class="muted">Start with your own Flickr account. Contacts and photos appear as they are discovered.</p></div><div class="mosaic"><i class="scene"></i><i class="scene"></i><i class="scene"></i><i class="scene"></i></div></div><section class="card empty"><div class="illustration">▧</div><h2>Nothing crawled yet</h2><p class="muted">Connect a Flickr account to start discovering contacts and photos.</p><button class="btn">Open setup wizard</button></section></div></article>
+        <article class="state" data-state="error"><div class="state-label">Error · retry</div><div class="app"><div class="hero"><div class="hero-copy"><span class="eyebrow">Good evening, Viet</span><h1>Your Flickr circle, searchable down to every photo.</h1><div class="search"><input placeholder="Describe a photo"><button class="btn">Search</button></div></div><div class="mosaic"><i class="scene"></i><i class="scene"></i><i class="scene"></i><i class="scene"></i></div></div><section class="card error" role="alert"><div class="illustration">!</div><h2>Home could not load</h2><p class="error-note">Check your connection and try again. Your data is safe.</p><button class="btn">Try again</button></section></div></article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
