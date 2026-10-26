@@ -37,7 +37,7 @@ Inside the USER shell main column (max width 1200px, 24px desktop padding,
    Flickr handle, location, depth, and ordered “Found via” discovery chain.
    Missing cover uses neutral decorative art; missing avatar uses deterministic
    initials. Missing location or discovery source uses localized “Not
-   available.”
+   available.” If `real_name` is empty, use `username` as the display name.
 3. Header actions: Star, Prioritise sizes, Pause/Resume contact crawl, and
    primary Download all. Show the confirmed star and pause states. Download all
    opens the shared New download modal preselected to this contact.
@@ -63,7 +63,7 @@ added to OpenAPI before the build. Use the authenticated session for scope.
 
 | Element | Source | Fields used |
 | --- | --- | --- |
-| Contact identity, cover, discovery, crawl, counts and facet progress | `GET /me/contacts/{nsid}` **contract request** | `nsid`, `username`, `real_name`, `avatar_url`, `cover_photo_url`, `location`, `depth`, `found_via[]` (`nsid`, `label`), `starred`, `paused`, `photo_records_crawled`, `photo_records_total`, `sizes_completed`, `facets[]` (`name`, `completed`, `total`, `status`, `updated_at`), `counts` (`photos`, `favorites`, `albums`, `galleries`, `groups`), `updated_at` |
+| Contact identity, cover, discovery, crawl, counts and facet progress | `GET /me/contacts/{nsid}` **contract request** | `nsid`, `username`, `real_name`, `avatar_url`, `cover_photo_url`, `location`, `depth`, `found_via[]` (`nsid`, `label`), `starred`, `paused`, `crawl_status`, `photo_records_crawled`, `photo_records_total`, `sizes_completed`, `facets[]` (`name`, `completed`, `total`, `status`, `updated_at`), `counts` (`photos`, `favorites`, `albums`, `galleries`, `groups`), `updated_at` |
 | Photos grid | `GET /me/contacts/{nsid}/photos?cursor=&limit=30` **contract request** | `items[]`: `id`, `title`, `thumbnail_url`, `width`, `height`, `taken_at`, `sizes_available`; `total`, `next_cursor`, `updated_at` |
 | Star | `PUT /me/contacts/{nsid}/star` **existing** | request `starred` |
 | Select contact for seven days | `PUT /me/contacts/{nsid}/select` **existing** | path `nsid`; this changes scheduler selection but does not guarantee sizes-first order |
@@ -72,9 +72,11 @@ added to OpenAPI before the build. Use the authenticated session for scope.
 | New download | `POST /downloads` **existing** | request `kind: "contact"`, `subject: nsid`, plus `photo_ids` only for tray downloads |
 | Live refresh | `GET /events` **existing** | authenticated SSE with resumable event IDs; `crawl.progress` is user scoped. Contact refresh event `contact.updated` with `nsid`, `updated_at` is a **contract request** |
 
-`sizes_completed` is a percentage from 0 to 100. Facet status is `pending`,
-`running`, `complete`, `partial` or `failed`; `total` can be null. Counts are
-nonnegative. `found_via` is the ordered path from a root connected account;
+`crawl_status` drives the contact status pill and is `pending`, `running`,
+`complete`, `partial`, `failed` or `paused`. `sizes_completed` is a percentage
+from 0 to 100. Facet status is `pending`, `running`, `complete`, `partial` or
+`failed`; `total` can be null. Counts are nonnegative. `found_via` is the
+ordered path from a root connected account;
 depth is this user's minimum interest depth, not a global crawl depth. Missing
 photo images use the shared placeholder and never a broken-image glyph. Photo
 URLs are stored size URLs selected by the server. Do not persist these
