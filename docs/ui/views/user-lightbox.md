@@ -132,8 +132,11 @@ For initial network or server failure, show “Could not load this photo”,
 “Check your connection, then try again.”, and Retry in the stage; keep Close
 available. For a stage image load error after metadata succeeds, retain panel
 data and show “Photo preview unavailable” with Retry. Never render raw server
-messages or a broken-image glyph. A failed size-list request keeps provisional
-sizes and shows a retryable partial notice.
+messages or a broken-image glyph. A 404 shows “This photo is unavailable” and
+a “Return to gallery” action; do not offer Retry because the response is also
+used for unknown and inaccessible photo IDs. The action closes the viewer and
+restores the invoking gallery. A failed size-list request keeps provisional
+sizes and shows “Some photo details could not be loaded” with Retry.
 
 ### Partial / stale
 
@@ -244,7 +247,9 @@ remain owned by those specifications.
 | `user.lightbox.error.title` | Could not load this photo | Không thể tải ảnh này |
 | `user.lightbox.error.body` | Check your connection, then try again. | Kiểm tra kết nối rồi thử lại. |
 | `user.lightbox.error.preview` | Photo preview unavailable | Không thể xem trước ảnh |
+| `user.lightbox.error.not-found` | This photo is unavailable | Ảnh này không khả dụng |
 | `user.lightbox.error.download` | Could not start the download. Try again. | Không thể bắt đầu tải xuống. Hãy thử lại. |
+| `user.lightbox.error.partial` | Some photo details could not be loaded. | Không thể tải một số thông tin ảnh. |
 | `user.lightbox.retry` | Retry | Thử lại |
 | `user.lightbox.stale` | Showing saved details | Đang hiển thị thông tin đã lưu |
 | `user.lightbox.stale.updated` | Last updated {relative_time} | Cập nhật lần cuối {relative_time} |
@@ -301,6 +306,9 @@ Stable E2E hooks:
 - `data-testid="lightbox-empty"`
 - `data-testid="lightbox-empty-action"`
 - `data-testid="lightbox-error"`
+- `data-testid="lightbox-not-found"`
+- `data-testid="lightbox-not-found-return"`
+- `data-testid="lightbox-partial"`
 - `data-testid="lightbox-stale"`
 - `data-testid="lightbox-tombstone"`
 - `data-testid="lightbox-forbidden"`
