@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Albums list · XFlickr mockup</title>
+  <style>
+    :root{font-family:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:light dark}
+    *{box-sizing:border-box}
+    body{margin:0;background:#e9edf3;color:#16202c;padding:24px}
+    h1,h2,h3,p{margin:0}
+    h1{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:clamp(24px,3vw,32px);line-height:1.15;letter-spacing:-.01em}
+    h2{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:20px;margin:0 0 14px}
+    h3{font-size:16px;line-height:1.35;margin:0 0 4px}
+    .intro{max-width:1440px;margin:0 auto 22px;color:#56657a}
+    .theme{max-width:1440px;margin:0 auto 28px;padding:22px;background:#dce2ea;border-radius:14px}
+    .theme.dark{background:#0f1116;color:#e8eaf0}
+    .theme-title{display:flex;align-items:center;gap:10px;margin:0 0 16px}
+    .theme-title span{font:12px ui-monospace,monospace;color:#56657a}
+    .dark .theme-title span{color:#a0a7b4}
+    .states{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+    .sample{min-width:0;background:#f6f7fa;border:1px solid #c9d2de;border-radius:14px;padding:14px}
+    .dark .sample{background:#171a21;border-color:#3a4150}
+    .sample-label{font-size:12px;color:#56657a;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin:0 0 10px}
+    .dark .sample-label{color:#a0a7b4}
+    .app{background:#fff;border-radius:12px;padding:20px;min-height:320px;color:#161a22}
+    .dark .app{background:#171a21;color:#e8eaf0}
+    .shellbar{height:24px;border-bottom:1px solid #e2e5ec;color:#5d6574;font-size:12px;margin-bottom:22px;padding-bottom:8px}
+    .dark .shellbar{border-color:#2a2f3a;color:#a0a7b4}
+    .pagehead{display:flex;justify-content:space-between;align-items:end;gap:16px;margin-bottom:18px}
+    .subtitle{color:#5d6574;font-size:14px;margin-top:5px}
+    .dark .subtitle{color:#a0a7b4}
+    label{display:block;font-size:12px;font-weight:600;color:#5d6574;margin-bottom:5px}
+    .dark label{color:#a0a7b4}
+    select,.select{font:inherit;color:inherit;background:transparent;border:1px solid #747b88;border-radius:999px;padding:9px 34px 9px 12px;min-height:40px;min-width:180px}
+    .dark select,.dark .select{border-color:#778396}
+    .album-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px 14px}
+    .album-card{min-width:0;color:inherit;text-decoration:none;display:block}
+    .stack{position:relative;aspect-ratio:4/3;margin:0 4px 12px 0}
+    .cover{position:absolute;inset:0;border-radius:8px;background:linear-gradient(145deg,#315f72,#b8c8b1 54%,#e2a56d);box-shadow:0 2px 8px rgba(18,22,30,.22)}
+    .cover:nth-child(1){transform:rotate(-3deg) translate(-4px,2px);opacity:.76}
+    .cover:nth-child(2){transform:rotate(2.5deg) translate(4px,0);opacity:.88;background:linear-gradient(135deg,#4f6c87,#d0ba89 55%,#526d61)}
+    .cover:nth-child(3){background:linear-gradient(150deg,#202c3d,#397c83 48%,#d49b6f)}
+    .album-title{font-weight:700;overflow-wrap:anywhere}
+    .meta{font-size:13px;color:#5d6574;line-height:1.45;margin-top:3px}
+    .dark .meta{color:#a0a7b4}
+    .empty,.error{min-height:210px;display:grid;align-content:center;justify-items:center;text-align:center;padding:24px;gap:9px}
+    .glyph{width:42px;height:42px;border-radius:50%;background:#e6edfd;color:#2457d6;display:grid;place-items:center;font-size:21px}
+    .dark .glyph{background:#1f2a47;color:#7d9cff}
+    .error .glyph{background:#fee8e7;color:#c12824}
+    .dark .error .glyph{background:#452522;color:#ff7b72}
+    .empty p,.error p{max-width:370px;color:#5d6574;font-size:14px;line-height:1.5}
+    .dark .empty p,.dark .error p{color:#a0a7b4}
+    .button{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 16px;border-radius:999px;background:#2457d6;color:white;text-decoration:none;font-weight:600;font-size:14px;margin-top:4px}
+    .dark .button{background:#7d9cff;color:#0d1220}
+    .notice{border:1px solid #c12824;background:#fff5f4;color:#8d211d;padding:12px 14px;border-radius:10px;display:flex;align-items:center;gap:10px;font-size:14px}
+    .dark .notice{background:#30201f;color:#ffb1aa;border-color:#8d4842}
+    .notice .button{margin:0 0 0 auto;min-height:36px}
+    .skeleton{height:100px;border-radius:8px;background:linear-gradient(90deg,#eef0f5 25%,#e2e5ec 45%,#eef0f5 65%);background-size:200% 100%;animation:shimmer 1.2s ease infinite;margin-bottom:9px}
+    .dark .skeleton{background:linear-gradient(90deg,#1e222b 25%,#252a35 45%,#1e222b 65%);background-size:200% 100%}
+    .skel-line{height:12px;width:65%;border-radius:8px;background:#eef0f5;margin:7px 0}
+    .dark .skel-line{background:#252a35}
+    .skel-line.short{width:44%}
+    .busy{font-size:12px;color:#5d6574;margin:0 0 10px}
+    .dark .busy{color:#a0a7b4}
+    @keyframes shimmer{to{background-position:-200% 0}}
+    @media(max-width:900px){body{padding:16px}.states{grid-template-columns:1fr}.theme{padding:14px}}
+    @media(max-width:600px){.app{padding:16px}.pagehead{align-items:stretch;flex-direction:column}.album-grid{grid-template-columns:1fr;gap:22px}.stack{margin-bottom:10px}.theme-title{align-items:flex-start;flex-direction:column}.notice{align-items:flex-start;flex-wrap:wrap}.notice .button{margin-left:0}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;scroll-behavior:auto!important}}
+  </style>
+</head>
+<body>
+  <header class="intro">
+    <h1>Albums list mockup</h1>
+    <p>USER role · Light gallery default, dark optional · Responsive at 1440px desktop and 390px mobile</p>
+  </header>
+
+  <section class="theme" aria-labelledby="light-title">
+    <h2 class="theme-title" id="light-title">Light gallery <span>USER default theme</span></h2>
+    <div class="states">
+      <section class="sample" data-state="ready" aria-label="Normal albums state">
+        <p class="sample-label">Normal</p>
+        <div class="app">
+          <div class="shellbar">XFlickr　　Home　 Library　 Contacts　 Albums</div>
+          <div class="pagehead"><div><h1>Albums</h1><p class="subtitle">Albums of all your contacts.</p></div><div><label for="contact-light">Filter by contact</label><select id="contact-light"><option>All contacts</option><option>Mai Pham</option></select></div></div>
+          <div class="album-grid">
+            <a class="album-card" href="#album-vietnam"><div class="stack"><span class="cover"></span><span class="cover"></span><span class="cover"></span></div><div class="album-title">Vietnam 2024</div><div class="meta">Mai Pham · 82 stored of 94 on Flickr</div></a>
+            <a class="album-card" href="#album-street"><div class="stack"><span class="cover"></span><span class="cover"></span><span class="cover"></span></div><div class="album-title">Street</div><div class="meta">Jooservices · 34 stored of 34 on Flickr</div></a>
+            <a class="album-card" href="#album-night"><div class="stack"><span class="cover"></span><span class="cover"></span><span class="cover"></span></div><div class="album-title">Night skies</div><div class="meta">Aiko Sato · 0 stored of 16 on Flickr</div></a>
+          </div>
+        </div>
+      </section>
+      <section class="sample" data-state="loading" aria-label="Loading albums state">
+        <p class="sample-label">Loading</p>
+        <div class="app" aria-busy="true">
+          <div class="shellbar">XFlickr　　Home　 Library　 Contacts　 Albums</div>
+          <div class="pagehead"><div><h1>Albums</h1><p class="subtitle">Albums of all your contacts.</p></div><div><label>Filter by contact</label><div class="select">All contacts　⌄</div></div></div>
+          <p class="busy">Loading albums…</p><div class="album-grid" aria-hidden="true"><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div></div>
+        </div>
+      </section>
+      <section class="sample" data-state="empty" aria-label="Empty albums state">
+        <p class="sample-label">Empty</p>
+        <div class="app">
+          <div class="shellbar">XFlickr　　Home　 Library　 Contacts　 Albums</div>
+          <div class="pagehead"><div><h1>Albums</h1><p class="subtitle">Albums of all your contacts.</p></div><div><label>Filter by contact</label><div class="select">All contacts　⌄</div></div></div>
+          <div class="empty"><div class="glyph" aria-hidden="true">▤</div><h3>No albums yet</h3><p>Albums from your contacts will appear here after they are discovered.</p><a class="button" href="/contacts">Browse contacts</a></div>
+        </div>
+      </section>
+      <section class="sample" data-state="error" aria-label="Albums error state">
+        <p class="sample-label">Error</p>
+        <div class="app">
+          <div class="shellbar">XFlickr　　Home　 Library　 Contacts　 Albums</div>
+          <div class="pagehead"><div><h1>Albums</h1><p class="subtitle">Albums of all your contacts.</p></div><div><label>Filter by contact</label><div class="select">All contacts　⌄</div></div></div>
+          <div class="error" role="alert"><div class="glyph" aria-hidden="true">!</div><h3>Could not load albums</h3><p>Check your connection, then try again.</p><a class="button" href="#retry">Retry</a></div>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <section class="theme dark" aria-labelledby="dark-title">
+    <h2 class="theme-title" id="dark-title">Dark gallery <span>USER optional theme</span></h2>
+    <div class="states">
+      <section class="sample" data-state="ready" aria-label="Normal albums state, dark theme">
+        <p class="sample-label">Normal</p>
+        <div class="app">
+          <div class="shellbar">XFlickr　　Home　 Library　 Contacts　 Albums</div>
+          <div class="pagehead"><div><h1>Albums</h1><p class="subtitle">Albums of all your contacts.</p></div><div><label for="contact-dark">Filter by contact</label><select id="contact-dark"><option>All contacts</option><option>Mai Pham</option></select></div></div>
+          <div class="album-grid">
+            <a class="album-card" href="#album-vietnam-dark"><div class="stack"><span class="cover"></span><span class="cover"></span><span class="cover"></span></div><div class="album-title">Vietnam 2024</div><div class="meta">Mai Pham · 82 stored of 94 on Flickr</div></a>
+            <a class="album-card" href="#album-street-dark"><div class="stack"><span class="cover"></span><span class="cover"></span><span class="cover"></span></div><div class="album-title">Street</div><div class="meta">Jooservices · 34 stored of 34 on Flickr</div></a>
+            <a class="album-card" href="#album-night-dark"><div class="stack"><span class="cover"></span><span class="cover"></span><span class="cover"></span></div><div class="album-title">Night skies</div><div class="meta">Aiko Sato · 0 stored of 16 on Flickr</div></a>
+          </div>
+        </div>
+      </section>
+      <section class="sample" data-state="loading" aria-label="Loading albums state, dark theme">
+        <p class="sample-label">Loading</p>
+        <div class="app" aria-busy="true">
+          <div class="shellbar">XFlickr　　Home　 Library　 Contacts　 Albums</div>
+          <div class="pagehead"><div><h1>Albums</h1><p class="subtitle">Albums of all your contacts.</p></div><div><label>Filter by contact</label><div class="select">All contacts　⌄</div></div></div>
+          <p class="busy">Loading albums…</p><div class="album-grid" aria-hidden="true"><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div></div>
+        </div>
+      </section>
+      <section class="sample" data-state="empty" aria-label="Empty albums state, dark theme">
+        <p class="sample-label">Empty</p>
+        <div class="app">
+          <div class="shellbar">XFlickr　　Home　 Library　 Contacts　 Albums</div>
+          <div class="pagehead"><div><h1>Albums</h1><p class="subtitle">Albums of all your contacts.</p></div><div><label>Filter by contact</label><div class="select">All contacts　⌄</div></div></div>
+          <div class="empty"><div class="glyph" aria-hidden="true">▤</div><h3>No albums yet</h3><p>Albums from your contacts will appear here after they are discovered.</p><a class="button" href="/contacts">Browse contacts</a></div>
+        </div>
+      </section>
+      <section class="sample" data-state="error" aria-label="Albums error state, dark theme">
+        <p class="sample-label">Error</p>
+        <div class="app">
+          <div class="shellbar">XFlickr　　Home　 Library　 Contacts　 Albums</div>
+          <div class="pagehead"><div><h1>Albums</h1><p class="subtitle">Albums of all your contacts.</p></div><div><label>Filter by contact</label><div class="select">All contacts　⌄</div></div></div>
+          <div class="error" role="alert"><div class="glyph" aria-hidden="true">!</div><h3>Could not load albums</h3><p>Check your connection, then try again.</p><a class="button" href="#retry">Retry</a></div>
+        </div>
+      </section>
+    </div>
+  </section>
+</body>
+</html>
