@@ -259,7 +259,8 @@ cloud destination management, download history, and admin views.
 
 ## Data
 
-See Data and API.
+Compatibility heading for the catalogue checker; the specification is in
+[Data and API](#data-and-api).
 
 ## Interactions
 
