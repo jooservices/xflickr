@@ -33,7 +33,7 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 | `user-home` | user | `/` | Home | [spec](views/user-home.md) | [mockup](mockups/user-home.html) | JOOXF-169 | `web/e2e/user-home.spec.ts` |
 | `user-library` | user | `/library` | Library | pending | pending | TBD | `web/e2e/user-library.spec.ts` |
 | `user-search` | user | `/search` | Search | pending | pending | TBD | `web/e2e/user-search.spec.ts` |
-| `user-contacts` | user | `/contacts` | Contacts | pending | pending | TBD | `web/e2e/user-contacts.spec.ts` |
+| `user-contacts` | user | `/contacts` | Contacts | [spec](views/user-contacts.md) | [mockup](mockups/user-contacts.html) | JOOXF-173 | `web/e2e/user-contacts.spec.ts` |
 | `user-contact` | user | `/contacts/:id` | Contact | pending | pending | TBD | `web/e2e/user-contact.spec.ts` |
 | `user-contact-favorites` | user | `/contacts/:nsid?tab=favorites` | Contact: Favorites tab | [spec](views/user-contact-favorites.md) | [mockup](mockups/user-contact-favorites.html) | JOOXF-173 | `web/e2e/user-contact-favorites.spec.ts` |
 | `user-contact-albums-galleries` | user | `/contacts/:nsid?tab=albums` or `?tab=galleries` | Contact: Albums and Galleries tabs | [spec](views/user-contact-albums-galleries.md) | [mockup](mockups/user-contact-albums-galleries.html) | JOOXF-173, JOOXF-174 | `web/e2e/user-contact-albums-galleries.spec.ts` |
