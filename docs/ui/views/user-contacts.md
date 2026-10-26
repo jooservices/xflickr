@@ -58,8 +58,8 @@ operation. Existing user-scoped crawl settings and star operations are used.
 
 | Element | Source | Fields used |
 | --- | --- | --- |
-| Contact cards and filter counts | `GET /me/crawl/interests?filter=&q=&sort=&cursor=&limit=30` **contract request / extension** | `items[]`: `person_id`, `nsid`, `name`, `username`, `avatar_url`, `depth`, `starred`, `status` (`done`, `crawling`, `queued`, `paused`, `error`), `photos_crawled`, `photos_total`, `favorites_count`, `sizes_percent`, `last_check_at`, `recent_photos[]` (`id`, `thumbnail_url`, `alt`); `counts` by `all`, `starred`, `crawling`, `needs_attention`; `next_cursor`, `updated_at` |
-| Effective depth | `GET /me/crawl/settings` **contract request** (shared with Crawl view) | `depth` |
+| Contact cards and filter counts | `GET /me/crawl/interests?filter=&q=&sort=&cursor=&limit=30` **contract request / extension** | `items[]`: `person_id`, `nsid`, `name`, `username`, `avatar_url`, `depth`, `starred`, `status` (`done`, `crawling`, `checking`, `queued`, `paused`, `error`), `photos_crawled`, `photos_total`, `favorites_count`, `sizes_percent`, `last_check_at`, `recent_photos[]` (`id`, `thumbnail_url`, `alt`); `counts` by `all`, `starred`, `crawling`, `needs_attention`; `next_cursor`, `updated_at` |
+| Effective depth | `GET /me/crawl/settings` (exists; shared with Crawl view) | `depth` |
 | Star toggle | `PUT /me/contacts/{nsid}/star` (exists), body `{starred: boolean}` | 204 success; 400/401/404 error |
 | Crawl state refresh | `GET /events` (exists, authenticated SSE; use shell connection) | `crawl.progress` `{person_id, status, photos_crawled, sizes_percent}`; `crawl.queue` snapshot where emitted by the user channel |
 
@@ -77,11 +77,20 @@ Flickr credentials, or a browser-constructed Flickr URL. Missing images use the
 shared neutral image placeholder. Missing names use NSID; missing avatar uses
 initials fallback.
 
+The `crawling` filter includes `crawling`, `checking`, and `queued`; the
+`needs_attention` filter includes `paused` and `error`, matching the POC's
+status grouping. Render `checking` with the localized Crawling label. The card
+progress bar is photo crawl progress (`photos_crawled / photos_total`, clamped
+to 0–100); size readiness is the separate `sizes_percent` count. A zero photo
+total renders 0% and does not imply that crawling is complete. The selected
+sort's ordering and tie-breaks are defined above; `updated` uses the crawl
+record's `last_check_at`.
+
 Contract request additions: list fields `username`, `favorites_count`,
-`recent_photos`, `counts`, `updated_at`, and `q`/`sort` query parameters, plus
-`needs_attention` filter naming. These are required for JOOXF-173 and must be
-added to OpenAPI by that build ticket. The existing star route is the only
-write action in this view.
+`recent_photos`, `counts`, `updated_at`, the `checking` status value, and
+`q`/`sort` query parameters, plus `needs_attention` filter naming. These are
+required for JOOXF-173 and must be added to OpenAPI by that build ticket. The
+existing star route is the only write action in this view.
 
 ## Actions
 
@@ -100,9 +109,10 @@ write action in this view.
 
 ### Ready
 
-Render heading, controls, cards, and Load more as appropriate. A successful
-empty result uses the Empty state below. Star state and counts come from the
-latest response; never infer completion from the progress percentage alone.
+This is the normal state. Render heading, controls, cards, and Load more as
+appropriate. A successful empty result uses the Empty state below. Star state
+and counts come from the latest response; never infer completion from the
+progress percentage alone.
 
 ### Loading
 
@@ -211,6 +221,7 @@ are not translated. Shared shell strings remain owned by `user-shell`.
 | `user.contacts.star.remove` | Unstar {name} | Bỏ đánh dấu sao {name} |
 | `user.contacts.status.done` | Complete | Hoàn tất |
 | `user.contacts.status.crawling` | Crawling | Đang thu thập |
+| `user.contacts.status.checking` | Crawling | Đang thu thập |
 | `user.contacts.status.queued` | Queued | Đang chờ |
 | `user.contacts.status.paused` | Paused | Đã tạm dừng |
 | `user.contacts.status.error` | Needs attention | Cần chú ý |
