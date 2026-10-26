@@ -30,11 +30,11 @@ per-group opt-in and starts off for every group.
 
 ## Layout
 
-Use the shared Contact header inside the USER shell main column (max width
-1200px, 24px desktop padding, 16px mobile padding): Contacts breadcrumb,
-contact name, avatar, Flickr handle and depth. Follow it with shared contact
-tab navigation. Mark the current tab with `aria-current="page"`; show the
-loaded item count on Groups only.
+Use the POC photo cover and shared Contact header inside the USER shell main
+column (max width 1200px, 24px desktop padding, 16px mobile padding): Contacts
+breadcrumb, contact name, avatar, Flickr handle and depth. Follow it with shared
+contact tab navigation. Mark the current tab with `aria-current="page"`; show
+the loaded item count on Groups only.
 
 Groups renders a responsive semantic table with Group, Members and Pool crawl
 columns. Each row shows the Flickr group name, member count and a labelled
@@ -45,8 +45,9 @@ About renders a definition list for Flickr NSID, Location, Found via, Depth and
 Last change check; beneath it, show facet progress and tombstone counts. Facet
 progress is a compact table with facet, completed/total or status, and last
 updated time. Include photos, favorites, albums, galleries and groups. The
-tombstone summary lists unavailable photo count and last update. Use existing
-card, table, switch, badge and progress components; do not add components.
+tombstone summary shows the unavailable photo count and its last update time.
+Use existing card, table, switch, badge and progress components; do not add
+components.
 
 ## Data and API
 
@@ -92,10 +93,10 @@ Pool crawl is explicitly opt-in for each group.
 
 ### Ready
 
-Show the shared header, selected tab and current data. Groups show each
-preference value from the API. About shows metadata, all five facet rows and
-the tombstone summary. Null values use localized fallback copy. Do not infer
-completion from a missing count.
+This is the normal state. Show the shared header, selected tab and current data.
+Groups show each preference value from the API. About shows metadata, all five
+facet rows and the tombstone summary. Null values use localized fallback copy.
+Do not infer completion from a missing count.
 
 ### Loading
 
@@ -184,6 +185,7 @@ keys; shared shell and common button strings use existing catalog keys.
 | `user.contact-groups-about.groups.disabled` | Off | Tắt |
 | `user.contact-groups-about.groups.off-default` | Off by default | Mặc định là tắt |
 | `user.contact-groups-about.groups.toggle` | Pool crawl for {group_name} | Thu thập ảnh trong nhóm {group_name} |
+| `user.contact-groups-about.groups.saving` | Saving… | Đang lưu… |
 | `user.contact-groups-about.about.nsid` | Flickr NSID | NSID Flickr |
 | `user.contact-groups-about.about.location` | Location | Vị trí |
 | `user.contact-groups-about.about.found-via` | Found via | Được tìm thấy qua |
@@ -241,6 +243,7 @@ keys; shared shell and common button strings use existing catalog keys.
 - `user-contact-groups-about-error`
 - `user-contact-groups-about-partial`
 - `user-contact-groups-about-forbidden`
+- `user-contact-groups-about-not-found`
 - `user-contact-groups-about-retry`
 - `user-contact-groups-about-live-status`
 
