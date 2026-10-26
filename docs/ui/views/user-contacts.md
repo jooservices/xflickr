@@ -59,7 +59,7 @@ operation. Existing user-scoped crawl settings and star operations are used.
 | Element | Source | Fields used |
 | --- | --- | --- |
 | Contact cards and filter counts | `GET /me/crawl/interests?filter=&q=&sort=&cursor=&limit=30` **contract request / extension** | `items[]`: `person_id`, `nsid`, `name`, `username`, `avatar_url`, `depth`, `starred`, `status` (`done`, `crawling`, `queued`, `paused`, `error`), `photos_crawled`, `photos_total`, `favorites_count`, `sizes_percent`, `last_check_at`, `recent_photos[]` (`id`, `thumbnail_url`, `alt`); `counts` by `all`, `starred`, `crawling`, `needs_attention`; `next_cursor`, `updated_at` |
-| Effective depth | `GET /me/crawl/settings` (exists) | `depth` |
+| Effective depth | `GET /me/crawl/settings` **contract request** (shared with Crawl view) | `depth` |
 | Star toggle | `PUT /me/contacts/{nsid}/star` (exists), body `{starred: boolean}` | 204 success; 400/401/404 error |
 | Crawl state refresh | `GET /events` (exists, authenticated SSE; use shell connection) | `crawl.progress` `{person_id, status, photos_crawled, sizes_percent}`; `crawl.queue` snapshot where emitted by the user channel |
 
