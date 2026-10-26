@@ -16,8 +16,8 @@
     article { padding: 16px; border-radius: 14px; background: #fff; }
     article > h2 { margin-bottom: 12px; }
     .samples { display: grid; gap: 16px; }
-    .frame { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); color: var(--ink); }
-    .frame.desktop { width: 100%; }
+    .frame { container-type: inline-size; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); color: var(--ink); }
+    .frame.desktop { width: 1440px; }
     .frame.mobile { width: 390px; max-width: 100%; }
     .view { max-width: 1200px; margin: auto; padding: 18px 24px 24px; }
     .crumb { margin-bottom: 12px; color: var(--muted); font-size: 13px; }
@@ -59,10 +59,7 @@
     .state-loading .grid { grid-auto-rows: auto; }
     [data-theme="light"] { --bg:#f6f7fa; --surface:#fff; --sunken:#eef0f5; --line:#e2e5ec; --line2:#747b88; --ink:#161a22; --muted:#5d6574; --accent:#2457d6; --soft:#e6edfd; }
     [data-theme="dark"] { --bg:#0f1116; --surface:#171a21; --sunken:#1e222b; --line:#2a2f3a; --line2:#778396; --ink:#e8eaf0; --muted:#a0a7b4; --accent:#7d9cff; --soft:#1f2a47; }
-    @media (min-width: 800px) { .samples { grid-template-columns: minmax(0,1fr) 390px; align-items: start; } }
-    @media (max-width: 600px) {
-      body { padding: 12px; }
-      article { padding: 12px; }
+    @container (max-width: 600px) {
       .view { padding: 12px 12px 18px; }
       .cover { align-items: start; flex-wrap: wrap; gap: 10px; padding: 14px; }
       .avatar { width: 52px; height: 52px; }
@@ -80,7 +77,7 @@
 <body>
   <header class="intro">
     <h1>Contact page · Header and Photos tab</h1>
-    <p class="muted">Static USER-role mockup. Each sample includes 1440px desktop and 390px mobile previews. All artwork is CSS; no network or build step is used.</p>
+    <p class="muted">Static USER-role mockup. Each state is shown at an exact 1440px desktop width and 390px mobile width in both gallery themes. All artwork is CSS; no network or build step is used.</p>
   </header>
   <main class="showcase">
     <article data-theme="light">

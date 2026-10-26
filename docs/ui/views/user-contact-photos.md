@@ -208,6 +208,7 @@ dates are source data and are not translated.
 | `user.contact-photos.tabs.albums` | Albums | Album |
 | `user.contact-photos.tabs.galleries` | Galleries | Bộ sưu tập |
 | `user.contact-photos.tabs.groups` | Groups | Nhóm |
+| `user.contact-photos.tabs.about` | About | Giới thiệu |
 | `user.contact-photos.identity.handle` | @{handle} | @{handle} |
 | `user.contact-photos.identity.location` | {location} | {location} |
 | `user.contact-photos.identity.depth` | Depth {depth} | Cấp độ {depth} |
@@ -215,9 +216,13 @@ dates are source data and are not translated.
 | `user.contact-photos.value.unavailable` | Not available | Không có thông tin |
 | `user.contact-photos.action.star` | Star | Đánh dấu sao |
 | `user.contact-photos.action.starred` | Starred | Đã đánh dấu sao |
+| `user.contact-photos.action.unstar` | Unstar | Bỏ đánh dấu sao |
 | `user.contact-photos.action.prioritise-sizes` | Prioritise sizes | Ưu tiên tải kích thước ảnh |
+| `user.contact-photos.action.prioritise-sizes.success` | Photo sizes prioritised | Đã ưu tiên tải kích thước ảnh |
 | `user.contact-photos.action.pause` | Pause crawl | Tạm dừng thu thập |
 | `user.contact-photos.action.resume` | Resume crawl | Tiếp tục thu thập |
+| `user.contact-photos.action.pause.success` | Contact crawl paused | Đã tạm dừng thu thập liên hệ |
+| `user.contact-photos.action.resume.success` | Contact crawl resumed | Đã tiếp tục thu thập liên hệ |
 | `user.contact-photos.action.download-all` | Download all | Tải tất cả |
 | `user.contact-photos.crawl.title` | Crawl | Thu thập dữ liệu |
 | `user.contact-photos.crawl.status.pending` | Pending | Đang chờ |
