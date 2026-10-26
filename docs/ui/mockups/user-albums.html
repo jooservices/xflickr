@@ -18,12 +18,12 @@
     .theme-title{display:flex;align-items:center;gap:10px;margin:0 0 16px}
     .theme-title span{font:12px ui-monospace,monospace;color:#56657a}
     .dark .theme-title span{color:#a0a7b4}
-    .states{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+    .states{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
     .sample{min-width:0;background:#f6f7fa;border:1px solid #c9d2de;border-radius:14px;padding:14px}
     .dark .sample{background:#171a21;border-color:#3a4150}
     .sample-label{font-size:12px;color:#56657a;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin:0 0 10px}
     .dark .sample-label{color:#a0a7b4}
-    .app{background:#fff;border-radius:12px;padding:20px;min-height:320px;color:#161a22}
+    .app{max-width:1200px;margin:0 auto;background:#fff;border-radius:12px;padding:20px;min-height:320px;color:#161a22}
     .dark .app{background:#171a21;color:#e8eaf0}
     .shellbar{height:24px;border-bottom:1px solid #e2e5ec;color:#5d6574;font-size:12px;margin-bottom:22px;padding-bottom:8px}
     .dark .shellbar{border-color:#2a2f3a;color:#a0a7b4}
@@ -32,7 +32,7 @@
     .dark .subtitle{color:#a0a7b4}
     label{display:block;font-size:12px;font-weight:600;color:#5d6574;margin-bottom:5px}
     .dark label{color:#a0a7b4}
-    select,.select{font:inherit;color:inherit;background:transparent;border:1px solid #747b88;border-radius:999px;padding:9px 34px 9px 12px;min-height:40px;min-width:180px}
+    select,.select{font:inherit;color:inherit;background:transparent;border:1px solid #747b88;border-radius:999px;padding:9px 34px 9px 12px;min-height:44px;min-width:180px}
     .dark select,.dark .select{border-color:#778396}
     .album-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px 14px}
     .album-card{min-width:0;color:inherit;text-decoration:none;display:block}
@@ -51,11 +51,11 @@
     .dark .error .glyph{background:#452522;color:#ff7b72}
     .empty p,.error p{max-width:370px;color:#5d6574;font-size:14px;line-height:1.5}
     .dark .empty p,.dark .error p{color:#a0a7b4}
-    .button{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 16px;border-radius:999px;background:#2457d6;color:white;text-decoration:none;font-weight:600;font-size:14px;margin-top:4px}
+    .button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 16px;border-radius:999px;background:#2457d6;color:white;text-decoration:none;font-weight:600;font-size:14px;margin-top:4px}
     .dark .button{background:#7d9cff;color:#0d1220}
     .notice{border:1px solid #c12824;background:#fff5f4;color:#8d211d;padding:12px 14px;border-radius:10px;display:flex;align-items:center;gap:10px;font-size:14px}
     .dark .notice{background:#30201f;color:#ffb1aa;border-color:#8d4842}
-    .notice .button{margin:0 0 0 auto;min-height:36px}
+    .notice .button{margin:0 0 0 auto;min-height:44px}
     .skeleton{height:100px;border-radius:8px;background:linear-gradient(90deg,#eef0f5 25%,#e2e5ec 45%,#eef0f5 65%);background-size:200% 100%;animation:shimmer 1.2s ease infinite;margin-bottom:9px}
     .dark .skeleton{background:linear-gradient(90deg,#1e222b 25%,#252a35 45%,#1e222b 65%);background-size:200% 100%}
     .skel-line{height:12px;width:65%;border-radius:8px;background:#eef0f5;margin:7px 0}
@@ -64,15 +64,15 @@
     .busy{font-size:12px;color:#5d6574;margin:0 0 10px}
     .dark .busy{color:#a0a7b4}
     @keyframes shimmer{to{background-position:-200% 0}}
-    @media(max-width:900px){body{padding:16px}.states{grid-template-columns:1fr}.theme{padding:14px}}
-    @media(max-width:600px){.app{padding:16px}.pagehead{align-items:stretch;flex-direction:column}.album-grid{grid-template-columns:1fr;gap:22px}.stack{margin-bottom:10px}.theme-title{align-items:flex-start;flex-direction:column}.notice{align-items:flex-start;flex-wrap:wrap}.notice .button{margin-left:0}}
+    @media(max-width:1100px){body{padding:16px}.album-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.theme{padding:14px}}
+    @media(max-width:699px){.app{padding:16px}.pagehead{align-items:stretch;flex-direction:column}.album-grid{grid-template-columns:1fr;gap:22px}.stack{margin-bottom:10px}.theme-title{align-items:flex-start;flex-direction:column}.notice{align-items:flex-start;flex-wrap:wrap}.notice .button{margin-left:0}}
     @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;scroll-behavior:auto!important}}
   </style>
 </head>
 <body>
   <header class="intro">
     <h1>Albums list mockup</h1>
-    <p>USER role · Light gallery default, dark optional · Responsive at 1440px desktop and 390px mobile</p>
+    <p>Self-contained static reference with no scripts, build step, or network requests. USER role · Light gallery default, dark optional · Full-width 1440px desktop samples and responsive 390px mobile layout</p>
   </header>
 
   <section class="theme" aria-labelledby="light-title">
@@ -95,7 +95,7 @@
         <div class="app" aria-busy="true">
           <div class="shellbar">XFlickr　　Home　 Library　 Contacts　 Albums</div>
           <div class="pagehead"><div><h1>Albums</h1><p class="subtitle">Albums of all your contacts.</p></div><div><label>Filter by contact</label><div class="select">All contacts　⌄</div></div></div>
-          <p class="busy">Loading albums…</p><div class="album-grid" aria-hidden="true"><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div></div>
+          <p class="busy">Loading albums…</p><div class="album-grid" aria-hidden="true"><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div></div>
         </div>
       </section>
       <section class="sample" data-state="empty" aria-label="Empty albums state">
@@ -137,7 +137,7 @@
         <div class="app" aria-busy="true">
           <div class="shellbar">XFlickr　　Home　 Library　 Contacts　 Albums</div>
           <div class="pagehead"><div><h1>Albums</h1><p class="subtitle">Albums of all your contacts.</p></div><div><label>Filter by contact</label><div class="select">All contacts　⌄</div></div></div>
-          <p class="busy">Loading albums…</p><div class="album-grid" aria-hidden="true"><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div></div>
+          <p class="busy">Loading albums…</p><div class="album-grid" aria-hidden="true"><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div><div><div class="skeleton"></div><div class="skel-line"></div><div class="skel-line short"></div></div></div>
         </div>
       </section>
       <section class="sample" data-state="empty" aria-label="Empty albums state, dark theme">

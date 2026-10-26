@@ -128,8 +128,10 @@ make the list partial.
 
 ### Forbidden
 
-For 403, show the standard access-denied state and “Back to home”. Clear album
-and contact-filter data; do not keep stale cards visible. A filter NSID that
+For 403, show the standard access-denied state and its shared
+`shell.forbidden.title`, `shell.forbidden.text`, and `shell.forbidden.home`
+copy (“Go to home”). Clear album and contact-filter data; do not keep stale
+cards visible. A filter NSID that
 returns 404 is treated as an unavailable contact: reset to All and show the
 localized inline notice. Never expose whether an inaccessible contact exists.
 
@@ -194,7 +196,6 @@ NSIDs are data and are not translated. Shared shell strings remain owned by
 | `user.albums.action.retry` | Retry | Thử lại |
 | `user.albums.partial.message` | Albums may be out of date | Album có thể chưa được cập nhật |
 | `user.albums.updated` | Updated {relative_time} | Cập nhật {relative_time} |
-| `user.albums.access.back` | Back to home | Về trang chủ |
 | `user.albums.filter.unavailable` | This contact is unavailable. Showing all contacts. | Không thể truy cập liên hệ này. Đang hiển thị tất cả liên hệ. |
 | `user.albums.loading.label` | Loading albums | Đang tải album |
 
