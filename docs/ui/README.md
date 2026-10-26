@@ -36,6 +36,7 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 | `user-contacts` | user | `/contacts` | Contacts | pending | pending | TBD | `web/e2e/user-contacts.spec.ts` |
 | `user-contact` | user | `/contacts/:id` | Contact | pending | pending | TBD | `web/e2e/user-contact.spec.ts` |
 | `user-contact-favorites` | user | `/contacts/:nsid?tab=favorites` | Contact: Favorites tab | [spec](views/user-contact-favorites.md) | [mockup](mockups/user-contact-favorites.html) | JOOXF-173 | `web/e2e/user-contact-favorites.spec.ts` |
+| `user-contact-albums-galleries` | user | `/contacts/:nsid?tab=albums` or `?tab=galleries` | Contact: Albums and Galleries tabs | [spec](views/user-contact-albums-galleries.md) | [mockup](mockups/user-contact-albums-galleries.html) | JOOXF-173, JOOXF-174 | `web/e2e/user-contact-albums-galleries.spec.ts` |
 | `user-albums` | user | `/albums` | Albums | pending | pending | TBD | `web/e2e/user-albums.spec.ts` |
 | `user-album` | user | `/albums/:id` | Album | pending | pending | TBD | `web/e2e/user-album.spec.ts` |
 | `user-crawl` | user | `/crawl` | Crawl | [spec](views/user-crawl.md) | [mockup](mockups/user-crawl.html) | JOOXF-175 | `web/e2e/user-crawl.spec.ts` |
