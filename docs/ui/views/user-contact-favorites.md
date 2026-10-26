@@ -12,8 +12,9 @@ ticket: JOOXF-173. This tab renders inside the Contact view and USER shell.
 ## Purpose
 
 Show the photos this contact has favorited and make the discovery consequence
-clear: each photo's owner is considered as a contact one depth below the
-current contact. The signed-in user's configured depth limit is authoritative.
+clear: each photo's owner is a candidate contact one depth below the current
+contact. The signed-in user's configured depth limit is authoritative; owners
+beyond that limit are not discovered as contacts.
 
 ## Route and access
 
@@ -38,10 +39,11 @@ Inside the USER shell main column (max width 1200px, 24px desktop padding,
    name, avatar, handle, and depth label.
 2. Contact tabs. Favorites is `aria-current`/pressed; its count is the loaded
    favorite total supplied by the API, not just the current page length.
-3. A muted explanatory line: owners shown here become depth `contact.depth + 1`
-   contacts. If that depth exceeds the user's configured limit, say that the
-   limit stops further discovery there. Do not imply that those owners will be
-   crawled.
+3. A muted explanatory line: owners shown here are candidates at depth
+   `contact.depth + 1`. If that depth is at or below the user's effective
+   `depth` limit, say they are discovered at that depth. If it exceeds the
+   limit, say the limit prevents their discovery; do not imply they become
+   contacts or will be crawled.
 4. Photo grid using the existing `photo-grid` / `photo-card` components. Each
    card has the photo image and concise title; its owner name and avatar link
    to `/contacts/{owner_nsid}`. A photo click opens the existing lightbox; the
@@ -95,7 +97,8 @@ Contract request response shape for the favorites page:
 ```
 
 The example is illustrative only. Do not persist the response in browser storage.
-The user's crawl setting bounds discovery: if `contact.depth + 1 > depth`, show
+The user's crawl setting bounds discovery: if `contact.depth + 1 > depth`, the
+owners remain visible as photo owners but are not discovered as contacts. Show
 the limit explanation and do not present a control to raise it here. Existing
 crawl rules retain already discovered records when a depth limit is lowered.
 
@@ -114,7 +117,10 @@ crawl rules retain already discovered records when a depth limit is lowered.
 
 ### Ready
 
-Normal state: show the header, depth explanation and favorite grid. Announce
+Normal state: show the header, depth explanation and favorite grid. The depth
+explanation says owners are discovered at `contact.depth + 1` when that value
+is within the user's effective limit; otherwise it says the limit prevents
+their discovery as contacts. Announce
 the grid total once; do not announce each image during a live refresh. Preserve
 the current cursor page when a refresh updates the total. Updated or newly
 inserted items follow the endpoint's stable ordering and do not steal focus.
@@ -216,7 +222,7 @@ Names, photo titles and dates from Flickr are not translated.
 | `user.contact-favorites.tabs.groups` | Groups | Nhóm |
 | `user.contact-favorites.tabs.about` | About | Giới thiệu |
 | `user.contact-favorites.depth.within-limit` | Owners of these photos are discovered as depth {depth} contacts. | Chủ sở hữu của những ảnh này được phát hiện ở cấp độ liên hệ {depth}. |
-| `user.contact-favorites.depth.limit` | Owners of these photos are depth {depth} contacts, but your depth limit stops there. | Chủ sở hữu của những ảnh này là liên hệ cấp độ {depth}, nhưng giới hạn độ sâu của bạn dừng tại đây. |
+| `user.contact-favorites.depth.limit` | Owners of these photos would be depth {depth} contacts, but your depth limit prevents their discovery. | Chủ sở hữu của những ảnh này sẽ là liên hệ cấp độ {depth}, nhưng giới hạn độ sâu ngăn việc phát hiện họ. |
 | `user.contact-favorites.photo-owner` | View {owner_name} contact | Xem liên hệ {owner_name} |
 | `user.contact-favorites.empty.title` | No favorites yet | Chưa có ảnh yêu thích |
 | `user.contact-favorites.empty.text` | Photos this contact favorites will appear here after XFlickr crawls them. | Ảnh người này yêu thích sẽ xuất hiện tại đây sau khi XFlickr thu thập dữ liệu. |
