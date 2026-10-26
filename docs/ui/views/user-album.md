@@ -1,4 +1,4 @@
-# Album detail
+# Album page
 
 View id `user-album`, role USER, light gallery theme (dark optional). Route
 `/albums/{album_id}`. Visual baseline: `vAlbum()` in the approved
@@ -90,7 +90,10 @@ from this page.
 Contract requests owned by this view: add the album detail read and the
 `album.updated` event payload. The Downloads view owns the estimate and create
 request extensions; the Downloads view also specifies `GET /cloud/providers`.
-Do not modify OpenAPI in this design ticket.
+The POC shows `Download album` but no cloud button; this ticket explicitly
+requires `Send to cloud`, so it opens the same existing New download modal with
+a connected cloud destination preselected. This is a decided view behavior,
+not a separate upload flow. Do not modify OpenAPI in this design ticket.
 
 ## Actions
 
