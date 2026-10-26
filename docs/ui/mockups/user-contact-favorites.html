@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contact favorites — XFlickr mockup</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#161a22;background:#f6f7fa;font-synthesis:none}
+    *{box-sizing:border-box}body{margin:0;padding:28px 20px 56px;background:#f6f7fa;color:#161a22}
+    h1,h2,h3,p{margin:0}h1{font-size:22px;letter-spacing:-.02em}h2{font-size:18px;margin:0 0 12px}h3{font-size:16px}
+    a{color:inherit}.intro{max-width:1000px;margin:0 auto 28px}.intro p{margin-top:8px;color:#5d6574;line-height:1.5}
+    .viewport{max-width:1440px;margin:0 auto 36px}.viewport-title{display:flex;align-items:baseline;gap:10px;margin:0 0 14px;color:#5d6574}
+    .viewport-title b{color:#161a22}.theme-set{padding:20px;border:1px solid #d5d9e3;border-radius:16px;background:#e9ebf0;margin-bottom:22px}
+    .theme-set>h2{margin:0 0 16px}.state-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+    .sample{min-width:0;overflow:hidden;border:1px solid #e2e5ec;border-radius:14px;background:#fff;box-shadow:0 2px 8px rgba(18,22,30,.08)}
+    .sample-label{padding:9px 12px;background:#eef0f5;color:#5d6574;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+    .app{min-height:355px;padding:20px;background:#f6f7fa;color:#161a22;font-size:14px;line-height:1.45}
+    .dark{--bg:#0f1116;--surface:#171a21;--sunken:#1e222b;--line:#2a2f3a;--ink:#e8eaf0;--muted:#a0a7b4;--accent:#7d9cff;--soft:#1f2a47}
+    .light{--bg:#f6f7fa;--surface:#fff;--sunken:#eef0f5;--line:#e2e5ec;--ink:#161a22;--muted:#5d6574;--accent:#2457d6;--soft:#e6edfd}
+    .app.theme{background:var(--bg);color:var(--ink)}.shell{max-width:1200px;margin:auto}.crumb{color:var(--muted);font-size:12px;margin-bottom:14px}
+    .contact-head{display:flex;align-items:center;gap:12px;margin-bottom:18px}.avatar{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:#425a87;color:#fff;font-weight:700;flex:none}
+    .handle{color:var(--muted);font-size:12px}.tabs{display:flex;gap:8px;overflow:auto;border-bottom:1px solid var(--line);margin-bottom:14px;white-space:nowrap}
+    .tab{border:0;background:transparent;color:var(--muted);padding:9px 12px;font:inherit}.tab.active{color:var(--accent);border-bottom:2px solid var(--accent);font-weight:700}
+    .note{font-size:12px;color:var(--muted);margin:0 0 14px}.photos{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+    .photo{min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+    .art{height:110px;background:linear-gradient(145deg,#8196a6,#d2c2a1 44%,#586f66);position:relative;overflow:hidden}
+    .art:before{content:"";position:absolute;inset:36% -10% -45%;background:linear-gradient(155deg,#364953,#243e46 58%,#698277);clip-path:polygon(0 25%,26% 0,40% 24%,70% 4%,100% 33%,100% 100%,0 100%)}
+    .art.alt{background:linear-gradient(150deg,#d8955e,#f1d4a0 48%,#384b68)}.art.alt:before{background:linear-gradient(160deg,#385166,#17273c 68%,#b7744f)}
+    .art.third{background:linear-gradient(145deg,#b5c9c9,#e0d6c3 45%,#788b78)}.art.third:before{background:linear-gradient(160deg,#728d7e,#465b52 60%,#9f9e7b)}
+    .art.fourth{background:linear-gradient(150deg,#b3c3d9,#efcfaa 50%,#846d66)}.art.fourth:before{background:linear-gradient(160deg,#546979,#354957 64%,#857b61)}
+    .photo-info{padding:9px 10px}.photo-title{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:7px}
+    .owner{display:flex;align-items:center;gap:6px;color:var(--accent);font-size:11px;text-decoration:none}.owner .avatar{width:20px;height:20px;font-size:9px}
+    .empty,.error,.partial{max-width:620px;margin:20px auto;padding:28px 18px;text-align:center;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+    .symbol{width:44px;height:44px;display:grid;place-items:center;margin:0 auto 12px;border-radius:50%;background:var(--soft);color:var(--accent);font-size:22px}
+    .empty p,.error p,.partial p{max-width:42ch;margin:7px auto 14px;color:var(--muted);font-size:13px}
+    .button{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:7px 15px;border:1px solid var(--line);border-radius:999px;color:var(--ink);background:var(--surface);font:inherit;font-size:12px;text-decoration:none}
+    .button.primary{background:var(--accent);border-color:var(--accent);color:#fff}.error{border-color:#e2a29e;text-align:left}.error .symbol{margin:0 0 10px;background:#fee8e7;color:#b42320}
+    .error .button{margin-top:5px}.partial{padding:11px 14px;text-align:left;border-color:#d9b878;background:var(--surface);font-size:12px}.partial p{margin:4px 0;color:var(--muted)}
+    .skeleton{background:linear-gradient(90deg,var(--sunken) 25%,var(--surface) 45%,var(--sunken) 65%);background-size:220% 100%;border-radius:8px;animation:shine 1.2s ease infinite}
+    .sk-head{height:42px;width:45%;margin-bottom:18px}.sk-line{height:12px;width:62%;margin:0 0 14px}.sk-image{height:110px}.sk-text{height:9px;margin:9px 4px 0}.sk-text.short{width:65%;margin-bottom:10px}
+    @keyframes shine{to{background-position:-200% 0}}@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;scroll-behavior:auto!important}}
+    .mobile-viewport{width:390px;max-width:100%;margin:0 auto 34px}.mobile-viewport .theme-set{padding:12px;margin-bottom:18px}.mobile-viewport .state-grid{grid-template-columns:1fr;gap:12px}.mobile-viewport .app{min-height:0;padding:16px;font-size:13px}.mobile-viewport .photos{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.mobile-viewport .art,.mobile-viewport .sk-image{height:108px}.mobile-viewport .contact-head{align-items:flex-start}.mobile-viewport .tabs{margin-left:-16px;margin-right:-16px;padding:0 16px}.mobile-viewport .note{line-height:1.5}
+    @media(max-width:720px){body{padding:18px 12px 36px}.state-grid{grid-template-columns:1fr}.theme-set{padding:12px}.viewport-title{font-size:13px}}
+  </style>
+</head>
+<body>
+  <header class="intro">
+    <h1>Contact: Favorites tab</h1>
+    <p>Static design reference for JOOXF-173. All imagery is drawn with local CSS; this page has no scripts, build step, remote fonts, or network requests. Desktop examples are framed at 1440px; mobile examples are framed at 390px.</p>
+  </header>
+
+  <section class="viewport" aria-labelledby="desktop-title">
+    <h2 class="viewport-title" id="desktop-title"><b>Desktop · 1440 px</b> · USER light and dark gallery themes</h2>
+    <div class="theme-set light">
+      <h2>Light gallery</h2>
+      <div class="state-grid">
+        <article class="sample" data-state="ready"><div class="sample-label">Normal</div><div class="app theme"><div class="shell">
+          <div class="crumb">‹ Contacts / Linh Tran</div><div class="contact-head"><div class="avatar">LT</div><div><h3>Linh Tran</h3><div class="handle">@linh.tran · depth 1</div></div></div>
+          <div class="tabs" role="tablist" aria-label="Contact sections"><span class="tab">Photos</span><span class="tab active">Favorites <small>18</small></span><span class="tab">Albums</span><span class="tab">Galleries</span><span class="tab">Groups</span><span class="tab">About</span></div>
+          <p class="note">Owners of these photos are discovered as depth 2 contacts.</p><div class="photos">
+            <div class="photo"><div class="art"></div><div class="photo-info"><div class="photo-title">Rain over the old quarter</div><a class="owner" href="#owner"><span class="avatar">MV</span> Minh Vu</a></div></div>
+            <div class="photo"><div class="art alt"></div><div class="photo-info"><div class="photo-title">Late light at the harbor</div><a class="owner" href="#owner"><span class="avatar">AT</span> An Tran</a></div></div>
+            <div class="photo"><div class="art third"></div><div class="photo-info"><div class="photo-title">A quiet path in the hills</div><a class="owner" href="#owner"><span class="avatar">JP</span> Jamie Pham</a></div></div>
+            <div class="photo"><div class="art fourth"></div><div class="photo-info"><div class="photo-title">Blue hour by the river</div><a class="owner" href="#owner"><span class="avatar">KL</span> Kai Le</a></div></div>
+          </div></div></div></article>
+        <article class="sample" data-state="loading"><div class="sample-label">Loading</div><div class="app theme"><div class="shell">
+          <div class="crumb">‹ Contacts / Linh Tran</div><div class="skeleton sk-head"></div><div class="tabs" role="tablist" aria-label="Contact sections"><span class="tab">Photos</span><span class="tab active">Favorites</span><span class="tab">Albums</span><span class="tab">About</span></div><div class="skeleton sk-line"></div>
+          <div class="photos"><div class="photo"><div class="skeleton sk-image"></div><div class="skeleton sk-text"></div><div class="skeleton sk-text short"></div></div><div class="photo"><div class="skeleton sk-image"></div><div class="skeleton sk-text"></div><div class="skeleton sk-text short"></div></div><div class="photo"><div class="skeleton sk-image"></div><div class="skeleton sk-text"></div><div class="skeleton sk-text short"></div></div><div class="photo"><div class="skeleton sk-image"></div><div class="skeleton sk-text"></div><div class="skeleton sk-text short"></div></div></div>
+        </div></div></article>
+        <article class="sample" data-state="empty"><div class="sample-label">Empty</div><div class="app theme"><div class="shell">
+          <div class="crumb">‹ Contacts / Linh Tran</div><div class="contact-head"><div class="avatar">LT</div><div><h3>Linh Tran</h3><div class="handle">@linh.tran · depth 1</div></div></div><div class="tabs" role="tablist" aria-label="Contact sections"><span class="tab">Photos</span><span class="tab active">Favorites</span><span class="tab">Albums</span></div>
+          <p class="note">Owners of these photos are discovered as depth 2 contacts.</p><div class="empty"><div class="symbol">♡</div><h3>No favorites yet</h3><p>Photos this contact favorites will appear here after XFlickr crawls them.</p><a class="button primary" href="#contacts">Browse contacts</a></div>
+        </div></div></article>
+        <article class="sample" data-state="error"><div class="sample-label">Error</div><div class="app theme"><div class="shell">
+          <div class="crumb">‹ Contacts / Linh Tran</div><div class="contact-head"><div class="avatar">LT</div><div><h3>Linh Tran</h3><div class="handle">@linh.tran · depth 1</div></div></div><div class="tabs" role="tablist" aria-label="Contact sections"><span class="tab">Photos</span><span class="tab active">Favorites</span><span class="tab">Albums</span></div>
+          <div class="error"><div class="symbol">!</div><h3>Could not load favorites</h3><p>Check your connection, then try again.</p><button type="button" class="button">↻ &nbsp; Retry</button></div>
+        </div></div></article>
+      </div>
+    </div>
+    <div class="theme-set dark">
+      <h2>Dark gallery</h2>
+      <div class="state-grid">
+        <article class="sample" data-state="ready"><div class="sample-label">Normal</div><div class="app theme"><div class="shell">
+          <div class="crumb">‹ Contacts / Linh Tran</div><div class="contact-head"><div class="avatar">LT</div><div><h3>Linh Tran</h3><div class="handle">@linh.tran · depth 1</div></div></div><div class="tabs" role="tablist" aria-label="Contact sections"><span class="tab">Photos</span><span class="tab active">Favorites <small>18</small></span><span class="tab">Albums</span><span class="tab">Galleries</span><span class="tab">Groups</span><span class="tab">About</span></div>
+          <p class="note">Owners of these photos are discovered as depth 2 contacts, but your depth limit stops there.</p><div class="photos">
+            <div class="photo"><div class="art"></div><div class="photo-info"><div class="photo-title">Rain over the old quarter</div><a class="owner" href="#owner"><span class="avatar">MV</span> Minh Vu</a></div></div>
+            <div class="photo"><div class="art alt"></div><div class="photo-info"><div class="photo-title">Late light at the harbor</div><a class="owner" href="#owner"><span class="avatar">AT</span> An Tran</a></div></div>
+            <div class="photo"><div class="art third"></div><div class="photo-info"><div class="photo-title">A quiet path in the hills</div><a class="owner" href="#owner"><span class="avatar">JP</span> Jamie Pham</a></div></div>
+            <div class="photo"><div class="art fourth"></div><div class="photo-info"><div class="photo-title">Blue hour by the river</div><a class="owner" href="#owner"><span class="avatar">KL</span> Kai Le</a></div></div>
+          </div></div></div></article>
+        <article class="sample" data-state="loading"><div class="sample-label">Loading</div><div class="app theme"><div class="shell">
+          <div class="crumb">‹ Contacts / Linh Tran</div><div class="skeleton sk-head"></div><div class="tabs" role="tablist" aria-label="Contact sections"><span class="tab">Photos</span><span class="tab active">Favorites</span><span class="tab">Albums</span><span class="tab">About</span></div><div class="skeleton sk-line"></div>
+          <div class="photos"><div class="photo"><div class="skeleton sk-image"></div><div class="skeleton sk-text"></div><div class="skeleton sk-text short"></div></div><div class="photo"><div class="skeleton sk-image"></div><div class="skeleton sk-text"></div><div class="skeleton sk-text short"></div></div><div class="photo"><div class="skeleton sk-image"></div><div class="skeleton sk-text"></div><div class="skeleton sk-text short"></div></div><div class="photo"><div class="skeleton sk-image"></div><div class="skeleton sk-text"></div><div class="skeleton sk-text short"></div></div></div>
+        </div></div></article>
+        <article class="sample" data-state="empty"><div class="sample-label">Empty</div><div class="app theme"><div class="shell">
+          <div class="crumb">‹ Contacts / Linh Tran</div><div class="contact-head"><div class="avatar">LT</div><div><h3>Linh Tran</h3><div class="handle">@linh.tran · depth 1</div></div></div><div class="tabs" role="tablist" aria-label="Contact sections"><span class="tab">Photos</span><span class="tab active">Favorites</span><span class="tab">Albums</span></div>
+          <p class="note">Owners of these photos are discovered as depth 2 contacts, but your depth limit stops there.</p><div class="empty"><div class="symbol">♡</div><h3>No favorites yet</h3><p>Photos this contact favorites will appear here after XFlickr crawls them.</p><a class="button primary" href="#contacts">Browse contacts</a></div>
+        </div></div></article>
+        <article class="sample" data-state="error"><div class="sample-label">Error</div><div class="app theme"><div class="shell">
+          <div class="crumb">‹ Contacts / Linh Tran</div><div class="contact-head"><div class="avatar">LT</div><div><h3>Linh Tran</h3><div class="handle">@linh.tran · depth 1</div></div></div><div class="tabs" role="tablist" aria-label="Contact sections"><span class="tab">Photos</span><span class="tab active">Favorites</span><span class="tab">Albums</span></div>
+          <div class="error"><div class="symbol">!</div><h3>Could not load favorites</h3><p>Check your connection, then try again.</p><button type="button" class="button">↻ &nbsp; Retry</button></div>
+        </div></div></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="mobile-viewport" aria-labelledby="mobile-title">
+    <h2 class="viewport-title" id="mobile-title"><b>Mobile · 390 px</b></h2>
+    <div class="theme-set light"><h2>Light gallery</h2><div class="state-grid">
+      <article class="sample" data-state="ready"><div class="sample-label">Normal</div><div class="app theme"><div class="crumb">‹ Contacts / Linh Tran</div><div class="contact-head"><div class="avatar">LT</div><div><h3>Linh Tran</h3><div class="handle">@linh.tran · depth 1</div></div></div><div class="tabs" role="tablist" aria-label="Contact sections"><span class="tab">Photos</span><span class="tab active">Favorites <small>18</small></span><span class="tab">Albums</span><span class="tab">About</span></div><p class="note">Owners are discovered as depth 2 contacts.</p><div class="photos">
+        <div class="photo"><div class="art"></div><div class="photo-info"><div class="photo-title">Rain over the old quarter</div><a class="owner" href="#owner"><span class="avatar">MV</span> Minh Vu</a></div></div><div class="photo"><div class="art alt"></div><div class="photo-info"><div class="photo-title">Late light at the harbor</div><a class="owner" href="#owner"><span class="avatar">AT</span> An Tran</a></div></div><div class="photo"><div class="art third"></div><div class="photo-info"><div class="photo-title">A quiet path in the hills</div><a class="owner" href="#owner"><span class="avatar">JP</span> Jamie Pham</a></div></div><div class="photo"><div class="art fourth"></div><div class="photo-info"><div class="photo-title">Blue hour by the river</div><a class="owner" href="#owner"><span class="avatar">KL</span> Kai Le</a></div></div>
+      </div></div></article>
+      <article class="sample" data-state="loading"><div class="sample-label">Loading</div><div class="app theme"><div class="skeleton sk-head"></div><div class="tabs" role="tablist" aria-label="Contact sections"><span class="tab">Photos</span><span class="tab active">Favorites</span><span class="tab">Albums</span></div><div class="skeleton sk-line"></div><div class="photos"><div class="photo"><div class="skeleton sk-image"></div><div class="skeleton sk-text"></div><div class="skeleton sk-text short"></div></div><div class="photo"><div class="skeleton sk-image"></div><div class="skeleton sk-text"></div><div class="skeleton sk-text short"></div></div></div></div></article>
+      <article class="sample" data-state="empty"><div class="sample-label">Empty</div><div class="app theme"><div class="empty"><div class="symbol">♡</div><h3>No favorites yet</h3><p>Photos this contact favorites will appear here after XFlickr crawls them.</p><a class="button primary" href="#contacts">Browse contacts</a></div></div></article>
+      <article class="sample" data-state="error"><div class="sample-label">Error</div><div class="app theme"><div class="error"><div class="symbol">!</div><h3>Could not load favorites</h3><p>Check your connection, then try again.</p><button type="button" class="button">↻ &nbsp; Retry</button></div></div></article>
+    </div></div>
+    <div class="theme-set dark"><h2>Dark gallery</h2><div class="state-grid">
+      <article class="sample" data-state="ready"><div class="sample-label">Normal</div><div class="app theme"><div class="crumb">‹ Contacts / Linh Tran</div><div class="contact-head"><div class="avatar">LT</div><div><h3>Linh Tran</h3><div class="handle">@linh.tran · depth 1</div></div></div><div class="tabs" role="tablist" aria-label="Contact sections"><span class="tab">Photos</span><span class="tab active">Favorites <small>18</small></span><span class="tab">Albums</span><span class="tab">About</span></div><p class="note">Owners are discovered as depth 2 contacts, but your depth limit stops there.</p><div class="photos">
+        <div class="photo"><div class="art"></div><div class="photo-info"><div class="photo-title">Rain over the old quarter</div><a class="owner" href="#owner"><span class="avatar">MV</span> Minh Vu</a></div></div><div class="photo"><div class="art alt"></div><div class="photo-info"><div class="photo-title">Late light at the harbor</div><a class="owner" href="#owner"><span class="avatar">AT</span> An Tran</a></div></div><div class="photo"><div class="art third"></div><div class="photo-info"><div class="photo-title">A quiet path in the hills</div><a class="owner" href="#owner"><span class="avatar">JP</span> Jamie Pham</a></div></div><div class="photo"><div class="art fourth"></div><div class="photo-info"><div class="photo-title">Blue hour by the river</div><a class="owner" href="#owner"><span class="avatar">KL</span> Kai Le</a></div></div>
+      </div></div></article>
+      <article class="sample" data-state="loading"><div class="sample-label">Loading</div><div class="app theme"><div class="skeleton sk-head"></div><div class="tabs" role="tablist" aria-label="Contact sections"><span class="tab">Photos</span><span class="tab active">Favorites</span><span class="tab">Albums</span></div><div class="skeleton sk-line"></div><div class="photos"><div class="photo"><div class="skeleton sk-image"></div><div class="skeleton sk-text"></div><div class="skeleton sk-text short"></div></div><div class="photo"><div class="skeleton sk-image"></div><div class="skeleton sk-text"></div><div class="skeleton sk-text short"></div></div></div></div></article>
+      <article class="sample" data-state="empty"><div class="sample-label">Empty</div><div class="app theme"><div class="empty"><div class="symbol">♡</div><h3>No favorites yet</h3><p>Photos this contact favorites will appear here after XFlickr crawls them.</p><a class="button primary" href="#contacts">Browse contacts</a></div></div></article>
+      <article class="sample" data-state="error"><div class="sample-label">Error</div><div class="app theme"><div class="error"><div class="symbol">!</div><h3>Could not load favorites</h3><p>Check your connection, then try again.</p><button type="button" class="button">↻ &nbsp; Retry</button></div></div></article>
+    </div></div>
+  </section>
+</body>
+</html>
