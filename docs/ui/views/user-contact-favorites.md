@@ -161,10 +161,12 @@ render stale contact or photo data after either response.
 
 This view is live. Subscribe on mount to the existing `/events` stream and
 filter the contract-requested `contact.favorites.updated` event by exact
-`nsid`. On a matching event, coalesce events for 500ms and refetch the first
-page and total; retain later pages only if their cursor remains valid. Use the
-server `updated_at` for freshness. Reconnect SSE with `Last-Event-ID` as the
-shell specifies. If SSE is unavailable or disconnected for 5 seconds, poll
+`nsid`. On a matching event, coalesce events for 500ms, refetch the first page
+and total, and discard any later pages so the grid cannot combine results from
+different snapshots. Keep focus where it is and do not announce refreshed
+items. Use the server `updated_at` for freshness. Reconnect SSE with
+`Last-Event-ID` as the shell specifies. If SSE is unavailable or disconnected
+for 5 seconds, poll
 `GET /me/contacts/{nsid}/favorites` every 30 seconds while this tab is visible;
 pause polling while hidden and refetch on visibility. Stop the timer and
 unsubscribe on navigation. Never poll faster than 30 seconds.
