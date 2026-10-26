@@ -37,8 +37,10 @@ quota, and Crawl activity. Cards use existing `card`, `button`, `chip`,
 
 Hero copy has a greeting, one headline, one supporting sentence, a large natural
 language search field, a Search button, and four example query chips (two
-English and two Vietnamese). The hero mosaic is decorative, uses public photo
-thumbnails already present in the user's library, and has no click action.
+English and two Vietnamese). The hero mosaic is decorative, uses up to four
+public thumbnails from `new_photos[].thumbnail_url` in the Home snapshot
+(reusing the newest items), and has no click action. Missing thumbnails use the
+neutral placeholder.
 Below 1100 px, collapse the hero and main grid to one column. At 390 px, stack
 the stats two by two, keep the search button visible below the input if needed,
 and allow query chips to scroll horizontally. No horizontal page scrolling.
@@ -54,8 +56,8 @@ each with avatar, name, photo count, sizes completion, and crawl status; an
 All contacts link opens `/contacts`. API quota has one compact usage bar per
 valid key, calls used/limit, status text, and reset countdown; Details opens
 `/keys`. Crawl activity shows the latest five user-scoped crawl, download, or
-quota events with readable severity text and local time; View crawl opens
-`/crawl`.
+quota events with localized activity copy, readable severity text, and local
+time; View crawl opens `/crawl`.
 
 ## Data and API
 
@@ -71,7 +73,7 @@ endpoint is called before it exists in the OpenAPI contract and backend.
 | Key list | `GET /keys` (exists) | array items `id`, `label`, `key_public`, `per_hour_limit`, `status` |
 | Per-key quota | `GET /keys/{id}/quota` (exists) | `key_id`, `used`, `limit`, `reserve`, `reset_at`, `state`, `lanes` |
 | Live activity | authenticated `GET /events` (exists) | `crawl.progress`, `download.progress`, `download.ready`; resume with `Last-Event-ID` |
-| Home snapshot contract request | `GET /me/home` (**contract request**) | `contacts.total`, `contacts.direct`, `contacts.discovered`; `photos.total`, `photos.sizes_ready`, `photos.captioned`; `new_photos[]` (`id`, `title`, `thumbnail_url`, `owner_nsid`, `owner_name`, `taken_at`, `captioned`); `starred_contacts[]` (`nsid`, `name`, `icon_url`, `photos_count`, `sizes_ready`, `sizes_total`, `crawl_state`: `idle`, `crawling`, `waiting`, or `attention`); `activity[]` (`id`, `kind`, `message_key`, `occurred_at`, `severity`) |
+| Home snapshot contract request | `GET /me/home` (**contract request**) | `contacts.total`, `contacts.direct`, `contacts.discovered`; `photos.total`, `photos.sizes_ready`, `photos.captioned`; `new_photos[]` (`id`, `title`, `thumbnail_url`, `owner_nsid`, `owner_name`, `taken_at`, `captioned`); `starred_contacts[]` (`nsid`, `name`, `icon_url`, `photos_count`, `sizes_ready`, `sizes_total`, `crawl_state`: `idle`, `crawling`, `waiting`, or `attention`); `activity[]` (`id`, `kind`, `message_key`: `new_photos`, `sizes_confirmed`, or `unknown`, `count`, `contact_name`, `occurred_at`, `severity`) |
 | Search submission | `/search?q={encoded query}` (view route; no API call from Home) | Navigate with the entered query; search view owns its API contract |
 
 `GET /me/home` returns one user-scoped snapshot, omits private Flickr content,
@@ -228,6 +230,7 @@ the active locale and user time zone. Do not truncate Vietnamese labels.
 | `user.home.stats.photos` | Photo records | Bản ghi ảnh |
 | `user.home.stats.sizes` | Sizes ready | Đã sẵn kích thước |
 | `user.home.stats.captioned` | Captioned | Đã tạo chú thích |
+| `user.home.stats.value` | {count} of {total} | {count} trên {total} |
 | `user.home.photos.title` | New from your contacts | Ảnh mới từ liên hệ |
 | `user.home.photos.all` | View library | Xem thư viện |
 | `user.home.contacts.title` | Starred contacts | Liên hệ đã gắn sao |
@@ -242,6 +245,11 @@ the active locale and user time zone. Do not truncate Vietnamese labels.
 | `user.home.activity.kind.{crawl,download,quota}` | Crawl · Download · Quota | Thu thập · Tải xuống · Hạn mức |
 | `user.home.activity.severity.{info,warning,error}` | Info · Warning · Error | Thông tin · Cảnh báo · Lỗi |
 | `user.home.contacts.state.{idle,crawling,waiting,attention}` | Ready · Crawling · Waiting · Needs attention | Sẵn sàng · Đang thu thập · Đang chờ · Cần chú ý |
+| `user.home.contacts.meta` | {photos} photos · sizes {percent}% | {photos} ảnh · kích thước {percent}% |
+| `user.home.photos.owner` | Photo by {owner} | Ảnh của {owner} |
+| `user.home.activity.message.new_photos` | Found {count} new photos from {contact_name} | Tìm thấy {count} ảnh mới từ {contact_name} |
+| `user.home.activity.message.sizes_confirmed` | Sizes confirmed for {count} photos | Đã xác nhận kích thước cho {count} ảnh |
+| `user.home.activity.message.unknown` | Activity updated | Hoạt động đã cập nhật |
 | `user.home.empty.title` | Nothing crawled yet | Chưa có dữ liệu thu thập |
 | `user.home.empty.text` | Connect a Flickr account to start discovering contacts and photos. | Kết nối tài khoản Flickr để bắt đầu khám phá liên hệ và ảnh. |
 | `user.home.empty.cta` | Open setup wizard | Mở trình hướng dẫn thiết lập |
@@ -256,6 +264,7 @@ the active locale and user time zone. Do not truncate Vietnamese labels.
 | `user.home.stale` | Data is out of date. Last updated {time}. | Dữ liệu chưa mới. Cập nhật lần cuối lúc {time}. |
 | `user.home.forbidden.{title,text,cta}` | You cannot view Home · Your account does not have access. · Back to sign in | Bạn không thể xem Trang chủ · Tài khoản của bạn không có quyền truy cập. · Quay lại đăng nhập |
 | `user.home.status.{loading,ready,partial}` | Loading Home · Updated · Some sections could not update | Đang tải Trang chủ · Đã cập nhật · Một số mục chưa thể cập nhật |
+| `user.home.loading.search` | Loading your photos… | Đang tải ảnh của bạn… |
 
 ## Test IDs
 
