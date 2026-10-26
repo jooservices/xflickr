@@ -64,17 +64,17 @@ time; View crawl opens `/crawl`.
 Requests start in parallel. Existing endpoints are used as specified; no
 endpoint is called before it exists in the OpenAPI contract and backend.
 
-| Element | Source | Fields used |
-| --- | --- | --- |
-| Greeting | `GET /me` (exists) | `email`, `locale`; derive the first name from `email` before `@` (the current User schema has no display name) |
-| Connected accounts / first-run check | `GET /flickr-accounts` (exists) | array items `id`, `status`, `username` |
-| Crawl progress | `GET /me/crawl` (exists) | `depths[]`, `facets[]`, `lanes[]` from `CrawlStatus`; use available totals for direct/discovered contact counts |
-| Queue activity fallback | `GET /me/crawl/queue` (exists) | `lanes[]`: `lane`, `backlog_calls`, `effective_calls_per_hour`, `eta_hours` |
-| Key list | `GET /keys` (exists) | array items `id`, `label`, `key_public`, `per_hour_limit`, `status` |
-| Per-key quota | `GET /keys/{id}/quota` (exists) | `key_id`, `used`, `limit`, `reserve`, `reset_at`, `state`, `lanes` |
-| Live activity | authenticated `GET /events` (exists) | `crawl.progress`, `download.progress`, `download.ready`; resume with `Last-Event-ID` |
-| Home snapshot contract request | `GET /me/home` (**contract request**) | `contacts.total`, `contacts.direct`, `contacts.discovered`; `photos.total`, `photos.sizes_ready`, `photos.captioned`; `new_photos[]` (`id`, `title`, `thumbnail_url`, `owner_nsid`, `owner_name`, `taken_at`, `captioned`); `starred_contacts[]` (`nsid`, `name`, `icon_url`, `photos_count`, `sizes_ready`, `sizes_total`, `crawl_state`: `idle`, `crawling`, `waiting`, or `attention`); `activity[]` (`id`, `kind`, `message_key`: `new_photos`, `sizes_confirmed`, or `unknown`, `count`, `contact_name`, `occurred_at`, `severity`) |
-| Search submission | `/search?q={encoded query}` (view route; no API call from Home) | Navigate with the entered query; search view owns its API contract |
+| Element | Source | Fields used | Action |
+| --- | --- | --- | --- |
+| Greeting | `GET /me` (exists) | `email`, `locale`; derive the first name from `email` before `@` (the current User schema has no display name) | None |
+| Connected accounts / first-run check | `GET /flickr-accounts` (exists) | array items `id`, `status`, `username` | If none are connected and no photos exist, show the first-run setup link |
+| Crawl progress | `GET /me/crawl` (exists) | `depths[]` (`depth`, `contacts`), `facets[]` (`facet`, `total`, `done`, `active`, `failed`), `lanes[]` (`lane`, `pending`, `running`, `waiting`, `paused`) | Open `/crawl`; this endpoint does not provide direct/discovered totals |
+| Queue activity fallback | `GET /me/crawl/queue` (exists) | `lanes[]`: `lane`, `backlog_calls`, `effective_calls_per_hour`, `eta_hours` | Open `/crawl` |
+| Key list | `GET /keys` (exists) | array items `id`, `label`, `key_public`, `per_hour_limit`, `status` | Open `/keys` for quota details |
+| Per-key quota | `GET /keys/{id}/quota` (exists) | `key_id`, `used`, `limit`, `reserve`, optional `reset_at`, `state`, `lanes` (`interactive`, `person`, `photo`) | Open `/keys`; update the local reset countdown |
+| Live activity | authenticated `GET /events` (exists) | `crawl.progress`, `download.progress`, `download.ready`; resume with `Last-Event-ID` | Apply relevant events to the view and announce new activity |
+| Home snapshot contract request | `GET /me/home` (**contract request**) | `generated_at`; `contacts.total`, `contacts.direct`, `contacts.discovered`; `photos.total`, `photos.sizes_ready`, `photos.captioned`; `new_photos[]` (`id`, `title`, `thumbnail_url`, `owner_nsid`, `owner_name`, `taken_at`, `captioned`); `starred_contacts[]` (`nsid`, `name`, `icon_url`, `photos_count`, `sizes_ready`, `sizes_total`, `crawl_state`: `idle`, `crawling`, `waiting`, or `attention`); `activity[]` (`id`, `kind`: `crawl`, `download`, or `quota`, `message_key`: `new_photos`, `sizes_confirmed`, `quota_updated`, or `unknown`, `count`, `contact_name`, `occurred_at`, `severity`) | Render the four stats, decorative mosaic, photo/contact navigation, and activity rows; no action on stats or mosaic |
+| Search submission | `/search?q={encoded query}` (view route; no API call from Home) | Search view owns its API contract | Trim the query and navigate to `/search?q={URL-encoded query}` |
 
 `GET /me/home` returns one user-scoped snapshot, omits private Flickr content,
 limits `new_photos` to 12, `starred_contacts` to 5, and `activity` to 5, and
@@ -88,7 +88,9 @@ design ticket.
 
 ## Data
 
-The response fields and existing API sources are listed in [Data and API](#data-and-api).
+Use the user-scoped snapshot as the source for Home totals and activity. Keep
+each successful section independently usable if another source fails; the
+loading, failure, and stale handling is defined in [States](#states).
 
 ## Actions
 
@@ -106,7 +108,10 @@ The response fields and existing API sources are listed in [Data and API](#data-
 
 ## Interactions
 
-Action triggers and outcomes are specified in [Actions](#actions).
+Submit the search form with Enter or its Search button. Query chips populate and
+submit the same form. Photo and contact cards are links; quota and section
+details use their labeled links. Interaction results and destinations are
+listed in [Actions](#actions).
 
 ## States
 
@@ -168,17 +173,18 @@ Home actions are navigation or safe reads.
 ## Live updates
 
 Home is live through the shell's single authenticated SSE connection at
-`GET /events`; do not open a second stream. Apply `crawl.progress` to contact,
-photo, size, caption counts and crawl activity; apply `download.progress` and
-`download.ready` to activity; refresh quota data when a quota state/reset event
-arrives. Preserve `Last-Event-ID` on reconnect. Refresh visible key quota
-snapshots at most once per 30 seconds while the stream is connected because
-crawl calls consume quota. If SSE is unavailable or the shell Live toggle is
-off, poll `GET /me/home`, `/me/crawl`, and each visible key's quota every 30
-seconds with 30, 60, then 120 second backoff. Pause polling in a hidden tab and
-refresh once when visible. Update reset countdown locally every second; pause
-it when the tab is hidden. A new activity row is announced once in a polite
-live region; changing counts are not announced repeatedly.
+`GET /events`; do not open a second stream. The current contract streams
+`crawl.progress`, `download.progress`, and `download.ready`; it does not stream
+quota events. Apply `crawl.progress` to contact, photo, size, and caption counts
+and crawl activity; apply download events to activity. Preserve
+`Last-Event-ID` on reconnect. Refresh visible key quota snapshots at most once
+per 30 seconds while SSE is connected because crawl calls consume quota. If SSE
+is unavailable or the shell Live toggle is off, poll `GET /me/home`,
+`/me/crawl`, and each visible key's quota every 30 seconds with 30, 60, then 120
+second backoff. Pause polling in a hidden tab and refresh once when visible.
+Update reset countdown locally every second; pause it when the tab is hidden. A
+new activity row is announced once in a polite live region; changing counts are
+not announced repeatedly.
 
 ## Responsive
 
@@ -247,8 +253,10 @@ the active locale and user time zone. Do not truncate Vietnamese labels.
 | `user.home.contacts.state.{idle,crawling,waiting,attention}` | Ready · Crawling · Waiting · Needs attention | Sẵn sàng · Đang thu thập · Đang chờ · Cần chú ý |
 | `user.home.contacts.meta` | {photos} photos · sizes {percent}% | {photos} ảnh · kích thước {percent}% |
 | `user.home.photos.owner` | Photo by {owner} | Ảnh của {owner} |
+| `user.home.photos.open` | Open photo: {title}, by {owner} | Mở ảnh: {title}, của {owner} |
 | `user.home.activity.message.new_photos` | Found {count} new photos from {contact_name} | Tìm thấy {count} ảnh mới từ {contact_name} |
 | `user.home.activity.message.sizes_confirmed` | Sizes confirmed for {count} photos | Đã xác nhận kích thước cho {count} ảnh |
+| `user.home.activity.message.quota_updated` | API quota updated | Đã cập nhật hạn mức API |
 | `user.home.activity.message.unknown` | Activity updated | Hoạt động đã cập nhật |
 | `user.home.empty.title` | Nothing crawled yet | Chưa có dữ liệu thu thập |
 | `user.home.empty.text` | Connect a Flickr account to start discovering contacts and photos. | Kết nối tài khoản Flickr để bắt đầu khám phá liên hệ và ảnh. |
@@ -294,8 +302,9 @@ Each value is a `data-testid` selector. IDs with `{id}` have stable record ids.
 
 ## Test hooks
 
-The complete E2E selector list is in [Test IDs](#test-ids). Select controls by
-accessible role first and these stable IDs when text varies by locale.
+Use the stable selectors in [Test IDs](#test-ids) when E2E checks need to target
+Home-specific state or locale-varying content. Prefer accessible roles and
+names for controls.
 
 ## Out of scope
 
