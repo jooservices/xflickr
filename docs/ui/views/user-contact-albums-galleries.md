@@ -102,6 +102,7 @@ one keyboard target each. Do not add download, edit, delete, or Flickr actions.
 
 ### Ready
 
+This is the normal state shown by the mockup's `data-state="ready"` sample.
 Show the shared header, selected tab and cards in server order. The Albums count
 and stored/total figures use the response values exactly. Galleries show the
 curated count. Announce the result count once after initial load; a live refresh
