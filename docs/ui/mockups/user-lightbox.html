@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XFlickr photo viewer mockup</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #e8eaf0; color: #161a22; }
+    .intro { max-width: 1440px; margin: auto; padding: 24px; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 28px; }
+    .intro p { margin-top: 6px; color: #5d6574; }
+    .theme { --bg: #f6f7fa; --surface: #fff; --sunken: #eef0f5; --line: #e2e5ec; --ink: #161a22; --muted: #5d6574; --accent: #2457d6; --accent-soft: #e6edfd; --focus: #2457d6; margin: 0 auto 28px; max-width: 1440px; padding: 0 24px 24px; }
+    .theme.dark { --bg: #0f1116; --surface: #171a21; --sunken: #1e222b; --line: #2a2f3a; --ink: #e8eaf0; --muted: #a0a7b4; --accent: #7d9cff; --accent-soft: #1f2a47; --focus: #7d9cff; }
+    .theme-title { margin: 0 0 12px; font-size: 19px; }
+    .samples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .sample { min-width: 0; }
+    .sample h3 { padding: 8px 10px; font-size: 14px; }
+    .viewer { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 460px; overflow: hidden; background: #0c0e12; color: #eef0f4; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,.22); }
+    .stage { min-width: 0; min-height: 460px; position: relative; display: grid; place-items: center; padding: 46px 42px 22px; background: radial-gradient(ellipse at 50% 48%, #3e4b5d, #171b23 68%, #0c0e12); }
+    .toolbar { position: absolute; inset: 0 0 auto; height: 48px; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; }
+    .actions { display: flex; gap: 6px; }
+    button { min-height: 40px; border: 1px solid #626b79; border-radius: 999px; padding: 7px 12px; background: rgba(255,255,255,.10); color: #fff; font: inherit; cursor: default; }
+    button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+    .photo { position: relative; width: min(100%, 470px); aspect-ratio: 4 / 3; overflow: hidden; border-radius: 4px; background: linear-gradient(180deg, #e2a87a 0 37%, #746c75 38% 55%, #52625f 56% 100%); box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+    .sun { position: absolute; top: 13%; right: 18%; width: 15%; aspect-ratio: 1; border-radius: 50%; background: #ffdfa0; box-shadow: 0 0 35px #ffdfa0; }
+    .ridge { position: absolute; inset: 42% -5% auto; height: 30%; background: #3d5353; clip-path: polygon(0 55%, 21% 15%, 38% 59%, 62% 5%, 100% 57%, 100% 100%, 0 100%); }
+    .foreground { position: absolute; inset: 62% -5% -3%; background: linear-gradient(160deg, #344b43, #182c28); clip-path: polygon(0 20%, 27% 0, 54% 22%, 79% 4%, 100% 25%, 100% 100%, 0 100%); }
+    .nav { position: absolute; top: 50%; width: 42px; height: 42px; padding: 0; border: 0; border-radius: 50%; font-size: 24px; transform: translateY(-50%); }
+    .prev { left: 10px; }
+    .next { right: 10px; }
+    .panel { min-width: 0; max-height: 620px; overflow: auto; padding: 20px; background: var(--surface); color: var(--ink); }
+    .panel section { padding: 0 0 14px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+    .panel section:last-child { border-bottom: 0; }
+    .panel h2 { font-size: 20px; line-height: 1.2; }
+    .eyebrow { margin: 0 0 7px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .owner { margin-top: 10px; color: var(--accent); }
+    .muted { color: var(--muted); }
+    .caption { padding: 10px 12px; border-radius: 8px; background: var(--accent-soft); }
+    .size { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13px; }
+    .size:first-of-type { border-top: 0; }
+    .badge { color: var(--muted); font-size: 11px; }
+    .dim { margin-left: auto; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .tag { display: inline-block; margin: 3px 3px 0 0; padding: 4px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); }
+    .state-copy { width: min(100%, 430px); padding: 24px; text-align: center; }
+    .state-copy h2 { margin-bottom: 8px; font-size: 23px; }
+    .state-copy p { margin-bottom: 14px; color: #d5d8df; }
+    .skeleton { width: min(100%, 460px); }
+    .sk-photo, .sk-line { background: linear-gradient(90deg, #262a33, #3a404c, #262a33); background-size: 200% 100%; border-radius: 8px; }
+    .sk-photo { aspect-ratio: 4 / 3; margin-bottom: 14px; }
+    .sk-line { height: 13px; margin: 10px 0; }
+    .sk-line.short { width: 54%; }
+    .empty-art { width: 76px; height: 62px; margin: 0 auto 16px; border: 2px solid #a0a7b4; border-radius: 12px; display: grid; place-items: center; font-size: 30px; }
+    .error-mark { width: 48px; height: 48px; margin: 0 auto 14px; border: 2px solid #ff7b72; border-radius: 50%; color: #ff7b72; font-size: 30px; line-height: 42px; }
+    .dark .panel { color: var(--ink); }
+    .note { padding: 0 24px 18px; max-width: 1440px; margin: auto; color: #5d6574; font-size: 13px; }
+    @media (max-width: 900px) {
+      .samples { grid-template-columns: 1fr; }
+      .viewer { grid-template-columns: 1fr; grid-template-rows: minmax(300px, auto) auto; }
+      .stage { min-height: 360px; padding: 54px 44px 20px; }
+      .panel { max-height: none; }
+    }
+    @media (max-width: 520px) {
+      .intro { padding: 18px 16px; }
+      .theme { padding: 0 16px 18px; }
+      .theme-title { font-size: 17px; }
+      .viewer { border-radius: 10px; }
+      .stage { min-height: 310px; padding: 52px 36px 16px; }
+      .toolbar { padding: 6px 8px; }
+      .toolbar button { min-height: 42px; padding: 6px 9px; font-size: 13px; }
+      .panel { padding: 16px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }
+  </style>
+</head>
+<body>
+  <header class="intro">
+    <h1>Photo viewer (lightbox)</h1>
+    <p>USER role · responsive preview at 1440px desktop and 390px mobile · each state shown in both gallery themes</p>
+  </header>
+
+  <main>
+    <section class="theme light" aria-labelledby="light-title">
+      <h2 class="theme-title" id="light-title">USER · Light gallery</h2>
+      <div class="samples">
+        <article class="sample">
+          <h3>Normal</h3>
+          <div class="viewer" data-state="ready" role="group" aria-label="Normal light theme photo viewer">
+            <div class="stage"><div class="toolbar"><span>3 / 18</span><div class="actions"><button type="button" aria-label="Add to download tray">＋ Tray</button><button type="button" aria-label="Download photo">↓ Download</button><button type="button" aria-label="Close photo viewer">× Close</button></div></div><button type="button" class="nav prev" aria-label="Previous photo">‹</button><div class="photo" role="img" aria-label="Sunset over a mountain lake"><span class="sun"></span><span class="ridge"></span><span class="foreground"></span></div><button type="button" class="nav next" aria-label="Next photo">›</button></div>
+            <aside class="panel" aria-label="Normal light photo details"><section><h2>Evening at the lake</h2><p class="owner">◉ Minh Tran · @minhtran</p></section><section><p class="eyebrow">AI caption</p><div class="caption">Warm evening light falls across a quiet mountain lake.</div></section><section><p class="eyebrow">Sizes</p><div class="size"><b>Original</b><span class="badge">Confirmed</span><span class="dim">4032 × 3024</span></div><div class="size"><b>Large 2048</b><span class="badge">Provisional</span><span class="dim">2048 × 1536</span></div></section><section><p class="eyebrow">Camera details</p><div>Fujifilm X-T5 · 35 mm · ISO 400</div><div class="muted">1/125 s · f/5.6</div></section><section><p class="eyebrow">Tags</p><span class="tag">mountain</span><span class="tag">sunset</span><span class="tag">lake</span></section><section><a href="#flickr" class="owner">View on Flickr ↗</a></section><section><p class="eyebrow">Favorited by</p><div>◉ Hoa Le　◉ Linh Pham　◉ An Vu</div></section></aside>
+          </div>
+        </article>
+        <article class="sample">
+          <h3>Loading · skeleton</h3>
+          <div class="viewer" data-state="loading" role="group" aria-label="Loading light theme photo viewer" aria-busy="true">
+            <div class="stage"><div class="toolbar"><span>3 / 18</span><div class="actions"><button type="button">＋ Tray</button><button type="button">↓ Download</button><button type="button">× Close</button></div></div><div class="skeleton"><div class="sk-photo"></div><div class="sk-line"></div><div class="sk-line short"></div></div></div>
+            <aside class="panel" aria-label="Loading light photo details"><div class="sk-line"></div><div class="sk-line short"></div><br><div class="sk-line"></div><div class="sk-line"></div><br><div class="sk-line"></div><div class="sk-line short"></div><br><div class="sk-line"></div><div class="sk-line short"></div></aside>
+          </div>
+        </article>
+        <article class="sample">
+          <h3>Empty · gallery returned no photo</h3>
+          <div class="viewer" data-state="empty" role="group" aria-label="Empty light theme photo viewer">
+            <div class="stage"><div class="toolbar"><span>0 / 0</span><div class="actions"><button type="button">× Close</button></div></div><div class="state-copy"><div class="empty-art" aria-hidden="true">▧</div><h2>No photo to show</h2><p>Return to the gallery and choose a photo.</p><button type="button">Return to gallery</button></div></div>
+            <aside class="panel" aria-label="Empty light photo details"><p class="muted">No photo details</p></aside>
+          </div>
+        </article>
+        <article class="sample">
+          <h3>Error · photo could not load</h3>
+          <div class="viewer" data-state="error" role="group" aria-label="Error light theme photo viewer">
+            <div class="stage"><div class="toolbar"><span>3 / 18</span><div class="actions"><button type="button">× Close</button></div></div><div class="state-copy"><div class="error-mark" aria-hidden="true">!</div><h2>Could not load this photo</h2><p>Check your connection, then try again.</p><button type="button">Retry</button></div></div>
+            <aside class="panel" aria-label="Error light photo details"><h2>Evening at the lake</h2><p class="owner">◉ Minh Tran · @minhtran</p><p class="muted">Saved details remain available.</p></aside>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="theme dark" aria-labelledby="dark-title">
+      <h2 class="theme-title" id="dark-title">USER · Dark gallery</h2>
+      <div class="samples">
+        <article class="sample">
+          <h3>Normal</h3>
+          <div class="viewer" data-state="ready" role="group" aria-label="Normal dark theme photo viewer">
+            <div class="stage"><div class="toolbar"><span>3 / 18</span><div class="actions"><button type="button" aria-label="Add to download tray">＋ Tray</button><button type="button" aria-label="Download photo">↓ Download</button><button type="button" aria-label="Close photo viewer">× Close</button></div></div><button type="button" class="nav prev" aria-label="Previous photo">‹</button><div class="photo" role="img" aria-label="Sunset over a mountain lake"><span class="sun"></span><span class="ridge"></span><span class="foreground"></span></div><button type="button" class="nav next" aria-label="Next photo">›</button></div>
+            <aside class="panel" aria-label="Normal dark photo details"><section><h2>Evening at the lake</h2><p class="owner">◉ Minh Tran · @minhtran</p></section><section><p class="eyebrow">AI caption</p><div class="caption">Warm evening light falls across a quiet mountain lake.</div></section><section><p class="eyebrow">Sizes</p><div class="size"><b>Original</b><span class="badge">Confirmed</span><span class="dim">4032 × 3024</span></div><div class="size"><b>Large 2048</b><span class="badge">Provisional</span><span class="dim">2048 × 1536</span></div></section><section><p class="eyebrow">Camera details</p><div>Fujifilm X-T5 · 35 mm · ISO 400</div><div class="muted">1/125 s · f/5.6</div></section><section><p class="eyebrow">Tags</p><span class="tag">mountain</span><span class="tag">sunset</span><span class="tag">lake</span></section><section><a href="#flickr-dark" class="owner">View on Flickr ↗</a></section><section><p class="eyebrow">Favorited by</p><div>◉ Hoa Le　◉ Linh Pham　◉ An Vu</div></section></aside>
+          </div>
+        </article>
+        <article class="sample">
+          <h3>Loading · skeleton</h3>
+          <div class="viewer" data-state="loading" role="group" aria-label="Loading dark theme photo viewer" aria-busy="true">
+            <div class="stage"><div class="toolbar"><span>3 / 18</span><div class="actions"><button type="button">＋ Tray</button><button type="button">↓ Download</button><button type="button">× Close</button></div></div><div class="skeleton"><div class="sk-photo"></div><div class="sk-line"></div><div class="sk-line short"></div></div></div>
+            <aside class="panel" aria-label="Loading dark photo details"><div class="sk-line"></div><div class="sk-line short"></div><br><div class="sk-line"></div><div class="sk-line"></div><br><div class="sk-line"></div><div class="sk-line short"></div><br><div class="sk-line"></div><div class="sk-line short"></div></aside>
+          </div>
+        </article>
+        <article class="sample">
+          <h3>Empty · gallery returned no photo</h3>
+          <div class="viewer" data-state="empty" role="group" aria-label="Empty dark theme photo viewer">
+            <div class="stage"><div class="toolbar"><span>0 / 0</span><div class="actions"><button type="button">× Close</button></div></div><div class="state-copy"><div class="empty-art" aria-hidden="true">▧</div><h2>No photo to show</h2><p>Return to the gallery and choose a photo.</p><button type="button">Return to gallery</button></div></div>
+            <aside class="panel" aria-label="Empty dark photo details"><p class="muted">No photo details</p></aside>
+          </div>
+        </article>
+        <article class="sample">
+          <h3>Error · photo could not load</h3>
+          <div class="viewer" data-state="error" role="group" aria-label="Error dark theme photo viewer">
+            <div class="stage"><div class="toolbar"><span>3 / 18</span><div class="actions"><button type="button">× Close</button></div></div><div class="state-copy"><div class="error-mark" aria-hidden="true">!</div><h2>Could not load this photo</h2><p>Check your connection, then try again.</p><button type="button">Retry</button></div></div>
+            <aside class="panel" aria-label="Error dark photo details"><h2>Evening at the lake</h2><p class="owner">◉ Minh Tran · @minhtran</p><p class="muted">Saved details remain available.</p></aside>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+  <p class="note">Static illustration and example metadata only. Resize this page to 390px to inspect the mobile stack; no network or build step is used.</p>
+</body>
+</html>

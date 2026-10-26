@@ -40,6 +40,7 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 | `user-contact-groups-about` | user | `/contacts/:nsid?tab=groups` or `?tab=about` | Contact: Groups and About tabs | [spec](views/user-contact-groups-about.md) | [mockup](mockups/user-contact-groups-about.html) | JOOXF-173 | `web/e2e/user-contact-groups-about.spec.ts` |
 | `user-albums` | user | `/albums` | Albums | [spec](views/user-albums.md) | [mockup](mockups/user-albums.html) | JOOXF-174 | `web/e2e/user-albums.spec.ts` |
 | `user-album` | user | `/albums/:album_id` | Album page | [spec](views/user-album.md) | [mockup](mockups/user-album.html) | JOOXF-174 | `web/e2e/user-album.spec.ts` |
+| `user-lightbox` | user | overlay on gallery routes | Photo viewer (lightbox) | [spec](views/user-lightbox.md) | [mockup](mockups/user-lightbox.html) | JOOXF-171 | `web/e2e/user-lightbox.spec.ts` |
 | `user-crawl` | user | `/crawl` | Crawl | [spec](views/user-crawl.md) | [mockup](mockups/user-crawl.html) | JOOXF-175 | `web/e2e/user-crawl.spec.ts` |
 | `user-keys` | user | `/keys` | Keys and quota | [spec](views/user-keys.md) | [mockup](mockups/user-keys.html) | JOOXF-176, JOOXF-167 | `web/e2e/user-keys.spec.ts` |
 | `user-downloads` | user | `/downloads` | Downloads | [spec](views/user-downloads.md) | [mockup](mockups/user-downloads.html) | JOOXF-177 | `web/e2e/user-downloads.spec.ts` |
@@ -76,7 +77,7 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 Overlays are not routes. They are specified with the components they use and
 are covered by the E2E spec of the view that opens them.
 
-- Lightbox (photo viewer)
+- [Photo viewer (lightbox)](views/user-lightbox.md)
 - Modals: add-key, move-key, new-download
 - Drawers: crawl-job, download-job, upload-process
 - Notifications panel
