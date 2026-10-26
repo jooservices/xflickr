@@ -63,6 +63,7 @@ it; this design ticket does not change OpenAPI.
 | Content | Endpoint and fields |
 | --- | --- |
 | Create job | `POST /downloads` **exists**. Existing body `{kind, subject?, photo_ids?}` (`kind`: contact/album/tray; `photo_ids` for tray); response `id, kind, subject, status, created_at, expires_at, item_count, skipped`. **Contract request:** accept `size` (`original`, `large_2048`, `large_1600`, `large_1024`, `medium_800`) and `destination` (`zip` or connected `cloud_provider_id`); return `estimated_bytes`, `missing_sizes`, `zip_url` when ready, and `server_time`. Preserve 409 `temp_storage_full` and no-valid-key errors. |
+| Estimate | `POST /downloads/estimate` **contract request**, called when What/source/size/destination changes and before creation. Accept the create selection fields plus `size` and `destination`; return `item_count, estimated_bytes, missing_sizes, required_size_checks, server_time`. `required_size_checks` counts `getSizes` calls and is used to explain quota cost. It must not create a job or reserve storage. |
 | Download list | `GET /downloads` **contract request**; `items[]`: `id, kind, subject, status, size, destination, created_at, completed_at, expires_at, item_count, completed_count, failed_count, bytes_done, estimated_bytes, speed_bytes_per_second, zip_url`; `server_time`. Status: queued, running, verifying, ready, partial, expired, syncing, synced, failed, canceled. |
 | Job detail and files | `GET /downloads/{id}` **contract request**; scoped job fields above plus `files[]`: `photo_id, title, thumb_url, size, status, bytes_done, bytes_total, attempt, max_attempts, checksum_status, error_code, retryable`. Per-file status: queued, fetching, verifying, ready, failed. |
 | Cancel / redo / retry file | `DELETE /downloads/{id}` **contract request** (active job only); `POST /downloads/{id}/redo` **contract request** (expired/failed job creates a new job); `POST /downloads/{id}/files/{photo_id}/retry` **contract request** (failed retryable item). Return updated job; errors `job_not_cancelable`, `job_not_retryable`. |
@@ -82,7 +83,7 @@ are deleted when their link expires. The expiry countdown uses
 
 | Action | Effect |
 | --- | --- |
-| New download | Open modal; changing What/source/size/destination refreshes estimate. Start posts the chosen fields and tray photo ids where relevant; on success close, show toast and insert job. |
+| New download | Open modal; changing What/source/size/destination calls `POST /downloads/estimate`. Start posts the chosen fields and tray photo ids where relevant; on success close, show toast and insert job. |
 | Copy link | Copy `zip_url`; announce copied, or offer selectable URL if clipboard access fails. |
 | Cancel | Confirm, then `DELETE /downloads/{id}`; canceled job stops media work and removes temporary assets. |
 | Prepare again | `POST /downloads/{id}/redo`; creates a new job with previous scope, size and destination. |
@@ -112,8 +113,7 @@ Error. Refresh retains current data with a title spinner.
 
 No jobs: download icon, “No downloads yet”, “Pick a contact or album and
 choose Download.” and Browse contacts CTA. Empty tray separately says “Your
-tray is empty” and invites adding photos from a gallery. Filtered empty copy
-says no downloads match and offers Clear filters.
+tray is empty” and invites adding photos from a gallery.
 
 ### Error
 
@@ -183,6 +183,7 @@ view label, action, empty and error message. Dynamic values are named in braces.
 | downloads.scope.contact | Contact | Người liên hệ |
 | downloads.scope.album | Album | Album |
 | downloads.scope.tray | Download tray | Khay tải xuống |
+| downloads.scope.description | Choose what to download. | Chọn nội dung cần tải xuống. |
 | downloads.source | Source | Nguồn |
 | downloads.size | Size | Kích thước |
 | downloads.size.original | Original | Bản gốc |
@@ -193,8 +194,11 @@ view label, action, empty and error message. Dynamic values are named in braces.
 | downloads.destination | Deliver to | Gửi đến |
 | downloads.destination.zip | ZIP link | Liên kết ZIP |
 | downloads.destination.cloud | Connected cloud | Dịch vụ đám mây đã kết nối |
+| downloads.destination.provider | {provider} | {provider} |
 | downloads.modal.title | New download | Tải xuống mới |
 | downloads.modal.start | Start download | Bắt đầu tải xuống |
+| downloads.modal.cancel | Cancel | Hủy |
+| downloads.modal.estimate-loading | Updating estimate… | Đang cập nhật ước tính… |
 | downloads.details | Details | Chi tiết |
 | downloads.drawer.title | Download details | Chi tiết tải xuống |
 | downloads.drawer.close | Close download details | Đóng chi tiết tải xuống |
@@ -204,9 +208,18 @@ view label, action, empty and error message. Dynamic values are named in braces.
 | downloads.file.verified | Verified | Đã xác minh |
 | downloads.file.retrying | Retrying · {percent}% | Đang thử lại · {percent}% |
 | downloads.file.checksum-failed | Checksum failed | Mã kiểm tra không khớp |
+| downloads.file.queued | Waiting | Đang chờ |
+| downloads.file.fetching | Downloading | Đang tải |
+| downloads.file.verifying | Verifying | Đang xác minh |
+| downloads.file.ready | Complete | Hoàn tất |
+| downloads.file.failed | Failed | Thất bại |
 | downloads.tray.count | {count} photos in tray | {count} ảnh trong khay |
 | downloads.tray.photo | {title} · {owner} | {title} · {owner} |
 | downloads.files | Files | Tệp |
+| downloads.bytes | Bytes | Dung lượng |
+| downloads.bytes-estimated | Estimated bytes | Dung lượng ước tính |
+| downloads.speed-label | Speed | Tốc độ |
+| downloads.size-checks | {count} Flickr size checks will use quota. | {count} lần kiểm tra kích thước Flickr sẽ dùng hạn mức. |
 | downloads.estimated-size | Estimated size | Dung lượng ước tính |
 | downloads.checksum | Checksum | Mã kiểm tra |
 | downloads.retries | Retries: {count} | Số lần thử lại: {count} |
@@ -238,6 +251,7 @@ view label, action, empty and error message. Dynamic values are named in braces.
 | downloads.cancel-confirm | Cancel this download? Temporary files will be removed. | Hủy lượt tải này? Các tệp tạm sẽ bị xóa. |
 | downloads.cancelled | Download canceled. | Đã hủy tải xuống. |
 | downloads.tray.title | Download tray | Khay tải xuống |
+| downloads.tray.add | Add to download tray | Thêm vào khay tải xuống |
 | downloads.tray.remove | Remove from tray | Xóa khỏi khay |
 | downloads.tray.download | Download selected photos | Tải ảnh đã chọn |
 | downloads.tray.empty | Your tray is empty. Add photos from a gallery. | Khay đang trống. Hãy thêm ảnh từ thư viện. |
@@ -247,7 +261,6 @@ view label, action, empty and error message. Dynamic values are named in braces.
 | downloads.empty.title | No downloads yet | Chưa có lượt tải xuống |
 | downloads.empty.text | Pick a contact or album and choose Download. | Chọn người liên hệ hoặc album rồi chọn Tải xuống. |
 | downloads.empty.cta | Browse contacts | Xem người liên hệ |
-| downloads.empty-filtered | No downloads match. Clear filters to see all jobs. | Không có lượt tải phù hợp. Xóa bộ lọc để xem tất cả. |
 | downloads.loading | Loading downloads… | Đang tải danh sách… |
 | downloads.error.title | Could not load downloads | Không thể tải danh sách |
 | downloads.error.text | Check your connection and try again. | Kiểm tra kết nối rồi thử lại. |
@@ -262,7 +275,9 @@ view label, action, empty and error message. Dynamic values are named in braces.
 | common.cancel | Cancel | Hủy |
 | downloads.start | Start download | Bắt đầu tải xuống |
 | common.close | Close | Đóng |
-| downloads.clear-filter | Clear filters | Xóa bộ lọc |
+| downloads.waiting | Waiting for your other download | Đang chờ lượt tải khác của bạn |
+| downloads.checksum-ok | Checksum verified | Mã kiểm tra hợp lệ |
+| downloads.failed-count | {count} files failed | {count} tệp bị lỗi |
 
 ## Test IDs
 
@@ -282,18 +297,17 @@ Stable E2E hooks: `downloads-page`, `downloads-new`, `downloads-list`,
 The build uses the `data-testid` values listed in [Test IDs](#test-ids). Add
 hooks to the corresponding page, list, action, drawer, modal and state blocks.
 
+## Data
+
+The canonical endpoint and field map is [Data and API](#data-and-api).
+
+## Interactions
+
+The canonical action behavior is listed in [Actions](#actions).
+
 ## Out of scope
 
 Admin fleet downloads, cloud-provider connection/setup, contact and album
 management, API contract implementation, permanent storage, server-side ZIP
 delivery implementation, and downloading private photos unavailable to the
 signed-in Flickr account. Contract requests above belong to build tickets.
-
-## Data
-
-See [Data and API](#data-and-api); source-of-truth fields are the existing
-OpenAPI response or the explicitly named contract request.
-
-## Interactions
-
-See [Actions](#actions). Dialogs close on Escape and return focus to the opener.
