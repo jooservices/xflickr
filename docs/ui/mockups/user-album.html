@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Album detail · XFlickr mockup</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;padding:24px;background:#eef0f5;color:#161a22;font:15px/1.5 "Figtree",system-ui,-apple-system,"Segoe UI",sans-serif}
+    h1,h2,h3,p{margin:0}
+    h1,h2,h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;letter-spacing:-.01em}
+    h1{font-size:clamp(24px,3vw,32px);line-height:1.15;font-weight:700}
+    h2{font-size:20px;line-height:1.25;margin-bottom:12px}
+    h3{font-size:16px;line-height:1.3}
+    .intro,.theme{max-width:1440px;margin:0 auto}
+    .intro{padding:0 0 20px;color:#5d6574}
+    .intro h1{color:#161a22;margin-bottom:4px}
+    .theme{padding:16px 0 28px}
+    .theme-title{display:flex;align-items:baseline;gap:12px;padding:0 0 12px}
+    .theme-title span,.sample-label{font-size:12px;color:#5d6574;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+    .sample{background:#fff;border:1px solid #747b88;border-radius:14px;padding:16px;margin-bottom:16px}
+    .sample-label{margin-bottom:12px}
+    .app{max-width:1200px;margin:0 auto;min-height:460px;background:#fff;border:1px solid #e2e5ec;border-radius:14px;padding:24px;color:#161a22}
+    .shellbar{display:flex;flex-wrap:wrap;gap:20px;align-items:center;border-bottom:1px solid #e2e5ec;padding-bottom:12px;margin-bottom:20px;color:#5d6574;font-size:13px}
+    .brand{font-weight:700;color:#161a22;margin-right:8px}
+    .crumb{color:#2457d6;text-decoration:underline;text-underline-offset:3px;font-size:14px;margin-bottom:12px;display:inline-block}
+    .head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:16px}
+    .owner,.sub{color:#5d6574;font-size:14px;margin-top:5px}
+    .owner a{color:#2457d6;text-underline-offset:3px}
+    .actions{display:flex;gap:8px;flex-wrap:wrap}
+    .btn{display:inline-flex;justify-content:center;align-items:center;gap:8px;min-height:44px;padding:0 16px;border:1px solid #747b88;border-radius:999px;background:#fff;color:#161a22;text-decoration:none;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer}
+    .btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+    .btn.primary{background:#2457d6;color:#fff;border-color:#2457d6}
+    .btn:focus-visible,a:focus-visible{outline:2px solid #2457d6;outline-offset:2px}
+    .partial{display:flex;gap:10px;align-items:center;border:1px solid #875300;background:#fff6e8;border-radius:10px;color:#563500;padding:10px 12px;margin:0 0 16px;font-size:14px}
+    .partial strong{font-variant-numeric:tabular-nums}
+    .photo-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+    .photo{position:relative;overflow:hidden;aspect-ratio:4/3;border-radius:10px;background:linear-gradient(145deg,#527581,#b4c2a3 52%,#dba276)}
+    .photo:nth-child(2){background:linear-gradient(135deg,#536d88,#d6bd8b 55%,#536659)}
+    .photo:nth-child(3){background:linear-gradient(150deg,#202c3d,#397c83 48%,#d49b6f)}
+    .photo:nth-child(4){background:linear-gradient(145deg,#9f725c,#e6cb9a 48%,#456d6d)}
+    .photo:nth-child(5){background:linear-gradient(140deg,#31575e,#a5b89c 52%,#d99f78)}
+    .photo:nth-child(6){background:linear-gradient(145deg,#313d62,#808aa6 48%,#e3b27d)}
+    .photo:nth-child(7){background:linear-gradient(145deg,#315e54,#b3c4a1 52%,#df9c71)}
+    .photo:nth-child(8){background:linear-gradient(135deg,#3a526a,#d0b589 55%,#547267)}
+    .photo span{position:absolute;inset:auto 0 0;padding:22px 10px 8px;background:linear-gradient(transparent,rgba(12,14,18,.78));color:#fff;font-size:13px}
+    .state{min-height:380px;display:grid;align-content:center;justify-items:center;text-align:center;padding:28px;gap:10px}
+    .state p{max-width:420px;color:#5d6574}
+    .mark{width:44px;height:44px;display:grid;place-items:center;border-radius:50%;background:#e6edfd;color:#2457d6;margin-bottom:2px}
+    .error .mark{background:#fee8e7;color:#c12824}
+    .mark svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+    .skeleton{border-radius:10px;background:linear-gradient(90deg,#eef0f5 25%,#e2e5ec 45%,#eef0f5 65%);background-size:200% 100%;animation:shimmer 1.2s ease infinite}
+    .sk-title{width:34%;height:32px;margin:10px 0 8px}
+    .sk-meta{width:22%;height:14px;margin-bottom:24px}
+    .sk-photo{aspect-ratio:4/3}
+    .sk-grid{width:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+    .busy{color:#5d6574;font-size:14px}
+    @keyframes shimmer{to{background-position:-200% 0}}
+    .theme.dark{background:#0f1116;color:#e8eaf0;border-radius:14px;padding:16px}
+    .dark .theme-title span,.dark .sample-label{color:#a0a7b4}
+    .dark .sample{background:#171a21;border-color:#778396}
+    .dark .app{background:#171a21;border-color:#2a2f3a;color:#e8eaf0}
+    .dark .shellbar{border-color:#2a2f3a;color:#a0a7b4}
+    .dark .brand{color:#e8eaf0}
+    .dark .crumb,.dark .owner a{color:#a9bcff}
+    .dark .owner,.dark .sub,.dark .state p,.dark .busy{color:#a0a7b4}
+    .dark .btn{background:#171a21;color:#e8eaf0;border-color:#778396}
+    .dark .btn.primary{background:#7d9cff;color:#0d1220;border-color:#7d9cff}
+    .dark .btn:focus-visible,.dark a:focus-visible{outline-color:#7d9cff}
+    .dark .partial{background:#332819;border-color:#f0b04a;color:#f6d59f}
+    .dark .mark{background:#1f2a47;color:#7d9cff}
+    .dark .error .mark{background:#452522;color:#ff7b72}
+    .dark .skeleton{background:linear-gradient(90deg,#1e222b 25%,#252a35 45%,#1e222b 65%);background-size:200% 100%}
+    @media(max-width:1100px){body{padding:16px}.app{padding:20px}.photo-grid,.sk-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media(max-width:699px){body{padding:12px}.theme{padding:12px 0 22px}.theme.dark{padding:12px}.sample{padding:10px;margin-bottom:12px}.app{padding:16px;min-height:400px}.shellbar{gap:10px;white-space:normal;font-size:12px}.head{align-items:stretch;flex-direction:column}.actions{display:grid;grid-template-columns:1fr 1fr}.photo-grid,.sk-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.partial{align-items:flex-start}.state{min-height:340px;padding:18px}.sk-title{width:70%}.sk-meta{width:56%}.theme-title{align-items:flex-start;flex-direction:column;gap:2px}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;scroll-behavior:auto!important}}
+  </style>
+</head>
+<body>
+  <header class="intro">
+    <h1>Album detail mockup</h1>
+    <p>Static reference with no scripts, build step, external fonts, or network requests. USER role · Light gallery default and dark optional · Check the responsive page at 1440px desktop and 390px mobile.</p>
+  </header>
+
+  <main>
+    <section class="theme" aria-labelledby="light-title">
+      <h2 class="theme-title" id="light-title">Light gallery <span>USER default theme</span></h2>
+      <section class="sample" data-state="ready" aria-label="Normal album state">
+        <p class="sample-label">Normal</p>
+        <div class="app">
+          <div class="shellbar"><span class="brand">XFlickr</span><span>Home</span><span>Library</span><span>Contacts</span><span>Albums</span></div>
+          <a class="crumb" href="/albums">‹ Albums</a>
+          <header class="head"><div><h1>Vietnam 2024</h1><p class="owner"><a href="/contacts/jooservices">Mai Pham</a> · Updated 2 hours ago</p></div><div class="actions"><button class="btn" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 17v4h14v-4"/></svg>Download album</button><button class="btn primary" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 18a5 5 0 1 1 .9-9.9A6 6 0 0 1 19 10a4 4 0 0 1 0 8z"/></svg>Send to cloud</button></div></header>
+          <p class="partial"><strong>82 of 94 photos stored</strong></p>
+          <div class="photo-grid" role="group" aria-label="Photos in Vietnam 2024">
+            <button class="photo" type="button" aria-label="Open photo Rice terraces"><span>Rice terraces</span></button><button class="photo" type="button" aria-label="Open photo Morning market"><span>Morning market</span></button><button class="photo" type="button" aria-label="Open photo Old quarter"><span>Old quarter</span></button><button class="photo" type="button" aria-label="Open photo River at dusk"><span>River at dusk</span></button>
+            <button class="photo" type="button" aria-label="Open photo Coastal road"><span>Coastal road</span></button><button class="photo" type="button" aria-label="Open photo Lanterns"><span>Lanterns</span></button><button class="photo" type="button" aria-label="Open photo Mountain village"><span>Mountain village</span></button><button class="photo" type="button" aria-label="Open photo Evening boats"><span>Evening boats</span></button>
+          </div>
+        </div>
+      </section>
+      <section class="sample" data-state="loading" aria-label="Loading album state">
+        <p class="sample-label">Loading</p>
+        <div class="app" aria-busy="true"><div class="shellbar"><span class="brand">XFlickr</span><span>Home</span><span>Library</span><span>Contacts</span><span>Albums</span></div><a class="crumb" href="/albums">‹ Albums</a><p class="busy" role="status">Loading album…</p><div class="skeleton sk-title" aria-hidden="true"></div><div class="skeleton sk-meta" aria-hidden="true"></div><div class="sk-grid" aria-hidden="true"><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div></div></div>
+      </section>
+      <section class="sample" data-state="empty" aria-label="Empty album state">
+        <p class="sample-label">Empty</p><div class="app"><div class="shellbar"><span class="brand">XFlickr</span><span>Home</span><span>Library</span><span>Contacts</span><span>Albums</span></div><a class="crumb" href="/albums">‹ Albums</a><h1>Shared sketches</h1><p class="owner">Mai Pham</p><div class="state"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="m4 15 5-5 4 4 3-3 4 4M9 9h.01"/></svg></span><h2>This album is empty</h2><p>This album has no photos available to you yet.</p><a class="btn primary" href="/albums">Browse albums</a></div></div>
+      </section>
+      <section class="sample" data-state="error" aria-label="Album error state">
+        <p class="sample-label">Error</p><div class="app"><div class="shellbar"><span class="brand">XFlickr</span><span>Home</span><span>Library</span><span>Contacts</span><span>Albums</span></div><a class="crumb" href="/albums">‹ Albums</a><div class="state error" role="alert"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 8v5m0 4h.01"/><path d="M10.3 3.9 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3l-7.6-13.1a2 2 0 0 0-3.4 0Z"/></svg></span><h2>Could not load this album</h2><p>Check your connection, then try again.</p><button class="btn primary" type="button">Retry</button></div></div>
+      </section>
+    </section>
+
+    <section class="theme dark" aria-labelledby="dark-title">
+      <h2 class="theme-title" id="dark-title">Dark gallery <span>USER optional theme</span></h2>
+      <section class="sample" data-state="ready" aria-label="Normal album state, dark theme">
+        <p class="sample-label">Normal</p><div class="app"><div class="shellbar"><span class="brand">XFlickr</span><span>Home</span><span>Library</span><span>Contacts</span><span>Albums</span></div><a class="crumb" href="/albums">‹ Albums</a><header class="head"><div><h1>Vietnam 2024</h1><p class="owner"><a href="/contacts/jooservices">Mai Pham</a> · Updated 2 hours ago</p></div><div class="actions"><button class="btn" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 17v4h14v-4"/></svg>Download album</button><button class="btn primary" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 18a5 5 0 1 1 .9-9.9A6 6 0 0 1 19 10a4 4 0 0 1 0 8z"/></svg>Send to cloud</button></div></header><p class="partial"><strong>82 of 94 photos stored</strong></p><div class="photo-grid" role="group" aria-label="Photos in Vietnam 2024"><button class="photo" type="button" aria-label="Open photo Rice terraces"><span>Rice terraces</span></button><button class="photo" type="button" aria-label="Open photo Morning market"><span>Morning market</span></button><button class="photo" type="button" aria-label="Open photo Old quarter"><span>Old quarter</span></button><button class="photo" type="button" aria-label="Open photo River at dusk"><span>River at dusk</span></button><button class="photo" type="button" aria-label="Open photo Coastal road"><span>Coastal road</span></button><button class="photo" type="button" aria-label="Open photo Lanterns"><span>Lanterns</span></button><button class="photo" type="button" aria-label="Open photo Mountain village"><span>Mountain village</span></button><button class="photo" type="button" aria-label="Open photo Evening boats"><span>Evening boats</span></button></div></div>
+      </section>
+      <section class="sample" data-state="loading" aria-label="Loading album state, dark theme"><p class="sample-label">Loading</p><div class="app" aria-busy="true"><div class="shellbar"><span class="brand">XFlickr</span><span>Home</span><span>Library</span><span>Contacts</span><span>Albums</span></div><a class="crumb" href="/albums">‹ Albums</a><p class="busy" role="status">Loading album…</p><div class="skeleton sk-title" aria-hidden="true"></div><div class="skeleton sk-meta" aria-hidden="true"></div><div class="sk-grid" aria-hidden="true"><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div><div class="skeleton sk-photo"></div></div></div></section>
+      <section class="sample" data-state="empty" aria-label="Empty album state, dark theme"><p class="sample-label">Empty</p><div class="app"><div class="shellbar"><span class="brand">XFlickr</span><span>Home</span><span>Library</span><span>Contacts</span><span>Albums</span></div><a class="crumb" href="/albums">‹ Albums</a><h1>Shared sketches</h1><p class="owner">Mai Pham</p><div class="state"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="m4 15 5-5 4 4 3-3 4 4M9 9h.01"/></svg></span><h2>This album is empty</h2><p>This album has no photos available to you yet.</p><a class="btn primary" href="/albums">Browse albums</a></div></div></section>
+      <section class="sample" data-state="error" aria-label="Album error state, dark theme"><p class="sample-label">Error</p><div class="app"><div class="shellbar"><span class="brand">XFlickr</span><span>Home</span><span>Library</span><span>Contacts</span><span>Albums</span></div><a class="crumb" href="/albums">‹ Albums</a><div class="state error" role="alert"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 8v5m0 4h.01"/><path d="M10.3 3.9 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3l-7.6-13.1a2 2 0 0 0-3.4 0Z"/></svg></span><h2>Could not load this album</h2><p>Check your connection, then try again.</p><button class="btn primary" type="button">Retry</button></div></div></section>
+    </section>
+  </main>
+</body>
+</html>
