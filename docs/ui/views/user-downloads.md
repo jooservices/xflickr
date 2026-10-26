@@ -194,16 +194,23 @@ view label, action, empty and error message. Dynamic values are named in braces.
 | downloads.destination.zip | ZIP link | Liên kết ZIP |
 | downloads.destination.cloud | Connected cloud | Dịch vụ đám mây đã kết nối |
 | downloads.modal.title | New download | Tải xuống mới |
-| downloads.modal.cancel | Cancel | Hủy |
 | downloads.modal.start | Start download | Bắt đầu tải xuống |
+| downloads.details | Details | Chi tiết |
 | downloads.drawer.title | Download details | Chi tiết tải xuống |
 | downloads.drawer.close | Close download details | Đóng chi tiết tải xuống |
+| downloads.drawer.job | Job details · {id} | Chi tiết lượt tải · {id} |
+| downloads.drawer.progress | Per-file progress · {done} / {total} | Tiến độ từng tệp · {done}/{total} |
+| downloads.drawer.retries | {count} retries | {count} lần thử lại |
+| downloads.file.verified | Verified | Đã xác minh |
+| downloads.file.retrying | Retrying · {percent}% | Đang thử lại · {percent}% |
+| downloads.file.checksum-failed | Checksum failed | Mã kiểm tra không khớp |
 | downloads.tray.count | {count} photos in tray | {count} ảnh trong khay |
+| downloads.tray.photo | {title} · {owner} | {title} · {owner} |
 | downloads.files | Files | Tệp |
 | downloads.estimated-size | Estimated size | Dung lượng ước tính |
 | downloads.checksum | Checksum | Mã kiểm tra |
 | downloads.retries | Retries: {count} | Số lần thử lại: {count} |
-| downloads.retry | Retry | Thử lại |
+| common.retry | Retry | Thử lại |
 | downloads.estimate.files | Estimated files: {count} | Số tệp ước tính: {count} |
 | downloads.estimate.bytes | Estimated size: {size} | Dung lượng ước tính: {size} |
 | downloads.missing-sizes | {count} sizes are missing; checking them uses Flickr quota. | Thiếu kích thước của {count} ảnh; kiểm tra sẽ dùng hạn mức Flickr. |
@@ -244,7 +251,6 @@ view label, action, empty and error message. Dynamic values are named in braces.
 | downloads.loading | Loading downloads… | Đang tải danh sách… |
 | downloads.error.title | Could not load downloads | Không thể tải danh sách |
 | downloads.error.text | Check your connection and try again. | Kiểm tra kết nối rồi thử lại. |
-| downloads.error.retry | Retry | Thử lại |
 | downloads.error.create | Could not start this download. Your choices are still here. | Không thể bắt đầu tải. Các lựa chọn của bạn vẫn được giữ. |
 | downloads.error.no-key | Connect a valid Flickr key in Keys before downloading. | Hãy kết nối khóa Flickr hợp lệ trong mục Khóa trước khi tải. |
 | downloads.error.storage-full | Temporary storage is full. Try again when space is available. | Bộ nhớ tạm đã đầy. Hãy thử lại khi có chỗ trống. |
@@ -253,9 +259,9 @@ view label, action, empty and error message. Dynamic values are named in braces.
 | downloads.error.not-found | We could not find that download. | Không tìm thấy lượt tải xuống này. |
 | downloads.stale | Updated {time} ago | Cập nhật cách đây {time} |
 | downloads.partial-error | This section could not load. Retry it. | Không thể tải phần này. Hãy thử lại. |
-| downloads.cancel-modal | Cancel | Hủy |
+| common.cancel | Cancel | Hủy |
 | downloads.start | Start download | Bắt đầu tải xuống |
-| downloads.close | Close | Đóng |
+| common.close | Close | Đóng |
 | downloads.clear-filter | Clear filters | Xóa bộ lọc |
 
 ## Test IDs
