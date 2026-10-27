@@ -13,14 +13,20 @@
         background: #0b0f15;
         color: #d6dee8;
         font:
-          14px/1.45 Barlow,
-          Arial,
+          14px/1.45 "Barlow",
+          system-ui,
+          -apple-system,
+          "Segoe UI",
           sans-serif;
       }
       h1,
       h2,
       h3 {
-        font-family: "Arial Narrow", Arial, sans-serif;
+        font-family:
+          "Barlow Semi Condensed",
+          "Arial Narrow",
+          system-ui,
+          sans-serif;
         margin: 0;
       }
       h1 {
@@ -57,8 +63,8 @@
         --raise: #1c2632;
         --line: #222c3a;
         --ink: #d6dee8;
-        --muted: #a0aec0;
-        --faint: #8190a4;
+        --muted: #8190a4;
+        --faint: #5d6b82;
         --accent: #4cb4d8;
         --ok: #3cb87c;
         --warn: #e2ae3d;
@@ -156,7 +162,7 @@
         border: 1px solid var(--line);
         background: var(--sunken);
         color: var(--ink);
-        border-radius: 6px;
+        border-radius: 7px;
         padding: 6px 10px;
         font: inherit;
       }
@@ -779,8 +785,8 @@
           <article class="state">
             <h3>Normal</h3>
             <div class="views">
-              <div class="screen desktop" data-state="ready">
-                <div class="caption">1440 px desktop · ready</div>
+              <div class="screen desktop" data-state="ready" data-view-state="normal">
+                <div class="caption">1440 px desktop · normal</div>
                 <div class="page">
                   <div class="head">
                     <div>
@@ -884,8 +890,8 @@
                   </div>
                 </div>
               </div>
-              <div class="screen phone" data-state="ready">
-                <div class="caption">390 px mobile · ready</div>
+              <div class="screen phone" data-state="ready" data-view-state="normal">
+                <div class="caption">390 px mobile · normal</div>
                 <div class="page">
                   <div class="head">
                     <h1>Overview</h1>

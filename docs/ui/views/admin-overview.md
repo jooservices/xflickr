@@ -50,19 +50,20 @@ invent fields before that contract lands. Snapshots include generated_at.
 | Content | Data source and fields | Action |
 | --- | --- | --- |
 | Healthy nodes KPI and map | Contract request GET /admin/overview: cluster.nodes[] with id, role (control/crawl), health (ok/degraded/offline), region, calls_per_second; cluster.links[] with from, to, status. Count health=ok. No IPs or private infrastructure details. | Node to /admin/nodes/:id; View nodes to /admin/nodes. |
-| Keys at quota | Existing GET /admin/ops/status: keys[].status, used, remaining, limit. Count remaining=0, regardless of key status. | View quota to /admin/quota. |
+| Keys at quota | Existing GET /admin/quota: keys[].state (`ok`, `cooling`, `exhausted`). Count keys where state=`exhausted`; do not infer quota state from credential validity or a zero remaining value. | View quota to /admin/quota. |
 | Queue age | Existing GET /admin/queue: oldest_item_age_seconds, backlog_by_plan[] (plan, lane, backlog_calls), ready_queue_sizes[] (queue, ready_jobs). | View pipeline to /admin/pipeline. |
 | Running downloads/syncs | Contract request GET /admin/overview: transfers.downloads_running, transfers.syncs_running. Do not derive from user-scoped lists. | View downloads to /admin/downloads; View sync to /admin/sync. |
 | Open incidents KPI and alert summary | Contract request GET /admin/overview: incidents.open_count, incidents.items[] (id, severity: critical/warning/info, title, summary, created_at), up to five newest open incidents. | Incident title to /admin/issues; All issues to /admin/issues. No acknowledge/resolve here. |
 | Throughput chart and KPI | Contract request GET /admin/overview: throughput.records_per_minute[] (60 points, oldest first), latest_records_per_minute. | View metrics to /admin/metrics. Tooltip shows timestamp and value. |
 | Recent events | Contract request GET /admin/overview: events[] (id, occurred_at, severity, source, message), newest first, up to nine. Redact secrets and personal data. | All events to /admin/events. Informational rows. |
 | Freshness | Existing GET /admin/ops/status: generated_at; requested overview: generated_at. Use the oldest required-section timestamp for page freshness. | Refresh reloads all sources. |
+| Live section updates | Contract request GET /admin/overview/events (SSE): resumable event ID and section snapshot payloads for nodes, quota, queue, transfers, incidents, throughput and events. Existing GET /events is user-scoped and is not suitable. | Shell Live control pauses or resumes this stream; retry via polling fallback. |
 
 The requested administrator-only overview snapshot combines the new fields above,
 returns a consistent generated_at and per-section completeness for partial
-rendering. Continue using existing ops/status and queue endpoints for fields
-listed above. Never expose Flickr secrets, tokens, user email addresses or
-private photo data. Use the common Error response and 401/403 auth responses.
+rendering. Continue using existing quota and queue endpoints for fields listed
+above. Never expose Flickr secrets, tokens, user email addresses or private photo
+data. Use the common Error response and 401/403 auth responses.
 
 ## Actions
 
@@ -121,11 +122,10 @@ streams and do not render cached admin data.
 
 ## Live updates
 
-Live is enabled by the shell Live control. Request an admin overview event
-stream as a contract request; existing GET /events is user-scoped and cannot
-supply admin metrics/events. The requested stream sends resumable IDs and
-section snapshots for nodes, quota, queue, transfers, incidents, throughput
-and events. Reconnect with Last-Event-ID; close on pause, logout or forbidden.
+Live is enabled by the shell Live control. The administrator-only
+`GET /admin/overview/events` stream is a contract request, not an existing
+route. It sends resumable IDs and section snapshots. Reconnect with
+Last-Event-ID; close on pause, logout or forbidden.
 Poll existing /admin/ops/status and /admin/queue plus requested overview every
 10 seconds if SSE is unavailable, backing off to 60 seconds. Do not poll while
 paused. Update only the changed section and freshness timestamp. Announce
