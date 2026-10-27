@@ -16,9 +16,9 @@ privacy boundary explicit before the user changes this choice.
 
 ## Route and access
 
-- `/sharing`; authenticated USER sees only their own setting and aggregate
-  counts. ADMIN on this route sees their own user view; fleet-wide sharing
-  belongs to `/admin/sharing`.
+- `/sharing`; only an authenticated USER can view or change their own setting
+  and aggregate counts. ADMIN access to this USER route is forbidden; fleet-wide
+  sharing belongs to the separate `/admin/sharing` view.
 - Unauthenticated requests follow the shell expiry flow to
   `/login?reason=expired&return_to=/sharing`. A 403 uses the shared forbidden
   view.
@@ -40,8 +40,9 @@ Flickr calls. A two-column desktop grid stacks at 720px and below.
    share” (the count of this user's eligible records currently visible to
    others), “You receive” (eligible public records available from other
    opted-in users), and “Calls saved” (deduplicated Flickr calls attributed
-   to reuse, with period “this week”). When sharing is off, “You share” is 0;
-   the other two values still describe records available to this user.
+   to reuse, with period “this week”). When sharing is off, all three values
+   are 0 and the off notice explains that the user sees records crawled through
+   their own access.
    Include the POC warning when off: the user sees records crawled through
    their own access and their crawl may repeat calls already made by others.
 3. **Turn-off confirmation:** an existing `modal` opened before sending an
@@ -62,8 +63,8 @@ does not change OpenAPI.
 
 | Content | Source and fields |
 | --- | --- |
-| Initial setting and summary | `GET /me/sharing` **contract request** (authenticated). Return `enabled: boolean` (false when unset), `changed_at: date-time (nullable)`, `shared_record_count: integer` (eligible records visible to others; zero when off), `received_record_count: integer`, `calls_saved_count: integer`, `calls_saved_period: "week"`, and `server_time: date-time`. Counts exclude private/friends/family records and are aggregate counts only. |
-| Change setting | `PUT /me/sharing` **exists**. Send `{enabled: boolean}`; response has `enabled`, `changed_at`. Requires CSRF. Persist the choice and publish `sharing.changed` transactionally. On success reconcile the switch immediately; when off, set visible-to-others count to zero in the response/cache before refreshing summary. **Contract request:** include the updated `shared_record_count` in the response, or guarantee the subsequent summary read reflects the committed choice. |
+| Initial setting and summary | `GET /me/sharing` **contract request** (authenticated). Return `enabled: boolean` (false when unset), `changed_at: date-time (nullable)`, `shared_record_count: integer` (eligible records visible to others; zero when off), `received_record_count: integer` (zero when off), `calls_saved_count: integer` (zero when off), `calls_saved_period: "week"`, and `server_time: date-time`. Counts exclude private/friends/family records and are aggregate counts only. |
+| Change setting | `PUT /me/sharing` **exists**. Send `{enabled: boolean}`; response has `enabled`, `changed_at`. Requires CSRF. Persist the choice and publish `sharing.changed` transactionally. On success reconcile the switch immediately; when off, set all three summary counts to zero in the response/cache before refreshing summary. **Contract request:** include the updated counts in the response, or guarantee the subsequent summary read reflects the committed choice. |
 | Summary refresh | `GET /me/sharing` contract request above. Re-read after successful setting change and after a sharing summary event. |
 | Live summary | `GET /events` **exists** as authenticated SSE with `Last-Event-ID`, but currently streams crawl/download progress only. **Contract request:** add user-scoped `sharing.summary.updated` carrying no counts or personal record data; on receipt fetch `GET /me/sharing`. The setting's internal `sharing.changed` outbox event is not itself a browser event. |
 | Errors | Shared `Error` body has `code`, `message`, `details`. Localize by `code`; never display server English `message`. `401` expires session; `403` forbidden; `429`/network/5xx retain previous values and offer retry. |
@@ -72,7 +73,8 @@ The summary endpoint must return counts only and must never return record titles
 photo URLs, usernames of contributors, identifiers, visibility details, or
 another user's setting. Counts are computed from distinct eligible records;
 turning sharing off immediately removes this user's contribution from the
-shared pool, while the user's own observations remain available to them.
+shared pool and returns zero for all three sharing summary counts, while the
+user's own observations remain available to them through their own access.
 No API key, secret, OAuth token, private/friends/family record, or download is
 ever shared. Flickr authorization and visibility rules remain in force.
 
@@ -82,7 +84,7 @@ ever shared. Flickr authorization and visibility rules remain in force.
 | --- | --- |
 | Load view | Fetch setting/summary. Never infer “off” from a failed request. |
 | Turn on | Immediately `PUT /me/sharing` with `{enabled:true}`; show pending state, then apply response and refresh summary. No confirmation. |
-| Turn off | Open confirmation modal. Cancel closes it and leaves setting unchanged. Confirm sends `{enabled:false}`; after success, immediately show off and zero “You share”, then refresh. Failure closes no state and restores enabled state. |
+| Turn off | Open confirmation modal. Cancel closes it and leaves setting unchanged. Confirm sends `{enabled:false}`; after success, immediately show off and zero all three summary counts, then refresh. Failure closes no state and restores enabled state. |
 | Retry | Repeat only the failed setting/summary request. |
 | Live refresh | Apply `sharing.summary.updated` by fetching summary; poll as fallback per Live updates. |
 
@@ -95,11 +97,17 @@ shell toast/live region.
 State scope is per view. Keep page heading and privacy explanation during load
 and summary failures where the relevant data is available.
 
+### Normal
+
+This is the ready view: show the saved sharing choice and all three summary
+values. A user with no stored choice starts with sharing off. Counts use locale
+number formatting; zero received records or saved calls display as `0`, not as
+an empty block.
+
 ### Ready
 
-Show the setting and all three summary values. Sharing defaults off for a user
-with no stored setting. Counts use locale number formatting. With zero received
-records or saved calls, show “0” in the statistic rather than an empty block.
+Compatibility name for the normal state in the repository UI-spec gate; use the
+same presentation and behavior defined under [Normal](#normal).
 
 ### Loading
 
