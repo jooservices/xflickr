@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>XFlickr · Cloud sync mockup</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #f6f7fa;
+        color: #161a22;
+        font:
+          15px/1.5 Figtree,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        border: 1px solid #747b88;
+        background: #fff;
+        padding: 8px 13px;
+        border-radius: 999px;
+        cursor: pointer;
+      }
+      button:focus-visible {
+        outline: 2px solid #2457d6;
+        outline-offset: 2px;
+      }
+      button.primary {
+        background: #2457d6;
+        color: #fff;
+        border-color: #2457d6;
+        font-weight: 700;
+      }
+      .frame {
+        max-width: 1440px;
+        margin: auto;
+        padding: 26px 36px;
+      }
+      .top {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        border-bottom: 1px solid #e2e5ec;
+        padding-bottom: 16px;
+      }
+      .brand {
+        font-weight: 800;
+        color: #2457d6;
+      }
+      .tabs {
+        display: flex;
+        gap: 18px;
+        color: #5d6574;
+      }
+      .tabs b {
+        color: #161a22;
+      }
+      .wrap {
+        max-width: 1200px;
+        margin: 30px auto;
+      }
+      .head {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        align-items: end;
+        margin-bottom: 20px;
+      }
+      h1 {
+        font-size: 32px;
+        line-height: 1.15;
+        letter-spacing: -0.01em;
+      }
+      .lead {
+        color: #5d6574;
+        margin-top: 7px;
+      }
+      .showcase {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+      }
+      .theme {
+        --bg: #f6f7fa;
+        --surface: #fff;
+        --sunken: #eef0f5;
+        --ink: #161a22;
+        --muted: #5d6574;
+        --line: #e2e5ec;
+        --line2: #747b88;
+        --accent: #2457d6;
+        --accent-ink: #fff;
+        --ok: #187244;
+        --warn: #875300;
+        --bad: #c12824;
+        min-width: 0;
+        background: var(--bg);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 16px;
+      }
+      .theme.dark {
+        --bg: #0f1116;
+        --surface: #171a21;
+        --sunken: #1e222b;
+        --ink: #e8eaf0;
+        --muted: #a0a7b4;
+        --line: #2a2f3a;
+        --line2: #778396;
+        --accent: #7d9cff;
+        --accent-ink: #0d1220;
+        --ok: #4fc887;
+        --warn: #f0b04a;
+        --bad: #ff7b72;
+      }
+      .theme h2 {
+        font-size: 17px;
+        margin-bottom: 12px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 9px;
+      }
+      .state {
+        min-width: 0;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 12px;
+      }
+      .state h3 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--muted);
+        margin-bottom: 9px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 10px;
+        margin: 7px 0;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .small {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .provider {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .logo {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: #e6edfd;
+        color: #2457d6;
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        flex: none;
+      }
+      .pill {
+        font-size: 11px;
+        font-weight: 700;
+        border-radius: 99px;
+        padding: 3px 7px;
+        background: color-mix(in srgb, var(--ok) 12%, var(--surface));
+        color: var(--ok);
+        white-space: nowrap;
+      }
+      .pill.warn {
+        background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+        color: var(--warn);
+      }
+      .bar {
+        height: 7px;
+        background: var(--sunken);
+        border-radius: 8px;
+        overflow: hidden;
+        margin: 8px 0 5px;
+      }
+      .bar i {
+        display: block;
+        width: 58%;
+        height: 100%;
+        background: var(--accent);
+      }
+      .file {
+        padding: 6px 0;
+        border-top: 1px solid var(--line);
+        font-size: 11px;
+      }
+      .files {
+        margin-top: 8px;
+      }
+      .buttons {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+      .buttons button {
+        font-size: 11px;
+        padding: 5px 9px;
+      }
+      .banner {
+        border-left: 3px solid var(--warn);
+        padding: 7px 8px;
+        margin-top: 8px;
+        background: color-mix(in srgb, var(--warn) 9%, var(--surface));
+        font-size: 11px;
+      }
+      .empty {
+        text-align: center;
+        padding: 20px 8px;
+      }
+      .empty .cloud {
+        font-size: 24px;
+        color: var(--accent);
+      }
+      .empty b {
+        display: block;
+        margin: 4px 0;
+      }
+      .skeleton {
+        height: 10px;
+        border-radius: 8px;
+        background: linear-gradient(
+          90deg,
+          var(--sunken),
+          var(--line),
+          var(--sunken)
+        );
+        background-size: 200% 100%;
+        margin: 10px 0;
+      }
+      .drawer {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 10px;
+        margin-top: 8px;
+      }
+      .drawer h3 {
+        margin-bottom: 5px;
+      }
+      .error {
+        color: var(--bad);
+      }
+      .caption {
+        color: #5d6574;
+        font-size: 12px;
+        margin-top: 12px;
+      }
+      @media (max-width: 720px) {
+        .frame {
+          padding: 14px;
+        }
+        .top {
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .tabs {
+          width: 100%;
+          overflow: auto;
+          white-space: nowrap;
+          font-size: 13px;
+        }
+        .wrap {
+          margin: 20px auto;
+        }
+        .head {
+          align-items: stretch;
+          flex-direction: column;
+        }
+        h1 {
+          font-size: 27px;
+        }
+        .head button {
+          width: 100%;
+        }
+        .showcase {
+          grid-template-columns: 1fr;
+        }
+        .theme {
+          padding: 11px;
+        }
+        .state {
+          padding: 10px;
+        }
+      }
+      @media (max-width: 390px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .row {
+          align-items: flex-start;
+        }
+        .card {
+          padding: 9px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <header class="top">
+        <span class="brand">XFlickr</span>
+        <nav class="tabs" aria-label="Sections">
+          <span>Home</span><span>Library</span><span>Contacts</span
+          ><span>Downloads</span><b>Cloud sync</b>
+        </nav>
+        <span style="margin-left: auto"
+          >USER · 1440px desktop / 390px mobile</span
+        >
+      </header>
+      <main class="wrap" data-testid="sync-page">
+        <div class="head">
+          <div>
+            <h1>Cloud sync</h1>
+            <p class="lead">
+              Send downloads to your cloud. Temporary files are removed after
+              upload.
+            </p>
+          </div>
+          <button>Connect provider</button>
+        </div>
+        <div class="showcase">
+          <section class="theme" aria-label="Light gallery theme">
+            <h2>Light gallery</h2>
+            <div class="grid">
+              <article class="state" data-state="ready">
+                <h3>Normal</h3>
+                <div class="card">
+                  <div class="row">
+                    <div class="provider">
+                      <span class="logo">G</span>
+                      <div>
+                        <b>Google Photos</b>
+                        <div class="small">viet@example.com</div>
+                      </div>
+                    </div>
+                    <span class="pill">Connected</span>
+                  </div>
+                  <p class="small">Folder · XFlickr / Photos</p>
+                  <div class="buttons"><button>Disconnect</button></div>
+                </div>
+                <div class="row small" style="padding: 3px 2px">
+                  <span>Google Drive · OneDrive · S3-compatible</span
+                  ><span>Connected</span>
+                </div>
+                <div class="card">
+                  <div class="row">
+                    <div class="provider">
+                      <span class="logo">B</span>
+                      <div>
+                        <b>Dropbox</b>
+                        <div class="small">viet@example.com</div>
+                      </div>
+                    </div>
+                    <span class="pill warn">Sign-in expired</span>
+                  </div>
+                  <div class="buttons">
+                    <button class="primary">Reconnect</button>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="row">
+                    <b>Mai Pham · Vietnam 2024</b
+                    ><span class="pill">Uploading</span>
+                  </div>
+                  <p class="small">
+                    Google Drive · /XFlickr/Mai Pham · 31 / 90 files
+                  </p>
+                  <div
+                    class="bar"
+                    role="progressbar"
+                    aria-label="Upload progress"
+                    aria-valuemin="0"
+                    aria-valuemax="90"
+                    aria-valuenow="31"
+                  >
+                    <i style="width: 34%"></i>
+                  </div>
+                  <div class="row small">
+                    <span>420 MB · 3.2 MB/s · 1 retry</span
+                    ><button>Details</button>
+                  </div>
+                  <div class="drawer">
+                    <h3>Upload details · 31 / 90</h3>
+                    <div class="file">IMG_1041.jpg · Uploaded · 100%</div>
+                    <div class="file">IMG_1042.jpg · Uploading · 58%</div>
+                    <div class="file">IMG_1043.jpg · Failed · Retry</div>
+                  </div>
+                </div>
+                <div class="banner">
+                  Dropbox sign-in expired. Upload paused. <b>Reconnect</b>
+                </div>
+              </article>
+              <article class="state" data-state="loading">
+                <h3>Loading</h3>
+                <div class="skeleton" style="width: 70%"></div>
+                <div class="skeleton"></div>
+                <div class="skeleton" style="width: 54%"></div>
+                <div class="skeleton" style="height: 44px"></div>
+                <p class="small" role="status">Loading cloud sync…</p>
+              </article>
+              <article class="state" data-state="empty">
+                <h3>Empty</h3>
+                <div class="empty">
+                  <div class="cloud" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="28" height="28">
+                      <path
+                        d="M7 18a5 5 0 1 1 .9-9.9A6 6 0 0 1 19 10a4 4 0 0 1 0 8z"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </div>
+                  <b>No cloud connected</b>
+                  <p class="small">
+                    Connect a provider to send downloads to your cloud.
+                  </p>
+                  <button class="primary" style="margin-top: 9px">
+                    Connect provider
+                  </button>
+                </div>
+              </article>
+              <article class="state" data-state="error">
+                <h3>Error</h3>
+                <div class="card">
+                  <b class="error">Could not load cloud sync</b>
+                  <p class="small">Check your connection and try again.</p>
+                  <button style="margin-top: 9px">Retry</button>
+                </div>
+              </article>
+            </div>
+          </section>
+          <section class="theme dark" aria-label="Dark gallery theme">
+            <h2>Dark gallery</h2>
+            <div class="grid">
+              <article class="state" data-state="ready">
+                <h3>Normal</h3>
+                <div class="card">
+                  <div class="row">
+                    <div class="provider">
+                      <span class="logo">G</span>
+                      <div>
+                        <b>Google Photos</b>
+                        <div class="small">viet@example.com</div>
+                      </div>
+                    </div>
+                    <span class="pill">Connected</span>
+                  </div>
+                  <p class="small">Folder · XFlickr / Photos</p>
+                  <div class="buttons"><button>Disconnect</button></div>
+                </div>
+                <div class="row small" style="padding: 3px 2px">
+                  <span>Google Drive · OneDrive · S3-compatible</span
+                  ><span>Connected</span>
+                </div>
+                <div class="card">
+                  <div class="row">
+                    <div class="provider">
+                      <span class="logo">B</span>
+                      <div>
+                        <b>Dropbox</b>
+                        <div class="small">viet@example.com</div>
+                      </div>
+                    </div>
+                    <span class="pill warn">Sign-in expired</span>
+                  </div>
+                  <div class="buttons">
+                    <button class="primary">Reconnect</button>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="row">
+                    <b>Mai Pham · Vietnam 2024</b
+                    ><span class="pill">Uploading</span>
+                  </div>
+                  <p class="small">
+                    Google Drive · /XFlickr/Mai Pham · 31 / 90 files
+                  </p>
+                  <div
+                    class="bar"
+                    role="progressbar"
+                    aria-label="Upload progress"
+                    aria-valuemin="0"
+                    aria-valuemax="90"
+                    aria-valuenow="31"
+                  >
+                    <i style="width: 34%"></i>
+                  </div>
+                  <div class="row small">
+                    <span>420 MB · 3.2 MB/s · 1 retry</span
+                    ><button>Details</button>
+                  </div>
+                  <div class="drawer">
+                    <h3>Upload details · 31 / 90</h3>
+                    <div class="file">IMG_1041.jpg · Uploaded · 100%</div>
+                    <div class="file">IMG_1042.jpg · Uploading · 58%</div>
+                    <div class="file">IMG_1043.jpg · Failed · Retry</div>
+                  </div>
+                </div>
+                <div class="banner">
+                  Google Drive is slowing uploads. Resumes in 2 min.
+                </div>
+              </article>
+              <article class="state" data-state="loading">
+                <h3>Loading</h3>
+                <div class="skeleton" style="width: 70%"></div>
+                <div class="skeleton"></div>
+                <div class="skeleton" style="width: 54%"></div>
+                <div class="skeleton" style="height: 44px"></div>
+                <p class="small" role="status">Loading cloud sync…</p>
+              </article>
+              <article class="state" data-state="empty">
+                <h3>Empty</h3>
+                <div class="empty">
+                  <div class="cloud" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="28" height="28">
+                      <path
+                        d="M7 18a5 5 0 1 1 .9-9.9A6 6 0 0 1 19 10a4 4 0 0 1 0 8z"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </div>
+                  <b>No cloud connected</b>
+                  <p class="small">
+                    Connect a provider to send downloads to your cloud.
+                  </p>
+                  <button class="primary" style="margin-top: 9px">
+                    Connect provider
+                  </button>
+                </div>
+              </article>
+              <article class="state" data-state="error">
+                <h3>Error</h3>
+                <div class="card">
+                  <b class="error">Could not load cloud sync</b>
+                  <p class="small">Check your connection and try again.</p>
+                  <button style="margin-top: 9px">Retry</button>
+                </div>
+              </article>
+            </div>
+          </section>
+        </div>
+        <p class="caption">
+          Static HTML/CSS preview. The four states appear in both USER themes;
+          responsive CSS reflows the same content at 390px.
+        </p>
+      </main>
+    </div>
+  </body>
+</html>

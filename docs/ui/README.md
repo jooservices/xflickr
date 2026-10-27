@@ -44,7 +44,7 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 | `user-crawl` | user | `/crawl` | Crawl | [spec](views/user-crawl.md) | [mockup](mockups/user-crawl.html) | JOOXF-175 | `web/e2e/user-crawl.spec.ts` |
 | `user-keys` | user | `/keys` | Keys and quota | [spec](views/user-keys.md) | [mockup](mockups/user-keys.html) | JOOXF-176, JOOXF-167 | `web/e2e/user-keys.spec.ts` |
 | `user-downloads` | user | `/downloads` | Downloads | [spec](views/user-downloads.md) | [mockup](mockups/user-downloads.html) | JOOXF-177 | `web/e2e/user-downloads.spec.ts` |
-| `user-sync` | user | `/sync` | Cloud sync | pending | pending | TBD | `web/e2e/user-sync.spec.ts` |
+| `user-sync` | user | `/sync` | Cloud sync | [spec](views/user-sync.md) | [mockup](mockups/user-sync.html) | JOOXF-178 | `web/e2e/user-sync.spec.ts` |
 | `user-sharing` | user | `/sharing` | Sharing | pending | pending | TBD | `web/e2e/user-sharing.spec.ts` |
 | `user-wizard` | user | `/onboarding` | Setup wizard: API key, Flickr connection, more accounts | [spec](views/user-wizard.md) | [mockup](mockups/user-wizard.html) | JOOXF-167 | `web/e2e/user-wizard.spec.ts` |
 | `user-profile` | user | `/profile` | Profile | [spec](views/user-profile.md) | [mockup](mockups/user-profile.html) | JOOXF-166 | `web/e2e/user-profile.spec.ts` |
