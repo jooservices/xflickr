@@ -1,0 +1,1450 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>API quota · XFlickr ADMIN mockup</title>
+    <style>
+      .w62 { width: 62%; }
+      .w91 { width: 91%; }
+      .mt9 { margin-top: 9px; }
+      .mt10 { margin-top: 10px; }
+      .mt12 { margin-top: 12px; }
+      .my8 { margin: 8px 0; }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #080b10;
+        color: #d6dee8;
+        font:
+          14px/1.45 Barlow,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      .catalog {
+        max-width: 1660px;
+        margin: auto;
+        padding: 24px;
+      }
+      .catalog > h1 {
+        font:
+          600 26px/1.2 "Arial Narrow",
+          system-ui,
+          sans-serif;
+        margin-bottom: 5px;
+      }
+      .intro {
+        color: #aeb9c8;
+        margin-bottom: 26px;
+      }
+      .theme {
+        --bg: #0b0f15;
+        --surface: #11171f;
+        --sunken: #161e28;
+        --raise: #1c2632;
+        --line: #222c3a;
+        --line2: #7a8798;
+        --ink: #d6dee8;
+        --muted: #aeb9c8;
+        --faint: #8190a4;
+        --accent: #4cb4d8;
+        --ok: #3cb87c;
+        --warn: #e2ae3d;
+        --bad: #f2766b;
+        --s1: #68b7fa;
+        --s2: #ff9265;
+        --s3: #40c58c;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 22px;
+        margin: 0 0 30px;
+      }
+      .theme.light {
+        --bg: #eef1f5;
+        --surface: #fff;
+        --sunken: #f5f7fa;
+        --raise: #e9edf3;
+        --line: #dce2ea;
+        --line2: #737f90;
+        --ink: #16202c;
+        --muted: #56657a;
+        --faint: #7d8a9c;
+        --accent: #006482;
+        --ok: #176d42;
+        --warn: #815800;
+        --bad: #c5372c;
+        --s1: #1f66b4;
+        --s2: #b8481e;
+        --s3: #08774f;
+      }
+      .theme > h2 {
+        font-size: 15px;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        margin-bottom: 14px;
+      }
+      .state {
+        border-top: 1px solid var(--line);
+        padding: 18px 0 22px;
+      }
+      .state > h3 {
+        font-size: 14px;
+        margin-bottom: 11px;
+        color: var(--muted);
+      }
+      .frames {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+      .screen {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        overflow: hidden;
+      }
+      .desktop {
+        width: 1440px;
+        max-width: 100%;
+      }
+      .mobile {
+        width: 390px;
+        max-width: 100%;
+      }
+      .shell {
+        min-height: 100%;
+        display: grid;
+        grid-template-columns: 174px minmax(0, 1fr);
+      }
+      .mobile .shell {
+        display: block;
+      }
+      .rail {
+        padding: 18px 13px;
+        background: var(--surface);
+        border-right: 1px solid var(--line);
+        color: var(--muted);
+      }
+      .brand {
+        font-weight: 700;
+        color: var(--ink);
+        font-size: 16px;
+        margin-bottom: 23px;
+      }
+      .nav {
+        padding: 8px 10px;
+        border-radius: 6px;
+        margin: 4px 0;
+      }
+      .nav.active {
+        background: var(--raise);
+        color: var(--ink);
+      }
+      .mobile .rail {
+        display: none;
+      }
+      .main {
+        padding: 22px;
+        min-width: 0;
+      }
+      .mobile .main {
+        padding: 14px;
+      }
+      .top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 12px;
+        margin-bottom: 18px;
+      }
+      .live {
+        color: var(--ok);
+        white-space: nowrap;
+      }
+      .head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 14px;
+        margin-bottom: 15px;
+      }
+      .mobile .head {
+        display: block;
+      }
+      .head h1 {
+        font:
+          600 25px/1.15 "Arial Narrow",
+          system-ui,
+          sans-serif;
+        margin-bottom: 4px;
+      }
+      .head p,
+      .muted {
+        color: var(--muted);
+      }
+      .head p {
+        max-width: 75ch;
+      }
+      .actions {
+        display: flex;
+        gap: 7px;
+        flex-wrap: wrap;
+      }
+      .mobile .actions {
+        margin-top: 10px;
+      }
+      .btn {
+        border: 1px solid var(--line2);
+        background: var(--surface);
+        border-radius: 7px;
+        padding: 7px 10px;
+        min-height: 36px;
+        white-space: nowrap;
+      }
+      .btn.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--bg);
+        font-weight: 600;
+      }
+      .btn.danger {
+        color: var(--bad);
+      }
+      .stack {
+        display: grid;
+        gap: 12px;
+      }
+      .panel,
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        overflow: hidden;
+      }
+      .panel-title {
+        padding: 11px 13px;
+        border-bottom: 1px solid var(--line);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .table-wrap {
+        overflow: hidden;
+      }
+      .table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .table th {
+        text-align: left;
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .table td,
+      .table th {
+        padding: 9px 8px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: middle;
+      }
+      .table tr:last-child td {
+        border-bottom: 0;
+      }
+      .num,
+      .mono {
+        font-variant-numeric: tabular-nums;
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+      }
+      .mono {
+        font-size: 11px;
+      }
+      .right {
+        text-align: right;
+      }
+      .key {
+        font-weight: 600;
+        color: var(--ink);
+      }
+      .sub {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .meter {
+        height: 7px;
+        width: 78px;
+        background: var(--sunken);
+        border-radius: 6px;
+        overflow: hidden;
+        display: inline-block;
+        vertical-align: middle;
+        margin-right: 5px;
+      }
+      .meter i {
+        display: block;
+        height: 100%;
+        background: var(--s1);
+      }
+      .meter.warn i {
+        background: var(--warn);
+      }
+      .pill {
+        display: inline-block;
+        border: 1px solid var(--line2);
+        border-radius: 20px;
+        padding: 2px 7px;
+        font-size: 10px;
+      }
+      .pill.ok {
+        color: var(--ok);
+        border-color: var(--ok);
+      }
+      .pill.warn {
+        color: var(--warn);
+        border-color: var(--warn);
+      }
+      .pill.bad {
+        color: var(--bad);
+        border-color: var(--bad);
+      }
+      .chart {
+        height: 30px;
+        width: 78px;
+        display: inline-block;
+        vertical-align: middle;
+      }
+      .chart svg {
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+      }
+      .nodegrid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .node {
+        padding: 12px;
+      }
+      .nodehead {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .nodeid {
+        font-weight: 600;
+      }
+      .nodefacts {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 7px;
+        padding: 8px 0;
+      }
+      .fact {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .fact b {
+        display: block;
+        color: var(--ink);
+        font:
+          500 12px ui-monospace,
+          Menlo,
+          Consolas,
+          monospace;
+        margin-top: 2px;
+      }
+      .history {
+        padding: 10px 13px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .history svg {
+        height: 74px;
+        flex: 1;
+        min-width: 0;
+      }
+      .policy {
+        padding: 10px 12px;
+        background: var(--sunken);
+        border-radius: 7px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .skeletons {
+        display: grid;
+        gap: 10px;
+      }
+      .skel {
+        height: 50px;
+        border-radius: 6px;
+        background: linear-gradient(
+          90deg,
+          var(--sunken) 25%,
+          var(--raise) 45%,
+          var(--sunken) 65%
+        );
+        background-size: 200% 100%;
+        animation: shine 1.2s infinite;
+      }
+      .skel.big {
+        height: 118px;
+      }
+      @keyframes shine {
+        to {
+          background-position: -200% 0;
+        }
+      }
+      .loadingline {
+        color: var(--muted);
+        margin: 0 0 12px;
+      }
+      .notice {
+        padding: 13px;
+        border: 1px solid var(--bad);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--bad) 8%, var(--surface));
+        margin-bottom: 12px;
+      }
+      .notice strong {
+        display: block;
+        margin-bottom: 3px;
+      }
+      .empty {
+        min-height: 255px;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        padding: 20px;
+      }
+      .empty-inner {
+        max-width: 390px;
+      }
+      .art {
+        width: 66px;
+        height: 66px;
+        border-radius: 50%;
+        background: var(--sunken);
+        display: grid;
+        place-items: center;
+        margin: 0 auto 12px;
+        color: var(--faint);
+        font-size: 27px;
+      }
+      .empty h2 {
+        font-size: 18px;
+        margin-bottom: 6px;
+      }
+      .empty p {
+        color: var(--muted);
+        margin-bottom: 13px;
+      }
+      .dim {
+        opacity: 0.35;
+      }
+      .cards {
+        display: none;
+      }
+      .mobile .table-wrap {
+        display: none;
+      }
+      .mobile .cards {
+        display: grid;
+        gap: 9px;
+      }
+      .keycard {
+        padding: 10px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+      .kv {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 7px 10px;
+        margin: 9px 0;
+      }
+      .kv div {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .kv b {
+        display: block;
+        color: var(--ink);
+        font-size: 12px;
+      }
+      .keyactions {
+        display: flex;
+        gap: 7px;
+      }
+      .keyactions .btn {
+        flex: 1;
+      }
+      .mobile .nodegrid {
+        grid-template-columns: 1fr;
+      }
+      .mobile .nodefacts {
+        grid-template-columns: 1fr 1fr;
+      }
+      .mobile .history {
+        align-items: flex-start;
+      }
+      .mobile .history svg {
+        height: 65px;
+      }
+      .mobile .policy {
+        font-size: 11px;
+      }
+      .mobile .table {
+        display: none;
+      }
+      .mobile .head p {
+        font-size: 12px;
+      }
+      .foot {
+        color: var(--muted);
+        font-size: 11px;
+        margin-top: 7px;
+      }
+      .state[data-state="loading"] .screen {
+        min-height: 230px;
+      }
+      .state[data-state="empty"] .screen {
+        min-height: 260px;
+      }
+      .mobile .state[data-state="normal"] .screen {
+        min-height: 200px;
+      }
+      .state[data-state="normal"] .screen {
+        min-height: 370px;
+      }
+      .mobile .state {
+        padding-top: 14px;
+      }
+      @media (max-width: 720px) {
+        .catalog {
+          padding: 12px;
+        }
+        .theme {
+          padding: 13px;
+        }
+        .main {
+          padding: 14px;
+        }
+        .nodegrid {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          scroll-behavior: auto !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="catalog">
+      <h1>API quota</h1>
+      <p class="intro">
+        Static ADMIN view mockup · each theme contains normal, loading, empty
+        and error states at 1440px desktop and 390px mobile.
+      </p>
+      <section class="theme" aria-labelledby="dark-title">
+        <h2 id="dark-title">ADMIN · DARK (DEFAULT)</h2>
+        <section class="state" data-state="ready" data-preview-state="normal">
+          <h3>Normal</h3>
+          <div class="frames">
+            <div class="screen desktop">
+              <div class="shell">
+                <aside class="rail">
+                  <div class="brand">
+                    XFlickr <span class="pill">ADMIN</span>
+                  </div>
+                  <div class="nav">Overview</div>
+                  <div class="nav">Cluster nodes</div>
+                  <div class="nav active">API quota</div>
+                  <div class="nav">Metrics</div>
+                  <div class="nav">Events &amp; audit</div>
+                  <div class="nav">Issues</div>
+                </aside>
+                <div class="main">
+                  <div class="top">
+                    <span>Operations / API quota</span
+                    ><span class="live">● Live　EN　◐</span>
+                  </div>
+                  <header class="head">
+                    <div>
+                      <h1>API quota</h1>
+                      <p>
+                        3,600 calls per key each hour · 100 calls reserved for
+                        user actions · person / sizes lanes 30 / 70
+                      </p>
+                    </div>
+                    <div class="actions">
+                      <button type="button" class="btn">↻ Refresh</button>
+                    </div>
+                  </header>
+                  <div class="stack">
+                    <section class="panel">
+                      <div class="panel-title">PER KEY · 2 ACTIVE KEYS</div>
+                      <div class="table-wrap">
+                        <table class="table">
+                          <thead>
+                            <tr>
+                              <th>Key / user</th>
+                              <th>Node</th>
+                              <th>Used / cap</th>
+                              <th>Person</th>
+                              <th>Sizes</th>
+                              <th>Burst · last 60s</th>
+                              <th>Hourly history</th>
+                              <th>Resets / cooldown</th>
+                              <th>429</th>
+                              <th>Skipped<br>(shared)</th>
+                              <th>State</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td>
+                                <span class="key mono">k1 · Archive</span
+                                ><span class="sub">Viet Vu</span>
+                              </td>
+                              <td>crawl-sg-1</td>
+                              <td>
+                                <span class="meter"
+                                  ><i class="w62"></i></span
+                                ><span class="num">2,232 / 3,600</span>
+                              </td>
+                              <td class="num">710</td>
+                              <td class="num">1,522</td>
+                              <td>
+                                <span class="num">2 / 4</span
+                                ><svg
+                                  class="chart"
+                                  viewBox="0 0 100 30" aria-hidden="true"
+                                >
+                                  <polyline
+                                    points="0,22 12,20 24,22 36,10 48,17 60,8 72,13 84,5 100,10"
+                                    fill="none"
+                                    stroke="var(--s2)"
+                                    stroke-width="2"
+                                  />
+                                </svg>
+                              </td>
+                              <td>
+                                <svg
+                                  class="chart"
+                                  viewBox="0 0 100 30" aria-hidden="true"
+                                >
+                                  <polyline
+                                    points="0,25 14,22 28,19 42,20 56,13 70,11 84,8 100,4"
+                                    fill="none"
+                                    stroke="var(--s1)"
+                                    stroke-width="2"
+                                  />
+                                </svg>
+                              </td>
+                              <td class="num">38:12</td>
+                              <td class="right num">2</td>
+                              <td class="right num">184</td>
+                              <td><span class="pill ok">ok</span></td>
+                              <td>
+                                <button type="button" class="btn">Move</button
+                                ><button type="button" class="btn danger">Pause</button>
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>
+                                <span class="key mono">k2 · Personal</span
+                                ><span class="sub">Linh Tran</span>
+                              </td>
+                              <td>crawl-us-1</td>
+                              <td>
+                                <span class="meter warn"
+                                  ><i class="w91"></i></span
+                                ><span class="num">3,276 / 3,600</span>
+                              </td>
+                              <td class="num">1,095</td>
+                              <td class="num">2,181</td>
+                              <td>
+                                <span class="num">4 / 4</span
+                                ><svg
+                                  class="chart"
+                                  viewBox="0 0 100 30" aria-hidden="true"
+                                >
+                                  <polyline
+                                    points="0,20 12,9 24,16 36,8 48,13 60,7 72,5 84,12 100,4"
+                                    fill="none"
+                                    stroke="var(--s2)"
+                                    stroke-width="2"
+                                  />
+                                </svg>
+                              </td>
+                              <td>
+                                <svg
+                                  class="chart"
+                                  viewBox="0 0 100 30" aria-hidden="true"
+                                >
+                                  <polyline
+                                    points="0,24 14,19 28,21 42,15 56,13 70,10 84,7 100,3"
+                                    fill="none"
+                                    stroke="var(--s1)"
+                                    stroke-width="2"
+                                  />
+                                </svg>
+                              </td>
+                              <td class="num">Cooling 04:18</td>
+                              <td class="right num">14</td>
+                              <td class="right num">392</td>
+                              <td><span class="pill warn">cooling</span></td>
+                              <td>
+                                <button type="button" class="btn">Move</button
+                                ><button type="button" class="btn">Pause</button>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div class="cards">
+                        <article class="keycard">
+                          <div class="nodehead">
+                            <span class="key mono">k1 · Archive</span
+                            ><span class="pill ok">ok</span>
+                          </div>
+                          <span class="sub">Viet Vu · crawl-sg-1</span>
+                          <div class="kv">
+                            <div>Used / cap<b>2,232 / 3,600</b></div>
+                            <div>Person lane<b>710 calls</b></div>
+                            <div>Sizes lane<b>1,522 calls</b></div>
+                            <div>Burst · 429<b>2 / 4 · 2</b></div>
+                            <div>Reset · cooldown<b>38:12 · —</b></div>
+                            <div>Skipped (shared)<b>184 calls</b></div>
+                          </div>
+                          <div class="keyactions">
+                            <button type="button" class="btn">Move</button
+                            ><button type="button" class="btn danger">Pause</button>
+                          </div>
+                        </article>
+                        <article class="keycard">
+                          <div class="nodehead">
+                            <span class="key mono">k2 · Personal</span
+                            ><span class="pill warn">cooling</span>
+                          </div>
+                          <span class="sub">Linh Tran · crawl-us-1</span>
+                          <div class="kv">
+                            <div>Used / cap<b>3,276 / 3,600</b></div>
+                            <div>Person lane<b>1,095 calls</b></div>
+                            <div>Sizes lane<b>2,181 calls</b></div>
+                            <div>Burst · 429<b>4 / 4 · 14</b></div>
+                            <div>Reset · cooldown<b>Cooling 04:18</b></div>
+                            <div>Skipped (shared)<b>392 calls</b></div>
+                          </div>
+                          <div class="keyactions">
+                            <button type="button" class="btn">Move</button
+                            ><button type="button" class="btn">Pause</button>
+                          </div>
+                        </article>
+                      </div>
+                    </section>
+                    <div class="nodegrid">
+                      <section class="panel">
+                        <div class="panel-title">
+                          PER NODE · CALLS PER SECOND
+                        </div>
+                        <article class="card node">
+                          <div class="nodehead">
+                            <span
+                              ><span class="nodeid mono">crawl-sg-1</span
+                              ><span class="sub"
+                                >1 key · 2,232 / 3,600 calls</span
+                              ></span
+                            ><span class="pill ok">Healthy</span>
+                          </div>
+                          <div class="nodefacts">
+                            <div class="fact">Calls this hour<b>2,232</b></div>
+                            <div class="fact">Calls / second<b>2.1</b></div>
+                            <div class="fact">HTTP 429<b>2</b></div>
+                            <div class="fact">Cool-down<b>—</b></div>
+                          </div>
+                          <div class="history">
+                            <span class="fact">Last 60 seconds</span
+                            ><svg
+                              viewBox="0 0 200 60" aria-hidden="true"
+                            >
+                              <polyline
+                                points="0,48 20,44 40,48 60,27 80,36 100,18 120,26 140,10 160,22 180,9 200,16"
+                                fill="none"
+                                stroke="var(--s3)"
+                                stroke-width="3"
+                              />
+                            </svg>
+                          </div>
+                        </article>
+                      </section>
+                      <section class="panel">
+                        <div class="panel-title">PER NODE · COOLING</div>
+                        <article class="card node">
+                          <div class="nodehead">
+                            <span
+                              ><span class="nodeid mono">crawl-us-1</span
+                              ><span class="sub"
+                                >1 key · 3,276 / 3,600 calls</span
+                              ></span
+                            ><span class="pill warn">Cooling</span>
+                          </div>
+                          <div class="nodefacts">
+                            <div class="fact">Calls this hour<b>3,276</b></div>
+                            <div class="fact">Calls / second<b>0.0</b></div>
+                            <div class="fact">HTTP 429<b>14</b></div>
+                            <div class="fact">Cool-down<b>04:18</b></div>
+                          </div>
+                          <div class="history">
+                            <span class="fact">Last 60 seconds</span
+                            ><svg
+                              viewBox="0 0 200 60" aria-hidden="true"
+                            >
+                              <polyline
+                                points="0,48 20,40 40,46 60,22 80,34 100,9 120,42 140,46 160,46 180,46 200,46"
+                                fill="none"
+                                stroke="var(--s3)"
+                                stroke-width="3"
+                              />
+                            </svg>
+                          </div>
+                        </article>
+                      </section>
+                    </div>
+                    <div class="policy">
+                      ⓘ A call needs both hourly and per-second capacity.
+                      Already shared records are reused; skipped calls save
+                      quota.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="screen mobile">
+            <div class="shell">
+              <div class="main">
+                <div class="top">
+                  <span>☰　API quota</span><span class="live">● Live　EN</span>
+                </div>
+                <header class="head">
+                  <h1>API quota</h1>
+                  <p>
+                    3,600 calls / hour · 100 reserved · person / sizes 30 / 70
+                  </p>
+                  <div class="actions">
+                    <button type="button" class="btn">↻ Refresh</button>
+                  </div>
+                </header>
+                <div class="stack">
+                  <section class="panel">
+                    <div class="panel-title">PER KEY</div>
+                    <div class="cards">
+                      <article class="keycard">
+                        <div class="nodehead">
+                          <span class="key mono">k1 · Archive</span
+                          ><span class="pill ok">ok</span>
+                        </div>
+                        <span class="sub">Viet Vu · crawl-sg-1</span>
+                        <div class="kv">
+                          <div>Used / cap<b>2,232 / 3,600</b></div>
+                          <div>Person lane<b>710 calls</b></div>
+                          <div>Sizes lane<b>1,522 calls</b></div>
+                          <div>Burst · 429<b>2 / 4 · 2</b></div>
+                          <div>Reset / cooldown<b>38:12 · —</b></div>
+                          <div>Skipped shared<b>184</b></div>
+                        </div>
+                        <div class="keyactions">
+                          <button type="button" class="btn">Move</button
+                          ><button type="button" class="btn danger">Pause</button>
+                        </div>
+                      </article>
+                      <article class="keycard">
+                        <div class="nodehead">
+                          <span class="key mono">k2 · Personal</span
+                          ><span class="pill warn">cooling</span>
+                        </div>
+                        <span class="sub">Linh Tran · crawl-us-1</span>
+                        <div class="kv">
+                          <div>Used / cap<b>3,276 / 3,600</b></div>
+                          <div>Person / sizes<b>1,095 / 2,181</b></div>
+                          <div>Burst · 429<b>4 / 4 · 14</b></div>
+                          <div>Reset / cooldown<b>Cooling 04:18</b></div>
+                          <div>Skipped shared<b>392</b></div>
+                          <div>History<b>Hourly + 60 seconds</b></div>
+                        </div>
+                        <div class="keyactions">
+                          <button type="button" class="btn">Move</button
+                          ><button type="button" class="btn">Pause</button>
+                        </div>
+                      </article>
+                    </div>
+                  </section>
+                  <div class="nodegrid">
+                    <section class="panel">
+                      <div class="panel-title">PER NODE</div>
+                      <article class="node">
+                        <div class="nodehead">
+                          <span class="nodeid mono">crawl-sg-1</span
+                          ><span class="pill ok">Healthy</span>
+                        </div>
+                        <div class="nodefacts">
+                          <div class="fact">Keys<b>1</b></div>
+                          <div class="fact">Used / cap<b>2,232 / 3,600</b></div>
+                          <div class="fact">Calls / sec<b>2.1</b></div>
+                          <div class="fact">429 · cooldown<b>2 · —</b></div>
+                        </div>
+                      </article>
+                      <article class="node">
+                        <div class="nodehead">
+                          <span class="nodeid mono">crawl-us-1</span
+                          ><span class="pill warn">Cooling</span>
+                        </div>
+                        <div class="nodefacts">
+                          <div class="fact">Keys<b>1</b></div>
+                          <div class="fact">Calls / sec<b>0.0</b></div>
+                          <div class="fact">429<b>14</b></div>
+                          <div class="fact">Cool-down<b>04:18</b></div>
+                        </div>
+                      </article>
+                    </section>
+                  </div>
+                  <div class="policy">
+                    ⓘ Shared records are reused and skipped calls save quota.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="state" data-state="loading">
+          <h3>Loading</h3>
+          <div class="frames">
+            <div class="screen desktop">
+              <div class="main" aria-busy="true">
+                <h1>API quota</h1>
+                <p class="loadingline" role="status">◌ Loading API quota…</p>
+                <div class="skeletons">
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel big"></div>
+                </div>
+              </div>
+            </div>
+            <div class="screen mobile">
+              <div class="main" aria-busy="true">
+                <h1>API quota</h1>
+                <p class="loadingline" role="status">◌ Loading API quota…</p>
+                <div class="skeletons">
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel big"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="state" data-state="empty">
+          <h3>Empty</h3>
+          <div class="frames">
+            <div class="screen desktop">
+              <div class="main">
+                <h1>API quota</h1>
+                <div class="panel empty">
+                  <div class="empty-inner">
+                    <div class="art">⌑</div>
+                    <h2>No API keys yet</h2>
+                    <p>
+                      Quota data appears when a Flickr API key is added. Ask an
+                      administrator to configure one.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="screen mobile">
+              <div class="main">
+                <h1>API quota</h1>
+                <div class="panel empty">
+                  <div class="empty-inner">
+                    <div class="art">⌑</div>
+                    <h2>No API keys yet</h2>
+                    <p>
+                      Quota data appears when a Flickr API key is added. Ask an
+                      administrator to configure one.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="state" data-state="error">
+          <h3>Error</h3>
+          <div class="frames">
+            <div class="screen desktop">
+              <div class="main">
+                <div class="head">
+                  <div>
+                    <h1>API quota</h1>
+                    <p>Per-key limits, lane use and node health.</p>
+                  </div>
+                  <button type="button" class="btn">↻ Refresh</button>
+                </div>
+                <div class="notice">
+                  <strong>Could not load API quota.</strong>The control node did
+                  not return quota data. Try again.
+                  <button type="button" class="btn">Retry</button>
+                </div>
+                <div class="skeletons dim" aria-hidden="true">
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel big"></div>
+                </div>
+              </div>
+            </div>
+            <div class="screen mobile">
+              <div class="main">
+                <h1>API quota</h1>
+                <div class="notice">
+                  <strong>Could not load API quota.</strong>The control node did
+                  not return quota data. Try again.<br><button type="button"
+                    class="btn mt9"
+                  >
+                    Retry
+                  </button>
+                </div>
+                <div class="skeletons dim" aria-hidden="true">
+                  <div class="skel"></div>
+                  <div class="skel big"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section class="theme light" aria-labelledby="light-title">
+        <h2 id="light-title">ADMIN · EXPLICIT LIGHT THEME</h2>
+        <section class="state" data-state="ready" data-preview-state="normal">
+          <h3>Normal</h3>
+          <div class="frames">
+            <div class="screen desktop">
+              <div class="main">
+                <div class="top">
+                  <span>Operations / API quota</span
+                  ><span class="live">● Live　EN　◐</span>
+                </div>
+                <header class="head">
+                  <div>
+                    <h1>API quota</h1>
+                    <p>
+                      3,600 calls per key each hour · 100 reserved · person /
+                      sizes lanes 30 / 70
+                    </p>
+                  </div>
+                  <button type="button" class="btn">↻ Refresh</button>
+                </header>
+                <section class="panel">
+                  <div class="panel-title">PER KEY</div>
+                  <div class="table-wrap">
+                    <table class="table">
+                      <thead>
+                        <tr>
+                          <th>Key / user</th>
+                          <th>Node</th>
+                          <th>Used / cap</th>
+                          <th>Person</th>
+                          <th>Sizes</th>
+                          <th>Burst history</th>
+                          <th>Hourly history</th>
+                          <th>Reset / cooldown</th>
+                          <th>429</th>
+                          <th>Skipped shared</th>
+                          <th>State</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td>
+                            <span class="key mono">k1 · Archive</span
+                            ><span class="sub">Viet Vu</span>
+                          </td>
+                          <td>crawl-sg-1</td>
+                          <td>
+                            <span class="meter"><i class="w62"></i></span
+                            ><span class="num">2,232 / 3,600</span>
+                          </td>
+                          <td>710</td>
+                          <td>1,522</td>
+                          <td>
+                            <svg class="chart" viewBox="0 0 100 30">
+                              <polyline
+                                points="0,22 12,20 24,22 36,10 48,17 60,8 72,13 84,5 100,10"
+                                fill="none"
+                                stroke="var(--s2)"
+                                stroke-width="2"
+                              />
+                            </svg>
+                          </td>
+                          <td>
+                            <svg class="chart" viewBox="0 0 100 30">
+                              <polyline
+                                points="0,25 14,22 28,19 42,20 56,13 70,11 84,8 100,4"
+                                fill="none"
+                                stroke="var(--s1)"
+                                stroke-width="2"
+                              />
+                            </svg>
+                          </td>
+                          <td>38:12</td>
+                          <td>2</td>
+                          <td>184</td>
+                          <td><span class="pill ok">ok</span></td>
+                          <td>
+                            <button type="button" class="btn">Move</button>
+                            <button type="button" class="btn">Pause</button>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td>
+                            <span class="key mono">k2 · Personal</span
+                            ><span class="sub">Linh Tran</span>
+                          </td>
+                          <td>crawl-us-1</td>
+                          <td>
+                            <span class="meter warn"
+                              ><i class="w91"></i></span
+                            ><span class="num">3,276 / 3,600</span>
+                          </td>
+                          <td>1,095</td>
+                          <td>2,181</td>
+                          <td>
+                            <svg class="chart" viewBox="0 0 100 30">
+                              <polyline
+                                points="0,20 12,9 24,16 36,8 48,13 60,7 72,5 84,12 100,4"
+                                fill="none"
+                                stroke="var(--s2)"
+                                stroke-width="2"
+                              />
+                            </svg>
+                          </td>
+                          <td>
+                            <svg class="chart" viewBox="0 0 100 30">
+                              <polyline
+                                points="0,24 14,19 28,21 42,15 56,13 70,10 84,7 100,3"
+                                fill="none"
+                                stroke="var(--s1)"
+                                stroke-width="2"
+                              />
+                            </svg>
+                          </td>
+                          <td>Cooling 04:18</td>
+                          <td>14</td>
+                          <td>392</td>
+                          <td><span class="pill warn">cooling</span></td>
+                          <td>
+                            <button type="button" class="btn">Move</button>
+                            <button type="button" class="btn">Pause</button>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="cards">
+                    <article class="keycard">
+                      <b class="mono">k1 · Archive</b
+                      ><span class="sub">Viet Vu · crawl-sg-1</span>
+                      <div class="kv">
+                        <div>Used / cap<b>2,232 / 3,600</b></div>
+                        <div>Person / sizes<b>710 / 1,522</b></div>
+                        <div>Burst · 429<b>2 / 4 · 2</b></div>
+                        <div>Reset · skipped<b>38:12 · 184</b></div>
+                        <div>History<b>Hourly · 60 seconds</b></div>
+                        <div>State<b>ok</b></div>
+                      </div>
+                      <div class="keyactions">
+                        <button type="button" class="btn">Move</button
+                        ><button type="button" class="btn">Pause</button>
+                      </div>
+                    </article>
+                    <article class="keycard">
+                      <b class="mono">k2 · Personal</b
+                      ><span class="sub">Linh Tran · crawl-us-1</span>
+                      <div class="kv">
+                        <div>Used / cap<b>3,276 / 3,600</b></div>
+                        <div>Person / sizes<b>1,095 / 2,181</b></div>
+                        <div>Burst · 429<b>4 / 4 · 14</b></div>
+                        <div>Cool-down<b>04:18</b></div>
+                        <div>Skipped shared<b>392</b></div>
+                        <div>State<b>cooling</b></div>
+                      </div>
+                      <div class="keyactions">
+                        <button type="button" class="btn">Move</button
+                        ><button type="button" class="btn">Pause</button>
+                      </div>
+                    </article>
+                  </div>
+                </section>
+                <div class="nodegrid mt12">
+                  <article class="panel node">
+                    <div class="nodehead">
+                      <b class="mono">crawl-sg-1</b
+                      ><span class="pill ok">Healthy</span>
+                    </div>
+                    <div class="nodefacts">
+                      <div class="fact">Used / cap<b>2,232 / 3,600</b></div>
+                      <div class="fact">Calls / second<b>2.1</b></div>
+                      <div class="fact">429<b>2</b></div>
+                      <div class="fact">Cool-down<b>—</b></div>
+                    </div>
+                    <div class="history">
+                      Calls / second · 60 seconds<svg viewBox="0 0 200 60">
+                        <polyline
+                          points="0,48 20,44 40,48 60,27 80,36 100,18 120,26 140,10 160,22 180,9 200,16"
+                          fill="none"
+                          stroke="var(--s3)"
+                          stroke-width="3"
+                        />
+                      </svg>
+                    </div>
+                  </article>
+                  <article class="panel node">
+                    <div class="nodehead">
+                      <b class="mono">crawl-us-1</b
+                      ><span class="pill warn">Cooling</span>
+                    </div>
+                    <div class="nodefacts">
+                      <div class="fact">Used / cap<b>3,276 / 3,600</b></div>
+                      <div class="fact">Calls / second<b>0.0</b></div>
+                      <div class="fact">429<b>14</b></div>
+                      <div class="fact">Cool-down<b>04:18</b></div>
+                    </div>
+                  </article>
+                </div>
+                <p class="policy mt12">
+                  ⓘ A call needs both hourly and per-second capacity. Already
+                  shared records are reused; skipped calls save quota.
+                </p>
+              </div>
+            </div>
+            <div class="screen mobile">
+              <div class="main">
+                <div class="top">
+                  <span>☰　API quota</span><span class="live">● Live　EN</span>
+                </div>
+                <h1>API quota</h1>
+                <p class="muted">
+                  3,600 calls / hour · 100 reserved · person / sizes 30 / 70
+                </p>
+                <button type="button" class="btn my8">↻ Refresh</button>
+                <div class="stack">
+                  <section class="panel">
+                    <div class="panel-title">PER KEY</div>
+                    <div class="cards">
+                      <article class="keycard">
+                        <b class="mono">k1 · Archive</b
+                        ><span class="sub">Viet Vu · crawl-sg-1</span>
+                        <div class="kv">
+                          <div>Used / cap<b>2,232 / 3,600</b></div>
+                          <div>Person / sizes<b>710 / 1,522</b></div>
+                          <div>Burst / 429<b>2 / 4 · 2</b></div>
+                          <div>Reset / skipped<b>38:12 · 184</b></div>
+                          <div>History<b>Hourly · 60 seconds</b></div>
+                          <div>State<b>ok</b></div>
+                        </div>
+                        <div class="keyactions">
+                          <button type="button" class="btn">Move</button
+                          ><button type="button" class="btn">Pause</button>
+                        </div>
+                      </article>
+                      <article class="keycard">
+                        <b class="mono">k2 · Personal</b
+                        ><span class="sub">Linh Tran · crawl-us-1</span>
+                        <div class="kv">
+                          <div>Used / cap<b>3,276 / 3,600</b></div>
+                          <div>Person / sizes<b>1,095 / 2,181</b></div>
+                          <div>Burst / 429<b>4 / 4 · 14</b></div>
+                          <div>Cool-down<b>04:18</b></div>
+                          <div>Skipped shared<b>392</b></div>
+                          <div>History<b>Hourly · 60 seconds</b></div>
+                        </div>
+                        <div class="keyactions">
+                          <button type="button" class="btn">Move</button
+                          ><button type="button" class="btn">Pause</button>
+                        </div>
+                      </article>
+                    </div>
+                  </section>
+                  <article class="panel node">
+                    <b class="mono">crawl-sg-1</b
+                    ><span class="pill ok"> Healthy</span>
+                    <div class="nodefacts">
+                      <div class="fact">Used / cap<b>2,232 / 3,600</b></div>
+                      <div class="fact">Calls / second<b>2.1</b></div>
+                      <div class="fact">429<b>2</b></div>
+                      <div class="fact">Cool-down<b>—</b></div>
+                    </div>
+                  </article>
+                  <article class="panel node">
+                    <b class="mono">crawl-us-1</b
+                    ><span class="pill warn"> Cooling</span>
+                    <div class="nodefacts">
+                      <div class="fact">Calls / second<b>0.0</b></div>
+                      <div class="fact">429<b>14</b></div>
+                      <div class="fact">Cool-down<b>04:18</b></div>
+                    </div>
+                  </article>
+                </div>
+                <p class="policy mt10">
+                  ⓘ Shared records are reused; skipped calls save quota.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="state" data-state="loading">
+          <h3>Loading</h3>
+          <div class="frames">
+            <div class="screen desktop">
+              <div class="main" aria-busy="true">
+                <h1>API quota</h1>
+                <p class="loadingline" role="status">◌ Loading API quota…</p>
+                <div class="skeletons">
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel big"></div>
+                </div>
+              </div>
+            </div>
+            <div class="screen mobile">
+              <div class="main" aria-busy="true">
+                <h1>API quota</h1>
+                <p class="loadingline" role="status">◌ Loading API quota…</p>
+                <div class="skeletons">
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel big"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="state" data-state="empty">
+          <h3>Empty</h3>
+          <div class="frames">
+            <div class="screen desktop">
+              <div class="main">
+                <h1>API quota</h1>
+                <div class="panel empty">
+                  <div class="empty-inner">
+                    <div class="art">⌑</div>
+                    <h2>No API keys yet</h2>
+                    <p>
+                      Quota data appears when a Flickr API key is added. Ask an
+                      administrator to configure one.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="screen mobile">
+              <div class="main">
+                <h1>API quota</h1>
+                <div class="panel empty">
+                  <div class="empty-inner">
+                    <div class="art">⌑</div>
+                    <h2>No API keys yet</h2>
+                    <p>
+                      Quota data appears when a Flickr API key is added. Ask an
+                      administrator to configure one.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="state" data-state="error">
+          <h3>Error</h3>
+          <div class="frames">
+            <div class="screen desktop">
+              <div class="main">
+                <div class="head">
+                  <div>
+                    <h1>API quota</h1>
+                    <p>Per-key limits, lane use and node health.</p>
+                  </div>
+                  <button type="button" class="btn">↻ Refresh</button>
+                </div>
+                <div class="notice">
+                  <strong>Could not load API quota.</strong>The control node did
+                  not return quota data. Try again.
+                  <button type="button" class="btn">Retry</button>
+                </div>
+                <div class="skeletons dim">
+                  <div class="skel"></div>
+                  <div class="skel"></div>
+                  <div class="skel big"></div>
+                </div>
+              </div>
+            </div>
+            <div class="screen mobile">
+              <div class="main">
+                <h1>API quota</h1>
+                <div class="notice">
+                  <strong>Could not load API quota.</strong>The control node did
+                  not return quota data. Try again.<br><button type="button"
+                    class="btn mt9"
+                  >
+                    Retry
+                  </button>
+                </div>
+                <div class="skeletons dim">
+                  <div class="skel"></div>
+                  <div class="skel big"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>
