@@ -1,14 +1,20 @@
 {
-  "name": "xflickr-token-revoked",
+  "name": "xflickr_token_revoked",
   "stream_type": "logs",
-  "stream_name": "xflickr",
+  "stream_name": "xflickr_metrics",
   "is_real_time": false,
   "query_condition": {
     "type": "sql",
-    "sql": "SELECT count(*) AS hits FROM \"xflickr\" WHERE event = 'crawl.health' AND tokens_revoked > 0 HAVING count(*) >= 1"
+    "sql": "SELECT max(value) AS revoked FROM \"xflickr_metrics\" WHERE metric='tokens_revoked' HAVING revoked > 0"
   },
-  "trigger_condition": { "period": 5, "operator": ">=", "threshold": 1, "frequency": 1, "silence": 60 },
+  "trigger_condition": {
+    "period": 5,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 1,
+    "silence": 60
+  },
   "destinations": [],
   "enabled": true,
-  "description": "At least one connected Flickr account has a revoked token."
+  "description": "Impact: A connected Flickr account needs reauthorization. Action: Reconnect the account and verify the token."
 }

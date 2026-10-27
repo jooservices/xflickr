@@ -1,0 +1,20 @@
+{
+  "name": "xflickr_work_backlog_stale",
+  "stream_type": "logs",
+  "stream_name": "xflickr_metrics",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "sql",
+    "sql": "SELECT max(CASE WHEN metric='work_items_oldest_age_seconds' THEN value ELSE 0 END) AS oldest_seconds, max(CASE WHEN metric='work_items_pending' THEN value ELSE 0 END) AS pending FROM \"xflickr_metrics\" WHERE metric IN ('work_items_oldest_age_seconds','work_items_pending') HAVING oldest_seconds > 21600 AND pending > 0"
+  },
+  "trigger_condition": {
+    "period": 15,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 5,
+    "silence": 60
+  },
+  "destinations": [],
+  "enabled": true,
+  "description": "Impact: Pending work is older than 6 hours. Action: Check scheduler progress, key/quota availability, and worker throughput."
+}

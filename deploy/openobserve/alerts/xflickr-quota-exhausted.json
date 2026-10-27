@@ -1,0 +1,20 @@
+{
+  "name": "xflickr_quota_exhausted",
+  "stream_type": "logs",
+  "stream_name": "xflickr_metrics",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "sql",
+    "sql": "SELECT key_id FROM \"xflickr_metrics\" WHERE metric IN ('quota_used_total','quota_limit') GROUP BY key_id HAVING max(CASE WHEN metric='quota_used_total' THEN value ELSE 0 END) >= max(CASE WHEN metric='quota_limit' THEN value ELSE 0 END) AND max(CASE WHEN metric='quota_limit' THEN value ELSE 0 END) > 0"
+  },
+  "trigger_condition": {
+    "period": 5,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 1,
+    "silence": 30
+  },
+  "destinations": [],
+  "enabled": true,
+  "description": "Impact: A Flickr API key has exhausted its hourly quota. Action: Check key rotation and pending work; calls will pause until reset."
+}

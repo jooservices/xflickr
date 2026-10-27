@@ -80,7 +80,9 @@ configure_openobserve() {
 	set_private_setting OPENOBSERVE_STREAM xflickr
 	set_private_setting OPENOBSERVE_USERNAME "${credentials[0]}"
 	set_private_setting OPENOBSERVE_PASSWORD "${credentials[1]}"
-	set_private_setting OPENOBSERVE_ALERT_DESTINATION javmeta_telegram
+	set_private_setting OPENOBSERVE_ALERT_DESTINATION xflickr_telegram
+	set_private_setting OPENOBSERVE_ALERT_TEMPLATE xflickr_telegram_v1
+	set_private_setting OPENOBSERVE_ALERT_SOURCE_DESTINATION javmeta_telegram
 	unset credentials
 }
 

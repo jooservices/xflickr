@@ -1,0 +1,20 @@
+{
+  "name": "xflickr_disk_high",
+  "stream_type": "logs",
+  "stream_name": "xflickr_metrics",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "sql",
+    "sql": "SELECT max(value) AS used_percent FROM \"xflickr_metrics\" WHERE metric='container_disk_used_percent' HAVING used_percent > 80"
+  },
+  "trigger_condition": {
+    "period": 1,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 1,
+    "silence": 30
+  },
+  "destinations": [],
+  "enabled": true,
+  "description": "Impact: The XFlickr data filesystem is above 80 percent. Action: Free space or increase the volume before writes fail."
+}

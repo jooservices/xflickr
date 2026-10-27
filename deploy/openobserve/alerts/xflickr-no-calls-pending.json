@@ -1,0 +1,20 @@
+{
+  "name": "xflickr_no_calls_pending",
+  "stream_type": "logs",
+  "stream_name": "xflickr_metrics",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "sql",
+    "sql": "SELECT max(CASE WHEN metric='api_calls_10m' THEN value ELSE 0 END) AS calls, max(CASE WHEN metric='work_items_pending' THEN value ELSE 0 END) AS pending FROM \"xflickr_metrics\" WHERE metric IN ('api_calls_10m','work_items_pending') HAVING calls=0 AND pending>0"
+  },
+  "trigger_condition": {
+    "period": 15,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 1,
+    "silence": 30
+  },
+  "destinations": [],
+  "enabled": true,
+  "description": "Impact: Pending work is not progressing because no Flickr call is being made. Action: Check scheduler, keys, quota, and worker availability."
+}

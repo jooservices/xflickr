@@ -1,0 +1,20 @@
+{
+  "name": "xflickr_rate_limited",
+  "stream_type": "logs",
+  "stream_name": "xflickr_calls",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "sql",
+    "sql": "SELECT count(*) AS hits FROM \"xflickr_calls\" WHERE status = 429 OR error_code = 429 HAVING hits > 0"
+  },
+  "trigger_condition": {
+    "period": 5,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 1,
+    "silence": 15
+  },
+  "destinations": [],
+  "enabled": true,
+  "description": "Impact: Flickr is rate-limiting XFlickr calls. Action: Check quota and retry/backoff behavior."
+}
