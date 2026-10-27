@@ -137,6 +137,12 @@
         width: 390px;
         max-width: 100%;
       }
+      .phone .stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .phone .cols {
+        grid-template-columns: 1fr;
+      }
       .caption {
         font:
           11px ui-monospace,
@@ -360,12 +366,6 @@
         .phone {
           width: 390px;
         }
-        .phone .stats {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-        .phone .cols {
-          grid-template-columns: 1fr;
-        }
         .phone .page {
           padding: 10px;
         }
@@ -402,7 +402,7 @@
           <article class="state">
             <h3>Normal</h3>
             <div class="views">
-              <div class="screen desktop" data-state="normal">
+              <div class="screen desktop" data-state="ready" data-view-state="normal">
                 <div class="caption">1440 px desktop · normal</div>
                 <div class="page">
                   <div class="head">
@@ -421,7 +421,7 @@
                     </div>
                     <div class="stat">
                       <label>Keys at quota</label><b>2 / 14</b
-                      ><small>remaining = 0</small>
+                      ><small>quota exhausted</small>
                     </div>
                     <div class="stat">
                       <label>Oldest queue item</label><b>12m</b
@@ -536,7 +536,7 @@
                   <p class="muted">Updated 4 seconds ago</p>
                 </div>
               </div>
-              <div class="screen phone" data-state="normal">
+              <div class="screen phone" data-state="ready" data-view-state="normal">
                 <div class="caption">390 px mobile · normal</div>
                 <div class="page">
                   <div class="head">
