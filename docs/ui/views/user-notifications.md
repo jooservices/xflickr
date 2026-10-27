@@ -59,13 +59,13 @@ lands. The shared `Error` envelope is `{code, message, details}`; localize by
 `data` is a type-specific object. It contains only display-safe fields; never
 include API key secrets, OAuth tokens, or private photo content.
 
-| Type | `data` fields | Copy and destination |
-| --- | --- | --- |
-| `quota` | `key_id, key_label, used, limit, reset_at` | “{key_label} reached {limit} calls.” Link to `/keys?key={key_id}`. |
-| `download_ready` | `download_id, source_label, expires_at` | “ZIP for {source_label} is ready.” Link to `/downloads?download={download_id}`. |
-| `sync_failed` | `upload_id, provider_name, error_code` | “{provider_name} sync needs attention.” Link to `/sync?upload={upload_id}`. |
-| `key_revoked` | `key_id, key_label` | “{key_label} was revoked.” Link to `/keys?key={key_id}`. |
-| `new_contact` | `count, depth` | “{count} new contacts were discovered at depth {depth}.” Link to `/contacts?sort=recent`. |
+| Type and icon | Data source | Row content | Row action |
+| --- | --- | --- | --- |
+| `quota` · `alert` | `GET /notifications`, `items[].data.key_id, key_label, used, limit, reset_at` | “{key_label} reached {limit} calls.” | Open `/keys?key={key_id}`; if `key_id` is absent, open `/keys`. |
+| `download_ready` · `download` | `GET /notifications`, `items[].data.download_id, source_label, expires_at` | “ZIP for {source_label} is ready.” | Open `/downloads?download={download_id}`; if `download_id` is absent, open `/downloads`. |
+| `sync_failed` · `cloud` | `GET /notifications`, `items[].data.upload_id, provider_name, error_code` | “{provider_name} sync needs attention.” | Open `/sync?upload={upload_id}`; if `upload_id` is absent, open `/sync`. |
+| `key_revoked` · `key` | `GET /notifications`, `items[].data.key_id, key_label` | “{key_label} was revoked.” | Open `/keys?key={key_id}`; if `key_id` is absent, open `/keys`. |
+| `new_contact` · `user` | `GET /notifications`, `items[].data.count, depth` | “{count} new contacts were discovered at depth {depth}.” | Open `/contacts?sort=recent`. |
 
 The list is newest first by `created_at`; stable ties use descending `id`.
 Render relative time from `created_at` and synchronize age with `server_time`.
@@ -88,7 +88,7 @@ collection route. Do not infer a user action from notification text.
 
 ### Ready
 
-Normal state is a newest-first mixed list with the five supported type icons,
+Ready (normal) state is a newest-first mixed list with the five supported type icons,
 timestamps, unread dots and working deep links. Unread rows use accent-soft
 background and a visible dot. Mark all read is disabled when `unread_count`
 is zero. A new arrival inserts at the top and receives the fresh-row entrance

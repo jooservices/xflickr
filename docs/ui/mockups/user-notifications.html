@@ -75,7 +75,7 @@
     @media (max-width: 720px) {
       body { padding: 16px; }
       .desktop { display: none; }
-      .mobile { grid-template-columns: 390px; width: calc(100% + 32px); margin-inline: -16px; padding: 8px 0; }
+      .mobile { grid-template-columns: minmax(0, 1fr); width: calc(100% + 32px); margin-inline: -16px; padding: 8px 0; overflow-x: visible; }
       .device { width: 100%; }
       .app { min-height: 580px; }
       .panel { top: auto; bottom: 0; left: 0; width: 100%; height: 85%; border-left: 0; border-radius: 14px 14px 0 0; }
