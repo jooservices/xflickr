@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XFlickr · Admin node detail mockup</title>
+  <style>
+    :root { color-scheme: dark; font: 14px/1.45 Arial, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; background: #080b10; color: #d6dee8; }
+    .board { width: min(100%, 1440px); margin: auto; }
+    .intro { margin: 0 0 18px; color: #aab5c3; }
+    h1 { margin: 0 0 5px; font-size: 25px; }
+    h2 { margin: 0 0 12px; font-size: 17px; }
+    h3 { margin: 0; font-size: 14px; }
+    .themes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .theme { --bg:#0b0f15; --surface:#11171f; --sunken:#161e28; --raise:#1c2632; --line:#222c3a; --ink:#d6dee8; --muted:#aab5c3; --accent:#4cb4d8; --ok:#3cb87c; --warn:#e2ae3d; --bad:#f2766b; --s1:#3987e5; --s2:#d95926; --s3:#199e70; overflow:hidden; border:1px solid #2d3745; border-radius:10px; background:var(--bg); color:var(--ink); }
+    .theme.light { --bg:#eef1f5; --surface:#fff; --sunken:#f5f7fa; --raise:#e9edf3; --line:#dce2ea; --ink:#16202c; --muted:#56657a; --accent:#006482; --ok:#176d42; --warn:#815800; --bad:#c5372c; --s1:#1f66b4; --s2:#b8481e; --s3:#08774f; color-scheme:light; }
+    .role { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line); color:var(--muted); font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+    .role strong { color:var(--accent); }
+    .states { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:12px; }
+    .state { min-width:0; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:var(--surface); }
+    .state-label { padding:7px 9px; border-bottom:1px solid var(--line); color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; }
+    .screen { min-height:235px; padding:10px; background:var(--bg); }
+    .crumb { color:var(--muted); font-size:10px; }
+    .head { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-start; gap:7px; margin:7px 0 9px; }
+    .node-title { display:flex; flex-wrap:wrap; gap:7px; align-items:baseline; }
+    .mono { font-family:ui-monospace,monospace; font-size:11px; overflow-wrap:anywhere; }
+    .sub { color:var(--muted); font-size:10px; }
+    .actions { display:flex; flex-wrap:wrap; gap:4px; }
+    button { min-height:28px; padding:4px 7px; border:1px solid var(--line); border-radius:5px; background:var(--raise); color:var(--ink); font:inherit; font-size:10px; }
+    .primary { border-color:var(--accent); background:var(--accent); color:#04131a; font-weight:700; }
+    .badge { display:inline-block; padding:2px 6px; border-radius:4px; background:color-mix(in srgb,var(--ok) 16%,var(--surface)); color:var(--ok); font-size:10px; font-weight:700; }
+    .warn { color:var(--warn); }
+    .banner { margin:7px 0; padding:7px; border:1px solid color-mix(in srgb,var(--warn) 45%,var(--line)); border-radius:5px; background:color-mix(in srgb,var(--warn) 10%,var(--surface)); font-size:10px; }
+    .stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px; }
+    .stat,.panel { min-width:0; padding:7px; border:1px solid var(--line); border-radius:6px; background:var(--surface); }
+    .label { display:block; color:var(--muted); font-size:9px; text-transform:uppercase; letter-spacing:.06em; }
+    .value { display:block; margin-top:3px; font-size:13px; font-weight:700; overflow-wrap:anywhere; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px; margin-top:5px; }
+    .panel h3 { margin-bottom:5px; color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.06em; }
+    .chart { display:block; width:100%; height:44px; }
+    .legend,.row { display:flex; flex-wrap:wrap; justify-content:space-between; gap:5px; color:var(--muted); font-size:9px; }
+    .legend span::before { content:""; display:inline-block; width:7px; height:7px; margin-right:4px; border-radius:50%; background:var(--s1); }
+    .legend span:nth-child(2)::before { background:var(--s2); }
+    .legend span:nth-child(3)::before { background:var(--s3); }
+    .line { display:flex; justify-content:space-between; gap:5px; padding:4px 0; border-top:1px solid var(--line); font-size:9px; }
+    .service { display:inline-block; margin:2px; padding:3px 5px; border:1px solid var(--line); border-radius:4px; font-size:9px; }
+    .ok { color:var(--ok); }
+    .table { width:100%; border-collapse:collapse; font-size:9px; }
+    th,td { padding:4px 3px; border-bottom:1px solid var(--line); text-align:left; }
+    th { color:var(--muted); font-weight:500; }
+    .empty { display:grid; min-height:166px; place-content:center; justify-items:center; gap:7px; text-align:center; }
+    .empty .glyph { color:var(--accent); font-size:24px; }
+    .empty p,.error p { max-width:230px; margin:0; color:var(--muted); font-size:10px; }
+    .error { display:grid; min-height:166px; place-content:center; justify-items:center; gap:8px; text-align:center; }
+    .error .glyph { color:var(--bad); font-size:24px; }
+    .skeleton { height:13px; margin:6px 0; border-radius:4px; background:linear-gradient(90deg,var(--sunken),var(--raise),var(--sunken)); background-size:200% 100%; }
+    .skeleton.short { width:55%; }
+    .skeleton.chart-skel { height:52px; }
+    .foot { margin-top:8px; color:var(--muted); font-size:9px; }
+    @media (max-width:720px) {
+      body { padding:12px; }
+      .themes { grid-template-columns:minmax(0,1fr); gap:12px; }
+      .states { grid-template-columns:minmax(0,1fr); padding:8px; }
+      .screen { min-height:0; }
+      .grid { grid-template-columns:minmax(0,1fr); }
+      .stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .mobile-note { display:block; }
+    }
+    @media (min-width:721px) { .mobile-note { display:none; } }
+    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; animation:none!important; transition:none!important; } }
+  </style>
+</head>
+<body>
+  <main class="board">
+    <h1>Node detail · ADMIN</h1>
+    <p class="intro">Static state and theme sheet. At 1440 px both theme columns are shown; at 390 px each theme and state stacks to the viewport width. Production view defaults to the dark control-room theme.</p>
+    <div class="themes">
+      <section class="theme" aria-label="ADMIN dark theme">
+        <div class="role"><strong>ADMIN</strong><span>Dark control room</span></div>
+        <div class="states">
+          <article class="state" data-state="ready">
+            <div class="state-label">Normal</div>
+            <div class="screen">
+              <div class="crumb">‹ Cluster nodes / <span class="mono">crawl-sg-1</span></div>
+              <div class="head"><div><div class="node-title"><h3>crawl-sg-1</h3><span class="badge">Healthy</span></div><div class="sub">Crawl + media · Singapore · agent v0.8.2</div></div><div class="actions"><button>Refresh</button><button>Drain</button><button class="primary">Restart agent</button></div></div>
+              <div class="banner">⚠ Duplicate egress IP: <span class="mono">198.51.100.24</span> is also reported by crawl-sg-2.</div>
+              <div class="stats"><div class="stat"><span class="label">CPU</span><span class="value">24%</span></div><div class="stat"><span class="label">RAM</span><span class="value">2.9 / 8 GB</span></div><div class="stat"><span class="label">Disk</span><span class="value">44 / 200 GB</span></div><div class="stat"><span class="label">Network ↓ / ↑</span><span class="value">9 / 7 Mbps</span></div><div class="stat"><span class="label">Flickr calls</span><span class="value">4 / sec</span></div><div class="stat"><span class="label">Heartbeat</span><span class="value">8 sec ago</span></div></div>
+              <div class="grid"><div class="panel"><h3>CPU and RAM · 60 min</h3><svg class="chart" viewBox="0 0 220 44" role="img" aria-label="CPU and RAM history trend"><path d="M0 31 C25 28 32 18 55 22 S90 31 110 17 145 26 166 12 195 23 220 8" fill="none" stroke="var(--s1)" stroke-width="2"/><path d="M0 37 C30 32 40 35 62 28 S100 33 126 25 154 29 178 21 201 25 220 19" fill="none" stroke="var(--s2)" stroke-width="2"/></svg><div class="legend"><span>CPU</span><span>RAM</span></div></div><div class="panel"><h3>Network · 60 min</h3><svg class="chart" viewBox="0 0 220 44" role="img" aria-label="Network history trend"><path d="M0 31 C30 22 44 30 67 18 S98 26 124 12 157 23 183 14 202 18 220 9" fill="none" stroke="var(--s1)" stroke-width="2"/><path d="M0 37 C22 34 43 32 65 29 S93 31 117 23 147 29 169 22 197 26 220 17" fill="none" stroke="var(--s3)" stroke-width="2"/></svg><div class="legend"><span>Inbound</span><span>Outbound</span></div></div></div>
+              <div class="grid"><div class="panel"><h3>Assigned keys</h3><div class="line"><span class="mono">key-104 · Photo archive</span><span>74 / 3,600 · valid</span></div><div class="line"><span class="mono">key-118 · Studio</span><span>211 / 3,600 · valid</span></div></div><div class="panel"><h3>Heartbeat · public IP history</h3><div class="line"><span>12:44:08 · healthy</span><span class="mono">198.51.100.24</span></div><div class="line"><span>12:12:03 · healthy</span><span class="mono">198.51.100.19</span></div></div></div>
+              <div class="grid"><div class="panel"><h3>Recent events</h3><div class="line"><span>12:44 · Heartbeat received</span><span class="ok">info</span></div><div class="line"><span>12:41 · Agent updated</span><span>deploy</span></div></div><div class="panel"><h3>Incidents</h3><div class="line"><span>No incidents for this node.</span><span class="ok">Clear</span></div><div class="service">Agent <b class="ok">● Healthy</b></div><div class="service">WireGuard <b class="ok">● Healthy</b></div></div></div>
+            </div>
+          </article>
+          <article class="state" data-state="loading">
+            <div class="state-label">Loading</div><div class="screen" aria-busy="true"><div class="crumb">‹ Cluster nodes</div><div class="skeleton short"></div><div class="skeleton"></div><div class="stats"><div class="stat"><div class="skeleton"></div></div><div class="stat"><div class="skeleton"></div></div><div class="stat"><div class="skeleton"></div></div></div><div class="grid"><div class="panel"><div class="skeleton chart-skel"></div></div><div class="panel"><div class="skeleton chart-skel"></div></div><div class="panel"><div class="skeleton"></div><div class="skeleton short"></div></div><div class="panel"><div class="skeleton"></div><div class="skeleton short"></div></div></div><p class="foot" role="status">Loading node details…</p></div>
+          </article>
+          <article class="state" data-state="empty">
+            <div class="state-label">Empty sections</div><div class="screen"><div class="crumb">‹ Cluster nodes / <span class="mono">crawl-sg-1</span></div><div class="head"><h3>crawl-sg-1</h3><span class="badge">Healthy</span></div><div class="grid"><div class="panel"><h3>Assigned keys</h3><div class="empty"><span class="glyph" aria-hidden="true">⌑</span><b>No keys are assigned</b><p>This crawl node has no Flickr keys at this time.</p><button>Refresh</button></div></div><div class="panel"><h3>Incidents</h3><div class="empty"><span class="glyph" aria-hidden="true">✓</span><b>No incidents</b><p>No incidents for this node.</p><button>Refresh</button></div></div><div class="panel"><h3>Services</h3><div class="empty"><b>No service inventory</b><p>No service inventory was reported.</p><button>Refresh</button></div></div><div class="panel"><h3>History</h3><div class="empty"><b>No history available</b><p>No history is available for this period.</p><button>Refresh</button></div></div></div></div>
+          </article>
+          <article class="state" data-state="error">
+            <div class="state-label">Error</div><div class="screen"><div class="crumb">‹ Cluster nodes / <span class="mono">crawl-sg-1</span></div><div class="error"><span class="glyph" aria-hidden="true">ⓘ</span><h3>Could not load this node.</h3><p>Node details could not be retrieved. Try again.</p><button class="primary">Retry</button></div></div>
+          </article>
+        </div>
+      </section>
+      <section class="theme light" aria-label="ADMIN light theme">
+        <div class="role"><strong>ADMIN</strong><span>Light control room</span></div>
+        <div class="states">
+          <article class="state" data-state="ready">
+            <div class="state-label">Normal</div>
+            <div class="screen">
+              <div class="crumb">‹ Cluster nodes / <span class="mono">crawl-sg-1</span></div>
+              <div class="head"><div><div class="node-title"><h3>crawl-sg-1</h3><span class="badge">Healthy</span></div><div class="sub">Crawl + media · Singapore · agent v0.8.2</div></div><div class="actions"><button>Refresh</button><button>Drain</button><button class="primary">Restart agent</button></div></div>
+              <div class="banner">⚠ Duplicate egress IP: <span class="mono">198.51.100.24</span> is also reported by crawl-sg-2.</div>
+              <div class="stats"><div class="stat"><span class="label">CPU</span><span class="value">24%</span></div><div class="stat"><span class="label">RAM</span><span class="value">2.9 / 8 GB</span></div><div class="stat"><span class="label">Disk</span><span class="value">44 / 200 GB</span></div><div class="stat"><span class="label">Network ↓ / ↑</span><span class="value">9 / 7 Mbps</span></div><div class="stat"><span class="label">Flickr calls</span><span class="value">4 / sec</span></div><div class="stat"><span class="label">Heartbeat</span><span class="value">8 sec ago</span></div></div>
+              <div class="grid"><div class="panel"><h3>CPU and RAM · 60 min</h3><svg class="chart" viewBox="0 0 220 44" role="img" aria-label="CPU and RAM history trend"><path d="M0 31 C25 28 32 18 55 22 S90 31 110 17 145 26 166 12 195 23 220 8" fill="none" stroke="var(--s1)" stroke-width="2"/><path d="M0 37 C30 32 40 35 62 28 S100 33 126 25 154 29 178 21 201 25 220 19" fill="none" stroke="var(--s2)" stroke-width="2"/></svg><div class="legend"><span>CPU</span><span>RAM</span></div></div><div class="panel"><h3>Network · 60 min</h3><svg class="chart" viewBox="0 0 220 44" role="img" aria-label="Network history trend"><path d="M0 31 C30 22 44 30 67 18 S98 26 124 12 157 23 183 14 202 18 220 9" fill="none" stroke="var(--s1)" stroke-width="2"/><path d="M0 37 C22 34 43 32 65 29 S93 31 117 23 147 29 169 22 197 26 220 17" fill="none" stroke="var(--s3)" stroke-width="2"/></svg><div class="legend"><span>Inbound</span><span>Outbound</span></div></div></div>
+              <div class="grid"><div class="panel"><h3>Assigned keys</h3><div class="line"><span class="mono">key-104 · Photo archive</span><span>74 / 3,600 · valid</span></div><div class="line"><span class="mono">key-118 · Studio</span><span>211 / 3,600 · valid</span></div></div><div class="panel"><h3>Heartbeat · public IP history</h3><div class="line"><span>12:44:08 · healthy</span><span class="mono">198.51.100.24</span></div><div class="line"><span>12:12:03 · healthy</span><span class="mono">198.51.100.19</span></div></div></div>
+              <div class="grid"><div class="panel"><h3>Recent events</h3><div class="line"><span>12:44 · Heartbeat received</span><span class="ok">info</span></div><div class="line"><span>12:41 · Agent updated</span><span>deploy</span></div></div><div class="panel"><h3>Incidents</h3><div class="line"><span>No incidents for this node.</span><span class="ok">Clear</span></div><div class="service">Agent <b class="ok">● Healthy</b></div><div class="service">WireGuard <b class="ok">● Healthy</b></div></div></div>
+            </div>
+          </article>
+          <article class="state" data-state="loading">
+            <div class="state-label">Loading</div><div class="screen" aria-busy="true"><div class="crumb">‹ Cluster nodes</div><div class="skeleton short"></div><div class="skeleton"></div><div class="stats"><div class="stat"><div class="skeleton"></div></div><div class="stat"><div class="skeleton"></div></div><div class="stat"><div class="skeleton"></div></div></div><div class="grid"><div class="panel"><div class="skeleton chart-skel"></div></div><div class="panel"><div class="skeleton chart-skel"></div></div><div class="panel"><div class="skeleton"></div><div class="skeleton short"></div></div><div class="panel"><div class="skeleton"></div><div class="skeleton short"></div></div></div><p class="foot" role="status">Loading node details…</p></div>
+          </article>
+          <article class="state" data-state="empty">
+            <div class="state-label">Empty sections</div><div class="screen"><div class="crumb">‹ Cluster nodes / <span class="mono">control-1</span></div><div class="head"><h3>control-1</h3><span class="badge">Healthy</span></div><div class="grid"><div class="panel"><h3>Assigned keys</h3><div class="empty"><span class="glyph" aria-hidden="true">⌑</span><b>Not applicable</b><p>Control nodes do not call Flickr.</p></div></div><div class="panel"><h3>Services</h3><div class="service">API <b class="ok">● Healthy</b></div><div class="service">Scheduler <b class="ok">● Healthy</b></div><div class="service">PostgreSQL <b class="ok">● Healthy</b></div><div class="service">Redis <b class="ok">● Healthy</b></div></div><div class="panel"><h3>Recent events</h3><div class="empty"><b>No recent events</b><p>No recent events for this node.</p><button>Refresh</button></div></div><div class="panel"><h3>History</h3><div class="empty"><b>No history available</b><p>No history is available for this period.</p><button>Refresh</button></div></div></div></div>
+          </article>
+          <article class="state" data-state="error">
+            <div class="state-label">Error</div><div class="screen"><div class="crumb">‹ Cluster nodes / <span class="mono">crawl-sg-1</span></div><div class="error"><span class="glyph" aria-hidden="true">ⓘ</span><h3>Could not load this node.</h3><p>Node details could not be retrieved. Try again.</p><button class="primary">Retry</button></div></div>
+          </article>
+        </div>
+      </section>
+    </div>
+    <p class="foot mobile-note">Mobile layout: 390 px viewport, one theme and state card per row.</p>
+  </main>
+</body>
+</html>
