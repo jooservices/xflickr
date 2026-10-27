@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XFlickr · Sharing mockup</title>
+  <style>
+    :root { color-scheme: light; --bg:#f6f7fa; --surface:#fff; --sunken:#eef0f5; --line:#e2e5ec; --line2:#747b88; --ink:#161a22; --muted:#5d6574; --faint:#8a92a1; --accent:#2457d6; --accent-ink:#fff; --soft:#e6edfd; --ok:#187244; --warn:#875300; --bad:#c12824; --radius:14px; --shadow:0 8px 24px rgba(18,22,30,.10); font-family:Figtree,system-ui,-apple-system,"Segoe UI",sans-serif; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font-size:15px; line-height:1.5; }
+    .theme-toggle:checked ~ .app { color-scheme:dark; --bg:#0f1116; --surface:#171a21; --sunken:#1e222b; --line:#2a2f3a; --line2:#778396; --ink:#e8eaf0; --muted:#a0a7b4; --faint:#747c8a; --accent:#7d9cff; --accent-ink:#0d1220; --soft:#1f2a47; --ok:#4fc887; --warn:#f0b04a; --bad:#ff7b72; --shadow:0 8px 24px rgba(0,0,0,.4); }
+    button { font:inherit; }
+    .chrome { height:58px; display:flex; align-items:center; gap:14px; padding:0 max(20px,calc((100vw - 1240px)/2)); background:var(--surface); border-bottom:1px solid var(--line); }
+    .brand { font-weight:700; letter-spacing:-.02em; white-space:nowrap; }
+    .brand span { color:var(--accent); }
+    .crumb { color:var(--muted); font-size:13px; }
+    .top-spacer { flex:1; }
+    .user-chip { border:1px solid var(--line); border-radius:999px; padding:6px 11px; font-size:12px; color:var(--muted); }
+    .app { min-height:100vh; background:var(--bg); transition:none; }
+    .main { max-width:1088px; padding:36px 24px 64px; margin:auto; }
+    h1,h2,h3,p { margin-top:0; }
+    h1 { margin-bottom:7px; font-family:"Bricolage Grotesque",Figtree,system-ui,sans-serif; font-size:32px; line-height:1.15; letter-spacing:-.02em; }
+    .lead { color:var(--muted); margin:0; max-width:680px; }
+    .layout { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:26px; }
+    .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:22px; box-shadow:0 2px 8px var(--shadow); }
+    h2 { font-size:18px; line-height:1.3; margin-bottom:15px; font-weight:700; }
+    h3 { font-size:16px; margin-bottom:6px; }
+    .choice { display:flex; justify-content:space-between; align-items:center; gap:18px; padding:2px 0 18px; }
+    .copy { min-width:0; }
+    .copy p { color:var(--muted); margin:0; font-size:13px; }
+    .switch { width:52px; height:30px; border-radius:999px; border:1px solid var(--line2); padding:3px; background:var(--sunken); flex:0 0 auto; }
+    .switch::after { content:""; display:block; width:22px; height:22px; border-radius:50%; background:var(--surface); box-shadow:0 1px 3px rgba(0,0,0,.25); }
+    .switch.on { background:var(--accent); border-color:var(--accent); }
+    .switch.on::after { margin-left:22px; background:var(--accent-ink); }
+    .privacy { border-top:1px solid var(--line); padding-top:16px; display:flex; align-items:flex-start; gap:12px; }
+    .lock { color:var(--muted); width:20px; height:20px; flex:0 0 auto; }
+    .privacy b { font-size:14px; }
+    .privacy p { margin:4px 0 0; color:var(--muted); font-size:13px; }
+    .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+    .stat { min-width:0; background:var(--sunken); border-radius:10px; padding:14px 12px; }
+    .stat-label { display:block; color:var(--muted); font-size:12px; min-height:36px; }
+    .value { display:block; font-size:27px; font-weight:700; line-height:1.2; font-variant-numeric:tabular-nums; letter-spacing:-.03em; }
+    .unit { color:var(--muted); font-size:11px; }
+    .banner { margin-top:16px; padding:12px 14px; border:1px solid color-mix(in srgb,var(--warn) 35%,var(--line)); border-radius:10px; color:var(--ink); background:color-mix(in srgb,var(--warn) 9%,var(--surface)); font-size:13px; }
+    .state-controls { margin:28px 0 10px; display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+    .state-controls strong { margin-right:5px; font-size:12px; color:var(--muted); }
+    input[type=radio], .theme-toggle { position:absolute; width:1px; height:1px; opacity:0; }
+    .state-controls label, .theme-label { cursor:pointer; border:1px solid var(--line2); border-radius:999px; padding:6px 12px; color:var(--muted); background:var(--surface); font-size:12px; }
+    #s-ready:checked ~ .app label[for=s-ready], #s-loading:checked ~ .app label[for=s-loading], #s-empty:checked ~ .app label[for=s-empty], #s-error:checked ~ .app label[for=s-error] { color:var(--accent-ink); background:var(--accent); border-color:var(--accent); }
+    .theme-label { margin-left:auto; }
+    .states { max-width:1088px; padding:0 24px 56px; margin:auto; }
+    .states > section { display:none; }
+    #s-ready:checked ~ .app .states [data-state=ready], #s-loading:checked ~ .app .states [data-state=loading], #s-empty:checked ~ .app .states [data-state=empty], #s-error:checked ~ .app .states [data-state=error] { display:block; }
+    .state-card { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:22px; }
+    .state-card h2 { margin-bottom:8px; }
+    .state-card p { color:var(--muted); margin-bottom:14px; }
+    .button { display:inline-flex; justify-content:center; align-items:center; min-height:40px; padding:0 17px; border:1px solid var(--line2); border-radius:999px; color:var(--ink); background:var(--surface); font-weight:600; font-size:13px; }
+    .button.primary { border-color:var(--accent); color:var(--accent-ink); background:var(--accent); }
+    .skeleton { display:inline-block; height:17px; width:120px; border-radius:7px; background:linear-gradient(90deg,var(--sunken),var(--line),var(--sunken)); background-size:200% 100%; }
+    .skeleton.wide { width:70%; height:25px; }
+    .error-mark { color:var(--bad); font-size:24px; font-weight:700; }
+    .modal-preview { margin-top:16px; border:1px dashed var(--line2); border-radius:12px; padding:14px; color:var(--muted); font-size:12px; }
+    .modal-preview b { color:var(--ink); }
+    .modal-actions { display:flex; gap:8px; margin-top:12px; }
+    .note { margin-top:8px; color:var(--faint); font-size:11px; }
+    @media (max-width:720px) {
+      .chrome { height:54px; padding:0 16px; }
+      .main { padding:27px 16px 36px; }
+      h1 { font-size:28px; }
+      .layout { grid-template-columns:1fr; gap:14px; margin-top:22px; }
+      .card { padding:18px; }
+      .states { padding:0 16px 36px; }
+      .state-card { padding:18px; }
+      .theme-label { margin-left:0; }
+    }
+    @media (max-width:420px) {
+      .stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .stat:last-child { grid-column:1 / -1; }
+      .stat-label { min-height:unset; margin-bottom:5px; }
+      .user-chip { padding:5px 8px; }
+      .crumb { display:none; }
+    }
+    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto !important; animation:none !important; transition:none !important; } }
+  </style>
+</head>
+<body>
+  <input class="theme-toggle" id="theme" type="checkbox" aria-label="Use dark theme">
+  <input id="s-ready" name="state" type="radio" checked>
+  <input id="s-loading" name="state" type="radio">
+  <input id="s-empty" name="state" type="radio">
+  <input id="s-error" name="state" type="radio">
+  <div class="app">
+    <header class="chrome"><div class="brand">XFlickr</div><div class="crumb">Settings / Sharing</div><div class="top-spacer"></div><div class="user-chip">Viet Vu · USER</div></header>
+    <main class="main" data-testid="sharing-page">
+      <h1>Sharing</h1>
+      <p class="lead">Share eligible public records to reduce duplicate Flickr calls for everyone.</p>
+      <div class="layout">
+        <section class="card" data-testid="sharing-setting-card">
+          <div class="choice"><div class="copy"><h2>Share my crawled records</h2><p>Only eligible public record data is shared.</p></div><span class="switch on" role="switch" aria-checked="true" aria-label="Share my crawled records" data-testid="sharing-toggle"></span></div>
+          <div class="privacy" data-testid="sharing-never-shared"><svg class="lock" aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="15" r="1" fill="currentColor"/></svg><div><b>Never shared</b><p>Private, friends-only and family-only records, API keys and secrets, OAuth tokens, and downloads.</p></div></div>
+        </section>
+        <section class="card" data-testid="sharing-summary">
+          <h2>What sharing gives you</h2>
+          <div class="stats">
+            <div class="stat"><span class="stat-label">You share</span><span class="value" data-testid="sharing-shared-count">48,210</span><span class="unit">records visible to others</span></div>
+            <div class="stat"><span class="stat-label">You receive</span><span class="value" data-testid="sharing-received-count">50,300</span><span class="unit">from other users</span></div>
+            <div class="stat"><span class="stat-label">Calls saved</span><span class="value" data-testid="sharing-calls-saved-count">6,210</span><span class="unit">this week</span></div>
+          </div>
+        </section>
+      </div>
+      <div class="state-controls"><strong>Preview state</strong><label for="s-ready">Normal</label><label for="s-loading">Loading</label><label for="s-empty">Empty</label><label for="s-error">Error</label><label class="theme-label" for="theme">Toggle light / dark</label></div>
+    </main>
+    <div class="states">
+      <section data-state="ready"><div class="state-card"><h2>Sharing is on</h2><p>Your eligible public records are available to other XFlickr users. Private and account data stay private.</p><div class="modal-preview"><b>Turn-off confirmation preview</b><br>Turning sharing off takes effect as soon as you confirm. Other users will no longer see records contributed only by you.<div class="modal-actions"><button class="button">Cancel</button><button class="button primary">Turn sharing off</button></div></div></div></section>
+      <section data-state="loading" aria-busy="true"><div class="state-card"><h2>Loading sharing</h2><p><span class="skeleton wide"></span></p><div class="stats"><div class="stat"><span class="skeleton"></span></div><div class="stat"><span class="skeleton"></span></div><div class="stat"><span class="skeleton"></span></div></div></div></section>
+      <section data-state="empty" data-testid="sharing-empty-state"><div class="state-card"><h2>No shared records yet</h2><p>Public records will appear here as your crawl discovers them.</p><button class="button primary">Go to crawl</button></div></section>
+      <section data-state="error" data-testid="sharing-error-state"><div class="state-card"><div class="error-mark" aria-hidden="true">!</div><h2>Could not load sharing</h2><p>Your sharing choice was not changed. Check your connection and try again.</p><button class="button primary">Retry</button></div></section>
+    </div>
+  </div>
+</body>
+</html>
