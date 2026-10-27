@@ -101,9 +101,11 @@ does not replace content.
 
 ### Empty
 
-If both keys and nodes are empty, show key icon, “No API keys yet”, and “Quota
-data appears when a Flickr API key is added. Add a key from Admin defaults or
-ask an administrator to configure one.” No CTA: this view cannot create a key.
+If both keys and nodes are empty, show key icon, “No API keys yet”, and
+“Quota data appears when a Flickr API key is added. Ask an administrator to
+configure one.” Include an “Open my API keys” link to the existing `/keys`
+route. ADMINs see only their own keys there; fleet-wide management remains out
+of scope for this view. The link does not create a key or call a new endpoint.
 
 ### Error
 
@@ -214,6 +216,7 @@ Use these keys for all visible text. Values are EN · VI.
 | `admin.quota.loading` | Loading API quota… | Đang tải hạn mức API… |
 | `admin.quota.emptyTitle` | No API keys yet | Chưa có khóa API |
 | `admin.quota.emptyBody` | Quota data appears when a Flickr API key is added. Ask an administrator to configure one. | Dữ liệu hạn mức sẽ xuất hiện khi thêm khóa API Flickr. Hãy nhờ quản trị viên thiết lập khóa. |
+| `admin.quota.emptyCta` | Open my API keys | Mở khóa API của tôi |
 | `admin.quota.errorTitle` | Could not load API quota. | Không thể tải hạn mức API. |
 | `admin.quota.errorBody` | The control node did not return quota data. Try again. | Node điều khiển không trả về dữ liệu hạn mức. Hãy thử lại. |
 | `admin.quota.retry` | Retry | Thử lại |
@@ -256,6 +259,7 @@ The following values are the `data-testid` attributes used by E2E tests:
 - `admin-quota-node-table`
 - `admin-quota-cooldown`
 - `admin-quota-empty`
+- `admin-quota-empty-cta`
 - `admin-quota-error`
 - `admin-quota-retry`
 - `admin-quota-stale`
