@@ -1,0 +1,1103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>XFlickr · Admin overview mockup</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #0b0f15;
+        color: #d6dee8;
+        font:
+          14px/1.45 Barlow,
+          Arial,
+          sans-serif;
+      }
+      h1,
+      h2,
+      h3 {
+        font-family: "Arial Narrow", Arial, sans-serif;
+        margin: 0;
+      }
+      h1 {
+        font-size: 24px;
+      }
+      h2 {
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      p {
+        margin: 0;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .wrap {
+        max-width: 1480px;
+        margin: auto;
+        padding: 24px;
+      }
+      .intro {
+        margin-bottom: 22px;
+      }
+      .intro p {
+        color: #8190a4;
+        margin-top: 4px;
+      }
+      .theme {
+        --bg: #0b0f15;
+        --surface: #11171f;
+        --sunken: #161e28;
+        --raise: #1c2632;
+        --line: #222c3a;
+        --ink: #d6dee8;
+        --muted: #a0aec0;
+        --faint: #8190a4;
+        --accent: #4cb4d8;
+        --ok: #3cb87c;
+        --warn: #e2ae3d;
+        --bad: #f2766b;
+        --s1: #3987e5;
+        --s2: #d95926;
+        background: var(--bg);
+        color: var(--ink);
+        padding: 24px;
+        margin: 24px 0;
+        border: 1px solid var(--line);
+      }
+      .theme.light {
+        --bg: #eef1f5;
+        --surface: #fff;
+        --sunken: #f5f7fa;
+        --raise: #e9edf3;
+        --line: #dce2ea;
+        --ink: #16202c;
+        --muted: #56657a;
+        --faint: #7d8a9c;
+        --accent: #006482;
+        --ok: #176d42;
+        --warn: #815800;
+        --bad: #c5372c;
+        --s1: #1f66b4;
+        --s2: #b8481e;
+      }
+      .theme h2 {
+        color: var(--muted);
+      }
+      .theme-title {
+        font-size: 20px;
+        margin-bottom: 16px;
+      }
+      .samples {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 20px;
+      }
+      .state {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        padding: 14px;
+        border-radius: 9px;
+      }
+      .state > h3 {
+        font-size: 15px;
+        margin-bottom: 10px;
+        color: var(--accent);
+      }
+      .views {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 390px;
+        gap: 14px;
+        align-items: start;
+      }
+      .screen {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        min-width: 0;
+      }
+      .desktop {
+        width: 100%;
+        max-width: 1440px;
+      }
+      .phone {
+        width: 390px;
+        max-width: 100%;
+      }
+      .caption {
+        font:
+          11px ui-monospace,
+          monospace;
+        color: var(--faint);
+        padding: 5px 9px;
+        border-bottom: 1px solid var(--line);
+      }
+      .page {
+        padding: 14px;
+      }
+      .head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .head h1 {
+        font-size: 21px;
+      }
+      .button {
+        border: 1px solid var(--line);
+        background: var(--sunken);
+        color: var(--ink);
+        border-radius: 6px;
+        padding: 6px 10px;
+        font: inherit;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 1px;
+        background: var(--line);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 12px;
+      }
+      .stat {
+        background: var(--surface);
+        padding: 9px;
+        min-width: 0;
+      }
+      .stat label {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .stat b {
+        display: block;
+        font:
+          600 22px "Arial Narrow",
+          Arial,
+          sans-serif;
+        margin: 2px 0;
+      }
+      .stat small {
+        font-size: 10px;
+        color: var(--muted);
+      }
+      .cols {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+        min-width: 0;
+      }
+      .ph {
+        padding: 9px 11px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        gap: 6px;
+        align-items: center;
+      }
+      .pb {
+        padding: 10px;
+      }
+      .chart {
+        height: 105px;
+        position: relative;
+        background: repeating-linear-gradient(
+          to bottom,
+          transparent 0 25px,
+          var(--line) 26px
+        );
+        border-bottom: 1px solid var(--line);
+        overflow: hidden;
+      }
+      .chart svg {
+        width: 100%;
+        height: 100%;
+      }
+      .legend {
+        font-size: 10px;
+        color: var(--muted);
+        padding-top: 5px;
+      }
+      .pill {
+        display: inline-block;
+        border-radius: 4px;
+        padding: 2px 6px;
+        background: color-mix(in srgb, var(--ok) 17%, transparent);
+        color: var(--ok);
+        font-size: 10px;
+      }
+      .nodes {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 95px;
+      }
+      .node {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 8px;
+        text-align: center;
+        font-size: 10px;
+        min-width: 72px;
+        background: var(--sunken);
+      }
+      .node b {
+        display: block;
+        font-size: 12px;
+      }
+      .link {
+        height: 2px;
+        width: 26px;
+        background: var(--ok);
+      }
+      .rows {
+        font-size: 11px;
+      }
+      .row {
+        padding: 7px 0;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .row:last-child {
+        border: 0;
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--warn);
+        flex: none;
+      }
+      .error {
+        border: 1px solid color-mix(in srgb, var(--bad) 60%, transparent);
+        background: color-mix(in srgb, var(--bad) 9%, transparent);
+        padding: 10px;
+        border-radius: 7px;
+        color: var(--ink);
+        margin-bottom: 10px;
+      }
+      .empty {
+        padding: 22px 10px;
+        text-align: center;
+      }
+      .empty b {
+        display: block;
+        margin-bottom: 5px;
+      }
+      .skel {
+        height: 12px;
+        border-radius: 5px;
+        background: linear-gradient(
+          90deg,
+          var(--sunken),
+          var(--raise),
+          var(--sunken)
+        );
+        margin: 7px 0;
+      }
+      .skel.big {
+        height: 55px;
+      }
+      .skel.stat {
+        height: 54px;
+      }
+      .maplist {
+        font-size: 10px;
+        color: var(--muted);
+        display: flex;
+        justify-content: space-around;
+        padding-top: 6px;
+      }
+      @media (max-width: 760px) {
+        .wrap {
+          padding: 12px;
+        }
+        .theme {
+          padding: 12px;
+        }
+        .views {
+          grid-template-columns: 1fr;
+        }
+        .desktop {
+          max-width: 100%;
+          overflow: hidden;
+        }
+        .desktop .stats {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        .desktop .cols {
+          grid-template-columns: 1fr;
+        }
+        .desktop .head h1 {
+          font-size: 18px;
+        }
+        .phone {
+          width: 390px;
+        }
+        .phone .stats {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .phone .cols {
+          grid-template-columns: 1fr;
+        }
+        .phone .page {
+          padding: 10px;
+        }
+        .phone .stat {
+          padding: 7px;
+        }
+        .phone .stat b {
+          font-size: 19px;
+        }
+      }
+      @media (max-width: 420px) {
+        .theme {
+          margin: 12px 0;
+        }
+        .phone {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="intro">
+        <h1>Admin overview · Static mockup</h1>
+        <p>
+          ADMIN control room · Desktop samples are capped at 1440 px; phone
+          samples are 390 px. Light and dark themes are shown below. No scripts
+          or network requests.
+        </p>
+      </header>
+      <section class="theme dark" aria-labelledby="dark-title">
+        <h2 id="dark-title" class="theme-title">ADMIN · Dark</h2>
+        <div class="samples">
+          <article class="state">
+            <h3>Normal</h3>
+            <div class="views">
+              <div class="screen desktop" data-state="normal">
+                <div class="caption">1440 px desktop · normal</div>
+                <div class="page">
+                  <div class="head">
+                    <div>
+                      <h1>Overview</h1>
+                      <p class="muted">
+                        Cluster, quota, work and incidents at a glance.
+                      </p>
+                    </div>
+                    <button class="button">Refresh</button>
+                  </div>
+                  <div class="stats">
+                    <div class="stat">
+                      <label>Nodes healthy</label><b>8 / 9</b
+                      ><small>1 degraded</small>
+                    </div>
+                    <div class="stat">
+                      <label>Keys at quota</label><b>2 / 14</b
+                      ><small>remaining = 0</small>
+                    </div>
+                    <div class="stat">
+                      <label>Oldest queue item</label><b>12m</b
+                      ><small>48,210 queued</small>
+                    </div>
+                    <div class="stat">
+                      <label>Downloads / syncs</label><b>23 / 6</b
+                      ><small>running now</small>
+                    </div>
+                    <div class="stat">
+                      <label>Open incidents</label><b>3</b
+                      ><small>1 critical</small>
+                    </div>
+                    <div class="stat">
+                      <label>Records / min</label><b>128</b
+                      ><small>crawl throughput</small>
+                    </div>
+                  </div>
+                  <div class="cols">
+                    <section class="panel">
+                      <div class="ph">
+                        <h2>Crawl throughput</h2>
+                        <span class="muted">records / min · 60 min</span>
+                      </div>
+                      <div class="pb">
+                        <div class="chart">
+                          <svg
+                            viewBox="0 0 600 110"
+                            preserveAspectRatio="none"
+                            aria-label="Records per minute trend"
+                          >
+                            <polyline
+                              points="0,82 45,70 90,77 135,52 180,65 225,42 270,57 315,30 360,47 405,21 450,35 495,18 540,28 600,12"
+                              fill="none"
+                              stroke="var(--s1)"
+                              stroke-width="3"
+                            />
+                          </svg>
+                        </div>
+                        <div class="legend">
+                          Records stored per minute · latest 128
+                        </div>
+                      </div>
+                    </section>
+                    <section class="panel">
+                      <div class="ph">
+                        <h2>Cluster map</h2>
+                        <span class="pill">8 healthy</span>
+                      </div>
+                      <div class="pb">
+                        <div class="nodes">
+                          <div class="node">
+                            <b>Control</b><span class="pill">healthy</span>
+                          </div>
+                          <i class="link"></i>
+                          <div class="node">
+                            <b>crawl-01</b><span class="pill">healthy</span>
+                          </div>
+                          <div class="node">
+                            <b>crawl-02</b><span class="pill">healthy</span>
+                          </div>
+                        </div>
+                        <div class="maplist">
+                          Control · healthy &nbsp; Crawl nodes · 8 healthy / 1
+                          degraded
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                  <div class="cols">
+                    <section class="panel">
+                      <div class="ph">
+                        <h2>Alerts</h2>
+                        <button class="button">All issues</button>
+                      </div>
+                      <div class="pb rows">
+                        <div class="row">
+                          <i class="dot" style="background: var(--bad)"></i
+                          ><b>Node heartbeat missed</b
+                          ><span class="muted">2m</span>
+                        </div>
+                        <div class="row">
+                          <i class="dot"></i><b>Key quota exhausted</b
+                          ><span class="muted">8m</span>
+                        </div>
+                        <div class="row">
+                          <i class="dot"></i><b>Queue age above target</b
+                          ><span class="muted">12m</span>
+                        </div>
+                      </div>
+                    </section>
+                    <section class="panel">
+                      <div class="ph">
+                        <h2>Recent events</h2>
+                        <button class="button">All events</button>
+                      </div>
+                      <div class="pb rows">
+                        <div class="row">
+                          <span class="muted">10:42</span> crawl-04 · heartbeat
+                          restored
+                        </div>
+                        <div class="row">
+                          <span class="muted">10:41</span> queue · 120 jobs
+                          claimed
+                        </div>
+                        <div class="row">
+                          <span class="muted">10:39</span> key · quota reached
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                  <p class="muted">Updated 4 seconds ago</p>
+                </div>
+              </div>
+              <div class="screen phone" data-state="normal">
+                <div class="caption">390 px mobile · normal</div>
+                <div class="page">
+                  <div class="head">
+                    <div>
+                      <h1>Overview</h1>
+                      <p class="muted">Live cluster status</p>
+                    </div>
+                    <button class="button">Refresh</button>
+                  </div>
+                  <div class="stats">
+                    <div class="stat">
+                      <label>Nodes healthy</label><b>8 / 9</b>
+                    </div>
+                    <div class="stat">
+                      <label>Keys at quota</label><b>2 / 14</b>
+                    </div>
+                    <div class="stat">
+                      <label>Oldest queue item</label><b>12m</b>
+                    </div>
+                    <div class="stat">
+                      <label>Downloads / syncs</label><b>23 / 6</b>
+                    </div>
+                    <div class="stat">
+                      <label>Open incidents</label><b>3</b>
+                    </div>
+                    <div class="stat">
+                      <label>Records / min</label><b>128</b>
+                    </div>
+                  </div>
+                  <section class="panel">
+                    <div class="ph"><h2>Crawl throughput</h2></div>
+                    <div class="pb">
+                      <div class="chart">
+                        <svg viewBox="0 0 300 110" preserveAspectRatio="none">
+                          <polyline
+                            points="0,82 40,70 80,77 120,52 160,65 200,42 240,35 300,12"
+                            fill="none"
+                            stroke="var(--s1)"
+                            stroke-width="3"
+                          />
+                        </svg>
+                      </div>
+                      <p class="legend">
+                        Records stored per minute · latest 128
+                      </p>
+                    </div>
+                  </section>
+                  <section class="panel" style="margin-top: 8px">
+                    <div class="ph"><h2>Cluster map</h2></div>
+                    <div class="pb">
+                      <div class="nodes">
+                        <div class="node">
+                          <b>Control</b><span class="pill">healthy</span>
+                        </div>
+                        <i class="link"></i>
+                        <div class="node">
+                          <b>crawl-01</b><span class="pill">healthy</span>
+                        </div>
+                      </div>
+                      <div class="maplist">8 healthy · 1 degraded</div>
+                    </div>
+                  </section>
+                  <section class="panel" style="margin-top: 8px">
+                    <div class="ph">
+                      <h2>Alerts</h2>
+                      <button class="button">All issues</button>
+                    </div>
+                    <div class="pb rows">
+                      <div class="row">
+                        <i class="dot" style="background: var(--bad)"></i>Node
+                        heartbeat missed
+                      </div>
+                      <div class="row">
+                        <i class="dot"></i>Key quota exhausted
+                      </div>
+                    </div>
+                  </section>
+                  <section class="panel" style="margin-top: 8px">
+                    <div class="ph">
+                      <h2>Recent events</h2>
+                      <button class="button">All events</button>
+                    </div>
+                    <div class="pb rows">
+                      <div class="row">10:42 · crawl heartbeat restored</div>
+                      <div class="row">10:41 · 120 jobs claimed</div>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </article>
+          <article class="state">
+            <h3>Loading</h3>
+            <div class="views">
+              <div class="screen desktop" data-state="loading">
+                <div class="caption">1440 px desktop · loading</div>
+                <div class="page">
+                  <div class="head">
+                    <h1>Overview</h1>
+                    <span class="muted">Loading dashboard…</span>
+                  </div>
+                  <div class="stats">
+                    <i class="skel stat"></i><i class="skel stat"></i
+                    ><i class="skel stat"></i><i class="skel stat"></i
+                    ><i class="skel stat"></i><i class="skel stat"></i>
+                  </div>
+                  <div class="cols">
+                    <div class="panel pb">
+                      <i class="skel"></i><i class="skel big"></i
+                      ><i class="skel"></i>
+                    </div>
+                    <div class="panel pb">
+                      <i class="skel"></i><i class="skel big"></i>
+                    </div>
+                  </div>
+                  <div class="cols">
+                    <div class="panel pb">
+                      <i class="skel"></i><i class="skel"></i
+                      ><i class="skel"></i>
+                    </div>
+                    <div class="panel pb">
+                      <i class="skel"></i><i class="skel"></i
+                      ><i class="skel"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="screen phone" data-state="loading">
+                <div class="caption">390 px mobile · loading</div>
+                <div class="page">
+                  <h1>Overview</h1>
+                  <p class="muted">Loading dashboard…</p>
+                  <div class="stats" style="margin-top: 10px">
+                    <i class="skel stat"></i><i class="skel stat"></i
+                    ><i class="skel stat"></i><i class="skel stat"></i>
+                  </div>
+                  <div class="panel pb">
+                    <i class="skel"></i><i class="skel big"></i
+                    ><i class="skel"></i>
+                  </div>
+                  <div class="panel pb" style="margin-top: 8px">
+                    <i class="skel"></i><i class="skel"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </article>
+          <article class="state">
+            <h3>Empty</h3>
+            <div class="views">
+              <div class="screen desktop" data-state="empty">
+                <div class="caption">1440 px desktop · empty</div>
+                <div class="page">
+                  <div class="head"><h1>Overview</h1></div>
+                  <section class="panel">
+                    <div class="empty">
+                      <b>No cluster activity yet</b>
+                      <p class="muted">
+                        Join a crawl node to start seeing cluster health and
+                        work here.
+                      </p>
+                      <button class="button" style="margin-top: 10px">
+                        View nodes
+                      </button>
+                    </div>
+                  </section>
+                </div>
+              </div>
+              <div class="screen phone" data-state="empty">
+                <div class="caption">390 px mobile · empty</div>
+                <div class="page">
+                  <div class="head"><h1>Overview</h1></div>
+                  <section class="panel">
+                    <div class="empty">
+                      <b>No cluster activity yet</b>
+                      <p class="muted">
+                        Join a crawl node to start seeing cluster health and
+                        work here.
+                      </p>
+                      <button class="button" style="margin-top: 10px">
+                        View nodes
+                      </button>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </article>
+          <article class="state">
+            <h3>Error</h3>
+            <div class="views">
+              <div class="screen desktop" data-state="error">
+                <div class="caption">1440 px desktop · error</div>
+                <div class="page">
+                  <div class="head"><h1>Overview</h1></div>
+                  <div class="error">
+                    <b>Could not load the admin overview.</b>
+                    <p>
+                      The control node did not return dashboard data. Try again.
+                    </p>
+                    <button class="button" style="margin-top: 8px">
+                      Retry
+                    </button>
+                  </div>
+                  <div class="stats">
+                    <i class="skel stat"></i><i class="skel stat"></i
+                    ><i class="skel stat"></i><i class="skel stat"></i
+                    ><i class="skel stat"></i><i class="skel stat"></i>
+                  </div>
+                  <div class="cols">
+                    <div class="panel pb"><i class="skel big"></i></div>
+                    <div class="panel pb"><i class="skel big"></i></div>
+                  </div>
+                </div>
+              </div>
+              <div class="screen phone" data-state="error">
+                <div class="caption">390 px mobile · error</div>
+                <div class="page">
+                  <h1>Overview</h1>
+                  <div class="error" style="margin-top: 10px">
+                    <b>Could not load the admin overview.</b>
+                    <p>
+                      The control node did not return dashboard data. Try again.
+                    </p>
+                    <button class="button" style="margin-top: 8px">
+                      Retry
+                    </button>
+                  </div>
+                  <div class="stats">
+                    <i class="skel stat"></i><i class="skel stat"></i
+                    ><i class="skel stat"></i><i class="skel stat"></i>
+                  </div>
+                  <div class="panel pb"><i class="skel big"></i></div>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+      <section class="theme light" aria-labelledby="light-title">
+        <h2 id="light-title" class="theme-title">ADMIN · Light</h2>
+        <p class="muted" style="margin-bottom: 14px">
+          Same view states and responsive frames in the explicit light theme.
+        </p>
+        <div class="samples">
+          <article class="state">
+            <h3>Normal</h3>
+            <div class="views">
+              <div class="screen desktop" data-state="ready">
+                <div class="caption">1440 px desktop · ready</div>
+                <div class="page">
+                  <div class="head">
+                    <div>
+                      <h1>Overview</h1>
+                      <p class="muted">
+                        Cluster, quota, work and incidents at a glance.
+                      </p>
+                    </div>
+                    <button class="button">Refresh</button>
+                  </div>
+                  <div class="stats">
+                    <div class="stat">
+                      <label>Nodes healthy</label><b>8 / 9</b>
+                    </div>
+                    <div class="stat">
+                      <label>Keys at quota</label><b>2 / 14</b>
+                    </div>
+                    <div class="stat">
+                      <label>Oldest queue item</label><b>12m</b>
+                    </div>
+                    <div class="stat">
+                      <label>Downloads / syncs</label><b>23 / 6</b>
+                    </div>
+                    <div class="stat">
+                      <label>Open incidents</label><b>3</b>
+                    </div>
+                    <div class="stat">
+                      <label>Records / min</label><b>128</b>
+                    </div>
+                  </div>
+                  <div class="cols">
+                    <section class="panel">
+                      <div class="ph"><h2>Crawl throughput</h2></div>
+                      <div class="pb">
+                        <div class="chart">
+                          <svg viewBox="0 0 600 110" preserveAspectRatio="none">
+                            <polyline
+                              points="0,82 45,70 90,77 135,52 180,65 225,42 270,57 315,30 360,47 405,21 450,35 495,18 540,28 600,12"
+                              fill="none"
+                              stroke="var(--s1)"
+                              stroke-width="3"
+                            />
+                          </svg>
+                        </div>
+                        <div class="legend">
+                          Records stored per minute · latest 128
+                        </div>
+                      </div>
+                    </section>
+                    <section class="panel">
+                      <div class="ph">
+                        <h2>Cluster map</h2>
+                        <span class="pill">8 healthy</span>
+                      </div>
+                      <div class="pb">
+                        <div class="nodes">
+                          <div class="node">
+                            <b>Control</b><span class="pill">healthy</span>
+                          </div>
+                          <i class="link"></i>
+                          <div class="node">
+                            <b>crawl-01</b><span class="pill">healthy</span>
+                          </div>
+                          <div class="node">
+                            <b>crawl-02</b><span class="pill">healthy</span>
+                          </div>
+                        </div>
+                        <div class="maplist">
+                          Control · healthy &nbsp; Crawl nodes · 8 healthy / 1
+                          degraded
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                  <div class="cols">
+                    <section class="panel">
+                      <div class="ph">
+                        <h2>Alerts</h2>
+                        <button class="button">All issues</button>
+                      </div>
+                      <div class="pb rows">
+                        <div class="row">
+                          <i class="dot" style="background: var(--bad)"></i>Node
+                          heartbeat missed
+                        </div>
+                        <div class="row">
+                          <i class="dot"></i>Key quota exhausted
+                        </div>
+                      </div>
+                    </section>
+                    <section class="panel">
+                      <div class="ph">
+                        <h2>Recent events</h2>
+                        <button class="button">All events</button>
+                      </div>
+                      <div class="pb rows">
+                        <div class="row">10:42 · crawl heartbeat restored</div>
+                        <div class="row">10:41 · 120 jobs claimed</div>
+                      </div>
+                    </section>
+                  </div>
+                </div>
+              </div>
+              <div class="screen phone" data-state="ready">
+                <div class="caption">390 px mobile · ready</div>
+                <div class="page">
+                  <div class="head">
+                    <h1>Overview</h1>
+                    <button class="button">Refresh</button>
+                  </div>
+                  <div class="stats">
+                    <div class="stat">
+                      <label>Nodes healthy</label><b>8 / 9</b>
+                    </div>
+                    <div class="stat">
+                      <label>Keys at quota</label><b>2 / 14</b>
+                    </div>
+                    <div class="stat">
+                      <label>Oldest queue item</label><b>12m</b>
+                    </div>
+                    <div class="stat">
+                      <label>Downloads / syncs</label><b>23 / 6</b>
+                    </div>
+                    <div class="stat">
+                      <label>Open incidents</label><b>3</b>
+                    </div>
+                    <div class="stat">
+                      <label>Records / min</label><b>128</b>
+                    </div>
+                  </div>
+                  <section class="panel">
+                    <div class="ph"><h2>Crawl throughput</h2></div>
+                    <div class="pb">
+                      <div class="chart">
+                        <svg viewBox="0 0 300 110" preserveAspectRatio="none">
+                          <polyline
+                            points="0,82 40,70 80,77 120,52 160,65 200,42 240,35 300,12"
+                            fill="none"
+                            stroke="var(--s1)"
+                            stroke-width="3"
+                          />
+                        </svg>
+                      </div>
+                    </div>
+                  </section>
+                  <section class="panel" style="margin-top: 8px">
+                    <div class="ph"><h2>Cluster map</h2></div>
+                    <div class="pb">
+                      <div class="nodes">
+                        <div class="node">
+                          <b>Control</b><span class="pill">healthy</span>
+                        </div>
+                        <i class="link"></i>
+                        <div class="node">
+                          <b>crawl-01</b><span class="pill">healthy</span>
+                        </div>
+                      </div>
+                      <div class="maplist">8 healthy · 1 degraded</div>
+                    </div>
+                  </section>
+                  <section class="panel" style="margin-top: 8px">
+                    <div class="ph">
+                      <h2>Alerts</h2>
+                      <button class="button">All issues</button>
+                    </div>
+                    <div class="pb">
+                      Node heartbeat missed · Key quota exhausted
+                    </div>
+                  </section>
+                  <section class="panel" style="margin-top: 8px">
+                    <div class="ph">
+                      <h2>Recent events</h2>
+                      <button class="button">All events</button>
+                    </div>
+                    <div class="pb">10:42 · crawl heartbeat restored</div>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </article>
+          <article class="state">
+            <h3>Loading</h3>
+            <div class="views">
+              <div class="screen desktop" data-state="loading">
+                <div class="caption">1440 px desktop · loading</div>
+                <div class="page">
+                  <h1>Overview</h1>
+                  <p class="muted">Loading dashboard…</p>
+                  <div class="stats" style="margin-top: 10px">
+                    <i class="skel stat"></i><i class="skel stat"></i
+                    ><i class="skel stat"></i><i class="skel stat"></i
+                    ><i class="skel stat"></i><i class="skel stat"></i>
+                  </div>
+                  <div class="cols">
+                    <div class="panel pb"><i class="skel big"></i></div>
+                    <div class="panel pb"><i class="skel big"></i></div>
+                  </div>
+                  <div class="cols">
+                    <div class="panel pb">
+                      <i class="skel"></i><i class="skel"></i>
+                    </div>
+                    <div class="panel pb">
+                      <i class="skel"></i><i class="skel"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="screen phone" data-state="loading">
+                <div class="caption">390 px mobile · loading</div>
+                <div class="page">
+                  <h1>Overview</h1>
+                  <p class="muted">Loading dashboard…</p>
+                  <div class="stats" style="margin-top: 10px">
+                    <i class="skel stat"></i><i class="skel stat"></i
+                    ><i class="skel stat"></i><i class="skel stat"></i>
+                  </div>
+                  <div class="panel pb"><i class="skel big"></i></div>
+                </div>
+              </div>
+            </div>
+          </article>
+          <article class="state">
+            <h3>Empty</h3>
+            <div class="views">
+              <div class="screen desktop" data-state="empty">
+                <div class="caption">1440 px desktop · empty</div>
+                <div class="page">
+                  <h1>Overview</h1>
+                  <section class="panel" style="margin-top: 10px">
+                    <div class="empty">
+                      <b>No cluster activity yet</b>
+                      <p class="muted">
+                        Join a crawl node to start seeing cluster health and
+                        work here.
+                      </p>
+                      <button class="button" style="margin-top: 10px">
+                        View nodes
+                      </button>
+                    </div>
+                  </section>
+                </div>
+              </div>
+              <div class="screen phone" data-state="empty">
+                <div class="caption">390 px mobile · empty</div>
+                <div class="page">
+                  <h1>Overview</h1>
+                  <section class="panel" style="margin-top: 10px">
+                    <div class="empty">
+                      <b>No cluster activity yet</b>
+                      <p class="muted">
+                        Join a crawl node to start seeing cluster health and
+                        work here.
+                      </p>
+                      <button class="button" style="margin-top: 10px">
+                        View nodes
+                      </button>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </article>
+          <article class="state">
+            <h3>Error</h3>
+            <div class="views">
+              <div class="screen desktop" data-state="error">
+                <div class="caption">1440 px desktop · error</div>
+                <div class="page">
+                  <h1>Overview</h1>
+                  <div class="error" style="margin-top: 10px">
+                    <b>Could not load the admin overview.</b>
+                    <p>
+                      The control node did not return dashboard data. Try again.
+                    </p>
+                    <button class="button" style="margin-top: 8px">
+                      Retry
+                    </button>
+                  </div>
+                  <div class="stats">
+                    <i class="skel stat"></i><i class="skel stat"></i
+                    ><i class="skel stat"></i><i class="skel stat"></i>
+                  </div>
+                  <div class="cols">
+                    <div class="panel pb"><i class="skel big"></i></div>
+                    <div class="panel pb"><i class="skel big"></i></div>
+                  </div>
+                </div>
+              </div>
+              <div class="screen phone" data-state="error">
+                <div class="caption">390 px mobile · error</div>
+                <div class="page">
+                  <h1>Overview</h1>
+                  <div class="error" style="margin-top: 10px">
+                    <b>Could not load the admin overview.</b>
+                    <p>
+                      The control node did not return dashboard data. Try again.
+                    </p>
+                    <button class="button" style="margin-top: 8px">
+                      Retry
+                    </button>
+                  </div>
+                  <div class="stats">
+                    <i class="skel stat"></i><i class="skel stat"></i
+                    ><i class="skel stat"></i><i class="skel stat"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+      <footer class="intro">
+        <p>
+          Static reference only · values are illustrative · all controls are
+          inert.
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>

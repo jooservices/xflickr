@@ -50,7 +50,7 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 | `user-wizard` | user | `/onboarding` | Setup wizard: API key, Flickr connection, more accounts | [spec](views/user-wizard.md) | [mockup](mockups/user-wizard.html) | JOOXF-167 | `web/e2e/user-wizard.spec.ts` |
 | `user-profile` | user | `/profile` | Profile | [spec](views/user-profile.md) | [mockup](mockups/user-profile.html) | JOOXF-166 | `web/e2e/user-profile.spec.ts` |
 | `admin-shell` | admin | `/admin/*` (layout) | Admin shell, rail and navigation | [spec](views/admin-shell.md) | [mockup](mockups/admin-shell.html) | JOOXF-79 | `web/e2e/admin-shell.spec.ts` |
-| `admin-overview` | admin | `/admin` | Overview | pending | pending | TBD | `web/e2e/admin-overview.spec.ts` |
+| `admin-overview` | admin | `/admin` | Overview | [spec](views/admin-overview.md) | [mockup](mockups/admin-overview.html) | JOOXF-180 | `web/e2e/admin-overview.spec.ts` |
 | `admin-nodes` | admin | `/admin/nodes` | Cluster nodes | pending | pending | TBD | `web/e2e/admin-nodes.spec.ts` |
 | `admin-node` | admin | `/admin/nodes/:id` | Cluster node | pending | pending | TBD | `web/e2e/admin-node.spec.ts` |
 | `admin-quota` | admin | `/admin/quota` | API quota | pending | pending | TBD | `web/e2e/admin-quota.spec.ts` |
