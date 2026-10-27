@@ -1,0 +1,20 @@
+{
+  "name": "xflickr_telemetry_ship_failed",
+  "stream_type": "logs",
+  "stream_name": "xflickr_logs",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "sql",
+    "sql": "SELECT count(*) AS hits FROM \"xflickr_logs\" WHERE level='WARN' AND msg='crawl health: ship to observability failed' HAVING hits > 0"
+  },
+  "trigger_condition": {
+    "period": 15,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 5,
+    "silence": 60
+  },
+  "destinations": [],
+  "enabled": true,
+  "description": "Impact: Health telemetry cannot reach OpenObserve. Action: Check OpenObserve credentials/connectivity and fallback disk usage."
+}

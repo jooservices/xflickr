@@ -1,0 +1,20 @@
+{
+  "name": "xflickr_latency_p95_high",
+  "stream_type": "logs",
+  "stream_name": "xflickr_calls",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "sql",
+    "sql": "SELECT approx_percentile_cont(latency_ms, 0.95) AS p95_ms FROM \"xflickr_calls\" WHERE latency_ms IS NOT NULL HAVING p95_ms > 8000"
+  },
+  "trigger_condition": {
+    "period": 15,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 5,
+    "silence": 60
+  },
+  "destinations": [],
+  "enabled": true,
+  "description": "Impact: Flickr call p95 latency is above 8 seconds. Action: Inspect slow methods and upstream/network health."
+}

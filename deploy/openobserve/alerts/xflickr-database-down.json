@@ -1,0 +1,20 @@
+{
+  "name": "xflickr_database_down",
+  "stream_type": "logs",
+  "stream_name": "xflickr_logs",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "sql",
+    "sql": "SELECT count(*) AS hits FROM \"xflickr_logs\" WHERE level='ERROR' AND msg='crawl health: report failed' HAVING hits > 0"
+  },
+  "trigger_condition": {
+    "period": 5,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 1,
+    "silence": 10
+  },
+  "destinations": [],
+  "enabled": true,
+  "description": "Impact: Health snapshots cannot read the database. Action: Check PostgreSQL connectivity and XFlickr database errors."
+}

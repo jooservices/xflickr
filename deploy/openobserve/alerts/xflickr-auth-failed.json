@@ -1,0 +1,20 @@
+{
+  "name": "xflickr_auth_failed",
+  "stream_type": "logs",
+  "stream_name": "xflickr_calls",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "sql",
+    "sql": "SELECT count(*) AS hits FROM \"xflickr_calls\" WHERE status IN (401,403) HAVING hits > 0"
+  },
+  "trigger_condition": {
+    "period": 5,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 1,
+    "silence": 30
+  },
+  "destinations": [],
+  "enabled": true,
+  "description": "Impact: Flickr authentication is failing. Action: Check API key and OAuth token validity; reconnect if needed."
+}

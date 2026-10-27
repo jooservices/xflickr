@@ -1,0 +1,20 @@
+{
+  "name": "xflickr_container_down",
+  "stream_type": "logs",
+  "stream_name": "xflickr_metrics",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "sql",
+    "sql": "SELECT count(*) AS hits FROM \"xflickr_metrics\" WHERE metric='container_memory_bytes' HAVING hits=0"
+  },
+  "trigger_condition": {
+    "period": 5,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 1,
+    "silence": 10
+  },
+  "destinations": [],
+  "enabled": true,
+  "description": "Impact: XFlickr health metrics stopped arriving. Action: Check the container and OpenObserve ingestion."
+}

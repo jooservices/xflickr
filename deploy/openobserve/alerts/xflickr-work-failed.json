@@ -1,0 +1,20 @@
+{
+  "name": "xflickr_work_failed",
+  "stream_type": "logs",
+  "stream_name": "xflickr_metrics",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "sql",
+    "sql": "SELECT max(value) - min(value) AS failures_added FROM \"xflickr_metrics\" WHERE metric='work_items_failed' HAVING failures_added >= 1"
+  },
+  "trigger_condition": {
+    "period": 15,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 5,
+    "silence": 30
+  },
+  "destinations": [],
+  "enabled": true,
+  "description": "Impact: New work items failed in the last 15 minutes. Action: Inspect the failed items and their last error."
+}

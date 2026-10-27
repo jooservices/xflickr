@@ -1,0 +1,20 @@
+{
+  "name": "xflickr_error_rate",
+  "stream_type": "logs",
+  "stream_name": "xflickr_calls",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "sql",
+    "sql": "SELECT count(*) FILTER (WHERE outcome='error') * 100.0 / nullif(count(*),0) AS error_rate FROM \"xflickr_calls\" HAVING error_rate > 5"
+  },
+  "trigger_condition": {
+    "period": 15,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 1,
+    "silence": 30
+  },
+  "destinations": [],
+  "enabled": true,
+  "description": "Impact: More than 5 percent of Flickr calls fail over 15 minutes. Action: Inspect error codes and retry patterns."
+}

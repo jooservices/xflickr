@@ -52,10 +52,12 @@ OpenObserve (`OPENOBSERVE_URL`, org `OPENOBSERVE_ORG`, stream
 Shipping failures are logged as warnings and never stop the crawl.
 The develop helper sources its account from private Workspaces configuration;
 credentials remain in the ignored `.env.develop` and are not written to logs.
-The notification destination name is also stored there as
-`OPENOBSERVE_ALERT_DESTINATION` (`javmeta_telegram` in the shared XFlickr
-environment); it is a reference to an existing OpenObserve destination, not a
-credential.
+The notification destination and template names are also stored there as
+`OPENOBSERVE_ALERT_DESTINATION` (`xflickr_telegram`) and
+`OPENOBSERVE_ALERT_TEMPLATE` (`xflickr_telegram_v1`); they are references to
+OpenObserve resources, not credentials. `OPENOBSERVE_ALERT_SOURCE_DESTINATION`
+names the existing destination copied once when the XFlickr destination is
+missing.
 
 ### Alerts
 
@@ -63,15 +65,30 @@ Alert definitions live in `deploy/openobserve/alerts/`:
 
 | Alert | Fires when |
 |---|---|
-| `xflickr-no-api-calls` | `calls_last_10min = 0` while `pending_items > 0` in 3 or more of the last 5 minutes. |
-| `xflickr-failed-jobs-growing` | `failed_total` (failed work items + dead jobs) rose within 10 minutes. |
-| `xflickr-token-revoked` | `tokens_revoked > 0`. |
+| `xflickr_api_5xx` | A Flickr/API log has status 500 or above. |
+| `xflickr_container_down` | No container memory metric arrived for 5 minutes. |
+| `xflickr_database_down` | The crawl health query reports a database failure. |
+| `xflickr_disk_high` | Disk use is above 80%. |
+| `xflickr_disk_critical` | Disk use is above 90%. |
+| `xflickr_error_rate` | Flickr call errors exceed 5% over 15 minutes. |
+| `xflickr_no_calls_pending` | No Flickr call for 15 minutes while work is pending. |
+| `xflickr_quota_exhausted` | A key has spent its hourly quota. |
+| `xflickr_quota_near_limit` | A key is at or above 90% of its hourly quota. |
+| `xflickr_token_revoked` | A connected Flickr token is revoked. |
+| `xflickr_work_failed` | New work items failed in the last 15 minutes. |
+| `xflickr_credential_decryption_failed` | Stored credential decryption failures are present. |
+| `xflickr_work_backlog_stale` | Pending work is older than 6 hours. |
+| `xflickr_scheduler_errors` | More than three scheduler errors in 15 minutes. |
+| `xflickr_latency_p95_high` | Flickr call p95 latency exceeds 8 seconds. |
+| `xflickr_rate_limited` | Flickr returns a 429 rate-limit response. |
+| `xflickr_auth_failed` | Flickr returns 401 or 403. |
+| `xflickr_telemetry_ship_failed` | Crawl health cannot ship to OpenObserve. |
 
-Apply them with `docker/scripts/openobserve-alerts.sh [env-file]` (defaults to
-`.env.develop`). The helper merges the configured destination name into each
-tracked definition at apply time, then verifies that the saved alert is enabled,
-uses the `xflickr` stream and query, and references that destination. It uses
-the v2 organization alert API; re-check it after an OpenObserve upgrade.
+Apply them with `docker/scripts/obs-provision.sh [env-file]` (defaults to
+`.env.develop`). The script creates or updates the `xflickr_telegram_v1`
+template, the `xflickr_telegram` destination, and all 18 alerts idempotently.
+The destination is cloned from `OPENOBSERVE_ALERT_SOURCE_DESTINATION` only when
+missing.
 
 ## Smoke check
 

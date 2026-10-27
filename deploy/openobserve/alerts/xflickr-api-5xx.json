@@ -1,0 +1,20 @@
+{
+  "name": "xflickr_api_5xx",
+  "stream_type": "logs",
+  "stream_name": "xflickr_logs",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "sql",
+    "sql": "SELECT count(*) AS hits FROM \"xflickr_logs\" WHERE component='xflickr' AND status >= 500 HAVING hits > 0"
+  },
+  "trigger_condition": {
+    "period": 1,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 1,
+    "silence": 5
+  },
+  "destinations": [],
+  "enabled": true,
+  "description": "Impact: Flickr/API requests are failing with server errors. Action: Check XFlickr logs for the failing endpoint and upstream status."
+}
