@@ -51,12 +51,20 @@ are added to OpenAPI and the backend.
 | Content | Data source and fields | Action |
 | --- | --- | --- |
 | Existing key baseline | `GET /admin/quota`: `keys[].key_id`, `user_id`, `label`, `node`, `used`, `limit`, `reset_at`, `state`, `trend`. Existing state values: `ok`, `cooling`, `exhausted`. | Refresh refetches this response. |
-| Key usage and lanes | Contract request: extend `AdminKeyQuota` with `person_used`, `sizes_used`, `burst_now`, `burst_limit`, `per_second_rate`, `skipped_shared`, `http_429_count`, `cooldown_until`, `paused`, `hourly_history[]` (`at`, `used`, `limit`), and `burst_history[]` (`at`, `calls`). Histories cover the current hour and last 60 seconds respectively; return newest point last. `used` and `limit` remain the current hourly used/cap. | Pause/Resume key through requested action below. |
-| Node summary | Contract request `GET /admin/quota` response adds `nodes[]`: `node_id`, `health`, `key_ids[]`, `used`, `limit`, `calls_per_second`, `calls_per_second_history[]` (`at`, `calls`), `http_429_count`, `cooldown_until`, `generated_at`. Aggregate key usage on the node; include only enabled crawl nodes. | Move key action can choose a different healthy node. |
-| Move targets | Contract request `GET /admin/nodes`: `nodes[].id`, `role`, `health`, `enabled`, `region`, `egress_ip`. Include enabled crawl nodes with `health=ok`, excluding current node. | Used by Move modal. |
-| Move key | Contract request `POST /admin/nodes/{node_id}/keys/{key_id}/move`, JSON `{ "target_node_id": string }`; response includes `key_id`, `node`, `state`. Requires CSRF and an audit record on success or failure. | Confirm moves the key; on success update placement and show confirmation. |
+| Key usage and lanes | Contract request: extend `AdminKeyQuota` with `person_used`, `sizes_used`, `burst_now`, `burst_limit`, `per_second_rate`, `skipped_shared`, `http_429_count`, `cooldown_until`, `paused`, `hourly_history[]` (`at`, `used`, `limit`), and `burst_history[]` (`at`, `calls`). Hourly history is one point per minute for the trailing 60 minutes; burst history is one point per second for the trailing 60 seconds. Return oldest point first and newest point last. `used` and `limit` remain current hourly used/cap. | Pause/Resume key through requested action below. |
+| Node summary | Contract request: extend `AdminQuota` with `nodes[]`: `node_id`, `health`, `key_ids[]`, `used`, `limit`, `person_used`, `sizes_used`, `calls_per_second`, `burst_history[]` (`at`, `calls`), `hourly_history[]` (`at`, `used`, `limit`), `http_429_count`, `skipped_shared`, `cooldown_until`, `generated_at`. `used`/`limit`, lane counts, and skipped count are sums for keys assigned to the node; `calls_per_second` is the latest aggregate rate. Hourly history uses one point per minute for the trailing hour, and burst history is aggregate calls per second for the trailing 60 seconds. Return oldest point first and newest last. Include only enabled crawl nodes. | Refresh the node panel; Move can select a different healthy node. |
+| Move targets | Contract request `GET /admin/nodes`: `nodes[].id`, `role`, `health`, `enabled`, `region`, `egress_ip`. Include enabled crawl nodes with `health=ok`, excluding current node. This endpoint is not currently in OpenAPI or the backend. | Used by Move modal. |
+| Move key | Contract request `POST /admin/quota/keys/{key_id}/move`, JSON `{ "target_node_id": string }`; response includes `key_id`, `node`, `state`. Requires CSRF and an audit record on success or failure. This endpoint is not currently in OpenAPI or the backend. | Confirm moves the key; on success update placement and show confirmation. |
 | Pause key | Contract request `POST /admin/quota/keys/{key_id}/pause`, JSON `{ "paused": boolean }`; response includes `key_id`, `paused`, `state`. Requires CSRF and audit record. Pause stops new scheduler calls; in-flight calls finish. Resume returns the key to normal eligibility, still subject to quota and node health. | Pause/Resume button; failure keeps prior state and shows an error toast. |
-| Live snapshots | Contract request admin channel `quota.keys` on existing multiplexed `GET /events/stream`; payload snapshot/upsert carries the same key and node fields plus `generated_at`. Channel is ADMIN-only. Existing documented USER-scoped stream does not currently provide this admin channel. | Subscribe while view is mounted; use shared live control. |
+| Live snapshots | Contract request: add an ADMIN-only `quota.keys` channel to existing multiplexed `GET /events` (the current OpenAPI/backend stream is user-scoped). Payload snapshot/upsert carries the same key and node fields plus `generated_at`. | Subscribe while view is mounted; use shared live control. |
+
+The only currently available quota request is `GET /admin/quota`, returning
+`AdminQuota.keys[]` with `key_id`, optional `user_id`, `label`, `node`, `used`,
+`limit`, optional `reset_at`, `state`, and `trend`. No node, key-control, or
+admin live-stream data is available in the current contract/backend. The
+requested additions above are design contract requests for JOOXF-182; until
+implemented, the view must use only the existing quota response and must not
+call the requested routes or fields.
 
 Cooldown is the later applicable key or node `cooldown_until`; display a
 countdown derived from the timestamp and server time, and show `—` when absent
@@ -131,14 +139,15 @@ authorization failure.
 
 ## Live updates
 
-Subscribe to ADMIN `quota.keys` on `GET /api/v1/events/stream`. Apply snapshot
+Subscribe to ADMIN `quota.keys` on `GET /api/v1/events`. Apply snapshot
 events as replacement and upsert events by `key_id` or `node_id`; ignore
 unknown event types. Reconnect with `Last-Event-ID`, using shared backoff
 (1, 2, 4, 8, then 15 seconds with jitter). The shell Live toggle pauses
 applying updates and buffers up to 200 events; resume applies them and refetches.
 
-If SSE is unavailable after three failed reconnects, poll `GET /admin/quota`
-and requested `GET /admin/nodes` every 10 seconds, with 10, 20, 40, then max
+If SSE is unavailable after three failed reconnects, poll the existing
+`GET /admin/quota` every 10 seconds. Fetch requested `GET /admin/nodes` only
+after that route exists in the contract and backend. Use 10, 20, 40, then max
 60-second retry backoff. Stop polling while the tab is hidden; fetch once on
 return. Show Live/Paused and stale age as text. Update cooldown countdowns
 locally each second without a network request.
