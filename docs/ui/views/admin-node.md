@@ -10,9 +10,9 @@ Follow [admin shell](admin-shell.md), [design system](../design-system.md),
 ## Purpose
 
 Give ADMIN operators a detailed, live operational view of one control or crawl
-node: its configuration, services, resource trends, assigned keys, history,
-events and incidents. ADMIN defaults to the dark control-room theme; the
-optional light theme retains ADMIN density and geometry.
+node: its configuration, services, resource trends, assigned keys, temporary
+downloads, history, events and incidents. ADMIN defaults to the dark
+control-room theme; the optional light theme retains ADMIN density and geometry.
 
 ## Route and access
 
@@ -29,8 +29,10 @@ optional light theme retains ADMIN density and geometry.
 ## Layout
 
 At 1440 px use the 226 px admin rail and remaining content width. Show a
-breadcrumb, node id, role/region/agent summary, health and operational flags,
-and Refresh. The POC's probe action is shown for blocked/offline health;
+breadcrumb, node id, role/region/agent summary, a system specification panel,
+health and operational flags, and Refresh. The specification panel shows OS,
+architecture, CPU cores, RAM and disk totals, agent start time and WireGuard
+address when present. The POC's probe action is shown for blocked/offline health;
 Drain/Undrain and Restart agent remain available in the header. Show a warning
 when this node's public egress IP is also reported by another enabled crawl
 node.
@@ -38,7 +40,8 @@ node.
 The first row contains health, CPU, RAM, disk, network and Flickr-call
 summaries. Follow with CPU/RAM and network time-series charts; crawl nodes also
 show calls-per-second history and assigned keys. Show services for the control
-node. Then show heartbeat and public-IP history, node-scoped incidents, and the
+node only, matching the POC. Show temporary downloads for either node role.
+Then show heartbeat and public-IP history, node-scoped incidents, and the
 eight newest node events. Control nodes have no Flickr egress or assigned
 Flickr keys; show those values as “Not applicable”, not zero. Use existing
 `panel`, `stat`, `pill`, `resource-bar`, `table`, `banner`, `button`,
@@ -61,10 +64,11 @@ unrelated user data.
 | Content | Data source and fields | Action |
 | --- | --- | --- |
 | Spec sheet and identity | Contract request `GET /admin/nodes/{id}`: `id`, `role`, `region`, `agent_version`, `agent_started_at`, `os`, `architecture`, `cpu_cores`, `ram_total_bytes`, `disk_total_bytes`, `public_egress_ip`, `wireguard_ip`, `enabled`, `draining`, `health`, `generated_at`. `public_egress_ip` is blank on the control node. | Breadcrumb returns to node list. |
-| Services | Same response: `services[] {name, state, checked_at, detail}`. Include only services configured for that node; state is `ok`, `degraded`, `down` or `unknown`. Detail is a safe short diagnostic, never a secret or raw log. | None; informational status. |
+| Services | Same response: `services[] {name, state, checked_at, detail}` on control nodes only, as in the POC. Include only services configured for that node; state is `ok`, `degraded`, `down` or `unknown`. Detail is a safe short diagnostic, never a secret or raw log. | None; informational status. |
 | Current resources | Same response: `cpu_percent`, `ram_used_bytes`, `disk_used_bytes`, `network_in_mbps`, `network_out_mbps`, `network_in_percent`, `network_out_percent`, `flickr_calls_per_second`, `workers_running`, `workers_capacity`, `heartbeat_at`, `http_429_last_hour`, `cooldown_until`. Resource percentages are 0–100 and capacity-relative; missing/zero capacity means unavailable, not 0%. | Refresh refetches snapshot. |
 | Resource charts | Contract request `GET /admin/nodes/{id}/history?from={RFC3339}&to={RFC3339}&interval=10s`: `generated_at`, `points[] {at,cpu_percent,ram_used_bytes,disk_used_bytes,network_in_mbps,network_out_mbps,flickr_calls_per_second}`. Default range is last 60 minutes; downsample to at most 360 points. Call rate is absent on control nodes. | Refresh range; chart points have a text summary and are not individually focusable. |
 | Assigned keys | Existing `GET /admin/quota`: `keys[] {key_id,label,user_id,node,used,limit,state,trend,reset_at}` filtered by exact `node == id`. Do not display secret or full public key. Control node has no assigned keys. | Key is informational; placement changes belong to Cluster nodes view. |
+| Temporary downloads | Contract request `GET /admin/nodes/{id}/downloads`: `downloads[] {job_id,state,temp_size_bytes,expires_at}` for temporary files currently held by this node. Do not include user identity, file names or file contents. | Rows are informational; opening or cancelling a download belongs to the Downloads view. |
 | Heartbeat history | Same history route: `heartbeat_points[] {at,state,agent_version}`; maximum 100 most recent transitions in the requested range. Current heartbeat and health come from detail snapshot. | None; history is read-only. |
 | Public IP history | Same history route: `ip_points[] {at,public_egress_ip,change_reason}`; maximum 50 most recent changes. Empty for control node. | None; history is read-only. |
 | Duplicate-egress warning | Compare detail `public_egress_ip` with `public_egress_ip` of other enabled crawl nodes in existing node-list contract request `GET /admin/nodes` (see admin-nodes spec). Warn only on exact normalized IP match; list conflicting node ids. Do not compare private WireGuard addresses. | Link to the other node's detail; no automatic reassignment. |
@@ -77,10 +81,12 @@ Contract decisions: detail/history timestamps are RFC3339 UTC; history points
 are ordered oldest-to-newest; missing metric samples are gaps, never zeroes.
 Only enabled crawl nodes participate in duplicate-egress warnings. A changed
 public IP is retained as history, not itself an incident. Services are omitted
-for nodes with no reported service inventory. The control node may show its
-configured host/network metrics but never a Flickr call-rate series, egress IP,
-or assigned key list. There is no arbitrary date picker; the fixed 60-minute
-chart range keeps the view bounded.
+for nodes with no reported service inventory and are shown only for the control
+node, as in the POC. The POC's temporary-download panel is retained for both
+node roles, with its source requested above and personal data omitted. The
+control node may show its configured host/network metrics but never a Flickr
+call-rate series, egress IP or assigned key list. There is no arbitrary date
+picker; the fixed 60-minute chart range keeps the view bounded.
 
 ## Actions
 
@@ -117,10 +123,10 @@ keep prior values visible and mark the snapshot refreshing.
 ### Empty
 
 An empty node detail is not a valid successful resource. For a valid node with
-no keys, services, history, events or incidents, show a concise section empty
-message and a Refresh CTA that retries that section. A control node's key and
-public-IP sections say “Not applicable” and have no CTA. A node list with no
-nodes uses the parent view's empty state.
+no keys, services, temporary downloads, history, events or incidents, show a
+concise section empty message and a Refresh CTA that retries that section. A
+control node's key and public-IP sections say “Not applicable” and have no CTA.
+A node list with no nodes uses the parent view's empty state.
 
 ### Error
 
@@ -197,8 +203,17 @@ names and agent version. EN → VI keys:
 | admin.node.role | Role | Vai trò |
 | admin.node.region | Region | Khu vực |
 | admin.node.agent | Agent | Tác tử |
+| admin.node.agent-started | Agent started | Agent đã khởi động |
 | admin.node.spec | System specification | Cấu hình hệ thống |
+| admin.node.os | Operating system | Hệ điều hành |
+| admin.node.architecture | Architecture | Kiến trúc |
+| admin.node.cpu-cores | CPU cores | Số lõi CPU |
+| admin.node.wireguard-ip | WireGuard address | Địa chỉ WireGuard |
 | admin.node.health | Health | Tình trạng |
+| admin.node.health.ok | Healthy | Khỏe mạnh |
+| admin.node.health.cooling | Cooling | Đang chờ hồi phục |
+| admin.node.health.blocked | Blocked | Bị chặn |
+| admin.node.health.offline | Offline | Ngoại tuyến |
 | admin.node.enabled | Enabled | Đã bật |
 | admin.node.disabled | Disabled | Đã tắt |
 | admin.node.draining | Draining | Đang rút việc |
@@ -209,11 +224,26 @@ names and agent version. EN → VI keys:
 | admin.node.inbound | Inbound | Lưu lượng vào |
 | admin.node.outbound | Outbound | Lưu lượng ra |
 | admin.node.calls | Flickr calls / second | Lượt gọi Flickr / giây |
+| admin.node.chart.cpu-ram | CPU and RAM history | Lịch sử CPU và RAM |
+| admin.node.chart.network | Network history | Lịch sử mạng |
+| admin.node.chart.calls | Flickr calls per second history | Lịch sử lượt gọi Flickr mỗi giây |
+| admin.node.chart.range | 60 min | 60 phút |
 | admin.node.workers | Workers | Worker |
 | admin.node.services | Services | Dịch vụ |
 | admin.node.service-state | Service state | Trạng thái dịch vụ |
+| admin.node.service.ok | Healthy | Khỏe mạnh |
+| admin.node.service.degraded | Degraded | Suy giảm |
+| admin.node.service.down | Down | Ngừng hoạt động |
+| admin.node.service.unknown | Unknown | Không xác định |
 | admin.node.keys | Assigned keys | Khóa được gán |
 | admin.node.key | Key | Khóa |
+| admin.node.downloads | Temporary downloads | Tải xuống tạm thời |
+| admin.node.download.job | Job | Tác vụ |
+| admin.node.download.state | State | Trạng thái |
+| admin.node.download.size | Temporary size | Dung lượng tạm thời |
+| admin.node.download.expires | Expires | Hết hạn |
+| admin.node.empty.downloads.title | No temporary downloads | Không có tải xuống tạm thời |
+| admin.node.empty.downloads.text | No temporary files are held by this node. | Node này không lưu tệp tạm thời nào. |
 | admin.node.user | User | Người dùng |
 | admin.node.used-limit | Used / limit | Đã dùng / giới hạn |
 | admin.node.heartbeat-history | Heartbeat history | Lịch sử heartbeat |
@@ -283,6 +313,8 @@ E2E `data-testid` contract:
 - `admin-node-service-<serviceName>`
 - `admin-node-assigned-keys`
 - `admin-node-key-<keyId>`
+- `admin-node-temp-downloads`
+- `admin-node-download-<jobId>`
 - `admin-node-heartbeat-history`
 - `admin-node-ip-history`
 - `admin-node-egress-warning`
