@@ -32,7 +32,7 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 | `user-shell` | user | all user routes | App shell, navigation and global states | [spec](views/user-shell.md) | [mockup](mockups/user-shell.html) | JOOXF-79, JOOXF-166 | `web/e2e/user-shell.spec.ts` |
 | `user-notifications` | user | all USER routes (shell drawer) | Notifications panel | [spec](views/user-notifications.md) | [mockup](mockups/user-notifications.html) | JOOXF-168 | `web/e2e/user-notifications.spec.ts` |
 | `user-home` | user | `/` | Home | [spec](views/user-home.md) | [mockup](mockups/user-home.html) | JOOXF-169 | `web/e2e/user-home.spec.ts` |
-| `user-library` | user | `/library` | Library | pending | pending | TBD | `web/e2e/user-library.spec.ts` |
+| `user-library` | user | `/library` | Library | [spec](views/user-library.md) | [mockup](mockups/user-library.html) | JOOXF-170 | `web/e2e/user-library.spec.ts` |
 | `user-search` | user | `/search` | Search | pending | pending | TBD | `web/e2e/user-search.spec.ts` |
 | `user-contacts` | user | `/contacts` | Contacts | [spec](views/user-contacts.md) | [mockup](mockups/user-contacts.html) | JOOXF-173 | `web/e2e/user-contacts.spec.ts` |
 | `user-contact-photos` | user | `/contacts/:nsid?tab=photos` | Contact: Header and Photos tab | [spec](views/user-contact-photos.md) | [mockup](mockups/user-contact-photos.html) | JOOXF-173 | `web/e2e/user-contact-photos.spec.ts` |
