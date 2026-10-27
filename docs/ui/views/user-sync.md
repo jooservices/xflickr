@@ -44,8 +44,10 @@ temporary files are removed after upload.
   open the process drawer.
 - Upload-process drawer is 480px on desktop and a full-width bottom sheet on
   mobile. It shows overall progress and per-file rows with filename, status,
-  progress, attempt count and Retry when retryable. Token-expired jobs show a
-  reconnect action. Closing does not cancel an upload.
+  transferred/total bytes, derived percentage, attempt count and Retry when
+  retryable. Derive percentage as `100 * bytes_done / bytes_total`; use
+  indeterminate progress and omit the percentage when `bytes_total` is zero. Token-expired
+  jobs show a reconnect action. Closing does not cancel an upload.
 - Show a provider rate-limit slowdown notice with the provider and retry time.
   Do not display raw provider response bodies.
 - If no provider is connected and no upload exists, use the “No cloud
@@ -78,9 +80,12 @@ The POC's S3-compatible “static key” is a credential type, not a bearer-toke
 expiry countdown. Show “Configured” for a valid S3 connection and “Reconnect”
 for invalid credentials. OAuth token state is “Connected”, “Expiring soon” when
 `token_expires_at` is within 15 minutes, or “Sign-in expired”; refresh tokens
-remain server side. The POC has no user-visible rate-limit notice; this spec
-adds one because the required slowdown needs a clear recovery time. Contract
-requests above belong to JOOXF-178 and later API work.
+remain server side. Map `reconnect_required` to “Reconnect required” and the
+Reconnect action for OAuth and S3 providers. A valid S3 connection has no
+expiring state; invalid S3 credentials map to “Credentials need attention”.
+The POC has no user-visible rate-limit notice; this spec adds one because the
+required slowdown needs a clear recovery time. Contract requests above belong
+to JOOXF-178 and later API work.
 
 ## Actions
 
@@ -99,8 +104,9 @@ requests above belong to JOOXF-178 and later API work.
 
 ### Ready
 
-Render provider cards and upload list. All five providers appear, including
-available providers with Connect. Active upload rows update progress. Token
+This is the normal state. Render provider cards and upload list. All five
+providers appear, including available providers with Connect. Active upload
+rows update progress. Token
 expiry pauses the upload and offers Reconnect. A provider rate limit pauses
 that provider's upload and shows the retry time; retry resumes automatically
 after `retry_after_seconds`, with manual Retry available for a failed file.
@@ -199,6 +205,7 @@ braces.
 | sync.token.configured | Configured | Đã thiết lập |
 | sync.token.expiring | Expiring soon | Sắp hết hạn |
 | sync.token.expired | Sign-in expired | Phiên đăng nhập đã hết hạn |
+| sync.token.reconnect-required | Reconnect required | Cần kết nối lại |
 | sync.token.invalid | Credentials need attention | Thông tin xác thực cần kiểm tra |
 | sync.connect | Connect | Kết nối |
 | sync.disconnect | Disconnect | Ngắt kết nối |
@@ -220,6 +227,8 @@ braces.
 | sync.upload.details | Upload details | Chi tiết tải lên |
 | sync.upload.close | Close upload details | Đóng chi tiết tải lên |
 | sync.upload.files | Files | Tệp |
+| sync.upload.file-progress | {done} of {total} bytes · {percent}% | {done}/{total} byte · {percent}% |
+| sync.upload.file-indeterminate | Upload progress unavailable | Không có thông tin tiến độ tải lên |
 | sync.upload.retry-file | Retry file | Thử lại tệp |
 | sync.upload.retry | Retry upload | Thử lại lượt tải lên |
 | sync.upload.queued | Queued | Đang chờ |
