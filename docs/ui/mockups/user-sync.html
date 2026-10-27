@@ -173,6 +173,11 @@
         gap: 8px;
         min-width: 0;
       }
+      .provider-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 2px;
+      }
       .logo {
         width: 28px;
         height: 28px;
@@ -261,8 +266,9 @@
       }
       .drawer {
         background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 12px;
+        border: 1px solid var(--line2);
+        border-left: 3px solid var(--accent);
+        border-radius: 10px;
         padding: 10px;
         margin-top: 8px;
       }
@@ -356,37 +362,45 @@
             <div class="grid">
               <article class="state" data-state="ready">
                 <h3>Normal</h3>
-                <div class="card">
-                  <div class="row">
-                    <div class="provider">
-                      <span class="logo">G</span>
-                      <div>
-                        <b>Google Photos</b>
-                        <div class="small">viet@example.com</div>
-                      </div>
+                <div class="provider-grid">
+                  <div class="card">
+                    <div class="row">
+                      <div class="provider"><span class="logo">G</span><b>Google Photos</b></div>
+                      <span class="pill">Connected</span>
                     </div>
-                    <span class="pill">Connected</span>
+                    <p class="small">viet@example.com · Folder: XFlickr / Photos</p>
+                    <div class="buttons"><button>Disconnect</button></div>
                   </div>
-                  <p class="small">Folder · XFlickr / Photos</p>
-                  <div class="buttons"><button>Disconnect</button></div>
-                </div>
-                <div class="row small" style="padding: 3px 2px">
-                  <span>Google Drive · OneDrive · S3-compatible</span
-                  ><span>Connected</span>
-                </div>
-                <div class="card">
-                  <div class="row">
-                    <div class="provider">
-                      <span class="logo">B</span>
-                      <div>
-                        <b>Dropbox</b>
-                        <div class="small">viet@example.com</div>
-                      </div>
+                  <div class="card">
+                    <div class="row">
+                      <div class="provider"><span class="logo">D</span><b>Google Drive</b></div>
+                      <span class="pill">Connected</span>
                     </div>
-                    <span class="pill warn">Sign-in expired</span>
+                    <p class="small">viet@example.com · Folder: /XFlickr/Photos</p>
+                    <div class="buttons"><button>Disconnect</button></div>
                   </div>
-                  <div class="buttons">
-                    <button class="primary">Reconnect</button>
+                  <div class="card">
+                    <div class="row">
+                      <div class="provider"><span class="logo">O</span><b>OneDrive</b></div>
+                      <span class="pill">Not connected</span>
+                    </div>
+                    <div class="buttons"><button class="primary">Connect</button></div>
+                  </div>
+                  <div class="card">
+                    <div class="row">
+                      <div class="provider"><span class="logo">B</span><b>Dropbox</b></div>
+                      <span class="pill warn">Sign-in expired</span>
+                    </div>
+                    <p class="small">viet@example.com · Folder: /Flickr</p>
+                    <div class="buttons"><button class="primary">Reconnect</button></div>
+                  </div>
+                  <div class="card">
+                    <div class="row">
+                      <div class="provider"><span class="logo">S3</span><b>S3-compatible</b></div>
+                      <span class="pill">Configured</span>
+                    </div>
+                    <p class="small">XFlickr backup · Folder: photos/</p>
+                    <div class="buttons"><button>Disconnect</button></div>
                   </div>
                 </div>
                 <div class="card">
@@ -411,12 +425,12 @@
                     <span>420 MB · 3.2 MB/s · 1 retry</span
                     ><button>Details</button>
                   </div>
-                  <div class="drawer">
-                    <h3>Upload details · 31 / 90</h3>
+                  <aside class="drawer" role="dialog" aria-label="Upload process details">
+                    <div class="row"><h3>Upload process · 31 / 90</h3><button>Close</button></div>
                     <div class="file">IMG_1041.jpg · Uploaded · 100%</div>
                     <div class="file">IMG_1042.jpg · Uploading · 58%</div>
-                    <div class="file">IMG_1043.jpg · Failed · Retry</div>
-                  </div>
+                    <div class="file">IMG_1043.jpg · Failed <button>Retry</button></div>
+                  </aside>
                 </div>
                 <div class="banner">
                   Dropbox sign-in expired. Upload paused. <b>Reconnect</b>
@@ -469,37 +483,45 @@
             <div class="grid">
               <article class="state" data-state="ready">
                 <h3>Normal</h3>
-                <div class="card">
-                  <div class="row">
-                    <div class="provider">
-                      <span class="logo">G</span>
-                      <div>
-                        <b>Google Photos</b>
-                        <div class="small">viet@example.com</div>
-                      </div>
+                <div class="provider-grid">
+                  <div class="card">
+                    <div class="row">
+                      <div class="provider"><span class="logo">G</span><b>Google Photos</b></div>
+                      <span class="pill">Connected</span>
                     </div>
-                    <span class="pill">Connected</span>
+                    <p class="small">viet@example.com · Folder: XFlickr / Photos</p>
+                    <div class="buttons"><button>Disconnect</button></div>
                   </div>
-                  <p class="small">Folder · XFlickr / Photos</p>
-                  <div class="buttons"><button>Disconnect</button></div>
-                </div>
-                <div class="row small" style="padding: 3px 2px">
-                  <span>Google Drive · OneDrive · S3-compatible</span
-                  ><span>Connected</span>
-                </div>
-                <div class="card">
-                  <div class="row">
-                    <div class="provider">
-                      <span class="logo">B</span>
-                      <div>
-                        <b>Dropbox</b>
-                        <div class="small">viet@example.com</div>
-                      </div>
+                  <div class="card">
+                    <div class="row">
+                      <div class="provider"><span class="logo">D</span><b>Google Drive</b></div>
+                      <span class="pill">Connected</span>
                     </div>
-                    <span class="pill warn">Sign-in expired</span>
+                    <p class="small">viet@example.com · Folder: /XFlickr/Photos</p>
+                    <div class="buttons"><button>Disconnect</button></div>
                   </div>
-                  <div class="buttons">
-                    <button class="primary">Reconnect</button>
+                  <div class="card">
+                    <div class="row">
+                      <div class="provider"><span class="logo">O</span><b>OneDrive</b></div>
+                      <span class="pill">Not connected</span>
+                    </div>
+                    <div class="buttons"><button class="primary">Connect</button></div>
+                  </div>
+                  <div class="card">
+                    <div class="row">
+                      <div class="provider"><span class="logo">B</span><b>Dropbox</b></div>
+                      <span class="pill warn">Sign-in expired</span>
+                    </div>
+                    <p class="small">viet@example.com · Folder: /Flickr</p>
+                    <div class="buttons"><button class="primary">Reconnect</button></div>
+                  </div>
+                  <div class="card">
+                    <div class="row">
+                      <div class="provider"><span class="logo">S3</span><b>S3-compatible</b></div>
+                      <span class="pill">Configured</span>
+                    </div>
+                    <p class="small">XFlickr backup · Folder: photos/</p>
+                    <div class="buttons"><button>Disconnect</button></div>
                   </div>
                 </div>
                 <div class="card">
@@ -524,12 +546,12 @@
                     <span>420 MB · 3.2 MB/s · 1 retry</span
                     ><button>Details</button>
                   </div>
-                  <div class="drawer">
-                    <h3>Upload details · 31 / 90</h3>
+                  <aside class="drawer" role="dialog" aria-label="Upload process details">
+                    <div class="row"><h3>Upload process · 31 / 90</h3><button>Close</button></div>
                     <div class="file">IMG_1041.jpg · Uploaded · 100%</div>
                     <div class="file">IMG_1042.jpg · Uploading · 58%</div>
-                    <div class="file">IMG_1043.jpg · Failed · Retry</div>
-                  </div>
+                    <div class="file">IMG_1043.jpg · Failed <button>Retry</button></div>
+                  </aside>
                 </div>
                 <div class="banner">
                   Google Drive is slowing uploads. Resumes in 2 min.
