@@ -21,10 +21,11 @@ readiness and crawl depth, and add photos to a download tray.
   ADMIN is redirected to `/admin` by the shell.
 - Respect the saved theme or USER system preference. Default is light gallery;
   dark gallery is supported. Set `data-role="user"`.
-- Query state: `contact`, `kind`, `sizes_ready`, `captioned`, `depth`, `sort`,
-  and `cursor` are reflected in the URL. Omit default values. Clear removes all
-  filters and cursor. A `photo` query is not supported; photo detail/lightbox
-  is outside this view.
+- Query state: repeat `contact` parameters for selected contact NSIDs and
+  repeat `depth` parameters for selected depths; `kind`, `sizes_ready`,
+  `captioned`, `sort`, and `cursor` are single values. Omit default values.
+  Clear removes all filters and cursor. A `photo` query is not supported;
+  photo detail/lightbox is outside this view.
 - Server scopes every result to the authenticated user and Flickr visibility.
   The client sends no user id.
 
@@ -71,9 +72,9 @@ separately.
 
 | Element | Source | Fields used | Action |
 | --- | --- | --- | --- |
-| Photo pages and totals | `GET /me/library` **contract request**; query `contact`, `kind` (`all`, `favorites`, `albums`, `galleries`), `sizes_ready`, `captioned`, `depth`, `sort` (`taken_desc`, `views_desc`, `favorites_desc`), `cursor`, `limit` (36) | `items[]`: `id`, `title`, `thumbnail_url`, `owner_nsid`, `owner_name`, `taken_at`, `width`, `height`, `sizes_ready`, `captioned`; response `total`, `next_cursor` | Open a photo is not an action here; toggling tray is local. |
+| Photo pages and totals | `GET /me/library` **contract request**; query repeated `contact` and `depth`, `kind` (`all`, `favorites`, `albums`, `galleries`), `sizes_ready`, `captioned`, `sort` (`taken_desc`, `views_desc`, `favorites_desc`), `cursor`, `limit` (36) | `items[]`: `id`, `title`, `thumbnail_url`, `owner_nsid`, `owner_name`, `taken_at`, `width`, `height`, `sizes_ready`, `captioned`, `depth`, `views_count`, `favorites_count`; response `total`, `next_cursor` | Open a photo is not an action here; toggling tray is local. |
 | Filter choices and counts | Same `GET /me/library` contract request | `facets.contacts[]` `{nsid, name, count}`, `facets.kinds[]` `{kind, count}`, `facets.sizes_ready` `{true_count, false_count}`, `facets.captioned` `{true_count, false_count}`, `facets.depths[]` `{depth, count}`; counts reflect all active filters except the facet's own selection | Apply one or more choices; URL reflects filters; count is for matching results. |
-| Tray download | `POST /downloads` (exists) body `{kind: "tray", photo_ids: [...]}` | response `id`, `kind`, `status`, `created_at`, `expires_at`, `item_count`, `skipped` | Create request; on 201 navigate `/downloads?id={id}`; on 409 show storage/key error. This endpoint's existing schema requires at least one `photo_ids` entry. |
+| Tray download | `POST /downloads` (exists) body `{kind: "tray", photo_ids: [...]}` | response `id`, `kind`, `subject`, `status`, `created_at`, `expires_at`, `item_count`, `skipped` | Create request; on 201 navigate `/downloads?id={id}`; on 409 map `temp_storage_full` or `flickr_key_required` to localized copy. Existing schema requires 1–500 `photo_ids` entries. |
 | Live events | authenticated `GET /events` (exists; shell-owned SSE) | Existing stream documents `crawl.progress`, `download.progress`, `download.ready`; resumes with `Last-Event-ID` | Library refresh behavior below; no new event subscription from the view. |
 | Library change event | `GET /events` **contract request** | `library.photo_changed` `{photo_id, changed_fields}` and `library.photo_removed` `{photo_id}` | Update visible card or invalidate the current result/facet snapshot. User scoped; resume using `Last-Event-ID`. |
 | Errors | shared `Error` response | `code`, `message` (English, never shown), `details` | Map known codes to localized copy; never display backend message. |
@@ -85,8 +86,9 @@ must be added to each item for the two POC sort modes (and remain nonnegative
 integers). Filter counts need total/matching semantics specified above. These
 fields are part of the `/me/library` contract request, not existing fields.
 `owner_nsid` is the stable contact filter value. `depth` is each user's
-interest depth for that owner, not a global depth. Cursor order is stable
-within a snapshot; a filter/sort change drops cursor and replaces results.
+interest depth for that owner, not a global depth, and populates the depth
+facet. Cursor order is stable within a snapshot; a filter/sort change drops
+cursor and replaces results.
 
 ## Data
 
@@ -100,7 +102,7 @@ listed above with the actions each supports.
 | --- | --- | --- |
 | Filter photos | Kind radio, contact/depth checkbox, readiness checkbox, mobile Apply | Update URL, reset cursor and fetch the first page. Selecting another kind replaces the prior kind; contact and depth support multiple selections. |
 | Sort | Sort select | Update `sort`, reset cursor, fetch first page. Default `taken_desc`. |
-| Select photos | Select photos button; card checkbox; Select visible / Clear selection | Selection mode reveals card checkboxes. Select visible applies to the loaded page only. Tray selection persists while filters/pages change, and is cleared only by explicit removal, successful tray submission, or leaving the authenticated session. Selection cap is 500 (existing download contract); at cap, further additions are disabled with copy. |
+| Select photos | Select photos button; card checkbox; Select visible / Clear selection | Selection mode reveals card checkboxes. Select visible applies to the loaded page only. Tray selection persists while filters/pages change, and is cleared only by explicit removal, successful tray submission, or leaving the authenticated session. Selection cap is 500, matching `CreateDownloadRequest.photo_ids.maxItems`; at cap, further additions are disabled with copy. |
 | Toggle tray item | Card tray toggle | Add/remove `id` from local tray; pressed state and toolbar count update immediately. No API call. |
 | Download tray | Page-head button with nonempty tray | `POST /downloads` with `kind: "tray"` and selected `photo_ids`; show pending state; on success clear tray and navigate to the created download. On failure keep selection. |
 | Load more | Button after current grid | Request `next_cursor`, append unique items, preserve focus and scroll. Hidden when cursor is null. No automatic/infinite fetch. |
@@ -123,6 +125,12 @@ listed above with the actions each supports.
 - Debounce contact search by 200 ms; it searches the loaded facet choices and
   does not issue a separate request. Mobile Apply closes the group and updates
   results; Reset clears only that group.
+- Combine selected contacts with OR, selected depths with OR, and filter groups
+  with AND. Apply the same OR-within/AND-between rule to facet counts; each
+  choice count is calculated with its own facet's current selection removed.
+- For equal sort values, order by photo `id` descending. The server cursor is
+  opaque and bound to the filter, sort, and result snapshot; reject a cursor
+  that does not match that request and start a fresh first page.
 
 ## States
 
@@ -150,8 +158,11 @@ button. Honor reduced motion.
 No records and no filters: `user.library.empty.title` and `.text`, CTA to
 `/accounts` (connect Flickr) when no connected account exists, otherwise to
 `/crawl` (check crawl progress). A filtered result with no matches shows
-`user.library.empty.filtered` and `user.library.filters.clear`. Empty content
-is localized and the CTA is a link.
+`user.library.empty.filtered`, identifies active filter labels in the results
+heading, and offers `user.library.filters.clear`. Use this same empty treatment
+for every kind, contact, readiness, and depth filter and their combinations; do
+not substitute an unrelated per-filter message. Empty content is localized and
+the CTA is a link.
 
 ### Error
 
@@ -159,8 +170,9 @@ Initial list failure (network, timeout, 5xx): replace results with the alert
 empty state, `user.library.error.title`, `.text`, and `user.common.retry`.
 Retry repeats the request; focus moves to the error block. Page-more failure
 keeps existing cards and shows inline `.error.more` with retry. Download
-`temp_storage_full` uses `.error.storage`; `key_required`/`key_invalid` uses
-`.error.key` with a link to `/keys`. Other action failures use
+`temp_storage_full` uses `.error.storage`; the existing `flickr_key_required`
+code uses `.error.key` with a link to `/keys`. Do not expect `key_required` or
+`key_invalid` from this endpoint. Other action failures use
 `.error.action`; tray selection remains intact.
 
 ### Partial and stale
@@ -229,6 +241,7 @@ locale-aware number formatting. Do not truncate necessary names/actions.
 | `user.library.action.select` | Select photos | Chọn ảnh |
 | `user.library.action.select-visible` | Select visible | Chọn ảnh đang hiển thị |
 | `user.library.action.clear-selection` | Clear selection | Bỏ chọn |
+| `user.library.selection.status` | Selection mode. {count} photos selected. | Chế độ chọn. Đã chọn {count} ảnh. |
 | `user.library.action.load-more` | Load more | Tải thêm |
 | `user.library.filters.title` | Filters | Bộ lọc |
 | `user.library.filters.kind` | Kind | Loại ảnh |
@@ -238,11 +251,13 @@ locale-aware number formatting. Do not truncate necessary names/actions.
 | `user.library.filters.kind.galleries` | Galleries | Bộ sưu tập |
 | `user.library.filters.contact` | Contact | Liên hệ |
 | `user.library.filters.contact-search` | Search contacts | Tìm liên hệ |
+| `user.library.filters.contact-none` | No contacts match this search. | Không có liên hệ phù hợp với tìm kiếm này. |
 | `user.library.filters.readiness` | Readiness | Trạng thái |
 | `user.library.filters.sizes` | Sizes ready | Đã có kích thước |
 | `user.library.filters.captioned` | Captioned | Đã có chú thích |
 | `user.library.filters.depth` | Depth | Độ sâu |
 | `user.library.filters.all-depths` | All depths | Mọi độ sâu |
+| `user.library.filters.depth-option` | Depth {depth} | Độ sâu {depth} |
 | `user.library.filters.apply` | Apply | Áp dụng |
 | `user.library.filters.reset` | Reset | Đặt lại |
 | `user.library.filters.clear` | Clear filters | Xóa bộ lọc |
@@ -293,9 +308,13 @@ Use stable selectors below; `{id}` is the photo id.
 | `user-library-filters` | desktop sidebar/mobile filter row |
 | `user-library-filter-kind` | kind group |
 | `user-library-filter-contact` | contact group |
+| `user-library-contact-search` | contact facet search field |
 | `user-library-filter-sizes` | sizes-ready checkbox |
 | `user-library-filter-captioned` | captioned checkbox |
 | `user-library-filter-depth` | depth group |
+| `user-library-filter-apply` | mobile filter group Apply button |
+| `user-library-filter-reset` | mobile filter group Reset button |
+| `user-library-filter-clear` | clear all filters button |
 | `user-library-sort` | sort select |
 | `user-library-grid` | photo grid |
 | `user-library-photo-{id}` | photo card |
@@ -303,10 +322,14 @@ Use stable selectors below; `{id}` is the photo id.
 | `user-library-photo-sizes-{id}` | sizes flag |
 | `user-library-photo-captioned-{id}` | caption flag |
 | `user-library-photo-tray-{id}` | card tray toggle |
+| `user-library-photo-select-{id}` | selection-mode checkbox |
+| `user-library-selection-status` | selection mode and selected count announcement |
 | `user-library-load-more` | paging button |
+| `user-library-load-more-retry` | retry button for paging failure |
 | `user-library-loading` | loading state |
 | `user-library-empty` | empty state |
 | `user-library-error` | error state |
+| `user-library-stale` | partial/stale status and retry |
 | `user-library-forbidden` | forbidden state |
 | `user-library-retry` | retry button |
 
