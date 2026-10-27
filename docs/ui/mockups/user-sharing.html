@@ -47,6 +47,7 @@
     input[type=radio], .theme-toggle { position:absolute; width:1px; height:1px; opacity:0; }
     .state-controls label, .theme-label { cursor:pointer; border:1px solid var(--line2); border-radius:999px; padding:6px 12px; color:var(--muted); background:var(--surface); font-size:12px; }
     #s-ready:checked ~ .app label[for=s-ready], #s-loading:checked ~ .app label[for=s-loading], #s-empty:checked ~ .app label[for=s-empty], #s-error:checked ~ .app label[for=s-error] { color:var(--accent-ink); background:var(--accent); border-color:var(--accent); }
+    #s-loading:checked ~ .app .main > .layout, #s-empty:checked ~ .app .main > .layout, #s-error:checked ~ .app .main > .layout { display:none; }
     .theme-label { margin-left:auto; }
     .states { max-width:1088px; padding:0 24px 56px; margin:auto; }
     .states > section { display:none; }
@@ -94,10 +95,10 @@
     <main class="main" data-testid="sharing-page">
       <h1>Sharing</h1>
       <p class="lead">Share eligible public records to reduce duplicate Flickr calls for everyone.</p>
-      <div class="layout">
+      <div class="layout" data-state="ready">
         <section class="card" data-testid="sharing-setting-card">
           <div class="choice"><div class="copy"><h2>Share my crawled records</h2><p>Only eligible public record data is shared.</p></div><span class="switch on" role="switch" aria-checked="true" aria-label="Share my crawled records" data-testid="sharing-toggle"></span></div>
-          <div class="privacy" data-testid="sharing-never-shared"><svg class="lock" aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="15" r="1" fill="currentColor"/></svg><div><b>Never shared</b><p>Private, friends-only and family-only records, API keys and secrets, OAuth tokens, and downloads.</p></div></div>
+          <div class="privacy" data-testid="sharing-never-shared"><svg class="lock" aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="15" r="1" fill="currentColor"/></svg><div><b>Never shared</b><p>Private, friends-only and family-only records, API keys and secrets, OAuth tokens, downloads, and saved searches.</p></div></div>
         </section>
         <section class="card" data-testid="sharing-summary">
           <h2>What sharing gives you</h2>
@@ -111,7 +112,6 @@
       <div class="state-controls"><strong>Preview state</strong><label for="s-ready">Normal</label><label for="s-loading">Loading</label><label for="s-empty">Empty</label><label for="s-error">Error</label><label class="theme-label" for="theme">Toggle light / dark</label></div>
     </main>
     <div class="states">
-      <section data-state="ready"><div class="state-card"><h2>Sharing is on</h2><p>Your eligible public records are available to other XFlickr users. Private and account data stay private.</p><div class="modal-preview"><b>Turn-off confirmation preview</b><br>Turning sharing off takes effect as soon as you confirm. Other users will no longer see records contributed only by you.<div class="modal-actions"><button class="button">Cancel</button><button class="button primary">Turn sharing off</button></div></div></div></section>
       <section data-state="loading" aria-busy="true"><div class="state-card"><h2>Loading sharing</h2><p><span class="skeleton wide"></span></p><div class="stats"><div class="stat"><span class="skeleton"></span></div><div class="stat"><span class="skeleton"></span></div><div class="stat"><span class="skeleton"></span></div></div></div></section>
       <section data-state="empty" data-testid="sharing-empty-state"><div class="state-card"><h2>No shared records yet</h2><p>Public records will appear here as your crawl discovers them.</p><button class="button primary">Go to crawl</button></div></section>
       <section data-state="error" data-testid="sharing-error-state"><div class="state-card"><div class="error-mark" aria-hidden="true">!</div><h2>Could not load sharing</h2><p>Your sharing choice was not changed. Check your connection and try again.</p><button class="button primary">Retry</button></div></section>

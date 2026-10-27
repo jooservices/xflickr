@@ -34,8 +34,8 @@ Flickr calls. A two-column desktop grid stacks at 720px and below.
 1. **Sharing choice card:** heading “Share my crawled records”, a labeled
    switch, and a short note that only eligible public record data is shared.
    A separate lock row lists what is never shared: private, friends-only and
-   family-only records, API keys/secrets, OAuth tokens, and downloads. Keep
-   the complete list visible without opening a tooltip.
+   family-only records, API keys/secrets, OAuth tokens, downloads, and saved
+   searches. Keep the complete list visible without opening a tooltip.
 2. **Summary card:** heading “What sharing gives you”; three statistics: “You
    share” (the count of this user's eligible records currently visible to
    others), “You receive” (eligible public records available from other
@@ -63,15 +63,15 @@ does not change OpenAPI.
 
 | Content | Source and fields |
 | --- | --- |
-| Initial setting and summary | `GET /me/sharing` **contract request** (authenticated). Return `enabled: boolean` (false when unset), `changed_at: date-time (nullable)`, `shared_record_count: integer` (eligible records visible to others; zero when off), `received_record_count: integer` (zero when off), `calls_saved_count: integer` (zero when off), `calls_saved_period: "week"`, and `server_time: date-time`. Counts exclude private/friends/family records and are aggregate counts only. |
+| Initial setting and summary | `GET /me/sharing` **contract request** (authenticated; no read operation exists yet). Return `enabled: boolean` (false when unset), `changed_at: date-time (nullable)`, `shared_record_count: integer` (distinct eligible public records contributed by this user and visible to others; zero when off), `received_record_count: integer` (distinct eligible public records available from other opted-in users; zero when off), `calls_saved_count: integer` (deduplicated Flickr calls avoided through shared record reuse; zero when off), `calls_saved_period: "week"`, and `server_time: date-time`. Counts exclude private/friends/family records and are aggregate counts only. |
 | Change setting | `PUT /me/sharing` **exists**. Send `{enabled: boolean}`; response has `enabled`, `changed_at`. Requires CSRF. Persist the choice and publish `sharing.changed` transactionally. On success reconcile the switch immediately; when off, set all three summary counts to zero in the response/cache before refreshing summary. **Contract request:** include the updated counts in the response, or guarantee the subsequent summary read reflects the committed choice. |
 | Summary refresh | `GET /me/sharing` contract request above. Re-read after successful setting change and after a sharing summary event. |
 | Live summary | `GET /events` **exists** as authenticated SSE with `Last-Event-ID`, but currently streams crawl/download progress only. **Contract request:** add user-scoped `sharing.summary.updated` carrying no counts or personal record data; on receipt fetch `GET /me/sharing`. The setting's internal `sharing.changed` outbox event is not itself a browser event. |
 | Errors | Shared `Error` body has `code`, `message`, `details`. Localize by `code`; never display server English `message`. `401` expires session; `403` forbidden; `429`/network/5xx retain previous values and offer retry. |
 
-The summary endpoint must return counts only and must never return record titles,
-photo URLs, usernames of contributors, identifiers, visibility details, or
-another user's setting. Counts are computed from distinct eligible records;
+The requested summary endpoint must return counts only and must never return
+record titles, photo URLs, usernames of contributors, identifiers, visibility
+details, or another user's setting. Counts are computed from distinct eligible records;
 turning sharing off immediately removes this user's contribution from the
 shared pool and returns zero for all three sharing summary counts, while the
 user's own observations remain available to them through their own access.
@@ -191,7 +191,7 @@ confirmation, and error. Dynamic values use named placeholders.
 | user.sharing.choice.off | Sharing is off | Đang tắt chia sẻ |
 | user.sharing.choice.public | Only eligible public record data is shared. | Chỉ dữ liệu công khai đủ điều kiện được chia sẻ. |
 | user.sharing.never.title | Never shared | Không bao giờ được chia sẻ |
-| user.sharing.never.text | Private, friends-only and family-only records, API keys and secrets, OAuth tokens, and downloads are never shared. | Dữ liệu riêng tư, chỉ bạn bè, chỉ gia đình, khóa và mã bí mật API, mã thông báo OAuth và nội dung tải xuống không bao giờ được chia sẻ. |
+| user.sharing.never.text | Private, friends-only and family-only records, API keys and secrets, OAuth tokens, downloads, and saved searches are never shared. | Dữ liệu riêng tư, chỉ bạn bè, chỉ gia đình, khóa và mã bí mật API, mã thông báo OAuth, nội dung tải xuống và tìm kiếm đã lưu không bao giờ được chia sẻ. |
 | user.sharing.summary.title | What sharing gives you | Chia sẻ mang lại điều gì |
 | user.sharing.summary.shared | You share | Bạn chia sẻ |
 | user.sharing.summary.records | records visible to others | bản ghi hiển thị với người khác |
