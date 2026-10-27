@@ -30,6 +30,11 @@ At 1440 px, use the shell's 226 px rail and remaining content width. Show the
 page title, short description, Refresh and Add node actions, then a three-column
 grid of node cards. Cards show identity and health, four resource rows, assigned
 keys, worker count, heartbeat age, hourly 429 count and remaining cool-down.
+CPU is a percentage bar; RAM and disk bars are used bytes divided by total
+bytes; network has separate inbound and outbound utilization bars plus Mbps
+labels. A bar is clamped to 0–100% and its text value remains visible. For
+network, the control node reports the configured interface-capacity utilization
+percentages; it does not derive utilization from an assumed link speed.
 Follow with a Key placement panel containing key, user, node, egress IP, calls
 per second, state and Move action. Use existing `node-card`, `resource-bar`,
 `pill`, `panel`, `table`, `button`, `empty-block`, `banner` and `skeleton`
@@ -48,7 +53,7 @@ personal data.
 | Content | Data source and fields | Action |
 | --- | --- | --- |
 | Node identity | Contract request `GET /admin/nodes`: `nodes[].id`, `role` (`control`/`crawl`/`crawl_media`), `region`, `egress_ip`, `health` (`ok`/`cooling`/`blocked`/`offline`), `enabled`, `draining`, `agent_version`, `generated_at`. Egress IP is the public source address used for Flickr calls. | Open card to `/admin/nodes/:id`. |
-| CPU, RAM, disk, network | Same requested response: `cpu_percent`, `ram_used_bytes`, `ram_total_bytes`, `disk_used_bytes`, `disk_total_bytes`, `network_in_mbps`, `network_out_mbps`. Show bars with text values and labelled meters. | Open node detail. |
+| CPU, RAM, disk, network | Same requested response: `cpu_percent`, `ram_used_bytes`, `ram_total_bytes`, `disk_used_bytes`, `disk_total_bytes`, `network_in_mbps`, `network_out_mbps`, `network_in_percent`, `network_out_percent`. All fields come from `GET /admin/nodes`; network percentages are measured against the node's configured interface capacity. Show labelled bars and readable values; retain Mbps labels for network. | Open node detail. |
 | Keys assigned | Existing `GET /admin/quota`: `keys[].key_id`, `label`, `user_id`, `node`, `used`, `limit`, `state`, `trend`. Contract request extends node list with `keys_assigned` count; egress IP for the placement table comes from the node snapshot. | Move opens a confirmation modal; target choices are enabled, healthy crawl nodes other than the current node. |
 | Workers | Contract request `GET /admin/nodes`: `workers_running`, `workers_capacity`. Display `running / capacity`. | Open node detail. |
 | Heartbeat, 429 and cooldown | Contract request `GET /admin/nodes`: `heartbeat_at`, `http_429_last_hour`, `cooldown_until`. Calculate heartbeat age and remaining cooldown from server timestamps and local time; show zero/expired as `—`. | Probe action is available for blocked or offline nodes. |
@@ -63,6 +68,16 @@ All five operator actions (probe, drain/undrain, disable/enable, move keys,
 create node token) require CSRF protection and an audit record for success or
 failure. Contract requests are proposals for the build ticket; no OpenAPI or
 backend change is part of this design ticket.
+
+Node health is independent of key quota state: `ok` accepts eligible work;
+`cooling` is the timed recovery window after the configured HTTP 429 threshold
+and exposes `cooldown_until`; `blocked` is a confirmed probe failure or
+operator block and remains ineligible until a successful probe or explicit
+unblock; `offline` means three consecutive heartbeat intervals were missed.
+Only `cooling` has an automatic end time. Disabled and draining are separate
+operational flags, not health values. The control node has no Flickr egress and
+shows no network call-rate value. Zero or missing resource totals render an
+unavailable value and no percentage bar.
 
 ## Actions
 
