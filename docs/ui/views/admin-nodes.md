@@ -176,12 +176,24 @@ copy keys:
 | admin.nodes.health.cooling | Cooling | Đang chờ hồi phục |
 | admin.nodes.health.blocked | Blocked | Bị chặn |
 | admin.nodes.health.offline | Offline | Ngoại tuyến |
+| admin.nodes.state | State | Trạng thái |
+| admin.nodes.action | Action | Hành động |
+| admin.nodes.enabled | Enabled | Đã bật |
+| admin.nodes.disabled | Disabled | Đã tắt |
+| admin.nodes.draining | Draining | Đang rút việc |
+| admin.nodes.role.control | Control | Điều khiển |
+| admin.nodes.role.crawl | Crawl | Thu thập dữ liệu |
+| admin.nodes.role.crawl-media | Crawl + media | Thu thập dữ liệu + phương tiện |
 | admin.nodes.cpu | CPU | CPU |
 | admin.nodes.ram | RAM | RAM |
 | admin.nodes.disk | Disk | Ổ đĩa |
 | admin.nodes.network | Network | Mạng |
+| admin.nodes.network-in | In | Vào |
+| admin.nodes.network-out | Out | Ra |
 | admin.nodes.keys-assigned | Keys assigned | Khóa được gán |
+| admin.nodes.no-keys | No keys assigned | Chưa có khóa nào được gán |
 | admin.nodes.workers | Workers | Worker |
+| admin.nodes.workers-capacity | Running / capacity | Đang chạy / sức chứa |
 | admin.nodes.heartbeat | Heartbeat | Nhịp tín hiệu |
 | admin.nodes.heartbeat-age | {age} ago | {age} trước |
 | admin.nodes.http-429 | HTTP 429 this hour | HTTP 429 trong giờ này |
@@ -191,15 +203,27 @@ copy keys:
 | admin.nodes.user | User | Người dùng |
 | admin.nodes.calls-per-second | Calls / second | Lượt gọi / giây |
 | admin.nodes.move-key | Move key | Chuyển khóa |
+| admin.nodes.move-key.target | Target node | Node đích |
+| admin.nodes.move-key.confirm | Move key to this node? | Chuyển khóa sang node này? |
+| admin.nodes.move-key.success | Key moved | Đã chuyển khóa |
+| admin.nodes.move-key.error | Could not move key | Không thể chuyển khóa |
 | admin.nodes.probe | Send probe | Gửi yêu cầu kiểm tra |
+| admin.nodes.probe.success | Probe completed | Đã hoàn tất kiểm tra |
+| admin.nodes.probe.error | Probe failed | Kiểm tra không thành công |
 | admin.nodes.drain | Drain | Rút node khỏi nhận việc |
 | admin.nodes.undrain | Undrain | Cho node nhận việc lại |
+| admin.nodes.drain.confirm | Change this node's drain state? | Thay đổi trạng thái rút việc của node này? |
 | admin.nodes.disable | Disable | Tắt node |
 | admin.nodes.enable | Enable | Bật node |
+| admin.nodes.disable.confirm | Disable this node? Assigned keys will stop making calls. | Tắt node này? Các khóa được gán sẽ ngừng gọi API. |
+| admin.nodes.disable.control-error | The control node cannot be disabled. | Không thể tắt node điều khiển. |
 | admin.nodes.create-token | Create node token | Tạo token cho node |
+| admin.nodes.token.role | Node role | Vai trò node |
+| admin.nodes.token.region | Region | Khu vực |
+| admin.nodes.token.expires | Expires | Hết hạn |
 | admin.nodes.copy-token | Copy token | Sao chép token |
 | admin.nodes.token-created | Token created. Copy it now; it will only be shown once. | Đã tạo token. Hãy sao chép ngay; token chỉ hiển thị một lần. |
-| admin.nodes.no-keys | No keys assigned | Chưa có khóa nào được gán |
+| admin.nodes.token.error | Could not create node token | Không thể tạo token cho node |
 | admin.nodes.empty.title | No nodes joined | Chưa có node nào kết nối |
 | admin.nodes.empty.text | Start the node agent on a VM with a join token. | Khởi chạy node agent trên máy ảo bằng token kết nối. |
 | admin.nodes.empty.cta | Add node | Thêm node |
@@ -217,6 +241,7 @@ copy keys:
 | admin.nodes.confirm | Confirm | Xác nhận |
 | admin.nodes.cancel | Cancel | Hủy |
 | admin.nodes.copied | Token copied | Đã sao chép token |
+| admin.nodes.live-update | Cluster data updated | Dữ liệu cụm đã được cập nhật |
 | common.status.live | Live | Trực tiếp |
 | common.status.paused | Paused | Tạm dừng |
 
