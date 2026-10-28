@@ -1,0 +1,58 @@
+CreateNodeRequest:
+  type: object
+  additionalProperties: false
+  required: [name, roles]
+  properties:
+    name:
+      type: string
+      minLength: 1
+      maxLength: 128
+    roles:
+      type: array
+      minItems: 1
+      maxItems: 32
+      uniqueItems: true
+      items:
+        type: string
+        pattern: '^[a-z][a-z0-9_-]{0,63}$'
+CreatedNode:
+  type: object
+  additionalProperties: false
+  required: [name, roles, state, token]
+  properties:
+    name: { type: string }
+    roles:
+      type: array
+      items: { type: string }
+    state:
+      type: string
+      enum: [online, warning, cooling, offline, disabled]
+    token:
+      type: string
+      description: One-time bearer token. Store securely; it cannot be retrieved later.
+NodeHeartbeatRequest:
+  type: object
+  additionalProperties: false
+  properties:
+    version:
+      type: string
+      maxLength: 64
+    egress_ip:
+      type: string
+      description: IPv4 or IPv6 address observed by the node.
+    metrics:
+      type: object
+      additionalProperties: true
+      description: Node resource metrics; arbitrary JSON object up to 64 KiB.
+NodeHeartbeatResponse:
+  type: object
+  additionalProperties: false
+  required: [name, state, last_heartbeat_at]
+  properties:
+    name: { type: string }
+    state:
+      type: string
+      enum: [online, warning, cooling, offline, disabled]
+    last_heartbeat_at:
+      type: string
+      format: date-time

@@ -38,6 +38,9 @@ components:
   crawl-app:        { in: internal/crawl/app/** }
   crawl-adapters:   { in: internal/crawl/adapters/** }
   crawl-facets:     { in: internal/crawl/facets/** }
+  cluster-domain:   { in: internal/cluster/domain/** }
+  cluster-app:      { in: internal/cluster/app/** }
+  cluster-adapters: { in: internal/cluster/adapters/** }
   sharing-domain:   { in: internal/sharing/domain/** }
   sharing-app:      { in: internal/sharing/app/** }
   sharing-adapters: { in: internal/sharing/adapters/** }
@@ -115,6 +118,10 @@ deps:
     mayDependOn: [crawl-domain, catalog-domain, pkg]
   crawl-adapters:
     mayDependOn: [crawl-domain, crawl-app, platform, settings-app, settings-domain]
+  cluster-app:
+    mayDependOn: [cluster-domain, platform]
+  cluster-adapters:
+    mayDependOn: [cluster-domain, cluster-app, platform]
   media-app:
     mayDependOn: [media-domain, catalog-domain, catalog-app, sharing-domain]
   media-adapters:
@@ -153,6 +160,9 @@ deps:
       - crawl-app
       - crawl-adapters
       - crawl-facets
+      - cluster-domain
+      - cluster-app
+      - cluster-adapters
       - sharing-domain
       - sharing-app
       - sharing-adapters

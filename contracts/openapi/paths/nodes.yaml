@@ -1,0 +1,68 @@
+admin_nodes:
+  post:
+    operationId: CreateAdminNode
+    tags: [admin]
+    summary: Register a node and issue its one-time token
+    description: The opaque token is returned only in this response; storage keeps its SHA-256 hash.
+    security:
+      - SessionCookie: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: ../schemas/nodes.yaml#/CreateNodeRequest }
+    responses:
+      '201':
+        description: Registered node and one-time bearer token
+        content:
+          application/json:
+            schema: { $ref: ../schemas/nodes.yaml#/CreatedNode }
+      '400':
+        description: Invalid node name or roles
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '403':
+        description: Administrator role required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '409':
+        description: A node with this name already exists
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+heartbeat:
+  post:
+    operationId: HeartbeatNode
+    tags: [internal]
+    summary: Record a node heartbeat
+    description: This operation is served only by the explicitly configured internal listener. Tokens are stored as hashes; heartbeat history is emitted as structured events.
+    security:
+      - NodeToken: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: ../schemas/nodes.yaml#/NodeHeartbeatRequest }
+    responses:
+      '200':
+        description: Updated node heartbeat state
+        content:
+          application/json:
+            schema: { $ref: ../schemas/nodes.yaml#/NodeHeartbeatResponse }
+      '400':
+        description: Invalid heartbeat metadata
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '401':
+        description: Missing, invalid, or disabled node token
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }

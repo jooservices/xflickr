@@ -7,15 +7,25 @@ import (
 	"net/http/httptest"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	clusterhttp "github.com/jooservices/xflickr/internal/cluster/adapters/http"
+	clusterapp "github.com/jooservices/xflickr/internal/cluster/app"
+	clusterdomain "github.com/jooservices/xflickr/internal/cluster/domain"
+
 	accountshttp "github.com/jooservices/xflickr/internal/accounts/adapters/http"
+	crawlhttp "github.com/jooservices/xflickr/internal/crawl/adapters/http"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	identitydomain "github.com/jooservices/xflickr/internal/identity/domain"
+	mediahttp "github.com/jooservices/xflickr/internal/media/adapters/http"
+	quotahttp "github.com/jooservices/xflickr/internal/quota/adapters/http"
 	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
+	sharinghttp "github.com/jooservices/xflickr/internal/sharing/adapters/http"
 )
 
 // roleSessions authenticates the "session" cookie as a user with the given role.
@@ -159,4 +169,70 @@ func TestAPIErrorHandlers(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "canceled") || !strings.Contains(rec.Body.String(), `"code":"internal_error"`) {
 		t.Fatalf("internal error = %d %s", rec.Code, rec.Body.String())
 	}
+}
+
+func TestNodeHeartbeatIsIsolatedToConfiguredInternalRouter(t *testing.T) {
+	lastHeartbeat := time.Now().UTC()
+	service := &routeNodeService{node: clusterdomain.Node{Name: "node-1", State: clusterdomain.StateOnline, LastHeartbeatAt: &lastHeartbeat}}
+	nodes := clusterhttp.Handler{Service: service}
+	routers := newAPIRoutersWithServices(identityhttp.Handler{Sessions: stubSessions{}}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{}, crawlhttp.CrawlHandler{}, quotahttp.QuotaHandler{}, sharinghttp.Handler{}, mediahttp.DownloadHandler{}, nodes)
+	request := func(method, path, auth string) *http.Request {
+		req := httptest.NewRequest(method, path, strings.NewReader("{\"version\":\"v1\"}"))
+		req.Header.Set("Content-Type", "application/json")
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		return req
+	}
+	public := httptest.NewRecorder()
+	routers.public.ServeHTTP(public, request(http.MethodPost, "/internal/nodes/heartbeat", "Bearer node-token"))
+	if public.Code != http.StatusNotFound {
+		t.Fatalf("public API exposed node heartbeat: %d %s", public.Code, public.Body.String())
+	}
+	unauthenticated := httptest.NewRecorder()
+	routers.internal.ServeHTTP(unauthenticated, request(http.MethodPost, "/internal/nodes/heartbeat", ""))
+	if unauthenticated.Code != http.StatusUnauthorized {
+		t.Fatalf("internal API without token = %d %s", unauthenticated.Code, unauthenticated.Body.String())
+	}
+	accepted := httptest.NewRecorder()
+	routers.internal.ServeHTTP(accepted, request(http.MethodPost, "/internal/nodes/heartbeat", "Bearer node-token"))
+	if accepted.Code != http.StatusOK || !strings.Contains(accepted.Body.String(), "node-1") {
+		t.Fatalf("internal heartbeat = %d %s", accepted.Code, accepted.Body.String())
+	}
+	service.mu.Lock()
+	calls := service.heartbeats
+	service.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("accepted heartbeats = %d, want 1", calls)
+	}
+	other := httptest.NewRecorder()
+	routers.internal.ServeHTTP(other, request(http.MethodGet, "/admin/nodes", "Bearer node-token"))
+	if other.Code != http.StatusNotFound {
+		t.Fatalf("internal listener exposed another route: %d", other.Code)
+	}
+}
+
+type routeNodeService struct {
+	mu         sync.Mutex
+	node       clusterdomain.Node
+	heartbeats int
+}
+
+func (service *routeNodeService) Create(context.Context, string, []string) (clusterdomain.Node, string, error) {
+	return service.node, "unused", nil
+}
+
+func (service *routeNodeService) AuthenticateToken(_ context.Context, token string) (clusterdomain.Node, error) {
+	if token != "node-token" {
+		return clusterdomain.Node{}, clusterapp.ErrInvalidToken
+	}
+	return service.node, nil
+}
+
+func (service *routeNodeService) Heartbeat(_ context.Context, name string, _ clusterapp.HeartbeatInput) (clusterdomain.Node, error) {
+	service.mu.Lock()
+	service.heartbeats++
+	service.mu.Unlock()
+	service.node.Name = name
+	return service.node, nil
 }

@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,15 +32,17 @@ type Config struct {
 	Flickr   FlickrConfig
 	CallLog  CallLogConfig
 
-	DownloadLinkTTL time.Duration
-	HTTPPort        int
-	LogLevel        string
+	DownloadLinkTTL  time.Duration
+	HTTPPort         int
+	InternalHTTPAddr string
+	LogLevel         string
 }
 
 type runtimeConfig struct {
-	DownloadLinkTTL time.Duration `env:"DOWNLOAD_LINK_TTL" envDefault:"15m"`
-	HTTPPort        int           `env:"HTTP_PORT" envDefault:"8080"`
-	LogLevel        string        `env:"LOG_LEVEL" envDefault:"info"`
+	DownloadLinkTTL  time.Duration `env:"DOWNLOAD_LINK_TTL" envDefault:"15m"`
+	HTTPPort         int           `env:"HTTP_PORT" envDefault:"8080"`
+	InternalHTTPAddr string        `env:"INTERNAL_HTTP_ADDR"`
+	LogLevel         string        `env:"LOG_LEVEL" envDefault:"info"`
 }
 
 // DBConfig contains PostgreSQL connection settings.
@@ -251,6 +255,7 @@ func LoadFromEnv(values map[string]string) (Config, error) {
 	}
 	cfg.DownloadLinkTTL = runtime.DownloadLinkTTL
 	cfg.HTTPPort = runtime.HTTPPort
+	cfg.InternalHTTPAddr = strings.TrimSpace(runtime.InternalHTTPAddr)
 	cfg.LogLevel = runtime.LogLevel
 	if err := cfg.validate(); err != nil {
 		return Config{}, err
@@ -347,6 +352,17 @@ func (cfg *Config) validate() error {
 	if cfg.HTTPPort < 1 || cfg.HTTPPort > 65535 {
 		return fmt.Errorf("HTTP_PORT must be between 1 and 65535")
 	}
+	if cfg.InternalHTTPAddr != "" {
+		host, portText, err := net.SplitHostPort(cfg.InternalHTTPAddr)
+		port, portErr := strconv.Atoi(portText)
+		address := net.ParseIP(host)
+		if err != nil || portErr != nil || port < 1 || port > 65535 || address == nil {
+			return fmt.Errorf("INTERNAL_HTTP_ADDR must be a specific IP address and a port between 1 and 65535")
+		}
+		if address.IsUnspecified() {
+			return fmt.Errorf("INTERNAL_HTTP_ADDR must not bind to a wildcard address")
+		}
+	}
 	if err := cfg.DB.Validate(); err != nil {
 		return err
 	}
@@ -405,7 +421,7 @@ func (cfg *Config) validate() error {
 // URL user information and query parameters may also contain secrets.
 func (cfg Config) String() string {
 	return fmt.Sprintf(
-		"Config{DB:{host:%q port:%d name:%q user:%q password:%s}, Redis:{host:%q port:%d db:%d prefix:%q password:%s}, Search:{endpoint_configured:%t username:%q password:%s index_prefix:%q}, Blob:{driver:%q local_dir:%q s3_endpoint_configured:%t s3_region:%q s3_bucket:%q s3_access_key:%s s3_secret_key:%s}, AI:{endpoint_configured:%t caption_model:%q embedding_model:%q}, Obs:{endpoint_configured:%t org:%q stream:%q username:%q password:%s}, Node:{id:%q}, CallLog:{retention_days:%d}, Crypto:{master_keys:%s active_master_key_id:%s}, HTTPPort:%d LogLevel:%q}",
+		"Config{DB:{host:%q port:%d name:%q user:%q password:%s}, Redis:{host:%q port:%d db:%d prefix:%q password:%s}, Search:{endpoint_configured:%t username:%q password:%s index_prefix:%q}, Blob:{driver:%q local_dir:%q s3_endpoint_configured:%t s3_region:%q s3_bucket:%q s3_access_key:%s s3_secret_key:%s}, AI:{endpoint_configured:%t caption_model:%q embedding_model:%q}, Obs:{endpoint_configured:%t org:%q stream:%q username:%q password:%s}, Node:{id:%q}, CallLog:{retention_days:%d}, Crypto:{master_keys:%s active_master_key_id:%s}, HTTPPort:%d InternalHTTPAddr:%q LogLevel:%q}",
 		cfg.DB.Host, cfg.DB.Port, cfg.DB.Name, cfg.DB.User, mask(cfg.DB.Password),
 		cfg.Redis.Host, cfg.Redis.Port, cfg.Redis.DB, cfg.Redis.Prefix, mask(cfg.Redis.Password),
 		cfg.Search.URL != "", cfg.Search.Username, mask(cfg.Search.Password), cfg.Search.IndexPrefix,
@@ -413,7 +429,7 @@ func (cfg Config) String() string {
 		mask(cfg.Blob.S3AccessKey), mask(cfg.Blob.S3SecretKey),
 		cfg.AI.URL != "", cfg.AI.CaptionModel, cfg.AI.EmbeddingModel,
 		cfg.Obs.URL != "", cfg.Obs.Org, cfg.Obs.Stream, cfg.Obs.Username, mask(cfg.Obs.Password),
-		cfg.Node.ID, cfg.CallLog.RetentionDays, mask(cfg.Crypto.MasterKeys), mask(cfg.Crypto.ActiveMasterKeyID), cfg.HTTPPort, cfg.LogLevel,
+		cfg.Node.ID, cfg.CallLog.RetentionDays, mask(cfg.Crypto.MasterKeys), mask(cfg.Crypto.ActiveMasterKeyID), cfg.HTTPPort, cfg.InternalHTTPAddr, cfg.LogLevel,
 	)
 }
 

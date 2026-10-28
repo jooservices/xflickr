@@ -60,6 +60,22 @@ describe('validateBody', () => {
     expect(validateBody('/downloads/9/parts/1/fetched', 'POST', 204, undefined)).toBeUndefined();
   });
 
+  it('validates node registration and heartbeat responses against OpenAPI', () => {
+    const created = {
+      name: 'node-1',
+      roles: ['crawl'],
+      state: 'offline',
+      token: 'A'.repeat(43),
+    };
+    expect(validateBody('/admin/nodes', 'POST', 201, created)).toEqual(created);
+    const heartbeat = {
+      name: 'node-1',
+      state: 'online',
+      last_heartbeat_at: '2026-10-28T12:00:00Z',
+    };
+    expect(validateBody('/internal/nodes/heartbeat', 'POST', 200, heartbeat)).toEqual(heartbeat);
+  });
+
   it.each([
     ['/keys', 'GET', {}],
     ['/keys', 'GET', null],

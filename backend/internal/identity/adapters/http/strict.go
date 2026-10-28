@@ -196,3 +196,13 @@ func (StrictHandler) GetAdminFlags(context.Context, gen.GetAdminFlagsRequestObje
 func (StrictHandler) UpdateAdminFlags(context.Context, gen.UpdateAdminFlagsRequestObject) (gen.UpdateAdminFlagsResponseObject, error) {
 	return nil, errFeatureFlagsServedBySettings
 }
+
+var errNodesServedByCluster = errors.New("identity: node registry endpoints are served by the cluster module")
+
+func (StrictHandler) CreateAdminNode(context.Context, gen.CreateAdminNodeRequestObject) (gen.CreateAdminNodeResponseObject, error) {
+	return nil, errNodesServedByCluster
+}
+
+func (StrictHandler) HeartbeatNode(context.Context, gen.HeartbeatNodeRequestObject) (gen.HeartbeatNodeResponseObject, error) {
+	return nil, errNodesServedByCluster
+}

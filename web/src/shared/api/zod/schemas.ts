@@ -488,6 +488,53 @@ export const ListAdminUsersResponse = zod.object({
 });
 
 /**
+ * The opaque token is returned only in this response; storage keeps its SHA-256 hash.
+ * @summary Register a node and issue its one-time token
+ */
+export const createAdminNodeBodyNameMax = 128;
+
+export const createAdminNodeBodyRolesItemRegExp = new RegExp('^[a-z][a-z0-9_-]{0,63}$');
+export const createAdminNodeBodyRolesMax = 32;
+
+export const CreateAdminNodeBody = zod.object({
+  name: zod.string().min(1).max(createAdminNodeBodyNameMax),
+  roles: zod
+    .array(zod.string().regex(createAdminNodeBodyRolesItemRegExp))
+    .min(1)
+    .max(createAdminNodeBodyRolesMax),
+});
+
+export const CreateAdminNodeResponse = zod.object({
+  name: zod.string(),
+  roles: zod.array(zod.string()),
+  state: zod.enum(['online', 'warning', 'cooling', 'offline', 'disabled']),
+  token: zod
+    .string()
+    .describe('One-time bearer token. Store securely; it cannot be retrieved later.'),
+});
+
+/**
+ * This operation is served only by the explicitly configured internal listener. Tokens are stored as hashes; heartbeat history is emitted as structured events.
+ * @summary Record a node heartbeat
+ */
+export const heartbeatNodeBodyVersionMax = 64;
+
+export const HeartbeatNodeBody = zod.object({
+  version: zod.string().max(heartbeatNodeBodyVersionMax).optional(),
+  egress_ip: zod.string().optional().describe('IPv4 or IPv6 address observed by the node.'),
+  metrics: zod
+    .record(zod.string(), zod.unknown())
+    .optional()
+    .describe('Node resource metrics; arbitrary JSON object up to 64 KiB.'),
+});
+
+export const HeartbeatNodeResponse = zod.object({
+  name: zod.string(),
+  state: zod.enum(['online', 'warning', 'cooling', 'offline', 'disabled']),
+  last_heartbeat_at: zod.iso.datetime({ offset: true }),
+});
+
+/**
  * Sends only the fields to change. The last active administrator cannot be disabled or demoted and the call responds with 409 and code last_admin. Every change is recorded in the audit trail.
  * @summary Change a user's role or disabled state
  */

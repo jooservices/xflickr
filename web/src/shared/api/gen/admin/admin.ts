@@ -26,6 +26,8 @@ import type {
   AdminQuota,
   AdminUser,
   AdminUserPage,
+  CreateNodeRequest,
+  CreatedNode,
   Error,
   FeatureFlag,
   ListAdminUsersParams,
@@ -214,6 +216,148 @@ export function useListAdminUsers<
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+export type createAdminNodeResponse201 = {
+  data: CreatedNode;
+  status: 201;
+};
+
+export type createAdminNodeResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type createAdminNodeResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type createAdminNodeResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type createAdminNodeResponse409 = {
+  data: Error;
+  status: 409;
+};
+
+export type createAdminNodeResponseSuccess = createAdminNodeResponse201 & {
+  headers: Headers;
+};
+export type createAdminNodeResponseError = (
+  | createAdminNodeResponse400
+  | createAdminNodeResponse401
+  | createAdminNodeResponse403
+  | createAdminNodeResponse409
+) & {
+  headers: Headers;
+};
+
+export type createAdminNodeResponse = createAdminNodeResponseSuccess | createAdminNodeResponseError;
+
+export const getCreateAdminNodeUrl = () => {
+  return `/admin/nodes`;
+};
+
+/**
+ * The opaque token is returned only in this response; storage keeps its SHA-256 hash.
+ * @summary Register a node and issue its one-time token
+ */
+export const createAdminNode = async (
+  createNodeRequest: CreateNodeRequest,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<createAdminNodeResponse> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit['headers']>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  return customFetch<createAdminNodeResponse>(getCreateAdminNodeUrl(), {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createNodeRequest),
+  });
+};
+
+export const getCreateAdminNodeMutationKey = () => ['createAdminNode'] as const;
+
+export const getCreateAdminNodeMutationOptions = <TError = Error, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAdminNode>>,
+    TError,
+    CreateAdminNodeMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createAdminNode>>,
+  TError,
+  CreateAdminNodeMutationVariables,
+  TContext
+> => {
+  const mutationKey = getCreateAdminNodeMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createAdminNode>>,
+    CreateAdminNodeMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createAdminNode(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateAdminNodeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createAdminNode>>
+>;
+export type CreateAdminNodeMutationBody = CreateNodeRequest;
+export type CreateAdminNodeMutationError = Error;
+export type CreateAdminNodeMutationVariables = { data: CreateNodeRequest };
+
+/**
+ * @summary Register a node and issue its one-time token
+ */
+export const useCreateAdminNode = <TError = Error, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createAdminNode>>,
+      TError,
+      CreateAdminNodeMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createAdminNode>>,
+  TError,
+  CreateAdminNodeMutationVariables,
+  TContext
+> => {
+  return useMutation(getCreateAdminNodeMutationOptions(options), queryClient);
+};
 export type updateAdminUserResponse200 = {
   data: AdminUser;
   status: 200;

@@ -119,3 +119,13 @@ func TestStrictHandlerLeavesFeatureFlagsToSettings(t *testing.T) {
 		t.Fatalf("update flags error = %v", err)
 	}
 }
+
+func TestStrictHandlerLeavesNodeEndpointsToCluster(t *testing.T) {
+	handler := StrictHandler{}
+	if _, err := handler.CreateAdminNode(t.Context(), gen.CreateAdminNodeRequestObject{}); !errors.Is(err, errNodesServedByCluster) {
+		t.Fatalf("create node error = %v", err)
+	}
+	if _, err := handler.HeartbeatNode(t.Context(), gen.HeartbeatNodeRequestObject{}); !errors.Is(err, errNodesServedByCluster) {
+		t.Fatalf("heartbeat error = %v", err)
+	}
+}
