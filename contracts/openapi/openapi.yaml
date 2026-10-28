@@ -46,6 +46,8 @@ paths:
     $ref: ./paths/admin_users.yaml#/item
   /admin/plans:
     $ref: ./paths/plans.yaml#/collection
+  /admin/flags:
+    $ref: ./paths/flags.yaml#/collection
   /admin/users/{id}/plan:
     $ref: ./paths/plans.yaml#/user_plan
   /me/crawl/queue:
@@ -114,6 +116,10 @@ components:
       $ref: ./schemas/plans.yaml#/Plan
     UpdateAdminPlansRequest:
       $ref: ./schemas/plans.yaml#/UpdateAdminPlansRequest
+    FeatureFlag:
+      $ref: ./schemas/flags.yaml#/FeatureFlag
+    UpdateAdminFlagsRequest:
+      $ref: ./schemas/flags.yaml#/UpdateAdminFlagsRequest
     UpdateUserPlanRequest:
       $ref: ./schemas/plans.yaml#/UpdateUserPlanRequest
     CrawlQueue:

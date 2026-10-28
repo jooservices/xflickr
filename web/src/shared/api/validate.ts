@@ -52,6 +52,8 @@ export const ROUTES: Route[] = [
   route('PATCH', '/admin/users/{id}', contract.UpdateAdminUserResponse),
   route('GET', '/admin/plans', contract.GetAdminPlansResponse),
   route('PUT', '/admin/plans', contract.UpdateAdminPlansResponse),
+  route('GET', '/admin/flags', contract.GetAdminFlagsResponse),
+  route('PUT', '/admin/flags', contract.UpdateAdminFlagsResponse),
   route('PUT', '/admin/users/{id}/plan', contract.UpdateAdminUserPlanResponse),
   route('GET', '/flickr-accounts', contract.ListFlickrAccountsResponse),
   route('GET', '/me/crawl', contract.GetMeCrawlResponse),

@@ -19,6 +19,11 @@ describe('validateBody', () => {
     expect(validateBody('/keys/7?x=1', 'GET', 200, key)).toEqual(key);
     expect(validateBody('/flickr-accounts', 'GET', 200, [])).toEqual([]);
     expect(
+      validateBody('/admin/flags', 'GET', 200, [
+        { name: 'new-search', enabled: true, audience: 'admins', user_ids: [] },
+      ]),
+    ).toEqual([{ name: 'new-search', enabled: true, audience: 'admins', user_ids: [] }]);
+    expect(
       validateBody('/readyz', 'GET', 200, {
         status: 'ok',
         dependencies: [{ name: 'api.postgres', status: 'ok' }],

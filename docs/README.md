@@ -18,6 +18,8 @@
   CSRF, and role checks.
 - [Admin user management](admin-users.md) — list, disable and promote users,
   last-administrator rule, and audit port.
+- [Feature flags](feature-flags.md) — administrator-managed rollout flags,
+  audience rules, API routes, and cache behavior.
 - [Plans](plans.md) — configurable entitlements, administrator updates, and user
   plan assignment.
 - [API keys](api-keys.md) — bring-your-own Flickr key validation, sealing, and
