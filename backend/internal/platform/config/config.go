@@ -28,6 +28,7 @@ type Config struct {
 	Crypto   CryptoConfig
 	Identity IdentityConfig
 	Flickr   FlickrConfig
+	CallLog  CallLogConfig
 
 	HTTPPort int
 	LogLevel string
@@ -127,6 +128,11 @@ type FlickrConfig struct {
 	// UpstreamURL points the REST and OAuth calls at another Flickr-compatible
 	// server such as fakeflickr. Empty keeps Flickr's own endpoints.
 	UpstreamURL string `env:"FLICKR_UPSTREAM_URL"`
+}
+
+// CallLogConfig contains retention settings for diagnostic call history.
+type CallLogConfig struct {
+	RetentionDays int `env:"API_CALL_LOG_RETENTION_DAYS" envDefault:"30"`
 }
 
 var requiredEnvironment = []string{
@@ -234,6 +240,7 @@ func LoadFromEnv(values map[string]string) (Config, error) {
 		&cfg.Crypto,
 		&cfg.Identity,
 		&cfg.Flickr,
+		&cfg.CallLog,
 		&runtime,
 	} {
 		if err := env.ParseWithOptions(target, env.Options{Environment: values}); err != nil {
@@ -316,6 +323,9 @@ func (cfg DBConfig) Validate() error {
 
 //nolint:cyclop // flat list of independent config invariants
 func (cfg *Config) validate() error {
+	if cfg.CallLog.RetentionDays < 1 || cfg.CallLog.RetentionDays > 3650 {
+		return fmt.Errorf("API_CALL_LOG_RETENTION_DAYS must be between 1 and 3650")
+	}
 	if cfg.Identity.Argon2Memory < 8*uint32(cfg.Identity.Argon2Parallelism) || cfg.Identity.Argon2Iterations == 0 || cfg.Identity.Argon2Parallelism == 0 || cfg.Identity.Argon2SaltLength < 8 || cfg.Identity.Argon2KeyLength < 16 {
 		return fmt.Errorf("ARGON2ID parameters are invalid")
 	}
@@ -386,7 +396,7 @@ func (cfg *Config) validate() error {
 // URL user information and query parameters may also contain secrets.
 func (cfg Config) String() string {
 	return fmt.Sprintf(
-		"Config{DB:{host:%q port:%d name:%q user:%q password:%s}, Redis:{host:%q port:%d db:%d prefix:%q password:%s}, Search:{endpoint_configured:%t username:%q password:%s index_prefix:%q}, Blob:{driver:%q local_dir:%q s3_endpoint_configured:%t s3_region:%q s3_bucket:%q s3_access_key:%s s3_secret_key:%s}, AI:{endpoint_configured:%t caption_model:%q embedding_model:%q}, Obs:{endpoint_configured:%t org:%q stream:%q username:%q password:%s}, Node:{id:%q}, Crypto:{master_keys:%s active_master_key_id:%s}, HTTPPort:%d LogLevel:%q}",
+		"Config{DB:{host:%q port:%d name:%q user:%q password:%s}, Redis:{host:%q port:%d db:%d prefix:%q password:%s}, Search:{endpoint_configured:%t username:%q password:%s index_prefix:%q}, Blob:{driver:%q local_dir:%q s3_endpoint_configured:%t s3_region:%q s3_bucket:%q s3_access_key:%s s3_secret_key:%s}, AI:{endpoint_configured:%t caption_model:%q embedding_model:%q}, Obs:{endpoint_configured:%t org:%q stream:%q username:%q password:%s}, Node:{id:%q}, CallLog:{retention_days:%d}, Crypto:{master_keys:%s active_master_key_id:%s}, HTTPPort:%d LogLevel:%q}",
 		cfg.DB.Host, cfg.DB.Port, cfg.DB.Name, cfg.DB.User, mask(cfg.DB.Password),
 		cfg.Redis.Host, cfg.Redis.Port, cfg.Redis.DB, cfg.Redis.Prefix, mask(cfg.Redis.Password),
 		cfg.Search.URL != "", cfg.Search.Username, mask(cfg.Search.Password), cfg.Search.IndexPrefix,
@@ -394,7 +404,7 @@ func (cfg Config) String() string {
 		mask(cfg.Blob.S3AccessKey), mask(cfg.Blob.S3SecretKey),
 		cfg.AI.URL != "", cfg.AI.CaptionModel, cfg.AI.EmbeddingModel,
 		cfg.Obs.URL != "", cfg.Obs.Org, cfg.Obs.Stream, cfg.Obs.Username, mask(cfg.Obs.Password),
-		cfg.Node.ID, mask(cfg.Crypto.MasterKeys), mask(cfg.Crypto.ActiveMasterKeyID), cfg.HTTPPort, cfg.LogLevel,
+		cfg.Node.ID, cfg.CallLog.RetentionDays, mask(cfg.Crypto.MasterKeys), mask(cfg.Crypto.ActiveMasterKeyID), cfg.HTTPPort, cfg.LogLevel,
 	)
 }
 

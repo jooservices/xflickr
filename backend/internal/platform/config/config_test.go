@@ -35,6 +35,9 @@ func TestLoadFromEnvAppliesDefaults(t *testing.T) {
 	if cfg.Flickr.CallbackURL != "http://127.0.0.1:8080/flickr-accounts/callback" {
 		t.Errorf("Flickr callback default = %q", cfg.Flickr.CallbackURL)
 	}
+	if cfg.CallLog.RetentionDays != 30 {
+		t.Errorf("call log retention default = %d", cfg.CallLog.RetentionDays)
+	}
 	if cfg.HTTPPort != 8080 || cfg.LogLevel != "info" {
 		t.Errorf("runtime defaults = port %d, level %q", cfg.HTTPPort, cfg.LogLevel)
 	}
@@ -42,50 +45,52 @@ func TestLoadFromEnvAppliesDefaults(t *testing.T) {
 
 func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 	values := requiredEnv()
+	testDBPassword := strings.Repeat("x", 32)
 	for key, value := range map[string]string{
-		"DB_HOST":                   "db.internal",
-		"DB_PORT":                   "5544",
-		"DB_NAME":                   "worktree_db",
-		"DB_USER":                   "worker",
-		"DB_PASSWORD":               "db-pass",
-		"DB_SSLMODE":                "require",
-		"DB_MAX_CONNS":              "35",
-		"DB_MIN_CONNS":              "4",
-		"DB_MAX_CONN_LIFETIME":      "45m",
-		"DB_MAX_CONN_IDLE_TIME":     "12m",
-		"DB_HEALTH_CHECK_PERIOD":    "30s",
-		"REDIS_HOST":                "redis.internal",
-		"REDIS_PORT":                "16383",
-		"REDIS_DB":                  "9",
-		"REDIS_PASSWORD":            "redis-pass",
-		"REDIS_PREFIX":              "xflickr_wt68:",
-		"SEARCH_URL":                "http://search.internal:9200",
-		"SEARCH_USERNAME":           "search-user",
-		"SEARCH_PASSWORD":           "search-pass",
-		"OPENSEARCH_INDEX_PREFIX":   "xflickr_wt68_",
-		"BLOB_DRIVER":               "s3",
-		"BLOB_LOCAL_DIR":            "/tmp/blobs",
-		"BLOB_MAX_BYTES":            "1234567",
-		"BLOB_MAX_TTL":              "48h",
-		"S3_ENDPOINT":               "https://objects.internal",
-		"S3_REGION":                 "ap-southeast-1",
-		"S3_BUCKET":                 "xflickr-worktree",
-		"S3_ACCESS_KEY":             "s3-access",
-		"S3_SECRET_KEY":             "s3-secret",
-		"S3_USE_PATH_STYLE":         "true",
-		"OLLAMA_URL":                "http://ollama.internal:11434",
-		"OLLAMA_CAPTION_MODEL":      "caption-model",
-		"OLLAMA_EMBEDDING_MODEL":    "embedding-model",
-		"OPENOBSERVE_URL":           "https://observe.internal",
-		"OPENOBSERVE_USERNAME":      "observe-user",
-		"OPENOBSERVE_PASSWORD":      "observe-pass",
-		"OPENOBSERVE_ORG":           "xflickr-org",
-		"OPENOBSERVE_STREAM":        "worktree-logs",
-		"NODE_ID":                   "node-worktree-68",
-		"XFLICKR_MASTER_KEYS":       "test-v1:AA==",
-		"XFLICKR_MASTER_KEY_ACTIVE": "test-v1",
-		"HTTP_PORT":                 "9080",
-		"LOG_LEVEL":                 "DEBUG",
+		"DB_HOST":                     "db.internal",
+		"DB_PORT":                     "5544",
+		"DB_NAME":                     "worktree_db",
+		"DB_USER":                     "worker",
+		"DB_PASSWORD":                 testDBPassword,
+		"DB_SSLMODE":                  "require",
+		"DB_MAX_CONNS":                "35",
+		"DB_MIN_CONNS":                "4",
+		"DB_MAX_CONN_LIFETIME":        "45m",
+		"DB_MAX_CONN_IDLE_TIME":       "12m",
+		"DB_HEALTH_CHECK_PERIOD":      "30s",
+		"REDIS_HOST":                  "redis.internal",
+		"REDIS_PORT":                  "16383",
+		"REDIS_DB":                    "9",
+		"REDIS_PASSWORD":              "redis-pass",
+		"REDIS_PREFIX":                "xflickr_wt68:",
+		"SEARCH_URL":                  "http://search.internal:9200",
+		"SEARCH_USERNAME":             "search-user",
+		"SEARCH_PASSWORD":             "search-pass",
+		"OPENSEARCH_INDEX_PREFIX":     "xflickr_wt68_",
+		"BLOB_DRIVER":                 "s3",
+		"BLOB_LOCAL_DIR":              "/tmp/blobs",
+		"BLOB_MAX_BYTES":              "1234567",
+		"BLOB_MAX_TTL":                "48h",
+		"S3_ENDPOINT":                 "https://objects.internal",
+		"S3_REGION":                   "ap-southeast-1",
+		"S3_BUCKET":                   "xflickr-worktree",
+		"S3_ACCESS_KEY":               "s3-access",
+		"S3_SECRET_KEY":               "s3-secret",
+		"S3_USE_PATH_STYLE":           "true",
+		"OLLAMA_URL":                  "http://ollama.internal:11434",
+		"OLLAMA_CAPTION_MODEL":        "caption-model",
+		"OLLAMA_EMBEDDING_MODEL":      "embedding-model",
+		"OPENOBSERVE_URL":             "https://observe.internal",
+		"OPENOBSERVE_USERNAME":        "observe-user",
+		"OPENOBSERVE_PASSWORD":        "observe-pass",
+		"OPENOBSERVE_ORG":             "xflickr-org",
+		"OPENOBSERVE_STREAM":          "worktree-logs",
+		"API_CALL_LOG_RETENTION_DAYS": "45",
+		"NODE_ID":                     "node-worktree-68",
+		"XFLICKR_MASTER_KEYS":         "test-v1:AA==",
+		"XFLICKR_MASTER_KEY_ACTIVE":   "test-v1",
+		"HTTP_PORT":                   "9080",
+		"LOG_LEVEL":                   "DEBUG",
 	} {
 		values[key] = value
 	}
@@ -94,7 +99,7 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFromEnv() error = %v", err)
 	}
-	if cfg.DB.Host != "db.internal" || cfg.DB.Port != 5544 || cfg.DB.Name != "worktree_db" || cfg.DB.User != "worker" || cfg.DB.Password != "db-pass" || cfg.DB.SSLMode != "require" {
+	if cfg.DB.Host != "db.internal" || cfg.DB.Port != 5544 || cfg.DB.Name != "worktree_db" || cfg.DB.User != "worker" || cfg.DB.Password != testDBPassword || cfg.DB.SSLMode != "require" {
 		t.Errorf("DB values not loaded: %#v", cfg.DB)
 	}
 	if cfg.DB.MaxConns != 35 || cfg.DB.MinConns != 4 || cfg.DB.MaxConnLifetime != 45*time.Minute || cfg.DB.MaxConnIdleTime != 12*time.Minute || cfg.DB.HealthCheckPeriod != 30*time.Second {
@@ -117,6 +122,22 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 	}
 	if cfg.Node.ID != "node-worktree-68" || cfg.Crypto.MasterKeys != "test-v1:AA==" || cfg.Crypto.ActiveMasterKeyID != "test-v1" || cfg.HTTPPort != 9080 || cfg.LogLevel != "debug" {
 		t.Errorf("identity/runtime values not loaded: node %#v crypto %#v port %d level %q", cfg.Node, cfg.Crypto, cfg.HTTPPort, cfg.LogLevel)
+	}
+	if cfg.CallLog.RetentionDays != 45 {
+		t.Errorf("call log retention = %d, want 45", cfg.CallLog.RetentionDays)
+	}
+}
+
+func TestCallLogRetentionDaysValidation(t *testing.T) {
+	for _, value := range []string{"0", "-1", "3651", "invalid"} {
+		values := requiredEnv()
+		values["API_CALL_LOG_RETENTION_DAYS"] = value
+		_, err := LoadFromEnv(values)
+		if err == nil {
+			t.Errorf("retention %q error = %v", value, err)
+		} else if value != "invalid" && !strings.Contains(err.Error(), "API_CALL_LOG_RETENTION_DAYS") {
+			t.Errorf("retention %q error = %v", value, err)
+		}
 	}
 }
 

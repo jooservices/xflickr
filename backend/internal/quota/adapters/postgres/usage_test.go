@@ -13,11 +13,15 @@ import (
 )
 
 type fakePool struct {
-	row     pgx.Row
-	rows    pgx.Rows
-	execErr error
-	qErr    error
-	args    []any
+	row         pgx.Row
+	rows        pgx.Rows
+	execErr     error
+	copyErr     error
+	qErr        error
+	args        []any
+	copyTable   pgx.Identifier
+	copyColumns []string
+	copyData    [][]any
 }
 
 func (p *fakePool) Exec(_ context.Context, _ string, args ...any) (pgconn.CommandTag, error) {
@@ -27,6 +31,21 @@ func (p *fakePool) Exec(_ context.Context, _ string, args ...any) (pgconn.Comman
 
 func (p *fakePool) Query(context.Context, string, ...any) (pgx.Rows, error) { return p.rows, p.qErr }
 func (p *fakePool) QueryRow(context.Context, string, ...any) pgx.Row        { return p.row }
+func (p *fakePool) CopyFrom(_ context.Context, table pgx.Identifier, columns []string, source pgx.CopyFromSource) (int64, error) {
+	p.copyTable = table
+	p.copyColumns = append([]string(nil), columns...)
+	for source.Next() {
+		values, err := source.Values()
+		if err != nil {
+			return int64(len(p.copyData)), err
+		}
+		p.copyData = append(p.copyData, values)
+	}
+	if err := source.Err(); err != nil {
+		return int64(len(p.copyData)), err
+	}
+	return int64(len(p.copyData)), p.copyErr
+}
 
 type fakeRows struct {
 	pgx.Rows
@@ -200,6 +219,41 @@ func TestCallLogRecordAndPrune(t *testing.T) {
 		t.Fatal("invalid record accepted")
 	}
 	if (CallLog{}).Prune(context.Background(), at) == nil {
+		t.Fatal("nil pool accepted")
+	}
+}
+
+func TestCallLogInsertCalls(t *testing.T) {
+	userID, accountID, errorCode := int64(2), int64(3), int64(105)
+	pool := &fakePool{}
+	record := app.CallRecord{
+		At: at, KeyID: 4, UserID: &userID, AccountID: &accountID, Node: "node-1",
+		Method: "flickr.people.getInfo", Status: "fail", ErrorCode: &errorCode,
+		LatencyMS: 75, Bytes: 42, Lane: "person",
+	}
+	if err := (CallLog{Pool: pool}).InsertCalls(context.Background(), []app.CallRecord{record}); err != nil {
+		t.Fatal(err)
+	}
+	if len(pool.copyData) != 1 || len(pool.copyColumns) != 12 || len(pool.copyTable) != 1 || pool.copyTable[0] != "api_call_log" {
+		t.Fatalf("copy target=%v columns=%v rows=%v", pool.copyTable, pool.copyColumns, pool.copyData)
+	}
+	row := pool.copyData[0]
+	if !row[0].(time.Time).Equal(at) || !row[1].(time.Time).Equal(at) || row[2] != int64(4) || row[3] != userID || row[4] != accountID || row[5] != "node-1" || row[6] != record.Method || row[7] != "fail" || row[8] != errorCode || row[9] != int64(75) || row[10] != int64(42) || row[11] != "person" {
+		t.Fatalf("copied row = %#v", row)
+	}
+	if err := (CallLog{Pool: pool}).InsertCalls(context.Background(), nil); err != nil {
+		t.Fatalf("empty batch: %v", err)
+	}
+	for _, invalid := range []app.CallRecord{{KeyID: 4, Method: "m", Status: "ok"}, {At: at, Method: "m", Status: "ok"}} {
+		if err := (CallLog{Pool: pool}).InsertCalls(context.Background(), []app.CallRecord{invalid}); err == nil {
+			t.Fatalf("accepted invalid record: %+v", invalid)
+		}
+	}
+	pool.copyErr = errors.New("copy failed")
+	if err := (CallLog{Pool: pool}).InsertCalls(context.Background(), []app.CallRecord{record}); err == nil {
+		t.Fatal("copy error ignored")
+	}
+	if err := (CallLog{}).InsertCalls(context.Background(), []app.CallRecord{record}); err == nil {
 		t.Fatal("nil pool accepted")
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	redisv9 "github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel"
 
 	"github.com/jooservices/xflickr/internal/platform/config"
 	quotaOpenObserve "github.com/jooservices/xflickr/internal/quota/adapters/openobserve"
@@ -20,9 +21,11 @@ import (
 // quotaRuntime holds the quota pieces that must share one Rebuilder: the
 // governor that gates every call, and the flusher that persists its usage.
 type quotaRuntime struct {
-	Governor  quotaRedis.Governor
-	Rebuilder *quotaapp.Rebuilder
-	Flusher   quotaapp.Flusher
+	Governor     quotaRedis.Governor
+	Rebuilder    *quotaapp.Rebuilder
+	Flusher      quotaapp.Flusher
+	CallRecorder *quotaapp.CallRecorder
+	Partitions   quotaapp.Partitions
 	// Emitter, when set, sends a quota.state event per active key every minute.
 	Emitter *quotaapp.Emitter
 }
@@ -42,10 +45,18 @@ func newQuotaRuntime(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cf
 	usage := quotaPostgres.Usage{Pool: pool}
 	calls := quotaPostgres.CallLog{Pool: pool}
 	rebuilder := &quotaapp.Rebuilder{Store: usage, Calls: calls, Counters: counters}
+	var onDrop func()
+	if dropped, err := otel.Meter("github.com/jooservices/xflickr/internal/quota").Int64Counter("xflickr.api_call_log.dropped"); err != nil {
+		slog.Default().Error("quota: create call log dropped metric", "error", err)
+	} else {
+		onDrop = func() { dropped.Add(context.Background(), 1) }
+	}
 	return quotaRuntime{
-		Governor:  quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Rebuilder: rebuilder, Recorder: calls},
-		Rebuilder: rebuilder,
-		Flusher:   quotaapp.Flusher{Store: usage, Counters: counters, Pruner: calls},
+		Governor:     quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Rebuilder: rebuilder, Recorder: calls},
+		Rebuilder:    rebuilder,
+		Flusher:      quotaapp.Flusher{Store: usage, Counters: counters, Pruner: calls},
+		CallRecorder: quotaapp.NewCallRecorder(calls, 10_000, 500, time.Second, onDrop),
+		Partitions:   quotaapp.Partitions{Store: quotaPostgres.Partitions{Pool: pool}, RetentionDays: cfg.CallLog.RetentionDays},
 	}
 }
 
@@ -67,6 +78,20 @@ func (q quotaRuntime) start(ctx context.Context, logger *slog.Logger) (stop func
 		defer wg.Done()
 		q.Flusher.Run(runCtx, func(err error) { logger.ErrorContext(runCtx, "quota: flush failed", "error", err) })
 	}()
+	if q.CallRecorder != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			q.CallRecorder.Run(runCtx, func(err error) { logger.ErrorContext(runCtx, "quota: call log write failed", "error", err) })
+		}()
+	}
+	if q.Partitions.Store != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			q.Partitions.Run(runCtx, func(err error) { logger.ErrorContext(runCtx, "quota: call log maintenance failed", "error", err) })
+		}()
+	}
 	if q.Emitter != nil {
 		wg.Add(1)
 		go func() {
