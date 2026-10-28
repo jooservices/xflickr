@@ -177,6 +177,32 @@ func TestHandlerRequiresHubAndFlusher(t *testing.T) {
 	}
 }
 
+func TestHandlerUsesQueryCursorAndStopsOnWriteError(t *testing.T) {
+	hub := NewHub(2)
+	if err := hub.Publish(Event{UserID: 7, ID: "event-1", Type: "crawl.progress", Data: []byte(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	writer := &failingSSEWriter{ResponseWriter: httptest.NewRecorder(), err: errors.New("client disconnected")}
+	request := httptest.NewRequest(http.MethodGet, "/events?lastEventId=event-0", nil)
+	(Handler{Hub: hub, Principal: func(*http.Request) (int64, bool) { return 7, true }}).ServeHTTP(writer, request)
+	if !writer.wrote {
+		t.Fatal("handler did not attempt to write the resumed event")
+	}
+}
+
+type failingSSEWriter struct {
+	http.ResponseWriter
+	err   error
+	wrote bool
+}
+
+func (w *failingSSEWriter) Write([]byte) (int, error) {
+	w.wrote = true
+	return 0, w.err
+}
+
+func (*failingSSEWriter) Flush() {}
+
 func TestStreamReturnsResumableEventReader(t *testing.T) {
 	hub := NewHub(4)
 	if err := hub.Publish(Event{UserID: 44, ID: "stream-1", Type: "crawl.progress", Data: []byte(`{"pending":3}`)}); err != nil {
@@ -204,6 +230,30 @@ func TestStreamReturnsResumableEventReader(t *testing.T) {
 	}
 	if _, err := (Handler{}).Stream(context.Background(), 44, ""); err == nil {
 		t.Fatal("stream accepted missing hub")
+	}
+}
+
+func TestStreamHeartbeatAndCanceledReader(t *testing.T) {
+	hub := NewHub(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	stream, err := (Handler{Hub: hub, Heartbeat: time.Millisecond}).Stream(ctx, 45, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := stream.Read(nil); n != 0 || err != nil {
+		t.Fatalf("empty read = %d, %v", n, err)
+	}
+	buffer := make([]byte, 64)
+	n, err := stream.Read(buffer)
+	if err != nil || string(buffer[:n]) != ": keep-alive\n\n" {
+		t.Fatalf("heartbeat read = %q, %v", buffer[:n], err)
+	}
+	cancel()
+	if n, err := stream.Read(buffer); n != 0 || err != io.EOF {
+		t.Fatalf("canceled read = %d, %v", n, err)
+	}
+	if err := stream.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 

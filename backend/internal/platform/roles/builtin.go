@@ -74,6 +74,10 @@ import (
 
 const defaultAPIAddress = ":8080"
 
+// openRoleDatabase keeps process startup injectable in unit tests without
+// connecting to a shared or live database.
+var openRoleDatabase = db.NewPool
+
 // apiAddress is the API listener: HTTP_PORT when it is a valid port (the E2E stack picks a free one), else :8080.
 func apiAddress() string {
 	port, err := strconv.Atoi(strings.TrimSpace(os.Getenv("HTTP_PORT")))
@@ -123,7 +127,7 @@ func (schedulerRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	pool, err := db.NewPool(ctx, cfg.DB)
+	pool, err := openRoleDatabase(ctx, cfg.DB)
 	if err != nil {
 		return err
 	}
@@ -167,7 +171,7 @@ func (crawlRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	pool, err := db.NewPool(ctx, cfg.DB)
+	pool, err := openRoleDatabase(ctx, cfg.DB)
 	if err != nil {
 		return err
 	}
@@ -222,7 +226,7 @@ func (syncRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	pool, err := db.NewPool(ctx, cfg.DB)
+	pool, err := openRoleDatabase(ctx, cfg.DB)
 	if err != nil {
 		return err
 	}
@@ -272,7 +276,7 @@ func (mediaRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	pool, err := db.NewPool(ctx, cfg.DB)
+	pool, err := openRoleDatabase(ctx, cfg.DB)
 	if err != nil {
 		return err
 	}
@@ -460,7 +464,7 @@ func (r APIRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	pool, err := db.NewPool(ctx, cfg.DB)
+	pool, err := openRoleDatabase(ctx, cfg.DB)
 	if err != nil {
 		return err
 	}

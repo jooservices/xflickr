@@ -13,16 +13,20 @@ import (
 )
 
 type repositoryTestDB struct {
-	batch   *repositoryTestBatch
-	execErr error
+	batch    *repositoryTestBatch
+	execErr  error
+	queryErr error
+	rows     pgx.Rows
 }
 
 func (d *repositoryTestDB) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
 	return pgconn.CommandTag{}, d.execErr
 }
 
-func (*repositoryTestDB) Query(context.Context, string, ...any) (pgx.Rows, error) { return nil, nil }
-func (*repositoryTestDB) QueryRow(context.Context, string, ...any) pgx.Row        { return nil }
+func (d *repositoryTestDB) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	return d.rows, d.queryErr
+}
+func (*repositoryTestDB) QueryRow(context.Context, string, ...any) pgx.Row { return nil }
 func (d *repositoryTestDB) SendBatch(context.Context, *pgx.Batch) pgx.BatchResults {
 	return d.batch
 }

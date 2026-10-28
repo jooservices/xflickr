@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jooservices/xflickr/internal/platform/outbox"
@@ -25,8 +26,60 @@ const pumpLockID int64 = 113
 // Store coordinates bounded work selection, River insertion, and lease recovery.
 type Store struct {
 	Pool     *pgxpool.Pool
+	database scheduleDatabase
 	listKeys func(context.Context, pgx.Tx) ([]int64, error)
 	inflight func(context.Context, pgx.Tx, int64, string) (int, error)
+}
+
+type scheduleDatabase interface {
+	Acquire(context.Context) (scheduleConnection, error)
+	Begin(context.Context) (pgx.Tx, error)
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+type scheduleConnection interface {
+	Begin(context.Context) (pgx.Tx, error)
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
+	Release()
+}
+
+type pgxScheduleDatabase struct{ pool *pgxpool.Pool }
+
+func (db pgxScheduleDatabase) Acquire(ctx context.Context) (scheduleConnection, error) {
+	conn, err := db.pool.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return conn, nil
+}
+
+func (db pgxScheduleDatabase) Begin(ctx context.Context) (pgx.Tx, error) {
+	return db.pool.Begin(ctx)
+}
+
+func (db pgxScheduleDatabase) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	return db.pool.Exec(ctx, sql, args...)
+}
+
+func (db pgxScheduleDatabase) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	return db.pool.Query(ctx, sql, args...)
+}
+
+func (db pgxScheduleDatabase) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	return db.pool.QueryRow(ctx, sql, args...)
+}
+
+func (s Store) backend() scheduleDatabase {
+	if s.database != nil {
+		return s.database
+	}
+	if s.Pool == nil {
+		return nil
+	}
+	return pgxScheduleDatabase{pool: s.Pool}
 }
 
 // LoadSettings reads scheduler limits from app_settings and retry defaults
@@ -35,6 +88,10 @@ func LoadSettings(ctx context.Context, pool *pgxpool.Pool) (app.PumpSettings, er
 	if pool == nil {
 		return app.PumpSettings{}, errors.New("schedule: settings database is required")
 	}
+	return loadSettings(ctx, pgxScheduleDatabase{pool: pool})
+}
+
+func loadSettings(ctx context.Context, pool scheduleDatabase) (app.PumpSettings, error) {
 	if ctx == nil {
 		return app.PumpSettings{}, errors.New("schedule: settings context is required")
 	}
@@ -107,13 +164,14 @@ type expiredLease struct {
 }
 
 func (s Store) Pump(ctx context.Context, settings app.PumpSettings, credits app.CreditProvider, jobs queue.JobQueue) (int, error) {
-	if s.Pool == nil || credits == nil || jobs == nil {
+	db := s.backend()
+	if db == nil || credits == nil || jobs == nil {
 		return 0, errors.New("schedule: pump adapter dependencies are required")
 	}
 	if ctx == nil {
 		return 0, errors.New("schedule: pump context is required")
 	}
-	conn, err := s.Pool.Acquire(ctx)
+	conn, err := db.Acquire(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: acquire leader connection: %w", err)
 	}
@@ -158,7 +216,7 @@ func (s Store) Pump(ctx context.Context, settings app.PumpSettings, credits app.
 // RecomputeScores refreshes stored scores for a bounded, rotating batch of
 // pending rows. Score math stays in the schedule domain.
 func (s Store) RecomputeScores(ctx context.Context, batchSize int, weights domain.ScoreWeights, maxDepth int) (int, error) {
-	if s.Pool == nil || ctx == nil || batchSize <= 0 || maxDepth < 0 {
+	if s.backend() == nil || ctx == nil || batchSize <= 0 || maxDepth < 0 {
 		return 0, errors.New("schedule: invalid score aging dependencies")
 	}
 	return s.rescore(ctx, `WHERE w.state='pending' AND w.not_before <= now() ORDER BY w.score_updated_at NULLS FIRST, w.created_at, w.id LIMIT $1`, []any{batchSize}, weights, maxDepth)
@@ -167,14 +225,14 @@ func (s Store) RecomputeScores(ctx context.Context, batchSize int, weights domai
 // RescorePerson immediately refreshes the stored scores of one user's pending
 // backlog for a person, so star/select changes affect dispatch order at once.
 func (s Store) RescorePerson(ctx context.Context, userID int64, person string, weights domain.ScoreWeights, maxDepth int) (int, error) {
-	if s.Pool == nil || ctx == nil || userID <= 0 || person == "" || maxDepth < 0 {
+	if s.backend() == nil || ctx == nil || userID <= 0 || person == "" || maxDepth < 0 {
 		return 0, errors.New("schedule: invalid person rescore dependencies")
 	}
 	return s.rescore(ctx, `WHERE w.state='pending' AND w.user_id=$1 AND w.subject_key=$2 ORDER BY w.id`, []any{userID, person}, weights, maxDepth)
 }
 
 func (s Store) rescore(ctx context.Context, selection string, args []any, weights domain.ScoreWeights, maxDepth int) (int, error) {
-	tx, err := s.Pool.Begin(ctx)
+	tx, err := s.backend().Begin(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: begin score aging: %w", err)
 	}
@@ -462,10 +520,11 @@ const SelfHealAfter = 15 * time.Minute
 // attempts reset. Rows keep their payload; the normal pump and quota gate
 // dispatch them. It reports how many rows were requeued.
 func (s Store) Requeue(ctx context.Context, ids []int64, now time.Time) (int, error) {
-	if s.Pool == nil {
+	db := s.backend()
+	if db == nil {
 		return 0, errors.New("schedule: requeue database is required")
 	}
-	tag, err := s.Pool.Exec(ctx, `UPDATE work_items SET state='pending', attempts=0, not_before=$1, lease_expires_at=NULL, last_error=NULL, updated_at=$1
+	tag, err := db.Exec(ctx, `UPDATE work_items SET state='pending', attempts=0, not_before=$1, lease_expires_at=NULL, last_error=NULL, updated_at=$1
 		WHERE state='failed' AND (coalesce(cardinality($2::bigint[]), 0) = 0 OR id = ANY($2))`, now, ids)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: requeue failed work: %w", err)
@@ -476,10 +535,11 @@ func (s Store) Requeue(ctx context.Context, ids []int64, now time.Time) (int, er
 // Reclaim returns work items with an expired lease and no live River job to
 // pending, with exponential delay based on the already-incremented attempt.
 func (s Store) Reclaim(ctx context.Context, retryMax int, base time.Duration, now time.Time) (int, error) {
-	if s.Pool == nil {
+	db := s.backend()
+	if db == nil {
 		return 0, errors.New("schedule: reclaim database is required")
 	}
-	tx, err := s.Pool.Begin(ctx)
+	tx, err := db.Begin(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: begin reclaim: %w", err)
 	}
