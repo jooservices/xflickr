@@ -54,6 +54,9 @@ func TestRegisterPhotoSizesAndMediaRolePreconditions(t *testing.T) {
 	}
 	client := redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:1"})
 	defer client.Close()
+	if err := registerPhotoSizes(nil, pool, client, config.Config{}, flickrclient.NewClient("http://127.0.0.1:1", nil)); err == nil {
+		t.Fatal("photo sizes registration accepted a nil queue")
+	}
 	if err := registerPhotoSizes(adapter, pool, client, config.Config{}, flickrclient.NewClient("http://127.0.0.1:1", nil)); err != nil {
 		t.Fatal(err)
 	}

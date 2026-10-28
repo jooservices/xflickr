@@ -167,19 +167,59 @@ func TestEnqueueValidationAndDefaults(t *testing.T) {
 		captured, capturedOpts = args, opts
 		return nil
 	}
-	if err := adapter.Enqueue(context.Background(), fakeTx{}, job, Options{}); err != nil {
+	if err := adapter.Enqueue(context.Background(), fakeTx{}, job, Options{UniqueByArgs: true, UniqueByQueue: true}); err != nil {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
 	if captured.KindName != "crawl" || string(captured.Args) != `{"id":7}` || captured.Queue != "crawl@node-1" || captured.Timeout != time.Minute || captured.Backoff != time.Second {
 		t.Fatalf("encoded River job = %#v", captured)
 	}
-	if capturedOpts.Queue != riverQueueName("crawl@node-1") || capturedOpts.MaxAttempts != 5 {
+	if capturedOpts.Queue != riverQueueName("crawl@node-1") || capturedOpts.MaxAttempts != 5 || !capturedOpts.UniqueOpts.ByArgs || !capturedOpts.UniqueOpts.ByQueue {
 		t.Fatalf("River insert options = %#v", capturedOpts)
 	}
 	insertErr := errors.New("insert failed")
 	adapter.insertTx = func(context.Context, pgx.Tx, riverArgs, *river.InsertOpts) error { return insertErr }
 	if err := adapter.Enqueue(context.Background(), fakeTx{}, job, Options{}); !errors.Is(err, insertErr) || !strings.Contains(err.Error(), "insert River job") {
 		t.Fatalf("Enqueue() insert error = %v", err)
+	}
+}
+
+func TestEnqueueStandaloneOwnsItsTransaction(t *testing.T) {
+	pool := disconnectedPool(t)
+	adapter, err := NewRiver(pool, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx := &trackedStandaloneTx{}
+	adapter.beginTx = func(context.Context) (pgx.Tx, error) { return tx, nil }
+	var capturedOpts *river.InsertOpts
+	adapter.insertTx = func(_ context.Context, gotTx pgx.Tx, _ riverArgs, opts *river.InsertOpts) error {
+		if gotTx != tx {
+			t.Fatal("EnqueueStandalone() used a different transaction")
+		}
+		capturedOpts = opts
+		return nil
+	}
+	job := Job{Kind: "accounts.verify", Args: json.RawMessage(`{"account_id":42}`)}
+	if err := adapter.EnqueueStandalone(context.Background(), job, Options{Queue: "accounts", UniqueByArgs: true, UniqueByQueue: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !tx.committed || !tx.rolledBack || capturedOpts == nil || !capturedOpts.UniqueOpts.ByArgs || !capturedOpts.UniqueOpts.ByQueue {
+		t.Fatalf("transaction state commit=%t rollback=%t opts=%+v", tx.committed, tx.rolledBack, capturedOpts)
+	}
+
+	tx = &trackedStandaloneTx{}
+	adapter.beginTx = func(context.Context) (pgx.Tx, error) { return tx, nil }
+	if err := adapter.EnqueueStandalone(context.Background(), Job{}, Options{Queue: "accounts"}); err == nil {
+		t.Fatal("EnqueueStandalone() accepted an invalid job")
+	}
+	if tx.committed || !tx.rolledBack {
+		t.Fatalf("failed enqueue transaction state commit=%t rollback=%t", tx.committed, tx.rolledBack)
+	}
+
+	beginErr := errors.New("begin failed")
+	adapter.beginTx = func(context.Context) (pgx.Tx, error) { return nil, beginErr }
+	if err := adapter.EnqueueStandalone(context.Background(), job, Options{Queue: "accounts"}); !errors.Is(err, beginErr) {
+		t.Fatalf("begin error = %v", err)
 	}
 }
 
@@ -470,4 +510,28 @@ func TestSnoozeClampsAndDeadLetterHookIgnoresIt(t *testing.T) {
 	if got := hook.WorkEnd(context.Background(), row, Snooze(time.Minute)); !errors.As(got, &snooze) {
 		t.Fatalf("snoozed final-attempt WorkEnd() = %v", got)
 	}
+	if err := SnoozeFor(VerifyIntervalForTest); !errors.As(err, &snooze) || snooze.Duration != VerifyIntervalForTest {
+		t.Fatalf("SnoozeFor(interval) = %v", err)
+	}
+	if err := SnoozeFor(30 * 24 * time.Hour); !errors.As(err, &snooze) || snooze.Duration != maxSnoozeFor {
+		t.Fatalf("SnoozeFor(30d) = %v", err)
+	}
+}
+
+const VerifyIntervalForTest = 24 * time.Hour
+
+type trackedStandaloneTx struct {
+	pgx.Tx
+	committed  bool
+	rolledBack bool
+}
+
+func (tx *trackedStandaloneTx) Commit(context.Context) error {
+	tx.committed = true
+	return nil
+}
+
+func (tx *trackedStandaloneTx) Rollback(context.Context) error {
+	tx.rolledBack = true
+	return nil
 }

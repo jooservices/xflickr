@@ -24,6 +24,7 @@ const (
 	deadLetterPublishAttempts = 3
 	deadLetterRetryDelay      = 25 * time.Millisecond
 	deadLetterReconcileDelay  = time.Second
+	maxSnoozeFor              = 7 * 24 * time.Hour
 )
 
 type riverArgs struct {
@@ -41,6 +42,7 @@ func (riverArgs) Kind() string { return riverJobKind }
 type River struct {
 	pool     *pgxpool.Pool
 	client   *river.Client[pgx.Tx]
+	beginTx  func(context.Context) (pgx.Tx, error)
 	insertTx func(context.Context, pgx.Tx, riverArgs, *river.InsertOpts) error
 	queues   map[string]river.QueueConfig
 	mu       sync.RWMutex
@@ -65,7 +67,7 @@ func NewRiver(pool *pgxpool.Pool, queues map[string]int) (*River, error) {
 		}
 		queueConfigs[riverQueueName(name)] = river.QueueConfig{MaxWorkers: concurrency}
 	}
-	adapter := &River{pool: pool, queues: queueConfigs, handlers: make(map[string]registeredHandler)}
+	adapter := &River{pool: pool, beginTx: pool.Begin, queues: queueConfigs, handlers: make(map[string]registeredHandler)}
 	worker := &dispatchWorker{adapter: adapter}
 	workers := river.NewWorkers()
 	river.AddWorker(workers, worker)
@@ -123,9 +125,32 @@ func (r *River) Enqueue(ctx context.Context, tx pgx.Tx, job Job, opts Options) e
 	}
 	err = r.insertTx(ctx, tx, decoded, &river.InsertOpts{
 		Queue: riverQueueName(opts.Queue), MaxAttempts: opts.MaxAttempts,
+		UniqueOpts: river.UniqueOpts{ByArgs: opts.UniqueByArgs, ByQueue: opts.UniqueByQueue},
 	})
 	if err != nil {
 		return fmt.Errorf("queue: insert River job: %w", err)
+	}
+	return nil
+}
+
+// EnqueueStandalone inserts one job in its own transaction.
+func (r *River) EnqueueStandalone(ctx context.Context, job Job, opts Options) error {
+	if r == nil || r.beginTx == nil {
+		return errors.New("queue: River adapter is required")
+	}
+	if ctx == nil {
+		return errors.New("queue: context is required")
+	}
+	tx, err := r.beginTx(ctx)
+	if err != nil {
+		return fmt.Errorf("queue: begin standalone enqueue: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := r.Enqueue(ctx, tx, job, opts); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("queue: commit standalone enqueue: %w", err)
 	}
 	return nil
 }
@@ -283,6 +308,11 @@ const maxSnooze = time.Hour
 // consuming an attempt.
 func Snooze(d time.Duration) error {
 	return river.JobSnooze(min(max(d, time.Second), maxSnooze)) //nolint:wrapcheck // River recognises the snooze error by its concrete type.
+}
+
+// SnoozeFor reschedules a recurring job without consuming an attempt.
+func SnoozeFor(d time.Duration) error {
+	return river.JobSnooze(min(max(d, time.Second), maxSnoozeFor)) //nolint:wrapcheck // River recognises the snooze error by its concrete type.
 }
 
 type dispatchWorker struct {

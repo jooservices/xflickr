@@ -2,6 +2,7 @@ package roles
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -187,7 +188,7 @@ func (crawlRole) Run(ctx context.Context) error {
 	}
 	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	defer redisClient.Close()
-	queueAdapter, err := queue.NewRiver(pool, map[string]int{scheduleriver.PhotoQueue: crawlWorkers})
+	queueAdapter, err := queue.NewRiver(pool, map[string]int{scheduleriver.PhotoQueue: crawlWorkers, accountsapp.VerifyQueue: 1})
 	if err != nil {
 		return err
 	}
@@ -202,6 +203,14 @@ func (crawlRole) Run(ctx context.Context) error {
 	if err := registerPhotoSizes(queueAdapter, pool, redisClient, cfg, client); err != nil {
 		return err
 	}
+	verificationRepository, verifier, err := newAccountVerifier(pool, redisClient, cfg)
+	if err != nil {
+		return err
+	}
+	seeder := accountsapp.VerificationSeeder{Repository: verificationRepository, Jobs: queueAdapter}
+	if err := startAccountVerification(ctx, queueAdapter, verifier, seeder); err != nil {
+		return err
+	}
 	service := crawlapp.Interests{Repository: interestsRepository, Settings: settingsapp.New(settingsRepository)}
 	configureRoleReadiness(ctx, "crawl", postgresDependency(pool), redisDependency(redisClient))
 	// The River worker and the interest consumer run side by side; if either
@@ -210,7 +219,14 @@ func (crawlRole) Run(ctx context.Context) error {
 	group.Go(func() error { return queue.Worker{Queue: queueAdapter}.Run(groupCtx) })
 	group.Go(func() error {
 		return outbox.NewConsumer(pool).Consume(groupCtx, accountsdomain.ConnectedTopic, func(ctx context.Context, event outbox.Event) error {
-			return service.HandleConnected(ctx, event.Payload)
+			if err := service.HandleConnected(ctx, event.Payload); err != nil {
+				return err
+			}
+			var connected accountsdomain.Connected
+			if err := json.Unmarshal(event.Payload, &connected); err != nil {
+				return fmt.Errorf("crawl: decode connected account event: %w", err)
+			}
+			return seeder.Enqueue(ctx, connected.AccountID)
 		})
 	})
 	return group.Wait()
