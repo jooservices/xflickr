@@ -42,6 +42,10 @@ paths:
     $ref: ./paths/flickr_accounts.yaml#/callback
   /admin/users:
     $ref: ./paths/admin_users.yaml#/collection
+  /admin/nodes:
+    $ref: ./paths/nodes.yaml#/admin_nodes
+  /internal/nodes/heartbeat:
+    $ref: ./paths/nodes.yaml#/heartbeat
   /admin/users/{id}:
     $ref: ./paths/admin_users.yaml#/item
   /admin/plans:
@@ -100,6 +104,10 @@ components:
       type: apiKey
       in: cookie
       name: xf_session
+    NodeToken:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
   schemas:
     AuthConfig:
       $ref: ./schemas/auth.yaml#/AuthConfig
@@ -133,6 +141,14 @@ components:
       $ref: ./schemas/flickr_accounts.yaml#/FlickrAccount
     AdminUser:
       $ref: ./schemas/admin_users.yaml#/AdminUser
+    CreateNodeRequest:
+      $ref: ./schemas/nodes.yaml#/CreateNodeRequest
+    CreatedNode:
+      $ref: ./schemas/nodes.yaml#/CreatedNode
+    NodeHeartbeatRequest:
+      $ref: ./schemas/nodes.yaml#/NodeHeartbeatRequest
+    NodeHeartbeatResponse:
+      $ref: ./schemas/nodes.yaml#/NodeHeartbeatResponse
     AdminUserPage:
       $ref: ./schemas/admin_users.yaml#/AdminUserPage
     UpdateAdminUserRequest:

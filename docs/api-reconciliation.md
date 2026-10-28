@@ -7,6 +7,7 @@ that serve it, or `MISSING`.
 | Web path | OpenAPI | Go router |
 | --- | --- | --- |
 | `/admin/flags` | `/admin/flags` | `/admin/flags` |
+| `/admin/nodes` | `/admin/nodes` | `/admin/nodes` |
 | `/admin/ops/status` | `/admin/ops/status` | `/admin/ops/status` |
 | `/admin/plans` | `/admin/plans` | `/admin/plans` |
 | `/admin/queue` | `/admin/queue` | `/admin/queue` |
@@ -31,6 +32,7 @@ that serve it, or `MISSING`.
 | `/flickr-accounts/callback` | `/flickr-accounts/callback` | `/flickr-accounts/callback` |
 | `/flickr-accounts/connect` | `/flickr-accounts/connect` | `/flickr-accounts/connect` |
 | `/healthz` | `/healthz` | `/healthz` |
+| `/internal/nodes/heartbeat` | `/internal/nodes/heartbeat` | `/internal/nodes/heartbeat` |
 | `/keys` | `/keys` | `/keys` |
 | `/keys/{}` | `/keys/{id}` | `/keys/{id}` |
 | `/keys/{}/quota` | `/keys/{id}/quota` | `/keys/{id}/quota` |

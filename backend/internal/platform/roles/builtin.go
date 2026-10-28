@@ -30,6 +30,9 @@ import (
 	cataloghttp "github.com/jooservices/xflickr/internal/catalog/adapters/http"
 	catalogpostgres "github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
 	catalogapp "github.com/jooservices/xflickr/internal/catalog/app"
+	clusterhttp "github.com/jooservices/xflickr/internal/cluster/adapters/http"
+	clusterpostgres "github.com/jooservices/xflickr/internal/cluster/adapters/postgres"
+	clusterapp "github.com/jooservices/xflickr/internal/cluster/app"
 	crawlhttp "github.com/jooservices/xflickr/internal/crawl/adapters/http"
 	crawlpostgres "github.com/jooservices/xflickr/internal/crawl/adapters/postgres"
 	crawlsettings "github.com/jooservices/xflickr/internal/crawl/adapters/settings"
@@ -623,11 +626,15 @@ func (r APIRole) Run(ctx context.Context) error {
 	defer redisClient.Close()
 	hub := platformsse.NewHub(256)
 	go listenSSEEvents(ctx, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"}, hub)
-	handler, err := buildConfiguredAPIHandlerWithHub(pool, redisClient, cfg, r.version, hub, readinessFromContext(ctx))
+	handlers, err := buildConfiguredAPIHandlerSetWithHub(pool, redisClient, cfg, r.version, hub, readinessFromContext(ctx))
 	if err != nil {
 		return err
 	}
-	return r.runServer(ctx, handler)
+	servers := []apiServerSpec{{address: r.address, handler: handlers.public}}
+	if cfg.InternalHTTPAddr != "" {
+		servers = append(servers, apiServerSpec{address: cfg.InternalHTTPAddr, handler: handlers.internal})
+	}
+	return r.runServers(ctx, servers)
 }
 
 func listenSSEEvents(ctx context.Context, publisher platformsse.Publisher, hub *platformsse.Hub) {
@@ -649,47 +656,52 @@ func buildConfiguredAPIHandler(pool *pgxpool.Pool, redisClient redisv9.Universal
 }
 
 func buildConfiguredAPIHandlerWithHub(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, version string, hub *platformsse.Hub, readiness ...*httpx.Readiness) (http.Handler, error) {
+	handlers, err := buildConfiguredAPIHandlerSetWithHub(pool, redisClient, cfg, version, hub, readiness...)
+	return handlers.public, err
+}
+
+func buildConfiguredAPIHandlerSetWithHub(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, version string, hub *platformsse.Hub, readiness ...*httpx.Readiness) (apiHandlerSet, error) {
 	if pool == nil {
-		return nil, errors.New("api: postgres database is required")
+		return apiHandlerSet{}, errors.New("api: postgres database is required")
 	}
 	identity, err := buildIdentityHandler(pool, redisClient, cfg, version)
 	if err != nil {
-		return nil, err
+		return apiHandlerSet{}, err
 	}
 	keys, err := buildKeyHandler(pool, cfg)
 	if err != nil {
-		return nil, err
+		return apiHandlerSet{}, err
 	}
 	connect, err := buildConnectHandler(pool, redisClient, cfg)
 	if err != nil {
-		return nil, err
+		return apiHandlerSet{}, err
 	}
 	plans, err := buildPlanHandler(pool)
 	if err != nil {
-		return nil, err
+		return apiHandlerSet{}, err
 	}
 	flags, err := buildFeatureFlagHandler(pool)
 	if err != nil {
-		return nil, err
+		return apiHandlerSet{}, err
 	}
 	catalogRepository, err := catalogpostgres.New(pool)
 	if err != nil {
-		return nil, err
+		return apiHandlerSet{}, err
 	}
 	catalogReads := cataloghttp.Handler{Reads: catalogapp.ReadService{Repository: catalogRepository}, ActorID: userIDFromPrincipal}
 	crawl, err := buildCrawlHandlerWithEvents(pool, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"})
 	if err != nil {
-		return nil, err
+		return apiHandlerSet{}, err
 	}
 	sharing, err := buildSharingHandler(pool)
 	if err != nil {
-		return nil, err
+		return apiHandlerSet{}, err
 	}
 	// The store always exists so download creation always applies the
 	// temp-storage back-pressure check; an empty driver fails fast.
 	blobs, err := newBlobStore(context.Background(), cfg)
 	if err != nil {
-		return nil, err
+		return apiHandlerSet{}, err
 	}
 	var probeReadiness *httpx.Readiness
 	if len(readiness) > 0 {
@@ -700,10 +712,13 @@ func buildConfiguredAPIHandlerWithHub(pool *pgxpool.Pool, redisClient redisv9.Un
 	}
 	downloads, err := buildDownloadHandlerWithEvents(pool, blobs, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"}, cfg.DownloadLinkTTL)
 	if err != nil {
-		return nil, err
+		return apiHandlerSet{}, err
 	}
 	opsHandler := opshttp.Handler{Service: ops.Service{Store: opspostgres.Store{Pool: pool}}, ActorID: userIDFromPrincipal}
-	return newAPIRouterWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}, probeReadiness, flags, catalogReads), nil
+	nodeRepository := clusterpostgres.New(pool)
+	nodeService := clusterapp.Nodes{Repository: nodeRepository}
+	nodesHandler := clusterhttp.Handler{Service: nodeService}
+	return newAPIRoutersWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}, probeReadiness, flags, catalogReads, nodesHandler), nil
 }
 
 func buildFeatureFlagHandler(pool *pgxpool.Pool) (settingshttp.Handler, error) {
@@ -770,7 +785,16 @@ type apiServer struct {
 	Readiness *httpx.Readiness
 	Flags     settingshttp.Handler
 	Catalog   cataloghttp.Handler
+	Nodes     clusterhttp.Handler
 	planHandler
+}
+
+func (s apiServer) CreateAdminNode(ctx context.Context, request gen.CreateAdminNodeRequestObject) (gen.CreateAdminNodeResponseObject, error) {
+	return s.Nodes.CreateAdminNode(ctx, request)
+}
+
+func (s apiServer) HeartbeatNode(ctx context.Context, request gen.HeartbeatNodeRequestObject) (gen.HeartbeatNodeResponseObject, error) {
+	return s.Nodes.HeartbeatNode(ctx, request)
 }
 
 func (s apiServer) ListPeople(ctx context.Context, request gen.ListPeopleRequestObject) (gen.ListPeopleResponseObject, error) {
@@ -887,20 +911,20 @@ func newAPIRouterWithQuota(identity identityhttp.Handler, keys accountshttp.KeyH
 	return newAPIRouterWithServices(identity, keys, connect, plans, crawl, quota, sharing, mediahttp.DownloadHandler{})
 }
 
+type apiHandlerSet struct {
+	public   http.Handler
+	internal http.Handler
+}
+
 func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawl crawlhttp.CrawlHandler, quota quotahttp.QuotaHandler, sharing sharinghttp.Handler, downloads mediahttp.DownloadHandler, options ...any) http.Handler {
+	return newAPIRoutersWithServices(identity, keys, connect, plans, crawl, quota, sharing, downloads, options...).public
+}
+
+func newAPIRoutersWithServices(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawl crawlhttp.CrawlHandler, quota quotahttp.QuotaHandler, sharing sharinghttp.Handler, downloads mediahttp.DownloadHandler, options ...any) apiHandlerSet {
 	var opsHandler opshttp.Handler
 	var flagsHandler settingshttp.Handler
 	var catalogHandler cataloghttp.Handler
-	router := chi.NewRouter()
-	serveWebAssets(router, os.Getenv("XFLICKR_WEB_DIR"))
-	router.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			next.ServeHTTP(w, r.WithContext(accountshttp.WithRequestAccept(r.Context(), r.Header.Get("Accept"))))
-		})
-	})
-	router.Use(identityhttp.RequestBodyLimit)
-	router.Use(identityhttp.CSRF)
-	router.Use(identityhttp.ProtectRoutes(identity.Sessions, accessResolver(router)))
+	var nodesHandler clusterhttp.Handler
 	var streamHandler platformsse.Handler
 	var readiness *httpx.Readiness
 	for _, option := range options {
@@ -919,12 +943,35 @@ func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.K
 		if catalog, ok := option.(cataloghttp.Handler); ok {
 			catalogHandler = catalog
 		}
+		if nodes, ok := option.(clusterhttp.Handler); ok {
+			nodesHandler = nodes
+		}
 	}
-	strict := gen.NewStrictHandlerWithOptions(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, Ops: opsHandler, Stream: streamHandler, Readiness: readiness, Flags: flagsHandler, Catalog: catalogHandler, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
+	server := apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, Ops: opsHandler, Stream: streamHandler, Readiness: readiness, Flags: flagsHandler, Catalog: catalogHandler, Nodes: nodesHandler, planHandler: planHandler{Handler: plans}}
+	publicRouter := chi.NewRouter()
+	serveWebAssets(publicRouter, os.Getenv("XFLICKR_WEB_DIR"))
+	publicRouter.Use(clusterhttp.PublicInternalPathBlocker)
+	publicRouter.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(accountshttp.WithRequestAccept(r.Context(), r.Header.Get("Accept"))))
+		})
+	})
+	publicRouter.Use(identityhttp.RequestBodyLimit)
+	publicRouter.Use(identityhttp.CSRF)
+	publicRouter.Use(identityhttp.ProtectRoutes(identity.Sessions, accessResolver(publicRouter)))
+	strict := gen.NewStrictHandlerWithOptions(server, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		identityhttp.MaintainSessionCookies(identity.Sessions),
 	}, gen.StrictHTTPServerOptions{RequestErrorHandlerFunc: badRequest, ResponseErrorHandlerFunc: internalError})
-	return gen.HandlerWithOptions(strict, gen.ChiServerOptions{BaseRouter: router, ErrorHandlerFunc: badRequest})
+	public := gen.HandlerWithOptions(strict, gen.ChiServerOptions{BaseRouter: publicRouter, ErrorHandlerFunc: badRequest})
+
+	internalRouter := chi.NewRouter()
+	internalRouter.Use(clusterhttp.InternalHeartbeatOnly)
+	internalRouter.Use(identityhttp.RequestBodyLimit)
+	internalRouter.Use(clusterhttp.NodeAuthMiddleware(nodesHandler.Service))
+	internalStrict := gen.NewStrictHandlerWithOptions(server, nil, gen.StrictHTTPServerOptions{RequestErrorHandlerFunc: badRequest, ResponseErrorHandlerFunc: internalError})
+	internal := gen.HandlerWithOptions(internalStrict, gen.ChiServerOptions{BaseRouter: internalRouter, ErrorHandlerFunc: badRequest})
+	return apiHandlerSet{public: public, internal: internal}
 }
 
 func buildSharingHandler(pool *pgxpool.Pool) (sharinghttp.Handler, error) {
@@ -1128,32 +1175,87 @@ func buildIdentityHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClien
 	}, nil
 }
 
+type apiServerSpec struct {
+	address string
+	handler http.Handler
+}
+
 func (r APIRole) runServer(ctx context.Context, handler http.Handler) error {
+	return r.runServers(ctx, []apiServerSpec{{address: r.address, handler: handler}})
+}
+
+func (r APIRole) runServers(ctx context.Context, specs []apiServerSpec) error {
 	listen := r.listenerFactory
 	if listen == nil {
 		listen = func(address string) (net.Listener, error) { return net.Listen("tcp", address) }
 	}
-	listener, err := listen(r.address)
+	listeners, servers, err := openAPIServers(specs, listen)
 	if err != nil {
 		return err
 	}
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
-	serveErr := make(chan error, 1)
-	go func() { serveErr <- server.Serve(listener) }()
+	return serveAPIServers(ctx, listeners, servers)
+}
 
+func openAPIServers(specs []apiServerSpec, listen func(string) (net.Listener, error)) ([]net.Listener, []*http.Server, error) {
+	if len(specs) == 0 {
+		return nil, nil, errors.New("api: at least one HTTP listener is required")
+	}
+	listeners := make([]net.Listener, 0, len(specs))
+	servers := make([]*http.Server, 0, len(specs))
+	for _, spec := range specs {
+		if spec.handler == nil {
+			closeAPIListeners(listeners)
+			return nil, nil, errors.New("api: HTTP listener handler is required")
+		}
+		listener, err := listen(spec.address)
+		if err != nil {
+			closeAPIListeners(listeners)
+			return nil, nil, fmt.Errorf("api: listen on %s: %w", spec.address, err)
+		}
+		listeners = append(listeners, listener)
+		servers = append(servers, &http.Server{Handler: spec.handler, ReadHeaderTimeout: 10 * time.Second})
+	}
+	return listeners, servers, nil
+}
+
+func closeAPIListeners(listeners []net.Listener) {
+	for _, listener := range listeners {
+		_ = listener.Close()
+	}
+}
+
+func serveAPIServers(ctx context.Context, listeners []net.Listener, servers []*http.Server) error {
+	serveErr := make(chan error, len(servers))
+	for index, server := range servers {
+		listener := listeners[index]
+		go func() { serveErr <- server.Serve(listener) }()
+	}
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			_ = server.Close()
-			return err
-		}
-		return nil
+		return shutdownAPIServers(servers)
 	case err := <-serveErr:
 		if errors.Is(err, http.ErrServerClosed) {
-			return nil
+			err = nil
 		}
-		return err
+		shutdownErr := shutdownAPIServers(servers)
+		if err != nil {
+			return err
+		}
+		return shutdownErr
 	}
+}
+
+func shutdownAPIServers(servers []*http.Server) error {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var first error
+	for _, server := range servers {
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			_ = server.Close()
+			if first == nil {
+				first = err
+			}
+		}
+	}
+	return first
 }

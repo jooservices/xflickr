@@ -41,7 +41,7 @@ func TestLoadFromEnvAppliesDefaults(t *testing.T) {
 	if cfg.CallLog.RetentionDays != 30 {
 		t.Errorf("call log retention default = %d", cfg.CallLog.RetentionDays)
 	}
-	if cfg.HTTPPort != 8080 || cfg.LogLevel != "info" {
+	if cfg.HTTPPort != 8080 || cfg.InternalHTTPAddr != "" || cfg.LogLevel != "info" {
 		t.Errorf("runtime defaults = port %d, level %q", cfg.HTTPPort, cfg.LogLevel)
 	}
 }
@@ -94,6 +94,7 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 		"XFLICKR_MASTER_KEYS":         "test-v1:AA==",
 		"XFLICKR_MASTER_KEY_ACTIVE":   "test-v1",
 		"HTTP_PORT":                   "9080",
+		"INTERNAL_HTTP_ADDR":          "192.168.2.10:8081",
 		"LOG_LEVEL":                   "DEBUG",
 	} {
 		values[key] = value
@@ -127,7 +128,7 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 	if cfg.Obs.URL != "https://observe.internal" || cfg.Obs.Username != "observe-user" || cfg.Obs.Password != "observe-pass" || cfg.Obs.Org != "xflickr-org" || cfg.Obs.Stream != "worktree-logs" {
 		t.Errorf("Obs values not loaded: %#v", cfg.Obs)
 	}
-	if cfg.Node.ID != "node-worktree-68" || cfg.Crypto.MasterKeys != "test-v1:AA==" || cfg.Crypto.ActiveMasterKeyID != "test-v1" || cfg.HTTPPort != 9080 || cfg.LogLevel != "debug" {
+	if cfg.Node.ID != "node-worktree-68" || cfg.Crypto.MasterKeys != "test-v1:AA==" || cfg.Crypto.ActiveMasterKeyID != "test-v1" || cfg.HTTPPort != 9080 || cfg.InternalHTTPAddr != "192.168.2.10:8081" || cfg.LogLevel != "debug" {
 		t.Errorf("identity/runtime values not loaded: node %#v crypto %#v port %d level %q", cfg.Node, cfg.Crypto, cfg.HTTPPort, cfg.LogLevel)
 	}
 	if cfg.CallLog.RetentionDays != 45 {

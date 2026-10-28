@@ -49,6 +49,8 @@ export const ROUTES: Route[] = [
   route('POST', '/flickr-accounts/connect', contract.ConnectFlickrAccountResponse),
   route('GET', '/flickr-accounts/callback', contract.FlickrAccountCallbackResponse),
   route('GET', '/admin/users', contract.ListAdminUsersResponse),
+  route('POST', '/admin/nodes', contract.CreateAdminNodeResponse),
+  route('POST', '/internal/nodes/heartbeat', contract.HeartbeatNodeResponse),
   route('PATCH', '/admin/users/{id}', contract.UpdateAdminUserResponse),
   route('GET', '/admin/plans', contract.GetAdminPlansResponse),
   route('PUT', '/admin/plans', contract.UpdateAdminPlansResponse),
