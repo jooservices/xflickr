@@ -6,6 +6,8 @@
 - [Sharing settings and observations](sharing.md)
 - [Ops monitoring](ops-monitoring.md) — crawl health log line, admin status
   endpoint, OpenObserve stream and alerts.
+- [Incident management](incident-management.md) — deduplication, acknowledgement,
+  closure, and critical incident notification events.
 - [Structured logging and telemetry](observability.md) — context fields, OTLP
   export, event helper, and offline log spill behavior.
 
