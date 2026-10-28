@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>XFlickr · Admin issues</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          14px/1.45 system-ui,
+          sans-serif;
+      }
+      .theme {
+        --bg: #0f1116;
+        --surface: #171a21;
+        --sunken: #1e222b;
+        --line: #3a4150;
+        --ink: #e8eaf0;
+        --muted: #a0a7b4;
+        --accent: #7d9cff;
+        --ok: #4fc887;
+        --warn: #f0b04a;
+        --bad: #ff7b72;
+        background: var(--bg);
+        color: var(--ink);
+        padding: 24px;
+        min-height: 100vh;
+      }
+      .theme.light {
+        --bg: #f6f7fa;
+        --surface: #fff;
+        --sunken: #eef0f5;
+        --line: #747b88;
+        --ink: #161a22;
+        --muted: #5d6574;
+        --accent: #2457d6;
+        --ok: #187244;
+        --warn: #875300;
+        --bad: #c12824;
+      }
+      .wrap {
+        max-width: 1392px;
+        margin: auto;
+      }
+      .theme-title {
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+      .state {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 16px;
+        min-width: 0;
+      }
+      .state h2 {
+        font-size: 13px;
+        color: var(--muted);
+        margin: 0 0 12px;
+      }
+      .head,
+      .tabs,
+      .filters,
+      .meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .head {
+        justify-content: space-between;
+      }
+      .head h1 {
+        margin: 0;
+        font-size: 24px;
+      }
+      .sub,
+      .muted,
+      .small {
+        color: var(--muted);
+      }
+      .tabs {
+        border-bottom: 1px solid var(--line);
+        padding: 10px 0;
+        margin-bottom: 10px;
+      }
+      .chip,
+      .btn,
+      .input {
+        font: inherit;
+        color: var(--ink);
+        background: var(--sunken);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 6px 9px;
+      }
+      .active {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+      .input {
+        flex: 1;
+        min-width: 180px;
+      }
+      .live {
+        color: var(--ok);
+      }
+      .count {
+        margin-left: auto;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+      }
+      th,
+      td {
+        padding: 8px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        font-size: 10px;
+        color: var(--muted);
+        text-transform: uppercase;
+      }
+      .crit {
+        color: var(--bad);
+        font-weight: 700;
+      }
+      .warning {
+        color: var(--warn);
+        font-weight: 700;
+      }
+      .detail {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .box,
+      .card {
+        background: var(--sunken);
+        padding: 10px;
+        border-radius: 6px;
+      }
+      .box p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .sk {
+        height: 28px;
+        margin: 8px 0;
+        border-radius: 5px;
+        background: var(--sunken);
+      }
+      .center {
+        text-align: center;
+        padding: 28px 8px;
+      }
+      .center p {
+        color: var(--muted);
+      }
+      .primary {
+        background: var(--accent);
+        color: #0d1220;
+        font-weight: 700;
+      }
+      .banner {
+        color: var(--bad);
+        border: 1px solid var(--bad);
+        padding: 10px;
+        border-radius: 6px;
+      }
+      .cards {
+        display: none;
+      }
+      .small {
+        font-size: 12px;
+      }
+      @media (max-width: 700px) {
+        .theme {
+          padding: 12px;
+        }
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .state {
+          padding: 12px;
+        }
+        table {
+          display: none;
+        }
+        .cards {
+          display: grid;
+          gap: 8px;
+        }
+        .detail {
+          grid-template-columns: 1fr;
+        }
+        .input {
+          min-width: 100%;
+        }
+        .count {
+          margin: 0;
+        }
+        .head {
+          align-items: flex-start;
+        }
+        .head h1 {
+          font-size: 21px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <section class="theme" data-theme="dark">
+      <div class="wrap">
+        <p class="theme-title">
+          ADMIN · Dark control room · 1440 desktop / responsive to 390px
+        </p>
+        <div class="grid">
+          <section class="state" data-state="ready">
+            <h2>Normal</h2>
+            <div class="head">
+              <div>
+                <h1>Issues</h1>
+                <span class="sub">Problems that need a person.</span>
+              </div>
+              <span class="live">● Live · updated now</span>
+            </div>
+            <div class="tabs">
+              <button class="chip active">Open 3</button
+              ><button class="chip">Acknowledged 2</button
+              ><button class="chip">Resolved 8</button>
+            </div>
+            <div class="filters">
+              <button class="chip active">All severities</button
+              ><button class="chip">Critical</button
+              ><input
+                class="input"
+                aria-label="Search issues"
+                placeholder="Search issues"
+              /><span class="count">13 issues</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Severity</th>
+                  <th>Area / issue</th>
+                  <th>First seen</th>
+                  <th>Last seen</th>
+                  <th>Count</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="crit">● Critical</td>
+                  <td>
+                    API quota exhausted
+                    <div class="small">Key ending 42A1</div>
+                  </td>
+                  <td>09:12</td>
+                  <td>09:24</td>
+                  <td>17</td>
+                  <td>Open</td>
+                  <td><button class="btn">Acknowledge</button></td>
+                </tr>
+                <tr>
+                  <td class="warning">● Warning</td>
+                  <td>
+                    Queue item age above threshold
+                    <div class="small">Crawl · photos lane</div>
+                  </td>
+                  <td>08:50</td>
+                  <td>09:20</td>
+                  <td>6</td>
+                  <td>Acknowledged</td>
+                  <td><button class="btn">Resolve</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="cards">
+              <div class="card">
+                <b class="crit">● Critical · API quota exhausted</b>
+                <div class="meta small">Key ending 42A1 · 17× · 09:24</div>
+                <button class="btn">Acknowledge</button>
+              </div>
+              <div class="card">
+                <b class="warning">● Warning · Queue age high</b>
+                <div class="meta small">Photos lane · 6× · 09:20</div>
+                <button class="btn">Resolve</button>
+              </div>
+            </div>
+            <div class="detail">
+              <div class="box">
+                <b>Detection</b>
+                <p>
+                  Quota at configured limit; reset comes from detector evidence.
+                </p>
+              </div>
+              <div class="box">
+                <b>Automatic action</b>
+                <p>
+                  Recorded/deduplicated. No key rotation or restart implied.
+                </p>
+              </div>
+              <div class="box">
+                <b>Human step</b>
+                <p>Check safe key label and reset time; follow key policy.</p>
+              </div>
+              <div class="box">
+                <b>Timeline</b>
+                <p>First 09:12 · Last 09:24 · Count 17 · Open</p>
+              </div>
+            </div>
+            <p class="small">
+              Auto-closed shows source/time. Raw JSON and secrets stay hidden.
+            </p>
+          </section>
+          <section class="state" data-state="loading">
+            <h2>Loading · skeleton</h2>
+            <div class="head">
+              <h1>Issues</h1>
+              <span class="muted">Loading issues…</span>
+            </div>
+            <div class="tabs">
+              <button class="chip active">Open</button
+              ><button class="chip">Acknowledged</button
+              ><button class="chip">Resolved</button>
+            </div>
+            <div aria-label="Loading issues">
+              <div class="sk"></div>
+              <div class="sk"></div>
+              <div class="sk"></div>
+              <div class="sk"></div>
+            </div>
+          </section>
+          <section class="state" data-state="empty">
+            <h2>Empty · no open issues</h2>
+            <div class="center">
+              <h1>No issues</h1>
+              <p>There are no open issues right now.</p>
+              <button class="btn primary">View resolved issues</button>
+            </div>
+          </section>
+          <section class="state" data-state="error">
+            <h2>Error · retry / stale</h2>
+            <div class="banner">
+              Issues could not be loaded. Last good data remains stale.
+            </div>
+            <div class="center">
+              <h1>Connection interrupted</h1>
+              <p>Check the connection, then retry.</p>
+              <button class="btn primary">Retry</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+    <section class="theme light" data-theme="light">
+      <div class="wrap">
+        <p class="theme-title">
+          ADMIN · Optional light theme · 1440 desktop / responsive to 390px
+        </p>
+        <div class="grid">
+          <section class="state" data-state="ready">
+            <h2>Normal</h2>
+            <div class="head">
+              <div>
+                <h1>Issues</h1>
+                <span class="sub">Problems that need a person.</span>
+              </div>
+              <span class="live">● Live · updated now</span>
+            </div>
+            <div class="tabs">
+              <button class="chip active">Open 3</button
+              ><button class="chip">Acknowledged 2</button
+              ><button class="chip">Resolved 8</button>
+            </div>
+            <div class="filters">
+              <button class="chip active">All severities</button
+              ><button class="chip">Critical</button
+              ><input
+                class="input"
+                aria-label="Search issues"
+                placeholder="Search issues"
+              /><span class="count">13 issues</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Severity</th>
+                  <th>Area / issue</th>
+                  <th>First seen</th>
+                  <th>Last seen</th>
+                  <th>Count</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="crit">● Critical</td>
+                  <td>
+                    API quota exhausted
+                    <div class="small">Key ending 42A1</div>
+                  </td>
+                  <td>09:12</td>
+                  <td>09:24</td>
+                  <td>17</td>
+                  <td>Open</td>
+                  <td><button class="btn">Acknowledge</button></td>
+                </tr>
+                <tr>
+                  <td class="warning">● Warning</td>
+                  <td>
+                    Queue item age above threshold
+                    <div class="small">Crawl · photos lane</div>
+                  </td>
+                  <td>08:50</td>
+                  <td>09:20</td>
+                  <td>6</td>
+                  <td>Acknowledged</td>
+                  <td><button class="btn">Resolve</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="cards">
+              <div class="card">
+                <b class="crit">● Critical · API quota exhausted</b>
+                <div class="meta small">Key ending 42A1 · 17× · 09:24</div>
+                <button class="btn">Acknowledge</button>
+              </div>
+              <div class="card">
+                <b class="warning">● Warning · Queue age high</b>
+                <div class="meta small">Photos lane · 6× · 09:20</div>
+                <button class="btn">Resolve</button>
+              </div>
+            </div>
+            <div class="detail">
+              <div class="box">
+                <b>Detection</b>
+                <p>
+                  Quota at configured limit; reset comes from detector evidence.
+                </p>
+              </div>
+              <div class="box">
+                <b>Automatic action</b>
+                <p>
+                  Recorded/deduplicated. No key rotation or restart implied.
+                </p>
+              </div>
+              <div class="box">
+                <b>Human step</b>
+                <p>Check safe key label and reset time; follow key policy.</p>
+              </div>
+              <div class="box">
+                <b>Timeline</b>
+                <p>First 09:12 · Last 09:24 · Count 17 · Open</p>
+              </div>
+            </div>
+            <p class="small">
+              Auto-closed shows source/time. Raw JSON and secrets stay hidden.
+            </p>
+          </section>
+          <section class="state" data-state="loading">
+            <h2>Loading · skeleton</h2>
+            <div class="head">
+              <h1>Issues</h1>
+              <span class="muted">Loading issues…</span>
+            </div>
+            <div class="tabs">
+              <button class="chip active">Open</button
+              ><button class="chip">Acknowledged</button
+              ><button class="chip">Resolved</button>
+            </div>
+            <div aria-label="Loading issues">
+              <div class="sk"></div>
+              <div class="sk"></div>
+              <div class="sk"></div>
+              <div class="sk"></div>
+            </div>
+          </section>
+          <section class="state" data-state="empty">
+            <h2>Empty · no open issues</h2>
+            <div class="center">
+              <h1>No issues</h1>
+              <p>There are no open issues right now.</p>
+              <button class="btn primary">View resolved issues</button>
+            </div>
+          </section>
+          <section class="state" data-state="error">
+            <h2>Error · retry / stale</h2>
+            <div class="banner">
+              Issues could not be loaded. Last good data remains stale.
+            </div>
+            <div class="center">
+              <h1>Connection interrupted</h1>
+              <p>Check the connection, then retry.</p>
+              <button class="btn primary">Retry</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </body>
+</html>

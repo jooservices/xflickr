@@ -56,7 +56,7 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 | `admin-quota` | admin | `/admin/quota` | API quota | [spec](views/admin-quota.md) | [mockup](mockups/admin-quota.html) | JOOXF-182 | `web/e2e/admin-quota.spec.ts` |
 | `admin-metrics` | admin | `/admin/metrics` | Metrics | [spec](views/admin-metrics.md) | [mockup](mockups/admin-metrics.html) | JOOXF-180 | `web/e2e/admin-metrics.spec.ts` |
 | `admin-events` | admin | `/admin/events` | Events and audit | [spec](views/admin-events.md) | [mockup](mockups/admin-events.html) | JOOXF-183 | `web/e2e/admin-events.spec.ts` |
-| `admin-issues` | admin | `/admin/issues` | Issues | pending | pending | TBD | `web/e2e/admin-issues.spec.ts` |
+| `admin-issues` | admin | `/admin/issues` | Issues | [spec](views/admin-issues.md) | [mockup](mockups/admin-issues.html) | JOOXF-183 | `web/e2e/admin-issues.spec.ts` |
 | `admin-pipeline` | admin | `/admin/pipeline` | Crawl pipeline | pending | pending | TBD | `web/e2e/admin-pipeline.spec.ts` |
 | `admin-downloads` | admin | `/admin/downloads` | Downloads | pending | pending | TBD | `web/e2e/admin-downloads.spec.ts` |
 | `admin-sync` | admin | `/admin/sync` | Cloud sync | pending | pending | TBD | `web/e2e/admin-sync.spec.ts` |
