@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin sharing · XFlickr</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b0f15;color:#d6dee8;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1480px;margin:auto;padding:24px}
+.theme{--bg:#0b0f15;--surface:#11171f;--sunken:#161e28;--raise:#1c2632;--line:#222c3a;--ink:#d6dee8;--muted:#8190a4;--accent:#4cb4d8;--accent-ink:#04131a;--ok:#3cb87c;--warn:#e2ae3d;--bad:#f2766b;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:9px;margin:0 0 32px;padding:22px}
+.theme.light{--bg:#eef1f5;--surface:#fff;--sunken:#f5f7fa;--raise:#e9edf3;--line:#dce2ea;--ink:#16202c;--muted:#56657a;--accent:#006482;--accent-ink:#fff;--ok:#176d42;--warn:#815800;--bad:#c5372c}
+.topbar,.row,.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.topbar{border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:20px}
+.brand{font-weight:750;letter-spacing:.04em}.role,.muted,.subtle{color:var(--muted)}.role{font-size:12px}
+.theme-chip,.pill,.button{border:1px solid var(--line);border-radius:7px;padding:6px 10px;font-size:11px}
+.theme-chip{color:var(--accent)}.button{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.intro h1{font-size:24px;margin:0 0 4px}.intro p{margin:0;color:var(--muted);max-width:850px}
+.live{color:var(--ok);font-size:12px}.live:before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:7px}
+.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0}
+.metric,.policy,.state-card{background:var(--surface);border:1px solid var(--line);border-radius:9px}
+.metric{padding:16px}.metric dt{color:var(--muted);font-size:12px}.metric dd{margin:7px 0 0;font-size:26px;font-weight:750}.metric small{font-size:12px;font-weight:500;color:var(--muted)}
+.policy{padding:15px 17px;border-left:3px solid var(--accent)}.policy h2{font-size:14px;margin:0 0 8px}.policy p{margin:5px 0;color:var(--muted)}.policy strong{color:var(--ink)}
+.states{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px}
+.state-card{padding:13px;min-height:126px}.state-card h2{font-size:12px;margin:0 0 8px}.state-card p{font-size:11px;color:var(--muted);margin:0 0 8px}
+.skeleton{height:12px;background:var(--raise);border-radius:4px;margin:9px 0}.skeleton.short{width:58%}
+.viewport-label{font-size:10px;color:var(--muted);margin:16px 0 6px;text-transform:uppercase;letter-spacing:.08em}
+.mobile{width:min(100%,390px);margin:18px auto 0;border:1px solid var(--line);border-radius:9px;background:var(--bg);padding:12px}
+.mobile .metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}
+.mobile .metric{padding:11px}.mobile .metric dd{font-size:20px}.mobile .metric:last-child{grid-column:1/-1}
+.mobile .states{grid-template-columns:1fr}.mobile .state-card{min-height:0}
+@media(max-width:760px){main{padding:10px}.theme{padding:14px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.metric:last-child{grid-column:1/-1}.states{grid-template-columns:1fr}.role{display:none}.topbar{align-items:flex-start}.topbar .row{flex-wrap:wrap;justify-content:flex-end}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+<section class="theme dark" data-theme="dark" aria-label="Admin sharing — dark theme" data-testid="admin-sharing-page">
+<header class="topbar"><div><span class="brand">XFlickr <span class="role">/ ADMIN CONTROL ROOM</span></span></div><div class="row"><span class="theme-chip">Dark · default</span><span class="live" aria-live="polite">Live · sample snapshot</span><button class="button" type="button" data-testid="admin-sharing-refresh">Refresh</button></div></header>
+<div class="viewport-label">1440 px desktop · normal · illustrative values only</div>
+<section class="desktop" data-viewport="1440" data-state="ready" data-testid="admin-sharing-summary">
+<div class="intro"><h1>Sharing</h1><p>Only eligible public records from accounts that opted in can be reused by other XFlickr users. Snapshot values below are fictional preview data.</p></div>
+<dl class="metrics"><div class="metric" data-testid="admin-sharing-accounts"><dt>Users sharing</dt><dd>42 <small>of 120 active users</small></dd></div><div class="metric" data-testid="admin-sharing-records"><dt>Eligible public records shared</dt><dd>18,420</dd></div><div class="metric"><dt>Snapshot updated</dt><dd><small>12 sec ago · sample</small></dd></div></dl>
+<section class="policy" data-testid="admin-sharing-policy"><h2>Sharing and privacy</h2><p><strong>Opt-in only.</strong> Public records contributed by sharing-enabled accounts may be reused.</p><p>Private, friends-only and family-only records are never shared. API keys, secrets, tokens and downloads are never shared.</p><p>This view shows aggregate counts only. It does not expose account or record details.</p></section>
+</section>
+<div class="states" aria-label="Other desktop states">
+<article class="state-card" data-state="loading" data-testid="admin-sharing-loading" aria-busy="true"><h2>Loading</h2><div class="skeleton"></div><div class="skeleton short"></div><p>Loading sharing summary…</p></article>
+<article class="state-card" data-state="empty" data-testid="admin-sharing-empty"><h2>No sharing activity yet</h2><p>Sharing is optional. Eligible public records appear after an account opts in.</p><button class="button" type="button" data-testid="admin-sharing-open-users">Open Users</button></article>
+<article class="state-card" data-state="error" data-testid="admin-sharing-error"><h2>Could not load sharing summary</h2><p>No sharing setting was changed. Try again.</p><button class="button" type="button">Retry</button></article>
+</div>
+<div class="viewport-label">390 px mobile · normal and states · illustrative values only</div>
+<section class="mobile" data-viewport="390" data-state="ready" aria-label="Mobile sharing preview">
+<div class="intro"><h1>Sharing</h1><p>Opt-in public records, safely reused.</p></div>
+<dl class="metrics"><div class="metric"><dt>Users sharing</dt><dd>42 <small>/ 120 users</small></dd></div><div class="metric"><dt>Public records</dt><dd>18,420</dd></div><div class="metric"><dt>Updated</dt><dd><small>12 sec ago · sample</small></dd></div></dl>
+<section class="policy"><h2>Sharing and privacy</h2><p>Only eligible public records from opted-in accounts may be reused.</p><p>Private, friends-only, family-only records, credentials and downloads are never shared.</p></section>
+<div class="states" aria-label="Mobile state previews">
+<article class="state-card" data-state="loading" aria-busy="true"><h2>Loading</h2><div class="skeleton"></div><div class="skeleton short"></div><p>Loading sharing summary…</p></article>
+<article class="state-card" data-state="empty"><h2>No sharing activity yet</h2><p>Eligible public records appear after an account opts in.</p><button class="button" type="button">Open Users</button></article>
+<article class="state-card" data-state="error"><h2>Could not load sharing summary</h2><p>No setting was changed. Try again.</p><button class="button" type="button">Retry</button></article>
+</div>
+</section>
+</section>
+<section class="theme light" data-theme="light" aria-label="Admin sharing — light theme">
+<header class="topbar"><div><span class="brand">XFlickr <span class="role">/ ADMIN CONTROL ROOM</span></span></div><div class="row"><span class="theme-chip">Light</span><span class="live" aria-live="polite">Live · sample snapshot</span><button class="button" type="button">Refresh</button></div></header>
+<div class="viewport-label">1440 px desktop · normal · illustrative values only</div>
+<section class="desktop" data-viewport="1440" data-state="ready">
+<div class="intro"><h1>Sharing</h1><p>Only eligible public records from accounts that opted in can be reused by other XFlickr users. Snapshot values below are fictional preview data.</p></div>
+<dl class="metrics"><div class="metric"><dt>Users sharing</dt><dd>42 <small>of 120 active users</small></dd></div><div class="metric"><dt>Eligible public records shared</dt><dd>18,420</dd></div><div class="metric"><dt>Snapshot updated</dt><dd><small>12 sec ago · sample</small></dd></div></dl>
+<section class="policy"><h2>Sharing and privacy</h2><p><strong>Opt-in only.</strong> Public records contributed by sharing-enabled accounts may be reused.</p><p>Private, friends-only and family-only records are never shared. API keys, secrets, tokens and downloads are never shared.</p><p>This view shows aggregate counts only. It does not expose account or record details.</p></section>
+</section>
+<div class="states" aria-label="Other desktop states">
+<article class="state-card" data-state="loading" aria-busy="true"><h2>Loading</h2><div class="skeleton"></div><div class="skeleton short"></div><p>Loading sharing summary…</p></article>
+<article class="state-card" data-state="empty"><h2>No sharing activity yet</h2><p>Sharing is optional. Eligible public records appear after an account opts in.</p><button class="button" type="button">Open Users</button></article>
+<article class="state-card" data-state="error"><h2>Could not load sharing summary</h2><p>No sharing setting was changed. Try again.</p><button class="button" type="button">Retry</button></article>
+</div>
+<div class="viewport-label">390 px mobile · normal and states · illustrative values only</div>
+<section class="mobile" data-viewport="390" data-state="ready" aria-label="Mobile sharing preview">
+<div class="intro"><h1>Sharing</h1><p>Opt-in public records, safely reused.</p></div>
+<dl class="metrics"><div class="metric"><dt>Users sharing</dt><dd>42 <small>/ 120 users</small></dd></div><div class="metric"><dt>Public records</dt><dd>18,420</dd></div><div class="metric"><dt>Updated</dt><dd><small>12 sec ago · sample</small></dd></div></dl>
+<section class="policy"><h2>Sharing and privacy</h2><p>Only eligible public records from opted-in accounts may be reused.</p><p>Private, friends-only, family-only records, credentials and downloads are never shared.</p></section>
+<div class="states" aria-label="Mobile state previews">
+<article class="state-card" data-state="loading" aria-busy="true"><h2>Loading</h2><div class="skeleton"></div><div class="skeleton short"></div><p>Loading sharing summary…</p></article>
+<article class="state-card" data-state="empty"><h2>No sharing activity yet</h2><p>Eligible public records appear after an account opts in.</p><button class="button" type="button">Open Users</button></article>
+<article class="state-card" data-state="error"><h2>Could not load sharing summary</h2><p>No setting was changed. Try again.</p><button class="button" type="button">Retry</button></article>
+</div>
+</section>
+</section>
+</main>
+</body>
+</html>
