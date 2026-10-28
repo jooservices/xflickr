@@ -17,7 +17,7 @@ Connection values come from `scripts/docker/shared env-project xflickr --mode li
 ## Rules that replace ticket wording
 
 1. No testcontainers and no per-job containers. Integration tests use `xflickr_test` or, in a ticket worktree, the worktree database `xflickr_wt<id>`; provision with `scripts/docker/shared provision-project xflickr --db <id> --postgres` (AI Flow does this per ticket).
-2. No dev Docker Compose for databases, search, Garage or Gatus. `make dev-up` only checks that the shared services answer and that the project databases exist. The only container XFlickr owns is its own application container (one image, roles comma separated).
+2. No dev Docker Compose for databases, search, Garage or Gatus. `make dev-up` checks that shared PostgreSQL and Redis are healthy and that the worktree database is reachable. It does not inspect unrelated shared services. The only container XFlickr owns is its own application container (one image, roles comma separated).
 3. Temporary download files and thumbnails use a directory on the WSL disk behind the `BlobStore` port (local filesystem adapter first); the S3 adapter is optional later. Garage is not used. Presigned ZIP links use `DOWNLOAD_LINK_TTL` (15m by default), which cannot exceed `BLOB_MAX_TTL`.
 4. Uptime checks use OpenObserve alerts; Gatus is not used.
 5. Branches: `develop` is the only long-lived branch for now (there is no `master` yet). Each ticket is built in its own worktree and merged into `develop` when everything passes. `develop` runs on WSL against the single database `xflickr` with real crawled data that the owner inspects.

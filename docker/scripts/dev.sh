@@ -61,8 +61,7 @@ for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
 command="${1:-}"
 case "$command" in
 	up)
-		workspaces_root="${WORKSPACES_ROOT:-$(find_workspaces_root)}"
-		"$workspaces_root/scripts/docker/shared" smoke
+		"$SCRIPT_DIR/dev-smoke.sh"
 		verify_worktree_database
 		printf 'Shared development services and worktree database are ready.\n'
 		;;
