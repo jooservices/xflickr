@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
 	accountsdomain "github.com/jooservices/xflickr/internal/accounts/domain"
 	"github.com/jooservices/xflickr/internal/crawl/app"
 	"github.com/jooservices/xflickr/internal/platform/crypto"

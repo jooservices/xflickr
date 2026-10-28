@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	redisv9 "github.com/redis/go-redis/v9"
+
 	"github.com/jooservices/xflickr/internal/media/app"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/queue"
 	quotaRedis "github.com/jooservices/xflickr/internal/quota/adapters/redis"
 	scheduleapp "github.com/jooservices/xflickr/internal/schedule/app"
 	flickrclient "github.com/jooservices/xflickr/pkg/flickr"
-	redisv9 "github.com/redis/go-redis/v9"
 )
 
 func TestCrawlAndSchedulerWiring(t *testing.T) {
@@ -83,6 +84,7 @@ func (blobStoreStub) Delete(context.Context, string) error { return nil }
 func (blobStoreStub) PresignGet(context.Context, string, time.Duration) (string, error) {
 	return "", nil
 }
+
 func (blobStoreStub) Stat(context.Context, string) (app.BlobInfo, error) { return app.BlobInfo{}, nil }
 func (blobStoreStub) Usage(context.Context) (int64, error)               { return 0, nil }
 func (blobStoreStub) Full(context.Context) (bool, error)                 { return false, nil }

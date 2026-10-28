@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/jooservices/xflickr/internal/platform/queue"
 	"github.com/jooservices/xflickr/internal/schedule/app"
 	"github.com/jooservices/xflickr/internal/schedule/domain"
@@ -63,15 +63,19 @@ type coverageRows struct {
 }
 
 func coverageRowsOf(values ...[]any) *coverageRows { return &coverageRows{values: values, index: -1} }
-func (r *coverageRows) Next() bool                 { r.index++; return r.index < len(r.values) }
+
+func (r *coverageRows) Next() bool { r.index++; return r.index < len(r.values) }
+
 func (r *coverageRows) Scan(dest ...any) error {
 	if r.scanErr != nil {
 		return r.scanErr
 	}
 	return (coverageRow{values: r.values[r.index]}).Scan(dest...)
 }
+
 func (r *coverageRows) Err() error { return r.err }
-func (r *coverageRows) Close()     { r.closed = true }
+
+func (r *coverageRows) Close() { r.closed = true }
 
 type coverageTx struct {
 	pgx.Tx
@@ -89,19 +93,23 @@ func (tx *coverageTx) Query(ctx context.Context, sql string, args ...any) (pgx.R
 	}
 	return tx.queryFn(ctx, sql, args...)
 }
+
 func (tx *coverageTx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	if tx.rowFn == nil {
 		return coverageRow{err: errors.New("unexpected tx query row")}
 	}
 	return tx.rowFn(ctx, sql, args...)
 }
+
 func (tx *coverageTx) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	if tx.execFn == nil {
 		return pgconn.NewCommandTag("UPDATE 1"), nil
 	}
 	return tx.execFn(ctx, sql, args...)
 }
-func (tx *coverageTx) Commit(context.Context) error   { tx.commitCount++; return tx.commitErr }
+
+func (tx *coverageTx) Commit(context.Context) error { tx.commitCount++; return tx.commitErr }
+
 func (tx *coverageTx) Rollback(context.Context) error { tx.rollbackCount++; return nil }
 
 type coverageConnection struct {
@@ -117,18 +125,21 @@ func (c *coverageConnection) Begin(ctx context.Context) (pgx.Tx, error) {
 	}
 	return c.beginFn(ctx)
 }
+
 func (c *coverageConnection) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	if c.execFn == nil {
 		return pgconn.NewCommandTag("SELECT 1"), nil
 	}
 	return c.execFn(ctx, sql, args...)
 }
+
 func (c *coverageConnection) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	if c.rowFn == nil {
 		return coverageRow{err: errors.New("unexpected connection query row")}
 	}
 	return c.rowFn(ctx, sql, args...)
 }
+
 func (c *coverageConnection) Release() { c.released = true }
 
 type coverageDatabase struct {
@@ -145,24 +156,28 @@ func (db *coverageDatabase) Acquire(ctx context.Context) (scheduleConnection, er
 	}
 	return db.acquireFn(ctx)
 }
+
 func (db *coverageDatabase) Begin(ctx context.Context) (pgx.Tx, error) {
 	if db.beginFn == nil {
 		return nil, errors.New("unexpected begin")
 	}
 	return db.beginFn(ctx)
 }
+
 func (db *coverageDatabase) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	if db.execFn == nil {
 		return pgconn.NewCommandTag("UPDATE 1"), nil
 	}
 	return db.execFn(ctx, sql, args...)
 }
+
 func (db *coverageDatabase) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	if db.queryFn == nil {
 		return coverageRowsOf(), nil
 	}
 	return db.queryFn(ctx, sql, args...)
 }
+
 func (db *coverageDatabase) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	if db.rowFn == nil {
 		return coverageRow{err: errors.New("unexpected query row")}
@@ -181,6 +196,7 @@ func (q *coverageJobs) Enqueue(_ context.Context, _ pgx.Tx, job queue.Job, optio
 	q.options = append(q.options, options)
 	return q.err
 }
+
 func (*coverageJobs) Register(string, queue.Handler) error { return nil }
 
 type coverageCredits struct {
@@ -196,7 +212,8 @@ func (c *coverageCredits) Capacity(context.Context, int64, time.Duration) (int, 
 
 type unavailableKey struct{}
 
-func (unavailableKey) Error() string        { return "key unavailable" }
+func (unavailableKey) Error() string { return "key unavailable" }
+
 func (unavailableKey) KeyUnavailable() bool { return true }
 
 func coverageSettings() app.PumpSettings {
@@ -374,7 +391,6 @@ func TestPumpLeaderTransactionsAndKeyHandling(t *testing.T) {
 func TestPumpHelpersAndQueueDispatch(t *testing.T) {
 	ctx := context.Background()
 	settings := coverageSettings()
-	tx := &coverageTx{}
 	if got := configuredQueues(settings); len(got) != 3 || got[0].name != "media" || got[1].name != "ai" || got[2].name != "sync" {
 		t.Fatalf("queues=%#v", got)
 	}
@@ -461,7 +477,6 @@ func TestPumpHelpersAndQueueDispatch(t *testing.T) {
 			}
 		})
 	}
-	_ = tx
 	for _, tc := range []struct {
 		name    string
 		err     error
@@ -770,8 +785,5 @@ func TestPumpQueueEmptyRowsAndCreditsBoundaries(t *testing.T) {
 	}
 	if _, err := (Store{}).pumpQueuePlan(ctx, &coverageTx{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) { return coverageRowsOf(), nil }}, 1, queueCap{name: "media"}, 1, 2, settings, &coverageJobs{}); err != nil {
 		t.Fatal(err)
-	}
-	if math.IsNaN(float64(settings.MediaReadyCap)) {
-		t.Fatal("unreachable")
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
 )
@@ -300,6 +301,7 @@ func (pool *identityPoolFake) QueryRow(_ context.Context, query string, args ...
 	pool.rowQueue = pool.rowQueue[1:]
 	return row
 }
+
 func (pool *identityPoolFake) Query(_ context.Context, query string, args ...any) (pgx.Rows, error) {
 	pool.query, pool.args = query, append([]any(nil), args...)
 	if pool.queryErr != nil {
@@ -307,6 +309,7 @@ func (pool *identityPoolFake) Query(_ context.Context, query string, args ...any
 	}
 	return pool.rows, nil
 }
+
 func (pool *identityPoolFake) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
 	return pool.execTag, pool.execErr
 }
@@ -314,6 +317,7 @@ func (pool *identityPoolFake) Begin(context.Context) (pgx.Tx, error) { return po
 func (pool *identityPoolFake) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) {
 	return pool.begin()
 }
+
 func (pool *identityPoolFake) begin() (pgx.Tx, error) {
 	if pool.beginErr != nil {
 		return nil, pool.beginErr
@@ -335,6 +339,7 @@ type identityTxFake struct {
 func (tx *identityTxFake) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
 	return pgconn.NewCommandTag("UPDATE 1"), tx.execErr
 }
+
 func (tx *identityTxFake) QueryRow(context.Context, string, ...any) pgx.Row {
 	if len(tx.rowQueue) == 0 {
 		return identityRow{err: errors.New("unexpected transaction QueryRow")}
@@ -363,11 +368,12 @@ func (row identityRow) Scan(dest ...any) error {
 		if out.Kind() != reflect.Pointer {
 			return errors.New("scan destination is not a pointer")
 		}
-		if !value.IsValid() {
+		switch {
+		case !value.IsValid():
 			out.Elem().SetZero()
-		} else if value.Type().AssignableTo(out.Elem().Type()) {
+		case value.Type().AssignableTo(out.Elem().Type()):
 			out.Elem().Set(value)
-		} else {
+		default:
 			return errors.New("unexpected scan value type")
 		}
 	}

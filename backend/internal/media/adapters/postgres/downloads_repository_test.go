@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
 	mediaapp "github.com/jooservices/xflickr/internal/media/app"
 	mediadomain "github.com/jooservices/xflickr/internal/media/domain"
 	"github.com/jooservices/xflickr/internal/platform/queue"
@@ -66,11 +67,12 @@ func (r mediaRow) Scan(dest ...any) error {
 			ptr.Elem().SetZero()
 			continue
 		}
-		if v.Type().AssignableTo(ptr.Elem().Type()) {
+		switch {
+		case v.Type().AssignableTo(ptr.Elem().Type()):
 			ptr.Elem().Set(v)
-		} else if v.Type().ConvertibleTo(ptr.Elem().Type()) {
+		case v.Type().ConvertibleTo(ptr.Elem().Type()):
 			ptr.Elem().Set(v.Convert(ptr.Elem().Type()))
-		} else {
+		default:
 			return fmt.Errorf("cannot scan %T into %T", value, dest[i])
 		}
 	}

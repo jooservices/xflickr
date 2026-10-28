@@ -7,11 +7,12 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	redisv9 "github.com/redis/go-redis/v9"
+
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	platformsse "github.com/jooservices/xflickr/internal/platform/sse"
-	redisv9 "github.com/redis/go-redis/v9"
 )
 
 func TestRoleBuilderSuccessAndErrorBranches(t *testing.T) {

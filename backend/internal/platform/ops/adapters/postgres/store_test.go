@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
 	"github.com/jooservices/xflickr/internal/platform/ops"
 )
 
@@ -131,7 +132,7 @@ func (db *snapshotDB) Query(_ context.Context, query string, _ ...any) (pgx.Rows
 	}
 }
 
-func (db *snapshotDB) QueryRow(_ context.Context, query string, args ...any) pgx.Row {
+func (db *snapshotDB) QueryRow(_ context.Context, query string, _ ...any) pgx.Row {
 	db.calls++
 	if db.calls == db.failAt {
 		return snapshotRow{err: errors.New("injected query failure")}

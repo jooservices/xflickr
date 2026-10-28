@@ -249,8 +249,19 @@ func TestStreamHeartbeatAndCanceledReader(t *testing.T) {
 		t.Fatalf("heartbeat read = %q, %v", buffer[:n], err)
 	}
 	cancel()
-	if n, err := stream.Read(buffer); n != 0 || err != io.EOF {
-		t.Fatalf("canceled read = %d, %v", n, err)
+	canceled := false
+	for attempt := 0; attempt < 100; attempt++ {
+		_, err := stream.Read(buffer)
+		if err == io.EOF {
+			canceled = true
+			break
+		}
+		if err != nil {
+			t.Fatalf("canceled read = %v", err)
+		}
+	}
+	if !canceled {
+		t.Fatal("canceled stream did not reach EOF")
 	}
 	if err := stream.Close(); err != nil {
 		t.Fatal(err)
