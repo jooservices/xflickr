@@ -23,6 +23,9 @@ components:
   schedule-domain:   { in: internal/schedule/domain/** }
   schedule-app:      { in: internal/schedule/app/** }
   schedule-adapters: { in: internal/schedule/adapters/** }
+  ops-domain:        { in: internal/ops/domain/** }
+  ops-app:           { in: internal/ops/app/** }
+  ops-adapters:      { in: internal/ops/adapters/** }
   quota-domain:     { in: internal/quota/domain/** }
   quota-app:        { in: internal/quota/app/** }
   quota-adapters:   { in: internal/quota/adapters/** }
@@ -82,6 +85,10 @@ deps:
     mayDependOn: [settings-domain, platform, pkg, identity-app]
   settings-adapters:
     mayDependOn: [settings-domain, settings-app, platform, pkg, identity-app]
+  ops-app:
+    mayDependOn: [ops-domain]
+  ops-adapters:
+    mayDependOn: [ops-domain, ops-app, platform]
   schedule-app:
     mayDependOn: [schedule-domain, platform, catalog-app, quota-app, quota-domain]
   schedule-adapters:
