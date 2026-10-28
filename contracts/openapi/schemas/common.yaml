@@ -30,3 +30,31 @@ Health:
     version:
       type: string
       description: Build version of the running process.
+Readiness:
+  type: object
+  additionalProperties: false
+  description: Dependency readiness reported by GET /readyz.
+  required:
+    - status
+    - dependencies
+  properties:
+    status:
+      type: string
+      enum: [ok, error]
+    dependencies:
+      type: array
+      items:
+        $ref: "#/DependencyStatus"
+DependencyStatus:
+  type: object
+  additionalProperties: false
+  required:
+    - name
+    - status
+  properties:
+    name:
+      type: string
+      description: Role-qualified dependency identifier.
+    status:
+      type: string
+      enum: [ok, error]

@@ -9,13 +9,8 @@ import (
 
 // Run starts each selected role and waits for all of them to stop.
 func Run(ctx context.Context, selected []Role) error {
-	if len(selected) == 0 {
-		return fmt.Errorf("no roles selected")
-	}
-	for _, role := range selected {
-		if role == nil {
-			return fmt.Errorf("cannot run a nil role")
-		}
+	if err := validateSelectedRoles(selected); err != nil {
+		return err
 	}
 
 	group, roleCtx := errgroup.WithContext(ctx)
@@ -24,4 +19,16 @@ func Run(ctx context.Context, selected []Role) error {
 		group.Go(func() error { return role.Run(roleCtx) })
 	}
 	return group.Wait()
+}
+
+func validateSelectedRoles(selected []Role) error {
+	if len(selected) == 0 {
+		return fmt.Errorf("no roles selected")
+	}
+	for _, role := range selected {
+		if role == nil {
+			return fmt.Errorf("cannot run a nil role")
+		}
+	}
+	return nil
 }

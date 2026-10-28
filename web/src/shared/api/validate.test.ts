@@ -18,6 +18,12 @@ describe('validateBody', () => {
     expect(validateBody('/keys', 'GET', 200, [key])).toEqual([key]);
     expect(validateBody('/keys/7?x=1', 'GET', 200, key)).toEqual(key);
     expect(validateBody('/flickr-accounts', 'GET', 200, [])).toEqual([]);
+    expect(
+      validateBody('/readyz', 'GET', 200, {
+        status: 'ok',
+        dependencies: [{ name: 'api.postgres', status: 'ok' }],
+      }),
+    ).toEqual({ status: 'ok', dependencies: [{ name: 'api.postgres', status: 'ok' }] });
     expect(validateBody('/keys/9', 'DELETE', 204, undefined)).toBeUndefined();
     expect(validateBody('/auth/logout', 'POST', 200, undefined)).toBeUndefined();
   });

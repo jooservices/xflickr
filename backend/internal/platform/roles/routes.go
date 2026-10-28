@@ -15,6 +15,7 @@ import (
 // missing here is treated as admin-only and fails TestEveryRouteDeclaresAccess.
 var routeAccess = map[string]identityhttp.Access{
 	"GET /healthz":        identityhttp.AccessPublic,
+	"GET /readyz":         identityhttp.AccessPublic,
 	"GET /auth/config":    identityhttp.AccessPublic,
 	"POST /auth/register": identityhttp.AccessPublic,
 	"POST /auth/login":    identityhttp.AccessPublic,

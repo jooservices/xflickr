@@ -74,7 +74,7 @@ func isPageFallback(r *http.Request) bool {
 }
 
 func isBackendOnlyPath(requestPath string) bool {
-	for _, prefix := range []string{"/auth", "/flickr-accounts", "/healthz"} {
+	for _, prefix := range []string{"/auth", "/flickr-accounts", "/healthz", "/readyz"} {
 		if requestPath == prefix || strings.HasPrefix(requestPath, prefix+"/") {
 			return true
 		}

@@ -13,6 +13,16 @@ type StrictHandler struct {
 	Handler
 }
 
+func (StrictHandler) GetReadiness(context.Context, gen.GetReadinessRequestObject) (gen.GetReadinessResponseObject, error) {
+	return gen.GetReadiness503JSONResponse{
+		Status: gen.ReadinessStatus("error"),
+		Dependencies: []gen.DependencyStatus{{
+			Name:   "platform.startup",
+			Status: gen.DependencyStatusStatus("error"),
+		}},
+	}, nil
+}
+
 var errAPIKeysServedByAccounts = errors.New("identity: api keys are served by the accounts module")
 
 func (StrictHandler) ListKeys(context.Context, gen.ListKeysRequestObject) (gen.ListKeysResponseObject, error) {

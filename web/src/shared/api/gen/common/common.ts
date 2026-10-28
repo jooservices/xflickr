@@ -18,7 +18,7 @@ import type {
   UseQueryResult,
 } from '@tanstack/react-query';
 
-import type { Error, Health } from '../models';
+import type { Error, Health, Readiness } from '../models';
 
 import { customFetch } from '../../mutator';
 
@@ -190,6 +190,139 @@ export function useGetHealth<TData = Awaited<ReturnType<typeof getHealth>>, TErr
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetHealthQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type getReadinessResponse200 = {
+  data: Readiness;
+  status: 200;
+};
+
+export type getReadinessResponse503 = {
+  data: Readiness;
+  status: 503;
+};
+
+export type getReadinessResponseSuccess = getReadinessResponse200 & {
+  headers: Headers;
+};
+export type getReadinessResponseError = getReadinessResponse503 & {
+  headers: Headers;
+};
+
+export type getReadinessResponse = getReadinessResponseSuccess | getReadinessResponseError;
+
+export const getGetReadinessUrl = () => {
+  return `/readyz`;
+};
+
+/**
+ * Returns the status of each required dependency for every selected role. Internal dependency errors are not exposed.
+ * @summary Report dependency readiness.
+ */
+export const getReadiness = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getReadinessResponse> => {
+  return customFetch<getReadinessResponse>(getGetReadinessUrl(), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getGetReadinessQueryKey = () => {
+  return [`/readyz`] as const;
+};
+
+export const getGetReadinessQueryOptions = <
+  TData = Awaited<ReturnType<typeof getReadiness>>,
+  TError = Readiness,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadiness>>, TError, TData>>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetReadinessQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getReadiness>>> = ({ signal }) =>
+    getReadiness({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getReadiness>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetReadinessQueryResult = NonNullable<Awaited<ReturnType<typeof getReadiness>>>;
+export type GetReadinessQueryError = Readiness;
+
+export function useGetReadiness<
+  TData = Awaited<ReturnType<typeof getReadiness>>,
+  TError = Readiness,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadiness>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getReadiness>>,
+          TError,
+          Awaited<ReturnType<typeof getReadiness>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetReadiness<
+  TData = Awaited<ReturnType<typeof getReadiness>>,
+  TError = Readiness,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadiness>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getReadiness>>,
+          TError,
+          Awaited<ReturnType<typeof getReadiness>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetReadiness<
+  TData = Awaited<ReturnType<typeof getReadiness>>,
+  TError = Readiness,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadiness>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Report dependency readiness.
+ */
+
+export function useGetReadiness<
+  TData = Awaited<ReturnType<typeof getReadiness>>,
+  TError = Readiness,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadiness>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetReadinessQueryOptions(options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

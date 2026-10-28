@@ -29,6 +29,7 @@ const route = (method: string, path: string, schema: ZodType): Route => ({
 export const ROUTES: Route[] = [
   route('GET', '/auth/config', contract.GetAuthConfigResponse),
   route('GET', '/healthz', contract.GetHealthResponse),
+  route('GET', '/readyz', contract.GetReadinessResponse),
   route('POST', '/auth/register', contract.RegisterResponse),
   route('POST', '/auth/login', contract.LoginResponse),
   route('POST', '/auth/logout', contract.LogoutResponse),
