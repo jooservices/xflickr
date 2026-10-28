@@ -109,76 +109,93 @@ Use one h1, labeled filters, semantic table/list, keyboard-operable tabs and but
 
 All values are EN / VI. Interpolate `{count}`, `{bytes}`, `{age}`, `{time}`. Keep error display localized by stable code; never render a server error message.
 
-| Key                                     | EN / VI                                                                                                                  |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| admin.downloads.title                   | Downloads / Tải xuống                                                                                                    |
-| admin.downloads.description             | Every user's download jobs and temporary storage health. / Tác vụ tải xuống của mọi người dùng và tình trạng bộ nhớ tạm. |
-| admin.downloads.metric.running          | Running / Đang chạy                                                                                                      |
-| admin.downloads.metric.throughput       | Throughput / Tốc độ truyền                                                                                               |
-| admin.downloads.metric.storage          | Temporary storage / Bộ nhớ tạm                                                                                           |
-| admin.downloads.metric.checksumFailures | Checksum failures · 24h / Lỗi checksum · 24 giờ                                                                          |
-| admin.downloads.metric.successRate      | Success rate · 24h / Tỷ lệ thành công · 24 giờ                                                                           |
-| admin.downloads.storage.warning         | Temporary storage is nearing its configured limit. / Bộ nhớ tạm đang gần chạm ngưỡng đã cấu hình.                        |
-| admin.downloads.storage.full            | New downloads are paused because temporary storage is full. / Tạm dừng tải mới vì bộ nhớ tạm đã đầy.                     |
-| admin.downloads.storage.unknown         | Storage capacity is unavailable. / Chưa có thông tin dung lượng bộ nhớ.                                                  |
-| admin.downloads.jobs.title              | Download jobs / Tác vụ tải xuống                                                                                         |
-| admin.downloads.filter.all              | All / Tất cả                                                                                                             |
-| admin.downloads.filter.active           | Active / Đang hoạt động                                                                                                  |
-| admin.downloads.filter.ready            | Ready / Sẵn sàng                                                                                                         |
-| admin.downloads.filter.finished         | Finished / Đã kết thúc                                                                                                   |
-| admin.downloads.filter.state            | State / Trạng thái                                                                                                       |
-| admin.downloads.filter.node             | Node / Nút xử lý                                                                                                         |
-| admin.downloads.filter.search           | Search safe labels / Tìm nhãn an toàn                                                                                    |
-| admin.downloads.action.refresh          | Refresh / Làm mới                                                                                                        |
-| admin.downloads.action.clearFilters     | Clear filters / Xóa bộ lọc                                                                                               |
-| admin.downloads.column.job              | Job / Mã tác vụ                                                                                                          |
-| admin.downloads.column.user             | User / Người dùng                                                                                                        |
-| admin.downloads.column.source           | Scope and source / Phạm vi và nguồn                                                                                      |
-| admin.downloads.column.node             | Node / Nút xử lý                                                                                                         |
-| admin.downloads.column.progress         | Files and bytes / Tệp và dung lượng                                                                                      |
-| admin.downloads.column.speed            | Speed / Tốc độ                                                                                                           |
-| admin.downloads.column.temporary        | Temporary bytes / Dung lượng tạm                                                                                         |
-| admin.downloads.column.delivery         | Delivery / Phương thức nhận                                                                                              |
-| admin.downloads.column.age              | Age / Thời gian                                                                                                          |
-| admin.downloads.column.state            | State / Trạng thái                                                                                                       |
-| admin.downloads.detail.title            | Download details / Chi tiết tải xuống                                                                                    |
-| admin.downloads.detail.files            | Files / Tệp                                                                                                              |
-| admin.downloads.detail.checksum         | Checksum / Kiểm tra checksum                                                                                             |
-| admin.downloads.checksum.verified       | Verified / Đã xác minh                                                                                                   |
-| admin.downloads.checksum.failed         | Failed / Thất bại                                                                                                        |
-| admin.downloads.checksum.pending        | Not checked / Chưa kiểm tra                                                                                              |
-| admin.downloads.checksum.unavailable    | Unavailable / Không khả dụng                                                                                             |
-| admin.downloads.status.queued           | Queued / Đang xếp hàng                                                                                                   |
-| admin.downloads.status.running          | Running / Đang chạy                                                                                                      |
-| admin.downloads.status.verifying        | Verifying / Đang xác minh                                                                                                |
-| admin.downloads.status.ready            | Ready / Sẵn sàng                                                                                                         |
-| admin.downloads.status.partial          | Ready with errors / Sẵn sàng nhưng có lỗi                                                                                |
-| admin.downloads.status.syncing          | Syncing / Đang đồng bộ                                                                                                   |
-| admin.downloads.status.synced           | Synced / Đã đồng bộ                                                                                                      |
-| admin.downloads.status.expired          | Expired / Đã hết hạn                                                                                                     |
-| admin.downloads.status.failed           | Failed / Thất bại                                                                                                        |
-| admin.downloads.status.canceled         | Canceled / Đã hủy                                                                                                        |
-| admin.downloads.delivery.zip            | ZIP / Tệp ZIP                                                                                                            |
-| admin.downloads.delivery.cloud          | Cloud / Đám mây                                                                                                          |
-| admin.downloads.scope.contact           | Contact / Liên hệ                                                                                                        |
-| admin.downloads.scope.album             | Album / Album                                                                                                            |
-| admin.downloads.scope.tray              | Tray / Khay                                                                                                              |
-| admin.downloads.files.showAll           | Show all files / Hiện tất cả tệp                                                                                         |
-| admin.downloads.action.retryFailed      | Retry failed files / Thử lại tệp lỗi                                                                                     |
-| admin.downloads.action.cancel           | Cancel job / Hủy tác vụ                                                                                                  |
-| admin.downloads.action.confirmRetry     | Retry {count} failed files for this job? / Thử lại {count} tệp lỗi của tác vụ này?                                       |
-| admin.downloads.action.confirmCancel    | Stop this active download and remove its temporary files? / Dừng lượt tải đang chạy này và xóa tệp tạm của nó?           |
-| admin.downloads.action.retryWarning     | This may use storage and worker capacity. / Thao tác này có thể dùng bộ nhớ và năng lực xử lý.                           |
-| admin.downloads.action.cancelWarning    | The user will lose this active download. / Người dùng sẽ mất lượt tải đang chạy này.                                     |
-| admin.downloads.empty.title             | No downloads yet / Chưa có lượt tải nào                                                                                  |
-| admin.downloads.empty.body              | Download jobs will appear here when users start a download. / Tác vụ sẽ xuất hiện khi người dùng bắt đầu tải xuống.      |
-| admin.downloads.empty.filtered          | No jobs match these filters / Không có tác vụ phù hợp với bộ lọc                                                         |
-| admin.downloads.state.loading           | Loading download jobs / Đang tải tác vụ xuống                                                                            |
-| admin.downloads.error.load              | Could not load downloads / Không tải được danh sách tải xuống                                                            |
-| admin.downloads.error.forbidden         | Admin access required / Cần quyền quản trị viên                                                                          |
-| admin.downloads.error.action            | The action failed. Refresh the job and try again. / Thao tác thất bại. Hãy tải lại tác vụ rồi thử lại.                   |
-| admin.downloads.label.live              | Live / Đang cập nhật                                                                                                     |
-| admin.downloads.label.stale             | Stale · updated {time} / Dữ liệu cũ · cập nhật lúc {time}                                                                |
+| Key                                     | EN / VI                                                                                                                                                        |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| admin.downloads.title                   | Downloads / Tải xuống                                                                                                                                          |
+| admin.downloads.description             | Every user's download jobs and temporary storage health. / Tác vụ tải xuống của mọi người dùng và tình trạng bộ nhớ tạm.                                       |
+| admin.downloads.metric.running          | Running / Đang chạy                                                                                                                                            |
+| admin.downloads.metric.throughput       | Throughput / Tốc độ truyền                                                                                                                                     |
+| admin.downloads.metric.storage          | Temporary storage / Bộ nhớ tạm                                                                                                                                 |
+| admin.downloads.metric.checksumFailures | Checksum failures · 24h / Lỗi checksum · 24 giờ                                                                                                                |
+| admin.downloads.metric.successRate      | Success rate · 24h / Tỷ lệ thành công · 24 giờ                                                                                                                 |
+| admin.downloads.storage.warning         | Temporary storage is nearing its configured limit; new downloads are still running. / Bộ nhớ tạm đang gần chạm ngưỡng đã cấu hình; lượt tải mới vẫn hoạt động. |
+| admin.downloads.storage.full            | New downloads are paused because temporary storage is full. / Tạm dừng tải mới vì bộ nhớ tạm đã đầy.                                                           |
+| admin.downloads.storage.byScope         | Temporary storage by scope / Bộ nhớ tạm theo phạm vi                                                                                                           |
+| admin.downloads.storage.observed        | Observed {time} ago / Được ghi nhận {time} trước                                                                                                               |
+| admin.downloads.storage.usage           | {scope} · {used} used of {capacity} · {percent}% / {scope} · đã dùng {used} trên {capacity} · {percent}%                                                       |
+| admin.downloads.storage.unknown         | Storage capacity is unavailable. / Chưa có thông tin dung lượng bộ nhớ.                                                                                        |
+| admin.downloads.jobs.title              | Download jobs / Tác vụ tải xuống                                                                                                                               |
+| admin.downloads.filter.all              | All / Tất cả                                                                                                                                                   |
+| admin.downloads.filter.active           | Active / Đang hoạt động                                                                                                                                        |
+| admin.downloads.filter.ready            | Ready / Sẵn sàng                                                                                                                                               |
+| admin.downloads.filter.finished         | Finished / Đã kết thúc                                                                                                                                         |
+| admin.downloads.filter.state            | State / Trạng thái                                                                                                                                             |
+| admin.downloads.filter.window           | Time window / Khoảng thời gian                                                                                                                                 |
+| admin.downloads.filter.node             | Node / Nút xử lý                                                                                                                                               |
+| admin.downloads.filter.search           | Search safe labels / Tìm nhãn an toàn                                                                                                                          |
+| admin.downloads.action.refresh          | Refresh / Làm mới                                                                                                                                              |
+| admin.downloads.action.clearFilters     | Clear filters / Xóa bộ lọc                                                                                                                                     |
+| admin.downloads.column.job              | Job / Mã tác vụ                                                                                                                                                |
+| admin.downloads.column.user             | User / Người dùng                                                                                                                                              |
+| admin.downloads.column.source           | Scope and source / Phạm vi và nguồn                                                                                                                            |
+| admin.downloads.column.node             | Node / Nút xử lý                                                                                                                                               |
+| admin.downloads.column.progress         | Files and bytes / Tệp và dung lượng                                                                                                                            |
+| admin.downloads.column.speed            | Speed / Tốc độ                                                                                                                                                 |
+| admin.downloads.column.temporary        | Temporary bytes / Dung lượng tạm                                                                                                                               |
+| admin.downloads.column.delivery         | Delivery / Phương thức nhận                                                                                                                                    |
+| admin.downloads.column.age              | Age / Thời gian                                                                                                                                                |
+| admin.downloads.column.state            | State / Trạng thái                                                                                                                                             |
+| admin.downloads.detail.title            | Download details / Chi tiết tải xuống                                                                                                                          |
+| admin.downloads.detail.progress         | Progress / Tiến độ                                                                                                                                             |
+| admin.downloads.detail.node             | Node / Nút xử lý                                                                                                                                               |
+| admin.downloads.detail.temporary        | Temporary bytes / Dung lượng tạm                                                                                                                               |
+| admin.downloads.detail.expiry           | Link expiry / Thời hạn liên kết                                                                                                                                |
+| admin.downloads.detail.elapsed          | Elapsed / Thời gian đã trôi qua                                                                                                                                |
+| admin.downloads.detail.files            | Files / Tệp                                                                                                                                                    |
+| admin.downloads.detail.checksum         | Checksum / Kiểm tra checksum                                                                                                                                   |
+| admin.downloads.checksum.verified       | Verified / Đã xác minh                                                                                                                                         |
+| admin.downloads.checksum.failed         | Failed / Thất bại                                                                                                                                              |
+| admin.downloads.checksum.pending        | Not checked / Chưa kiểm tra                                                                                                                                    |
+| admin.downloads.files.ordinal           | File {ordinal} / Tệp {ordinal}                                                                                                                                 |
+| admin.downloads.files.size              | Size / Kích thước                                                                                                                                              |
+| admin.downloads.files.progress          | Progress / Tiến độ                                                                                                                                             |
+| admin.downloads.files.speed             | Speed / Tốc độ                                                                                                                                                 |
+| admin.downloads.files.attempts          | Attempts / Số lần thử                                                                                                                                          |
+| admin.downloads.files.duration          | Duration / Thời lượng                                                                                                                                          |
+| admin.downloads.files.state             | State / Trạng thái                                                                                                                                             |
+| admin.downloads.checksum.unavailable    | Unavailable / Không khả dụng                                                                                                                                   |
+| admin.downloads.status.queued           | Queued / Đang xếp hàng                                                                                                                                         |
+| admin.downloads.status.running          | Running / Đang chạy                                                                                                                                            |
+| admin.downloads.status.verifying        | Verifying / Đang xác minh                                                                                                                                      |
+| admin.downloads.status.ready            | Ready / Sẵn sàng                                                                                                                                               |
+| admin.downloads.status.partial          | Ready with errors / Sẵn sàng nhưng có lỗi                                                                                                                      |
+| admin.downloads.status.syncing          | Syncing / Đang đồng bộ                                                                                                                                         |
+| admin.downloads.status.synced           | Synced / Đã đồng bộ                                                                                                                                            |
+| admin.downloads.status.expired          | Expired / Đã hết hạn                                                                                                                                           |
+| admin.downloads.status.failed           | Failed / Thất bại                                                                                                                                              |
+| admin.downloads.status.canceled         | Canceled / Đã hủy                                                                                                                                              |
+| admin.downloads.delivery.zip            | ZIP / Tệp ZIP                                                                                                                                                  |
+| admin.downloads.delivery.cloud          | Cloud / Đám mây                                                                                                                                                |
+| admin.downloads.scope.contact           | Contact / Liên hệ                                                                                                                                              |
+| admin.downloads.scope.album             | Album / Album                                                                                                                                                  |
+| admin.downloads.scope.tray              | Tray / Khay                                                                                                                                                    |
+| admin.downloads.files.showAll           | Show all files / Hiện tất cả tệp                                                                                                                               |
+| admin.downloads.action.retryFailed      | Retry failed files / Thử lại tệp lỗi                                                                                                                           |
+| admin.downloads.action.cancel           | Cancel job / Hủy tác vụ                                                                                                                                        |
+| admin.downloads.action.cancelActive     | Cancel active job / Hủy tác vụ đang chạy                                                                                                                       |
+| admin.downloads.action.confirmRetry     | Retry {count} failed files for this job? / Thử lại {count} tệp lỗi của tác vụ này?                                                                             |
+| admin.downloads.action.confirmCancel    | Stop this active download and remove its temporary files? / Dừng lượt tải đang chạy này và xóa tệp tạm của nó?                                                 |
+| admin.downloads.action.retryWarning     | This may use storage and worker capacity. / Thao tác này có thể dùng bộ nhớ và năng lực xử lý.                                                                 |
+| admin.downloads.action.cancelWarning    | The user will lose this active download. / Người dùng sẽ mất lượt tải đang chạy này.                                                                           |
+| admin.downloads.empty.title             | No downloads yet / Chưa có lượt tải nào                                                                                                                        |
+| admin.downloads.empty.body              | Download jobs will appear here when users start a download. / Tác vụ sẽ xuất hiện khi người dùng bắt đầu tải xuống.                                            |
+| admin.downloads.empty.filtered          | No jobs match these filters / Không có tác vụ phù hợp với bộ lọc                                                                                               |
+| admin.downloads.state.loading           | Loading download jobs / Đang tải tác vụ xuống                                                                                                                  |
+| admin.downloads.error.load              | Could not load downloads / Không tải được danh sách tải xuống                                                                                                  |
+| admin.downloads.error.forbidden         | Admin access required / Cần quyền quản trị viên                                                                                                                |
+| admin.downloads.error.action            | The action failed. Refresh the job and try again. / Thao tác thất bại. Hãy tải lại tác vụ rồi thử lại.                                                         |
+| admin.downloads.label.live              | Live / Đang cập nhật                                                                                                                                           |
+| admin.downloads.label.stale             | Stale · updated {time} / Dữ liệu cũ · cập nhật lúc {time}                                                                                                      |
 
 ## Test hooks
 
