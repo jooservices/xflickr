@@ -41,6 +41,9 @@ components:
   media-domain:     { in: internal/media/domain/** }
   media-app:        { in: internal/media/app/** }
   media-adapters:   { in: internal/media/adapters/** }
+  sync-app:         { in: internal/sync/app/** }
+  sync-adapters:    { in: internal/sync/adapters/** }
+  sync-providertest: { in: internal/sync/providertest/** }
   platform:
     in:
       - internal/platform/adapters/**
@@ -105,6 +108,12 @@ deps:
     mayDependOn: [media-domain, catalog-domain, catalog-app, sharing-domain]
   media-adapters:
     mayDependOn: [media-domain, media-app, platform, quota-domain, sharing-domain]
+  sync-app:
+    mayDependOn: [platform]
+  sync-adapters:
+    mayDependOn: [sync-app, platform]
+  sync-providertest:
+    mayDependOn: [sync-app]
   platform:
     mayDependOn: [platform, pkg, migrations]
   wiring:

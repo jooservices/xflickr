@@ -28,6 +28,8 @@
   idempotent upserts, compressed source payloads, and size status.
 - [Temporary media storage](media.md) — blob storage port, local storage cap,
   and five-minute expiry cleanup.
+- [Cloud storage provider contract](cloud-sync-providers.md) — provider port,
+  capabilities, upload verification, and reusable adapter contract tests.
 - [Downloads](downloads.md) — visible-photo requests, per-item state, and media
   queue handoff.
 - [Crawl interests](crawl-interests.md) — per-user person depth, lowest-depth
