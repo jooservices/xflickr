@@ -64,7 +64,7 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 | `admin-users` | admin | `/admin/users` | Users | [spec](views/admin-users.md) | [mockup](mockups/admin-users.html) | JOOXF-186 | `web/e2e/admin-users.spec.ts` |
 | `admin-defaults` | admin | `/admin/defaults` | Defaults and plans | [spec](views/admin-defaults.md) | [mockup](mockups/admin-defaults.html) | JOOXF-186 | `web/e2e/admin-defaults.spec.ts` |
 | `admin-sharing` | admin | `/admin/sharing` | Sharing | [spec](views/admin-sharing.md) | [mockup](mockups/admin-sharing.html) | JOOXF-186 | `web/e2e/admin-sharing.spec.ts` |
-| `admin-log` | admin | `/admin/log` | API call log | pending | pending | TBD | `web/e2e/admin-log.spec.ts` |
+| `admin-call-log` | admin | `/admin/log` | API call log | [spec](views/admin-call-log.md) | [mockup](mockups/admin-call-log.html) | JOOXF-182 | `web/e2e/admin-log.spec.ts` |
 | `user-auth` | user | `/login`, `/register`, `/login?reason=expired` | Login, register and session expired | [spec](views/user-auth.md) | [mockup](mockups/user-auth.html) | JOOXF-166 | `web/e2e/user-auth.spec.ts` |
 | `public-setup` | public | `/setup` | Setup wizard | pending | pending | TBD | `web/e2e/public-setup.spec.ts` |
 | `public-not-found` | public | `*` | Page not found | pending | pending | TBD | `web/e2e/public-not-found.spec.ts` |
