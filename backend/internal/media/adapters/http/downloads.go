@@ -15,8 +15,19 @@ type DownloadService interface {
 	Create(context.Context, mediaapp.CreateDownloadInput) (mediadomain.Download, error)
 }
 
+type DownloadPartService interface {
+	Get(context.Context, int64, int64) ([]mediaapp.DownloadPartLink, error)
+	MarkFetched(context.Context, int64, int64, int) error
+}
+
+type FailedDownloadRetryService interface {
+	Run(context.Context, int64, int64) (int, error)
+}
+
 type DownloadHandler struct {
 	Downloads DownloadService
+	Parts     DownloadPartService
+	Retry     FailedDownloadRetryService
 	Principal Principal
 }
 
@@ -54,4 +65,69 @@ func (h DownloadHandler) CreateDownload(ctx context.Context, request gen.CreateD
 		return nil, err
 	}
 	return gen.CreateDownload201JSONResponse(gen.Download{ID: created.ID, Kind: gen.DownloadKind(created.Kind), Subject: created.Subject, Status: created.Status, CreatedAt: created.CreatedAt, ExpiresAt: created.ExpiresAt, ItemCount: len(created.Items), Skipped: created.Skipped}), nil
+}
+
+func (h DownloadHandler) GetDownloadParts(ctx context.Context, request gen.GetDownloadPartsRequestObject) (gen.GetDownloadPartsResponseObject, error) {
+	if h.Principal == nil {
+		return gen.GetDownloadParts401JSONResponse(gen.Error{Code: "unauthenticated"}), nil
+	}
+	userID, ok := h.Principal(ctx)
+	if !ok {
+		return gen.GetDownloadParts401JSONResponse(gen.Error{Code: "unauthenticated"}), nil
+	}
+	if h.Parts == nil {
+		return nil, errors.New("media: download part service is not configured")
+	}
+	links, err := h.Parts.Get(ctx, userID, request.ID)
+	if errors.Is(err, mediaapp.ErrDownloadNotFound) {
+		return gen.GetDownloadParts404JSONResponse(gen.Error{Code: "download_not_found"}), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	response := gen.DownloadPartLinks{DownloadID: request.ID, Parts: make([]gen.DownloadPartLink, 0, len(links))}
+	for _, link := range links {
+		response.Parts = append(response.Parts, gen.DownloadPartLink{PartNumber: link.Number, URL: link.URL, Bytes: link.Bytes, ExpiresAt: link.ExpiresAt})
+	}
+	return gen.GetDownloadParts200JSONResponse(response), nil
+}
+
+func (h DownloadHandler) MarkDownloadPartFetched(ctx context.Context, request gen.MarkDownloadPartFetchedRequestObject) (gen.MarkDownloadPartFetchedResponseObject, error) {
+	if h.Principal == nil {
+		return gen.MarkDownloadPartFetched401JSONResponse(gen.Error{Code: "unauthenticated"}), nil
+	}
+	userID, ok := h.Principal(ctx)
+	if !ok {
+		return gen.MarkDownloadPartFetched401JSONResponse(gen.Error{Code: "unauthenticated"}), nil
+	}
+	if h.Parts == nil {
+		return nil, errors.New("media: download part service is not configured")
+	}
+	if err := h.Parts.MarkFetched(ctx, userID, request.ID, request.PartNumber); errors.Is(err, mediaapp.ErrDownloadNotFound) {
+		return gen.MarkDownloadPartFetched404JSONResponse(gen.Error{Code: "download_not_found"}), nil
+	} else if err != nil {
+		return nil, err
+	}
+	return gen.MarkDownloadPartFetched204Response{}, nil
+}
+
+func (h DownloadHandler) RetryFailedDownload(ctx context.Context, request gen.RetryFailedDownloadRequestObject) (gen.RetryFailedDownloadResponseObject, error) {
+	if h.Principal == nil {
+		return gen.RetryFailedDownload401JSONResponse(gen.Error{Code: "unauthenticated"}), nil
+	}
+	userID, ok := h.Principal(ctx)
+	if !ok {
+		return gen.RetryFailedDownload401JSONResponse(gen.Error{Code: "unauthenticated"}), nil
+	}
+	if h.Retry == nil {
+		return nil, errors.New("media: failed download retry service is not configured")
+	}
+	requeued, err := h.Retry.Run(ctx, userID, request.ID)
+	if errors.Is(err, mediaapp.ErrDownloadNotFound) {
+		return gen.RetryFailedDownload404JSONResponse(gen.Error{Code: "download_not_found"}), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return gen.RetryFailedDownload200JSONResponse(gen.RetryFailedDownloadResponse{Requeued: requeued}), nil
 }

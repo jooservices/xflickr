@@ -19,3 +19,16 @@ is marked `ready` or `ready_with_errors` after part metadata is committed.
 Part metadata is recorded in `download_parts` with the expiry from the user's
 plan ZIP TTL. Original per-photo blobs are removed after the parts are
 recorded; the ZIP parts remain temporary.
+
+Owners retrieve short-lived links with `GET /downloads/{id}/parts`. Each link
+expires after `DOWNLOAD_LINK_TTL` (15 minutes by default), capped by the ZIP
+part's own expiry. A client calls
+`POST /downloads/{id}/parts/{partNumber}/fetched` only after that transfer
+completes. The media expiry worker deletes the temporary ZIP parts and marks
+the download `expired` after every part is acknowledged or the download/part
+TTL expires. It keeps a part's database row when deleting its blob fails, so a
+later cleanup pass can retry.
+
+`POST /downloads/{id}/retry-failed` atomically resets and requeues only items
+still marked failed. Repeating the request is safe. The package is unavailable
+while the retry is running and is rebuilt after the retried items settle.

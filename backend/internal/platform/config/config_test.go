@@ -26,6 +26,9 @@ func TestLoadFromEnvAppliesDefaults(t *testing.T) {
 	if cfg.Blob.Driver != "local" || cfg.Blob.LocalDir != "var/blobs" || cfg.Blob.MaxBytes != 10737418240 || cfg.Blob.S3Region != "us-east-1" {
 		t.Errorf("Blob defaults = %#v", cfg.Blob)
 	}
+	if cfg.DownloadLinkTTL != 15*time.Minute {
+		t.Errorf("download link TTL default = %s", cfg.DownloadLinkTTL)
+	}
 	if cfg.AI.URL != "http://127.0.0.1:11434" || cfg.AI.CaptionModel != "llama3.2" || cfg.AI.EmbeddingModel != "nomic-embed-text" {
 		t.Errorf("AI defaults = %#v", cfg.AI)
 	}
@@ -71,6 +74,7 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 		"BLOB_LOCAL_DIR":              "/tmp/blobs",
 		"BLOB_MAX_BYTES":              "1234567",
 		"BLOB_MAX_TTL":                "48h",
+		"DOWNLOAD_LINK_TTL":           "2h",
 		"S3_ENDPOINT":                 "https://objects.internal",
 		"S3_REGION":                   "ap-southeast-1",
 		"S3_BUCKET":                   "xflickr-worktree",
@@ -113,6 +117,9 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 	}
 	if cfg.Blob.Driver != "s3" || cfg.Blob.LocalDir != "/tmp/blobs" || cfg.Blob.MaxBytes != 1234567 || cfg.Blob.S3Endpoint != "https://objects.internal" || cfg.Blob.S3Region != "ap-southeast-1" || cfg.Blob.S3Bucket != "xflickr-worktree" || cfg.Blob.S3AccessKey != "s3-access" || cfg.Blob.S3SecretKey != "s3-secret" || !cfg.Blob.S3UsePathStyle {
 		t.Errorf("Blob values not loaded: %#v", cfg.Blob)
+	}
+	if cfg.DownloadLinkTTL != 2*time.Hour {
+		t.Errorf("download link TTL = %s, want 2h", cfg.DownloadLinkTTL)
 	}
 	if cfg.AI.URL != "http://ollama.internal:11434" || cfg.AI.CaptionModel != "caption-model" || cfg.AI.EmbeddingModel != "embedding-model" {
 		t.Errorf("AI values not loaded: %#v", cfg.AI)
@@ -174,6 +181,7 @@ func TestLoadFromEnvValidatesSettings(t *testing.T) {
 		{name: "blob driver", key: "BLOB_DRIVER", value: "garage", want: "BLOB_DRIVER"},
 		{name: "blob cap", key: "BLOB_MAX_BYTES", value: "-1", want: "BLOB_MAX_BYTES"},
 		{name: "blob ttl", key: "BLOB_MAX_TTL", value: "0s", want: "BLOB_MAX_TTL"},
+		{name: "download link ttl", key: "DOWNLOAD_LINK_TTL", value: "0s", want: "DOWNLOAD_LINK_TTL"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -191,6 +199,13 @@ func TestLoadFromEnvValidatesSettings(t *testing.T) {
 	_, err := LoadFromEnv(values)
 	if err == nil || !strings.Contains(err.Error(), "S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY") {
 		t.Errorf("incomplete S3 configuration error = %v", err)
+	}
+
+	values = requiredEnv()
+	values["DOWNLOAD_LINK_TTL"] = "48h"
+	_, err = LoadFromEnv(values)
+	if err == nil || !strings.Contains(err.Error(), "DOWNLOAD_LINK_TTL must not exceed BLOB_MAX_TTL") {
+		t.Errorf("link TTL beyond blob limit error = %v", err)
 	}
 }
 

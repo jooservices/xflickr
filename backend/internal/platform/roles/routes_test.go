@@ -37,7 +37,7 @@ func routerWith(sessions identityhttp.SessionService) http.Handler {
 
 // samplePath fills the path parameters of a route pattern.
 func samplePath(pattern string) string {
-	for _, name := range []string{"{id}", "{nsid}"} {
+	for _, name := range []string{"{id}", "{nsid}", "{partNumber}"} {
 		pattern = strings.ReplaceAll(pattern, name, "1")
 	}
 	return pattern

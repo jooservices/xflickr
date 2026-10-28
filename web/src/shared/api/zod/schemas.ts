@@ -992,6 +992,56 @@ export const CreateDownloadResponse = zod.object({
 });
 
 /**
+ * Returns short-lived links to the ZIP parts. Only the owner can request them.
+ * @summary Get temporary links for a ready download
+ */
+
+export const GetDownloadPartsParams = zod.object({
+  id: zod.int().min(1),
+});
+
+export const getDownloadPartsResponsePartsItemBytesMin = 0;
+
+export const GetDownloadPartsResponse = zod.object({
+  download_id: zod.int(),
+  parts: zod.array(
+    zod.object({
+      part_number: zod.int().min(1),
+      url: zod.url(),
+      bytes: zod.int().min(getDownloadPartsResponsePartsItemBytesMin),
+      expires_at: zod.iso.datetime({ offset: true }),
+    }),
+  ),
+});
+
+/**
+ * Call after a part link has been downloaded successfully. The expiry worker removes the ZIP after every part is acknowledged or the download expires.
+ * @summary Acknowledge a completed ZIP part transfer
+ */
+
+export const MarkDownloadPartFetchedParams = zod.object({
+  id: zod.int().min(1),
+  partNumber: zod.int().min(1),
+});
+
+export const MarkDownloadPartFetchedResponse = zod.void();
+
+/**
+ * Requeues every failed item in the download. A repeated request is safe and requeues only items that are still failed.
+ * @summary Retry failed download items
+ */
+
+export const RetryFailedDownloadParams = zod.object({
+  id: zod.int().min(1),
+});
+
+export const retryFailedDownloadResponseRequeuedMin = 0;
+
+export const RetryFailedDownloadResponse = zod.object({
+  requeued: zod.int().min(retryFailedDownloadResponseRequeuedMin),
+});
+
+/**
  * Streams download progress, ready downloads, and crawl progress. Supports resuming with Last-Event-ID.
  * @summary Stream user-scoped progress events
  */

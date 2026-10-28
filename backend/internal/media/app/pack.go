@@ -55,6 +55,7 @@ type ZIPPart struct {
 type PackRepository interface {
 	PackItems(context.Context, int64) ([]PackItem, time.Duration, error)
 	PackedOriginals(context.Context, int64) ([]string, bool, error)
+	PackedParts(context.Context, int64) ([]ZIPPart, error)
 	CompletePack(context.Context, int64, string, []ZIPPart) error
 }
 
@@ -87,8 +88,20 @@ func (p Packer) Pack(ctx context.Context, downloadID int64) error {
 	if err != nil {
 		return fmt.Errorf("media: load pack items: %w", err)
 	}
+	oldParts, err := p.Repo.PackedParts(ctx, downloadID)
+	if err != nil {
+		return fmt.Errorf("media: load existing ZIP parts: %w", err)
+	}
 	if len(items) == 0 {
 		return errors.New("media: no settled download items to pack")
+	}
+	// A user retry moves a completed-with-errors download back to pending.
+	// Remove its old package before writing replacements so a later retry
+	// cannot return a stale ZIP or leave higher-numbered part files behind.
+	for _, part := range oldParts {
+		if err := p.Blobs.Delete(ctx, part.BlobKey); err != nil && !errors.Is(err, ErrNotFound) {
+			return fmt.Errorf("media: remove previous ZIP part %q: %w", part.BlobKey, err)
+		}
 	}
 	limit := p.Limit
 	if limit <= 0 || limit > MaxZIPPartBytes {

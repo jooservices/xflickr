@@ -72,6 +72,12 @@ paths:
     $ref: ./paths/ops.yaml#/status
   /downloads:
     $ref: ./paths/downloads.yaml#/create
+  /downloads/{id}/parts:
+    $ref: ./paths/downloads.yaml#/parts
+  /downloads/{id}/parts/{partNumber}/fetched:
+    $ref: ./paths/downloads.yaml#/part_fetched
+  /downloads/{id}/retry-failed:
+    $ref: ./paths/downloads.yaml#/retry_failed
   /events:
     $ref: ./paths/events.yaml#/stream
 components:
