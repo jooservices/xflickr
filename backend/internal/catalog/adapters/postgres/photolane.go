@@ -33,7 +33,7 @@ type PhotoLane struct{ Pool photoLanePool }
 // Select returns up to limit photos after skipping the first skip, ordered by
 // user-selected contact, starred contact, depth and upload date. It probes the
 // top-ranked persons and widens the probe only while it finds too few photos.
-func (l PhotoLane) Select(ctx context.Context, limit, skip int) ([]app.PhotoRef, error) {
+func (l PhotoLane) Select(ctx context.Context, limit, skip int, optionalFacets []string) ([]app.PhotoRef, error) {
 	if l.Pool == nil || ctx == nil {
 		return nil, errors.New("catalog: photo lane database and context are required")
 	}
@@ -43,7 +43,7 @@ func (l PhotoLane) Select(ctx context.Context, limit, skip int) ([]app.PhotoRef,
 	want := limit + skip
 	var refs []app.PhotoRef
 	for chunk := firstPersonChunk; ; chunk *= 2 {
-		found, more, err := l.probe(ctx, chunk, want)
+		found, more, err := l.probe(ctx, chunk, want, optionalFacets)
 		if err != nil {
 			return nil, err
 		}
@@ -58,8 +58,8 @@ func (l PhotoLane) Select(ctx context.Context, limit, skip int) ([]app.PhotoRef,
 	return refs[skip:], nil
 }
 
-func (l PhotoLane) probe(ctx context.Context, persons, photos int) ([]app.PhotoRef, bool, error) {
-	rows, err := l.Pool.Query(ctx, photoLaneSQL, persons, photos)
+func (l PhotoLane) probe(ctx context.Context, persons, photos int, optionalFacets []string) ([]app.PhotoRef, bool, error) {
+	rows, err := l.Pool.Query(ctx, photoLaneSQL, persons, photos, optionalFacets)
 	if err != nil {
 		return nil, false, fmt.Errorf("catalog: select photo lane: %w", err)
 	}
@@ -69,11 +69,12 @@ func (l PhotoLane) probe(ctx context.Context, persons, photos int) ([]app.PhotoR
 	for rows.Next() {
 		var id *int64
 		var owner *string
-		if err := rows.Scan(&more, &id, &owner); err != nil {
+		var facet *string
+		if err := rows.Scan(&more, &id, &owner, &facet); err != nil {
 			return nil, false, fmt.Errorf("catalog: scan photo lane: %w", err)
 		}
-		if id != nil && owner != nil {
-			out = append(out, app.PhotoRef{ID: *id, OwnerNSID: *owner})
+		if id != nil && owner != nil && facet != nil {
+			out = append(out, app.PhotoRef{ID: *id, OwnerNSID: *owner, Facet: *facet})
 		}
 	}
 	if err := rows.Err(); err != nil {

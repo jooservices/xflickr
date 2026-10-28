@@ -29,6 +29,11 @@ const (
 	RetryBackoff            Key = "retry_backoff"
 	NodeCooldown            Key = "node_cooldown"
 	GroupPoolsEnabled       Key = "group_pools_enabled"
+	PhotoInfoEnabled        Key = "photo_info_enabled"
+	PhotoExifEnabled        Key = "photo_exif_enabled"
+	PhotoContextsEnabled    Key = "photo_contexts_enabled"
+	PhotoCommentsEnabled    Key = "photo_comments_enabled"
+	PhotoFavoritesEnabled   Key = "photo_favorites_enabled"
 	RegistrationOpen        Key = "registration_open"
 	PerKeyReadyCap          Key = "per_key_ready_cap"
 	NodeReadyCap            Key = "node_ready_cap"
@@ -59,6 +64,11 @@ type Effective struct {
 	RetryBackoff            time.Duration
 	NodeCooldown            time.Duration
 	GroupPoolsEnabled       bool
+	PhotoInfoEnabled        bool
+	PhotoExifEnabled        bool
+	PhotoContextsEnabled    bool
+	PhotoCommentsEnabled    bool
+	PhotoFavoritesEnabled   bool
 	PerKeyReadyCap          int
 	NodeReadyCap            int
 	MediaReadyCap           int
@@ -165,6 +175,11 @@ var schemas = map[Key]JSONSchema{
 	RetryBackoff:            {Type: "integer", Minimum: minZero, Maximum: maxDuration},
 	NodeCooldown:            {Type: "integer", Minimum: minZero, Maximum: maxDuration},
 	GroupPoolsEnabled:       {Type: "boolean"},
+	PhotoInfoEnabled:        {Type: "boolean"},
+	PhotoExifEnabled:        {Type: "boolean"},
+	PhotoContextsEnabled:    {Type: "boolean"},
+	PhotoCommentsEnabled:    {Type: "boolean"},
+	PhotoFavoritesEnabled:   {Type: "boolean"},
 	RegistrationOpen:        {Type: "boolean"},
 	PerKeyReadyCap:          {Type: "integer", Minimum: minZero},
 	NodeReadyCap:            {Type: "integer", Minimum: minZero},
@@ -201,6 +216,11 @@ func Keys() []Key {
 		RetryBackoff,
 		NodeCooldown,
 		GroupPoolsEnabled,
+		PhotoInfoEnabled,
+		PhotoExifEnabled,
+		PhotoContextsEnabled,
+		PhotoCommentsEnabled,
+		PhotoFavoritesEnabled,
 		RegistrationOpen,
 		PerKeyReadyCap,
 		NodeReadyCap,
@@ -227,6 +247,11 @@ func Defaults() []Definition {
 		{Key: RetryBackoff, Value: json.RawMessage("30"), UserOverridable: true},
 		{Key: NodeCooldown, Value: json.RawMessage("2700"), UserOverridable: true},
 		{Key: GroupPoolsEnabled, Value: json.RawMessage("false"), UserOverridable: true},
+		{Key: PhotoInfoEnabled, Value: json.RawMessage("true"), UserOverridable: false},
+		{Key: PhotoExifEnabled, Value: json.RawMessage("true"), UserOverridable: false},
+		{Key: PhotoContextsEnabled, Value: json.RawMessage("true"), UserOverridable: false},
+		{Key: PhotoCommentsEnabled, Value: json.RawMessage("false"), UserOverridable: false},
+		{Key: PhotoFavoritesEnabled, Value: json.RawMessage("false"), UserOverridable: false},
 		{Key: RegistrationOpen, Value: json.RawMessage("false"), UserOverridable: false},
 		{Key: PerKeyReadyCap, Value: json.RawMessage("100"), UserOverridable: false, Min: floatPointer(0)},
 		{Key: NodeReadyCap, Value: json.RawMessage("500"), UserOverridable: false, Min: floatPointer(0)},
@@ -471,9 +496,14 @@ func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
 	if result.NodeCooldown, err = duration(values[NodeCooldown]); err != nil {
 		return Effective{}, nil, invalidStored(NodeCooldown, err)
 	}
-	if result.GroupPoolsEnabled, err = boolean(values[GroupPoolsEnabled]); err != nil {
-		return Effective{}, nil, invalidStored(GroupPoolsEnabled, err)
-	}
+	// Every definition and override was validated above, so these values are
+	// guaranteed JSON boolean literals and cannot fail conversion here.
+	result.GroupPoolsEnabled = validatedBoolean(values[GroupPoolsEnabled])
+	result.PhotoInfoEnabled = validatedBoolean(values[PhotoInfoEnabled])
+	result.PhotoExifEnabled = validatedBoolean(values[PhotoExifEnabled])
+	result.PhotoContextsEnabled = validatedBoolean(values[PhotoContextsEnabled])
+	result.PhotoCommentsEnabled = validatedBoolean(values[PhotoCommentsEnabled])
+	result.PhotoFavoritesEnabled = validatedBoolean(values[PhotoFavoritesEnabled])
 	if result.PerKeyReadyCap, err = integer(values[PerKeyReadyCap]); err != nil {
 		return Effective{}, nil, invalidStored(PerKeyReadyCap, err)
 	}
@@ -595,6 +625,10 @@ func boolean(raw []byte) (bool, error) {
 		return false, errors.New("not a JSON boolean")
 	}
 	return result, nil
+}
+
+func validatedBoolean(raw []byte) bool {
+	return string(bytes.TrimSpace(raw)) == "true"
 }
 
 func invalidStored(key Key, err error) error {

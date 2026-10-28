@@ -12,13 +12,15 @@ import (
 )
 
 type fakeSelector struct {
-	refs  []catalogapp.PhotoRef
-	err   error
-	calls int
+	refs           []catalogapp.PhotoRef
+	err            error
+	calls          int
+	optionalFacets []string
 }
 
-func (s *fakeSelector) Select(_ context.Context, limit, skip int) ([]catalogapp.PhotoRef, error) {
+func (s *fakeSelector) Select(_ context.Context, limit, skip int, optionalFacets []string) ([]catalogapp.PhotoRef, error) {
 	s.calls++
+	s.optionalFacets = append([]string(nil), optionalFacets...)
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -26,6 +28,15 @@ func (s *fakeSelector) Select(_ context.Context, limit, skip int) ([]catalogapp.
 		return nil, nil
 	}
 	return s.refs[skip:min(len(s.refs), skip+limit)], nil
+}
+
+type fakePhotoFacetSettings struct {
+	options PhotoFacetOptions
+	err     error
+}
+
+func (s fakePhotoFacetSettings) PhotoFacets(context.Context) (PhotoFacetOptions, error) {
+	return s.options, s.err
 }
 
 type fakeChooser struct {
@@ -66,9 +77,36 @@ func (e *fakeEnqueuer) EnqueuePhoto(_ context.Context, job PhotoJob) (bool, erro
 func refs(ids ...int64) []catalogapp.PhotoRef {
 	out := make([]catalogapp.PhotoRef, len(ids))
 	for i, id := range ids {
-		out[i] = catalogapp.PhotoRef{ID: id, OwnerNSID: "owner"}
+		out[i] = catalogapp.PhotoRef{ID: id, OwnerNSID: "owner", Facet: PhotoFacet}
 	}
 	return out
+}
+
+func TestPhotoLanePassesEnabledFacetsAndKeepsSizesFirst(t *testing.T) {
+	selector := &fakeSelector{refs: []catalogapp.PhotoRef{
+		{ID: 1, OwnerNSID: "owner", Facet: PhotoFacet},
+		{ID: 1, OwnerNSID: "owner", Facet: PhotoInfoFacet},
+		{ID: 1, OwnerNSID: "owner", Facet: PhotoExifFacet},
+	}}
+	enqueuer := &fakeEnqueuer{}
+	lane := PhotoLane{
+		Selector: selector,
+		Keys:     fakeChooser{},
+		Queue:    enqueuer,
+		Settings: fakePhotoFacetSettings{options: PhotoFacetOptions{Info: true, Exif: true}},
+	}
+	if ids, err := lane.Next(t.Context(), 3); err != nil || !reflect.DeepEqual(ids, []int64{1, 1, 1}) {
+		t.Fatalf("Next() = %v, %v, want one size and two optional jobs", ids, err)
+	}
+	if !reflect.DeepEqual(selector.optionalFacets, []string{PhotoInfoFacet, PhotoExifFacet}) {
+		t.Fatalf("optional facets = %v", selector.optionalFacets)
+	}
+	if got := []string{enqueuer.jobs[0].Facet, enqueuer.jobs[1].Facet, enqueuer.jobs[2].Facet}; !reflect.DeepEqual(got, []string{PhotoFacet, PhotoInfoFacet, PhotoExifFacet}) {
+		t.Fatalf("enqueued facet order = %v", got)
+	}
+	if enqueuer.jobs[2].DedupeKey != "photo:1:exif" {
+		t.Fatalf("optional facet dedupe key = %q", enqueuer.jobs[2].DedupeKey)
+	}
 }
 
 func TestPhotoLaneNextEnqueuesInOrderWithKeyAndDedupeKey(t *testing.T) {
@@ -136,5 +174,8 @@ func TestPhotoLaneNextValidatesAndPropagatesErrors(t *testing.T) {
 		if _, err := lane.Next(t.Context(), 1); !errors.Is(err, boom) {
 			t.Fatalf("%s: Next() error = %v, want boom", name, err)
 		}
+	}
+	if _, err := (PhotoLane{Selector: &fakeSelector{}, Keys: fakeChooser{}, Queue: &fakeEnqueuer{}, Settings: fakePhotoFacetSettings{err: boom}}).Next(t.Context(), 1); !errors.Is(err, boom) {
+		t.Fatalf("settings: Next() error = %v, want boom", err)
 	}
 }

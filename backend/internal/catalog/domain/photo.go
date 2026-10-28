@@ -52,6 +52,16 @@ type Photo struct {
 	TombstonedAt   *time.Time
 }
 
+// PhotoFacetSource is the minimal photo state required before fetching
+// optional metadata. The sizes check gates extra Flickr calls and LastUpdate
+// versions the fetched result.
+type PhotoFacetSource struct {
+	Secret         string
+	LastUpdate     time.Time
+	SizesStatus    SizesStatus
+	SizesCheckedAt *time.Time
+}
+
 // Validate checks fields whose values are constrained by the catalog schema.
 func (p Photo) Validate() error {
 	if p.ID <= 0 || p.OwnerNSID == "" || p.LastUpdate.IsZero() || len(p.Raw) == 0 {

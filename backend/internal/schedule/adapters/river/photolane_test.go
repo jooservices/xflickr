@@ -39,6 +39,7 @@ type photoTx struct {
 	execErr, scanErr, commitErr error
 	queued                      bool
 	active                      int
+	sizeActive                  int
 	committed                   bool
 }
 
@@ -47,7 +48,7 @@ func (t *photoTx) Exec(context.Context, string, ...any) (pgconn.CommandTag, erro
 }
 
 func (t *photoTx) QueryRow(_ context.Context, query string, _ ...any) pgx.Row {
-	return photoRow{tx: t, activeQuery: strings.Contains(query, "count(*) FROM river_job")}
+	return photoRow{tx: t, activeQuery: strings.Contains(query, "count(*)") && strings.Contains(query, "FROM river_job")}
 }
 func (t *photoTx) Commit(context.Context) error   { t.committed = true; return t.commitErr }
 func (t *photoTx) Rollback(context.Context) error { return nil }
@@ -59,7 +60,8 @@ type photoRow struct {
 
 func (r photoRow) Scan(dest ...any) error {
 	if r.activeQuery {
-		*dest[0].(*int) = r.tx.active
+		*dest[0].(*int) = r.tx.sizeActive
+		*dest[1].(*int) = r.tx.active
 		return r.tx.scanErr
 	}
 	*dest[0].(*bool) = r.tx.queued
@@ -91,10 +93,13 @@ func TestPhotoEnqueuerTransactionOutcomes(t *testing.T) {
 		wantOK       bool
 		wantErr      error
 		wantInserted int
+		job          app.PhotoJob
 	}{
 		{name: "inserted", tx: &photoTx{}, wantOK: true, wantInserted: 1},
 		{name: "already queued", tx: &photoTx{queued: true}},
-		{name: "ready cap", tx: &photoTx{active: 4}, wantOK: false},
+		{name: "size ready cap", tx: &photoTx{active: 4, sizeActive: 4}, wantOK: false},
+		{name: "optional full cap", tx: &photoTx{active: 4}, wantOK: false, job: app.PhotoJob{PhotoID: 1, KeyID: 2, Facet: app.PhotoInfoFacet, DedupeKey: "photo:1:info"}},
+		{name: "sizes retain reservation", tx: &photoTx{active: 4}, wantOK: true, wantInserted: 1},
 		{name: "lock fails", tx: &photoTx{execErr: boom}, wantErr: boom},
 		{name: "check fails", tx: &photoTx{scanErr: boom}, wantErr: boom},
 		{name: "insert fails", tx: &photoTx{}, jobsErr: boom, wantErr: boom, wantInserted: 1},
@@ -104,10 +109,14 @@ func TestPhotoEnqueuerTransactionOutcomes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			jobs := &countingJobs{err: tt.jobsErr}
 			cap := 0
-			if tt.name == "ready cap" {
+			if strings.Contains(tt.name, "cap") || tt.name == "sizes retain reservation" {
 				cap = 4
 			}
-			ok, err := PhotoEnqueuer{Pool: txBegin{tt.tx}, Jobs: jobs, ReadyCap: cap}.EnqueuePhoto(t.Context(), job)
+			currentJob := job
+			if tt.job.PhotoID > 0 {
+				currentJob = tt.job
+			}
+			ok, err := PhotoEnqueuer{Pool: txBegin{tt.tx}, Jobs: jobs, ReadyCap: cap}.EnqueuePhoto(t.Context(), currentJob)
 			if ok != tt.wantOK || !errors.Is(err, tt.wantErr) || jobs.inserted != tt.wantInserted {
 				t.Fatalf("EnqueuePhoto() = %v, %v with %d inserts", ok, err, jobs.inserted)
 			}

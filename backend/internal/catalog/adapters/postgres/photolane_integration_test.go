@@ -57,8 +57,8 @@ func TestPhotoLaneOrdersByInterestDepthAndUpload(t *testing.T) {
 	interest(userA, "expired", 0, false, "-1 hour")
 
 	photo := func(id int64, name, status string, uploadedAgo time.Duration, tombstoned bool) {
-		if _, err := pool.Exec(ctx, `INSERT INTO photos (id, owner_nsid, last_update, visibility, sizes_status, uploaded_at, tombstoned_at, raw, content_hash)
-			VALUES ($1,$2,now(),'public',$3, now() - $4::interval, CASE WHEN $5 THEN now() END, '{}', decode(repeat('ab',32),'hex'))`, id, people[name], status, fmt.Sprintf("%d seconds", int(uploadedAgo.Seconds())), tombstoned); err != nil {
+		if _, err := pool.Exec(ctx, `INSERT INTO photos (id, owner_nsid, last_update, visibility, sizes_status, sizes_checked_at, uploaded_at, tombstoned_at, raw, content_hash)
+			VALUES ($1,$2,now(),'public',$3, CASE WHEN $3='confirmed' THEN now() END, now() - $4::interval, CASE WHEN $5 THEN now() END, '{}', decode(repeat('ab',32),'hex'))`, id, people[name], status, fmt.Sprintf("%d seconds", int(uploadedAgo.Seconds())), tombstoned); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -74,7 +74,7 @@ func TestPhotoLaneOrdersByInterestDepthAndUpload(t *testing.T) {
 
 	lane := postgres.PhotoLane{Pool: pool}
 	mine := func(limit, skip int) []int64 {
-		refs, err := lane.Select(ctx, limit, skip)
+		refs, err := lane.Select(ctx, limit, skip, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -90,12 +90,33 @@ func TestPhotoLaneOrdersByInterestDepthAndUpload(t *testing.T) {
 	if got := mine(1000, 0); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Select() ids = %v, want %v", got, want)
 	}
-	first, err := lane.Select(ctx, 2, 0)
+	first, err := lane.Select(ctx, 2, 0, nil)
 	if err != nil || len(first) != 2 {
 		t.Fatalf("Select(2, 0) = %v, %v", first, err)
 	}
-	second, err := lane.Select(ctx, 2, 2)
+	second, err := lane.Select(ctx, 2, 2, nil)
 	if err != nil || len(second) != 2 || second[0] == first[0] || second[0] == first[1] {
 		t.Fatalf("Select(2, 2) = %v, %v; want rows after %v", second, err, first)
+	}
+	withExtras, err := lane.Select(ctx, 1000, 0, []string{"info"})
+	if err != nil {
+		t.Fatalf("Select() with optional facets: %v", err)
+	}
+	selectedInfoIndex := -1
+	for index, ref := range withExtras {
+		if ref.ID == base+3 && ref.Facet == "info" {
+			selectedInfoIndex = index
+		}
+		if ref.ID == base+8 && ref.Facet != "sizes" {
+			t.Fatalf("unstarred and unselected owner received optional facet: %+v", ref)
+		}
+	}
+	if selectedInfoIndex < 0 {
+		t.Fatalf("selected contact photo missing optional info work: %+v", withExtras)
+	}
+	for index, ref := range withExtras {
+		if ref.Facet == "sizes" && index > selectedInfoIndex {
+			t.Fatalf("optional facet at %d preceded size job at %d", selectedInfoIndex, index)
+		}
 	}
 }
