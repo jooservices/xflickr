@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>XFlickr · Admin Metrics mockup</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #080b10; color: #d6dee8; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+      h1, h2, h3, h4, p { margin: 0; }
+      button, select { font: inherit; }
+      .gallery { max-width: 1440px; margin: auto; padding: 28px; }
+      .gallery > h1 { font-size: 26px; letter-spacing: -.02em; }
+      .intro { max-width: 900px; margin: 6px 0 26px; color: #a5afbf; }
+      .hint { margin: -12px 0 28px; color: #8d99aa; font-size: 12px; }
+      .theme {
+        --bg: #0b0f15; --surface: #11171f; --sunken: #161e28; --raise: #1c2632;
+        --line: #303b49; --ink: #d6dee8; --muted: #a5afbf; --faint: #8390a3;
+        --accent: #4cb4d8; --ok: #3cb87c; --warn: #e2ae3d; --bad: #f2766b;
+        --s1: #58a8ff; --s2: #ff9b65; --s3: #42c99b;
+        margin: 24px 0; padding: 22px; border: 1px solid #2b3541; background: #070a0e;
+      }
+      .theme.light {
+        --bg: #eef1f5; --surface: #fff; --sunken: #f5f7fa; --raise: #e9edf3;
+        --line: #b6c0cc; --ink: #16202c; --muted: #56657a; --faint: #647286;
+        --accent: #006482; --ok: #176d42; --warn: #815800; --bad: #c5372c;
+        --s1: #1f66b4; --s2: #b8481e; --s3: #08774f; background: #dfe4eb;
+      }
+      .theme-title { margin-bottom: 16px; font-size: 20px; }
+      .state { margin: 16px 0 24px; padding: 16px; background: var(--bg); border: 1px solid var(--line); color: var(--ink); }
+      .state-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 10px; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+      .sample { color: var(--faint); font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+      .view { padding: 20px; background: var(--bg); }
+      .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
+      .head h3 { font-size: 24px; letter-spacing: -.02em; }
+      .head p { margin-top: 4px; color: var(--muted); }
+      .tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      select, button { min-height: 38px; padding: 0 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+      button { background: var(--raise); cursor: default; font-weight: 650; }
+      button.primary { color: #06131c; background: var(--accent); border-color: var(--accent); }
+      .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+      .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      .panel { min-width: 0; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+      .panel h4 { margin-bottom: 2px; font-size: 14px; }
+      .unit { color: var(--muted); font-size: 11px; }
+      .value-row { display: flex; align-items: baseline; gap: 8px; margin: 9px 0 4px; }
+      .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .subvalue { color: var(--muted); font-size: 12px; }
+      .plot { display: block; width: 100%; height: 100px; margin-top: 6px; overflow: visible; }
+      .gridline { stroke: var(--line); stroke-width: 1; }
+      .line1, .line2, .line3 { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+      .line1 { stroke: var(--s1); } .line2 { stroke: var(--s2); } .line3 { stroke: var(--s3); }
+      .axis { display: flex; justify-content: space-between; color: var(--faint); font: 10px ui-monospace, monospace; }
+      .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; color: var(--muted); font-size: 11px; }
+      .key { display: inline-flex; align-items: center; gap: 5px; }
+      .swatch { width: 8px; height: 8px; border-radius: 50%; background: var(--s1); }
+      .swatch.orange { background: var(--s2); } .swatch.green { background: var(--s3); }
+      .tip { margin-left: 6px; color: var(--accent); cursor: help; }
+      .skeleton { height: 10px; margin: 10px 0; background: linear-gradient(90deg, var(--sunken), var(--raise), var(--sunken)); border-radius: 4px; }
+      .skeleton.title { width: 45%; height: 18px; } .skeleton.value { width: 34%; height: 25px; } .skeleton.plot { height: 100px; }
+      .banner, .empty { margin: 14px 0; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+      .banner { border-left: 4px solid var(--bad); }
+      .banner h4, .empty h4 { margin-bottom: 4px; font-size: 17px; }
+      .banner p, .empty p { max-width: 620px; color: var(--muted); }
+      .empty { padding: 30px 18px; text-align: center; }
+      .empty button, .banner button { margin-top: 12px; }
+      .dim { opacity: .35; pointer-events: none; }
+      @media (max-width: 720px) {
+        .gallery { padding: 14px; } .theme { padding: 12px; } .state { padding: 9px; }
+        .view { padding: 12px; } .head { flex-direction: column; gap: 12px; } .head h3 { font-size: 21px; }
+        .tools { width: 100%; } .tools select, .tools button { flex: 1; }
+        .charts { grid-template-columns: minmax(0, 1fr); } .panel { padding: 12px; }
+        .plot { height: 92px; } .meta { white-space: normal; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="gallery">
+      <h1>Metrics · ADMIN view concept</h1>
+      <p class="intro">Static, self-contained preview data. Resize this page to 390 px to inspect the mobile layout; each screen frame scales from a 1440 px desktop canvas.</p>
+      <p class="hint">No scripts, fonts, images, or network requests. Chart figures are illustrative and are not live XFlickr measurements.</p>
+
+      <section class="theme" aria-labelledby="dark-heading">
+        <h2 class="theme-title" id="dark-heading">Dark control room · default</h2>
+
+        <article class="state" data-state="ready">
+          <div class="state-label"><span>Normal · ready</span><span class="sample">Illustrative values</span></div>
+          <div class="view">
+            <header class="head">
+              <div><h3>Metrics</h3><p>Operational trends across the last hour or day.</p></div>
+              <div class="tools"><span class="meta">Updated 14 sec ago</span><label><span class="meta">Time range</span> <select aria-label="Time range"><option>Last hour</option><option>Last 24 hours</option></select></label><button>Refresh</button></div>
+            </header>
+            <div class="charts">
+              <section class="panel"><h4>Crawl throughput <span class="tip" tabindex="0" title="Latest bucket: 10:59 · 842 records per minute">●</span></h4><span class="unit">Records per minute</span><div class="value-row"><span class="value">842</span><span class="subvalue">latest bucket</span></div><svg class="plot" viewBox="0 0 500 100" role="img" aria-label="Throughput trend, illustrative sample"><path class="gridline" d="M0 20H500M0 50H500M0 80H500"/><path class="line1" d="M0 76L35 66L70 70L105 48L140 57L175 37L210 46L245 28L280 43L315 33L350 50L385 32L420 39L455 22L500 27"/></svg><div class="axis"><span>10:00</span><span>10:30</span><span>11:00</span></div><div class="legend"><span class="key"><i class="swatch"></i>Records / min</span></div></section>
+              <section class="panel"><h4>Queue length by lane <span class="tip" tabindex="0" title="Latest bucket: person 284, sizes 4,216 calls">●</span></h4><span class="unit">Backlog calls</span><div class="value-row"><span class="value">4,216</span><span class="subvalue">sizes · person 284</span></div><svg class="plot" viewBox="0 0 500 100" role="img" aria-label="Backlog by person and sizes lane, illustrative sample"><path class="gridline" d="M0 20H500M0 50H500M0 80H500"/><path class="line1" d="M0 56L35 52L70 57L105 46L140 49L175 40L210 43L245 32L280 39L315 36L350 30L385 35L420 25L455 29L500 21"/><path class="line3" d="M0 82L35 80L70 82L105 77L140 78L175 74L210 75L245 70L280 73L315 69L350 72L385 65L420 68L455 61L500 64"/></svg><div class="axis"><span>10:00</span><span>10:30</span><span>11:00</span></div><div class="legend"><span class="key"><i class="swatch"></i>Person</span><span class="key"><i class="swatch green"></i>Sizes</span></div></section>
+              <section class="panel"><h4>Flickr API latency <span class="tip" tabindex="0" title="Latest bucket: p50 248 ms, p95 762 ms">●</span></h4><span class="unit">Milliseconds</span><div class="value-row"><span class="value">248 ms</span><span class="subvalue">p50 · 762 ms p95</span></div><svg class="plot" viewBox="0 0 500 100" role="img" aria-label="API p50 and p95 latency, illustrative sample"><path class="gridline" d="M0 20H500M0 50H500M0 80H500"/><path class="line1" d="M0 66L35 63L70 67L105 59L140 61L175 54L210 60L245 52L280 56L315 48L350 52L385 42L420 48L455 44L500 45"/><path class="line2" d="M0 34L35 38L70 31L105 42L140 36L175 44L210 32L245 41L280 27L315 38L350 24L385 35L420 18L455 31L500 21"/></svg><div class="axis"><span>10:00</span><span>10:30</span><span>11:00</span></div><div class="legend"><span class="key"><i class="swatch"></i>p50</span><span class="key"><i class="swatch orange"></i>p95</span></div></section>
+              <section class="panel"><h4>Error rate <span class="tip" tabindex="0" title="Latest bucket: 0.8 percent">●</span></h4><span class="unit">Failed calls / total calls</span><div class="value-row"><span class="value">0.8%</span><span class="subvalue">latest bucket</span></div><svg class="plot" viewBox="0 0 500 100" role="img" aria-label="Error rate trend, illustrative sample"><path class="gridline" d="M0 20H500M0 50H500M0 80H500"/><path class="line2" d="M0 77L35 70L70 74L105 64L140 70L175 61L210 67L245 39L280 22L315 55L350 68L385 72L420 58L455 68L500 72"/></svg><div class="axis"><span>10:00</span><span>10:30</span><span>11:00</span></div><div class="legend"><span class="key"><i class="swatch orange"></i>Failed calls</span></div></section>
+              <section class="panel"><h4>HTTP 429 responses <span class="tip" tabindex="0" title="Latest bucket: 4 responses">●</span></h4><span class="unit">Responses per bucket</span><div class="value-row"><span class="value">4</span><span class="subvalue">latest bucket</span></div><svg class="plot" viewBox="0 0 500 100" role="img" aria-label="HTTP 429 response trend, illustrative sample"><path class="gridline" d="M0 20H500M0 50H500M0 80H500"/><path class="line2" d="M0 82L35 80L70 82L105 78L140 82L175 76L210 82L245 46L280 25L315 76L350 82L385 80L420 67L455 82L500 73"/></svg><div class="axis"><span>10:00</span><span>10:30</span><span>11:00</span></div><div class="legend"><span class="key"><i class="swatch orange"></i>HTTP 429</span></div></section>
+              <section class="panel"><h4>Captions per minute <span class="tip" tabindex="0" title="Latest bucket: 14 captions">●</span></h4><span class="unit">Completed captions per minute</span><div class="value-row"><span class="value">14</span><span class="subvalue">latest bucket</span></div><svg class="plot" viewBox="0 0 500 100" role="img" aria-label="Caption throughput trend, illustrative sample"><path class="gridline" d="M0 20H500M0 50H500M0 80H500"/><path class="line3" d="M0 65L35 59L70 69L105 52L140 58L175 44L210 61L245 48L280 55L315 39L350 50L385 44L420 32L455 46L500 36"/></svg><div class="axis"><span>10:00</span><span>10:30</span><span>11:00</span></div><div class="legend"><span class="key"><i class="swatch green"></i>Captions / min</span></div></section>
+              <section class="panel"><h4>Search latency <span class="tip" tabindex="0" title="Latest bucket: p95 184 milliseconds">●</span></h4><span class="unit">p95 milliseconds</span><div class="value-row"><span class="value">184 ms</span><span class="subvalue">latest bucket</span></div><svg class="plot" viewBox="0 0 500 100" role="img" aria-label="Search p95 trend, illustrative sample"><path class="gridline" d="M0 20H500M0 50H500M0 80H500"/><path class="line1" d="M0 62L35 59L70 66L105 54L140 57L175 49L210 55L245 42L280 48L315 38L350 47L385 32L420 42L455 36L500 40"/></svg><div class="axis"><span>10:00</span><span>10:30</span><span>11:00</span></div><div class="legend"><span class="key"><i class="swatch"></i>Search p95</span></div></section>
+            </div>
+          </div>
+        </article>
+
+        <article class="state" data-state="loading">
+          <div class="state-label"><span>Loading · skeleton</span><span class="sample">No fabricated values</span></div>
+          <div class="view" aria-busy="true"><header class="head"><div><h3>Metrics</h3><p>Loading metrics…</p></div><div class="tools"><select aria-label="Time range" disabled><option>Last hour</option></select><button disabled>Refresh</button></div></header><div class="charts"><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section></div></div>
+        </article>
+
+        <article class="state" data-state="empty">
+          <div class="state-label"><span>Empty · no observations</span><span class="sample">Request succeeded</span></div>
+          <div class="view"><header class="head"><div><h3>Metrics</h3><p>Operational trends across the last hour or day.</p></div><div class="tools"><select aria-label="Time range"><option>Last hour</option><option>Last 24 hours</option></select><button>Refresh</button></div></header><section class="empty"><h4>No metrics for this range</h4><p>Charts fill when the system processes work. Choose a wider range or check the pipeline.</p><button class="primary">View pipeline</button></section></div>
+        </article>
+
+        <article class="state" data-state="error">
+          <div class="state-label"><span>Error · retry</span><span class="sample">Request failed</span></div>
+          <div class="view"><header class="head"><div><h3>Metrics</h3><p>Operational trends across the last hour or day.</p></div><div class="tools"><select aria-label="Time range"><option>Last hour</option></select><button>Refresh</button></div></header><section class="banner" role="alert"><h4>Metrics could not load</h4><p>Operational data is temporarily unavailable.</p><button>Try again</button></section><div class="charts dim" aria-hidden="true"><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section></div></div>
+        </article>
+      </section>
+
+      <section class="theme light" aria-labelledby="light-heading">
+        <h2 class="theme-title" id="light-heading">Light control room · optional</h2>
+
+        <article class="state" data-state="ready">
+          <div class="state-label"><span>Normal · ready</span><span class="sample">Illustrative values</span></div>
+          <div class="view">
+            <header class="head"><div><h3>Metrics</h3><p>Operational trends across the last hour or day.</p></div><div class="tools"><span class="meta">Updated 14 sec ago</span><label><span class="meta">Time range</span> <select aria-label="Time range"><option>Last hour</option><option>Last 24 hours</option></select></label><button>Refresh</button></div></header>
+            <div class="charts">
+              <section class="panel"><h4>Crawl throughput <span class="tip" tabindex="0" title="Latest bucket: 10:59 · 842 records per minute">●</span></h4><span class="unit">Records per minute</span><div class="value-row"><span class="value">842</span><span class="subvalue">latest bucket</span></div><svg class="plot" viewBox="0 0 500 100" role="img" aria-label="Throughput trend, illustrative sample"><path class="gridline" d="M0 20H500M0 50H500M0 80H500"/><path class="line1" d="M0 76L35 66L70 70L105 48L140 57L175 37L210 46L245 28L280 43L315 33L350 50L385 32L420 39L455 22L500 27"/></svg><div class="axis"><span>10:00</span><span>10:30</span><span>11:00</span></div><div class="legend"><span class="key"><i class="swatch"></i>Records / min</span></div></section>
+              <section class="panel"><h4>Queue length by lane <span class="tip" tabindex="0" title="Latest bucket: person 284, sizes 4,216 calls">●</span></h4><span class="unit">Backlog calls</span><div class="value-row"><span class="value">4,216</span><span class="subvalue">sizes · person 284</span></div><svg class="plot" viewBox="0 0 500 100" role="img" aria-label="Backlog by person and sizes lane, illustrative sample"><path class="gridline" d="M0 20H500M0 50H500M0 80H500"/><path class="line1" d="M0 56L35 52L70 57L105 46L140 49L175 40L210 43L245 32L280 39L315 36L350 30L385 35L420 25L455 29L500 21"/><path class="line3" d="M0 82L35 80L70 82L105 77L140 78L175 74L210 75L245 70L280 73L315 69L350 72L385 65L420 68L455 61L500 64"/></svg><div class="axis"><span>10:00</span><span>10:30</span><span>11:00</span></div><div class="legend"><span class="key"><i class="swatch"></i>Person</span><span class="key"><i class="swatch green"></i>Sizes</span></div></section>
+              <section class="panel"><h4>Flickr API latency <span class="tip" tabindex="0" title="Latest bucket: p50 248 ms, p95 762 ms">●</span></h4><span class="unit">Milliseconds</span><div class="value-row"><span class="value">248 ms</span><span class="subvalue">p50 · 762 ms p95</span></div><svg class="plot" viewBox="0 0 500 100" role="img" aria-label="API p50 and p95 latency, illustrative sample"><path class="gridline" d="M0 20H500M0 50H500M0 80H500"/><path class="line1" d="M0 66L35 63L70 67L105 59L140 61L175 54L210 60L245 52L280 56L315 48L350 52L385 42L420 48L455 44L500 45"/><path class="line2" d="M0 34L35 38L70 31L105 42L140 36L175 44L210 32L245 41L280 27L315 38L350 24L385 35L420 18L455 31L500 21"/></svg><div class="axis"><span>10:00</span><span>10:30</span><span>11:00</span></div><div class="legend"><span class="key"><i class="swatch"></i>p50</span><span class="key"><i class="swatch orange"></i>p95</span></div></section>
+              <section class="panel"><h4>Error rate <span class="tip" tabindex="0" title="Latest bucket: 0.8 percent">●</span></h4><span class="unit">Failed calls / total calls</span><div class="value-row"><span class="value">0.8%</span><span class="subvalue">latest bucket</span></div><svg class="plot" viewBox="0 0 500 100" role="img" aria-label="Error rate trend, illustrative sample"><path class="gridline" d="M0 20H500M0 50H500M0 80H500"/><path class="line2" d="M0 77L35 70L70 74L105 64L140 70L175 61L210 67L245 39L280 22L315 55L350 68L385 72L420 58L455 68L500 72"/></svg><div class="axis"><span>10:00</span><span>10:30</span><span>11:00</span></div><div class="legend"><span class="key"><i class="swatch orange"></i>Failed calls</span></div></section>
+              <section class="panel"><h4>HTTP 429 responses <span class="tip" tabindex="0" title="Latest bucket: 4 responses">●</span></h4><span class="unit">Responses per bucket</span><div class="value-row"><span class="value">4</span><span class="subvalue">latest bucket</span></div><svg class="plot" viewBox="0 0 500 100" role="img" aria-label="HTTP 429 response trend, illustrative sample"><path class="gridline" d="M0 20H500M0 50H500M0 80H500"/><path class="line2" d="M0 82L35 80L70 82L105 78L140 82L175 76L210 82L245 46L280 25L315 76L350 82L385 80L420 67L455 82L500 73"/></svg><div class="axis"><span>10:00</span><span>10:30</span><span>11:00</span></div><div class="legend"><span class="key"><i class="swatch orange"></i>HTTP 429</span></div></section>
+              <section class="panel"><h4>Captions per minute <span class="tip" tabindex="0" title="Latest bucket: 14 captions">●</span></h4><span class="unit">Completed captions per minute</span><div class="value-row"><span class="value">14</span><span class="subvalue">latest bucket</span></div><svg class="plot" viewBox="0 0 500 100" role="img" aria-label="Caption throughput trend, illustrative sample"><path class="gridline" d="M0 20H500M0 50H500M0 80H500"/><path class="line3" d="M0 65L35 59L70 69L105 52L140 58L175 44L210 61L245 48L280 55L315 39L350 50L385 44L420 32L455 46L500 36"/></svg><div class="axis"><span>10:00</span><span>10:30</span><span>11:00</span></div><div class="legend"><span class="key"><i class="swatch green"></i>Captions / min</span></div></section>
+              <section class="panel"><h4>Search latency <span class="tip" tabindex="0" title="Latest bucket: p95 184 milliseconds">●</span></h4><span class="unit">p95 milliseconds</span><div class="value-row"><span class="value">184 ms</span><span class="subvalue">latest bucket</span></div><svg class="plot" viewBox="0 0 500 100" role="img" aria-label="Search p95 trend, illustrative sample"><path class="gridline" d="M0 20H500M0 50H500M0 80H500"/><path class="line1" d="M0 62L35 59L70 66L105 54L140 57L175 49L210 55L245 42L280 48L315 38L350 47L385 32L420 42L455 36L500 40"/></svg><div class="axis"><span>10:00</span><span>10:30</span><span>11:00</span></div><div class="legend"><span class="key"><i class="swatch"></i>Search p95</span></div></section>
+            </div>
+          </div>
+        </article>
+
+        <article class="state" data-state="loading">
+          <div class="state-label"><span>Loading · skeleton</span><span class="sample">No fabricated values</span></div>
+          <div class="view" aria-busy="true"><header class="head"><div><h3>Metrics</h3><p>Loading metrics…</p></div><div class="tools"><select aria-label="Time range" disabled><option>Last hour</option></select><button disabled>Refresh</button></div></header><div class="charts"><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section></div></div>
+        </article>
+
+        <article class="state" data-state="empty">
+          <div class="state-label"><span>Empty · no observations</span><span class="sample">Request succeeded</span></div>
+          <div class="view"><header class="head"><div><h3>Metrics</h3><p>Operational trends across the last hour or day.</p></div><div class="tools"><select aria-label="Time range"><option>Last hour</option><option>Last 24 hours</option></select><button>Refresh</button></div></header><section class="empty"><h4>No metrics for this range</h4><p>Charts fill when the system processes work. Choose a wider range or check the pipeline.</p><button class="primary">View pipeline</button></section></div>
+        </article>
+
+        <article class="state" data-state="error">
+          <div class="state-label"><span>Error · retry</span><span class="sample">Request failed</span></div>
+          <div class="view"><header class="head"><div><h3>Metrics</h3><p>Operational trends across the last hour or day.</p></div><div class="tools"><select aria-label="Time range"><option>Last hour</option></select><button>Refresh</button></div></header><section class="banner" role="alert"><h4>Metrics could not load</h4><p>Operational data is temporarily unavailable. Try again.</p><button>Try again</button></section><div class="charts dim" aria-hidden="true"><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section><section class="panel"><div class="skeleton title"></div><div class="skeleton value"></div><div class="skeleton plot"></div></section></div></div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
