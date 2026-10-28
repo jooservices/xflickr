@@ -78,3 +78,53 @@ func TestPhotoEnqueuerDedupesReadyJobs(t *testing.T) {
 		t.Fatalf("EnqueuePhoto(after completion) = %v, %v, want true", ok, err)
 	}
 }
+
+func TestPhotoEnqueuerRecoversDiscardedSizeJob(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run make test-integration to use the configured worktree database")
+	}
+	pool := integrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	photo := (time.Now().UnixNano()%1_000_000_000_000)*10 + 2
+	dedupe := app.PhotoDedupeKey(photo, app.PhotoFacet)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM river_job WHERE args->'args'->>'dedupe_key' = $1`, dedupe)
+	})
+	adapter, err := queue.NewRiver(pool, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enqueuer := scheduleriver.PhotoEnqueuer{
+		Pool: pool, Jobs: adapter, ReadyCap: 1,
+		Options: queue.Options{Queue: scheduleriver.PhotoQueue, MaxAttempts: 3},
+	}
+	job := app.PhotoJob{
+		PhotoID: photo, OwnerNSID: "owner", Facet: app.PhotoFacet,
+		KeyID: 7, Class: quotadomain.Photo, DedupeKey: dedupe,
+	}
+	if ok, err := enqueuer.EnqueuePhoto(ctx, job); err != nil || !ok {
+		t.Fatalf("first EnqueuePhoto() = %v, %v; want inserted", ok, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE river_job SET state='discarded', attempt=max_attempts,
+		finalized_at=now(), errors=ARRAY[jsonb_build_object('attempt', max_attempts, 'error', 'synthetic exhausted size job')]
+		WHERE args->'args'->>'dedupe_key'=$1 AND state='available'`, dedupe); err != nil {
+		t.Fatalf("mark exhausted size job discarded: %v", err)
+	}
+	var discarded int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM river_job
+		WHERE args->'args'->>'dedupe_key'=$1 AND state='discarded'`, dedupe).Scan(&discarded); err != nil || discarded != 1 {
+		t.Fatalf("discarded size jobs = %d, %v; want 1", discarded, err)
+	}
+	if ok, err := enqueuer.EnqueuePhoto(ctx, job); err != nil || !ok {
+		t.Fatalf("EnqueuePhoto() after discard = %v, %v; want a durable retry", ok, err)
+	}
+	var active, total int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE state IN ('available','pending','scheduled','retryable','running')),
+		count(*) FROM river_job WHERE args->'args'->>'dedupe_key'=$1`, dedupe).Scan(&active, &total); err != nil {
+		t.Fatal(err)
+	}
+	if active != 1 || total != 2 {
+		t.Fatalf("jobs after recovery = active %d / total %d; want one active retry and one discarded history row", active, total)
+	}
+}

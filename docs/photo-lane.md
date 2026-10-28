@@ -31,6 +31,23 @@ skipped while its last update is no newer than that check. Flickr not-found and
 permission errors store an empty sizes list with status `unavailable`; those
 photos leave the lane and are not retried.
 
+Quota exhaustion returns a River snooze, so it does not consume an attempt and
+the same job resumes through the quota governor when its wait expires. Other
+transient Flickr, transport, and storage failures use the configured River
+retry and backoff policy. If those attempts are exhausted, the job is
+discarded and reported through the dead-job outbox; the photo itself remains
+unconfirmed in the catalog. The next ordinary photo-lane pump can select it
+again, and the new job still goes through key selection and the quota governor.
+This makes a discarded job visible and recoverable without a manual requeue or
+a quota bypass. Flickr error code 1 (`Photo not found`) is treated as an
+unavailable photo by this lane; code 2 (`Permission denied`) is classified
+separately and also stored as unavailable. Flickr documents that `getSizes`
+does not require OAuth, but the caller must be allowed to view the photo; code
+1 means the photo ID is invalid, while code 2 means the caller cannot view it.
+The API client tests both classifications and the FakeFlickr integration test
+verifies the requested method, photo ID, retry, and confirmed result. See the
+[Flickr `getSizes` API reference](https://www.flickr.com/services/api/flickr.photos.getSizes.html).
+
 Optional facets are configured by application settings: `photo_info_enabled`,
 `photo_exif_enabled`, and `photo_contexts_enabled` default to true;
 `photo_comments_enabled` and `photo_favorites_enabled` default to false. They
