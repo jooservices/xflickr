@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin users · XFlickr</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b0f15;color:#d6dee8;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1440px;margin:auto;padding:28px}
+.theme{--bg:#0b0f15;--surface:#11171f;--sunken:#161e28;--raise:#1c2632;--line:#222c3a;--ink:#d6dee8;--muted:#8190a4;--accent:#4cb4d8;--accent-ink:#04131a;--ok:#3cb87c;--warn:#e2ae3d;--bad:#f2766b;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:9px;margin:0 0 36px;padding:24px}
+.theme.light{--bg:#eef1f5;--surface:#fff;--sunken:#f5f7fa;--raise:#e9edf3;--line:#dce2ea;--ink:#16202c;--muted:#56657a;--accent:#006482;--accent-ink:#fff;--ok:#176d42;--warn:#815800;--bad:#c5372c}
+.topbar,.row,.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.topbar{border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:22px}
+.brand{font-weight:750;letter-spacing:.05em}.role,.muted,.subtle{color:var(--muted)}.role{font-size:12px}
+.theme-chip,.pill,.button,.control{border:1px solid var(--line);border-radius:7px;padding:6px 10px;font-size:11px}
+.theme-chip{color:var(--accent)}.button{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.intro h1{font-size:24px;margin:0 0 3px}.intro p{margin:0;color:var(--muted)}
+.live{color:var(--ok);font-size:12px}.live:before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:7px}
+.panel,.drawer,.state-card,.dialog{background:var(--surface);border:1px solid var(--line);border-radius:9px}
+.panel{overflow:hidden;margin:16px 0}.panel-head{padding:14px 16px;border-bottom:1px solid var(--line)}.panel-head h2{font-size:14px;margin:0}.panel-body{padding:14px 16px}
+.pill{display:inline-block;color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--line));white-space:nowrap}.pill.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}.pill.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
+.controls{display:flex;gap:8px;margin:16px 0 12px}.control{color:var(--muted);background:var(--sunken);min-width:250px}
+.content{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,.8fr);gap:14px}
+table{border-collapse:collapse;width:100%;font-size:11px}th{text-align:left;color:var(--muted);font-size:10px;padding:9px 8px;border-bottom:1px solid var(--line)}td{padding:11px 8px;border-bottom:1px solid var(--line);vertical-align:middle}tr:last-child td{border-bottom:0}.selected{background:var(--sunken)}
+.email,.subtle{font-size:10px;color:var(--muted)}.name{font-weight:700}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.drawer{padding:15px;align-self:start}.drawer h2{font-size:14px;margin:0}.divider{border-top:1px solid var(--line);margin:13px 0}
+.details{display:grid;grid-template-columns:1fr auto;gap:8px 12px;font-size:11px}.details span:nth-child(odd){color:var(--muted)}
+.notice{background:var(--sunken);border:1px solid var(--line);border-left:3px solid var(--accent);padding:10px 12px;border-radius:6px;color:var(--muted);font-size:11px;margin-top:14px}
+.states{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px}.state-card{padding:13px;min-height:118px}.state-card h3{font-size:12px;margin:0 0 9px}.state-card p{font-size:11px;color:var(--muted);margin:0 0 8px}
+.skeleton{height:12px;background:var(--raise);border-radius:4px;margin:8px 0}.skeleton.short{width:58%}
+.dialog{margin:18px auto 0;max-width:460px;padding:16px}.dialog h2{font-size:15px;margin:0 0 12px}.field{display:block;margin:10px 0}.field span{display:block;color:var(--muted);font-size:11px;margin-bottom:5px}.field input,.field select{width:100%;background:var(--sunken);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:9px}
+@media(max-width:900px){.content{grid-template-columns:1fr}.drawer{order:-1}.controls{flex-wrap:wrap}}
+@media(max-width:600px){main{padding:12px}.theme{padding:14px;margin-bottom:22px}.role{display:none}.topbar{align-items:flex-start}.topbar .row{flex-wrap:wrap;justify-content:flex-end}.content,.states{grid-template-columns:1fr}.controls{display:grid;grid-template-columns:1fr}.control{width:100%;min-width:0}table,tbody,tr,td{display:block;width:100%}thead{display:none}tbody{display:grid;gap:8px}tr{border:1px solid var(--line);border-radius:7px;padding:7px;background:var(--surface)}td{display:grid;grid-template-columns:110px 1fr;gap:8px;padding:5px 2px;border:0!important}td:before{content:attr(data-label);color:var(--muted);font-size:10px}.panel-head{align-items:flex-start}.panel-body{padding:10px}.drawer{order:0;min-height:100vh;border-radius:0}.dialog{max-width:none;margin:14px 0;padding:14px;min-height:100vh;border-radius:0}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+<section class="theme dark" data-theme="dark" data-state="ready" data-testid="admin-users-page" aria-label="Admin users — dark theme">
+<header class="topbar"><div><span class="brand">XFlickr <span class="role">/ ADMIN CONTROL ROOM</span></span></div><div class="row"><span class="theme-chip">Dark · default</span><span class="live" aria-live="polite">Live · updated 12 sec ago</span><button class="button" type="button">Refresh</button></div></header>
+<div class="intro"><h1>Users</h1><p>Account access, plans and safe support details.</p></div>
+<div class="controls"><span class="control">Search email</span><button class="button" type="button">Invite user</button></div>
+<div class="content">
+<section class="panel" data-testid="admin-users-table"><div class="panel-head"><h2>All users · 5</h2><span class="subtle">Page 1 of 1</span></div><div class="panel-body"><table><thead><tr><th>User</th><th>Role</th><th>Plan</th><th>Keys</th><th>Accounts</th><th>Last seen</th><th>Status</th></tr></thead><tbody>
+<tr class="selected" data-testid="admin-users-row-u-1"><td data-label="User"><span class="name">Viet Vu</span><br><span class="email">viet@example.com</span></td><td data-label="Role">Admin</td><td data-label="Plan">Pro</td><td data-label="Keys">2 · 2 valid</td><td data-label="Accounts">2</td><td data-label="Last seen">Now</td><td data-label="Status"><span class="pill">Active</span></td></tr>
+<tr data-testid="admin-users-row-u-2"><td data-label="User"><span class="name">Hoa Le</span><br><span class="email">hoa@example.com</span></td><td data-label="Role">User</td><td data-label="Plan">Standard</td><td data-label="Keys">1 · valid</td><td data-label="Accounts">1</td><td data-label="Last seen">2 h ago</td><td data-label="Status"><span class="pill">Active</span></td></tr>
+<tr><td data-label="User"><span class="name">Minh Do</span><br><span class="email">minh@example.com</span></td><td data-label="Role">User</td><td data-label="Plan">Standard</td><td data-label="Keys">1 · attention</td><td data-label="Accounts">3</td><td data-label="Last seen">1 d ago</td><td data-label="Status"><span class="pill">Active</span></td></tr>
+<tr><td data-label="User"><span class="name">Linh Tran</span><br><span class="email">linh@example.com</span></td><td data-label="Role">User</td><td data-label="Plan">Pro</td><td data-label="Keys">1 · valid</td><td data-label="Accounts">1</td><td data-label="Last seen">12 min ago</td><td data-label="Status"><span class="pill">Active</span></td></tr>
+<tr><td data-label="User"><span class="name">Quang Ngo</span><br><span class="email">quang@example.com</span></td><td data-label="Role">User</td><td data-label="Plan">Free</td><td data-label="Keys">0</td><td data-label="Accounts">0</td><td data-label="Last seen">Never</td><td data-label="Status"><span class="pill warn">Invited</span></td></tr>
+</tbody></table></div></section>
+<aside class="drawer" data-testid="admin-users-support-drawer" aria-label="Read-only support details"><div class="row"><h2>Support details</h2><span class="subtle">user-ref · 0048</span></div><div class="divider"></div><div class="details"><span>Email</span><b>viet@example.com</b><span>Role</span><b>Admin</b><span>Plan</span><b>Pro</b><span>Locale</span><b>English</b><span>Created</span><b>12 Oct 2026</b><span>Last seen</span><b>Now</b><span>API keys</span><b>2 · 2 valid</b><span>Flickr accounts</span><b>2 connected</b></div><div class="notice">Read-only support. No user session, credentials or private content is available.</div><div class="divider"></div><div class="row"><button class="control" type="button">Change role</button><button class="control" type="button">Change plan</button></div><div class="row" style="margin-top:8px"><button class="control" type="button">Disable account</button><span class="subtle">Confirm and audit required</span></div></aside>
+</div>
+<div class="states" aria-label="Other view states">
+<article class="state-card" data-state="loading" data-testid="admin-users-loading"><h3>Loading</h3><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton short"></div><p>Loading users…</p></article>
+<article class="state-card" data-state="empty" data-testid="admin-users-empty"><h3>Empty</h3><p>No users yet. Invite a user to get started.</p><span class="pill">Invite user</span></article>
+<article class="state-card" data-state="error" data-testid="admin-users-error"><h3>Error</h3><p>Could not load users. Refresh and try again.</p><span class="pill">Retry</span></article>
+</div>
+<div class="dialog" data-testid="admin-users-invite-dialog" aria-label="Invite user dialog preview"><h2>Invite user</h2><label class="field"><span>Email address</span><input type="email" value="new-user@example.com" readonly></label><label class="field"><span>Starting plan · role User</span><select><option>Standard</option></select></label><div class="notice">An invitation will be sent. The recipient signs in to their own account; support never impersonates them.</div><div class="row" style="margin-top:12px"><button class="control" type="button">Cancel</button><button class="button" type="button" data-testid="admin-users-invite-submit">Send invitation</button></div></div>
+</section>
+<section class="theme light" data-theme="light" data-state="ready" aria-label="Admin users — light theme">
+<header class="topbar"><div><span class="brand">XFlickr <span class="role">/ ADMIN CONTROL ROOM</span></span></div><div class="row"><span class="theme-chip">Light</span><span class="live" aria-live="polite">Live · updated 12 sec ago</span><button class="button" type="button">Refresh</button></div></header>
+<div class="intro"><h1>Users</h1><p>Account access, plans and safe support details.</p></div>
+<div class="controls"><span class="control">Search email</span><button class="button" type="button">Invite user</button></div>
+<div class="content">
+<section class="panel"><div class="panel-head"><h2>All users · 5</h2><span class="subtle">Page 1 of 1</span></div><div class="panel-body"><table><thead><tr><th>User</th><th>Role</th><th>Plan</th><th>Keys</th><th>Accounts</th><th>Last seen</th><th>Status</th></tr></thead><tbody>
+<tr class="selected"><td data-label="User"><span class="name">Viet Vu</span><br><span class="email">viet@example.com</span></td><td data-label="Role">Admin</td><td data-label="Plan">Pro</td><td data-label="Keys">2 · 2 valid</td><td data-label="Accounts">2</td><td data-label="Last seen">Now</td><td data-label="Status"><span class="pill">Active</span></td></tr>
+<tr><td data-label="User"><span class="name">Hoa Le</span><br><span class="email">hoa@example.com</span></td><td data-label="Role">User</td><td data-label="Plan">Standard</td><td data-label="Keys">1 · valid</td><td data-label="Accounts">1</td><td data-label="Last seen">2 h ago</td><td data-label="Status"><span class="pill">Active</span></td></tr>
+<tr><td data-label="User"><span class="name">Minh Do</span><br><span class="email">minh@example.com</span></td><td data-label="Role">User</td><td data-label="Plan">Standard</td><td data-label="Keys">1 · attention</td><td data-label="Accounts">3</td><td data-label="Last seen">1 d ago</td><td data-label="Status"><span class="pill">Active</span></td></tr>
+<tr><td data-label="User"><span class="name">Linh Tran</span><br><span class="email">linh@example.com</span></td><td data-label="Role">User</td><td data-label="Plan">Pro</td><td data-label="Keys">1 · valid</td><td data-label="Accounts">1</td><td data-label="Last seen">12 min ago</td><td data-label="Status"><span class="pill">Active</span></td></tr>
+<tr><td data-label="User"><span class="name">Quang Ngo</span><br><span class="email">quang@example.com</span></td><td data-label="Role">User</td><td data-label="Plan">Free</td><td data-label="Keys">0</td><td data-label="Accounts">0</td><td data-label="Last seen">Never</td><td data-label="Status"><span class="pill warn">Invited</span></td></tr>
+</tbody></table></div></section>
+<aside class="drawer"><div class="row"><h2>Support details</h2><span class="subtle">user-ref · 0048</span></div><div class="divider"></div><div class="details"><span>Email</span><b>viet@example.com</b><span>Role</span><b>Admin</b><span>Plan</span><b>Pro</b><span>Locale</span><b>English</b><span>Created</span><b>12 Oct 2026</b><span>Last seen</span><b>Now</b><span>API keys</span><b>2 · 2 valid</b><span>Flickr accounts</span><b>2 connected</b></div><div class="notice">Read-only support. No user session, credentials or private content is available.</div><div class="divider"></div><div class="row"><button class="control" type="button">Change role</button><button class="control" type="button">Change plan</button></div><div class="row" style="margin-top:8px"><button class="control" type="button">Disable account</button><span class="subtle">Confirm and audit required</span></div></aside>
+</div>
+<div class="states"><article class="state-card" data-state="loading"><h3>Loading</h3><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton short"></div><p>Loading users…</p></article><article class="state-card" data-state="empty"><h3>Empty</h3><p>No users yet. Invite a user to get started.</p><span class="pill">Invite user</span></article><article class="state-card" data-state="error"><h3>Error</h3><p>Could not load users. Refresh and try again.</p><span class="pill">Retry</span></article></div>
+<div class="dialog"><h2>Invite user</h2><label class="field"><span>Email address</span><input type="email" value="new-user@example.com" readonly></label><label class="field"><span>Starting plan · role User</span><select><option>Standard</option></select></label><div class="notice">An invitation will be sent. The recipient signs in to their own account; support never impersonates them.</div><div class="row" style="margin-top:12px"><button class="control" type="button">Cancel</button><button class="button" type="button">Send invitation</button></div></div>
+</section>
+</main>
+</body>
+</html>
