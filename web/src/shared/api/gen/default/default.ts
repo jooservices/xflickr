@@ -27,12 +27,14 @@ import type {
   ChangePasswordRequest,
   CreateDownloadRequest,
   Download,
+  DownloadPartLinks,
   Error,
   LoginLocked,
   LoginRateLimited,
   RegisterConflict,
   RegisterRequest,
   RegisterValidationError,
+  RetryFailedDownloadResponse,
   SessionList,
   UpdateMeRequest,
   User,
@@ -1377,6 +1379,396 @@ export const useCreateDownload = <TError = Error, TContext = unknown>(
   TContext
 > => {
   return useMutation(getCreateDownloadMutationOptions(options), queryClient);
+};
+export type getDownloadPartsResponse200 = {
+  data: DownloadPartLinks;
+  status: 200;
+};
+
+export type getDownloadPartsResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type getDownloadPartsResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type getDownloadPartsResponse500 = {
+  data: Error;
+  status: 500;
+};
+
+export type getDownloadPartsResponseSuccess = getDownloadPartsResponse200 & {
+  headers: Headers;
+};
+export type getDownloadPartsResponseError = (
+  getDownloadPartsResponse401 | getDownloadPartsResponse404 | getDownloadPartsResponse500
+) & {
+  headers: Headers;
+};
+
+export type getDownloadPartsResponse =
+  getDownloadPartsResponseSuccess | getDownloadPartsResponseError;
+
+export const getGetDownloadPartsUrl = (id: number) => {
+  return `/downloads/${id}/parts`;
+};
+
+/**
+ * Returns short-lived links to the ZIP parts. Only the owner can request them.
+ * @summary Get temporary links for a ready download
+ */
+export const getDownloadParts = async (
+  id: number,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getDownloadPartsResponse> => {
+  return customFetch<getDownloadPartsResponse>(getGetDownloadPartsUrl(id), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getGetDownloadPartsQueryKey = (id: number) => {
+  return [`/downloads/${id}/parts`] as const;
+};
+
+export const getGetDownloadPartsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDownloadParts>>,
+  TError = Error,
+>(
+  id: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getDownloadParts>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetDownloadPartsQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getDownloadParts>>> = ({ signal }) =>
+    getDownloadParts(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getDownloadParts>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type GetDownloadPartsQueryResult = NonNullable<Awaited<ReturnType<typeof getDownloadParts>>>;
+export type GetDownloadPartsQueryError = Error;
+
+export function useGetDownloadParts<
+  TData = Awaited<ReturnType<typeof getDownloadParts>>,
+  TError = Error,
+>(
+  id: number,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getDownloadParts>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getDownloadParts>>,
+          TError,
+          Awaited<ReturnType<typeof getDownloadParts>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetDownloadParts<
+  TData = Awaited<ReturnType<typeof getDownloadParts>>,
+  TError = Error,
+>(
+  id: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getDownloadParts>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getDownloadParts>>,
+          TError,
+          Awaited<ReturnType<typeof getDownloadParts>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetDownloadParts<
+  TData = Awaited<ReturnType<typeof getDownloadParts>>,
+  TError = Error,
+>(
+  id: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getDownloadParts>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get temporary links for a ready download
+ */
+
+export function useGetDownloadParts<
+  TData = Awaited<ReturnType<typeof getDownloadParts>>,
+  TError = Error,
+>(
+  id: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getDownloadParts>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetDownloadPartsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type markDownloadPartFetchedResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type markDownloadPartFetchedResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type markDownloadPartFetchedResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type markDownloadPartFetchedResponseSuccess = markDownloadPartFetchedResponse204 & {
+  headers: Headers;
+};
+export type markDownloadPartFetchedResponseError = (
+  markDownloadPartFetchedResponse401 | markDownloadPartFetchedResponse404
+) & {
+  headers: Headers;
+};
+
+export type markDownloadPartFetchedResponse =
+  markDownloadPartFetchedResponseSuccess | markDownloadPartFetchedResponseError;
+
+export const getMarkDownloadPartFetchedUrl = (id: number, partNumber: number) => {
+  return `/downloads/${id}/parts/${partNumber}/fetched`;
+};
+
+/**
+ * Call after a part link has been downloaded successfully. The expiry worker removes the ZIP after every part is acknowledged or the download expires.
+ * @summary Acknowledge a completed ZIP part transfer
+ */
+export const markDownloadPartFetched = async (
+  id: number,
+  partNumber: number,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<markDownloadPartFetchedResponse> => {
+  return customFetch<markDownloadPartFetchedResponse>(
+    getMarkDownloadPartFetchedUrl(id, partNumber),
+    {
+      ...options,
+      method: 'POST',
+    },
+  );
+};
+
+export const getMarkDownloadPartFetchedMutationKey = () => ['markDownloadPartFetched'] as const;
+
+export const getMarkDownloadPartFetchedMutationOptions = <
+  TError = Error,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof markDownloadPartFetched>>,
+    TError,
+    MarkDownloadPartFetchedMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof markDownloadPartFetched>>,
+  TError,
+  MarkDownloadPartFetchedMutationVariables,
+  TContext
+> => {
+  const mutationKey = getMarkDownloadPartFetchedMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof markDownloadPartFetched>>,
+    MarkDownloadPartFetchedMutationVariables
+  > = (props) => {
+    const { id, partNumber } = props ?? {};
+
+    return markDownloadPartFetched(id, partNumber, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MarkDownloadPartFetchedMutationResult = NonNullable<
+  Awaited<ReturnType<typeof markDownloadPartFetched>>
+>;
+
+export type MarkDownloadPartFetchedMutationError = Error;
+export type MarkDownloadPartFetchedMutationVariables = { id: number; partNumber: number };
+
+/**
+ * @summary Acknowledge a completed ZIP part transfer
+ */
+export const useMarkDownloadPartFetched = <TError = Error, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof markDownloadPartFetched>>,
+      TError,
+      MarkDownloadPartFetchedMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof markDownloadPartFetched>>,
+  TError,
+  MarkDownloadPartFetchedMutationVariables,
+  TContext
+> => {
+  return useMutation(getMarkDownloadPartFetchedMutationOptions(options), queryClient);
+};
+export type retryFailedDownloadResponse200 = {
+  data: RetryFailedDownloadResponse;
+  status: 200;
+};
+
+export type retryFailedDownloadResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type retryFailedDownloadResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type retryFailedDownloadResponse500 = {
+  data: Error;
+  status: 500;
+};
+
+export type retryFailedDownloadResponseSuccess = retryFailedDownloadResponse200 & {
+  headers: Headers;
+};
+export type retryFailedDownloadResponseError = (
+  retryFailedDownloadResponse401 | retryFailedDownloadResponse404 | retryFailedDownloadResponse500
+) & {
+  headers: Headers;
+};
+
+export type retryFailedDownloadResponse =
+  retryFailedDownloadResponseSuccess | retryFailedDownloadResponseError;
+
+export const getRetryFailedDownloadUrl = (id: number) => {
+  return `/downloads/${id}/retry-failed`;
+};
+
+/**
+ * Requeues every failed item in the download. A repeated request is safe and requeues only items that are still failed.
+ * @summary Retry failed download items
+ */
+export const retryFailedDownload = async (
+  id: number,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<retryFailedDownloadResponse> => {
+  return customFetch<retryFailedDownloadResponse>(getRetryFailedDownloadUrl(id), {
+    ...options,
+    method: 'POST',
+  });
+};
+
+export const getRetryFailedDownloadMutationKey = () => ['retryFailedDownload'] as const;
+
+export const getRetryFailedDownloadMutationOptions = <
+  TError = Error,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof retryFailedDownload>>,
+    TError,
+    RetryFailedDownloadMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof retryFailedDownload>>,
+  TError,
+  RetryFailedDownloadMutationVariables,
+  TContext
+> => {
+  const mutationKey = getRetryFailedDownloadMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof retryFailedDownload>>,
+    RetryFailedDownloadMutationVariables
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return retryFailedDownload(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RetryFailedDownloadMutationResult = NonNullable<
+  Awaited<ReturnType<typeof retryFailedDownload>>
+>;
+
+export type RetryFailedDownloadMutationError = Error;
+export type RetryFailedDownloadMutationVariables = { id: number };
+
+/**
+ * @summary Retry failed download items
+ */
+export const useRetryFailedDownload = <TError = Error, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof retryFailedDownload>>,
+      TError,
+      RetryFailedDownloadMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof retryFailedDownload>>,
+  TError,
+  RetryFailedDownloadMutationVariables,
+  TContext
+> => {
+  return useMutation(getRetryFailedDownloadMutationOptions(options), queryClient);
 };
 export type streamEventsResponse200 = {
   data: string;

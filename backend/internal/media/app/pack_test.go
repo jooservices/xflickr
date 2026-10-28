@@ -85,7 +85,7 @@ func (r *packRepo) PackItems(context.Context, int64) ([]PackItem, time.Duration,
 }
 
 func (r *packRepo) PackedOriginals(context.Context, int64) ([]string, bool, error) {
-	if r.status != "" || len(r.parts) > 0 {
+	if r.status == "ready" || r.status == "ready_with_errors" {
 		var keys []string
 		for _, item := range r.items {
 			if item.Failure == "" {
@@ -95,6 +95,10 @@ func (r *packRepo) PackedOriginals(context.Context, int64) ([]string, bool, erro
 		return keys, true, nil
 	}
 	return nil, false, nil
+}
+
+func (r *packRepo) PackedParts(context.Context, int64) ([]ZIPPart, error) {
+	return r.parts, nil
 }
 
 func (r *packRepo) CompletePack(_ context.Context, _ int64, status string, parts []ZIPPart) error {
@@ -252,6 +256,39 @@ func TestPackerRetryAfterPartialOriginalCleanup(t *testing.T) {
 	}
 	if len(repo.parts) != 1 {
 		t.Fatalf("retry repacked existing output: parts=%d", len(repo.parts))
+	}
+}
+
+func TestPackerRetryReplacesOldPartsAndRemovesStaleHigherParts(t *testing.T) {
+	ctx := context.Background()
+	oldPartExpiry := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	oldPart1 := "downloads/9/part-001.zip"
+	oldPart2 := "downloads/9/part-002.zip"
+	blobs := &packBlobStore{objects: map[string][]byte{
+		"original": []byte("abc"),
+		oldPart1:   []byte("old first package"),
+		oldPart2:   []byte("stale second package"),
+	}}
+	repo := &packRepo{
+		items:  []PackItem{{PhotoID: 1, Name: "one.jpg", BlobKey: "original", Size: 3}},
+		ttl:    time.Hour,
+		status: "pending",
+		parts: []ZIPPart{
+			{Number: 1, BlobKey: oldPart1, ExpiresAt: oldPartExpiry},
+			{Number: 2, BlobKey: oldPart2, ExpiresAt: oldPartExpiry},
+		},
+	}
+	if err := (Packer{Blobs: blobs, Repo: repo, Limit: 1000}).Pack(ctx, 9); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.parts) != 1 || repo.parts[0].BlobKey != oldPart1 || repo.status != "ready" {
+		t.Fatalf("replacement package = status:%q parts:%+v", repo.status, repo.parts)
+	}
+	if _, ok := blobs.objects[oldPart2]; ok {
+		t.Fatal("stale higher-numbered package part remains")
+	}
+	if _, ok := blobs.objects[oldPart1]; !ok || string(blobs.objects[oldPart1]) == "old first package" {
+		t.Fatal("replacement package part was not written")
 	}
 }
 

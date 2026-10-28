@@ -68,6 +68,13 @@ export const ROUTES: Route[] = [
   route('GET', '/admin/quota', contract.GetAdminQuotaResponse),
   route('GET', '/admin/ops/status', contract.GetAdminOpsStatusResponse),
   route('POST', '/downloads', contract.CreateDownloadResponse),
+  route('GET', '/downloads/{id}/parts', contract.GetDownloadPartsResponse),
+  route(
+    'POST',
+    '/downloads/{id}/parts/{partNumber}/fetched',
+    contract.MarkDownloadPartFetchedResponse,
+  ),
+  route('POST', '/downloads/{id}/retry-failed', contract.RetryFailedDownloadResponse),
   route('GET', '/events', contract.StreamEventsResponse),
 ];
 

@@ -142,9 +142,10 @@ guide feature implementation; operational environment rules live in
 - Apply download back-pressure when the BlobStore is full or its local
   filesystem is more than 90% used. Reject newly requested downloads with
   `temp_storage_full` and stop pumping media work until capacity is available.
-- Verify downloaded files before packaging or syncing. A ZIP link is temporary;
-  delete its files when the link expires. For cloud sync, delete temporary files
-  after upload completes or is abandoned.
+- Verify downloaded files before packaging or syncing. ZIP-part links are
+  owner-scoped and short-lived; delete the temporary ZIP parts after all
+  transfers are acknowledged or the download expires. For cloud sync, delete
+  temporary files after upload completes or is abandoned.
 - Do not turn temporary download storage into a permanent XFlickr archive. The
   user's connected cloud destination is the durable copy when they choose sync.
 

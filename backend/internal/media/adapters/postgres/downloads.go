@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	mediaapp "github.com/jooservices/xflickr/internal/media/app"
 	mediadomain "github.com/jooservices/xflickr/internal/media/domain"
@@ -29,6 +30,7 @@ type downloadsPool interface {
 	Begin(context.Context) (pgx.Tx, error)
 	Query(context.Context, string, ...any) (pgx.Rows, error)
 	QueryRow(context.Context, string, ...any) pgx.Row
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 }
 
 var (
@@ -81,7 +83,7 @@ func (r Downloads) PackedOriginals(ctx context.Context, downloadID int64) ([]str
 		return nil, false, errors.New("media: pack database, context, and download id are required")
 	}
 	var complete bool
-	if err := r.Pool.QueryRow(ctx, `SELECT d.status IN ('ready','ready_with_errors') OR EXISTS (SELECT 1 FROM download_parts dp WHERE dp.download_id=d.id) FROM downloads d WHERE d.id=$1`, downloadID).Scan(&complete); err != nil {
+	if err := r.Pool.QueryRow(ctx, `SELECT d.status IN ('ready','ready_with_errors') FROM downloads d WHERE d.id=$1`, downloadID).Scan(&complete); err != nil {
 		return nil, false, fmt.Errorf("media: check existing ZIP parts: %w", err)
 	}
 	if !complete {
@@ -175,13 +177,18 @@ func (r Downloads) CompletePack(ctx context.Context, downloadID int64, status st
 		return fmt.Errorf("media: begin ZIP completion: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
+	partNumbers := make([]int32, 0, len(parts))
 	for _, part := range parts {
-		if part.Number <= 0 || part.BlobKey == "" || part.Bytes < 0 || part.ExpiresAt.IsZero() {
+		if part.Number <= 0 || uint64(part.Number) > uint64(int32(^uint32(0)>>1)) || part.BlobKey == "" || part.Bytes < 0 || part.ExpiresAt.IsZero() {
 			return errors.New("media: invalid ZIP part metadata")
 		}
+		partNumbers = append(partNumbers, int32(part.Number))
 		if _, err := tx.Exec(ctx, `INSERT INTO download_parts(download_id,part_number,blob_key,bytes,expires_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(download_id,part_number) DO UPDATE SET blob_key=EXCLUDED.blob_key,bytes=EXCLUDED.bytes,expires_at=EXCLUDED.expires_at`, downloadID, part.Number, part.BlobKey, part.Bytes, part.ExpiresAt); err != nil {
 			return fmt.Errorf("media: save ZIP part: %w", err)
 		}
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM download_parts WHERE download_id=$1 AND NOT (part_number = ANY($2))`, downloadID, partNumbers); err != nil {
+		return fmt.Errorf("media: remove stale ZIP part metadata: %w", err)
 	}
 	var userID int64
 	err = tx.QueryRow(ctx, `UPDATE downloads SET status=$2 WHERE id=$1 RETURNING user_id`, downloadID, status).Scan(&userID)

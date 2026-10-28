@@ -20,6 +20,9 @@ that serve it, or `MISSING`.
 | `/auth/register` | `/auth/register` | `/auth/register` |
 | `/auth/sessions` | `/auth/sessions` | `/auth/sessions` |
 | `/downloads` | `/downloads` | `/downloads` |
+| `/downloads/{}/parts` | `/downloads/{id}/parts` | `/downloads/{id}/parts` |
+| `/downloads/{}/parts/{}/fetched` | `/downloads/{id}/parts/{partNumber}/fetched` | `/downloads/{id}/parts/{partNumber}/fetched` |
+| `/downloads/{}/retry-failed` | `/downloads/{id}/retry-failed` | `/downloads/{id}/retry-failed` |
 | `/events` | `/events` | `/events` |
 | `/flickr-accounts` | `/flickr-accounts` | `/flickr-accounts` |
 | `/flickr-accounts/callback` | `/flickr-accounts/callback` | `/flickr-accounts/callback` |

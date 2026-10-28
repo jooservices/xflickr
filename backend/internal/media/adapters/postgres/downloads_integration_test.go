@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 
 	catalogdownloadspostgres "github.com/jooservices/xflickr/internal/catalog/adapters/downloads/postgres"
 	catalogapp "github.com/jooservices/xflickr/internal/catalog/app"
+	medialocal "github.com/jooservices/xflickr/internal/media/adapters/local"
 	"github.com/jooservices/xflickr/internal/media/app"
 	mediadomain "github.com/jooservices/xflickr/internal/media/domain"
 	"github.com/jooservices/xflickr/internal/platform/config"
@@ -172,6 +174,185 @@ func TestCreateAlbumDownloadWithPostgres(t *testing.T) {
 	}
 	if countJobs(jobs.jobs, "media.pack") != packJobsBefore+1 {
 		t.Fatalf("pack jobs after final settlement = %d, want %d", countJobs(jobs.jobs, "media.pack"), packJobsBefore+1)
+	}
+}
+
+func TestDownloadPartsOwnershipAcknowledgementAndExpiry(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run make test-integration to use the configured worktree database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, downloadIntegrationDatabase(t))
+	base := time.Now().UnixNano()
+	userID := base
+	if _, err := pool.Exec(ctx, `INSERT INTO users(id,email,password_hash,role) VALUES($1,$2,'not-used','user')`, userID, fmt.Sprintf("links-%d@example.invalid", base)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
+	})
+	blobs, err := medialocal.New(t.TempDir(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	repository := Downloads{Pool: pool}
+	insertDownload := func(expiry time.Time, partKeys []string, partExpiry time.Time) int64 {
+		t.Helper()
+		var downloadID int64
+		if err := pool.QueryRow(ctx, `INSERT INTO downloads(user_id,kind,subject,status,created_at,expires_at) VALUES($1,'album','links-test','ready',NOW(),$2) RETURNING id`, userID, expiry).Scan(&downloadID); err != nil {
+			t.Fatal(err)
+		}
+		for i, key := range partKeys {
+			if err := blobs.Put(ctx, key, strings.NewReader("zip-part")); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := pool.Exec(ctx, `INSERT INTO download_parts(download_id,part_number,blob_key,bytes,expires_at) VALUES($1,$2,$3,8,$4)`, downloadID, i+1, key, partExpiry); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return downloadID
+	}
+
+	partKeys := []string{fmt.Sprintf("downloads/%d/part-001.zip", base), fmt.Sprintf("downloads/%d/part-002.zip", base)}
+	downloadID := insertDownload(now.Add(5*time.Minute), partKeys, now.Add(time.Hour))
+	links := app.DownloadPartLinks{Repository: repository, Blobs: blobs, TTL: 15 * time.Minute, Now: func() time.Time { return now }}
+	got, err := links.Get(ctx, userID, downloadID)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("owner links = %+v, err=%v", got, err)
+	}
+	if !got[0].ExpiresAt.Equal(now.Add(5 * time.Minute)) {
+		t.Fatalf("link expires at %s, beyond download expiry %s", got[0].ExpiresAt, now.Add(5*time.Minute))
+	}
+	if _, err := links.Get(ctx, userID+1, downloadID); !errors.Is(err, app.ErrDownloadNotFound) {
+		t.Fatalf("other user's link error = %v", err)
+	}
+	if err := links.MarkFetched(ctx, userID, downloadID, 1); err != nil {
+		t.Fatal(err)
+	}
+	cleaner := app.DownloadExpiryCleaner{Repository: repository, Blobs: blobs}
+	if err := cleaner.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	var partCount int
+	if err := pool.QueryRow(ctx, `SELECT d.status,(SELECT count(*) FROM download_parts dp WHERE dp.download_id=d.id) FROM downloads d WHERE d.id=$1`, downloadID).Scan(&status, &partCount); err != nil {
+		t.Fatal(err)
+	}
+	if status != "ready" || partCount != 2 {
+		t.Fatalf("partial acknowledgement status=%s parts=%d", status, partCount)
+	}
+	if err := links.MarkFetched(ctx, userID, downloadID, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := cleaner.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT d.status,(SELECT count(*) FROM download_parts dp WHERE dp.download_id=d.id) FROM downloads d WHERE d.id=$1`, downloadID).Scan(&status, &partCount); err != nil {
+		t.Fatal(err)
+	}
+	if status != "expired" || partCount != 0 {
+		t.Fatalf("all-fetched status=%s parts=%d", status, partCount)
+	}
+	for _, key := range partKeys {
+		if _, err := blobs.Stat(ctx, key); !errors.Is(err, app.ErrNotFound) {
+			t.Fatalf("fetched part %q remains: %v", key, err)
+		}
+	}
+
+	expiredKey := fmt.Sprintf("downloads/%d/expired-part.zip", base)
+	expiredID := insertDownload(now.Add(-time.Minute), []string{expiredKey}, now.Add(-time.Minute))
+	if err := cleaner.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT d.status,(SELECT count(*) FROM download_parts dp WHERE dp.download_id=d.id) FROM downloads d WHERE d.id=$1`, expiredID).Scan(&status, &partCount); err != nil {
+		t.Fatal(err)
+	}
+	if status != "expired" || partCount != 0 {
+		t.Fatalf("expired download status=%s parts=%d", status, partCount)
+	}
+	if err := links.MarkFetched(ctx, userID, expiredID, 1); !errors.Is(err, app.ErrDownloadNotFound) {
+		t.Fatalf("expired part acknowledgement error = %v", err)
+	}
+}
+
+func TestRetryFailedDownloadPostgresIsAtomicAndIdempotent(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run make test-integration to use the configured worktree database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, downloadIntegrationDatabase(t))
+	base := time.Now().UnixNano()
+	userID, photoID := base, base+1
+	owner := fmt.Sprintf("retry-%d", base)
+	if _, err := pool.Exec(ctx, `INSERT INTO users(id,email,password_hash,role) VALUES($1,$2,'not-used','user')`, userID, owner+"@example.invalid"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM river_job WHERE args->'args'->>'download_id' IN (SELECT id::text FROM downloads WHERE user_id=$1)`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=$1`, photoID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, owner)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,last_update,visibility,raw,content_hash) VALUES($1,$2,NOW(),'public','{}',decode(repeat('cd',32),'hex'))`, photoID, owner); err != nil {
+		t.Fatal(err)
+	}
+	var downloadID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO downloads(user_id,kind,subject,status,expires_at) VALUES($1,'album','retry-test','ready_with_errors',NOW()+interval '1 hour') RETURNING id`, userID).Scan(&downloadID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO download_items(download_id,photo_id,state,error) VALUES($1,$2,'failed','fixture failure')`, downloadID, photoID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := (Downloads{Pool: pool, Jobs: failingQueue{}}).RetryFailedDownload(ctx, userID, downloadID); err == nil {
+		t.Fatal("retry succeeded despite queue failure")
+	}
+	var status, state, itemError string
+	if err := pool.QueryRow(ctx, `SELECT d.status,di.state::text,di.error FROM downloads d JOIN download_items di ON di.download_id=d.id WHERE d.id=$1`, downloadID).Scan(&status, &state, &itemError); err != nil {
+		t.Fatal(err)
+	}
+	if status != "ready_with_errors" || state != "failed" || itemError != "fixture failure" {
+		t.Fatalf("queue failure committed partial retry: status=%s state=%s error=%q", status, state, itemError)
+	}
+	if count, err := (Downloads{Pool: pool, Jobs: failingQueue{}}).RetryFailedDownload(ctx, userID+1, downloadID); !errors.Is(err, app.ErrDownloadNotFound) || count != 0 {
+		t.Fatalf("non-owner retry = %d, %v", count, err)
+	}
+
+	jobs, err := queue.NewRiver(pool, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := Downloads{Pool: pool, Jobs: jobs}
+	if count, err := repository.RetryFailedDownload(ctx, userID, downloadID); err != nil || count != 1 {
+		t.Fatalf("retry = %d, %v", count, err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT d.status,di.state::text,di.error FROM downloads d JOIN download_items di ON di.download_id=d.id WHERE d.id=$1`, downloadID).Scan(&status, &state, &itemError); err != nil {
+		t.Fatal(err)
+	}
+	if status != "pending" || state != "pending" || itemError != "" {
+		t.Fatalf("retry state = status:%s state:%s error:%q", status, state, itemError)
+	}
+	var jobCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE args->>'kind'='media.fetch' AND args->'args'->>'download_id'=$1`, fmt.Sprint(downloadID)).Scan(&jobCount); err != nil {
+		t.Fatal(err)
+	}
+	if jobCount != 1 {
+		t.Fatalf("queued media.fetch jobs = %d, want 1", jobCount)
+	}
+	if count, err := repository.RetryFailedDownload(ctx, userID, downloadID); err != nil || count != 0 {
+		t.Fatalf("repeated retry = %d, %v", count, err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE args->>'kind'='media.fetch' AND args->'args'->>'download_id'=$1`, fmt.Sprint(downloadID)).Scan(&jobCount); err != nil {
+		t.Fatal(err)
+	}
+	if jobCount != 1 {
+		t.Fatalf("repeated retry queued %d jobs, want 1", jobCount)
 	}
 }
 

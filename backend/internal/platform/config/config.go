@@ -30,13 +30,15 @@ type Config struct {
 	Flickr   FlickrConfig
 	CallLog  CallLogConfig
 
-	HTTPPort int
-	LogLevel string
+	DownloadLinkTTL time.Duration
+	HTTPPort        int
+	LogLevel        string
 }
 
 type runtimeConfig struct {
-	HTTPPort int    `env:"HTTP_PORT" envDefault:"8080"`
-	LogLevel string `env:"LOG_LEVEL" envDefault:"info"`
+	DownloadLinkTTL time.Duration `env:"DOWNLOAD_LINK_TTL" envDefault:"15m"`
+	HTTPPort        int           `env:"HTTP_PORT" envDefault:"8080"`
+	LogLevel        string        `env:"LOG_LEVEL" envDefault:"info"`
 }
 
 // DBConfig contains PostgreSQL connection settings.
@@ -247,6 +249,7 @@ func LoadFromEnv(values map[string]string) (Config, error) {
 			return Config{}, fmt.Errorf("parse environment: %w", err)
 		}
 	}
+	cfg.DownloadLinkTTL = runtime.DownloadLinkTTL
 	cfg.HTTPPort = runtime.HTTPPort
 	cfg.LogLevel = runtime.LogLevel
 	if err := cfg.validate(); err != nil {
@@ -364,6 +367,12 @@ func (cfg *Config) validate() error {
 	}
 	if cfg.Blob.MaxTTL <= 0 {
 		return fmt.Errorf("BLOB_MAX_TTL must be greater than zero")
+	}
+	if cfg.DownloadLinkTTL <= 0 {
+		return fmt.Errorf("DOWNLOAD_LINK_TTL must be greater than zero")
+	}
+	if cfg.DownloadLinkTTL > cfg.Blob.MaxTTL {
+		return fmt.Errorf("DOWNLOAD_LINK_TTL must not exceed BLOB_MAX_TTL")
 	}
 	switch cfg.Blob.Driver {
 	case "local", "s3":

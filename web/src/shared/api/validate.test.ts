@@ -31,6 +31,33 @@ describe('validateBody', () => {
     ).toEqual({ status: 'ok', dependencies: [{ name: 'api.postgres', status: 'ok' }] });
     expect(validateBody('/keys/9', 'DELETE', 204, undefined)).toBeUndefined();
     expect(validateBody('/auth/logout', 'POST', 200, undefined)).toBeUndefined();
+    expect(
+      validateBody('/downloads/9/parts', 'GET', 200, {
+        download_id: 9,
+        parts: [
+          {
+            part_number: 1,
+            url: 'https://storage.invalid/part-1.zip',
+            bytes: 123,
+            expires_at: '2026-10-28T12:15:00Z',
+          },
+        ],
+      }),
+    ).toEqual({
+      download_id: 9,
+      parts: [
+        {
+          part_number: 1,
+          url: 'https://storage.invalid/part-1.zip',
+          bytes: 123,
+          expires_at: '2026-10-28T12:15:00Z',
+        },
+      ],
+    });
+    expect(validateBody('/downloads/9/retry-failed', 'POST', 200, { requeued: 1 })).toEqual({
+      requeued: 1,
+    });
+    expect(validateBody('/downloads/9/parts/1/fetched', 'POST', 204, undefined)).toBeUndefined();
   });
 
   it.each([

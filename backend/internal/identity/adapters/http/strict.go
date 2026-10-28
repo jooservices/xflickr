@@ -123,6 +123,18 @@ func (StrictHandler) CreateDownload(context.Context, gen.CreateDownloadRequestOb
 	return nil, errDownloadsServedByMedia
 }
 
+func (StrictHandler) GetDownloadParts(context.Context, gen.GetDownloadPartsRequestObject) (gen.GetDownloadPartsResponseObject, error) {
+	return nil, errDownloadsServedByMedia
+}
+
+func (StrictHandler) MarkDownloadPartFetched(context.Context, gen.MarkDownloadPartFetchedRequestObject) (gen.MarkDownloadPartFetchedResponseObject, error) {
+	return nil, errDownloadsServedByMedia
+}
+
+func (StrictHandler) RetryFailedDownload(context.Context, gen.RetryFailedDownloadRequestObject) (gen.RetryFailedDownloadResponseObject, error) {
+	return nil, errDownloadsServedByMedia
+}
+
 func (StrictHandler) StreamEvents(context.Context, gen.StreamEventsRequestObject) (gen.StreamEventsResponseObject, error) {
 	return nil, errEventsServedByPlatform
 }

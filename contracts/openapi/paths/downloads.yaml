@@ -36,3 +36,122 @@ create:
           application/json:
             schema:
               $ref: ../schemas/common.yaml#/Error
+
+parts:
+  get:
+    operationId: getDownloadParts
+    summary: Get temporary links for a ready download
+    description: Returns short-lived links to the ZIP parts. Only the owner can request them.
+    security:
+      - SessionCookie: []
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+    responses:
+      '200':
+        description: Temporary links for the available ZIP parts
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/downloads.yaml#/DownloadPartLinks
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '404':
+        description: Download is not available to this user
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '500':
+        description: A link could not be created
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+
+part_fetched:
+  post:
+    operationId: markDownloadPartFetched
+    summary: Acknowledge a completed ZIP part transfer
+    description: Call after a part link has been downloaded successfully. The expiry worker removes the ZIP after every part is acknowledged or the download expires.
+    security:
+      - SessionCookie: []
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+      - name: partNumber
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    responses:
+      '204':
+        description: Part transfer acknowledged
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '404':
+        description: Download or part is not available to this user
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+
+retry_failed:
+  post:
+    operationId: retryFailedDownload
+    summary: Retry failed download items
+    description: Requeues every failed item in the download. A repeated request is safe and requeues only items that are still failed.
+    security:
+      - SessionCookie: []
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+    responses:
+      '200':
+        description: Number of failed items requeued
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/downloads.yaml#/RetryFailedDownloadResponse
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '404':
+        description: Download is not available to this user
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error
+      '500':
+        description: Failed to queue retry work
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Error

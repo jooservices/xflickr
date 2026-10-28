@@ -432,17 +432,22 @@ func (mediaRole) Run(ctx context.Context) error {
 	configureRoleReadiness(ctx, "media", postgresDependency(pool), redisDependency(redisClient), blobStoreDependency(blobs))
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	results := make(chan error, 2)
+	results := make(chan error, 3)
 	go func() { results <- queue.Worker{Queue: queueAdapter}.Run(runCtx) }()
 	go func() { results <- (mediaapp.Cleaner{Assets: assets, Blobs: blobs}).Run(runCtx) }()
+	go func() {
+		results <- (mediaapp.DownloadExpiryCleaner{Repository: mediapostgres.Downloads{Pool: pool}, Blobs: blobs}).Run(runCtx)
+	}()
 	first := <-results
 	cancel()
 	second := <-results
-	if first != nil && ctx.Err() == nil {
-		return first
-	}
-	if second != nil && ctx.Err() == nil {
-		return second
+	third := <-results
+	if ctx.Err() == nil {
+		for _, result := range []error{first, second, third} {
+			if result != nil {
+				return result
+			}
+		}
 	}
 	return nil
 }
@@ -687,7 +692,7 @@ func buildConfiguredAPIHandlerWithHub(pool *pgxpool.Pool, redisClient redisv9.Un
 	if probeReadiness != nil {
 		probeReadiness.ConfigureRole("api", postgresDependency(pool), redisDependency(redisClient), blobStoreDependency(blobs))
 	}
-	downloads, err := buildDownloadHandlerWithEvents(pool, blobs, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"})
+	downloads, err := buildDownloadHandlerWithEvents(pool, blobs, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"}, cfg.DownloadLinkTTL)
 	if err != nil {
 		return nil, err
 	}
@@ -799,6 +804,18 @@ func (s apiServer) CreateDownload(ctx context.Context, request gen.CreateDownloa
 	return s.Downloads.CreateDownload(ctx, request)
 }
 
+func (s apiServer) GetDownloadParts(ctx context.Context, request gen.GetDownloadPartsRequestObject) (gen.GetDownloadPartsResponseObject, error) {
+	return s.Downloads.GetDownloadParts(ctx, request)
+}
+
+func (s apiServer) MarkDownloadPartFetched(ctx context.Context, request gen.MarkDownloadPartFetchedRequestObject) (gen.MarkDownloadPartFetchedResponseObject, error) {
+	return s.Downloads.MarkDownloadPartFetched(ctx, request)
+}
+
+func (s apiServer) RetryFailedDownload(ctx context.Context, request gen.RetryFailedDownloadRequestObject) (gen.RetryFailedDownloadResponseObject, error) {
+	return s.Downloads.RetryFailedDownload(ctx, request)
+}
+
 func (s apiServer) StreamEvents(ctx context.Context, request gen.StreamEventsRequestObject) (gen.StreamEventsResponseObject, error) {
 	userID, ok := userIDFromPrincipal(ctx)
 	if !ok {
@@ -891,18 +908,27 @@ type downloadEventPublisher interface {
 	Publish(context.Context, platformsse.Event) error
 }
 
-func buildDownloadHandlerWithEvents(pool *pgxpool.Pool, store mediaapp.BlobStore, events downloadEventPublisher) (mediahttp.DownloadHandler, error) {
+func buildDownloadHandlerWithEvents(pool *pgxpool.Pool, store mediaapp.BlobStore, events downloadEventPublisher, linkTTLs ...time.Duration) (mediahttp.DownloadHandler, error) {
 	jobs, err := queue.NewRiver(pool, nil)
 	if err != nil {
 		return mediahttp.DownloadHandler{}, err
 	}
 	catalogRepository := catalogdownloadspostgres.Repository{Pool: pool}
 	repository := mediapostgres.Downloads{Pool: pool, Jobs: jobs, Events: events}
+	linkTTL := mediaapp.DefaultDownloadLinkTTL
+	if len(linkTTLs) > 0 {
+		linkTTL = linkTTLs[0]
+	}
 	var pressure interface{ Check(context.Context) error }
 	if store != nil {
 		pressure = mediaapp.Pressure{Store: store}
 	}
-	return mediahttp.DownloadHandler{Downloads: mediaapp.Downloads{Catalog: catalogapp.DownloadCatalog{Photos: catalogRepository}, Repository: repository, Pressure: pressure}, Principal: userIDFromPrincipal}, nil
+	return mediahttp.DownloadHandler{
+		Downloads: mediaapp.Downloads{Catalog: catalogapp.DownloadCatalog{Photos: catalogRepository}, Repository: repository, Pressure: pressure},
+		Parts:     mediaapp.DownloadPartLinks{Repository: repository, Blobs: store, TTL: linkTTL},
+		Retry:     mediaapp.RetryFailed{Repository: repository},
+		Principal: userIDFromPrincipal,
+	}, nil
 }
 
 func buildCrawlHandler(pool *pgxpool.Pool) (crawlhttp.CrawlHandler, error) {

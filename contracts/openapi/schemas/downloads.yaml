@@ -28,3 +28,25 @@ Download:
     item_count: { type: integer }
     skipped: { type: integer }
   required: [id, kind, subject, status, created_at, expires_at, item_count, skipped]
+DownloadPartLink:
+  type: object
+  properties:
+    part_number: { type: integer, minimum: 1 }
+    url: { type: string, format: uri }
+    bytes: { type: integer, format: int64, minimum: 0 }
+    expires_at: { type: string, format: date-time }
+  required: [part_number, url, bytes, expires_at]
+DownloadPartLinks:
+  type: object
+  properties:
+    download_id: { type: integer, format: int64 }
+    parts:
+      type: array
+      items:
+        $ref: '#/DownloadPartLink'
+  required: [download_id, parts]
+RetryFailedDownloadResponse:
+  type: object
+  properties:
+    requeued: { type: integer, minimum: 0 }
+  required: [requeued]

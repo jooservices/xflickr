@@ -22,6 +22,7 @@ type mediaPoolStub struct {
 	begin func(context.Context) (pgx.Tx, error)
 	query func(context.Context, string, ...any) (pgx.Rows, error)
 	row   func(context.Context, string, ...any) pgx.Row
+	exec  func(context.Context, string, ...any) (pgconn.CommandTag, error)
 }
 
 func (p mediaPoolStub) Begin(ctx context.Context) (pgx.Tx, error) {
@@ -43,6 +44,13 @@ func (p mediaPoolStub) QueryRow(ctx context.Context, sql string, args ...any) pg
 		return mediaRow{err: errors.New("unexpected query row")}
 	}
 	return p.row(ctx, sql, args...)
+}
+
+func (p mediaPoolStub) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	if p.exec == nil {
+		return pgconn.NewCommandTag("UPDATE 1"), nil
+	}
+	return p.exec(ctx, sql, args...)
 }
 
 type mediaRow struct {
@@ -105,6 +113,7 @@ func (r *mediaRowsStub) Err() error { return r.err }
 type mediaTxStub struct {
 	pgx.Tx
 	row         func(context.Context, string, ...any) pgx.Row
+	query       func(context.Context, string, ...any) (pgx.Rows, error)
 	exec        func(context.Context, string, ...any) (pgconn.CommandTag, error)
 	copyFrom    func(context.Context, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error)
 	commitErr   error
@@ -118,6 +127,13 @@ func (tx *mediaTxStub) QueryRow(ctx context.Context, sql string, args ...any) pg
 		return mediaRow{err: errors.New("unexpected transaction query row")}
 	}
 	return tx.row(ctx, sql, args...)
+}
+
+func (tx *mediaTxStub) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	if tx.query == nil {
+		return nil, errors.New("unexpected transaction query")
+	}
+	return tx.query(ctx, sql, args...)
 }
 
 func (tx *mediaTxStub) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
@@ -443,6 +459,7 @@ func TestCompletePackTransactionAndEvent(t *testing.T) {
 			{repo: valid, ctx: context.Background(), id: 1, status: "pending", parts: []mediaapp.ZIPPart{part}},
 			{repo: valid, ctx: context.Background(), id: 1, status: "ready"},
 			{repo: valid, ctx: context.Background(), id: 1, status: "ready", parts: []mediaapp.ZIPPart{{Number: 0, BlobKey: "key", ExpiresAt: part.ExpiresAt}}},
+			{repo: valid, ctx: context.Background(), id: 1, status: "ready", parts: []mediaapp.ZIPPart{{Number: int(int64(1) << 31), BlobKey: "key", ExpiresAt: part.ExpiresAt}}},
 			{repo: valid, ctx: context.Background(), id: 1, status: "ready", parts: []mediaapp.ZIPPart{{Number: 1, ExpiresAt: part.ExpiresAt}}},
 			{repo: valid, ctx: context.Background(), id: 1, status: "ready", parts: []mediaapp.ZIPPart{{Number: 1, BlobKey: "key", Bytes: -1, ExpiresAt: part.ExpiresAt}}},
 			{repo: valid, ctx: context.Background(), id: 1, status: "ready", parts: []mediaapp.ZIPPart{{Number: 1, BlobKey: "key"}}},
