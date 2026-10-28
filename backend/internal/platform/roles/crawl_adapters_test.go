@@ -37,7 +37,7 @@ func TestCrawlFlickrCredentialsAndCall(t *testing.T) {
 		t.Fatal(err)
 	}
 	keyRow := func(value crypto.Sealed) pgx.Row { return credentialRow{values: []any{"public-key", value}} }
-	accountRow := credentialRow{values: []any{accountID, sealedToken, sealedTokenSecret}}
+	accountRow := credentialRow{values: []any{accountID, "123@example", sealedToken, sealedTokenSecret}}
 	request := app.Request{KeyID: keyID, UserID: 0}
 	withoutUser, err := (&crawlFlickr{pool: &credentialPool{rows: []pgx.Row{keyRow(sealedKey)}}, ring: ring}).credentials(context.Background(), request)
 	if err != nil || withoutUser.APIKey != "public-key" || withoutUser.APISecret != "api-secret" || withoutUser.Token != "" {
@@ -57,12 +57,17 @@ func TestCrawlFlickrCredentialsAndCall(t *testing.T) {
 	}))
 	defer server.Close()
 	client := flickrclient.NewClient(server.URL, server.Client())
+	var observed flickrclient.CallRecord
+	client.SetCallObserver(flickrclient.CallObserverFunc(func(_ context.Context, record flickrclient.CallRecord) { observed = record }))
 	client.SetNonceGenerator(func() (string, error) { return "nonce", nil })
 	client.SetClock(func() time.Time { return time.Unix(1700000000, 0) })
 	flickr := &crawlFlickr{pool: &credentialPool{rows: []pgx.Row{keyRow(sealedKey), accountRow}}, client: client, ring: ring}
 	payload, err := flickr.Call(context.Background(), app.Request{KeyID: keyID, UserID: 5, Method: "flickr.test.echo", Params: map[string]string{"value": "yes"}})
 	if err != nil || !json.Valid(payload) || !reflect.DeepEqual(json.RawMessage(payload), json.RawMessage(`{"stat":"ok","echo":{"value":"yes"}}`)) {
 		t.Fatalf("Call() payload=%s err=%v", payload, err)
+	}
+	if observed.KeyID != keyID || observed.UserID == nil || *observed.UserID != 5 || observed.AccountID == nil || *observed.AccountID != accountID || observed.FlickrAccount != "123@example" {
+		t.Fatalf("call attribution = %+v", observed)
 	}
 }
 
@@ -93,9 +98,24 @@ func TestCrawlFlickrCredentialsPropagateQueryAndEnvelopeErrors(t *testing.T) {
 	}
 	if _, err := (&crawlFlickr{pool: &credentialPool{rows: []pgx.Row{
 		credentialRow{values: []any{"public", sealed}},
-		credentialRow{values: []any{int64(1), wrongAAD, wrongAAD}},
+		credentialRow{values: []any{int64(1), "123@example", wrongAAD, wrongAAD}},
 	}}, ring: ring}).credentials(context.Background(), request); err == nil {
 		t.Fatal("token with the wrong associated data was accepted")
+	}
+}
+
+func TestCrawlFlickrRecordsQuotaWaitAttribution(t *testing.T) {
+	var observed flickrclient.CallRecord
+	client := flickrclient.NewClient(flickrclient.DefaultBaseURL, nil)
+	client.SetCallObserver(flickrclient.CallObserverFunc(func(_ context.Context, record flickrclient.CallRecord) { observed = record }))
+	flickr := &crawlFlickr{client: client, nodeID: "worker-a"}
+	flickr.RecordQuotaWait(context.Background(), app.Request{
+		KeyID: 4, UserID: 5, Lane: "photo", Facet: "photos", Attempt: 3, Method: "flickr.photos.getInfo",
+	})
+	if observed.KeyID != 4 || observed.UserID == nil || *observed.UserID != 5 || observed.Lane != "photo" || observed.Facet != "photos" ||
+		observed.Attempt != 3 || observed.NodeID != "worker-a" || observed.Method != "flickr.photos.getInfo" || observed.Outcome != "quota_wait" ||
+		observed.HTTPStatus != 0 || observed.RequestID == "" {
+		t.Fatalf("quota wait record = %+v", observed)
 	}
 }
 

@@ -6,6 +6,7 @@ that serve it, or `MISSING`.
 
 | Web path | OpenAPI | Go router |
 | --- | --- | --- |
+| `/admin/calls/stats` | `/admin/calls/stats` | `/admin/calls/stats` |
 | `/admin/flags` | `/admin/flags` | `/admin/flags` |
 | `/admin/nodes` | `/admin/nodes` | `/admin/nodes` |
 | `/admin/ops/status` | `/admin/ops/status` | `/admin/ops/status` |

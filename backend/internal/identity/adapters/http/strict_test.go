@@ -102,6 +102,9 @@ func TestStrictHandlerLeavesQuotaToQuota(t *testing.T) {
 	if _, err := handler.GetAdminQuota(t.Context(), gen.GetAdminQuotaRequestObject{}); !errors.Is(err, errQuotaServedByQuota) {
 		t.Fatalf("admin quota error=%v", err)
 	}
+	if _, err := handler.GetAdminCallStats(t.Context(), gen.GetAdminCallStatsRequestObject{}); !errors.Is(err, errQuotaServedByQuota) {
+		t.Fatalf("admin call stats error=%v", err)
+	}
 }
 
 func TestStrictHandlerLeavesOpsToOps(t *testing.T) {

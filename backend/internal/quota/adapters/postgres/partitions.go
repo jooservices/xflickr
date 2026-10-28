@@ -96,10 +96,10 @@ SELECT (at AT TIME ZONE 'UTC')::date,
        key_id,
        method,
        count(*)::bigint,
-       count(*) FILTER (WHERE status IN ('fail', 'error'))::bigint,
+       count(*) FILTER (WHERE COALESCE(outcome, status) IN ('failure', 'throttled', 'fail', 'error'))::bigint,
        COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)::bigint, 0)
 FROM api_call_log
-WHERE at >= $1 AND at < $2 AND class IS NULL AND method IS NOT NULL AND status IS NOT NULL
+WHERE at >= $1 AND at < $2 AND class IS NULL AND method IS NOT NULL AND status IS NOT NULL AND outcome IS DISTINCT FROM 'quota_wait'
 GROUP BY 1, 2, 3, 4
 ON CONFLICT (day, hour, key_id, method) DO UPDATE
 SET call_count = EXCLUDED.call_count,

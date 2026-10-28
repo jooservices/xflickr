@@ -13,8 +13,9 @@ import (
 
 // Job is an application job. Args must be JSON-serializable.
 type Job struct {
-	Kind string          `json:"kind"`
-	Args json.RawMessage `json:"args"`
+	Kind    string          `json:"kind"`
+	Args    json.RawMessage `json:"args"`
+	Attempt int             `json:"-"`
 }
 
 // Options configure an individual enqueued job. Queue names are deployment

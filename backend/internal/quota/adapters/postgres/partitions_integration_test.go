@@ -12,6 +12,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 	"github.com/jooservices/xflickr/internal/quota/app"
+	flickrclient "github.com/jooservices/xflickr/pkg/flickr"
 )
 
 func TestCallLogPartitionsBatchAndRollupIntegration(t *testing.T) {
@@ -92,6 +93,86 @@ func TestCallLogPartitionsBatchAndRollupIntegration(t *testing.T) {
 	if err != nil || usage.ByClass["person"] != 1 {
 		t.Fatalf("quota usage counted diagnostic calls: %+v err=%v", usage, err)
 	}
+
+	statsAt := time.Now().UTC()
+	statsHour := statsAt.Truncate(time.Hour)
+	beforeStats, err := quotaCalls.Stats(ctx, "1h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unique := fmt.Sprintf("%d", time.Now().UnixNano())
+	method, facet := "flickr.test.observability."+unique, "observability_"+unique
+	flickrError := int64(987654)
+	okStatus, failStatus := 200, 502
+	observerUserID := userID
+	observations := []app.CallRecord{
+		{
+			At: statsAt, StartedAt: statsAt, KeyID: keyID, UserID: &observerUserID, Node: "integration-node", NodeID: "integration-node",
+			Method: method, Status: "success", Outcome: "success", LatencyMS: 10, Bytes: 11, ResponseBytes: 11, HTTPStatus: &okStatus,
+			FlickrStat: "ok", FlickrAccount: "123@example", Lane: "person", Facet: facet, Attempt: 1, RequestID: flickrclient.NewRequestID(),
+		},
+		{
+			At: statsAt, StartedAt: statsAt, KeyID: keyID, UserID: &observerUserID, Node: "integration-node", NodeID: "integration-node",
+			Method: method, Status: "failure", Outcome: "failure", ErrorCode: &flickrError, FlickrErrorCode: &flickrError,
+			ErrorMessage: "synthetic upstream failure", LatencyMS: 30, Bytes: 13, ResponseBytes: 13, HTTPStatus: &failStatus,
+			FlickrStat: "fail", FlickrAccount: "123@example", Lane: "person", Facet: facet, Attempt: 2, RequestID: flickrclient.NewRequestID(),
+		},
+		{
+			At: statsAt, StartedAt: statsAt, KeyID: keyID, UserID: &observerUserID, Node: "integration-node", NodeID: "integration-node",
+			Method: method, Status: "failure", Outcome: "failure", ErrorCode: &flickrError, FlickrErrorCode: &flickrError,
+			ErrorMessage: "synthetic upstream failure", LatencyMS: 40, Bytes: 13, ResponseBytes: 13, HTTPStatus: &failStatus,
+			FlickrStat: "fail", FlickrAccount: "123@example", Lane: "person", Facet: facet, Attempt: 3, RequestID: flickrclient.NewRequestID(),
+		},
+		{
+			At: statsAt, StartedAt: statsAt, KeyID: keyID, UserID: &observerUserID, Node: "integration-node", NodeID: "integration-node",
+			Method: method, Status: "failure", Outcome: "failure", ErrorCode: &flickrError, FlickrErrorCode: &flickrError,
+			ErrorMessage: "synthetic upstream failure", LatencyMS: 50, Bytes: 13, ResponseBytes: 13, HTTPStatus: &failStatus,
+			FlickrStat: "fail", FlickrAccount: "123@example", Lane: "person", Facet: facet, Attempt: 4, RequestID: flickrclient.NewRequestID(),
+		},
+		{
+			At: statsAt, StartedAt: statsAt, KeyID: keyID, UserID: &observerUserID, Node: "integration-node", NodeID: "integration-node",
+			Method: method, Status: "quota_wait", Outcome: "quota_wait", Lane: "person", Facet: facet, Attempt: 5, RequestID: flickrclient.NewRequestID(),
+		},
+	}
+	if err := quotaCalls.InsertCalls(ctx, observations); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items (kind, subject_key, user_id, state, updated_at) VALUES ('photos',$1,$2,'done',$4),('person',$3,$2,'done',$4),('favorites',$5,$2,'done',$4)`, "call-stats-photo-"+unique, userID, "call-stats-person-"+unique, statsAt, "call-stats-favorites-"+unique); err != nil {
+		t.Fatal(err)
+	}
+	afterStats, err := quotaCalls.Stats(ctx, "1h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for outcome, want := range map[string]int64{"success": 1, "failure": 3, "quota_wait": 1} {
+		if delta := statsCallsAt(beforeStats, statsHour, outcome, afterStats); delta != want {
+			t.Fatalf("%s calls in %s increased by %d, want %d", outcome, statsHour, delta, want)
+		}
+	}
+	if !containsCallError(afterStats.TopErrorCodes, flickrError, 3) {
+		t.Fatalf("top error codes do not include synthetic error: %+v", afterStats.TopErrorCodes)
+	}
+	if !containsMethodLatency(afterStats.LatencyByMethod, method, 35, 48.5) {
+		t.Fatalf("latency stats do not exclude quota waits or aggregate attempts: %+v", afterStats.LatencyByMethod)
+	}
+	if !containsFacetRetries(afterStats.RetriesByFacet, facet, 3) {
+		t.Fatalf("retry stats do not exclude quota waits: %+v", afterStats.RetriesByFacet)
+	}
+	beforePhotos, beforePeople := statsCompletedAt(beforeStats, statsHour)
+	afterPhotos, afterPeople := statsCompletedAt(afterStats, statsHour)
+	if afterPhotos-beforePhotos != 1 || afterPeople-beforePeople != 1 {
+		t.Fatalf("completion deltas photos=%d people=%d, want 1/1", afterPhotos-beforePhotos, afterPeople-beforePeople)
+	}
+	if err := manager.RollupCalls(ctx, statsHour, statsHour.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	var observedCalls, observedErrors, observedP95 int64
+	if err := pool.QueryRow(ctx, `SELECT call_count, errors, p95_ms FROM api_call_rollup WHERE day=$1 AND hour=$2 AND key_id=$3 AND method=$4`, statsHour.Format("2006-01-02"), int16(statsHour.Hour()), keyID, method).Scan(&observedCalls, &observedErrors, &observedP95); err != nil {
+		t.Fatal(err)
+	}
+	if observedCalls != 4 || observedErrors != 3 || observedP95 != 48 {
+		t.Fatalf("rollup included a quota wait or missed failures: calls=%d errors=%d p95=%d, want 4/3/48", observedCalls, observedErrors, observedP95)
+	}
 	var synced bool
 	if err := pool.QueryRow(ctx, `SELECT at = called_at FROM api_call_log WHERE key_id=$1 AND class IS NULL ORDER BY at LIMIT 1`, keyID).Scan(&synced); err != nil || !synced {
 		t.Fatalf("call timestamp compatibility at=called_at:%t err=%v", synced, err)
@@ -127,3 +208,52 @@ func TestCallLogPartitionsBatchAndRollupIntegration(t *testing.T) {
 }
 
 func int64Pointer(value int64) *int64 { return &value }
+
+func statsCallsAt(before app.CallStats, hour time.Time, outcome string, after app.CallStats) int64 {
+	count := func(stats app.CallStats) int64 {
+		var total int64
+		for _, row := range stats.CallsPerHour {
+			if row.Hour.Equal(hour) && row.Outcome == outcome {
+				total += row.Calls
+			}
+		}
+		return total
+	}
+	return count(after) - count(before)
+}
+
+func containsCallError(rows []app.CallErrorCode, code, calls int64) bool {
+	for _, row := range rows {
+		if row.Code == code && row.Calls >= calls {
+			return true
+		}
+	}
+	return false
+}
+
+func containsMethodLatency(rows []app.CallMethodLatency, method string, p50, p95 float64) bool {
+	for _, row := range rows {
+		if row.Method == method && row.P50MS == p50 && row.P95MS == p95 {
+			return true
+		}
+	}
+	return false
+}
+
+func containsFacetRetries(rows []app.CallFacetRetries, facet string, retries int64) bool {
+	for _, row := range rows {
+		if row.Facet == facet && row.Retries == retries {
+			return true
+		}
+	}
+	return false
+}
+
+func statsCompletedAt(stats app.CallStats, hour time.Time) (int64, int64) {
+	for _, row := range stats.CompletedPerHour {
+		if row.Hour.Equal(hour) {
+			return row.Photos, row.People
+		}
+	}
+	return 0, 0
+}

@@ -68,6 +68,7 @@ export const ROUTES: Route[] = [
   route('PUT', '/me/crawl/resume', contract.ResumeCrawlContactResponse),
   route('GET', '/admin/queue', contract.GetAdminQueueResponse),
   route('GET', '/admin/quota', contract.GetAdminQuotaResponse),
+  route('GET', '/admin/calls/stats', contract.GetAdminCallStatsResponse),
   route('GET', '/admin/ops/status', contract.GetAdminOpsStatusResponse),
   route('POST', '/downloads', contract.CreateDownloadResponse),
   route('GET', '/downloads/{id}/parts', contract.GetDownloadPartsResponse),

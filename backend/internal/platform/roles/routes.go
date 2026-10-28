@@ -69,6 +69,7 @@ var routeAccess = map[string]identityhttp.Access{
 	"PUT /admin/flags":           identityhttp.AccessAdmin,
 	"GET /admin/queue":           identityhttp.AccessAdmin,
 	"GET /admin/quota":           identityhttp.AccessAdmin,
+	"GET /admin/calls/stats":     identityhttp.AccessAdmin,
 	"GET /admin/ops/status":      identityhttp.AccessAdmin,
 	"POST /admin/nodes":          identityhttp.AccessAdmin,
 

@@ -17,8 +17,12 @@ type LoginProbe struct {
 	timeout time.Duration
 }
 
-func NewLoginProbe(baseURL string, httpClient *http.Client) LoginProbe {
-	return LoginProbe{client: flickrclient.NewClient(baseURL, httpClient), timeout: loginTimeout}
+func NewLoginProbe(baseURL string, httpClient *http.Client, observers ...flickrclient.CallObserver) LoginProbe {
+	client := flickrclient.NewClient(baseURL, httpClient)
+	if len(observers) > 0 {
+		client.SetCallObserver(observers[0])
+	}
+	return LoginProbe{client: client, timeout: loginTimeout}
 }
 
 func (p LoginProbe) TestLogin(ctx context.Context, credentials flickrclient.Credentials) (flickrclient.LoginUser, error) {

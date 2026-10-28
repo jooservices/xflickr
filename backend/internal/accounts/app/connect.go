@@ -157,6 +157,8 @@ func (c Connect) Start(ctx context.Context, userID, keyID int64) (string, error)
 	if err != nil {
 		return "", err
 	}
+	ownerID := userID
+	ctx = flickrclient.WithCallContext(ctx, flickrclient.CallContext{KeyID: keyID, UserID: &ownerID, Lane: "interactive", Facet: "oauth", Attempt: 1})
 	request, err := c.Authorizer.RequestToken(ctx, consumer, callback)
 	if err != nil {
 		return "", err
@@ -209,6 +211,8 @@ func (c Connect) Complete(ctx context.Context, userID int64, state, oauthToken, 
 	if err != nil {
 		return domain.Account{}, err
 	}
+	ownerID := userID
+	ctx = flickrclient.WithCallContext(ctx, flickrclient.CallContext{KeyID: pending.KeyID, UserID: &ownerID, Lane: "interactive", Facet: "oauth", Attempt: 1})
 	grant, err := c.Authorizer.AccessToken(ctx, consumer, RequestToken{Token: pending.RequestToken, Secret: string(requestSecret)}, verifier)
 	if err != nil {
 		return domain.Account{}, err

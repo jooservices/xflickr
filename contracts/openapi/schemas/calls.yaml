@@ -1,0 +1,64 @@
+CallOutcomeHour:
+  type: object
+  additionalProperties: false
+  required: [hour, outcome, calls]
+  properties:
+    hour: { type: string, format: date-time }
+    outcome: { type: string, enum: [success, failure, throttled, quota_wait] }
+    calls: { type: integer, format: int64, minimum: 0 }
+
+CallErrorCode:
+  type: object
+  additionalProperties: false
+  required: [code, calls]
+  properties:
+    code: { type: integer, format: int64 }
+    calls: { type: integer, format: int64, minimum: 0 }
+
+CallMethodLatency:
+  type: object
+  additionalProperties: false
+  required: [method, p50_ms, p95_ms]
+  properties:
+    method: { type: string }
+    p50_ms: { type: number, minimum: 0 }
+    p95_ms: { type: number, minimum: 0 }
+
+CallFacetRetries:
+  type: object
+  additionalProperties: false
+  required: [facet, retries]
+  properties:
+    facet: { type: string }
+    retries: { type: integer, format: int64, minimum: 0 }
+
+CallCompletedHour:
+  type: object
+  additionalProperties: false
+  required: [hour, photos, people]
+  properties:
+    hour: { type: string, format: date-time }
+    photos: { type: integer, format: int64, minimum: 0, description: Completed work items with kind photos. }
+    people: { type: integer, format: int64, minimum: 0, description: Completed non-photo work items. }
+
+CallStats:
+  type: object
+  additionalProperties: false
+  required: [window, calls_per_hour, top_error_codes, latency_by_method, retries_by_facet, completed_per_hour]
+  properties:
+    window: { type: string, enum: [1h, 24h] }
+    calls_per_hour:
+      type: array
+      items: { $ref: '#/CallOutcomeHour' }
+    top_error_codes:
+      type: array
+      items: { $ref: '#/CallErrorCode' }
+    latency_by_method:
+      type: array
+      items: { $ref: '#/CallMethodLatency' }
+    retries_by_facet:
+      type: array
+      items: { $ref: '#/CallFacetRetries' }
+    completed_per_hour:
+      type: array
+      items: { $ref: '#/CallCompletedHour' }

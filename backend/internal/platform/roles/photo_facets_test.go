@@ -29,7 +29,7 @@ func TestPhotoFacetClientUsesFakeFlickrAndPhotoQuota(t *testing.T) {
 
 	rows := make([]pgx.Row, 5)
 	for i := range rows {
-		rows[i] = credentialRow{values: []any{"fake-api-key", "valid"}}
+		rows[i] = credentialRow{values: []any{"fake-api-key", "valid", int64(9)}}
 	}
 	governor := &photoFacetGovernorFake{}
 	client := photoFacetClient{
@@ -62,14 +62,14 @@ func TestPhotoFacetClientUsesFakeFlickrAndPhotoQuota(t *testing.T) {
 func TestPhotoFacetClientCallFailures(t *testing.T) {
 	boom := errors.New("database unavailable")
 	validPool := func() *credentialPool {
-		return &credentialPool{rows: []pgx.Row{credentialRow{values: []any{"fake-api-key", "valid"}}}}
+		return &credentialPool{rows: []pgx.Row{credentialRow{values: []any{"fake-api-key", "valid", int64(9)}}}}
 	}
 	requestCalled := false
-	request := func(flickrclient.Credentials) error {
+	request := func(context.Context, flickrclient.Credentials) error {
 		requestCalled = true
 		return nil
 	}
-	if err := (photoFacetClient{}).call(context.Background(), 7, request); err == nil {
+	if err := (photoFacetClient{}).call(context.Background(), 7, "flickr.test.echo", "test_facet", request); err == nil {
 		t.Fatal("call without dependencies succeeded")
 	}
 	if requestCalled {
@@ -78,24 +78,24 @@ func TestPhotoFacetClientCallFailures(t *testing.T) {
 	clientFor := func(pool *credentialPool, governor *photoFacetGovernorFake) photoFacetClient {
 		return photoFacetClient{Pool: pool, Client: flickrclient.NewClient("http://127.0.0.1", nil), Quota: governor}
 	}
-	if err := clientFor(&credentialPool{rows: []pgx.Row{credentialRow{err: boom}}}, &photoFacetGovernorFake{}).call(context.Background(), 7, request); !errors.Is(err, boom) {
+	if err := clientFor(&credentialPool{rows: []pgx.Row{credentialRow{err: boom}}}, &photoFacetGovernorFake{}).call(context.Background(), 7, "flickr.test.echo", "test_facet", request); !errors.Is(err, boom) {
 		t.Fatalf("key query error = %v, want database error", err)
 	}
-	if err := clientFor(&credentialPool{rows: []pgx.Row{credentialRow{values: []any{"fake-api-key", "revoked"}}}}, &photoFacetGovernorFake{}).call(context.Background(), 7, request); err == nil {
+	if err := clientFor(&credentialPool{rows: []pgx.Row{credentialRow{values: []any{"fake-api-key", "revoked", int64(9)}}}}, &photoFacetGovernorFake{}).call(context.Background(), 7, "flickr.test.echo", "test_facet", request); err == nil {
 		t.Fatal("call with revoked key succeeded")
 	}
 	governor := &photoFacetGovernorFake{acquireErr: boom}
-	if err := clientFor(validPool(), governor).call(context.Background(), 7, request); !errors.Is(err, boom) {
+	if err := clientFor(validPool(), governor).call(context.Background(), 7, "flickr.test.echo", "test_facet", request); !errors.Is(err, boom) {
 		t.Fatalf("quota acquire error = %v, want quota error", err)
 	}
 	governor = &photoFacetGovernorFake{noPermit: true, wait: time.Minute}
-	err := clientFor(validPool(), governor).call(context.Background(), 7, request)
+	err := clientFor(validPool(), governor).call(context.Background(), 7, "flickr.test.echo", "test_facet", request)
 	var waiting *crawlapp.QuotaWaitError
 	if !errors.As(err, &waiting) || !errors.Is(err, flickrclient.ErrQuotaExceeded) || waiting.Wait != time.Minute {
 		t.Fatalf("no permit error=%v, want one-minute quota wait", err)
 	}
 	governor = &photoFacetGovernorFake{doneErr: boom}
-	err = clientFor(validPool(), governor).call(context.Background(), 7, request)
+	err = clientFor(validPool(), governor).call(context.Background(), 7, "flickr.test.echo", "test_facet", request)
 	if !errors.Is(err, boom) || !requestCalled {
 		t.Fatalf("permit completion error=%v requestCalled=%t", err, requestCalled)
 	}

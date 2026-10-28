@@ -17,9 +17,10 @@ import (
 	quotaPostgres "github.com/jooservices/xflickr/internal/quota/adapters/postgres"
 	quotaRedis "github.com/jooservices/xflickr/internal/quota/adapters/redis"
 	quotadomain "github.com/jooservices/xflickr/internal/quota/domain"
+	flickrclient "github.com/jooservices/xflickr/pkg/flickr"
 )
 
-func newAccountVerifier(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config) (*accountspostgres.Repository, accountsapp.Verify, error) {
+func newAccountVerifier(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, observers ...flickrclient.CallObserver) (*accountspostgres.Repository, accountsapp.Verify, error) {
 	if pool == nil {
 		return nil, accountsapp.Verify{}, errors.New("accounts: PostgreSQL pool is required for verification")
 	}
@@ -37,7 +38,7 @@ func newAccountVerifier(pool *pgxpool.Pool, redisClient redisv9.UniversalClient,
 	quota := quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Recorder: quotaPostgres.CallLog{Pool: pool}}
 	verifier := accountsapp.Verify{
 		Repository: repository,
-		Checker:    accountsflickr.NewLoginProbe(flickrRESTURL(cfg), nil),
+		Checker:    accountsflickr.NewLoginProbe(flickrRESTURL(cfg), nil, observers...),
 		Cipher:     cipher,
 		Quota:      interactiveAccountQuota{Governor: quota},
 	}

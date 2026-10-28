@@ -78,6 +78,12 @@ func (r valRow) Scan(dest ...any) error {
 				return errors.New("type mismatch")
 			}
 			*target = v
+		case *float64:
+			v, ok := value.(float64)
+			if !ok {
+				return errors.New("type mismatch")
+			}
+			*target = v
 		case *string:
 			v, ok := value.(string)
 			if !ok {
@@ -225,20 +231,24 @@ func TestCallLogRecordAndPrune(t *testing.T) {
 
 func TestCallLogInsertCalls(t *testing.T) {
 	userID, accountID, errorCode := int64(2), int64(3), int64(105)
+	httpStatus := 502
 	pool := &fakePool{}
 	record := app.CallRecord{
 		At: at, KeyID: 4, UserID: &userID, AccountID: &accountID, Node: "node-1",
 		Method: "flickr.people.getInfo", Status: "fail", ErrorCode: &errorCode,
-		LatencyMS: 75, Bytes: 42, Lane: "person",
+		LatencyMS: 75, Bytes: 42, Lane: "person", FlickrAccount: "123@example", Facet: "person_info", Attempt: 2,
+		StartedAt: at.Add(-75 * time.Millisecond), HTTPStatus: &httpStatus, FlickrStat: "fail", FlickrErrorCode: &errorCode,
+		ErrorMessage: "upstream unavailable", ResponseBytes: 42, NodeID: "node-1", RequestID: "00000000-0000-4000-8000-000000000001", Outcome: "failure",
 	}
 	if err := (CallLog{Pool: pool}).InsertCalls(context.Background(), []app.CallRecord{record}); err != nil {
 		t.Fatal(err)
 	}
-	if len(pool.copyData) != 1 || len(pool.copyColumns) != 12 || len(pool.copyTable) != 1 || pool.copyTable[0] != "api_call_log" {
+	if len(pool.copyData) != 1 || len(pool.copyColumns) != 24 || len(pool.copyTable) != 1 || pool.copyTable[0] != "api_call_log" {
 		t.Fatalf("copy target=%v columns=%v rows=%v", pool.copyTable, pool.copyColumns, pool.copyData)
 	}
 	row := pool.copyData[0]
-	if !row[0].(time.Time).Equal(at) || !row[1].(time.Time).Equal(at) || row[2] != int64(4) || row[3] != userID || row[4] != accountID || row[5] != "node-1" || row[6] != record.Method || row[7] != "fail" || row[8] != errorCode || row[9] != int64(75) || row[10] != int64(42) || row[11] != "person" {
+	if !row[0].(time.Time).Equal(at) || !row[1].(time.Time).Equal(at) || row[2] != int64(4) || row[3] != userID || row[4] != accountID || row[5] != "node-1" || row[6] != record.Method || row[7] != "fail" || row[8] != errorCode || row[9] != int64(75) || row[10] != int64(42) || row[11] != "person" ||
+		row[12] != "123@example" || row[13] != "person_info" || row[14] != 2 || !row[15].(time.Time).Equal(record.StartedAt) || row[16] != httpStatus || row[17] != "fail" || row[18] != errorCode || row[19] != "upstream unavailable" || row[20] != int64(42) || row[21] != "node-1" || row[22] != record.RequestID || row[23] != "failure" {
 		t.Fatalf("copied row = %#v", row)
 	}
 	if err := (CallLog{Pool: pool}).InsertCalls(context.Background(), nil); err != nil {
@@ -255,5 +265,57 @@ func TestCallLogInsertCalls(t *testing.T) {
 	}
 	if err := (CallLog{}).InsertCalls(context.Background(), []app.CallRecord{record}); err == nil {
 		t.Fatal("nil pool accepted")
+	}
+}
+
+type scriptedStatsPool struct {
+	results []pgx.Rows
+	queries []string
+	args    [][]any
+}
+
+func (p *scriptedStatsPool) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, nil
+}
+
+func (p *scriptedStatsPool) Query(_ context.Context, query string, args ...any) (pgx.Rows, error) {
+	p.queries = append(p.queries, query)
+	p.args = append(p.args, append([]any(nil), args...))
+	if len(p.results) == 0 {
+		return nil, errors.New("unexpected query")
+	}
+	rows := p.results[0]
+	p.results = p.results[1:]
+	return rows, nil
+}
+
+func TestCallLogStatsReadsAllAggregates(t *testing.T) {
+	hour := at.Truncate(time.Hour)
+	pool := &scriptedStatsPool{results: []pgx.Rows{
+		&fakeRows{data: [][]any{{hour, "failure", int64(4)}}},
+		&fakeRows{data: [][]any{{int64(105), int64(3)}}},
+		&fakeRows{data: [][]any{{"flickr.photos.getSizes", float64(12.5), float64(98.75)}}},
+		&fakeRows{data: [][]any{{"photo_sizes", int64(2)}}},
+		&fakeRows{data: [][]any{{hour, int64(9), int64(5)}}},
+	}}
+	got, err := (CallLog{Pool: pool}).Stats(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Window != "24h" || len(pool.queries) != 5 || len(pool.results) != 0 ||
+		len(got.CallsPerHour) != 1 || got.CallsPerHour[0] != (app.CallOutcomeHour{Hour: hour, Outcome: "failure", Calls: 4}) ||
+		len(got.TopErrorCodes) != 1 || got.TopErrorCodes[0] != (app.CallErrorCode{Code: 105, Calls: 3}) ||
+		len(got.LatencyByMethod) != 1 || got.LatencyByMethod[0] != (app.CallMethodLatency{Method: "flickr.photos.getSizes", P50MS: 12.5, P95MS: 98.75}) ||
+		len(got.RetriesByFacet) != 1 || got.RetriesByFacet[0] != (app.CallFacetRetries{Facet: "photo_sizes", Retries: 2}) ||
+		len(got.CompletedPerHour) != 1 || got.CompletedPerHour[0] != (app.CallCompletedHour{Hour: hour, Photos: 9, People: 5}) {
+		t.Fatalf("stats = %+v, queries=%d", got, len(pool.queries))
+	}
+	for i, args := range pool.args {
+		if len(args) != 1 {
+			t.Fatalf("query %d args = %#v", i, args)
+		}
+		if since, ok := args[0].(time.Time); !ok || time.Since(since) < 23*time.Hour {
+			t.Fatalf("query %d window arg = %#v", i, args[0])
+		}
 	}
 }

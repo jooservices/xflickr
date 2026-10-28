@@ -10,9 +10,11 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jooservices/xflickr/pkg/flickr/oauth"
 )
@@ -65,6 +67,7 @@ type Client struct {
 	httpClient      *http.Client
 	observer        EventObserver
 	contextObserver ContextEventObserver
+	callObserver    CallObserver
 	now             func() time.Time
 	newNonce        func() (string, error)
 }
@@ -109,16 +112,57 @@ func (c *Client) SetNonceGenerator(fn func() (string, error)) {
 	}
 }
 
+// SetCallObserver wires the non-blocking call recorder for this client.
+func (c *Client) SetCallObserver(observer CallObserver) {
+	if c != nil {
+		c.callObserver = observer
+	}
+}
+
+// RecordQuotaWait writes an attribution record for a denied permit without
+// treating it as an HTTP request or a quota consuming call.
+func (c *Client) RecordQuotaWait(ctx context.Context, method string) {
+	metadata, _ := CallContextFrom(ctx)
+	if metadata.RequestID == "" {
+		metadata.RequestID = NewRequestID()
+	}
+	if metadata.Attempt <= 0 {
+		metadata.Attempt = 1
+	}
+	if metadata.Lane == "" {
+		metadata.Lane = "interactive"
+	}
+	ctx = WithCallContext(ctx, metadata)
+	c.emitCallEvent(ctx, CallRecord{
+		CallContext: metadata, Method: method, StartedAt: time.Now().UTC(),
+		Outcome: "quota_wait", ErrorMessage: "quota capacity unavailable",
+	})
+}
+
 // Call invokes a Flickr REST method using form encoded parameters. Flickr's
 // JSON response is returned intact on success. Calls that carry an OAuth
 // token are signed with HMAC-SHA1.
 //
 //nolint:cyclop // single Flickr call pipeline (sign, send, decode, classify); tracked for a refactor
 func (c *Client) Call(ctx context.Context, creds Credentials, method string, params map[string]string) (payload json.RawMessage, meta CallMeta, callErr error) {
-	started := time.Now()
+	started := time.Now().UTC()
+	meta.StartedAt = started
+	callContext, _ := CallContextFrom(ctx)
+	if callContext.RequestID == "" {
+		callContext.RequestID = NewRequestID()
+	}
+	if callContext.Attempt <= 0 {
+		callContext.Attempt = 1
+	}
+	if callContext.Lane == "" {
+		callContext.Lane = "interactive"
+	}
+	ctx = WithCallContext(ctx, callContext)
 	defer func() {
 		meta.Latency = time.Since(started)
-		c.emitCallEvent(ctx, method, meta)
+		meta.ErrorMessage = callErrorMessage(callErr, creds)
+		record := callRecord(ctx, method, meta, callErr)
+		c.emitCallEvent(ctx, record)
 	}()
 
 	method = strings.TrimSpace(method)
@@ -179,6 +223,9 @@ func (c *Client) Call(ctx context.Context, creds Credentials, method string, par
 	envelope, decodeErr := decodeResponse(body)
 	if decodeErr == nil {
 		meta.ErrorCode = envelope.errorCode()
+		if strings.EqualFold(envelope.Stat, "ok") || strings.EqualFold(envelope.Stat, "fail") {
+			meta.FlickrStat = strings.ToLower(envelope.Stat)
+		}
 	}
 
 	if response.StatusCode == http.StatusTooManyRequests {
@@ -232,32 +279,128 @@ func (c *Client) signForm(endpoint string, creds Credentials, form url.Values) (
 	return signed, nil
 }
 
-func (c *Client) emitCallEvent(ctx context.Context, method string, meta CallMeta) {
+func (c *Client) emitCallEvent(ctx context.Context, record CallRecord) {
 	fields := map[string]any{
-		"method":     method,
-		"status":     meta.HTTPStatus,
-		"latency_ms": meta.Latency.Milliseconds(),
-		"bytes":      meta.Bytes,
-		"error_code": meta.ErrorCode,
+		"method":            record.Method,
+		"started_at":        record.StartedAt.UTC().Format(time.RFC3339Nano),
+		"http_status":       record.HTTPStatus,
+		"latency_ms":        record.Latency.Milliseconds(),
+		"response_bytes":    record.ResponseBytes,
+		"flickr_stat":       record.FlickrStat,
+		"error_code":        record.FlickrErrorCode,
+		"flickr_error_code": record.FlickrErrorCode,
+		"outcome":           record.Outcome,
+		"facet":             record.Facet,
+		"attempt":           record.Attempt,
+		"request_id":        record.RequestID,
+		"node_id":           record.NodeID,
+		"key_id":            record.KeyID,
+		"user_id":           callIDValue(record.UserID),
+		"account_id":        callIDValue(record.AccountID),
+		"flickr_account":    record.FlickrAccount,
+		"lane":              record.Lane,
 	}
-	if c != nil && c.contextObserver != nil {
+	if record.ErrorMessage != "" {
+		fields["error_message"] = record.ErrorMessage
+	}
+	switch {
+	case c != nil && c.callObserver != nil:
+		c.callObserver.RecordCall(ctx, record)
+	case c != nil && c.contextObserver != nil:
 		c.contextObserver.EventContext(ctx, "flickr.call", fields)
-		return
-	}
-	if c != nil && c.observer != nil {
+	case c != nil && c.observer != nil:
 		c.observer.Event("flickr.call", fields)
-		return
+	default:
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		fields["event.name"] = "flickr.call"
+		attrs := make([]slog.Attr, 0, len(fields))
+		for key, value := range fields {
+			attrs = append(attrs, slog.Any(key, value))
+		}
+		slog.Default().LogAttrs(ctx, slog.LevelInfo, "flickr.call", attrs...)
 	}
-	if ctx == nil {
-		ctx = context.Background()
+	if record.Outcome != "success" && (c == nil || c.callObserver == nil) {
+		slog.Default().WarnContext(ctx, "flickr call failed", "method", record.Method, "outcome", record.Outcome, "error_code", record.FlickrErrorCode, "request_id", record.RequestID)
 	}
-	slog.Default().LogAttrs(ctx, slog.LevelInfo, "flickr.call",
-		slog.String("method", method),
-		slog.Int("status", meta.HTTPStatus),
-		slog.Int64("latency_ms", meta.Latency.Milliseconds()),
-		slog.Int64("bytes", meta.Bytes),
-		slog.Int("error_code", meta.ErrorCode),
-	)
+}
+
+func callRecord(ctx context.Context, method string, meta CallMeta, callErr error) CallRecord {
+	metadata, _ := CallContextFrom(ctx)
+	status, outcome := meta.HTTPStatus, "success"
+	if callErr != nil {
+		outcome = "failure"
+		if errors.Is(callErr, ErrRateLimited) || meta.HTTPStatus == http.StatusTooManyRequests {
+			outcome = "throttled"
+		}
+	}
+	var userID, accountID *int64
+	if metadata.UserID != nil {
+		value := *metadata.UserID
+		userID = &value
+	}
+	if metadata.AccountID != nil {
+		value := *metadata.AccountID
+		accountID = &value
+	}
+	return CallRecord{
+		CallContext: CallContext{
+			KeyID: metadata.KeyID, UserID: userID, AccountID: accountID, FlickrAccount: metadata.FlickrAccount,
+			Lane: metadata.Lane, Facet: metadata.Facet, Attempt: metadata.Attempt, NodeID: metadata.NodeID, RequestID: metadata.RequestID,
+		},
+		Method: strings.TrimSpace(method), StartedAt: meta.StartedAt.UTC(),
+		Latency: meta.Latency, HTTPStatus: status, FlickrStat: meta.FlickrStat,
+		FlickrErrorCode: meta.ErrorCode, ErrorMessage: meta.ErrorMessage,
+		ResponseBytes: meta.Bytes, Outcome: outcome,
+	}
+}
+
+func callErrorMessage(err error, creds Credentials) string {
+	if err == nil {
+		return ""
+	}
+	message := "upstream request failed"
+	var call *CallError
+	if errors.As(err, &call) {
+		switch {
+		case call.Message != "":
+			message = call.Message
+		case call.Kind != nil:
+			message = call.Kind.Error()
+		}
+	}
+	for _, secret := range []string{creds.APIKey, creds.APISecret, creds.Token, creds.TokenSecret} {
+		if secret != "" {
+			message = strings.ReplaceAll(message, secret, "[REDACTED]")
+		}
+	}
+	message = sensitiveQueryValue.ReplaceAllString(message, "$1=[REDACTED]")
+	message = strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r == '\t' || !utf8.ValidRune(r) {
+			return ' '
+		}
+		if r < 0x20 {
+			return -1
+		}
+		return r
+	}, message)
+	if len(message) > 512 {
+		message = message[:512]
+		for !utf8.ValidString(message) {
+			message = message[:len(message)-1]
+		}
+	}
+	return message
+}
+
+var sensitiveQueryValue = regexp.MustCompile(`(?i)(api_key|oauth_consumer_key|oauth_token_secret|oauth_token|oauth_signature|oauth_verifier)=([^&[:space:]]+)`)
+
+func callIDValue(value *int64) any {
+	if value == nil {
+		return nil
+	}
+	return *value
 }
 
 func parseEndpoint(raw string) (*url.URL, error) {

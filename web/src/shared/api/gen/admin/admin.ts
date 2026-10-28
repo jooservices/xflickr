@@ -26,10 +26,12 @@ import type {
   AdminQuota,
   AdminUser,
   AdminUserPage,
+  CallStats,
   CreateNodeRequest,
   CreatedNode,
   Error,
   FeatureFlag,
+  GetAdminCallStatsParams,
   ListAdminUsersParams,
   OpsStatus,
   Plan,
@@ -1416,6 +1418,173 @@ export function useGetAdminQuota<TData = Awaited<ReturnType<typeof getAdminQuota
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetAdminQuotaQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type getAdminCallStatsResponse200 = {
+  data: CallStats;
+  status: 200;
+};
+
+export type getAdminCallStatsResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type getAdminCallStatsResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type getAdminCallStatsResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type getAdminCallStatsResponseSuccess = getAdminCallStatsResponse200 & {
+  headers: Headers;
+};
+export type getAdminCallStatsResponseError = (
+  getAdminCallStatsResponse400 | getAdminCallStatsResponse401 | getAdminCallStatsResponse403
+) & {
+  headers: Headers;
+};
+
+export type getAdminCallStatsResponse =
+  getAdminCallStatsResponseSuccess | getAdminCallStatsResponseError;
+
+export const getGetAdminCallStatsUrl = (params: GetAdminCallStatsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/admin/calls/stats?${stringifiedParams}`
+    : `/admin/calls/stats`;
+};
+
+/**
+ * @summary Get Flickr call statistics
+ */
+export const getAdminCallStats = async (
+  params: GetAdminCallStatsParams,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getAdminCallStatsResponse> => {
+  return customFetch<getAdminCallStatsResponse>(getGetAdminCallStatsUrl(params), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getGetAdminCallStatsQueryKey = (params?: GetAdminCallStatsParams) => {
+  return [`/admin/calls/stats`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetAdminCallStatsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminCallStats>>,
+  TError = Error,
+>(
+  params: GetAdminCallStatsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminCallStats>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminCallStatsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminCallStats>>> = ({ signal }) =>
+    getAdminCallStats(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminCallStats>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetAdminCallStatsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAdminCallStats>>
+>;
+export type GetAdminCallStatsQueryError = Error;
+
+export function useGetAdminCallStats<
+  TData = Awaited<ReturnType<typeof getAdminCallStats>>,
+  TError = Error,
+>(
+  params: GetAdminCallStatsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminCallStats>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminCallStats>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminCallStats>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAdminCallStats<
+  TData = Awaited<ReturnType<typeof getAdminCallStats>>,
+  TError = Error,
+>(
+  params: GetAdminCallStatsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminCallStats>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminCallStats>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminCallStats>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAdminCallStats<
+  TData = Awaited<ReturnType<typeof getAdminCallStats>>,
+  TError = Error,
+>(
+  params: GetAdminCallStatsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminCallStats>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get Flickr call statistics
+ */
+
+export function useGetAdminCallStats<
+  TData = Awaited<ReturnType<typeof getAdminCallStats>>,
+  TError = Error,
+>(
+  params: GetAdminCallStatsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminCallStats>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminCallStatsQueryOptions(params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

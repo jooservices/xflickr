@@ -181,6 +181,10 @@ func (StrictHandler) GetAdminQuota(context.Context, gen.GetAdminQuotaRequestObje
 	return nil, errQuotaServedByQuota
 }
 
+func (StrictHandler) GetAdminCallStats(context.Context, gen.GetAdminCallStatsRequestObject) (gen.GetAdminCallStatsResponseObject, error) {
+	return nil, errQuotaServedByQuota
+}
+
 var errOpsServedByOps = errors.New("identity: ops status is served by the ops module")
 
 var errFeatureFlagsServedBySettings = errors.New("identity: feature flags are served by the settings module")

@@ -1,0 +1,32 @@
+stats:
+  get:
+    operationId: GetAdminCallStats
+    tags: [admin]
+    summary: Get Flickr call statistics
+    parameters:
+      - name: window
+        in: query
+        required: true
+        description: Rolling period to summarize.
+        schema: { type: string, enum: [1h, 24h] }
+    responses:
+      '200':
+        description: Flickr call and crawl completion statistics grouped by hour.
+        content:
+          application/json:
+            schema: { $ref: ../schemas/calls.yaml#/CallStats }
+      '400':
+        description: Unsupported statistics window.
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '401':
+        description: Authentication required.
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '403':
+        description: Administrator role required.
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }

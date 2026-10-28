@@ -43,16 +43,23 @@ type Governor interface {
 
 // Request is one Flickr call on behalf of a work item.
 type Request struct {
-	KeyID  int64
-	UserID int64
-	Lane   domain.Lane
-	Method string
-	Params map[string]string
+	KeyID   int64
+	UserID  int64
+	Lane    domain.Lane
+	Facet   string
+	Attempt int
+	Method  string
+	Params  map[string]string
 }
 
 // Flickr performs a call with the credentials of the key and user.
 type Flickr interface {
 	Call(ctx context.Context, request Request) (json.RawMessage, error)
+}
+
+// QuotaWaitRecorder records a denied permit without counting an upstream call.
+type QuotaWaitRecorder interface {
+	RecordQuotaWait(context.Context, Request)
 }
 
 // NodeHealth receives reports that this node's IP is blocked (JOOXF-13).
@@ -239,9 +246,13 @@ func (e *Engine) run(ctx context.Context, item domain.Item, facet domain.Facet) 
 		return e.hold(ctx, item, e.Timing.withDefaults().QuotaWait, "quota governor: "+err.Error())
 	}
 	if permit == nil {
+		request := Request{KeyID: keyID, UserID: item.UserID, Lane: facet.Lane(), Facet: item.Kind, Attempt: item.Attempts + 1, Method: item.Cursor.Method, Params: pageParams(item.Cursor)}
+		if recorder, ok := e.Flickr.(QuotaWaitRecorder); ok {
+			recorder.RecordQuotaWait(ctx, request)
+		}
 		return e.hold(ctx, item, wait, "waiting for quota")
 	}
-	payload, callErr := e.Flickr.Call(ctx, Request{KeyID: keyID, UserID: item.UserID, Lane: facet.Lane(), Method: item.Cursor.Method, Params: pageParams(item.Cursor)})
+	payload, callErr := e.Flickr.Call(ctx, Request{KeyID: keyID, UserID: item.UserID, Lane: facet.Lane(), Facet: item.Kind, Attempt: item.Attempts + 1, Method: item.Cursor.Method, Params: pageParams(item.Cursor)})
 	if doneErr := permit.Done(callErr); doneErr != nil {
 		e.logger().WarnContext(ctx, "crawl permit release failed", "work_item_id", item.ID, "error", doneErr)
 	}
