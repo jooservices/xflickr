@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Defaults and plans — XFlickr admin mockup</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b0f15;color:#d6dee8;font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1440px;margin:auto;padding:24px}
+.theme{--bg:#0b0f15;--surface:#11171f;--sunken:#161e28;--raise:#1c2632;--line:#222c3a;--border:#7a8798;--ink:#d6dee8;--muted:#a3afbf;--accent:#4cb4d8;--accent-ink:#04131a;--ok:#3cb87c;--warn:#e2ae3d;--bad:#f2766b;--radius:9px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:22px;margin:0 0 28px;color-scheme:dark}
+.theme[data-theme="light"]{--bg:#eef1f5;--surface:#fff;--sunken:#e4e9ef;--raise:#dce3eb;--line:#d3dbe5;--border:#69798b;--ink:#1a222c;--muted:#536273;--accent:#08658a;--accent-ink:#fff;--ok:#187244;--warn:#875300;--bad:#c12824;background:var(--bg);color-scheme:light}
+.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px}
+.kicker,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.kicker{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+h1{font-size:26px;line-height:1.2;margin:4px 0 6px}
+h2{font-size:17px;margin:0 0 12px}
+h3{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px}
+p{margin:4px 0 12px;color:var(--muted)}
+button{font:inherit;border:1px solid var(--border);border-radius:7px;background:var(--sunken);color:var(--ink);padding:8px 12px}
+.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
+.badge{display:inline-flex;border:1px solid var(--border);border-radius:999px;padding:3px 8px;color:var(--muted);font-size:12px}
+.viewport{color:var(--muted);font-size:12px;text-align:right}
+.state-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.state{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:16px;min-width:0}
+.state-name{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.panel{background:var(--sunken);border:1px solid var(--line);border-radius:7px;padding:12px;margin:10px 0}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.field{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:9px;min-width:0}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+.field strong{font-variant-numeric:tabular-nums}
+.field input:not([type=checkbox]){width:100%;max-width:100%;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--ink);padding:5px;font:inherit;font-variant-numeric:tabular-nums}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.5;cursor:not-allowed}
+.field small{display:block;color:var(--muted);margin-top:3px}
+.status{color:var(--ok);font-weight:700}
+.warn{color:var(--warn)}
+.error{color:var(--bad)}
+.table-wrap{overflow:hidden;border:1px solid var(--line);border-radius:7px}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--sunken);color:var(--muted);font-weight:600}
+tr:last-child td{border-bottom:0}
+.mobile-cards{display:none}
+.audit{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.audit input{flex:1;min-width:180px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--ink);padding:9px}
+.skeleton{height:22px;border-radius:4px;background:var(--raise);margin:8px 0}
+.skeleton.wide{width:82%}.skeleton.short{width:48%}
+.empty,.error-box{text-align:center;padding:24px 12px}
+.alert{border-left:3px solid var(--bad);padding:10px 12px;background:var(--sunken);margin:12px 0}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+@media(max-width:720px){.wrap{padding:12px}.theme{padding:14px}.top{align-items:flex-start;flex-direction:column}.viewport{text-align:left}.state-grid{grid-template-columns:1fr}.grid{grid-template-columns:1fr}.desktop-table{display:none}.mobile-cards{display:grid;gap:8px}.audit{align-items:stretch;flex-direction:column}.audit input{min-width:0}.actions button{flex:1}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="viewport">Static review board · responsive at 1440 px desktop and 390 px mobile · no network or scripts</div>
+  <section class="theme" data-theme="dark" aria-label="ADMIN dark theme preview">
+    <header class="top">
+      <div><div class="kicker">ADMIN · dark control room</div><h1>Defaults and plans</h1><p>Review global defaults, plan entitlements, and feature-flag rollout settings.</p></div>
+      <div class="actions"><span class="badge">Updated 2 min ago</span><button type="button">Refresh</button></div>
+    </header>
+    <div class="state-grid">
+      <article class="state" data-state="ready">
+        <div class="state-name"><h2>Ready · illustrative values</h2><span class="badge status">Current revision 18</span></div>
+        <p>Illustrative sample values, not live configuration. Static controls do not save changes.</p>
+        <div class="panel"><h3>Global defaults</h3><div class="grid">
+          <div class="field"><label>Default depth · cap</label><strong>Source / effective: 2 · cap 4</strong><input type="number" value="2" min="1" max="4" aria-label="Default depth"><input type="number" value="4" min="1" max="4" aria-label="Maximum depth cap"><small>Source: application default · effective before user override</small></div>
+          <div class="field"><label>Hourly ceiling · reserve</label><strong>3,600 · 100 calls</strong><input type="number" value="3600" min="1" aria-label="Hourly ceiling"><input type="number" value="100" min="0" aria-label="Interactive reserve"><small>Source: quota policy · interactive reserve</small></div>
+          <div class="field"><label>Rate · burst bucket</label><strong>4 calls/s · 5 tokens</strong><input type="number" value="4" min="1" aria-label="Calls per second"><input type="number" value="5" min="1" aria-label="Burst bucket"><small>Source: settings registry</small></div>
+          <div class="field"><label>Person · photo lane</label><strong>30% · 70%</strong><input type="number" value="30" min="0" max="100" aria-label="Person lane share"><small>Source: application default</small></div>
+          <div class="field"><label>ZIP TTL · retries</label><strong>24 h · 5 attempts</strong><input type="number" value="24" min="0" aria-label="ZIP lifetime"><input type="number" value="5" min="0" aria-label="Maximum retries"><input type="number" value="30" min="0" aria-label="Initial retry backoff"><small>Initial backoff 30 s</small></div>
+          <div class="field"><label>Node cooldown · change check</label><strong>45 min · 24 h</strong><input type="number" value="45" min="0" aria-label="Node cooldown"><input type="number" value="24" min="1" aria-label="Change-check interval"><small>Source: application default</small></div>
+          <div class="field"><label>Crawl group pools</label><strong>Off</strong><input type="checkbox" aria-label="Crawl group pools"><small>Expensive · disabled by default</small></div>
+        </div></div>
+        <div class="panel"><h3>Plans</h3>
+          <div class="table-wrap desktop-table"><table><caption class="kicker" style="text-align:left;padding:8px">Plan entitlement limits</caption><thead><tr><th>Name</th><th>Weight</th><th>Depth</th><th>Contacts</th><th>AI/day</th><th>ZIP TTL</th><th>Share</th></tr></thead><tbody>
+            <tr><td>free</td><td>1</td><td>1</td><td>100</td><td>0</td><td>24 h</td><td>20%</td></tr>
+            <tr><td>pro</td><td>4</td><td>3</td><td>1,000</td><td>100</td><td>72 h</td><td>80%</td></tr>
+          </tbody></table></div>
+          <div class="mobile-cards"><div class="field"><strong>free</strong><small>Weight 1 · depth 1 · contacts 100 · AI/day 0 · ZIP 24 h · share 20%</small></div><div class="field"><strong>pro</strong><small>Weight 4 · depth 3 · contacts 1,000 · AI/day 100 · ZIP 72 h · share 80%</small></div></div>
+        </div>
+        <div class="panel"><h3>Feature flags · example rows only</h3>
+          <div class="table-wrap desktop-table"><table><caption class="kicker" style="text-align:left;padding:8px">Rollout controls</caption><thead><tr><th>Name</th><th>Enabled</th><th>Audience</th></tr></thead><tbody><tr><td>sample.comments</td><td>No</td><td>All</td></tr><tr><td>sample.facets</td><td>Yes</td><td>Admins</td></tr></tbody></table></div>
+          <div class="mobile-cards"><div class="field"><strong>sample.comments</strong><small>Disabled · audience all</small></div><div class="field"><strong>sample.facets</strong><small>Enabled · audience admins</small></div></div>
+          <small>Example rows only. Specific-user targets are never displayed here.</small>
+        </div>
+        <div class="panel"><h3>Staged save · audit required</h3><div class="audit"><label for="audit-dark">Audit note</label><input id="audit-dark" placeholder="Required before save" aria-label="Audit note"><button type="button" class="primary" disabled>Save changes</button><button type="button">Discard</button></div><small>Changes require server validation, revision match, and a durable audit record.</small></div>
+      </article>
+      <article class="state" data-state="loading" aria-busy="true">
+        <div class="state-name"><h2>Loading</h2><span class="badge">Reading sections</span></div><p>Loading configuration</p><div class="panel"><div class="skeleton wide"></div><div class="skeleton"></div><div class="skeleton short"></div></div><div class="panel"><div class="skeleton wide"></div><div class="skeleton"></div></div><div class="panel"><div class="skeleton short"></div><div class="skeleton"></div></div>
+      </article>
+      <article class="state" data-state="empty">
+        <div class="state-name"><h2>Empty</h2><span class="badge">Plans and flags</span></div><div class="empty"><h3>No plans or flags configured</h3><p>Add a draft to begin. Nothing is saved until you confirm with an audit note.</p><button type="button" class="primary">Add a plan draft</button></div>
+      </article>
+      <article class="state" data-state="error">
+        <div class="state-name"><h2>Error</h2><span class="badge error">Unavailable</span></div><div class="alert" role="alert"><strong>Could not load defaults and plans</strong><p>No changes were confirmed. Retry the failed section.</p></div><button type="button">Retry</button>
+      </article>
+    </div>
+  </section>
+  <section class="theme" data-theme="light" aria-label="ADMIN light theme preview">
+    <header class="top">
+      <div><div class="kicker">ADMIN · light control room</div><h1>Defaults and plans</h1><p>Same compact layout and controls with the optional light theme.</p></div>
+      <div class="actions"><span class="badge">Updated 2 min ago</span><button type="button">Refresh</button></div>
+    </header>
+    <div class="state-grid">
+      <article class="state" data-state="ready">
+        <div class="state-name"><h2>Ready · illustrative values</h2><span class="badge status">Current revision 18</span></div>
+        <p>Illustrative sample values, not live configuration. Static controls do not save changes.</p>
+        <div class="panel"><h3>Global defaults</h3><div class="grid">
+          <div class="field"><label>Default depth · cap</label><strong>Source / effective: 2 · cap 4</strong><input type="number" value="2" min="1" max="4" aria-label="Default depth"><input type="number" value="4" min="1" max="4" aria-label="Maximum depth cap"><small>Application default · before user override</small></div>
+          <div class="field"><label>Hourly ceiling · reserve</label><strong>3,600 · 100 calls</strong><input type="number" value="3600" min="1" aria-label="Hourly ceiling"><input type="number" value="100" min="0" aria-label="Interactive reserve"><small>Interactive reserve</small></div>
+          <div class="field"><label>Rate · burst bucket</label><strong>4 calls/s · 5 tokens</strong><input type="number" value="4" min="1" aria-label="Calls per second"><input type="number" value="5" min="1" aria-label="Burst bucket"><small>Settings registry</small></div>
+          <div class="field"><label>Person · photo lane</label><strong>30% · 70%</strong><input type="number" value="30" min="0" max="100" aria-label="Person lane share"><small>Application default</small></div>
+          <div class="field"><label>ZIP TTL · retries</label><strong>24 h · 5 attempts</strong><input type="number" value="24" min="0" aria-label="ZIP lifetime"><input type="number" value="5" min="0" aria-label="Maximum retries"><input type="number" value="30" min="0" aria-label="Initial retry backoff"><small>Initial backoff 30 s</small></div>
+          <div class="field"><label>Node cooldown · change check</label><strong>45 min · 24 h</strong><input type="number" value="45" min="0" aria-label="Node cooldown"><input type="number" value="24" min="1" aria-label="Change-check interval"><small>Application default</small></div>
+          <div class="field"><label>Crawl group pools</label><strong>Off</strong><input type="checkbox" aria-label="Crawl group pools"><small>Expensive · disabled by default</small></div>
+        </div></div>
+        <div class="panel"><h3>Plans</h3>
+          <div class="table-wrap desktop-table"><table><caption class="kicker" style="text-align:left;padding:8px">Plan entitlement limits</caption><thead><tr><th>Name</th><th>Weight</th><th>Depth</th><th>Contacts</th><th>AI/day</th><th>ZIP TTL</th><th>Share</th></tr></thead><tbody><tr><td>free</td><td>1</td><td>1</td><td>100</td><td>0</td><td>24 h</td><td>20%</td></tr><tr><td>pro</td><td>4</td><td>3</td><td>1,000</td><td>100</td><td>72 h</td><td>80%</td></tr></tbody></table></div>
+          <div class="mobile-cards"><div class="field"><strong>free</strong><small>Weight 1 · depth 1 · contacts 100 · AI/day 0 · ZIP 24 h · share 20%</small></div><div class="field"><strong>pro</strong><small>Weight 4 · depth 3 · contacts 1,000 · AI/day 100 · ZIP 72 h · share 80%</small></div></div>
+        </div>
+        <div class="panel"><h3>Feature flags · example rows only</h3>
+          <div class="table-wrap desktop-table"><table><caption class="kicker" style="text-align:left;padding:8px">Rollout controls</caption><thead><tr><th>Name</th><th>Enabled</th><th>Audience</th></tr></thead><tbody><tr><td>sample.comments</td><td>No</td><td>All</td></tr><tr><td>sample.facets</td><td>Yes</td><td>Admins</td></tr></tbody></table></div>
+          <div class="mobile-cards"><div class="field"><strong>sample.comments</strong><small>Disabled · audience all</small></div><div class="field"><strong>sample.facets</strong><small>Enabled · audience admins</small></div></div>
+          <small>Example rows only. Specific-user targets are never displayed here.</small>
+        </div>
+        <div class="panel"><h3>Staged save · audit required</h3><div class="audit"><label for="audit-light">Audit note</label><input id="audit-light" placeholder="Required before save" aria-label="Audit note"><button type="button" class="primary" disabled>Save changes</button><button type="button">Discard</button></div><small>Changes require server validation, revision match, and a durable audit record.</small></div>
+      </article>
+      <article class="state" data-state="loading" aria-busy="true">
+        <div class="state-name"><h2>Loading</h2><span class="badge">Reading sections</span></div><p>Loading configuration</p><div class="panel"><div class="skeleton wide"></div><div class="skeleton"></div><div class="skeleton short"></div></div><div class="panel"><div class="skeleton wide"></div><div class="skeleton"></div></div><div class="panel"><div class="skeleton short"></div><div class="skeleton"></div></div>
+      </article>
+      <article class="state" data-state="empty">
+        <div class="state-name"><h2>Empty</h2><span class="badge">Plans and flags</span></div><div class="empty"><h3>No plans or flags configured</h3><p>Add a draft to begin. Nothing is saved until you confirm with an audit note.</p><button type="button" class="primary">Add a plan draft</button></div>
+      </article>
+      <article class="state" data-state="error">
+        <div class="state-name"><h2>Error</h2><span class="badge error">Unavailable</span></div><div class="alert" role="alert"><strong>Could not load defaults and plans</strong><p>No changes were confirmed. Retry the failed section.</p></div><button type="button">Retry</button>
+      </article>
+    </div>
+  </section>
+</main>
+</body>
+</html>
