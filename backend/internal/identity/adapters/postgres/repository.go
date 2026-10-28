@@ -13,7 +13,15 @@ import (
 	"github.com/jooservices/xflickr/internal/identity/domain"
 )
 
-type Repository struct{ pool *pgxpool.Pool }
+type repositoryPool interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
+	Begin(context.Context) (pgx.Tx, error)
+	BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error)
+}
+
+type Repository struct{ pool repositoryPool }
 
 func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 

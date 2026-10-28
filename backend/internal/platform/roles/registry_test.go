@@ -252,19 +252,23 @@ func (r photoSizesQueryRow) Scan(dest ...any) error {
 	return nil
 }
 
-type photoSizesTestPermit struct{ meta quotadomain.Meta }
+type photoSizesTestPermit struct {
+	meta quotadomain.Meta
+	err  error
+}
 
-func (p *photoSizesTestPermit) Done(meta quotadomain.Meta) error { p.meta = meta; return nil }
+func (p *photoSizesTestPermit) Done(meta quotadomain.Meta) error { p.meta = meta; return p.err }
 
 type photoSizesTestGovernor struct {
 	permit quotadomain.Permit
 	err    error
 	class  quotadomain.Class
+	wait   time.Duration
 }
 
 func (g *photoSizesTestGovernor) Acquire(_ context.Context, _ int64, class quotadomain.Class) (quotadomain.Permit, time.Duration, error) {
 	g.class = class
-	return g.permit, 0, g.err
+	return g.permit, g.wait, g.err
 }
 
 func TestPhotoSizesClientUsesValidKeyAndPhotoQuota(t *testing.T) {
@@ -292,6 +296,36 @@ func TestPhotoSizesClientUsesValidKeyAndPhotoQuota(t *testing.T) {
 	sizes, err := client.GetSizesClass(t.Context(), 4, "9", quotadomain.Interactive)
 	if err != nil || len(sizes) != 1 || gotMethod != "flickr.photos.getSizes" || gotPhoto != "9" || governor.class != quotadomain.Interactive || permit.meta.Err != nil {
 		t.Fatalf("GetSizes() = %#v, %v; method=%q photo=%q class=%q meta=%+v", sizes, err, gotMethod, gotPhoto, governor.class, permit.meta)
+	}
+}
+
+func TestPhotoSizesClientReportsDependencyQuotaAndCallFailures(t *testing.T) {
+	if _, err := (photoSizesClient{}).GetSizesClass(t.Context(), 4, "9", quotadomain.Photo); err == nil {
+		t.Fatal("missing dependencies were accepted")
+	}
+	pool := photoSizesQueryPool{row: photoSizesQueryRow{key: "public-key", status: "valid"}}
+	boom := errors.New("quota unavailable")
+	governor := &photoSizesTestGovernor{err: boom}
+	client := photoSizesClient{Pool: pool, Client: flickrclient.NewClient("http://127.0.0.1:1", nil), Quota: governor}
+	if _, err := client.GetSizesClass(t.Context(), 4, "9", quotadomain.Photo); !errors.Is(err, boom) {
+		t.Fatalf("quota error=%v", err)
+	}
+	governor.err = nil
+	governor.wait = time.Second
+	if _, err := client.GetSizesClass(t.Context(), 4, "9", quotadomain.Photo); err == nil {
+		t.Fatal("quota wait without permit was accepted")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) }))
+	defer server.Close()
+	permit := &photoSizesTestPermit{err: boom}
+	governor.permit = permit
+	client.Client = flickrclient.NewClient(server.URL, server.Client())
+	if _, err := client.GetSizesClass(t.Context(), 4, "9", quotadomain.Photo); !errors.Is(err, boom) {
+		t.Fatalf("permit release error=%v", err)
+	}
+	permit.err = nil
+	if _, err := client.GetSizesClass(t.Context(), 4, "9", quotadomain.Photo); err == nil || permit.meta.Err == nil {
+		t.Fatalf("Flickr error=%v permit metadata=%+v", err, permit.meta)
 	}
 }
 

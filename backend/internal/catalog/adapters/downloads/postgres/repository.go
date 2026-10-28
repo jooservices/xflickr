@@ -6,12 +6,15 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	catalogapp "github.com/jooservices/xflickr/internal/catalog/app"
 )
 
-type Repository struct{ Pool *pgxpool.Pool }
+type Repository struct {
+	Pool interface {
+		Query(context.Context, string, ...any) (pgx.Rows, error)
+	}
+}
 
 var _ catalogapp.DownloadPhotoRepository = Repository{}
 

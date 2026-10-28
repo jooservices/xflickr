@@ -1,0 +1,5 @@
+# package-pattern | reason
+cmd/* | Command entry points are exercised through process-level flows, not package coverage.
+internal/catalog/adapters/postgres/gen | sqlc-generated PostgreSQL query code.
+internal/platform/adapters/postgres/gen | sqlc-generated PostgreSQL query code.
+internal/platform/api/gen | oapi-codegen-generated HTTP server code.

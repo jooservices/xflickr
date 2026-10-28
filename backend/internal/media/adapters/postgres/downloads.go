@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	mediaapp "github.com/jooservices/xflickr/internal/media/app"
 	mediadomain "github.com/jooservices/xflickr/internal/media/domain"
@@ -19,11 +18,17 @@ import (
 )
 
 type Downloads struct {
-	Pool   *pgxpool.Pool
+	Pool   downloadsPool
 	Jobs   queue.JobQueue
 	Events interface {
 		Publish(context.Context, platformsse.Event) error
 	}
+}
+
+type downloadsPool interface {
+	Begin(context.Context) (pgx.Tx, error)
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
 var (
