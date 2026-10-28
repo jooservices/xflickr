@@ -12,11 +12,18 @@ import (
 	"github.com/jooservices/xflickr/internal/schedule/app"
 )
 
-// PhotoJobKind is the queue job kind of a photo-lane job.
+// PhotoJobKind is the queue job kind of a size confirmation job.
 const PhotoJobKind = "photo.sizes"
 
 // PhotoQueue is the queue photo-lane jobs wait in.
 const PhotoQueue = "sync"
+
+// PhotoFacetJobKind is the queue job kind of an optional photo facet.
+const PhotoFacetJobKind = "photo.facet"
+
+// PhotoExtrasQueue runs optional facets separately so they cannot sit ahead
+// of size confirmation work.
+const PhotoExtrasQueue = "sync-low"
 
 type photoTxBeginner interface {
 	Begin(context.Context) (pgx.Tx, error)
@@ -54,13 +61,24 @@ func (e PhotoEnqueuer) EnqueuePhoto(ctx context.Context, job app.PhotoJob) (bool
 	if job.DedupeKey == "" || job.PhotoID <= 0 || job.KeyID <= 0 {
 		return false, errors.New("schedule: photo job needs a photo, key and dedupe key")
 	}
-	args, err := json.Marshal(photoArgs{PhotoID: job.PhotoID, OwnerNSID: job.OwnerNSID, Facet: job.Facet, KeyID: job.KeyID, Class: string(job.Class), DedupeKey: job.DedupeKey})
+	facet := job.Facet
+	if facet == "" {
+		facet = app.PhotoFacet
+	}
+	kind, queueName := PhotoJobKind, PhotoQueue
+	if facet != app.PhotoFacet {
+		if !isOptionalPhotoFacet(facet) {
+			return false, errors.New("schedule: photo job has an unsupported facet")
+		}
+		kind, queueName = PhotoFacetJobKind, PhotoExtrasQueue
+	}
+	args, err := json.Marshal(photoArgs{PhotoID: job.PhotoID, OwnerNSID: job.OwnerNSID, Facet: facet, KeyID: job.KeyID, Class: string(job.Class), DedupeKey: job.DedupeKey})
 	if err != nil {
 		return false, fmt.Errorf("schedule: encode photo job: %w", err)
 	}
 	opts := e.Options
-	if opts.Queue == "" {
-		opts.Queue = PhotoQueue
+	if kind == PhotoFacetJobKind || opts.Queue == "" {
+		opts.Queue = queueName
 	}
 	tx, err := e.Pool.Begin(ctx)
 	if err != nil {
@@ -78,22 +96,37 @@ func (e PhotoEnqueuer) EnqueuePhoto(ctx context.Context, job app.PhotoJob) (bool
 		return false, nil
 	}
 	if e.ReadyCap > 0 {
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('photo.sizes.ready-cap', 0))`); err != nil {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('photo-lane.ready-cap', 0))`); err != nil {
 			return false, fmt.Errorf("schedule: lock photo size capacity: %w", err)
 		}
-		var active int
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE args->>'kind'=$1 AND args->>'queue'=$2 AND state IN ('available','pending','scheduled','retryable','running')`, PhotoJobKind, opts.Queue).Scan(&active); err != nil {
+		var sizeActive, active int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE args->>'kind'=$1), count(*)
+			FROM river_job
+			WHERE args->>'kind' IN ($1,$2) AND args->>'queue' IN ($3,$4)
+			AND state IN ('available','pending','scheduled','retryable','running')`, PhotoJobKind, PhotoFacetJobKind, PhotoQueue, PhotoExtrasQueue).Scan(&sizeActive, &active); err != nil {
 			return false, fmt.Errorf("schedule: count photo size jobs: %w", err)
 		}
-		if active >= e.ReadyCap {
+		// Optional work may use unclaimed capacity, but it cannot consume the
+		// size-job reservation. Sizes remain enqueueable up to the configured cap
+		// even when the lower-priority queue is full.
+		if (kind == PhotoJobKind && sizeActive >= e.ReadyCap) || (kind == PhotoFacetJobKind && active >= e.ReadyCap) {
 			return false, nil
 		}
 	}
-	if err := e.Jobs.Enqueue(ctx, tx, queue.Job{Kind: PhotoJobKind, Args: args}, opts); err != nil {
+	if err := e.Jobs.Enqueue(ctx, tx, queue.Job{Kind: kind, Args: args}, opts); err != nil {
 		return false, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return false, fmt.Errorf("schedule: commit photo enqueue: %w", err)
 	}
 	return true, nil
+}
+
+func isOptionalPhotoFacet(facet string) bool {
+	switch facet {
+	case app.PhotoInfoFacet, app.PhotoExifFacet, app.PhotoContextsFacet, app.PhotoCommentsFacet, app.PhotoFavoritesFacet:
+		return true
+	default:
+		return false
+	}
 }

@@ -188,7 +188,7 @@ func (crawlRole) Run(ctx context.Context) error {
 	}
 	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	defer redisClient.Close()
-	queueAdapter, err := queue.NewRiver(pool, map[string]int{scheduleriver.PhotoQueue: crawlWorkers, accountsapp.VerifyQueue: 1})
+	queueAdapter, err := queue.NewRiver(pool, map[string]int{scheduleriver.PhotoQueue: crawlWorkers, scheduleriver.PhotoExtrasQueue: 1, accountsapp.VerifyQueue: 1})
 	if err != nil {
 		return err
 	}
@@ -251,7 +251,7 @@ func (syncRole) Run(ctx context.Context) error {
 	defer pool.Close()
 	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	defer redisClient.Close()
-	queueAdapter, err := queue.NewRiver(pool, map[string]int{scheduleriver.PhotoQueue: 1})
+	queueAdapter, err := queue.NewRiver(pool, map[string]int{scheduleriver.PhotoQueue: 1, scheduleriver.PhotoExtrasQueue: 1})
 	if err != nil {
 		return err
 	}
@@ -273,13 +273,115 @@ func registerPhotoSizes(queueAdapter *queue.River, pool *pgxpool.Pool, redisClie
 		Store:  catalogRepository,
 		Flickr: photoSizesClient{Pool: pool, Client: client, Quota: quota},
 	}
-	return queueAdapter.RegisterWithOptions(scheduleriver.PhotoJobKind, func(ctx context.Context, job queue.Job) error {
+	if err := queueAdapter.RegisterWithOptions(scheduleriver.PhotoJobKind, func(ctx context.Context, job queue.Job) error {
 		args, err := crawlapp.ParseSizesJob(job.Args)
 		if err != nil {
 			return err
 		}
 		return snoozeOnQuota(handler.Handle(ctx, args))
-	}, queue.Options{Queue: scheduleriver.PhotoQueue})
+	}, queue.Options{Queue: scheduleriver.PhotoQueue}); err != nil {
+		return err
+	}
+	facetHandler := crawlapp.PhotoFacets{
+		Store: catalogRepository,
+		Flickr: photoFacetClient{
+			Pool: pool, Client: client,
+			Quota: quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Recorder: quotaPostgres.CallLog{Pool: pool}},
+		},
+	}
+	return queueAdapter.RegisterWithOptions(scheduleriver.PhotoFacetJobKind, func(ctx context.Context, job queue.Job) error {
+		args, err := crawlapp.ParsePhotoFacetJob(job.Args)
+		if err != nil {
+			return err
+		}
+		return snoozeOnQuota(facetHandler.Handle(ctx, args))
+	}, queue.Options{Queue: scheduleriver.PhotoExtrasQueue})
+}
+
+type photoFacetClient struct {
+	Pool interface {
+		QueryRow(context.Context, string, ...any) pgx.Row
+	}
+	Client *flickrclient.Client
+	Quota  quotadomain.Governor
+}
+
+func (c photoFacetClient) PhotosGetInfo(ctx context.Context, keyID int64, photoID, secret string) (flickrclient.PhotoInfo, error) {
+	var result flickrclient.PhotoInfo
+	err := c.call(ctx, keyID, func(credentials flickrclient.Credentials) error {
+		var callErr error
+		result, callErr = c.Client.PhotosGetInfo(ctx, credentials, photoID, secret)
+		return callErr
+	})
+	return result, err
+}
+
+func (c photoFacetClient) PhotosGetExif(ctx context.Context, keyID int64, photoID, secret string) (flickrclient.PhotoExif, error) {
+	var result flickrclient.PhotoExif
+	err := c.call(ctx, keyID, func(credentials flickrclient.Credentials) error {
+		var callErr error
+		result, callErr = c.Client.PhotosGetExif(ctx, credentials, photoID, secret)
+		return callErr
+	})
+	return result, err
+}
+
+func (c photoFacetClient) PhotosGetAllContexts(ctx context.Context, keyID int64, photoID string) (flickrclient.PhotoContexts, error) {
+	var result flickrclient.PhotoContexts
+	err := c.call(ctx, keyID, func(credentials flickrclient.Credentials) error {
+		var callErr error
+		result, callErr = c.Client.PhotosGetAllContexts(ctx, credentials, photoID)
+		return callErr
+	})
+	return result, err
+}
+
+func (c photoFacetClient) PhotosCommentsGetList(ctx context.Context, keyID int64, photoID string, page int) (flickrclient.Page[flickrclient.PhotoComment], error) {
+	var result flickrclient.Page[flickrclient.PhotoComment]
+	err := c.call(ctx, keyID, func(credentials flickrclient.Credentials) error {
+		var callErr error
+		result, callErr = c.Client.PhotosCommentsGetList(ctx, credentials, photoID, flickrclient.ListOptions{PerPage: 50, Page: page})
+		return callErr
+	})
+	return result, err
+}
+
+func (c photoFacetClient) PhotosGetFavorites(ctx context.Context, keyID int64, photoID string, page int) (flickrclient.Page[flickrclient.PhotoFavorite], error) {
+	var result flickrclient.Page[flickrclient.PhotoFavorite]
+	err := c.call(ctx, keyID, func(credentials flickrclient.Credentials) error {
+		var callErr error
+		result, callErr = c.Client.PhotosGetFavorites(ctx, credentials, photoID, flickrclient.ListOptions{PerPage: 50, Page: page})
+		return callErr
+	})
+	return result, err
+}
+
+func (c photoFacetClient) call(ctx context.Context, keyID int64, request func(flickrclient.Credentials) error) error {
+	if c.Pool == nil || c.Client == nil || c.Quota == nil || ctx == nil || keyID <= 0 {
+		return errors.New("crawl: photo facet client dependencies are required")
+	}
+	var apiKey, status string
+	if err := c.Pool.QueryRow(ctx, `SELECT key_public, status FROM api_keys WHERE id=$1`, keyID).Scan(&apiKey, &status); err != nil {
+		return fmt.Errorf("crawl: load photo facet key: %w", err)
+	}
+	if status != "valid" {
+		return errors.New("crawl: photo facet key is not valid")
+	}
+	permit, wait, err := c.Quota.Acquire(ctx, keyID, quotadomain.Photo)
+	if err != nil {
+		return err
+	}
+	if permit == nil {
+		return crawlapp.NewQuotaWaitError(flickrclient.ErrQuotaExceeded, wait)
+	}
+	callErr := request(flickrclient.Credentials{APIKey: apiKey})
+	if doneErr := permit.Done(quotadomain.Meta{Err: callErr}); doneErr != nil {
+		if callErr != nil {
+			return errors.Join(callErr, fmt.Errorf("crawl: release photo facet quota permit: %w", doneErr))
+		}
+		return fmt.Errorf("crawl: release photo facet quota permit: %w", doneErr)
+	}
+	return callErr
 }
 
 type mediaRole struct{}
@@ -406,7 +508,8 @@ func newSchedulerPump(pool *pgxpool.Pool, governor quotaRedis.Governor, store sc
 	if len(stores) > 0 && stores[0] != nil {
 		pump.MediaPressure = mediaapp.Pressure{Store: stores[0]}
 	}
-	pump.ChangeChecks = crawlapp.Cycle{Store: cycleRepository, Users: cycleRepository, Settings: settingsapp.New(effectiveSettingsRepository)}
+	settingsService := settingsapp.New(effectiveSettingsRepository)
+	pump.ChangeChecks = crawlapp.Cycle{Store: cycleRepository, Users: cycleRepository, Settings: settingsService}
 	keyPool := quotaapp.KeyPool{
 		Interests: personInterests{pool: pool},
 		Keys:      usableKeys{pool: pool},
@@ -415,12 +518,30 @@ func newSchedulerPump(pool *pgxpool.Pool, governor quotaRedis.Governor, store sc
 	pump.PhotoLane = scheduleapp.PhotoLane{
 		Selector: catalogpostgres.PhotoLane{Pool: pool},
 		Keys:     keyPool,
+		Settings: photoFacetSettings{settings: settingsService},
 		Queue: scheduleriver.PhotoEnqueuer{
 			Pool: pool, Jobs: queueAdapter, ReadyCap: settings.SyncReadyCap,
 			Options: queue.Options{Queue: scheduleriver.PhotoQueue, MaxAttempts: max(1, settings.RetryMax), LeaseTimeout: settings.LeaseTimeout, Backoff: settings.RetryBackoff},
 		},
 	}
 	return pump, nil
+}
+
+type photoFacetSettings struct{ settings *settingsapp.Service }
+
+func (s photoFacetSettings) PhotoFacets(ctx context.Context) (scheduleapp.PhotoFacetOptions, error) {
+	if s.settings == nil {
+		return scheduleapp.PhotoFacetOptions{}, errors.New("scheduler: photo facet settings service is required")
+	}
+	configured, err := s.settings.Effective(ctx, 0)
+	if err != nil {
+		return scheduleapp.PhotoFacetOptions{}, err
+	}
+	return scheduleapp.PhotoFacetOptions{
+		Info: configured.PhotoInfoEnabled, Exif: configured.PhotoExifEnabled,
+		Contexts: configured.PhotoContextsEnabled, Comments: configured.PhotoCommentsEnabled,
+		Favorites: configured.PhotoFavoritesEnabled,
+	}, nil
 }
 
 func newBlobStore(ctx context.Context, cfg config.Config) (mediaapp.BlobStore, error) {

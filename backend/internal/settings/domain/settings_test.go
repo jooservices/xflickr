@@ -41,6 +41,11 @@ func TestMergeSeededDefaults(t *testing.T) {
 		RetryBackoff:            30 * time.Second,
 		NodeCooldown:            45 * time.Minute,
 		GroupPoolsEnabled:       false,
+		PhotoInfoEnabled:        true,
+		PhotoExifEnabled:        true,
+		PhotoContextsEnabled:    true,
+		PhotoCommentsEnabled:    false,
+		PhotoFavoritesEnabled:   false,
 		PerKeyReadyCap:          100,
 		NodeReadyCap:            500,
 		MediaReadyCap:           100,
@@ -61,14 +66,19 @@ func TestMergeSeededDefaults(t *testing.T) {
 
 func TestJSONSchemaPerKey(t *testing.T) {
 	documents := map[Key]string{
-		MaxDepth:          `{"type":"integer","minimum":1}`,
-		DailyCallLimit:    `{"type":"integer","minimum":0}`,
-		QuotaReserve:      `{"type":"integer","minimum":0}`,
-		PerSecondRate:     `{"type":"integer","minimum":1}`,
-		Burst:             `{"type":"integer","minimum":1}`,
-		PersonLaneShare:   `{"type":"number","minimum":0,"maximum":1}`,
-		RetryMax:          `{"type":"integer","minimum":0}`,
-		GroupPoolsEnabled: `{"type":"boolean"}`,
+		MaxDepth:              `{"type":"integer","minimum":1}`,
+		DailyCallLimit:        `{"type":"integer","minimum":0}`,
+		QuotaReserve:          `{"type":"integer","minimum":0}`,
+		PerSecondRate:         `{"type":"integer","minimum":1}`,
+		Burst:                 `{"type":"integer","minimum":1}`,
+		PersonLaneShare:       `{"type":"number","minimum":0,"maximum":1}`,
+		RetryMax:              `{"type":"integer","minimum":0}`,
+		GroupPoolsEnabled:     `{"type":"boolean"}`,
+		PhotoInfoEnabled:      `{"type":"boolean"}`,
+		PhotoExifEnabled:      `{"type":"boolean"}`,
+		PhotoContextsEnabled:  `{"type":"boolean"}`,
+		PhotoCommentsEnabled:  `{"type":"boolean"}`,
+		PhotoFavoritesEnabled: `{"type":"boolean"}`,
 	}
 	if len(Keys()) != len(schemas) {
 		t.Fatalf("keys = %d, schemas = %d", len(Keys()), len(schemas))
@@ -261,6 +271,33 @@ func TestMergeAppliesOverridesInsideCaps(t *testing.T) {
 	}
 	if got.MaxDepth != 4 || !got.GroupPoolsEnabled || got.PersonLaneShare != 0 || got.QuotaReserve != 100 || got.ChangeCheckInterval != 24*time.Hour {
 		t.Fatalf("merged = %+v", got)
+	}
+}
+
+func TestMergeKeepsPhotoFacetSettingsApplicationOnly(t *testing.T) {
+	snapshot := DefaultSnapshot()
+	snapshot.Overrides = map[Key]json.RawMessage{
+		PhotoInfoEnabled:      json.RawMessage("false"),
+		PhotoExifEnabled:      json.RawMessage("false"),
+		PhotoContextsEnabled:  json.RawMessage("false"),
+		PhotoCommentsEnabled:  json.RawMessage("true"),
+		PhotoFavoritesEnabled: json.RawMessage("true"),
+	}
+	got, dropped, err := Merge(snapshot)
+	if err != nil {
+		t.Fatalf("Merge(photo facet overrides) error = %v", err)
+	}
+	if got.PhotoInfoEnabled != true || got.PhotoExifEnabled != true || got.PhotoContextsEnabled != true || got.PhotoCommentsEnabled || got.PhotoFavoritesEnabled {
+		t.Fatalf("photo facet effective settings = %+v, want application defaults", got)
+	}
+	want := []Key{PhotoCommentsEnabled, PhotoContextsEnabled, PhotoExifEnabled, PhotoFavoritesEnabled, PhotoInfoEnabled}
+	if len(dropped) != len(want) {
+		t.Fatalf("dropped photo facet overrides = %+v, want %d", dropped, len(want))
+	}
+	for index, key := range want {
+		if dropped[index].Key != key || dropped[index].Reason != "is not user-overridable" {
+			t.Errorf("dropped[%d] = %+v, want %s app-only override", index, dropped[index], key)
+		}
 	}
 }
 

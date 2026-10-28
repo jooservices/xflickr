@@ -28,12 +28,14 @@ type Repository interface {
 type PhotoRef struct {
 	ID        int64
 	OwnerNSID string
+	Facet     string
 }
 
 // PhotoSelector lists photos waiting for getSizes, best interest first. Skip
 // drops the first candidates so a caller can page past photos it cannot use.
+// Optional facets are supplied in priority order and returned only after sizes.
 type PhotoSelector interface {
-	Select(ctx context.Context, limit, skip int) ([]PhotoRef, error)
+	Select(ctx context.Context, limit, skip int, optionalFacets []string) ([]PhotoRef, error)
 }
 
 // Observation identifies a record discovered through one connected Flickr account.
