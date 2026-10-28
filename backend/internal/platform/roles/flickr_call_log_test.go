@@ -61,7 +61,43 @@ func TestFlickrCallLogWithoutDatabaseAndCallLogIDs(t *testing.T) {
 	_, stop := startFlickrCallLog(context.Background(), nil)
 	stop()
 	id := int64(7)
-	if callLogIDValue(nil) != nil || callLogIDValue(&id) != id {
+	if callLogIDValue(nil) != nil || callLogIDValue(&id) != id || callLogKeyIDValue(0) != nil || callLogKeyIDValue(id) != id {
 		t.Fatal("callLogIDValue did not preserve nullable IDs")
 	}
+}
+
+func TestFlickrCallLogRecordsKeyValidationBeforeKeyExists(t *testing.T) {
+	written := make(chan quotaapp.CallRecord, 1)
+	recorder := quotaapp.NewCallRecorder(callLogWriterFunc(func(_ context.Context, records []quotaapp.CallRecord) error {
+		written <- records[0]
+		return nil
+	}), 4, 1, time.Hour, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		recorder.Run(ctx, nil)
+	}()
+	userID := int64(17)
+	requestID := flickrclient.NewRequestID()
+	observer := flickrCallLog{recorder: recorder}
+	observer.RecordCall(ctx, flickrclient.CallRecord{
+		CallContext: flickrclient.CallContext{UserID: &userID, Lane: "interactive", Facet: "key_validation", Attempt: 1, RequestID: requestID},
+		Method:      "flickr.test.echo", StartedAt: time.Now().UTC(), HTTPStatus: 200, FlickrStat: "ok", Outcome: "success",
+	})
+	select {
+	case got := <-written:
+		if got.KeyID != 0 || got.UserID == nil || *got.UserID != userID || got.Method != "flickr.test.echo" ||
+			got.Lane != "interactive" || got.Facet != "key_validation" || got.Attempt != 1 || got.RequestID != requestID {
+			cancel()
+			<-done
+			t.Fatalf("persisted pre-key probe = %+v", got)
+		}
+	case <-time.After(time.Second):
+		cancel()
+		<-done
+		t.Fatal("pre-key probe call was not recorded")
+	}
+	cancel()
+	<-done
 }

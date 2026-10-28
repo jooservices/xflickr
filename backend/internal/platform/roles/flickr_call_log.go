@@ -17,7 +17,7 @@ type flickrCallLog struct{ recorder *quotaapp.CallRecorder }
 
 func (l flickrCallLog) RecordCall(ctx context.Context, call flickrclient.CallRecord) {
 	fields := map[string]any{
-		"method": call.Method, "key_id": call.KeyID, "user_id": callLogIDValue(call.UserID),
+		"method": call.Method, "key_id": callLogKeyIDValue(call.KeyID), "user_id": callLogIDValue(call.UserID),
 		"account_id": callLogIDValue(call.AccountID), "flickr_account": call.FlickrAccount,
 		"lane": call.Lane, "facet": call.Facet, "attempt": call.Attempt,
 		"started_at": call.StartedAt.UTC().Format(time.RFC3339Nano),
@@ -30,7 +30,7 @@ func (l flickrCallLog) RecordCall(ctx context.Context, call flickrclient.CallRec
 	if call.Outcome != "success" {
 		slog.Default().WarnContext(ctx, "flickr call failed", "method", call.Method, "outcome", call.Outcome, "error_code", call.FlickrErrorCode, "request_id", call.RequestID)
 	}
-	if l.recorder == nil || call.KeyID <= 0 {
+	if l.recorder == nil {
 		return
 	}
 
@@ -73,6 +73,13 @@ func callLogIDValue(value *int64) any {
 		return nil
 	}
 	return *value
+}
+
+func callLogKeyIDValue(value int64) any {
+	if value <= 0 {
+		return nil
+	}
+	return value
 }
 
 func startFlickrCallLog(ctx context.Context, pool *pgxpool.Pool) (flickrclient.CallObserver, func()) {

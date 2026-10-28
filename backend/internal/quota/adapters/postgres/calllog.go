@@ -107,7 +107,7 @@ func (c CallLog) InsertCalls(ctx context.Context, records []app.CallRecord) erro
 			responseBytes = record.Bytes
 		}
 		return []any{
-			record.At.UTC(), record.At.UTC(), record.KeyID, nullableInt64(record.UserID), nullableInt64(record.AccountID),
+			record.At.UTC(), record.At.UTC(), nullableKeyID(record.KeyID), nullableInt64(record.UserID), nullableInt64(record.AccountID),
 			record.Node, record.Method, record.Status, nullableInt64(record.ErrorCode),
 			record.LatencyMS, record.Bytes, record.Lane, nullableText(record.FlickrAccount), nullableText(record.Facet), positiveAttempt(record.Attempt),
 			startedAt.UTC(), nullableInt(record.HTTPStatus), nullableText(record.FlickrStat), nullableInt64(record.FlickrErrorCode), nullableText(record.ErrorMessage),
@@ -231,4 +231,12 @@ func nullableInt64(value *int64) any {
 		return nil
 	}
 	return *value
+}
+
+// A zero key ID represents an upstream call made before an API-key row exists.
+func nullableKeyID(value int64) any {
+	if value == 0 {
+		return nil
+	}
+	return value
 }

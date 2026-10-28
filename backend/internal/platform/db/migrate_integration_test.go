@@ -67,6 +67,38 @@ func TestMigrateDownToZeroAndUpUsesEmbeddedNames(t *testing.T) {
 	assertEachEmbeddedVersionOnce(t, ctx, pool, sources)
 }
 
+func TestCallLogDownMigrationPreservesUnassociatedRows(t *testing.T) {
+	ctx, cfg, pool := prepareMigrationTest(t)
+	requestID := "f4f2dc30-25f6-4e39-bc2a-933676de40cf"
+	if _, err := pool.Exec(ctx, `INSERT INTO api_call_log (at, called_at, method, status, outcome, request_id)
+		VALUES (now(), now(), 'flickr.test.echo', 'success', 'success', $1)`, requestID); err != nil {
+		t.Fatalf("insert unassociated call: %v", err)
+	}
+	if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err == nil || !strings.Contains(err.Error(), "unassociated call rows exist") {
+		t.Fatalf("rollback with an unassociated call = %v, want a data-preserving refusal", err)
+	}
+	var rows int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM api_call_log WHERE request_id=$1 AND key_id IS NULL`, requestID).Scan(&rows); err != nil || rows != 1 {
+		t.Fatalf("unassociated call rows after refused rollback = %d, %v; want 1", rows, err)
+	}
+	var keyIsNotNull bool
+	if err := pool.QueryRow(ctx, `SELECT attnotnull FROM pg_attribute WHERE attrelid='api_call_log'::regclass AND attname='key_id' AND NOT attisdropped`).Scan(&keyIsNotNull); err != nil || keyIsNotNull {
+		t.Fatalf("key_id not-null after refused rollback = %t, %v; want false", keyIsNotNull, err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM api_call_log WHERE request_id=$1`, requestID); err != nil {
+		t.Fatalf("remove isolated rollback-test row: %v", err)
+	}
+	if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err != nil {
+		t.Fatalf("rollback after explicitly removing the isolated test row: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT attnotnull FROM pg_attribute WHERE attrelid='api_call_log'::regclass AND attname='key_id' AND NOT attisdropped`).Scan(&keyIsNotNull); err != nil || !keyIsNotNull {
+		t.Fatalf("key_id not-null after safe rollback = %t, %v; want true", keyIsNotNull, err)
+	}
+	if err := db.Migrate(ctx, cfg, db.MigrateUp, io.Discard); err != nil {
+		t.Fatalf("reapply unassociated-call migration: %v", err)
+	}
+}
+
 func TestMigrateUpFromSeveralGoroutinesAppliesEachVersionOnce(t *testing.T) {
 	ctx, cfg, pool := prepareMigrationTest(t)
 	sources := embeddedMigrations(t)

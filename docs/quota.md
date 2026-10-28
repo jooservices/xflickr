@@ -45,6 +45,10 @@ older than two windows after each flush. A missing table is an error, so a
 rebuild fails closed instead of treating the log as empty. Calls made after the
 last flush and before a Redis loss are therefore recovered from the call log.
 
+The initial `flickr.test.echo` used to validate a new public API key is logged
+with `key_id IS NULL` because its key row does not exist yet. It has no quota
+class and is excluded from per-key recovery and rollups.
+
 The scheduler role builds one rebuilder, rebuilds every tracked key at start,
 and runs the flusher in the background until shutdown, when it flushes a last
 time. Failures of the start rebuild or of a flush are logged; `Acquire` keeps

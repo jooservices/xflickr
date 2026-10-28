@@ -30,6 +30,12 @@ Use `obs.Event(ctx, name, attrs)` to write a named structured event and add the
 same event to the active trace span. Flickr transport calls emit `flickr.call`
 with method, status, latency, response bytes, and classified error code.
 
+The public API-key preflight uses `flickr.test.echo` before an `api_keys` row
+exists. It is recorded with a null `key_id`, the signed-in `user_id`, lane
+`interactive`, and facet `key_validation`. The request log stores neither the
+submitted public key nor the secret. Unassociated calls remain in the overall
+call statistics but are excluded from per-key quota usage and hourly rollups.
+
 ## Offline buffering
 
 Logs are exported asynchronously with a 10,000-record SDK queue and 512-record

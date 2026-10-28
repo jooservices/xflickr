@@ -205,6 +205,34 @@ func TestCallLogPartitionsBatchAndRollupIntegration(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM api_call_rollup WHERE day=$1 AND key_id=$2`, oldRollupDay, keyID).Scan(&oldRollups); err != nil || oldRollups != 0 {
 		t.Fatalf("expired rollups=%d err=%v", oldRollups, err)
 	}
+
+	probeAt := time.Now().UTC()
+	probeUserID := userID
+	probeStatus := 200
+	probeRequestID := flickrclient.NewRequestID()
+	if err := quotaCalls.InsertCalls(ctx, []app.CallRecord{{
+		At: probeAt, StartedAt: probeAt, KeyID: 0, UserID: &probeUserID,
+		Method: "flickr.test.echo", Status: "success", Outcome: "success", Lane: "interactive",
+		Facet: "key_validation", Attempt: 1, HTTPStatus: &probeStatus, FlickrStat: "ok", RequestID: probeRequestID,
+	}}); err != nil {
+		t.Fatalf("insert pre-key validation call: %v", err)
+	}
+	if err := manager.RollupCalls(ctx, probeAt.Truncate(time.Hour), probeAt.Truncate(time.Hour).Add(time.Hour)); err != nil {
+		t.Fatalf("roll up keyed calls with unassociated probe: %v", err)
+	}
+	var keyIsNull, userMatches bool
+	var probeMethod, probeOutcome string
+	if err := pool.QueryRow(ctx, `SELECT key_id IS NULL, user_id=$2, method, outcome
+		FROM api_call_log WHERE request_id=$1`, probeRequestID, userID).Scan(&keyIsNull, &userMatches, &probeMethod, &probeOutcome); err != nil {
+		t.Fatalf("read pre-key validation call: %v", err)
+	}
+	if !keyIsNull || !userMatches || probeMethod != "flickr.test.echo" || probeOutcome != "success" {
+		t.Fatalf("pre-key validation call key_null=%t user_matches=%t method=%q outcome=%q", keyIsNull, userMatches, probeMethod, probeOutcome)
+	}
+	var unassociatedRollups int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM api_call_rollup WHERE method='flickr.test.echo' AND day=$1`, probeAt.Format("2006-01-02")).Scan(&unassociatedRollups); err != nil || unassociatedRollups != 0 {
+		t.Fatalf("pre-key probe rollups=%d err=%v, want no per-key rollup", unassociatedRollups, err)
+	}
 }
 
 func int64Pointer(value int64) *int64 { return &value }
