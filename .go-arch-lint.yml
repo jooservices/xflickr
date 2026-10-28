@@ -44,11 +44,14 @@ components:
   sync-app:         { in: internal/sync/app/** }
   sync-adapters:    { in: internal/sync/adapters/** }
   sync-providertest: { in: internal/sync/providertest/** }
+  ai-app:           { in: internal/ai/app/** }
+  ai-adapters:      { in: internal/ai/adapters/** }
   platform:
     in:
       - internal/platform/adapters/**
       - internal/platform/api/**
       - internal/platform/audit/**
+      - internal/platform/breaker/**
       - internal/platform/config/**
       - internal/platform/crypto/**
       - internal/platform/db/**
@@ -114,6 +117,8 @@ deps:
     mayDependOn: [sync-app, platform]
   sync-providertest:
     mayDependOn: [sync-app]
+  ai-adapters:
+    mayDependOn: [ai-app, platform]
   platform:
     mayDependOn: [platform, pkg, migrations]
   wiring:
