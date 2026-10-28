@@ -1,0 +1,106 @@
+people:
+  get:
+    operationId: listPeople
+    tags: [catalog]
+    summary: List people visible to the signed-in user
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
+      - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+    responses:
+      '200': { description: Visible people page, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/CatalogPersonPage } } } }
+      '400': { description: Invalid page request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '500': { description: Catalog could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+
+person:
+  get:
+    operationId: getPerson
+    tags: [catalog]
+    summary: Get a person visible to the signed-in user
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+    responses:
+      '200': { description: Visible person, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/CatalogPerson } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '404': { description: Person is missing or not visible, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '500': { description: Catalog could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+
+person_photos:
+  get:
+    operationId: listPersonPhotos
+    tags: [catalog]
+    summary: List visible photos for a person
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
+      - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+    responses:
+      '200': { description: Visible photo page, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/CatalogPhotoPage } } } }
+      '400': { description: Invalid page request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '404': { description: Person is missing or not visible, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '500': { description: Catalog could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+
+favorites:
+  get:
+    operationId: listFavorites
+    tags: [catalog]
+    summary: List visible favorites from the user's connected Flickr accounts
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
+      - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+    responses:
+      '200': { description: Visible favorite page, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/CatalogFavoritePage } } } }
+      '400': { description: Invalid page request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '500': { description: Catalog could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+
+albums:
+  get:
+    operationId: listAlbums
+    tags: [catalog]
+    summary: List albums with visible photos from the user's connected Flickr accounts
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
+      - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+    responses:
+      '200': { description: Visible album page, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/CatalogAlbumPage } } } }
+      '400': { description: Invalid page request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '500': { description: Catalog could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+
+album_photos:
+  get:
+    operationId: listAlbumPhotos
+    tags: [catalog]
+    summary: List visible photos in an album
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
+      - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+    responses:
+      '200': { description: Visible photo page, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/CatalogPhotoPage } } } }
+      '400': { description: Invalid page request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '404': { description: Album is missing or not visible, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '500': { description: Catalog could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+
+photo:
+  get:
+    operationId: getPhoto
+    tags: [catalog]
+    summary: Get a photo visible to the signed-in user
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    responses:
+      '200': { description: Visible photo, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/CatalogPhoto } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '404': { description: Photo is missing or not visible, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '500': { description: Catalog could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }

@@ -1,0 +1,98 @@
+CatalogSize:
+  type: object
+  additionalProperties: false
+  properties:
+    label: { type: string }
+    width: { type: integer, minimum: 0 }
+    height: { type: integer, minimum: 0 }
+    source: { type: string }
+    url: { type: string }
+    media: { type: string }
+  required: [label]
+
+CatalogPerson:
+  type: object
+  additionalProperties: false
+  properties:
+    nsid: { type: string }
+    username: { type: string }
+    realname: { type: string }
+    icon: { type: string }
+    photos_count: { type: integer, format: int64, minimum: 0, description: Count of photos visible to this user }
+  required: [nsid, username, realname, icon, photos_count]
+
+CatalogPhoto:
+  type: object
+  additionalProperties: false
+  properties:
+    id: { type: integer, format: int64, minimum: 1 }
+    owner_nsid: { type: string }
+    title: { type: string }
+    description: { type: string }
+    labels:
+      type: array
+      items: { type: string }
+      description: Photo tags
+    taken_at: { type: string, format: date-time }
+    uploaded_at: { type: string, format: date-time }
+    visibility: { type: string, enum: [public, friends, family, private] }
+    sizes_status: { type: string, enum: [none, provisional, confirmed, unavailable] }
+    sizes:
+      type: array
+      items: { $ref: '#/CatalogSize' }
+    ai_status: { type: string, enum: [none, ready], description: Caption enrichment availability; caption contents are not returned }
+  required: [id, owner_nsid, title, description, labels, visibility, sizes_status, sizes, ai_status]
+
+CatalogFavorite:
+  type: object
+  additionalProperties: false
+  properties:
+    photo: { $ref: '#/CatalogPhoto' }
+    favorite_at: { type: string, format: date-time }
+  required: [photo, favorite_at]
+
+CatalogAlbum:
+  type: object
+  additionalProperties: false
+  properties:
+    id: { type: string }
+    owner_nsid: { type: string }
+    title: { type: string }
+    description: { type: string }
+    primary_photo_id: { type: integer, format: int64 }
+    photos_count: { type: integer, format: int64, minimum: 0, description: Count of photos visible to this user }
+    created_at: { type: string, format: date-time }
+    updated_at: { type: string, format: date-time }
+  required: [id, owner_nsid, title, description, photos_count]
+
+CatalogPersonPage:
+  type: object
+  additionalProperties: false
+  properties:
+    items: { type: array, items: { $ref: '#/CatalogPerson' } }
+    next_cursor: { type: string }
+  required: [items]
+
+CatalogPhotoPage:
+  type: object
+  additionalProperties: false
+  properties:
+    items: { type: array, items: { $ref: '#/CatalogPhoto' } }
+    next_cursor: { type: string }
+  required: [items]
+
+CatalogFavoritePage:
+  type: object
+  additionalProperties: false
+  properties:
+    items: { type: array, items: { $ref: '#/CatalogFavorite' } }
+    next_cursor: { type: string }
+  required: [items]
+
+CatalogAlbumPage:
+  type: object
+  additionalProperties: false
+  properties:
+    items: { type: array, items: { $ref: '#/CatalogAlbum' } }
+    next_cursor: { type: string }
+  required: [items]

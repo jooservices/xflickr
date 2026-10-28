@@ -115,6 +115,36 @@ var errQuotaServedByQuota = errors.New("identity: quota state is served by the q
 
 var errSharingServedBySharing = errors.New("identity: sharing settings are served by the sharing module")
 
+var errCatalogServedByCatalog = errors.New("identity: catalog reads are served by the catalog module")
+
+func (StrictHandler) ListPeople(context.Context, gen.ListPeopleRequestObject) (gen.ListPeopleResponseObject, error) {
+	return nil, errCatalogServedByCatalog
+}
+
+func (StrictHandler) GetPerson(context.Context, gen.GetPersonRequestObject) (gen.GetPersonResponseObject, error) {
+	return nil, errCatalogServedByCatalog
+}
+
+func (StrictHandler) ListPersonPhotos(context.Context, gen.ListPersonPhotosRequestObject) (gen.ListPersonPhotosResponseObject, error) {
+	return nil, errCatalogServedByCatalog
+}
+
+func (StrictHandler) ListFavorites(context.Context, gen.ListFavoritesRequestObject) (gen.ListFavoritesResponseObject, error) {
+	return nil, errCatalogServedByCatalog
+}
+
+func (StrictHandler) ListAlbums(context.Context, gen.ListAlbumsRequestObject) (gen.ListAlbumsResponseObject, error) {
+	return nil, errCatalogServedByCatalog
+}
+
+func (StrictHandler) ListAlbumPhotos(context.Context, gen.ListAlbumPhotosRequestObject) (gen.ListAlbumPhotosResponseObject, error) {
+	return nil, errCatalogServedByCatalog
+}
+
+func (StrictHandler) GetPhoto(context.Context, gen.GetPhotoRequestObject) (gen.GetPhotoResponseObject, error) {
+	return nil, errCatalogServedByCatalog
+}
+
 var errDownloadsServedByMedia = errors.New("identity: downloads are served by the media module")
 
 var errEventsServedByPlatform = errors.New("identity: events are served by the platform SSE adapter")

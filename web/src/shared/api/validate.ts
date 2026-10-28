@@ -75,6 +75,13 @@ export const ROUTES: Route[] = [
     contract.MarkDownloadPartFetchedResponse,
   ),
   route('POST', '/downloads/{id}/retry-failed', contract.RetryFailedDownloadResponse),
+  route('GET', '/people', contract.ListPeopleResponse),
+  route('GET', '/people/{nsid}', contract.GetPersonResponse),
+  route('GET', '/people/{nsid}/photos', contract.ListPersonPhotosResponse),
+  route('GET', '/favorites', contract.ListFavoritesResponse),
+  route('GET', '/albums', contract.ListAlbumsResponse),
+  route('GET', '/albums/{id}/photos', contract.ListAlbumPhotosResponse),
+  route('GET', '/photos/{id}', contract.GetPhotoResponse),
   route('GET', '/events', contract.StreamEventsResponse),
 ];
 
