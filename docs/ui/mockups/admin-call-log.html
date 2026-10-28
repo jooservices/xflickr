@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XFlickr · Admin API call log — static mockup</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-synthesis:none}
+*{box-sizing:border-box}
+body{margin:0;background:#080a0e;color:#e8eaf0}
+button,select,input{font:inherit}
+button,select,input{color:inherit}
+.page-intro{max-width:1440px;margin:0 auto;padding:24px 18px;color:#e8eaf0}
+.page-intro h1{margin:0 0 6px;font-size:22px}
+.page-intro p{margin:0;color:#a0a7b4}
+.theme-board{--bg:#0f1116;--surface:#171a21;--sunken:#1e222b;--raise:#252a35;--line:#2a2f3a;--line2:#778396;--ink:#e8eaf0;--muted:#a0a7b4;--accent:#7d9cff;--accent-ink:#0d1220;--accent-soft:#1f2a47;--ok:#4fc887;--warn:#f0b04a;--bad:#ff7b72;color:var(--ink);background:var(--bg);max-width:1440px;margin:20px auto 34px;border:1px solid var(--line);border-radius:16px;overflow:hidden;color-scheme:dark}
+.theme-board[data-theme=light]{--bg:#f6f7fa;--surface:#fff;--sunken:#eef0f5;--raise:#e7eaf1;--line:#e2e5ec;--line2:#747b88;--ink:#161a22;--muted:#5d6574;--accent:#2457d6;--accent-ink:#fff;--accent-soft:#e6edfd;--ok:#187244;--warn:#875300;--bad:#c12824;color-scheme:light}
+.board-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 22px;border-bottom:1px solid var(--line);background:var(--surface)}
+.board-heading h2{font-size:16px;margin:0}
+.board-heading p{font-size:12px;color:var(--muted);margin:4px 0 0}
+.theme-name{font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;padding:7px 10px;border:1px solid var(--line2);border-radius:999px;color:var(--accent)}
+.state-sample{margin:16px 18px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--surface)}
+.sample-label{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 14px;background:var(--sunken);border-bottom:1px solid var(--line);font-size:12px;font-weight:700}
+.sample-label span:last-child{color:var(--muted);font-size:11px;font-weight:500}
+.shell{display:grid;grid-template-columns:210px minmax(0,1fr);min-height:280px}
+.rail{background:var(--surface);border-right:1px solid var(--line);padding:16px 12px}
+.brand{font-weight:800;letter-spacing:-.03em;font-size:17px;margin:0 0 22px;padding:0 9px}
+.rail-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;padding:0 9px;margin:16px 0 8px}
+.nav-item{display:block;padding:8px 10px;margin:3px 0;border-radius:8px;color:var(--muted);font-size:12px}
+.nav-item.active{background:var(--accent-soft);color:var(--accent);font-weight:700}
+.content{min-width:0;padding:20px 22px}
+.topbar{display:flex;justify-content:flex-end;align-items:center;gap:9px;margin-bottom:18px}
+.small{font-size:11px;color:var(--muted)}
+.btn{min-height:34px;border:1px solid var(--line2);border-radius:999px;background:var(--surface);padding:6px 13px;font-size:12px;font-weight:650}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.live{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:999px;padding:6px 10px;font-size:11px}
+.dot{width:7px;height:7px;background:var(--ok);border-radius:50%}
+.heading{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px}
+.heading h3{font-size:21px;letter-spacing:-.03em;margin:0 0 3px}
+.heading p{font-size:12px;color:var(--muted);margin:0}
+.filters{display:flex;align-items:end;gap:8px;flex-wrap:wrap;padding:12px;border:1px solid var(--line);background:var(--surface);border-radius:10px}
+.field{display:flex;flex-direction:column;gap:4px;min-width:112px;font-size:10px;color:var(--muted)}
+.field select,.field input{height:32px;border:1px solid var(--line2);border-radius:7px;background:var(--sunken);padding:0 8px;font-size:11px;min-width:0}
+.field.search{flex:1;min-width:160px}
+.chips{display:flex;gap:5px;align-items:center}
+.chip{border:1px solid var(--line2);border-radius:999px;padding:6px 9px;color:var(--muted);font-size:10px;white-space:nowrap}
+.chip.active{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+.summary{display:flex;gap:9px;margin:12px 0}
+.stat{border:1px solid var(--line);background:var(--surface);border-radius:9px;padding:9px 12px;min-width:115px}
+.stat b{display:block;font:700 16px ui-monospace,Menlo,monospace}
+.stat span{font-size:10px;color:var(--muted)}
+.panel{border:1px solid var(--line);background:var(--surface);border-radius:10px;overflow:hidden}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.panel-head strong{font-size:12px}
+.pill{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;font-size:10px;font-weight:700;background:var(--sunken);color:var(--muted);white-space:nowrap}
+.pill.ok{color:var(--ok)}.pill.warn{color:var(--warn)}.pill.bad{color:var(--bad)}
+.table-wrap{overflow:auto}
+table{border-collapse:collapse;width:100%;font-size:10px}
+caption{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+th,td{padding:9px 7px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.04em}
+tbody tr:last-child td{border-bottom:0}
+.mono{font:10px ui-monospace,Menlo,monospace}
+.num{text-align:right}
+.row-button{border:0;background:none;color:var(--accent);padding:0;font-size:10px;text-decoration:underline;text-underline-offset:2px}
+.retention{display:flex;justify-content:space-between;gap:8px;padding:9px 12px;color:var(--muted);font-size:10px;border-top:1px solid var(--line)}
+.detail{display:grid;grid-template-columns:1fr auto;gap:10px;padding:12px;margin-top:10px;border:1px solid var(--line);border-radius:10px;background:var(--sunken)}
+.detail h4{margin:0 0 9px;font-size:12px}
+.detail dl{display:grid;grid-template-columns:repeat(4,minmax(100px,1fr));gap:8px;margin:0}
+.detail dt{font-size:9px;color:var(--muted)}
+.detail dd{margin:3px 0 0;font-size:10px}
+.empty,.error,.loading{padding:24px 16px;text-align:center}
+.empty-mark,.error-mark{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--accent-soft);color:var(--accent);font-weight:800;margin-bottom:8px}
+.error-mark{background:color-mix(in srgb,var(--bad) 14%,transparent);color:var(--bad)}
+.empty h4,.error h4{margin:0 0 4px;font-size:14px}
+.empty p,.error p{margin:0 auto 12px;max-width:360px;font-size:11px;color:var(--muted)}
+.skeleton{height:10px;background:var(--raise);border-radius:5px}
+.skeleton-row{display:grid;grid-template-columns:1.1fr 1.6fr .8fr 1fr 1fr .8fr .8fr .8fr .7fr .7fr;gap:9px;padding:12px;border-bottom:1px solid var(--line)}
+.skeleton-row:last-child{border-bottom:0}
+@media(max-width:720px){
+ .page-intro{padding:16px 12px}.theme-board{margin:12px;border-radius:12px}
+ .board-heading{padding:14px}.state-sample{margin:12px 8px}.shell{grid-template-columns:minmax(0,1fr)}
+ .rail{display:none}.content{padding:14px 11px}.topbar{justify-content:space-between;margin-bottom:14px}
+ .heading{display:block}.heading h3{font-size:19px}.heading .small{display:block;margin-top:6px}
+ .filters{display:grid;grid-template-columns:1fr 1fr;align-items:stretch}
+ .field,.field.search{min-width:0}.field.search{grid-column:1/-1}.chips{grid-column:1/-1;flex-wrap:wrap}
+ .summary{display:grid;grid-template-columns:1fr 1fr}.stat{min-width:0}
+ .table-wrap{overflow:visible}table,tbody{display:block;width:100%}thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+ tbody tr{display:grid;grid-template-columns:1fr 1fr;padding:7px 9px;border-bottom:1px solid var(--line)}
+ td{display:flex;justify-content:space-between;gap:9px;white-space:normal;text-align:right;padding:6px 2px;border:0;font-size:10px}
+ td::before{content:attr(data-label);color:var(--muted);font-size:9px;text-align:left}
+ .detail{grid-template-columns:1fr}.detail dl{grid-template-columns:1fr 1fr}
+ .skeleton-row{grid-template-columns:1fr 1fr}.skeleton-row .skeleton:nth-child(n+5){display:none}
+ .retention{display:block}.retention span{display:block;margin:3px 0}
+}
+</style>
+</head>
+<body>
+<header class="page-intro">
+  <h1>API call log · design states</h1>
+  <p>Static, data-free mockup. Resize this page between 1440 px desktop and 390 px mobile.</p>
+</header>
+
+<section class="theme-board" data-theme="dark" aria-label="ADMIN dark theme">
+  <header class="board-heading"><div><h2>ADMIN · dark control-room</h2><p>Default admin theme · same four states at desktop and mobile</p></div><span class="theme-name">Dark</span></header>
+
+  <article class="state-sample">
+    <div class="sample-label"><span>Normal · populated</span><span>1440 px → 390 px responsive</span></div>
+    <div class="shell">
+      <aside class="rail"><div class="brand">XFlickr</div><div class="rail-label">Operations</div><span class="nav-item">Overview</span><span class="nav-item">Cluster nodes</span><span class="nav-item">API quota</span><div class="rail-label">Data &amp; people</div><span class="nav-item active">API call log</span></aside>
+      <main class="content">
+        <div class="topbar"><span class="live"><span class="dot"></span>Live</span><button class="btn">Refresh</button></div>
+        <div class="heading"><div><h3>API call log</h3><p>Recent Flickr API calls, newest first. Kept for 30 days.</p></div><span class="small">Updated 14:02:18 UTC</span></div>
+        <div class="filters">
+          <div class="chips" aria-label="Outcome"><span class="chip active">All</span><span class="chip">Success</span><span class="chip">Errors</span></div>
+          <label class="field">Range<select><option>Last 24 hours</option></select></label>
+          <label class="field">Method<select><option>All methods</option></select></label>
+          <label class="field">Key<select><option>All keys</option></select></label>
+          <label class="field search">Search<input value="" placeholder="Method, node, user or account"></label>
+          <button class="btn">Clear filters</button>
+        </div>
+        <div class="summary"><div class="stat"><b>486 ms</b><span>p50 latency · 4 calls</span></div><div class="stat"><b>1,640 ms</b><span>p95 latency · this page</span></div><div class="stat"><b>30 days</b><span>retention window</span></div></div>
+        <section class="panel" data-state="ready" aria-label="Recent calls">
+          <div class="panel-head"><strong>Newest calls · 4 shown · 250 max</strong><span class="small">Sorted by time</span></div>
+          <div class="table-wrap"><table><caption>Recent Flickr API calls</caption><thead><tr><th>Time</th><th>Method</th><th>Key</th><th>User</th><th>Account</th><th>Node</th><th>Lane / facet</th><th>Status</th><th>Latency</th><th>Bytes</th><th>Details</th></tr></thead><tbody>
+            <tr><td data-label="Time" class="mono">14:02:12</td><td data-label="Method" class="mono">photos.search</td><td data-label="Key">key #17 · Main</td><td data-label="User">User #42</td><td data-label="Account">Account #08</td><td data-label="Node">worker-03</td><td data-label="Lane / facet">photo · search</td><td data-label="Status"><span class="pill ok">Success · 200</span></td><td data-label="Latency" class="num">486 ms</td><td data-label="Bytes" class="num">18.4 KB</td><td data-label="Details"><button class="row-button">View details</button></td></tr>
+            <tr><td data-label="Time" class="mono">14:02:08</td><td data-label="Method" class="mono">people.getInfo</td><td data-label="Key">key #17 · Main</td><td data-label="User">User #42</td><td data-label="Account">Account #08</td><td data-label="Node">worker-03</td><td data-label="Lane / facet">person · profile</td><td data-label="Status"><span class="pill ok">Success · 200</span></td><td data-label="Latency" class="num">212 ms</td><td data-label="Bytes" class="num">2.1 KB</td><td data-label="Details"><button class="row-button">View details</button></td></tr>
+            <tr><td data-label="Time" class="mono">14:01:59</td><td data-label="Method" class="mono">photos.getSizes</td><td data-label="Key">key #21 · Reserve</td><td data-label="User">User #18</td><td data-label="Account">Account #14</td><td data-label="Node">worker-02</td><td data-label="Lane / facet">photo · sizes</td><td data-label="Status"><span class="pill warn">Throttled · 429</span></td><td data-label="Latency" class="num">1,214 ms</td><td data-label="Bytes" class="num">512 B</td><td data-label="Details"><button class="row-button">View details</button></td></tr>
+            <tr><td data-label="Time" class="mono">14:01:45</td><td data-label="Method" class="mono">flickr.test.echo</td><td data-label="Key">—</td><td data-label="User">User #42</td><td data-label="Account">Unassociated</td><td data-label="Node">worker-03</td><td data-label="Lane / facet">interactive · validation</td><td data-label="Status"><span class="pill ok">Success · 200</span></td><td data-label="Latency" class="num">96 ms</td><td data-label="Bytes" class="num">84 B</td><td data-label="Details"><button class="row-button">View details</button></td></tr>
+          </tbody></table></div>
+          <div class="retention"><span>30-day retention · This sample contains synthetic labels only.</span><button class="btn">Load older</button></div>
+        </section>
+        <aside class="detail" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+          <div><h4 id="detail-title">Call details · read only</h4><dl>
+            <div><dt>Method</dt><dd class="mono">photos.search</dd></div><div><dt>Outcome / HTTP</dt><dd>success · 200</dd></div><div><dt>Key / user</dt><dd>key #17 · User #42</dd></div><div><dt>Account / node</dt><dd>Account #08 · worker-03</dd></div>
+            <div><dt>Lane / facet</dt><dd>photo · search</dd></div><div><dt>Latency / bytes</dt><dd>486 ms · 18.4 KB</dd></div><div><dt>Attempt</dt><dd>1</dd></div><div><dt>Request id</dt><dd class="mono">…7c21</dd></div>
+          </dl></div><button class="btn">Close details</button>
+        </aside>
+      </main>
+    </div>
+  </article>
+
+  <article class="state-sample">
+    <div class="sample-label"><span>Loading · first request</span><span>Skeleton rows, controls remain labeled</span></div>
+    <div class="shell"><aside class="rail"><div class="brand">XFlickr</div><div class="rail-label">Data &amp; people</div><span class="nav-item active">API call log</span></aside>
+      <main class="content" aria-busy="true"><div class="topbar"><span class="live"><span class="dot"></span>Live</span><button class="btn">Refresh</button></div><div class="heading"><div><h3>API call log</h3><p>Recent Flickr API calls, newest first. Kept for 30 days.</p></div><span class="small">Loading…</span></div>
+        <div class="filters"><div class="chips"><span class="chip active">All</span><span class="chip">Success</span><span class="chip">Errors</span></div><label class="field">Range<select><option>Last 24 hours</option></select></label><label class="field">Method<select><option>All methods</option></select></label><label class="field">Key<select><option>All keys</option></select></label><label class="field search">Search<input placeholder="Method, node, user or account"></label></div>
+        <div class="summary"><div class="stat"><div class="skeleton"></div><span>p50 latency</span></div><div class="stat"><div class="skeleton"></div><span>p95 latency</span></div></div>
+        <section class="panel" data-state="loading"><div class="panel-head"><strong>Loading API calls…</strong></div><div class="loading"><div class="skeleton-row"><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i></div><div class="skeleton-row"><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i></div></div></section>
+      </main>
+    </div>
+  </article>
+
+  <article class="state-sample">
+    <div class="sample-label"><span>Empty · no matching calls</span><span>Clear filters returns to defaults</span></div>
+    <div class="shell"><aside class="rail"><div class="brand">XFlickr</div><div class="rail-label">Data &amp; people</div><span class="nav-item active">API call log</span></aside>
+      <main class="content"><div class="topbar"><span class="live"><span class="dot"></span>Live</span><button class="btn">Refresh</button></div><div class="heading"><div><h3>API call log</h3><p>Recent Flickr API calls, newest first. Kept for 30 days.</p></div><span class="small">Updated 14:02 UTC</span></div>
+        <div class="filters"><div class="chips"><span class="chip">All</span><span class="chip">Success</span><span class="chip active">Errors</span></div><label class="field">Range<select><option>Last 24 hours</option></select></label><label class="field">Method<select><option>All methods</option></select></label><label class="field">Key<select><option>All keys</option></select></label><label class="field search">Search<input value="photos.upload" aria-label="Search calls"></label><button class="btn">Clear filters</button></div>
+        <section class="panel"><div class="panel-head"><strong>0 calls</strong><span class="small">No results for this range</span></div><div class="empty" data-state="empty"><span class="empty-mark" aria-hidden="true">0</span><h4>No API calls match these filters</h4><p>Calls appear after a key is used. Try a wider time range or clear filters.</p><button class="btn primary">Clear filters</button></div></section>
+      </main>
+    </div>
+  </article>
+
+  <article class="state-sample">
+    <div class="sample-label"><span>Error · list request failed</span><span>Raw server details are hidden</span></div>
+    <div class="shell"><aside class="rail"><div class="brand">XFlickr</div><div class="rail-label">Data &amp; people</div><span class="nav-item active">API call log</span></aside>
+      <main class="content"><div class="topbar"><span class="live"><span class="dot"></span>Live</span><button class="btn">Refresh</button></div><div class="heading"><div><h3>API call log</h3><p>Recent Flickr API calls, newest first. Kept for 30 days.</p></div><span class="small">Could not refresh</span></div>
+        <div class="filters"><div class="chips"><span class="chip active">All</span><span class="chip">Success</span><span class="chip">Errors</span></div><label class="field">Range<select><option>Last 24 hours</option></select></label><label class="field">Method<select><option>All methods</option></select></label><label class="field">Key<select><option>All keys</option></select></label><label class="field search">Search<input placeholder="Method, node, user or account"></label></div>
+        <section class="panel"><div class="error" data-state="error" role="alert"><span class="error-mark" aria-hidden="true">!</span><h4>API call log could not load</h4><p>Your last successful rows remain available when possible. Try again in a moment.</p><button class="btn primary">Retry</button></div></section>
+      </main>
+    </div>
+  </article>
+</section>
+
+<section class="theme-board" data-theme="light" aria-label="ADMIN light theme">
+  <header class="board-heading"><div><h2>ADMIN · light theme</h2><p>Explicit light preference · same controls, labels and status meaning</p></div><span class="theme-name">Light</span></header>
+
+  <article class="state-sample">
+    <div class="sample-label"><span>Normal · populated</span><span>1440 px → 390 px responsive</span></div>
+    <div class="shell">
+      <aside class="rail"><div class="brand">XFlickr</div><div class="rail-label">Operations</div><span class="nav-item">Overview</span><span class="nav-item">Cluster nodes</span><span class="nav-item">API quota</span><div class="rail-label">Data &amp; people</div><span class="nav-item active">API call log</span></aside>
+      <main class="content">
+        <div class="topbar"><span class="live"><span class="dot"></span>Live</span><button class="btn">Refresh</button></div>
+        <div class="heading"><div><h3>API call log</h3><p>Recent Flickr API calls, newest first. Kept for 30 days.</p></div><span class="small">Updated 14:02:18 UTC</span></div>
+        <div class="filters"><div class="chips" aria-label="Outcome"><span class="chip active">All</span><span class="chip">Success</span><span class="chip">Errors</span></div><label class="field">Range<select><option>Last 24 hours</option></select></label><label class="field">Method<select><option>All methods</option></select></label><label class="field">Key<select><option>All keys</option></select></label><label class="field search">Search<input placeholder="Method, node, user or account"></label><button class="btn">Clear filters</button></div>
+        <div class="summary"><div class="stat"><b>486 ms</b><span>p50 latency · 4 calls</span></div><div class="stat"><b>1,640 ms</b><span>p95 latency · this page</span></div><div class="stat"><b>30 days</b><span>retention window</span></div></div>
+        <section class="panel" data-state="ready" aria-label="Recent calls"><div class="panel-head"><strong>Newest calls · 4 shown · 250 max</strong><span class="small">Sorted by time</span></div>
+          <div class="table-wrap"><table><caption>Recent Flickr API calls</caption><thead><tr><th>Time</th><th>Method</th><th>Key</th><th>User</th><th>Account</th><th>Node</th><th>Lane / facet</th><th>Status</th><th>Latency</th><th>Bytes</th><th>Details</th></tr></thead><tbody>
+            <tr><td data-label="Time" class="mono">14:02:12</td><td data-label="Method" class="mono">photos.search</td><td data-label="Key">key #17 · Main</td><td data-label="User">User #42</td><td data-label="Account">Account #08</td><td data-label="Node">worker-03</td><td data-label="Lane / facet">photo · search</td><td data-label="Status"><span class="pill ok">Success · 200</span></td><td data-label="Latency" class="num">486 ms</td><td data-label="Bytes" class="num">18.4 KB</td><td data-label="Details"><button class="row-button">View details</button></td></tr>
+            <tr><td data-label="Time" class="mono">14:02:08</td><td data-label="Method" class="mono">people.getInfo</td><td data-label="Key">key #17 · Main</td><td data-label="User">User #42</td><td data-label="Account">Account #08</td><td data-label="Node">worker-03</td><td data-label="Lane / facet">person · profile</td><td data-label="Status"><span class="pill ok">Success · 200</span></td><td data-label="Latency" class="num">212 ms</td><td data-label="Bytes" class="num">2.1 KB</td><td data-label="Details"><button class="row-button">View details</button></td></tr>
+            <tr><td data-label="Time" class="mono">14:01:59</td><td data-label="Method" class="mono">photos.getSizes</td><td data-label="Key">key #21 · Reserve</td><td data-label="User">User #18</td><td data-label="Account">Account #14</td><td data-label="Node">worker-02</td><td data-label="Lane / facet">photo · sizes</td><td data-label="Status"><span class="pill warn">Throttled · 429</span></td><td data-label="Latency" class="num">1,214 ms</td><td data-label="Bytes" class="num">512 B</td><td data-label="Details"><button class="row-button">View details</button></td></tr>
+            <tr><td data-label="Time" class="mono">14:01:45</td><td data-label="Method" class="mono">flickr.test.echo</td><td data-label="Key">—</td><td data-label="User">User #42</td><td data-label="Account">Unassociated</td><td data-label="Node">worker-03</td><td data-label="Lane / facet">interactive · validation</td><td data-label="Status"><span class="pill ok">Success · 200</span></td><td data-label="Latency" class="num">96 ms</td><td data-label="Bytes" class="num">84 B</td><td data-label="Details"><button class="row-button">View details</button></td></tr>
+          </tbody></table></div><div class="retention"><span>30-day retention · This sample contains synthetic labels only.</span><button class="btn">Load older</button></div></section>
+        <aside class="detail" role="dialog" aria-modal="true" aria-labelledby="detail-light-title"><div><h4 id="detail-light-title">Call details · read only</h4><dl>
+          <div><dt>Method</dt><dd class="mono">photos.search</dd></div><div><dt>Outcome / HTTP</dt><dd>success · 200</dd></div><div><dt>Key / user</dt><dd>key #17 · User #42</dd></div><div><dt>Account / node</dt><dd>Account #08 · worker-03</dd></div><div><dt>Lane / facet</dt><dd>photo · search</dd></div><div><dt>Latency / bytes</dt><dd>486 ms · 18.4 KB</dd></div><div><dt>Attempt</dt><dd>1</dd></div><div><dt>Request id</dt><dd class="mono">…7c21</dd></div>
+        </dl></div><button class="btn">Close details</button></aside>
+      </main>
+    </div>
+  </article>
+
+  <article class="state-sample"><div class="sample-label"><span>Loading · first request</span><span>Skeleton rows, controls remain labeled</span></div>
+    <div class="shell"><aside class="rail"><div class="brand">XFlickr</div><div class="rail-label">Data &amp; people</div><span class="nav-item active">API call log</span></aside><main class="content" aria-busy="true">
+      <div class="topbar"><span class="live"><span class="dot"></span>Live</span><button class="btn">Refresh</button></div><div class="heading"><div><h3>API call log</h3><p>Recent Flickr API calls, newest first. Kept for 30 days.</p></div><span class="small">Loading…</span></div>
+      <div class="filters"><div class="chips"><span class="chip active">All</span><span class="chip">Success</span><span class="chip">Errors</span></div><label class="field">Range<select><option>Last 24 hours</option></select></label><label class="field">Method<select><option>All methods</option></select></label><label class="field">Key<select><option>All keys</option></select></label><label class="field search">Search<input placeholder="Method, node, user or account"></label></div>
+      <div class="summary"><div class="stat"><div class="skeleton"></div><span>p50 latency</span></div><div class="stat"><div class="skeleton"></div><span>p95 latency</span></div></div><section class="panel" data-state="loading"><div class="panel-head"><strong>Loading API calls…</strong></div><div class="loading"><div class="skeleton-row"><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i></div><div class="skeleton-row"><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i><i class="skeleton"></i></div></div></section>
+    </main></div>
+  </article>
+
+  <article class="state-sample"><div class="sample-label"><span>Empty · no matching calls</span><span>Clear filters returns to defaults</span></div>
+    <div class="shell"><aside class="rail"><div class="brand">XFlickr</div><div class="rail-label">Data &amp; people</div><span class="nav-item active">API call log</span></aside><main class="content">
+      <div class="topbar"><span class="live"><span class="dot"></span>Live</span><button class="btn">Refresh</button></div><div class="heading"><div><h3>API call log</h3><p>Recent Flickr API calls, newest first. Kept for 30 days.</p></div><span class="small">Updated 14:02 UTC</span></div>
+      <div class="filters"><div class="chips"><span class="chip">All</span><span class="chip">Success</span><span class="chip active">Errors</span></div><label class="field">Range<select><option>Last 24 hours</option></select></label><label class="field">Method<select><option>All methods</option></select></label><label class="field">Key<select><option>All keys</option></select></label><label class="field search">Search<input value="photos.upload" aria-label="Search calls"></label><button class="btn">Clear filters</button></div>
+      <section class="panel"><div class="panel-head"><strong>0 calls</strong><span class="small">No results for this range</span></div><div class="empty" data-state="empty"><span class="empty-mark" aria-hidden="true">0</span><h4>No API calls match these filters</h4><p>Calls appear after a key is used. Try a wider time range or clear filters.</p><button class="btn primary">Clear filters</button></div></section>
+    </main></div>
+  </article>
+
+  <article class="state-sample"><div class="sample-label"><span>Error · list request failed</span><span>Raw server details are hidden</span></div>
+    <div class="shell"><aside class="rail"><div class="brand">XFlickr</div><div class="rail-label">Data &amp; people</div><span class="nav-item active">API call log</span></aside><main class="content">
+      <div class="topbar"><span class="live"><span class="dot"></span>Live</span><button class="btn">Refresh</button></div><div class="heading"><div><h3>API call log</h3><p>Recent Flickr API calls, newest first. Kept for 30 days.</p></div><span class="small">Could not refresh</span></div>
+      <div class="filters"><div class="chips"><span class="chip active">All</span><span class="chip">Success</span><span class="chip">Errors</span></div><label class="field">Range<select><option>Last 24 hours</option></select></label><label class="field">Method<select><option>All methods</option></select></label><label class="field">Key<select><option>All keys</option></select></label><label class="field search">Search<input placeholder="Method, node, user or account"></label></div>
+      <section class="panel"><div class="error" data-state="error" role="alert"><span class="error-mark" aria-hidden="true">!</span><h4>API call log could not load</h4><p>Your last successful rows remain available when possible. Try again in a moment.</p><button class="btn primary">Retry</button></div></section>
+    </main></div>
+  </article>
+</section>
+<footer class="page-intro"><p>Static HTML/CSS only · no scripts, external fonts, images, requests or live XFlickr data.</p></footer>
+</body>
+</html>
