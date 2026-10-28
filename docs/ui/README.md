@@ -60,7 +60,7 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 | `admin-pipeline` | admin | `/admin/pipeline` | Crawl pipeline | [spec](views/admin-pipeline.md) | [mockup](mockups/admin-pipeline.html) | JOOXF-184 | `web/e2e/admin-pipeline.spec.ts` |
 | `admin-downloads` | admin | `/admin/downloads` | Downloads | [spec](views/admin-downloads.md) | [mockup](mockups/admin-downloads.html) | JOOXF-184 | `web/e2e/admin-downloads.spec.ts` |
 | `admin-sync` | admin | `/admin/sync` | Cloud sync | [spec](views/admin-sync.md) | [mockup](mockups/admin-sync.html) | JOOXF-184 | `web/e2e/admin-sync.spec.ts` |
-| `admin-ai` | admin | `/admin/ai` | AI index | pending | pending | TBD | `web/e2e/admin-ai.spec.ts` |
+| `admin-ai` | admin | `/admin/ai` | AI index | [spec](views/admin-ai.md) | [mockup](mockups/admin-ai.html) | JOOXF-185 | `web/e2e/admin-ai.spec.ts` |
 | `admin-users` | admin | `/admin/users` | Users | pending | pending | TBD | `web/e2e/admin-users.spec.ts` |
 | `admin-defaults` | admin | `/admin/defaults` | Defaults | pending | pending | TBD | `web/e2e/admin-defaults.spec.ts` |
 | `admin-sharing` | admin | `/admin/sharing` | Sharing | pending | pending | TBD | `web/e2e/admin-sharing.spec.ts` |

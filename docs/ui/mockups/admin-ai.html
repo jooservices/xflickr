@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin AI index · XFlickr</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b0f15;color:#d6dee8;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1440px;margin:auto;padding:28px}
+.theme{--bg:#0b0f15;--surface:#11171f;--sunken:#161e28;--raise:#1c2632;--line:#222c3a;--line2:#7a8798;--ink:#d6dee8;--muted:#8190a4;--accent:#4cb4d8;--accent-ink:#04131a;--ok:#3cb87c;--warn:#e2ae3d;--bad:#f2766b;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:9px;margin:0 0 36px;padding:24px}
+.theme.light{--bg:#eef1f5;--surface:#fff;--sunken:#f5f7fa;--raise:#e9edf3;--line:#dce2ea;--line2:#737f90;--ink:#16202c;--muted:#56657a;--accent:#006482;--accent-ink:#fff;--ok:#176d42;--warn:#815800;--bad:#c5372c}
+.topbar,.row,.panel-head,.card-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.topbar{border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:22px}
+.brand{font-weight:750;letter-spacing:.05em}.role,.muted,.subtle{color:var(--muted)}.role{font-size:12px}
+.theme-chip,.pill,.button,.demo{border:1px solid var(--line);border-radius:7px;padding:5px 9px;font-size:11px}
+.theme-chip{color:var(--accent)}.button{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.intro h1{font-size:24px;margin:0 0 3px}.intro p{color:var(--muted);margin:0}
+.live{color:var(--ok);font-size:12px}.live:before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:7px}
+.grid{display:grid;gap:12px}.metrics{grid-template-columns:repeat(6,1fr);margin:18px 0}.models{grid-template-columns:repeat(2,1fr);margin:12px 0}
+.metric,.model,.panel,.state-card{background:var(--surface);border:1px solid var(--line);border-radius:9px}
+.metric{padding:12px}.metric-label,.subtle{color:var(--muted);font-size:11px}.metric-value{font-size:21px;font-weight:720;margin:5px 0 2px}
+.panel{overflow:hidden;margin:14px 0}.panel-head{padding:13px 15px;border-bottom:1px solid var(--line)}.panel-head h2{font-size:14px;margin:0}.panel-body{padding:14px 15px}
+.pill{display:inline-block;border-color:color-mix(in srgb,var(--ok) 40%,var(--line));color:var(--ok);white-space:nowrap}.pill.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}.pill.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
+.model{padding:15px}.model h3{font-size:15px;margin:0}.model-name{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.model-meta{font-size:11px;color:var(--muted);margin-top:4px}
+.model-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;border-top:1px solid var(--line);padding-top:12px;margin-top:13px}.model-stats b{display:block;font-size:12px}.model-stats span{font-size:10px;color:var(--muted)}
+.columns{grid-template-columns:1fr 1fr}.workers{display:grid;grid-template-columns:1fr auto;gap:8px 14px;font-size:12px}.workers span:nth-child(odd){color:var(--muted)}
+.bar{height:7px;background:var(--sunken);border-radius:6px;overflow:hidden}.bar i{display:block;height:100%;background:var(--accent);border-radius:6px}
+.coverage{display:grid;grid-template-columns:1fr auto;gap:7px 10px;margin-top:12px;font-size:11px}.coverage .bar{grid-column:1/-1}
+.re-enrich{display:flex;align-items:center;justify-content:space-between;gap:16px}.re-enrich p{margin:3px 0 0;color:var(--muted);font-size:11px}
+.banner{background:var(--sunken);border:1px solid var(--line);border-left:3px solid var(--warn);padding:11px 13px;border-radius:7px;margin-top:14px}
+.states{grid-template-columns:repeat(4,1fr);margin-top:20px}.state-card{padding:13px;min-height:130px}.state-card h3{font-size:12px;margin:0 0 10px}.state-copy{font-size:11px;color:var(--muted);margin:7px 0}.demo{display:inline-block;color:var(--warn);margin-top:4px}
+.skeleton{height:12px;background:var(--raise);border-radius:4px;margin:9px 0}.skeleton.short{width:58%}
+@media(max-width:1000px){.metrics{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:700px){main{padding:12px}.theme{padding:14px;margin-bottom:22px}.role{display:none}.metrics{grid-template-columns:repeat(2,1fr);gap:8px}.metric{padding:10px}.metric-value{font-size:18px}.models,.columns,.states{grid-template-columns:1fr}.panel-head{align-items:flex-start}.re-enrich{align-items:flex-start;flex-direction:column}.topbar{align-items:flex-start}.topbar .row{flex-wrap:wrap;justify-content:flex-end}.card-head{align-items:flex-start}.model-stats{grid-template-columns:repeat(2,1fr)}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+<section class="theme dark" data-theme="dark" data-state="ready" data-testid="admin-ai-page" aria-label="Admin AI index — dark theme">
+<header class="topbar"><div><span class="brand">XFlickr <span class="role">/ ADMIN CONTROL ROOM</span></span></div><div class="row"><span class="theme-chip">Dark · default</span><span class="live" aria-live="polite">Live · updated 5 sec ago</span><button class="button" type="button">Refresh</button></div></header>
+<div class="intro"><h1>AI index</h1><p>Captioning, embeddings, model health and search coverage.</p></div>
+<div class="grid metrics" data-testid="admin-ai-summary">
+<article class="metric"><div class="metric-label">Caption backlog</div><div class="metric-value">18,240</div><div class="subtle">items waiting</div></article>
+<article class="metric"><div class="metric-label">Captions completed</div><div class="metric-value">61,230</div><div class="subtle">all models</div></article>
+<article class="metric"><div class="metric-label">Captions / minute</div><div class="metric-value">16.4</div><div class="subtle">last 5 min</div></article>
+<article class="metric"><div class="metric-label">Embedding backlog</div><div class="metric-value">320</div><div class="subtle">items waiting</div></article>
+<article class="metric"><div class="metric-label">Embeddings / second</div><div class="metric-value">41</div><div class="subtle">last 5 min</div></article>
+<article class="metric"><div class="metric-label">Index documents</div><div class="metric-value">1,284,330</div><div class="subtle">photos-v3</div></article>
+</div>
+<div class="grid models" data-testid="admin-ai-models">
+<article class="model" data-testid="admin-ai-model-caption"><div class="card-head"><div><div class="subtle">Caption model</div><h3 class="model-name">qwen2.5vl:3b</h3><div class="model-meta">Demo version · qwen-build-16:48 UTC</div></div><span class="pill">Loaded</span></div><div class="model-stats"><div><b>CPU · 6 threads</b><span>Device</span></div><div><b>3.4 GB</b><span>Memory</span></div><div><b>7.6 s / photo</b><span>Speed</span></div></div></article>
+<article class="model" data-testid="admin-ai-model-embedding"><div class="card-head"><div><div class="subtle">Embedding model</div><h3 class="model-name">bge-m3</h3><div class="model-meta">Demo version · bge-build-16:45 UTC</div></div><span class="pill">Loaded</span></div><div class="model-stats"><div><b>CPU · 2 threads</b><span>Device</span></div><div><b>1.2 GB</b><span>Memory</span></div><div><b>41 texts / s</b><span>Speed</span></div></div></article>
+</div>
+<div class="grid columns">
+<section class="panel" data-testid="admin-ai-worker"><div class="panel-head"><h2>AI worker</h2><span class="pill">Ready</span></div><div class="panel-body"><div class="workers"><span>Workers active</span><b>2 / 2</b><span>In flight</span><b>8</b><span>Oldest queued</span><b>11 min</b><span>Last heartbeat</span><b>5 sec ago</b></div><div class="banner">Ollama is serving caption and embedding work.</div></div></section>
+<section class="panel" data-testid="admin-ai-index"><div class="panel-head"><h2>Search index</h2><span class="pill">Healthy</span></div><div class="panel-body"><div class="workers"><span>Documents · photos-v3</span><b>1.28 M</b><span>Size · shards</span><b>18.4 GB · 3 primary</b><span>Refresh · query p95</span><b>1 sec · 146 ms</b><span>Search mode</span><b data-testid="admin-ai-search-mode">Semantic + keyword</b></div><div class="coverage"><span>Metadata coverage</span><b>96.2%</b><div class="bar"><i style="width:96.2%"></i></div><span>Caption coverage</span><b>41.5%</b><div class="bar"><i style="width:41.5%"></i></div></div></div></section>
+</div>
+<section class="panel" data-testid="admin-ai-reenrichment"><div class="panel-head"><h2>Re-enrichment</h2><span class="pill warn">Model version changed</span></div><div class="panel-body"><div class="re-enrich"><div><strong>18,240 items need caption model qwen2.5vl:3b</strong><p>Existing captions stay available until a newer result succeeds. Queue runs in bounded batches.</p></div><button class="button" type="button" data-testid="admin-ai-reenrichment-review">Review queue</button></div></div></section>
+<div class="banner">Sample values for the mockup only. Model names in production come from configuration.</div>
+<div class="grid states" aria-label="Other view states">
+<article class="state-card" data-state="loading" data-testid="admin-ai-loading"><h3>Loading</h3><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton short"></div><div class="state-copy">Loading AI status…</div></article>
+<article class="state-card" data-state="empty" data-testid="admin-ai-empty"><h3>Empty</h3><div class="state-copy">No enrichment backlog. New work appears when records need captions or embeddings.</div></article>
+<article class="state-card" data-state="offline" data-testid="admin-ai-offline-preview"><h3>Offline preview</h3><div class="state-copy">Ollama offline. New AI work waits; search uses keywords only. Existing captions and vectors are preserved.</div><span class="demo">Simulated locally · test only</span></article>
+<article class="state-card" data-state="error" data-testid="admin-ai-error"><h3>Error</h3><div class="state-copy">Could not load AI status. Refresh and try again.</div><span class="demo">Retry</span></article>
+</div>
+</section>
+
+<section class="theme light" data-theme="light" data-state="ready" aria-label="Admin AI index — light theme">
+<header class="topbar"><div><span class="brand">XFlickr <span class="role">/ ADMIN CONTROL ROOM</span></span></div><div class="row"><span class="theme-chip">Light</span><span class="live" aria-live="polite">Live · updated 5 sec ago</span><button class="button" type="button">Refresh</button></div></header>
+<div class="intro"><h1>AI index</h1><p>Captioning, embeddings, model health and search coverage.</p></div>
+<div class="grid metrics">
+<article class="metric"><div class="metric-label">Caption backlog</div><div class="metric-value">18,240</div><div class="subtle">items waiting</div></article>
+<article class="metric"><div class="metric-label">Captions completed</div><div class="metric-value">61,230</div><div class="subtle">all models</div></article>
+<article class="metric"><div class="metric-label">Captions / minute</div><div class="metric-value">16.4</div><div class="subtle">last 5 min</div></article>
+<article class="metric"><div class="metric-label">Embedding backlog</div><div class="metric-value">320</div><div class="subtle">items waiting</div></article>
+<article class="metric"><div class="metric-label">Embeddings / second</div><div class="metric-value">41</div><div class="subtle">last 5 min</div></article>
+<article class="metric"><div class="metric-label">Index documents</div><div class="metric-value">1,284,330</div><div class="subtle">photos-v3</div></article>
+</div>
+<div class="grid models">
+<article class="model"><div class="card-head"><div><div class="subtle">Caption model</div><h3 class="model-name">qwen2.5vl:3b</h3><div class="model-meta">Demo version · qwen-build-16:48 UTC</div></div><span class="pill">Loaded</span></div><div class="model-stats"><div><b>CPU · 6 threads</b><span>Device</span></div><div><b>3.4 GB</b><span>Memory</span></div><div><b>7.6 s / photo</b><span>Speed</span></div></div></article>
+<article class="model"><div class="card-head"><div><div class="subtle">Embedding model</div><h3 class="model-name">bge-m3</h3><div class="model-meta">Demo version · bge-build-16:45 UTC</div></div><span class="pill">Loaded</span></div><div class="model-stats"><div><b>CPU · 2 threads</b><span>Device</span></div><div><b>1.2 GB</b><span>Memory</span></div><div><b>41 texts / s</b><span>Speed</span></div></div></article>
+</div>
+<div class="grid columns"><section class="panel"><div class="panel-head"><h2>AI worker</h2><span class="pill">Ready</span></div><div class="panel-body"><div class="workers"><span>Workers active</span><b>2 / 2</b><span>In flight</span><b>8</b><span>Oldest queued</span><b>11 min</b><span>Last heartbeat</span><b>5 sec ago</b></div><div class="banner">Ollama is serving caption and embedding work.</div></div></section><section class="panel"><div class="panel-head"><h2>Search index</h2><span class="pill">Healthy</span></div><div class="panel-body"><div class="workers"><span>Documents · photos-v3</span><b>1.28 M</b><span>Size · shards</span><b>18.4 GB · 3 primary</b><span>Refresh · query p95</span><b>1 sec · 146 ms</b><span>Search mode</span><b>Semantic + keyword</b></div><div class="coverage"><span>Metadata coverage</span><b>96.2%</b><div class="bar"><i style="width:96.2%"></i></div><span>Caption coverage</span><b>41.5%</b><div class="bar"><i style="width:41.5%"></i></div></div></div></section></div>
+<section class="panel"><div class="panel-head"><h2>Re-enrichment</h2><span class="pill warn">Model version changed</span></div><div class="panel-body"><div class="re-enrich"><div><strong>18,240 items need caption model qwen2.5vl:3b</strong><p>Existing captions stay available until a newer result succeeds. Queue runs in bounded batches.</p></div><button class="button" type="button">Review queue</button></div></div></section>
+<div class="banner">Sample values for the mockup only. Model names in production come from configuration.</div>
+<div class="grid states" aria-label="Other view states">
+<article class="state-card" data-state="loading"><h3>Loading</h3><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton short"></div><div class="state-copy">Loading AI status…</div></article>
+<article class="state-card" data-state="empty"><h3>Empty</h3><div class="state-copy">No enrichment backlog. New work appears when records need captions or embeddings.</div></article>
+<article class="state-card" data-state="error"><h3>Offline preview</h3><div class="state-copy">Ollama offline. New AI work waits; search uses keywords only. Existing captions and vectors are preserved.</div><span class="demo">Simulated locally · test only</span></article>
+<article class="state-card" data-state="error" data-testid="admin-ai-error"><h3>Error</h3><div class="state-copy">Could not load AI status. Refresh and try again.</div><span class="demo">Retry</span></article>
+</div>
+</section>
+</main>
+</body>
+</html>
