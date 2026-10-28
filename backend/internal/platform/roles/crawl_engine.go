@@ -20,6 +20,7 @@ import (
 	"github.com/jooservices/xflickr/internal/crawl/facets"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/crypto"
+	"github.com/jooservices/xflickr/internal/platform/obs"
 	"github.com/jooservices/xflickr/internal/platform/queue"
 	quotaPostgres "github.com/jooservices/xflickr/internal/quota/adapters/postgres"
 	quotaRedis "github.com/jooservices/xflickr/internal/quota/adapters/redis"
@@ -187,6 +188,17 @@ type crawlFlickr struct {
 }
 
 func (f *crawlFlickr) Call(ctx context.Context, request crawlapp.Request) (json.RawMessage, error) {
+	fields := make(map[string]any, 3)
+	if request.KeyID > 0 {
+		fields["key_id"] = request.KeyID
+	}
+	if request.UserID > 0 {
+		fields["user_id"] = request.UserID
+	}
+	if request.Lane != "" {
+		fields["lane"] = string(request.Lane)
+	}
+	ctx = obs.WithFields(ctx, fields)
 	creds, err := f.credentials(ctx, request)
 	if err != nil {
 		return nil, err
