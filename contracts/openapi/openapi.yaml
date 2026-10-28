@@ -8,6 +8,8 @@ paths:
     $ref: ./paths/auth.yaml#/config
   /healthz:
     $ref: ./paths/common.yaml#/healthz
+  /readyz:
+    $ref: ./paths/common.yaml#/readyz
   /auth/register:
     $ref: ./paths/auth.yaml#/register
   /auth/login:
@@ -78,6 +80,10 @@ components:
       $ref: ./schemas/common.yaml#/Error
     Health:
       $ref: ./schemas/common.yaml#/Health
+    Readiness:
+      $ref: ./schemas/common.yaml#/Readiness
+    DependencyStatus:
+      $ref: ./schemas/common.yaml#/DependencyStatus
     AuthRequest:
       $ref: ./schemas/auth.yaml#/AuthRequest
     User:

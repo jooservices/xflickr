@@ -32,6 +32,22 @@ export const GetHealthResponse = zod
   .describe('Process health reported by GET /healthz.');
 
 /**
+ * Returns the status of each required dependency for every selected role. Internal dependency errors are not exposed.
+ * @summary Report dependency readiness.
+ */
+export const GetReadinessResponse = zod
+  .object({
+    status: zod.enum(['ok', 'error']),
+    dependencies: zod.array(
+      zod.object({
+        name: zod.string().describe('Role-qualified dependency identifier.'),
+        status: zod.enum(['ok', 'error']),
+      }),
+    ),
+  })
+  .describe('Dependency readiness reported by GET /readyz.');
+
+/**
  * @summary Register a user
  */
 export const registerBodyEmailMax = 254;

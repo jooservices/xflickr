@@ -21,11 +21,15 @@ func main() {
 func mainExit() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return execute(ctx, os.Args[1:], os.Getenv("XFLICKR_ROLES"), roles.NewBuiltinRegistry(version), os.Stderr)
+	return executeWithHealth(ctx, os.Args[1:], os.Getenv("XFLICKR_ROLES"), roles.NewBuiltinRegistry(version), os.Stderr)
 }
 
 func execute(ctx context.Context, args []string, envRoles string, registry *roles.Registry, stderr io.Writer) int {
 	return executeWithCommands(ctx, args, envRoles, registry, os.Stdout, stderr, runConfiguredMigrations, runConfiguredRotation)
+}
+
+func executeWithHealth(ctx context.Context, args []string, envRoles string, registry *roles.Registry, stderr io.Writer) int {
+	return executeWithCommandsAndHealth(ctx, args, envRoles, registry, os.Stdout, stderr, runConfiguredMigrations, runConfiguredRotation, true)
 }
 
 func executeWithMigration(ctx context.Context, args []string, envRoles string, registry *roles.Registry, stdout, stderr io.Writer, run migrationRunner) int {
@@ -33,6 +37,10 @@ func executeWithMigration(ctx context.Context, args []string, envRoles string, r
 }
 
 func executeWithCommands(ctx context.Context, args []string, envRoles string, registry *roles.Registry, stdout, stderr io.Writer, runMigrations migrationRunner, runRotation rotationRunner) int {
+	return executeWithCommandsAndHealth(ctx, args, envRoles, registry, stdout, stderr, runMigrations, runRotation, false)
+}
+
+func executeWithCommandsAndHealth(ctx context.Context, args []string, envRoles string, registry *roles.Registry, stdout, stderr io.Writer, runMigrations migrationRunner, runRotation rotationRunner, withHealth bool) int {
 	if len(args) > 0 && args[0] == "migrate" {
 		return runMigrate(ctx, args[1:], stdout, stderr, runMigrations)
 	}
@@ -48,8 +56,14 @@ func executeWithCommands(ctx context.Context, args []string, envRoles string, re
 		fmt.Fprintf(stderr, "xflickr: %v\n", err)
 		return 2
 	}
-	if err := roles.Run(ctx, selected); err != nil {
-		fmt.Fprintf(stderr, "xflickr: %v\n", err)
+	var runErr error
+	if withHealth {
+		runErr = roles.RunWithHealth(ctx, selected, version)
+	} else {
+		runErr = roles.Run(ctx, selected)
+	}
+	if runErr != nil {
+		fmt.Fprintf(stderr, "xflickr: %v\n", runErr)
 		return 1
 	}
 	return 0

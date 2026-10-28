@@ -18,3 +18,23 @@ healthz:
           application/json:
             schema:
               $ref: ../schemas/common.yaml#/Error
+readyz:
+  get:
+    operationId: getReadiness
+    tags:
+      - common
+    summary: Report dependency readiness.
+    description: Returns the status of each required dependency for every selected role. Internal dependency errors are not exposed.
+    responses:
+      "200":
+        description: Every selected role and required dependency is ready.
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Readiness
+      "503":
+        description: One or more roles or required dependencies are not ready.
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/common.yaml#/Readiness

@@ -7,6 +7,17 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
 )
 
+func TestStrictHandlerReportsPlatformReadinessUnavailable(t *testing.T) {
+	response, err := (StrictHandler{}).GetReadiness(t.Context(), gen.GetReadinessRequestObject{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unready, ok := response.(gen.GetReadiness503JSONResponse)
+	if !ok || unready.Status != gen.ReadinessStatus("error") || len(unready.Dependencies) != 1 || unready.Dependencies[0].Name != "platform.startup" {
+		t.Fatalf("readiness response = %#v", response)
+	}
+}
+
 func TestStrictHandlerLeavesAPIKeysToAccounts(t *testing.T) {
 	handler := StrictHandler{}
 	if _, err := handler.ListKeys(t.Context(), gen.ListKeysRequestObject{}); !errors.Is(err, errAPIKeysServedByAccounts) {

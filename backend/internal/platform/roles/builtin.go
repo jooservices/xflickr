@@ -156,6 +156,7 @@ func (schedulerRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	configureRoleReadiness(ctx, "scheduler", postgresDependency(pool), redisDependency(redisClient), blobStoreDependency(blobs))
 	return pump.Run(ctx)
 }
 
@@ -202,6 +203,7 @@ func (crawlRole) Run(ctx context.Context) error {
 		return err
 	}
 	service := crawlapp.Interests{Repository: interestsRepository, Settings: settingsapp.New(settingsRepository)}
+	configureRoleReadiness(ctx, "crawl", postgresDependency(pool), redisDependency(redisClient))
 	// The River worker and the interest consumer run side by side; if either
 	// fails the role fails, so a dead worker cannot leave the process idling.
 	group, groupCtx := errgroup.WithContext(ctx)
@@ -240,6 +242,7 @@ func (syncRole) Run(ctx context.Context) error {
 	if err := registerPhotoSizes(queueAdapter, pool, redisClient, cfg, flickrclient.NewClient(flickrRESTURL(cfg), nil)); err != nil {
 		return err
 	}
+	configureRoleReadiness(ctx, "sync", postgresDependency(pool), redisDependency(redisClient))
 	return queue.Worker{Queue: queueAdapter}.Run(ctx)
 }
 
@@ -306,6 +309,7 @@ func (mediaRole) Run(ctx context.Context) error {
 	}, queue.Options{Queue: "media", MaxAttempts: 3, LeaseTimeout: 2 * time.Hour}); err != nil {
 		return err
 	}
+	configureRoleReadiness(ctx, "media", postgresDependency(pool), redisDependency(redisClient), blobStoreDependency(blobs))
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	results := make(chan error, 2)
@@ -431,6 +435,7 @@ type idleRole struct {
 func (r idleRole) Name() string { return r.name }
 
 func (r idleRole) Run(ctx context.Context) error {
+	configureRoleReadiness(ctx, r.name)
 	<-ctx.Done()
 	return nil
 }
@@ -473,7 +478,7 @@ func (r APIRole) Run(ctx context.Context) error {
 	defer redisClient.Close()
 	hub := platformsse.NewHub(256)
 	go listenSSEEvents(ctx, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"}, hub)
-	handler, err := buildConfiguredAPIHandlerWithHub(pool, redisClient, cfg, r.version, hub)
+	handler, err := buildConfiguredAPIHandlerWithHub(pool, redisClient, cfg, r.version, hub, readinessFromContext(ctx))
 	if err != nil {
 		return err
 	}
@@ -498,7 +503,7 @@ func buildConfiguredAPIHandler(pool *pgxpool.Pool, redisClient redisv9.Universal
 	return buildConfiguredAPIHandlerWithHub(pool, redisClient, cfg, version, platformsse.NewHub(256))
 }
 
-func buildConfiguredAPIHandlerWithHub(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, version string, hub *platformsse.Hub) (http.Handler, error) {
+func buildConfiguredAPIHandlerWithHub(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, version string, hub *platformsse.Hub, readiness ...*httpx.Readiness) (http.Handler, error) {
 	if pool == nil {
 		return nil, errors.New("api: postgres database is required")
 	}
@@ -532,12 +537,19 @@ func buildConfiguredAPIHandlerWithHub(pool *pgxpool.Pool, redisClient redisv9.Un
 	if err != nil {
 		return nil, err
 	}
+	var probeReadiness *httpx.Readiness
+	if len(readiness) > 0 {
+		probeReadiness = readiness[0]
+	}
+	if probeReadiness != nil {
+		probeReadiness.ConfigureRole("api", postgresDependency(pool), redisDependency(redisClient), blobStoreDependency(blobs))
+	}
 	downloads, err := buildDownloadHandlerWithEvents(pool, blobs, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"})
 	if err != nil {
 		return nil, err
 	}
 	opsHandler := opshttp.Handler{Service: ops.Service{Store: opspostgres.Store{Pool: pool}}, ActorID: userIDFromPrincipal}
-	return newAPIRouterWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}), nil
+	return newAPIRouterWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}, probeReadiness), nil
 }
 
 func sseUserID(r *http.Request) (int64, bool) {
@@ -593,11 +605,30 @@ type apiServer struct {
 	Downloads mediahttp.DownloadHandler
 	Ops       opshttp.Handler
 	Stream    platformsse.Handler
+	Readiness *httpx.Readiness
 	planHandler
 }
 
 func (s apiServer) PutMeSharing(ctx context.Context, request gen.PutMeSharingRequestObject) (gen.PutMeSharingResponseObject, error) {
 	return s.Sharing.PutMeSharing(ctx, request)
+}
+
+func (s apiServer) GetReadiness(ctx context.Context, _ gen.GetReadinessRequestObject) (gen.GetReadinessResponseObject, error) {
+	status, ready := s.Readiness.Evaluate(ctx)
+	response := gen.Readiness{
+		Status:       gen.ReadinessStatus(status.Status),
+		Dependencies: make([]gen.DependencyStatus, 0, len(status.Dependencies)),
+	}
+	for _, dependency := range status.Dependencies {
+		response.Dependencies = append(response.Dependencies, gen.DependencyStatus{
+			Name:   dependency.Name,
+			Status: gen.DependencyStatusStatus(dependency.Status),
+		})
+	}
+	if ready {
+		return gen.GetReadiness200JSONResponse(response), nil
+	}
+	return gen.GetReadiness503JSONResponse(response), nil
 }
 
 func (s apiServer) GetAdminOpsStatus(ctx context.Context, request gen.GetAdminOpsStatusRequestObject) (gen.GetAdminOpsStatusResponseObject, error) {
@@ -657,6 +688,7 @@ func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.K
 	router.Use(identityhttp.CSRF)
 	router.Use(identityhttp.ProtectRoutes(identity.Sessions, accessResolver(router)))
 	var streamHandler platformsse.Handler
+	var readiness *httpx.Readiness
 	for _, option := range options {
 		if ops, ok := option.(opshttp.Handler); ok {
 			opsHandler = ops
@@ -664,8 +696,11 @@ func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.K
 		if events, ok := option.(platformsse.Handler); ok {
 			streamHandler = events
 		}
+		if probe, ok := option.(*httpx.Readiness); ok {
+			readiness = probe
+		}
 	}
-	strict := gen.NewStrictHandlerWithOptions(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, Ops: opsHandler, Stream: streamHandler, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
+	strict := gen.NewStrictHandlerWithOptions(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, Ops: opsHandler, Stream: streamHandler, Readiness: readiness, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		identityhttp.MaintainSessionCookies(identity.Sessions),
 	}, gen.StrictHTTPServerOptions{RequestErrorHandlerFunc: badRequest, ResponseErrorHandlerFunc: internalError})

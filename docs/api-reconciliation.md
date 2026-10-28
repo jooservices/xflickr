@@ -39,3 +39,4 @@ that serve it, or `MISSING`.
 | `/me/sessions` | `/me/sessions` | `/me/sessions` |
 | `/me/sessions/{}` | `/me/sessions/{id}` | `/me/sessions/{id}` |
 | `/me/sharing` | `/me/sharing` | `/me/sharing` |
+| `/readyz` | `/readyz` | `/readyz` |
