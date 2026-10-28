@@ -15,6 +15,7 @@ RUN npm run build
 
 FROM node:24-alpine AS runtime
 ENV HTTP_PORT=8080 \
+    OBS_HTTP_PORT=8081 \
     XFLICKR_WEB_DIR=/app/web \
     BLOB_LOCAL_DIR=/app/data
 WORKDIR /app
@@ -22,5 +23,5 @@ COPY --from=go-build --chown=node:node /out/xflickr /app/xflickr
 COPY --from=web-build --chown=node:node /src/web/dist /app/web
 RUN mkdir -p /app/data && chown node:node /app/data
 USER node
-EXPOSE 8080
+EXPOSE 8080 8081
 CMD ["/app/xflickr"]
