@@ -41,7 +41,7 @@ func TestCycleSchedulesPeopleInOrderBeforeWrapping(t *testing.T) {
 		t.Fatal(err)
 	}
 	for index, want := range people {
-		queued, err := repository.ScheduleNext(ctx, userID, now, 24*time.Hour)
+		queued, err := repository.ScheduleNext(ctx, userID, now, 24*time.Hour, 30*24*time.Hour)
 		if index == 1 {
 			if err != nil || queued {
 				t.Fatalf("ScheduleNext() for not-yet-due %q = %v, %v; want cursor visit only", want, queued, err)
@@ -69,7 +69,7 @@ func TestCycleSchedulesPeopleInOrderBeforeWrapping(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	queued, err := repository.ScheduleNext(ctx, userID, now.Add(24*time.Hour), 24*time.Hour)
+	queued, err := repository.ScheduleNext(ctx, userID, now.Add(24*time.Hour), 24*time.Hour, 30*24*time.Hour)
 	if err != nil || !queued {
 		t.Fatalf("wrapped ScheduleNext() = %v, %v; want queued", queued, err)
 	}
@@ -79,6 +79,52 @@ func TestCycleSchedulesPeopleInOrderBeforeWrapping(t *testing.T) {
 	}
 	if wrapped != people[0] {
 		t.Fatalf("cycle wrapped to %q, want %q", wrapped, people[0])
+	}
+}
+
+func TestCycleSchedulesFullReconciliationAfterItsOwnInterval(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	person := fmt.Sprintf("reconcile-cycle-%d", time.Now().UnixNano())
+	now := time.Now().UTC().Truncate(time.Second)
+	lastReconciled := now.Add(-31 * 24 * time.Hour)
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,last_checked_at,last_reconciled_at) VALUES($1,$2,0,'test',$3,$4)`, userID, person, now, lastReconciled); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM crawl_cycles WHERE user_id=$1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, userID, person)
+	})
+	repository, err := NewCycleRepository(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queued, err := repository.ScheduleNext(ctx, userID, now, 24*time.Hour, 30*24*time.Hour)
+	if err != nil || !queued {
+		t.Fatalf("ScheduleNext() = %v, %v; want a full reconciliation", queued, err)
+	}
+	var kind, subject string
+	var rawCursor []byte
+	if err := pool.QueryRow(ctx, `SELECT kind,subject_key,cursor FROM work_items WHERE user_id=$1 AND kind='reconcile' AND subject_key=$2`, userID, person).Scan(&kind, &subject, &rawCursor); err != nil {
+		t.Fatal(err)
+	}
+	cursor, err := domain.ParseCursor(rawCursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kind != "reconcile" || subject != person || cursor.Method != "flickr.people.getPhotos" || cursor.CheckpointAt != now.Unix() || cursor.Params["user_id"] != person || cursor.Params["per_page"] != "500" {
+		t.Fatalf("reconciliation item = kind:%s subject:%s cursor:%+v", kind, subject, cursor)
+	}
+	queued, err = repository.ScheduleNext(ctx, userID, now.Add(time.Minute), 24*time.Hour, 30*24*time.Hour)
+	if err != nil || queued || count(t, ctx, pool, `SELECT count(*) FROM work_items WHERE user_id=$1 AND kind='reconcile' AND subject_key=$2`, userID, person) != 1 {
+		t.Fatalf("active reconciliation was duplicated: queued=%v err=%v", queued, err)
+	}
+	var stored time.Time
+	if err := pool.QueryRow(ctx, `SELECT last_reconciled_at FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, userID, person).Scan(&stored); err != nil || !stored.Equal(lastReconciled) {
+		t.Fatalf("last_reconciled_at advanced before completion: got %s want %s err=%v", stored, lastReconciled, err)
 	}
 }
 
@@ -110,7 +156,7 @@ func TestCycleAssignsOwnerAccountKeyToWorkItems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if queued, err := repository.ScheduleNext(ctx, userID, time.Now().UTC(), 24*time.Hour); err != nil || !queued {
+	if queued, err := repository.ScheduleNext(ctx, userID, time.Now().UTC(), 24*time.Hour, 30*24*time.Hour); err != nil || !queued {
 		t.Fatalf("ScheduleNext() = %v, %v; want queued", queued, err)
 	}
 	var missing int
@@ -248,7 +294,7 @@ func TestCycleContactsPhotosAssignsKeyAndSkipsNonOkAccount(t *testing.T) {
 			if _, err := pool.Exec(ctx, `INSERT INTO crawl_cycles(user_id,cursor_person_nsid,started_at) VALUES($1,'zzzz',now()-interval '48 hours') ON CONFLICT (user_id) DO UPDATE SET cursor_person_nsid='zzzz', started_at=now()-interval '48 hours'`, userID); err != nil {
 				t.Fatal(err)
 			}
-			if queued, err := repository.ScheduleNext(ctx, userID, time.Now().UTC(), 24*time.Hour); err != nil || !queued {
+			if queued, err := repository.ScheduleNext(ctx, userID, time.Now().UTC(), 24*time.Hour, 30*24*time.Hour); err != nil || !queued {
 				t.Fatalf("ScheduleNext() = %v, %v; want queued", queued, err)
 			}
 			var key *int64
@@ -275,7 +321,7 @@ func TestCycleContactsPhotosAssignsKeyAndSkipsNonOkAccount(t *testing.T) {
 			if _, err := pool.Exec(ctx, `UPDATE crawl_interests SET last_checked_at=NULL WHERE user_id=$1`, userID); err != nil {
 				t.Fatal(err)
 			}
-			if queued, err := repository.ScheduleNext(ctx, userID, time.Now().UTC(), 24*time.Hour); err != nil || !queued {
+			if queued, err := repository.ScheduleNext(ctx, userID, time.Now().UTC(), 24*time.Hour, 30*24*time.Hour); err != nil || !queued {
 				t.Fatalf("second ScheduleNext() = %v, %v; want queued", queued, err)
 			}
 			var state string

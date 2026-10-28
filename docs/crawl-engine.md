@@ -20,8 +20,8 @@ The scheduler pump dispatches a ready work item as a job whose arguments carry
 6. in one unit of work: locks the item, upserts catalog records, records
    observations, adds an interest one level deeper (`depth + 1`, ignored beyond
    the user's maximum depth) for each discovery, creates the planned and
-   returned work items, then advances the cursor (`HasMore`) or finishes the
-   item.
+   returned work items, applies a complete reconciliation diff when marked by
+   the final page, then advances the cursor (`HasMore`) or finishes the item.
 
 The commit only applies while the item is still `running` on the page that was
 fetched. A page that was already committed, or an item that finished, changes
@@ -70,6 +70,16 @@ corresponding checkpoint. Completed or failed items reopen with the new cursor;
 pending and running items keep their current work.
 The settings interval defaults to 24 hours when no positive effective interval
 is supplied.
+
+## Full catalog reconciliation
+
+The cycle scheduler independently checks `reconcile_interval` (default 30 days)
+for each person. A durable `reconcile` item reads every page of the person's
+photo list and then every page of favorites using one start-time checkpoint.
+Only after the final favorites page commits does the engine tombstone missing
+photos and mark missing favorite relationships as removed. A failed or
+incomplete scan does not apply a diff. See [Catalog reconciliation](reconciliation.md)
+for the privacy and event rules.
 
 `crawl_cycles` stores each user's cursor through the full NSID-ordered list.
 The cursor advances over people who are not yet due without marking them

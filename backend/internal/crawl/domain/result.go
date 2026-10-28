@@ -38,4 +38,7 @@ type Result struct {
 	NextCursor *Cursor
 	// HasMore asks for the next page of the same item; false finishes it.
 	HasMore bool
+	// CompleteReconcile applies the missing-item diff only after both full lists
+	// have been read successfully.
+	CompleteReconcile bool
 }

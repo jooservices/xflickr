@@ -53,6 +53,7 @@ func (r *Repository) UpsertPhotos(ctx context.Context, photos []domain.Photo) er
 	}
 	defer encoder.Close()
 	params := make([]gen.UpsertPhotoParams, 0, len(photos))
+	seenAt := toPgTime(time.Now().UTC())
 	for _, photo := range photos {
 		if err := photo.Validate(); err != nil {
 			return err
@@ -82,7 +83,7 @@ func (r *Repository) UpsertPhotos(ctx context.Context, photos []domain.Photo) er
 			License: photo.License, Media: photo.Media, Geo: jsonOrObject(photo.Geo),
 			Sizes: jsonOrArray(photo.Sizes), SizesStatus: string(status),
 			SizesCheckedAt: pgTime(photo.SizesCheckedAt), Raw: raw, ContentHash: hash[:],
-			TombstonedAt: pgTime(photo.TombstonedAt),
+			TombstonedAt: pgTime(photo.TombstonedAt), LastSeenAt: seenAt,
 		})
 	}
 	results := r.queries.UpsertPhoto(ctx, params)

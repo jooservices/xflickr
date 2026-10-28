@@ -31,6 +31,7 @@ func TestMergeSeededDefaults(t *testing.T) {
 	want := Effective{
 		MaxDepth:                2,
 		ChangeCheckInterval:     24 * time.Hour,
+		ReconcileInterval:       30 * 24 * time.Hour,
 		DailyCallLimit:          0,
 		QuotaReserve:            100,
 		PerSecondRate:           4,
@@ -107,7 +108,7 @@ func TestJSONSchemaPerKey(t *testing.T) {
 		t.Fatal("SchemaFor(missing) = true")
 	}
 
-	for _, key := range []Key{ChangeCheckInterval, ZipTTL, RetryBackoff, NodeCooldown} {
+	for _, key := range []Key{ChangeCheckInterval, ReconcileInterval, ZipTTL, RetryBackoff, NodeCooldown} {
 		schema, ok := SchemaFor(key)
 		if !ok || schema.Type != "integer" || !floatEqual(schema.Minimum, 0) && !floatEqual(schema.Minimum, 1) || !floatEqual(schema.Maximum, float64(math.MaxInt64/int64(time.Second))) {
 			t.Fatalf("duration schema %s = %+v", key, schema)

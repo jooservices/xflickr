@@ -23,10 +23,10 @@ WHERE (people.username, people.realname, people.profile, people.icon, people.pho
 INSERT INTO photos (
     id, owner_nsid, secret, server, title, description, tags, taken_at,
     uploaded_at, last_update, visibility, license, media, geo, sizes,
-    sizes_status, sizes_checked_at, raw, content_hash, tombstoned_at
+    sizes_status, sizes_checked_at, raw, content_hash, tombstoned_at, last_seen_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-    $16, $17, $18, $19, $20
+    $16, $17, $18, $19, $20, $21
 )
 ON CONFLICT (id) DO UPDATE SET
     owner_nsid = EXCLUDED.owner_nsid,
@@ -44,9 +44,11 @@ ON CONFLICT (id) DO UPDATE SET
     geo = EXCLUDED.geo,
     raw = EXCLUDED.raw,
     content_hash = EXCLUDED.content_hash,
-    tombstoned_at = EXCLUDED.tombstoned_at
+    tombstoned_at = EXCLUDED.tombstoned_at,
+    last_seen_at = EXCLUDED.last_seen_at
 WHERE photos.last_update IS DISTINCT FROM EXCLUDED.last_update
-   OR photos.content_hash IS DISTINCT FROM EXCLUDED.content_hash;
+   OR photos.content_hash IS DISTINCT FROM EXCLUDED.content_hash
+   OR photos.last_seen_at IS DISTINCT FROM EXCLUDED.last_seen_at;
 
 -- name: SetSizes :exec
 UPDATE photos

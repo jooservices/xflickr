@@ -487,6 +487,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 	}{
 		"max_depth":                  {value: "2", min: &minimum, max: &maximum},
 		"change_check_interval":      {value: "86400"},
+		"reconcile_interval":         {value: "2592000"},
 		"daily_call_limit":           {value: "0"},
 		"quota_reserve":              {value: "100"},
 		"per_second_rate":            {value: "4"},
@@ -497,6 +498,11 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		"retry_backoff":              {value: "30"},
 		"node_cooldown":              {value: "2700"},
 		"group_pools_enabled":        {value: "false"},
+		"photo_info_enabled":         {value: "true"},
+		"photo_exif_enabled":         {value: "true"},
+		"photo_contexts_enabled":     {value: "true"},
+		"photo_comments_enabled":     {value: "false"},
+		"photo_favorites_enabled":    {value: "false"},
 		"registration_open":          {value: "false"},
 		"per_key_ready_cap":          {value: "100", min: &zero},
 		"node_ready_cap":             {value: "500", min: &zero},
@@ -516,7 +522,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 	}
 	for key, expected := range want {
 		item, ok := got[key]
-		wantOverridable := key != "registration_open" && key != "per_key_ready_cap" && key != "node_ready_cap" && key != "media_ready_cap" && key != "ai_ready_cap" && key != "sync_ready_cap" && key != "lease_timeout" && !strings.HasPrefix(key, "score_")
+		wantOverridable := key != "registration_open" && key != "photo_info_enabled" && key != "photo_exif_enabled" && key != "photo_contexts_enabled" && key != "photo_comments_enabled" && key != "photo_favorites_enabled" && key != "per_key_ready_cap" && key != "node_ready_cap" && key != "media_ready_cap" && key != "ai_ready_cap" && key != "sync_ready_cap" && key != "lease_timeout" && !strings.HasPrefix(key, "score_")
 		if !ok || item.overridable != wantOverridable || !jsonEqual(item.value, expected.value) || !floatPtrEqual(item.minimum, expected.min) || !floatPtrEqual(item.maximum, expected.max) {
 			t.Fatalf("seed %s = value %s overridable %v min %v max %v", key, item.value, item.overridable, item.minimum, item.maximum)
 		}
@@ -528,25 +534,29 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		t.Fatalf("Effective(defaults) error = %v", err)
 	}
 	wantEffective := domain.Effective{
-		MaxDepth:            2,
-		ChangeCheckInterval: 24 * time.Hour,
-		DailyCallLimit:      0,
-		QuotaReserve:        100,
-		PerSecondRate:       4,
-		Burst:               5,
-		PersonLaneShare:     0.30,
-		ZipTTL:              24 * time.Hour,
-		RetryMax:            5,
-		RetryBackoff:        30 * time.Second,
-		NodeCooldown:        45 * time.Minute,
-		GroupPoolsEnabled:   false,
-		PerKeyReadyCap:      100,
-		NodeReadyCap:        500,
-		MediaReadyCap:       100,
-		AIReadyCap:          100,
-		SyncReadyCap:        100,
-		LeaseTimeout:        2 * time.Minute,
-		ScoreWeightPlan:     10, ScoreWeightDirectAction: 100, ScoreWeightStarred: 20,
+		MaxDepth:             2,
+		ChangeCheckInterval:  24 * time.Hour,
+		ReconcileInterval:    30 * 24 * time.Hour,
+		DailyCallLimit:       0,
+		QuotaReserve:         100,
+		PerSecondRate:        4,
+		Burst:                5,
+		PersonLaneShare:      0.30,
+		ZipTTL:               24 * time.Hour,
+		RetryMax:             5,
+		RetryBackoff:         30 * time.Second,
+		NodeCooldown:         45 * time.Minute,
+		GroupPoolsEnabled:    false,
+		PhotoInfoEnabled:     true,
+		PhotoExifEnabled:     true,
+		PhotoContextsEnabled: true,
+		PerKeyReadyCap:       100,
+		NodeReadyCap:         500,
+		MediaReadyCap:        100,
+		AIReadyCap:           100,
+		SyncReadyCap:         100,
+		LeaseTimeout:         2 * time.Minute,
+		ScoreWeightPlan:      10, ScoreWeightDirectAction: 100, ScoreWeightStarred: 20,
 		ScoreWeightDepth: 5, ScoreWeightAgeMinutes: 0.1, ScoreAgingBatchSize: 500,
 	}
 	if effective != wantEffective {

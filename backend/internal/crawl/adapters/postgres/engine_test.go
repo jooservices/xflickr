@@ -297,6 +297,90 @@ func TestWritersWrapFailures(t *testing.T) {
 	}
 }
 
+func TestReconcileTxCompleteValidatesAndSkipsRemovedInterest(t *testing.T) {
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	valid := struct {
+		userID int64
+		person string
+	}{userID: 7, person: "person"}
+	invalid := []struct {
+		name    string
+		userID  int64
+		person  string
+		scanned time.Time
+		done    time.Time
+	}{
+		{name: "user", userID: 0, person: valid.person, scanned: now, done: now},
+		{name: "person", userID: valid.userID, person: "", scanned: now, done: now},
+		{name: "scan time", userID: valid.userID, person: valid.person, done: now},
+		{name: "completion time", userID: valid.userID, person: valid.person, scanned: now},
+	}
+	for _, tt := range invalid {
+		t.Run(tt.name, func(t *testing.T) {
+			conn := &engConn{}
+			err := (reconcileTx{tx: conn}).Complete(t.Context(), tt.userID, tt.person, tt.scanned, tt.done)
+			if err == nil || len(conn.execs) != 0 {
+				t.Fatalf("Complete() = %v, execs=%d; want validation error before writes", err, len(conn.execs))
+			}
+		})
+	}
+
+	conn := &engConn{row: engRow{err: pgx.ErrNoRows}}
+	if err := (reconcileTx{tx: conn}).Complete(t.Context(), valid.userID, valid.person, now, now); err != nil {
+		t.Fatalf("removed interest Complete() = %v; want no-op", err)
+	}
+	if len(conn.execs) != 0 {
+		t.Fatalf("removed interest wrote %d queries", len(conn.execs))
+	}
+
+	conn.row = engRow{err: errors.New("query failed")}
+	if err := (reconcileTx{tx: conn}).Complete(t.Context(), valid.userID, valid.person, now, now); err == nil || !strings.Contains(err.Error(), "lock reconciliation interest") {
+		t.Fatalf("interest lock error = %v", err)
+	}
+}
+
+func TestReconcileTxCompleteAppliesDiffAndWrapsWriteFailures(t *testing.T) {
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	completed := now.Add(time.Minute)
+	newConn := func() *engConn { return &engConn{row: engRow{values: []any{1}}} }
+	conn := newConn()
+	if err := (reconcileTx{tx: conn}).Complete(t.Context(), 7, "person", now, completed); err != nil {
+		t.Fatal(err)
+	}
+	if len(conn.execs) != 3 {
+		t.Fatalf("Complete() issued %d writes; want photo, favorite, and completion updates", len(conn.execs))
+	}
+	for i, want := range []string{"UPDATE photos", "UPDATE favorites"} {
+		if !strings.Contains(conn.execs[i].sql, want) || conn.execs[i].args[0] != "person" || conn.execs[i].args[1] != now || conn.execs[i].args[2] != completed || conn.execs[i].args[3] != int64(7) {
+			t.Fatalf("write %d = %+v; want %q and reconciliation arguments", i, conn.execs[i], want)
+		}
+	}
+	if !strings.Contains(conn.execs[2].sql, "UPDATE crawl_interests") || conn.execs[2].args[0] != int64(7) || conn.execs[2].args[1] != "person" || conn.execs[2].args[2] != completed {
+		t.Fatalf("completion write = %+v; want user, person, and completion time", conn.execs[2])
+	}
+	if !strings.Contains(conn.execs[0].sql, "p.visibility='public'") || !strings.Contains(conn.execs[1].sql, "flickr_accounts") {
+		t.Fatalf("missing-row safety predicates absent: photo=%s favorite=%s", conn.execs[0].sql, conn.execs[1].sql)
+	}
+
+	for _, tt := range []struct {
+		fragment string
+		want     string
+	}{
+		{fragment: "UPDATE photos", want: "tombstone photos"},
+		{fragment: "UPDATE favorites", want: "mark favorites"},
+		{fragment: "UPDATE crawl_interests", want: "record completed reconciliation"},
+	} {
+		t.Run(tt.want, func(t *testing.T) {
+			conn := newConn()
+			conn.failExec = tt.fragment
+			err := (reconcileTx{tx: conn}).Complete(t.Context(), 7, "person", now, completed)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Complete() error = %v; want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestLockReadsItemForUpdate(t *testing.T) {
 	conn := &engConn{row: engRow{values: []any{int64(5), "photos", "1@N01", int64(3), 0, "running", 0, []byte(`{"page":1,"method":"m"}`)}}}
 	err := newTestEngine(conn).Do(t.Context(), func(w app.Writers) error {

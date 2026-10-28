@@ -2,7 +2,6 @@ package river_test
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -24,7 +23,6 @@ func TestPhotoEnqueuerDedupesReadyJobs(t *testing.T) {
 	defer cancel()
 	base := time.Now().UnixNano() % 1_000_000_000_000
 	photo := base*10 + 1
-	testQueue := fmt.Sprintf("sizes_%d", base)
 	dedupe := func(id int64) string { return app.PhotoDedupeKey(id, app.PhotoFacet) }
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM river_job WHERE args->'args'->>'dedupe_key' = ANY($1)`, []string{dedupe(photo), dedupe(photo + 1)})
@@ -33,7 +31,7 @@ func TestPhotoEnqueuerDedupesReadyJobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	enqueuer := scheduleriver.PhotoEnqueuer{Pool: pool, Jobs: adapter, ReadyCap: 1, Options: queue.Options{Queue: testQueue, MaxAttempts: 3}}
+	enqueuer := scheduleriver.PhotoEnqueuer{Pool: pool, Jobs: adapter, ReadyCap: 1, Options: queue.Options{Queue: scheduleriver.PhotoQueue, MaxAttempts: 3}}
 	job := func(id int64) app.PhotoJob {
 		return app.PhotoJob{PhotoID: id, OwnerNSID: "owner", Facet: app.PhotoFacet, KeyID: 7, Class: quotadomain.Photo, DedupeKey: dedupe(id)}
 	}

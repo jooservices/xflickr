@@ -44,6 +44,8 @@
   deduplication, progress reporting, contact priority controls, and pause/resume.
 - [Crawl engine](crawl-engine.md) — facet interface, registry, page job flow
   and error outcomes.
+- [Catalog reconciliation](reconciliation.md) — full photo and favorite scans,
+  safe tombstones, and visibility change events.
 - [Web app shells](web-shells.md) — user and admin shells, route guard, tokens,
   state components, and EN/VI i18n.
 - [Schedule backlog](schedule.md) — deduplicated work items, cursors, and state

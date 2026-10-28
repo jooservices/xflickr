@@ -19,6 +19,7 @@ type Key string
 const (
 	MaxDepth                Key = "max_depth"
 	ChangeCheckInterval     Key = "change_check_interval"
+	ReconcileInterval       Key = "reconcile_interval"
 	DailyCallLimit          Key = "daily_call_limit"
 	QuotaReserve            Key = "quota_reserve"
 	PerSecondRate           Key = "per_second_rate"
@@ -54,6 +55,7 @@ const (
 type Effective struct {
 	MaxDepth                int
 	ChangeCheckInterval     time.Duration
+	ReconcileInterval       time.Duration
 	DailyCallLimit          int64 // zero means unlimited
 	QuotaReserve            int64
 	PerSecondRate           int
@@ -165,6 +167,7 @@ var (
 var schemas = map[Key]JSONSchema{
 	MaxDepth:                {Type: "integer", Minimum: minOne},
 	ChangeCheckInterval:     {Type: "integer", Minimum: minOne, Maximum: maxDuration},
+	ReconcileInterval:       {Type: "integer", Minimum: minOne, Maximum: maxDuration},
 	DailyCallLimit:          {Type: "integer", Minimum: minZero},
 	QuotaReserve:            {Type: "integer", Minimum: minZero},
 	PerSecondRate:           {Type: "integer", Minimum: minOne},
@@ -206,6 +209,7 @@ func Keys() []Key {
 	return []Key{
 		MaxDepth,
 		ChangeCheckInterval,
+		ReconcileInterval,
 		DailyCallLimit,
 		QuotaReserve,
 		PerSecondRate,
@@ -237,6 +241,7 @@ func Defaults() []Definition {
 	return []Definition{
 		{Key: MaxDepth, Value: json.RawMessage("2"), UserOverridable: true, Min: floatPointer(1), Max: floatPointer(4)},
 		{Key: ChangeCheckInterval, Value: json.RawMessage("86400"), UserOverridable: true},
+		{Key: ReconcileInterval, Value: json.RawMessage("2592000"), UserOverridable: true},
 		{Key: DailyCallLimit, Value: json.RawMessage("0"), UserOverridable: true},
 		{Key: QuotaReserve, Value: json.RawMessage("100"), UserOverridable: true},
 		{Key: PerSecondRate, Value: json.RawMessage("4"), UserOverridable: true},
@@ -468,6 +473,9 @@ func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
 	}
 	if result.ChangeCheckInterval, err = duration(values[ChangeCheckInterval]); err != nil {
 		return Effective{}, nil, invalidStored(ChangeCheckInterval, err)
+	}
+	if result.ReconcileInterval, err = duration(values[ReconcileInterval]); err != nil {
+		return Effective{}, nil, invalidStored(ReconcileInterval, err)
 	}
 	if result.DailyCallLimit, err = integer64(values[DailyCallLimit]); err != nil {
 		return Effective{}, nil, invalidStored(DailyCallLimit, err)

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -165,8 +166,51 @@ func (e *Engine) Stop(ctx context.Context, request app.StopRequest) error {
 // Do runs fn in one serializable transaction.
 func (e *Engine) Do(ctx context.Context, fn func(app.Writers) error) error {
 	return e.run(ctx, func(tx Conn) error {
-		return fn(app.Writers{Work: workTx{tx}, Catalog: e.catalog(tx), Interests: interestTx{tx}, Observations: observationTx{tx}})
+		return fn(app.Writers{
+			Work: workTx{tx}, Catalog: e.catalog(tx), Interests: interestTx{tx},
+			Observations: observationTx{tx}, Reconcile: reconcileTx{tx},
+		})
 	})
+}
+
+type reconcileTx struct{ tx Conn }
+
+func (r reconcileTx) Complete(ctx context.Context, userID int64, person string, scannedAt, completedAt time.Time) error {
+	if userID <= 0 || person == "" || scannedAt.IsZero() || completedAt.IsZero() {
+		return errors.New("crawl: invalid reconciliation completion")
+	}
+	var exists int
+	err := r.tx.QueryRow(ctx, `SELECT 1 FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2 FOR UPDATE`, userID, person).Scan(&exists)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// The interest may have been removed while its durable work item was
+		// running. Do not apply a catalog diff for a scope that no longer exists.
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("crawl: lock reconciliation interest: %w", err)
+	}
+	if _, err := r.tx.Exec(ctx, `
+		UPDATE photos p SET tombstoned_at=$3
+		WHERE p.owner_nsid=$1 AND p.tombstoned_at IS NULL AND p.last_seen_at<$2
+		  AND (p.visibility='public' OR EXISTS (
+			SELECT 1 FROM flickr_accounts fa
+			WHERE fa.user_id=$4 AND fa.nsid=$1 AND fa.status='ok'
+		  ))`, person, scannedAt, completedAt, userID); err != nil {
+		return fmt.Errorf("crawl: tombstone photos missing from full list: %w", err)
+	}
+	if _, err := r.tx.Exec(ctx, `
+		UPDATE favorites f SET removed_at=$3
+		WHERE f.person_nsid=$1 AND f.removed_at IS NULL AND f.seen_at<$2
+		  AND EXISTS (
+			SELECT 1 FROM flickr_accounts fa
+			WHERE fa.user_id=$4 AND fa.nsid=$1 AND fa.status='ok'
+		  )`, person, scannedAt, completedAt, userID); err != nil {
+		return fmt.Errorf("crawl: mark favorites missing from full list: %w", err)
+	}
+	if _, err := r.tx.Exec(ctx, `UPDATE crawl_interests SET last_reconciled_at=$3 WHERE user_id=$1 AND person_nsid=$2`, userID, person, completedAt); err != nil {
+		return fmt.Errorf("crawl: record completed reconciliation: %w", err)
+	}
+	return nil
 }
 
 type workTx struct{ tx Conn }
