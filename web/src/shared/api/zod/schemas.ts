@@ -1050,3 +1050,291 @@ export const StreamEventsHeader = zod.object({
 });
 
 export const StreamEventsResponse = zod.unknown();
+
+/**
+ * @summary List people visible to the signed-in user
+ */
+export const listPeopleQueryCursorMax = 1024;
+
+export const listPeopleQueryLimitDefault = 50;
+export const listPeopleQueryLimitMax = 100;
+
+export const ListPeopleQueryParams = zod.object({
+  cursor: zod.string().max(listPeopleQueryCursorMax).optional(),
+  limit: zod.int().min(1).max(listPeopleQueryLimitMax).default(listPeopleQueryLimitDefault),
+});
+
+export const listPeopleResponseItemsItemPhotosCountMin = 0;
+
+export const ListPeopleResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      nsid: zod.string(),
+      username: zod.string(),
+      realname: zod.string(),
+      icon: zod.string(),
+      photos_count: zod
+        .int()
+        .min(listPeopleResponseItemsItemPhotosCountMin)
+        .describe('Count of photos visible to this user'),
+    }),
+  ),
+  next_cursor: zod.string().optional(),
+});
+
+/**
+ * @summary Get a person visible to the signed-in user
+ */
+export const getPersonPathNsidMax = 255;
+
+export const GetPersonParams = zod.object({
+  nsid: zod.string().min(1).max(getPersonPathNsidMax),
+});
+
+export const getPersonResponsePhotosCountMin = 0;
+
+export const GetPersonResponse = zod.object({
+  nsid: zod.string(),
+  username: zod.string(),
+  realname: zod.string(),
+  icon: zod.string(),
+  photos_count: zod
+    .int()
+    .min(getPersonResponsePhotosCountMin)
+    .describe('Count of photos visible to this user'),
+});
+
+/**
+ * @summary List visible photos for a person
+ */
+export const listPersonPhotosPathNsidMax = 255;
+
+export const ListPersonPhotosParams = zod.object({
+  nsid: zod.string().min(1).max(listPersonPhotosPathNsidMax),
+});
+
+export const listPersonPhotosQueryCursorMax = 1024;
+
+export const listPersonPhotosQueryLimitDefault = 50;
+export const listPersonPhotosQueryLimitMax = 100;
+
+export const ListPersonPhotosQueryParams = zod.object({
+  cursor: zod.string().max(listPersonPhotosQueryCursorMax).optional(),
+  limit: zod
+    .int()
+    .min(1)
+    .max(listPersonPhotosQueryLimitMax)
+    .default(listPersonPhotosQueryLimitDefault),
+});
+
+export const listPersonPhotosResponseItemsItemSizesItemWidthMin = 0;
+
+export const listPersonPhotosResponseItemsItemSizesItemHeightMin = 0;
+
+export const ListPersonPhotosResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.int().min(1),
+      owner_nsid: zod.string(),
+      title: zod.string(),
+      description: zod.string(),
+      labels: zod.array(zod.string()).describe('Photo tags'),
+      taken_at: zod.iso.datetime({ offset: true }).optional(),
+      uploaded_at: zod.iso.datetime({ offset: true }).optional(),
+      visibility: zod.enum(['public', 'friends', 'family', 'private']),
+      sizes_status: zod.enum(['none', 'provisional', 'confirmed', 'unavailable']),
+      sizes: zod.array(
+        zod.object({
+          label: zod.string(),
+          width: zod.int().min(listPersonPhotosResponseItemsItemSizesItemWidthMin).optional(),
+          height: zod.int().min(listPersonPhotosResponseItemsItemSizesItemHeightMin).optional(),
+          source: zod.string().optional(),
+          url: zod.string().optional(),
+          media: zod.string().optional(),
+        }),
+      ),
+      ai_status: zod
+        .enum(['none', 'ready'])
+        .describe('Caption enrichment availability; caption contents are not returned'),
+    }),
+  ),
+  next_cursor: zod.string().optional(),
+});
+
+/**
+ * @summary List visible favorites from the user's connected Flickr accounts
+ */
+export const listFavoritesQueryCursorMax = 1024;
+
+export const listFavoritesQueryLimitDefault = 50;
+export const listFavoritesQueryLimitMax = 100;
+
+export const ListFavoritesQueryParams = zod.object({
+  cursor: zod.string().max(listFavoritesQueryCursorMax).optional(),
+  limit: zod.int().min(1).max(listFavoritesQueryLimitMax).default(listFavoritesQueryLimitDefault),
+});
+
+export const listFavoritesResponseItemsItemPhotoSizesItemWidthMin = 0;
+
+export const listFavoritesResponseItemsItemPhotoSizesItemHeightMin = 0;
+
+export const ListFavoritesResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      photo: zod.object({
+        id: zod.int().min(1),
+        owner_nsid: zod.string(),
+        title: zod.string(),
+        description: zod.string(),
+        labels: zod.array(zod.string()).describe('Photo tags'),
+        taken_at: zod.iso.datetime({ offset: true }).optional(),
+        uploaded_at: zod.iso.datetime({ offset: true }).optional(),
+        visibility: zod.enum(['public', 'friends', 'family', 'private']),
+        sizes_status: zod.enum(['none', 'provisional', 'confirmed', 'unavailable']),
+        sizes: zod.array(
+          zod.object({
+            label: zod.string(),
+            width: zod.int().min(listFavoritesResponseItemsItemPhotoSizesItemWidthMin).optional(),
+            height: zod.int().min(listFavoritesResponseItemsItemPhotoSizesItemHeightMin).optional(),
+            source: zod.string().optional(),
+            url: zod.string().optional(),
+            media: zod.string().optional(),
+          }),
+        ),
+        ai_status: zod
+          .enum(['none', 'ready'])
+          .describe('Caption enrichment availability; caption contents are not returned'),
+      }),
+      favorite_at: zod.iso.datetime({ offset: true }),
+    }),
+  ),
+  next_cursor: zod.string().optional(),
+});
+
+/**
+ * @summary List albums with visible photos from the user's connected Flickr accounts
+ */
+export const listAlbumsQueryCursorMax = 1024;
+
+export const listAlbumsQueryLimitDefault = 50;
+export const listAlbumsQueryLimitMax = 100;
+
+export const ListAlbumsQueryParams = zod.object({
+  cursor: zod.string().max(listAlbumsQueryCursorMax).optional(),
+  limit: zod.int().min(1).max(listAlbumsQueryLimitMax).default(listAlbumsQueryLimitDefault),
+});
+
+export const listAlbumsResponseItemsItemPhotosCountMin = 0;
+
+export const ListAlbumsResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.string(),
+      owner_nsid: zod.string(),
+      title: zod.string(),
+      description: zod.string(),
+      primary_photo_id: zod.int().optional(),
+      photos_count: zod
+        .int()
+        .min(listAlbumsResponseItemsItemPhotosCountMin)
+        .describe('Count of photos visible to this user'),
+      created_at: zod.iso.datetime({ offset: true }).optional(),
+      updated_at: zod.iso.datetime({ offset: true }).optional(),
+    }),
+  ),
+  next_cursor: zod.string().optional(),
+});
+
+/**
+ * @summary List visible photos in an album
+ */
+export const listAlbumPhotosPathIdMax = 255;
+
+export const ListAlbumPhotosParams = zod.object({
+  id: zod.string().min(1).max(listAlbumPhotosPathIdMax),
+});
+
+export const listAlbumPhotosQueryCursorMax = 1024;
+
+export const listAlbumPhotosQueryLimitDefault = 50;
+export const listAlbumPhotosQueryLimitMax = 100;
+
+export const ListAlbumPhotosQueryParams = zod.object({
+  cursor: zod.string().max(listAlbumPhotosQueryCursorMax).optional(),
+  limit: zod
+    .int()
+    .min(1)
+    .max(listAlbumPhotosQueryLimitMax)
+    .default(listAlbumPhotosQueryLimitDefault),
+});
+
+export const listAlbumPhotosResponseItemsItemSizesItemWidthMin = 0;
+
+export const listAlbumPhotosResponseItemsItemSizesItemHeightMin = 0;
+
+export const ListAlbumPhotosResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.int().min(1),
+      owner_nsid: zod.string(),
+      title: zod.string(),
+      description: zod.string(),
+      labels: zod.array(zod.string()).describe('Photo tags'),
+      taken_at: zod.iso.datetime({ offset: true }).optional(),
+      uploaded_at: zod.iso.datetime({ offset: true }).optional(),
+      visibility: zod.enum(['public', 'friends', 'family', 'private']),
+      sizes_status: zod.enum(['none', 'provisional', 'confirmed', 'unavailable']),
+      sizes: zod.array(
+        zod.object({
+          label: zod.string(),
+          width: zod.int().min(listAlbumPhotosResponseItemsItemSizesItemWidthMin).optional(),
+          height: zod.int().min(listAlbumPhotosResponseItemsItemSizesItemHeightMin).optional(),
+          source: zod.string().optional(),
+          url: zod.string().optional(),
+          media: zod.string().optional(),
+        }),
+      ),
+      ai_status: zod
+        .enum(['none', 'ready'])
+        .describe('Caption enrichment availability; caption contents are not returned'),
+    }),
+  ),
+  next_cursor: zod.string().optional(),
+});
+
+/**
+ * @summary Get a photo visible to the signed-in user
+ */
+
+export const GetPhotoParams = zod.object({
+  id: zod.int().min(1),
+});
+
+export const getPhotoResponseSizesItemWidthMin = 0;
+
+export const getPhotoResponseSizesItemHeightMin = 0;
+
+export const GetPhotoResponse = zod.object({
+  id: zod.int().min(1),
+  owner_nsid: zod.string(),
+  title: zod.string(),
+  description: zod.string(),
+  labels: zod.array(zod.string()).describe('Photo tags'),
+  taken_at: zod.iso.datetime({ offset: true }).optional(),
+  uploaded_at: zod.iso.datetime({ offset: true }).optional(),
+  visibility: zod.enum(['public', 'friends', 'family', 'private']),
+  sizes_status: zod.enum(['none', 'provisional', 'confirmed', 'unavailable']),
+  sizes: zod.array(
+    zod.object({
+      label: zod.string(),
+      width: zod.int().min(getPhotoResponseSizesItemWidthMin).optional(),
+      height: zod.int().min(getPhotoResponseSizesItemHeightMin).optional(),
+      source: zod.string().optional(),
+      url: zod.string().optional(),
+      media: zod.string().optional(),
+    }),
+  ),
+  ai_status: zod
+    .enum(['none', 'ready'])
+    .describe('Caption enrichment availability; caption contents are not returned'),
+});

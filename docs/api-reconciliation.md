@@ -14,6 +14,8 @@ that serve it, or `MISSING`.
 | `/admin/users` | `/admin/users` | `/admin/users` |
 | `/admin/users/{}` | `/admin/users/{id}` | `/admin/users/{id}` |
 | `/admin/users/{}/plan` | `/admin/users/{id}/plan` | `/admin/users/{id}/plan` |
+| `/albums` | `/albums` | `/albums` |
+| `/albums/{}/photos` | `/albums/{id}/photos` | `/albums/{id}/photos` |
 | `/auth/config` | `/auth/config` | `/auth/config` |
 | `/auth/login` | `/auth/login` | `/auth/login` |
 | `/auth/logout` | `/auth/logout` | `/auth/logout` |
@@ -24,6 +26,7 @@ that serve it, or `MISSING`.
 | `/downloads/{}/parts/{}/fetched` | `/downloads/{id}/parts/{partNumber}/fetched` | `/downloads/{id}/parts/{partNumber}/fetched` |
 | `/downloads/{}/retry-failed` | `/downloads/{id}/retry-failed` | `/downloads/{id}/retry-failed` |
 | `/events` | `/events` | `/events` |
+| `/favorites` | `/favorites` | `/favorites` |
 | `/flickr-accounts` | `/flickr-accounts` | `/flickr-accounts` |
 | `/flickr-accounts/callback` | `/flickr-accounts/callback` | `/flickr-accounts/callback` |
 | `/flickr-accounts/connect` | `/flickr-accounts/connect` | `/flickr-accounts/connect` |
@@ -43,4 +46,8 @@ that serve it, or `MISSING`.
 | `/me/sessions` | `/me/sessions` | `/me/sessions` |
 | `/me/sessions/{}` | `/me/sessions/{id}` | `/me/sessions/{id}` |
 | `/me/sharing` | `/me/sharing` | `/me/sharing` |
+| `/people` | `/people` | `/people` |
+| `/people/{}` | `/people/{nsid}` | `/people/{nsid}` |
+| `/people/{}/photos` | `/people/{nsid}/photos` | `/people/{nsid}/photos` |
+| `/photos/{}` | `/photos/{id}` | `/photos/{id}` |
 | `/readyz` | `/readyz` | `/readyz` |

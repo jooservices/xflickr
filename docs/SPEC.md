@@ -84,6 +84,10 @@ guide feature implementation; operational environment rules live in
 - Never share API keys, secrets, OAuth tokens, private photos, or downloads.
   Apply Flickr visibility and authorization rules even when a record is
   otherwise shareable.
+- Catalog read endpoints reuse the same visibility policy as other photo reads.
+  Omit hidden photos from lists and answer hidden detail reads with 404, the
+  same response as a missing row. Exclude tombstones and report only visible
+  photo counts for people and albums. Use opaque keyset cursors for list pages.
 
 ## Crawl work and quota
 

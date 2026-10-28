@@ -80,7 +80,26 @@ paths:
     $ref: ./paths/downloads.yaml#/retry_failed
   /events:
     $ref: ./paths/events.yaml#/stream
+  /people:
+    $ref: ./paths/catalog.yaml#/people
+  /people/{nsid}:
+    $ref: ./paths/catalog.yaml#/person
+  /people/{nsid}/photos:
+    $ref: ./paths/catalog.yaml#/person_photos
+  /favorites:
+    $ref: ./paths/catalog.yaml#/favorites
+  /albums:
+    $ref: ./paths/catalog.yaml#/albums
+  /albums/{id}/photos:
+    $ref: ./paths/catalog.yaml#/album_photos
+  /photos/{id}:
+    $ref: ./paths/catalog.yaml#/photo
 components:
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: xf_session
   schemas:
     AuthConfig:
       $ref: ./schemas/auth.yaml#/AuthConfig
@@ -152,3 +171,21 @@ components:
       $ref: ./schemas/downloads.yaml#/CreateDownloadRequest
     Download:
       $ref: ./schemas/downloads.yaml#/Download
+    CatalogSize:
+      $ref: ./schemas/catalog.yaml#/CatalogSize
+    CatalogPerson:
+      $ref: ./schemas/catalog.yaml#/CatalogPerson
+    CatalogPhoto:
+      $ref: ./schemas/catalog.yaml#/CatalogPhoto
+    CatalogFavorite:
+      $ref: ./schemas/catalog.yaml#/CatalogFavorite
+    CatalogAlbum:
+      $ref: ./schemas/catalog.yaml#/CatalogAlbum
+    CatalogPersonPage:
+      $ref: ./schemas/catalog.yaml#/CatalogPersonPage
+    CatalogPhotoPage:
+      $ref: ./schemas/catalog.yaml#/CatalogPhotoPage
+    CatalogFavoritePage:
+      $ref: ./schemas/catalog.yaml#/CatalogFavoritePage
+    CatalogAlbumPage:
+      $ref: ./schemas/catalog.yaml#/CatalogAlbumPage

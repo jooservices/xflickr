@@ -27,6 +27,7 @@ import (
 	accountsapp "github.com/jooservices/xflickr/internal/accounts/app"
 	accountsdomain "github.com/jooservices/xflickr/internal/accounts/domain"
 	catalogdownloadspostgres "github.com/jooservices/xflickr/internal/catalog/adapters/downloads/postgres"
+	cataloghttp "github.com/jooservices/xflickr/internal/catalog/adapters/http"
 	catalogpostgres "github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
 	catalogapp "github.com/jooservices/xflickr/internal/catalog/app"
 	crawlhttp "github.com/jooservices/xflickr/internal/crawl/adapters/http"
@@ -671,6 +672,11 @@ func buildConfiguredAPIHandlerWithHub(pool *pgxpool.Pool, redisClient redisv9.Un
 	if err != nil {
 		return nil, err
 	}
+	catalogRepository, err := catalogpostgres.New(pool)
+	if err != nil {
+		return nil, err
+	}
+	catalogReads := cataloghttp.Handler{Reads: catalogapp.ReadService{Repository: catalogRepository}, ActorID: userIDFromPrincipal}
 	crawl, err := buildCrawlHandlerWithEvents(pool, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"})
 	if err != nil {
 		return nil, err
@@ -697,7 +703,7 @@ func buildConfiguredAPIHandlerWithHub(pool *pgxpool.Pool, redisClient redisv9.Un
 		return nil, err
 	}
 	opsHandler := opshttp.Handler{Service: ops.Service{Store: opspostgres.Store{Pool: pool}}, ActorID: userIDFromPrincipal}
-	return newAPIRouterWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}, probeReadiness, flags), nil
+	return newAPIRouterWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}, probeReadiness, flags, catalogReads), nil
 }
 
 func buildFeatureFlagHandler(pool *pgxpool.Pool) (settingshttp.Handler, error) {
@@ -763,7 +769,36 @@ type apiServer struct {
 	Stream    platformsse.Handler
 	Readiness *httpx.Readiness
 	Flags     settingshttp.Handler
+	Catalog   cataloghttp.Handler
 	planHandler
+}
+
+func (s apiServer) ListPeople(ctx context.Context, request gen.ListPeopleRequestObject) (gen.ListPeopleResponseObject, error) {
+	return s.Catalog.ListPeople(ctx, request)
+}
+
+func (s apiServer) GetPerson(ctx context.Context, request gen.GetPersonRequestObject) (gen.GetPersonResponseObject, error) {
+	return s.Catalog.GetPerson(ctx, request)
+}
+
+func (s apiServer) ListPersonPhotos(ctx context.Context, request gen.ListPersonPhotosRequestObject) (gen.ListPersonPhotosResponseObject, error) {
+	return s.Catalog.ListPersonPhotos(ctx, request)
+}
+
+func (s apiServer) ListFavorites(ctx context.Context, request gen.ListFavoritesRequestObject) (gen.ListFavoritesResponseObject, error) {
+	return s.Catalog.ListFavorites(ctx, request)
+}
+
+func (s apiServer) ListAlbums(ctx context.Context, request gen.ListAlbumsRequestObject) (gen.ListAlbumsResponseObject, error) {
+	return s.Catalog.ListAlbums(ctx, request)
+}
+
+func (s apiServer) ListAlbumPhotos(ctx context.Context, request gen.ListAlbumPhotosRequestObject) (gen.ListAlbumPhotosResponseObject, error) {
+	return s.Catalog.ListAlbumPhotos(ctx, request)
+}
+
+func (s apiServer) GetPhoto(ctx context.Context, request gen.GetPhotoRequestObject) (gen.GetPhotoResponseObject, error) {
+	return s.Catalog.GetPhoto(ctx, request)
 }
 
 func (s apiServer) GetAdminFlags(ctx context.Context, request gen.GetAdminFlagsRequestObject) (gen.GetAdminFlagsResponseObject, error) {
@@ -855,6 +890,7 @@ func newAPIRouterWithQuota(identity identityhttp.Handler, keys accountshttp.KeyH
 func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawl crawlhttp.CrawlHandler, quota quotahttp.QuotaHandler, sharing sharinghttp.Handler, downloads mediahttp.DownloadHandler, options ...any) http.Handler {
 	var opsHandler opshttp.Handler
 	var flagsHandler settingshttp.Handler
+	var catalogHandler cataloghttp.Handler
 	router := chi.NewRouter()
 	serveWebAssets(router, os.Getenv("XFLICKR_WEB_DIR"))
 	router.Use(func(next http.Handler) http.Handler {
@@ -880,8 +916,11 @@ func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.K
 		if flags, ok := option.(settingshttp.Handler); ok {
 			flagsHandler = flags
 		}
+		if catalog, ok := option.(cataloghttp.Handler); ok {
+			catalogHandler = catalog
+		}
 	}
-	strict := gen.NewStrictHandlerWithOptions(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, Ops: opsHandler, Stream: streamHandler, Readiness: readiness, Flags: flagsHandler, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
+	strict := gen.NewStrictHandlerWithOptions(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, Ops: opsHandler, Stream: streamHandler, Readiness: readiness, Flags: flagsHandler, Catalog: catalogHandler, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		identityhttp.MaintainSessionCookies(identity.Sessions),
 	}, gen.StrictHTTPServerOptions{RequestErrorHandlerFunc: badRequest, ResponseErrorHandlerFunc: internalError})
