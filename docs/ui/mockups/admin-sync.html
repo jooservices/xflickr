@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin Cloud sync · XFlickr</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0f1116;color:#e8eaf0;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1440px;margin:auto;padding:28px}
+.theme{--bg:#0f1116;--surface:#171a21;--sunken:#1e222b;--raise:#252a35;--line:#2a2f3a;--ink:#e8eaf0;--muted:#a0a7b4;--accent:#7d9cff;--ok:#4fc887;--warn:#f0b04a;--bad:#ff7b72;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:12px;margin:0 0 36px;padding:24px}
+.theme.light{--bg:#f2f4f8;--surface:#fff;--sunken:#eef0f5;--raise:#e7eaf1;--line:#cfd4de;--ink:#161a22;--muted:#5d6574;--accent:#2457d6;--ok:#187244;--warn:#875300;--bad:#c12824}
+.topbar,.row,.panel-head,.metric-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.topbar{border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:22px}
+.brand{font-weight:750;letter-spacing:.04em}.role{color:var(--muted);font-size:12px}
+.theme-name,.pill,.button,.tag{border:1px solid var(--line);border-radius:999px;padding:5px 10px;font-size:12px}
+.theme-name{color:var(--accent)}
+.button{background:var(--accent);color:#0d1220;border-color:var(--accent);font-weight:650}
+.light .button{color:#fff}
+.intro h1{font-size:24px;margin:0 0 3px}.intro p{color:var(--muted);margin:0 0 18px}
+.live{color:var(--ok);font-size:12px}.live:before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:7px}
+.grid{display:grid;gap:12px}.metrics{grid-template-columns:repeat(4,1fr);margin:18px 0}
+.providers{grid-template-columns:repeat(5,1fr);margin:12px 0 20px}
+.metric,.provider,.panel,.state-card,.drawer{background:var(--surface);border:1px solid var(--line);border-radius:9px}
+.metric{padding:14px}.metric-label,.muted,.subtle{color:var(--muted)}.metric-label{font-size:12px}.metric-value{font-size:22px;font-weight:720;margin:5px 0 2px}.subtle{font-size:11px}
+.provider{padding:13px;min-width:0}.provider h3{font-size:13px;margin:0}.provider .count{color:var(--muted);font-size:11px;margin-top:4px}
+.pill{display:inline-block;color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,var(--line));padding:3px 8px;white-space:nowrap}
+.pill.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 38%,var(--line))}
+.pill.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 38%,var(--line))}
+.provider-metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;border-top:1px solid var(--line);margin-top:11px;padding-top:9px}
+.provider-metrics b{display:block;font-size:13px}.provider-metrics span{font-size:10px;color:var(--muted)}
+.panel{overflow:hidden;margin:14px 0}.panel-head{padding:14px 16px;border-bottom:1px solid var(--line)}.panel-head h2{font-size:14px;margin:0}
+.panel-body{padding:14px 16px}.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.control{background:var(--sunken);color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-size:11px;min-width:110px}
+.control.search{flex:1;min-width:180px}
+table{width:100%;border-collapse:collapse;font-size:11px}th{text-align:left;color:var(--muted);font-size:10px;font-weight:600;padding:8px;border-bottom:1px solid var(--line)}td{padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:middle}tr:last-child td{border-bottom:0}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.user-label{font-weight:650}.source{color:var(--muted)}
+.progress{height:6px;background:var(--sunken);border-radius:5px;overflow:hidden;min-width:70px}.progress i{display:block;height:100%;background:var(--accent);border-radius:5px}
+.upload-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(250px,.8fr);gap:12px}
+.drawer{padding:14px}.drawer h3{font-size:14px;margin:0}.drawer .divider{border-top:1px solid var(--line);margin:12px 0}.file{display:grid;grid-template-columns:60px 1fr auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:11px}.file:last-child{border:0}.file .progress{min-width:60px}.selected{background:var(--sunken)}
+.states{grid-template-columns:repeat(3,1fr);margin-top:20px}.state-card{padding:13px;min-height:120px}.state-card h3{font-size:12px;margin:0 0 10px}.state-copy{color:var(--muted);font-size:11px}.skeleton{height:12px;background:var(--raise);border-radius:4px;margin:9px 0}.skeleton.short{width:55%}.empty-icon,.error-icon{font-size:19px;margin-right:6px}.empty-action{display:inline-block;color:var(--accent);font-size:11px;margin-top:8px}
+@media(max-width:900px){.providers{grid-template-columns:repeat(3,1fr)}.metrics{grid-template-columns:repeat(2,1fr)}.upload-layout{grid-template-columns:1fr}.drawer{order:2}}
+@media(max-width:600px){main{padding:12px}.theme{padding:14px;margin-bottom:22px}.topbar{align-items:flex-start}.role{display:none}.providers{grid-template-columns:1fr 1fr}.metrics{gap:8px}.metric{padding:10px}.metric-value{font-size:18px}.states{grid-template-columns:1fr}.panel-head{align-items:flex-start}.panel-body{padding:10px}.filters{display:grid;grid-template-columns:1fr 1fr}.control,.control.search{min-width:0;width:100%}.control.search{grid-column:1/-1}table,tbody,tr,td{display:block;width:100%}thead{display:none}tbody{display:grid;gap:8px}tr{border:1px solid var(--line);border-radius:7px;padding:7px;background:var(--surface)}td{display:grid;grid-template-columns:90px 1fr;gap:8px;padding:5px 2px;border:0!important}td:before{content:attr(data-label);color:var(--muted);font-size:10px}.progress{max-width:150px}.file{grid-template-columns:52px 1fr}.file .file-status{grid-column:2}.metric-head{align-items:flex-start;flex-direction:column}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+<section class="theme dark" data-theme="dark" data-state="ready" data-testid="admin-sync-page" aria-label="Admin Cloud sync — dark theme">
+<header class="topbar"><div><span class="brand">XFlickr <span class="role">/ ADMIN CONTROL ROOM</span></span></div><div class="row"><span class="theme-name">Dark · default</span><span class="live" aria-live="polite">Live · updated 8 sec ago</span><button class="button" type="button">Refresh</button></div></header>
+<div class="intro"><h1>Cloud sync</h1><p>Provider connections and upload health across XFlickr.</p></div>
+<div class="grid metrics" data-testid="admin-sync-summary">
+<article class="metric"><div class="metric-label">Active uploads</div><div class="metric-value">12</div><div class="subtle">Across 5 providers</div></article>
+<article class="metric"><div class="metric-label">Completed · 24h</div><div class="metric-value">2,642</div><div class="subtle">All users</div></article>
+<article class="metric"><div class="metric-label">Provider error rate · 24h</div><div class="metric-value">0.53%</div><div class="subtle">14 failed / 2,656 attempts</div></article>
+<article class="metric"><div class="metric-label">Rate-limited providers</div><div class="metric-value">1</div><div class="subtle">Dropbox · retry in 4 min</div></article>
+</div>
+<div class="panel"><div class="panel-head"><h2>Provider health</h2><span class="subtle">Trailing 24 hours · UTC</span></div><div class="panel-body"><div class="grid providers" data-testid="admin-sync-providers">
+<article class="provider" data-testid="admin-sync-provider-google-photos"><div class="row"><h3>Google Photos</h3><span class="pill">Healthy</span></div><div class="count">3 connected users</div><div class="provider-metrics"><div><b>180 ms</b><span>API p95</span></div><div><b>4 / 1,840</b><span>Failed / attempts</span></div><div><b>0.22%</b><span>Error rate</span></div><div><b>Clear</b><span>Rate limit</span></div></div></article>
+<article class="provider" data-testid="admin-sync-provider-google-drive"><div class="row"><h3>Google Drive</h3><span class="pill">Healthy</span></div><div class="count">2 connected users</div><div class="provider-metrics"><div><b>140 ms</b><span>API p95</span></div><div><b>0 / 610</b><span>Failed / attempts</span></div><div><b>0.00%</b><span>Error rate</span></div><div><b>Clear</b><span>Rate limit</span></div></div></article>
+<article class="provider" data-testid="admin-sync-provider-onedrive"><div class="row"><h3>OneDrive</h3><span class="pill">Healthy</span></div><div class="count">1 connected user</div><div class="provider-metrics"><div><b>260 ms</b><span>API p95</span></div><div><b>1 / 120</b><span>Failed / attempts</span></div><div><b>0.83%</b><span>Error rate</span></div><div><b>Clear</b><span>Rate limit</span></div></div></article>
+<article class="provider" data-testid="admin-sync-provider-dropbox"><div class="row"><h3>Dropbox</h3><span class="pill warn">Degraded</span></div><div class="count">2 connected users</div><div class="provider-metrics"><div><b>—</b><span>API p95</span></div><div><b>9 / 22</b><span>Failed / attempts</span></div><div><b>40.9%</b><span>Error rate</span></div><div><b>Limited · 4 min</b><span>Rate limit</span></div></div></article>
+<article class="provider" data-testid="admin-sync-provider-s3"><div class="row"><h3>S3-compatible</h3><span class="pill">Healthy</span></div><div class="count">1 connected user</div><div class="provider-metrics"><div><b>95 ms</b><span>API p95</span></div><div><b>0 / 64</b><span>Failed / attempts</span></div><div><b>0.00%</b><span>Error rate</span></div><div><b>Clear</b><span>Rate limit</span></div></div></article>
+</div></div></div>
+<div class="panel" data-testid="admin-sync-connections"><div class="panel-head"><h2>Connected accounts</h2><span class="pill bad">Expired tokens · 2</span></div><div class="panel-body"><div class="filters"><span class="control">All providers ▾</span><span class="control">All states ▾</span><span class="control">Expired only</span></div><table><thead><tr><th>User</th><th>Provider</th><th>Connection</th><th>Updated</th></tr></thead><tbody>
+<tr data-testid="admin-sync-connection-a81c"><td data-label="User"><span class="user-label">User ·••48</span></td><td data-label="Provider">Dropbox</td><td data-label="Connection"><span class="pill bad">Sign-in expired</span></td><td data-label="Updated">12 min ago</td></tr>
+<tr><td data-label="User"><span class="user-label">User ·••21</span></td><td data-label="Provider">Dropbox</td><td data-label="Connection"><span class="pill warn">Reconnect required</span></td><td data-label="Updated">26 min ago</td></tr>
+<tr><td data-label="User"><span class="user-label">User ·••09</span></td><td data-label="Provider">Google Photos</td><td data-label="Connection"><span class="pill">Connected</span></td><td data-label="Updated">4 min ago</td></tr>
+</tbody></table></div></div>
+<div class="upload-layout">
+<div class="panel" data-testid="admin-sync-uploads"><div class="panel-head"><h2>Upload processes</h2><span class="subtle">12 active · 2 shown</span></div><div class="panel-body">
+<div class="filters"><span class="control">All states ▾</span><span class="control">All providers ▾</span><span class="control">From date</span><span class="control">To date</span><span class="control search">Search safe labels or reference</span></div>
+<table><thead><tr><th>Upload</th><th>User / source</th><th>Provider</th><th>Files</th><th>Speed</th><th>State</th></tr></thead><tbody>
+<tr class="selected" data-testid="admin-sync-upload-u7f2"><td data-label="Upload" class="mono">up-••7f2</td><td data-label="User / source"><span class="user-label">User ·••48</span><br><span class="source">Download · 2024 set</span></td><td data-label="Provider">Google Photos</td><td data-label="Files"><div class="row"><div class="progress"><i style="width:59%"></i></div>480 / 812</div></td><td data-label="Speed">3.2 MB/s</td><td data-label="State"><span class="pill">Running</span></td></tr>
+<tr data-testid="admin-sync-upload-q1b3"><td data-label="Upload" class="mono">up-••1b3</td><td data-label="User / source"><span class="user-label">User ·••21</span><br><span class="source">Download · album</span></td><td data-label="Provider">Dropbox</td><td data-label="Files"><div class="row"><div class="progress"><i style="width:24%"></i></div>22 / 90</div></td><td data-label="Speed">—</td><td data-label="State"><span class="pill warn">Rate limited</span></td></tr>
+</tbody></table></div></div>
+<aside class="drawer" data-testid="admin-sync-upload-detail" aria-label="Upload details"><div class="row"><h3>Upload details</h3><span class="subtle">up-••7f2</span></div><div class="divider"></div><div class="subtle">User ·••48 → Google Photos · Download · 2024 set</div><div class="row" style="margin:12px 0"><strong>480 / 812 files</strong><span class="pill">Running</span></div><div class="progress"><i style="width:59%"></i></div><div class="divider"></div><div class="row"><strong>Files</strong><span class="subtle">2 of 4 visible</span></div>
+<div class="file"><span>File 01</span><div><div class="progress"><i style="width:100%"></i></div><span class="subtle">Completed · 4.2 MB</span></div><span class="file-status">✓</span></div>
+<div class="file"><span>File 02</span><div><div class="progress"><i style="width:66%"></i></div><span class="subtle">Uploading · 2.8 / 4.2 MB</span></div><span class="file-status">66%</span></div>
+<div class="file"><span>File 03</span><div><div class="progress"><i style="width:0%"></i></div><span class="subtle">Queued</span></div><span class="file-status">—</span></div></aside>
+</div>
+<div class="grid states" aria-label="Other view states">
+<article class="state-card" data-state="loading" data-testid="admin-sync-loading"><h3>Loading</h3><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton short"></div><div class="subtle">Loading cloud sync data…</div></article>
+<article class="state-card" data-state="empty" data-testid="admin-sync-empty-uploads"><h3>Empty</h3><div class="state-copy"><span class="empty-icon">□</span>No upload processes match these filters.</div><span class="empty-action">Clear filters</span></article>
+<article class="state-card" data-state="error" data-testid="admin-sync-error"><h3>Error</h3><div class="state-copy"><span class="error-icon">!</span>Could not load cloud sync. Refresh and try again.</div><span class="empty-action">Retry</span></article>
+</div>
+</section>
+
+<section class="theme light" data-theme="light" aria-label="Admin Cloud sync — light theme">
+<header class="topbar"><div><span class="brand">XFlickr <span class="role">/ ADMIN CONTROL ROOM</span></span></div><div class="row"><span class="theme-name">Light</span><span class="live" aria-live="polite">Live · updated 8 sec ago</span><button class="button" type="button">Refresh</button></div></header>
+<div class="intro"><h1>Cloud sync</h1><p>Provider connections and upload health across XFlickr.</p></div>
+<div class="grid metrics">
+<article class="metric"><div class="metric-label">Active uploads</div><div class="metric-value">12</div><div class="subtle">Across 5 providers</div></article>
+<article class="metric"><div class="metric-label">Completed · 24h</div><div class="metric-value">2,642</div><div class="subtle">All users</div></article>
+<article class="metric"><div class="metric-label">Provider error rate · 24h</div><div class="metric-value">0.53%</div><div class="subtle">14 failed / 2,656 attempts</div></article>
+<article class="metric"><div class="metric-label">Rate-limited providers</div><div class="metric-value">1</div><div class="subtle">Dropbox · retry in 4 min</div></article>
+</div>
+<div class="panel"><div class="panel-head"><h2>Provider health</h2><span class="subtle">Trailing 24 hours · UTC</span></div><div class="panel-body"><div class="grid providers">
+<article class="provider"><div class="row"><h3>Google Photos</h3><span class="pill">Healthy</span></div><div class="count">3 connected users</div><div class="provider-metrics"><div><b>180 ms</b><span>API p95</span></div><div><b>4 / 1,840</b><span>Failed / attempts</span></div><div><b>0.22%</b><span>Error rate</span></div><div><b>Clear</b><span>Rate limit</span></div></div></article>
+<article class="provider"><div class="row"><h3>Google Drive</h3><span class="pill">Healthy</span></div><div class="count">2 connected users</div><div class="provider-metrics"><div><b>140 ms</b><span>API p95</span></div><div><b>0 / 610</b><span>Failed / attempts</span></div><div><b>0.00%</b><span>Error rate</span></div><div><b>Clear</b><span>Rate limit</span></div></div></article>
+<article class="provider"><div class="row"><h3>OneDrive</h3><span class="pill">Healthy</span></div><div class="count">1 connected user</div><div class="provider-metrics"><div><b>260 ms</b><span>API p95</span></div><div><b>1 / 120</b><span>Failed / attempts</span></div><div><b>0.83%</b><span>Error rate</span></div><div><b>Clear</b><span>Rate limit</span></div></div></article>
+<article class="provider"><div class="row"><h3>Dropbox</h3><span class="pill warn">Degraded</span></div><div class="count">2 connected users</div><div class="provider-metrics"><div><b>—</b><span>API p95</span></div><div><b>9 / 22</b><span>Failed / attempts</span></div><div><b>40.9%</b><span>Error rate</span></div><div><b>Limited · 4 min</b><span>Rate limit</span></div></div></article>
+<article class="provider"><div class="row"><h3>S3-compatible</h3><span class="pill">Healthy</span></div><div class="count">1 connected user</div><div class="provider-metrics"><div><b>95 ms</b><span>API p95</span></div><div><b>0 / 64</b><span>Failed / attempts</span></div><div><b>0.00%</b><span>Error rate</span></div><div><b>Clear</b><span>Rate limit</span></div></div></article>
+</div></div></div>
+<div class="panel"><div class="panel-head"><h2>Connected accounts</h2><span class="pill bad">Expired tokens · 2</span></div><div class="panel-body"><div class="filters"><span class="control">All providers ▾</span><span class="control">All states ▾</span><span class="control">Expired only</span></div><table><thead><tr><th>User</th><th>Provider</th><th>Connection</th><th>Updated</th></tr></thead><tbody>
+<tr><td data-label="User"><span class="user-label">User ·••48</span></td><td data-label="Provider">Dropbox</td><td data-label="Connection"><span class="pill bad">Sign-in expired</span></td><td data-label="Updated">12 min ago</td></tr>
+<tr><td data-label="User"><span class="user-label">User ·••21</span></td><td data-label="Provider">Dropbox</td><td data-label="Connection"><span class="pill warn">Reconnect required</span></td><td data-label="Updated">26 min ago</td></tr>
+<tr><td data-label="User"><span class="user-label">User ·••09</span></td><td data-label="Provider">Google Photos</td><td data-label="Connection"><span class="pill">Connected</span></td><td data-label="Updated">4 min ago</td></tr>
+</tbody></table></div></div>
+<div class="upload-layout">
+<div class="panel"><div class="panel-head"><h2>Upload processes</h2><span class="subtle">12 active · 2 shown</span></div><div class="panel-body"><div class="filters"><span class="control">All states ▾</span><span class="control">All providers ▾</span><span class="control">From date</span><span class="control">To date</span><span class="control search">Search safe labels or reference</span></div><table><thead><tr><th>Upload</th><th>User / source</th><th>Provider</th><th>Files</th><th>Speed</th><th>State</th></tr></thead><tbody>
+<tr><td data-label="Upload" class="mono">up-••7f2</td><td data-label="User / source"><span class="user-label">User ·••48</span><br><span class="source">Download · 2024 set</span></td><td data-label="Provider">Google Photos</td><td data-label="Files"><div class="row"><div class="progress"><i style="width:59%"></i></div>480 / 812</div></td><td data-label="Speed">3.2 MB/s</td><td data-label="State"><span class="pill">Running</span></td></tr>
+<tr><td data-label="Upload" class="mono">up-••1b3</td><td data-label="User / source"><span class="user-label">User ·••21</span><br><span class="source">Download · album</span></td><td data-label="Provider">Dropbox</td><td data-label="Files"><div class="row"><div class="progress"><i style="width:24%"></i></div>22 / 90</div></td><td data-label="Speed">—</td><td data-label="State"><span class="pill warn">Rate limited</span></td></tr>
+</tbody></table></div></div>
+<aside class="drawer"><div class="row"><h3>Upload details</h3><span class="subtle">up-••7f2</span></div><div class="divider"></div><div class="subtle">User ·••48 → Google Photos · Download · 2024 set</div><div class="row" style="margin:12px 0"><strong>480 / 812 files</strong><span class="pill">Running</span></div><div class="progress"><i style="width:59%"></i></div><div class="divider"></div><div class="row"><strong>Files</strong><span class="subtle">2 of 4 visible</span></div>
+<div class="file"><span>File 01</span><div><div class="progress"><i style="width:100%"></i></div><span class="subtle">Completed · 4.2 MB</span></div><span class="file-status">✓</span></div>
+<div class="file"><span>File 02</span><div><div class="progress"><i style="width:66%"></i></div><span class="subtle">Uploading · 2.8 / 4.2 MB</span></div><span class="file-status">66%</span></div>
+<div class="file"><span>File 03</span><div><div class="progress"><i style="width:0%"></i></div><span class="subtle">Queued</span></div><span class="file-status">—</span></div></aside>
+</div>
+<div class="grid states" aria-label="Other view states">
+<article class="state-card" data-state="loading"><h3>Loading</h3><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton short"></div><div class="subtle">Loading cloud sync data…</div></article>
+<article class="state-card" data-state="empty"><h3>Empty</h3><div class="state-copy"><span class="empty-icon">□</span>No upload processes match these filters.</div><span class="empty-action">Clear filters</span></article>
+<article class="state-card" data-state="error"><h3>Error</h3><div class="state-copy"><span class="error-icon">!</span>Could not load cloud sync. Refresh and try again.</div><span class="empty-action">Retry</span></article>
+</div>
+</section>
+</main>
+</body>
+</html>
