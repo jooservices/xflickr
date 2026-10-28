@@ -30,6 +30,8 @@
   and five-minute expiry cleanup.
 - [Cloud storage provider contract](cloud-sync-providers.md) — provider port,
   capabilities, upload verification, and reusable adapter contract tests.
+- [AI captioning](ai-captioning.md) — caption port, Ollama vision requests,
+  timeout, concurrency, response validation, and circuit breaker behaviour.
 - [Downloads](downloads.md) — visible-photo requests, per-item state, and media
   queue handoff.
 - [Crawl interests](crawl-interests.md) — per-user person depth, lowest-depth
