@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>XFlickr · Crawl pipeline</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          14px/1.45 system-ui,
+          sans-serif;
+      }
+      .theme {
+        --bg: #0f1116;
+        --surface: #171a21;
+        --sunken: #1e222b;
+        --line: #3a4150;
+        --ink: #e8eaf0;
+        --muted: #a0a7b4;
+        --accent: #7d9cff;
+        --ok: #4fc887;
+        --warn: #f0b04a;
+        --bad: #ff7b72;
+        background: var(--bg);
+        color: var(--ink);
+        padding: 24px;
+        min-height: 100vh;
+      }
+      .theme.light {
+        --bg: #f6f7fa;
+        --surface: #fff;
+        --sunken: #eef0f5;
+        --line: #747b88;
+        --ink: #161a22;
+        --muted: #5d6574;
+        --accent: #2457d6;
+        --ok: #187244;
+        --warn: #875300;
+        --bad: #c12824;
+      }
+      .wrap {
+        max-width: 1392px;
+        margin: auto;
+      }
+      .theme-title {
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+      .state {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 16px;
+        min-width: 0;
+      }
+      .state h2 {
+        font-size: 13px;
+        color: var(--muted);
+        margin: 0 0 12px;
+      }
+      .head,
+      .tabs,
+      .filters,
+      .meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .head {
+        justify-content: space-between;
+      }
+      .head h1 {
+        margin: 0;
+        font-size: 24px;
+      }
+      .muted,
+      .small {
+        color: var(--muted);
+      }
+      .tabs {
+        border-bottom: 1px solid var(--line);
+        padding: 10px 0;
+      }
+      .chip,
+      .btn,
+      .input {
+        font: inherit;
+        color: var(--ink);
+        background: var(--sunken);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 6px 9px;
+      }
+      .active {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+      .input {
+        flex: 1;
+        min-width: 180px;
+      }
+      .live {
+        color: var(--ok);
+      }
+      .cards4 {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        margin: 12px 0;
+      }
+      .metric,
+      .box,
+      .card {
+        background: var(--sunken);
+        padding: 10px;
+        border-radius: 6px;
+      }
+      .metric b {
+        display: block;
+        font-size: 20px;
+      }
+      .metric span,
+      .small {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .cols {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-top: 12px;
+      }
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 12px;
+        margin-top: 12px;
+      }
+      .panel h3 {
+        margin: 0 0 10px;
+        font-size: 15px;
+      }
+      .row {
+        border-bottom: 1px solid var(--line);
+        padding: 8px 0;
+      }
+      .row:last-child {
+        border-bottom: 0;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+      }
+      th,
+      td {
+        padding: 8px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        font-size: 10px;
+        color: var(--muted);
+        text-transform: uppercase;
+      }
+      .pill {
+        border: 1px solid var(--line);
+        border-radius: 99px;
+        padding: 2px 7px;
+        font-size: 11px;
+      }
+      .warning {
+        color: var(--warn);
+        font-weight: 700;
+      }
+      .crit {
+        color: var(--bad);
+        font-weight: 700;
+      }
+      .tree {
+        display: grid;
+        gap: 8px;
+      }
+      .bar {
+        height: 6px;
+        background: var(--line);
+        border-radius: 99px;
+        overflow: hidden;
+      }
+      .bar i {
+        display: block;
+        height: 100%;
+        width: 62%;
+        background: var(--accent);
+      }
+      .detail {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .detail p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .sk {
+        height: 28px;
+        margin: 8px 0;
+        border-radius: 5px;
+        background: var(--sunken);
+      }
+      .center {
+        text-align: center;
+        padding: 26px 8px;
+      }
+      .center p {
+        color: var(--muted);
+      }
+      .primary {
+        background: var(--accent);
+        color: #0d1220;
+        font-weight: 700;
+      }
+      .banner {
+        color: var(--bad);
+        border: 1px solid var(--bad);
+        padding: 10px;
+        border-radius: 6px;
+      }
+      .mobile {
+        display: none;
+      }
+      .small {
+        font-size: 12px;
+      }
+      @media (max-width: 700px) {
+        .theme {
+          padding: 12px;
+        }
+        .grid,
+        .cols {
+          grid-template-columns: 1fr;
+        }
+        .state {
+          padding: 12px;
+        }
+        .cards4 {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        table {
+          display: none;
+        }
+        .mobile {
+          display: grid;
+          gap: 8px;
+        }
+        .input {
+          min-width: 100%;
+        }
+        .head {
+          align-items: flex-start;
+        }
+        .head h1 {
+          font-size: 21px;
+        }
+        .detail {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <section class="theme" data-theme="dark">
+      <div class="wrap">
+        <p class="theme-title">
+          ADMIN · Dark control room · 1440 desktop / responsive to 390px
+        </p>
+        <div class="grid">
+          <section class="state" data-state="ready">
+            <h2>Normal</h2>
+            <div class="head">
+              <div>
+                <h1>Crawl pipeline</h1>
+                <span class="muted"
+                  >Queue health and safe one-item retries.</span
+                >
+              </div>
+              <span class="live">● Live · updated now</span>
+            </div>
+            <div class="tabs">
+              <button class="chip active">Both lanes</button
+              ><button class="chip">Person</button
+              ><button class="chip">Sizes</button>
+            </div>
+            <div class="cards4">
+              <div class="metric"><span>Person · queued</span><b>412</b></div>
+              <div class="metric"><span>In flight</span><b>3</b></div>
+              <div class="metric"><span>Done this hour</span><b>1,840</b></div>
+              <div class="metric">
+                <span>Blocked</span><b class="warning">268</b>
+              </div>
+              <div class="metric"><span>Sizes · queued</span><b>18,240</b></div>
+              <div class="metric"><span>In flight</span><b>9</b></div>
+              <div class="metric"><span>Done this hour</span><b>5,120</b></div>
+              <div class="metric"><span>Blocked</span><b>0</b></div>
+            </div>
+            <div class="cols">
+              <div class="panel">
+                <h3>Backlog by plan · oldest 42m</h3>
+                <div class="row">Personal · person <b>268</b></div>
+                <div class="row">Personal · sizes <b>8,120</b></div>
+                <div class="row">Team · sizes <b>10,120</b></div>
+              </div>
+              <div class="panel">
+                <h3>Sizes priority</h3>
+                <div class="row">1 · Contact a user just chose</div>
+                <div class="row">2 · Starred contacts</div>
+                <div class="row">3 · Depth 1, then 2, then 3</div>
+              </div>
+            </div>
+            <div class="panel">
+              <h3>Jobs</h3>
+              <div class="filters">
+                <button class="chip active">Both lanes</button
+                ><button class="chip">Plan: All</button
+                ><button class="chip">State: All</button
+                ><input
+                  class="input"
+                  aria-label="Search jobs"
+                  placeholder="Search safe job labels"
+                />
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Job</th>
+                    <th>Lane</th>
+                    <th>Plan</th>
+                    <th>Work type</th>
+                    <th>Progress</th>
+                    <th>Attempt</th>
+                    <th>Next retry</th>
+                    <th>State</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>J-88241</td>
+                    <td>Person</td>
+                    <td>Personal</td>
+                    <td>Photo page</td>
+                    <td>100 records</td>
+                    <td>1/5</td>
+                    <td>—</td>
+                    <td><span class="pill">Running</span></td>
+                    <td><button class="btn">View</button></td>
+                  </tr>
+                  <tr>
+                    <td>J-88229</td>
+                    <td>Sizes</td>
+                    <td>Personal</td>
+                    <td>Photo sizes</td>
+                    <td>31/50</td>
+                    <td>3/5</td>
+                    <td>4m</td>
+                    <td><span class="pill">Retry</span></td>
+                    <td>
+                      <button class="btn">View</button>
+                      <button class="btn">Retry</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="mobile">
+                <div class="card">
+                  <b>J-88241 · Person · Running</b>
+                  <div class="meta small">
+                    Personal · Photo page · 100 records · attempt 1/5
+                  </div>
+                  <button class="btn">View</button>
+                </div>
+                <div class="card">
+                  <b>J-88229 · Sizes · Retry</b>
+                  <div class="meta small">
+                    Personal · Photo sizes · 31/50 · attempt 3/5 · retry in 4m
+                  </div>
+                  <button class="btn">View</button>
+                  <button class="btn">Retry</button>
+                </div>
+              </div>
+            </div>
+            <div class="cols">
+              <div class="panel">
+                <h3>Discovery by depth</h3>
+                <div class="row">Depth 0 · 6 accounts</div>
+                <div class="row">Depth 1 · 179 contacts</div>
+                <div class="row">Depth 2 · 2,431 contacts</div>
+                <div class="row">Depth 3 · 11,902 contacts</div>
+                <div class="tree">
+                  <button class="chip">
+                    ▸ Safe account label · 34 contacts</button
+                  ><button class="chip">▸ Safe contact label · depth 1</button>
+                </div>
+              </div>
+              <div class="panel">
+                <h3>Dead-letter queue · 1</h3>
+                <div class="row">
+                  <span class="crit">DL-204 · Failed</span> · Photo page · account
+                  unavailable · 5 attempts
+                </div>
+                <button class="btn">View</button>
+                <button class="btn">Retry</button>
+              </div>
+            </div>
+            <div class="detail">
+              <div class="box">
+                <b>Job details · J-88229</b>
+                <p>Sizes lane · Photo sizes · Personal plan</p>
+              </div>
+              <div class="box">
+                <b>Attempts</b>
+                <p>3 of 5 · next eligible retry in 4m</p>
+              </div>
+              <div class="box">
+                <b>Last error</b>
+                <p>service_unavailable · safe summary only</p>
+              </div>
+            </div>
+            <p class="small">
+              No raw payload, personal identifiers, key IDs, or secrets are
+              shown.
+            </p>
+          </section>
+          <section class="state" data-state="loading">
+            <h2>Loading · skeleton</h2>
+            <div class="head">
+              <h1>Crawl pipeline</h1>
+              <span class="muted">Loading pipeline…</span>
+            </div>
+            <div class="cards4">
+              <div class="sk"></div>
+              <div class="sk"></div>
+              <div class="sk"></div>
+              <div class="sk"></div>
+            </div>
+            <div class="sk"></div>
+            <div class="sk"></div>
+            <div class="sk"></div>
+            <div class="sk"></div>
+          </section>
+          <section class="state" data-state="empty">
+            <h2>Empty · no crawl work</h2>
+            <div class="center">
+              <h1>No crawl work yet</h1>
+              <p>The pipeline will appear when crawl work is scheduled.</p>
+              <button class="btn primary">Show both lanes</button>
+            </div>
+          </section>
+          <section class="state" data-state="error">
+            <h2>Error · retry</h2>
+            <div class="banner">
+              Pipeline data could not be loaded. Last good values remain
+              available as stale.
+            </div>
+            <div class="center">
+              <h1>Connection interrupted</h1>
+              <p>Check the connection, then retry.</p>
+              <button class="btn primary">Retry</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+    <section class="theme light" data-theme="light">
+      <div class="wrap">
+        <p class="theme-title">
+          ADMIN · Optional light theme · 1440 desktop / responsive to 390px
+        </p>
+        <div class="grid">
+          <section class="state" data-state="ready">
+            <h2>Normal</h2>
+            <div class="head">
+              <div>
+                <h1>Crawl pipeline</h1>
+                <span class="muted"
+                  >Queue health and safe one-item retries.</span
+                >
+              </div>
+              <span class="live">● Live · updated now</span>
+            </div>
+            <div class="tabs">
+              <button class="chip active">Both lanes</button
+              ><button class="chip">Person</button
+              ><button class="chip">Sizes</button>
+            </div>
+            <div class="cards4">
+              <div class="metric"><span>Person · queued</span><b>412</b></div>
+              <div class="metric"><span>In flight</span><b>3</b></div>
+              <div class="metric"><span>Done this hour</span><b>1,840</b></div>
+              <div class="metric">
+                <span>Blocked</span><b class="warning">268</b>
+              </div>
+              <div class="metric"><span>Sizes · queued</span><b>18,240</b></div>
+              <div class="metric"><span>In flight</span><b>9</b></div>
+              <div class="metric"><span>Done this hour</span><b>5,120</b></div>
+              <div class="metric"><span>Blocked</span><b>0</b></div>
+            </div>
+            <div class="cols">
+              <div class="panel">
+                <h3>Backlog by plan · oldest 42m</h3>
+                <div class="row">Personal · person <b>268</b></div>
+                <div class="row">Personal · sizes <b>8,120</b></div>
+                <div class="row">Team · sizes <b>10,120</b></div>
+              </div>
+              <div class="panel">
+                <h3>Sizes priority</h3>
+                <div class="row">1 · Contact a user just chose</div>
+                <div class="row">2 · Starred contacts</div>
+                <div class="row">3 · Depth 1, then 2, then 3</div>
+              </div>
+            </div>
+            <div class="panel">
+              <h3>Jobs</h3>
+              <div class="filters">
+                <button class="chip active">Both lanes</button
+                ><button class="chip">Plan: All</button
+                ><button class="chip">State: All</button
+                ><input
+                  class="input"
+                  aria-label="Search jobs"
+                  placeholder="Search safe job labels"
+                />
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Job</th>
+                    <th>Lane</th>
+                    <th>Plan</th>
+                    <th>Work type</th>
+                    <th>Progress</th>
+                    <th>Attempt</th>
+                    <th>Next retry</th>
+                    <th>State</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>J-88241</td>
+                    <td>Person</td>
+                    <td>Personal</td>
+                    <td>Photo page</td>
+                    <td>100 records</td>
+                    <td>1/5</td>
+                    <td>—</td>
+                    <td><span class="pill">Running</span></td>
+                    <td><button class="btn">View</button></td>
+                  </tr>
+                  <tr>
+                    <td>J-88229</td>
+                    <td>Sizes</td>
+                    <td>Personal</td>
+                    <td>Photo sizes</td>
+                    <td>31/50</td>
+                    <td>3/5</td>
+                    <td>4m</td>
+                    <td><span class="pill">Retry</span></td>
+                    <td>
+                      <button class="btn">View</button>
+                      <button class="btn">Retry</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="mobile">
+                <div class="card">
+                  <b>J-88241 · Person · Running</b>
+                  <div class="meta small">
+                    Personal · Photo page · 100 records · attempt 1/5
+                  </div>
+                  <button class="btn">View</button>
+                </div>
+                <div class="card">
+                  <b>J-88229 · Sizes · Retry</b>
+                  <div class="meta small">
+                    Personal · Photo sizes · 31/50 · attempt 3/5 · retry in 4m
+                  </div>
+                  <button class="btn">View</button>
+                  <button class="btn">Retry</button>
+                </div>
+              </div>
+            </div>
+            <div class="cols">
+              <div class="panel">
+                <h3>Discovery by depth</h3>
+                <div class="row">Depth 0 · 6 accounts</div>
+                <div class="row">Depth 1 · 179 contacts</div>
+                <div class="row">Depth 2 · 2,431 contacts</div>
+                <div class="row">Depth 3 · 11,902 contacts</div>
+                <div class="tree">
+                  <button class="chip">
+                    ▸ Safe account label · 34 contacts</button
+                  ><button class="chip">▸ Safe contact label · depth 1</button>
+                </div>
+              </div>
+              <div class="panel">
+                <h3>Dead-letter queue · 1</h3>
+                <div class="row">
+                  <span class="crit">DL-204 · Failed</span> · Photo page · account
+                  unavailable · 5 attempts
+                </div>
+                <button class="btn">View</button>
+                <button class="btn">Retry</button>
+              </div>
+            </div>
+            <div class="detail">
+              <div class="box">
+                <b>Job details · J-88229</b>
+                <p>Sizes lane · Photo sizes · Personal plan</p>
+              </div>
+              <div class="box">
+                <b>Attempts</b>
+                <p>3 of 5 · next eligible retry in 4m</p>
+              </div>
+              <div class="box">
+                <b>Last error</b>
+                <p>service_unavailable · safe summary only</p>
+              </div>
+            </div>
+            <p class="small">
+              No raw payload, personal identifiers, key IDs, or secrets are
+              shown.
+            </p>
+          </section>
+          <section class="state" data-state="loading">
+            <h2>Loading · skeleton</h2>
+            <div class="head">
+              <h1>Crawl pipeline</h1>
+              <span class="muted">Loading pipeline…</span>
+            </div>
+            <div class="cards4">
+              <div class="sk"></div>
+              <div class="sk"></div>
+              <div class="sk"></div>
+              <div class="sk"></div>
+            </div>
+            <div class="sk"></div>
+            <div class="sk"></div>
+            <div class="sk"></div>
+            <div class="sk"></div>
+          </section>
+          <section class="state" data-state="empty">
+            <h2>Empty · no crawl work</h2>
+            <div class="center">
+              <h1>No crawl work yet</h1>
+              <p>The pipeline will appear when crawl work is scheduled.</p>
+              <button class="btn primary">Show both lanes</button>
+            </div>
+          </section>
+          <section class="state" data-state="error">
+            <h2>Error · retry</h2>
+            <div class="banner">
+              Pipeline data could not be loaded. Last good values remain
+              available as stale.
+            </div>
+            <div class="center">
+              <h1>Connection interrupted</h1>
+              <p>Check the connection, then retry.</p>
+              <button class="btn primary">Retry</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </body>
+</html>
