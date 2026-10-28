@@ -1,0 +1,50 @@
+collection:
+  get:
+    operationId: GetAdminFlags
+    tags: [admin]
+    summary: List configured feature flags
+    responses:
+      '200':
+        description: Configured feature flags
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: ../schemas/flags.yaml#/FeatureFlag }
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '403':
+        description: Administrator role required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+  put:
+    operationId: UpdateAdminFlags
+    tags: [admin]
+    summary: Create or update feature flags
+    description: Upserts the supplied flags atomically. Omitted flags remain unchanged.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: ../schemas/flags.yaml#/UpdateAdminFlagsRequest }
+    responses:
+      '204': { description: Feature flags updated }
+      '400':
+        description: Invalid feature flags
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '403':
+        description: Administrator role required, or the CSRF token is missing or invalid
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }

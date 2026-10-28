@@ -66,6 +66,7 @@ import (
 	queuepostgres "github.com/jooservices/xflickr/internal/schedule/adapters/queuepostgres"
 	scheduleriver "github.com/jooservices/xflickr/internal/schedule/adapters/river"
 	scheduleapp "github.com/jooservices/xflickr/internal/schedule/app"
+	settingshttp "github.com/jooservices/xflickr/internal/settings/adapters/http"
 	settingspostgres "github.com/jooservices/xflickr/internal/settings/adapters/postgres"
 	settingsapp "github.com/jooservices/xflickr/internal/settings/app"
 	sharinghttp "github.com/jooservices/xflickr/internal/sharing/adapters/http"
@@ -661,6 +662,10 @@ func buildConfiguredAPIHandlerWithHub(pool *pgxpool.Pool, redisClient redisv9.Un
 	if err != nil {
 		return nil, err
 	}
+	flags, err := buildFeatureFlagHandler(pool)
+	if err != nil {
+		return nil, err
+	}
 	crawl, err := buildCrawlHandlerWithEvents(pool, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"})
 	if err != nil {
 		return nil, err
@@ -687,7 +692,15 @@ func buildConfiguredAPIHandlerWithHub(pool *pgxpool.Pool, redisClient redisv9.Un
 		return nil, err
 	}
 	opsHandler := opshttp.Handler{Service: ops.Service{Store: opspostgres.Store{Pool: pool}}, ActorID: userIDFromPrincipal}
-	return newAPIRouterWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}, probeReadiness), nil
+	return newAPIRouterWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}, probeReadiness, flags), nil
+}
+
+func buildFeatureFlagHandler(pool *pgxpool.Pool) (settingshttp.Handler, error) {
+	repository, err := settingspostgres.NewFlagRepository(pool)
+	if err != nil {
+		return settingshttp.Handler{}, err
+	}
+	return settingshttp.Handler{Flags: settingsapp.NewFeatureFlags(repository)}, nil
 }
 
 func sseUserID(r *http.Request) (int64, bool) {
@@ -744,7 +757,16 @@ type apiServer struct {
 	Ops       opshttp.Handler
 	Stream    platformsse.Handler
 	Readiness *httpx.Readiness
+	Flags     settingshttp.Handler
 	planHandler
+}
+
+func (s apiServer) GetAdminFlags(ctx context.Context, request gen.GetAdminFlagsRequestObject) (gen.GetAdminFlagsResponseObject, error) {
+	return s.Flags.GetAdminFlags(ctx, request)
+}
+
+func (s apiServer) UpdateAdminFlags(ctx context.Context, request gen.UpdateAdminFlagsRequestObject) (gen.UpdateAdminFlagsResponseObject, error) {
+	return s.Flags.UpdateAdminFlags(ctx, request)
 }
 
 func (s apiServer) PutMeSharing(ctx context.Context, request gen.PutMeSharingRequestObject) (gen.PutMeSharingResponseObject, error) {
@@ -815,6 +837,7 @@ func newAPIRouterWithQuota(identity identityhttp.Handler, keys accountshttp.KeyH
 
 func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawl crawlhttp.CrawlHandler, quota quotahttp.QuotaHandler, sharing sharinghttp.Handler, downloads mediahttp.DownloadHandler, options ...any) http.Handler {
 	var opsHandler opshttp.Handler
+	var flagsHandler settingshttp.Handler
 	router := chi.NewRouter()
 	serveWebAssets(router, os.Getenv("XFLICKR_WEB_DIR"))
 	router.Use(func(next http.Handler) http.Handler {
@@ -837,8 +860,11 @@ func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.K
 		if probe, ok := option.(*httpx.Readiness); ok {
 			readiness = probe
 		}
+		if flags, ok := option.(settingshttp.Handler); ok {
+			flagsHandler = flags
+		}
 	}
-	strict := gen.NewStrictHandlerWithOptions(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, Ops: opsHandler, Stream: streamHandler, Readiness: readiness, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
+	strict := gen.NewStrictHandlerWithOptions(apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, Ops: opsHandler, Stream: streamHandler, Readiness: readiness, Flags: flagsHandler, planHandler: planHandler{Handler: plans}}, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		identityhttp.MaintainSessionCookies(identity.Sessions),
 	}, gen.StrictHTTPServerOptions{RequestErrorHandlerFunc: badRequest, ResponseErrorHandlerFunc: internalError})

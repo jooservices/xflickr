@@ -109,3 +109,13 @@ func TestStrictHandlerLeavesOpsToOps(t *testing.T) {
 		t.Fatalf("ops status error=%v", err)
 	}
 }
+
+func TestStrictHandlerLeavesFeatureFlagsToSettings(t *testing.T) {
+	handler := StrictHandler{}
+	if _, err := handler.GetAdminFlags(t.Context(), gen.GetAdminFlagsRequestObject{}); !errors.Is(err, errFeatureFlagsServedBySettings) {
+		t.Fatalf("get flags error = %v", err)
+	}
+	if _, err := handler.UpdateAdminFlags(t.Context(), gen.UpdateAdminFlagsRequestObject{}); !errors.Is(err, errFeatureFlagsServedBySettings) {
+		t.Fatalf("update flags error = %v", err)
+	}
+}

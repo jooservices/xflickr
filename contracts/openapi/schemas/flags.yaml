@@ -1,0 +1,29 @@
+FeatureFlag:
+  type: object
+  additionalProperties: false
+  required: [name, enabled, audience, user_ids]
+  properties:
+    name:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: '^[a-z][a-z0-9_.-]{0,127}$'
+    enabled: { type: boolean }
+    audience:
+      type: string
+      enum: [all, admins, user_ids]
+    user_ids:
+      type: array
+      maxItems: 10000
+      uniqueItems: true
+      items: { type: integer, format: int64, minimum: 1 }
+      description: Required for all audiences; must be empty unless audience is user_ids.
+UpdateAdminFlagsRequest:
+  type: object
+  additionalProperties: false
+  required: [flags]
+  properties:
+    flags:
+      type: array
+      minItems: 1
+      items: { $ref: '#/FeatureFlag' }

@@ -27,9 +27,11 @@ import type {
   AdminUser,
   AdminUserPage,
   Error,
+  FeatureFlag,
   ListAdminUsersParams,
   OpsStatus,
   Plan,
+  UpdateAdminFlagsRequest,
   UpdateAdminPlansRequest,
   UpdateAdminUserRequest,
   UpdateUserPlanRequest,
@@ -620,6 +622,266 @@ export const useUpdateAdminPlans = <TError = Error, TContext = unknown>(
   TContext
 > => {
   return useMutation(getUpdateAdminPlansMutationOptions(options), queryClient);
+};
+export type getAdminFlagsResponse200 = {
+  data: FeatureFlag[];
+  status: 200;
+};
+
+export type getAdminFlagsResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type getAdminFlagsResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type getAdminFlagsResponseSuccess = getAdminFlagsResponse200 & {
+  headers: Headers;
+};
+export type getAdminFlagsResponseError = (getAdminFlagsResponse401 | getAdminFlagsResponse403) & {
+  headers: Headers;
+};
+
+export type getAdminFlagsResponse = getAdminFlagsResponseSuccess | getAdminFlagsResponseError;
+
+export const getGetAdminFlagsUrl = () => {
+  return `/admin/flags`;
+};
+
+/**
+ * @summary List configured feature flags
+ */
+export const getAdminFlags = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getAdminFlagsResponse> => {
+  return customFetch<getAdminFlagsResponse>(getGetAdminFlagsUrl(), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getGetAdminFlagsQueryKey = () => {
+  return [`/admin/flags`] as const;
+};
+
+export const getGetAdminFlagsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminFlags>>,
+  TError = Error,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminFlags>>, TError, TData>>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminFlagsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminFlags>>> = ({ signal }) =>
+    getAdminFlags({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminFlags>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetAdminFlagsQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminFlags>>>;
+export type GetAdminFlagsQueryError = Error;
+
+export function useGetAdminFlags<TData = Awaited<ReturnType<typeof getAdminFlags>>, TError = Error>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminFlags>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminFlags>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminFlags>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAdminFlags<TData = Awaited<ReturnType<typeof getAdminFlags>>, TError = Error>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminFlags>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminFlags>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminFlags>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAdminFlags<TData = Awaited<ReturnType<typeof getAdminFlags>>, TError = Error>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminFlags>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List configured feature flags
+ */
+
+export function useGetAdminFlags<TData = Awaited<ReturnType<typeof getAdminFlags>>, TError = Error>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminFlags>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminFlagsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type updateAdminFlagsResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type updateAdminFlagsResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type updateAdminFlagsResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type updateAdminFlagsResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type updateAdminFlagsResponseSuccess = updateAdminFlagsResponse204 & {
+  headers: Headers;
+};
+export type updateAdminFlagsResponseError = (
+  updateAdminFlagsResponse400 | updateAdminFlagsResponse401 | updateAdminFlagsResponse403
+) & {
+  headers: Headers;
+};
+
+export type updateAdminFlagsResponse =
+  updateAdminFlagsResponseSuccess | updateAdminFlagsResponseError;
+
+export const getUpdateAdminFlagsUrl = () => {
+  return `/admin/flags`;
+};
+
+/**
+ * Upserts the supplied flags atomically. Omitted flags remain unchanged.
+ * @summary Create or update feature flags
+ */
+export const updateAdminFlags = async (
+  updateAdminFlagsRequest: UpdateAdminFlagsRequest,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<updateAdminFlagsResponse> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit['headers']>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  return customFetch<updateAdminFlagsResponse>(getUpdateAdminFlagsUrl(), {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateAdminFlagsRequest),
+  });
+};
+
+export const getUpdateAdminFlagsMutationKey = () => ['updateAdminFlags'] as const;
+
+export const getUpdateAdminFlagsMutationOptions = <TError = Error, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAdminFlags>>,
+    TError,
+    UpdateAdminFlagsMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAdminFlags>>,
+  TError,
+  UpdateAdminFlagsMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUpdateAdminFlagsMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAdminFlags>>,
+    UpdateAdminFlagsMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateAdminFlags(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateAdminFlagsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAdminFlags>>
+>;
+export type UpdateAdminFlagsMutationBody = UpdateAdminFlagsRequest;
+export type UpdateAdminFlagsMutationError = Error;
+export type UpdateAdminFlagsMutationVariables = { data: UpdateAdminFlagsRequest };
+
+/**
+ * @summary Create or update feature flags
+ */
+export const useUpdateAdminFlags = <TError = Error, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateAdminFlags>>,
+      TError,
+      UpdateAdminFlagsMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateAdminFlags>>,
+  TError,
+  UpdateAdminFlagsMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateAdminFlagsMutationOptions(options), queryClient);
 };
 export type updateAdminUserPlanResponse204 = {
   data: void;

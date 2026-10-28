@@ -582,6 +582,62 @@ export const UpdateAdminPlansBody = zod.object({
 export const UpdateAdminPlansResponse = zod.void();
 
 /**
+ * @summary List configured feature flags
+ */
+export const getAdminFlagsResponseNameMax = 128;
+
+export const getAdminFlagsResponseNameRegExp = new RegExp('^[a-z][a-z0-9_.-]{0,127}$');
+
+export const getAdminFlagsResponseUserIdsMax = 10000;
+
+export const GetAdminFlagsResponseItem = zod.object({
+  name: zod
+    .string()
+    .min(1)
+    .max(getAdminFlagsResponseNameMax)
+    .regex(getAdminFlagsResponseNameRegExp),
+  enabled: zod.boolean(),
+  audience: zod.enum(['all', 'admins', 'user_ids']),
+  user_ids: zod
+    .array(zod.int().min(1))
+    .max(getAdminFlagsResponseUserIdsMax)
+    .describe('Required for all audiences; must be empty unless audience is user_ids.'),
+});
+export const GetAdminFlagsResponse = zod.array(GetAdminFlagsResponseItem);
+
+/**
+ * Upserts the supplied flags atomically. Omitted flags remain unchanged.
+ * @summary Create or update feature flags
+ */
+export const updateAdminFlagsBodyFlagsItemNameMax = 128;
+
+export const updateAdminFlagsBodyFlagsItemNameRegExp = new RegExp('^[a-z][a-z0-9_.-]{0,127}$');
+
+export const updateAdminFlagsBodyFlagsItemUserIdsMax = 10000;
+
+export const UpdateAdminFlagsBody = zod.object({
+  flags: zod
+    .array(
+      zod.object({
+        name: zod
+          .string()
+          .min(1)
+          .max(updateAdminFlagsBodyFlagsItemNameMax)
+          .regex(updateAdminFlagsBodyFlagsItemNameRegExp),
+        enabled: zod.boolean(),
+        audience: zod.enum(['all', 'admins', 'user_ids']),
+        user_ids: zod
+          .array(zod.int().min(1))
+          .max(updateAdminFlagsBodyFlagsItemUserIdsMax)
+          .describe('Required for all audiences; must be empty unless audience is user_ids.'),
+      }),
+    )
+    .min(1),
+});
+
+export const UpdateAdminFlagsResponse = zod.void();
+
+/**
  * Every assignment is recorded in the audit trail.
  * @summary Assign a plan to a user
  */
