@@ -38,6 +38,27 @@ func fixtureClient(t *testing.T) (*Client, *map[string]string) {
 	return NewClient(server.URL, server.Client()), &last
 }
 
+func TestPhotosGetSizesClassifiesPermissionDenied(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("parse request: %v", err)
+		}
+		if r.Form.Get("method") != "flickr.photos.getSizes" || r.Form.Get("photo_id") != "42" {
+			t.Errorf("request method/photo_id = %q/%q", r.Form.Get("method"), r.Form.Get("photo_id"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"stat":"fail","code":2,"message":"Permission denied"}`))
+	}))
+	defer server.Close()
+	client := NewClient(server.URL, server.Client())
+
+	_, err := client.PhotosGetSizes(t.Context(), Credentials{APIKey: "test-key"}, "42")
+	var callErr *CallError
+	if !errors.As(err, &callErr) || callErr.Code != 2 || !errors.Is(err, ErrPermission) || errors.Is(err, ErrNotFound) {
+		t.Fatalf("PhotosGetSizes() error = %#v, want code 2 classified as permission denied", err)
+	}
+}
+
 func assertPhotoPage(t *testing.T, page Page[Photo], err error) {
 	t.Helper()
 	if err != nil {

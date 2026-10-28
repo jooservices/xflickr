@@ -1,6 +1,9 @@
 package flickr
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // PhotoSize is one available size returned by flickr.photos.getSizes.
 type PhotoSize struct {
@@ -32,5 +35,13 @@ func LargestAllowed(sizes []PhotoSize) PhotoSize {
 // PhotosGetSizes calls flickr.photos.getSizes.
 func (c *Client) PhotosGetSizes(ctx context.Context, creds Credentials, photoID string) ([]PhotoSize, error) {
 	page, err := listPage[PhotoSize](ctx, c, creds, "flickr.photos.getSizes", "sizes", "size", map[string]string{"photo_id": photoID})
+	var callErr *CallError
+	if errors.As(err, &callErr) && callErr.Code == 2 {
+		// Flickr uses code 2 for permission denied on photos.getSizes. Other
+		// methods use code 2 for different errors, so keep this correction local.
+		permissionErr := *callErr
+		permissionErr.Kind = ErrPermission
+		return page.Items, &permissionErr
+	}
 	return page.Items, err
 }

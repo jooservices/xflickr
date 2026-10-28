@@ -39,7 +39,7 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 
 	base := time.Now().UnixNano()
 	testQueue := fmt.Sprintf("sizes_%d", base)
-	photoIDs := []int64{base, base + 1, base + 2}
+	photoIDs := []int64{base, base + 1, base + 2, base + 3}
 	owner := fmt.Sprintf("sizes-integration-%d@example.invalid", base)
 	if _, err := pool.Exec(ctx, `INSERT INTO people (nsid, username) VALUES ($1, $1)`, owner); err != nil {
 		t.Fatal(err)
@@ -52,7 +52,7 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM river_job WHERE args->'args'->>'photo_id' = ANY($1)`, []string{fmt.Sprint(photoIDs[0]), fmt.Sprint(photoIDs[1]), fmt.Sprint(photoIDs[2])})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM river_job WHERE args->'args'->>'photo_id' = ANY($1)`, []string{fmt.Sprint(photoIDs[0]), fmt.Sprint(photoIDs[1]), fmt.Sprint(photoIDs[2]), fmt.Sprint(photoIDs[3])})
 		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE owner_nsid=$1`, owner)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, owner)
@@ -83,10 +83,15 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 		photoID := r.Form.Get("photo_id")
 		mu.Lock()
 		calls[photoID]++
+		attempt := calls[photoID]
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		if photoID == fmt.Sprint(photoIDs[2]) {
 			_, _ = w.Write([]byte(`{"stat":"fail","code":1,"message":"Photo not found"}`))
+			return
+		}
+		if photoID == fmt.Sprint(photoIDs[3]) && attempt == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
 		_, _ = w.Write([]byte(`{"stat":"ok","sizes":{"size":[{"label":"Original","width":100,"height":80,"source":"https://example.test/original","media":"photo"}]}}`))
@@ -99,7 +104,7 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	processed := make(chan error, len(photoIDs))
+	processed := make(chan error, 2*len(photoIDs))
 	if err := adapter.RegisterWithOptions(scheduleriver.PhotoJobKind, func(ctx context.Context, job queue.Job) error {
 		args, err := ParseSizesJob(job.Args)
 		if err == nil {
@@ -107,7 +112,7 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 		}
 		processed <- err
 		return err
-	}, queue.Options{Queue: testQueue, MaxAttempts: 1}); err != nil {
+	}, queue.Options{Queue: testQueue, MaxAttempts: 2, Backoff: 5 * time.Millisecond}); err != nil {
 		t.Fatal(err)
 	}
 	if err := adapter.Start(ctx); err != nil {
@@ -119,7 +124,7 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 		}
 		<-adapter.Stopped()
 	})
-	enqueuer := scheduleriver.PhotoEnqueuer{Pool: pool, Jobs: adapter, ReadyCap: 2, Options: queue.Options{Queue: testQueue, MaxAttempts: 1}}
+	enqueuer := scheduleriver.PhotoEnqueuer{Pool: pool, Jobs: adapter, ReadyCap: 2, Options: queue.Options{Queue: testQueue, MaxAttempts: 2, Backoff: 5 * time.Millisecond}}
 	lane := scheduleapp.PhotoLane{Selector: catalogpostgres.PhotoLane{Pool: pool}, Keys: integrationPhotoKeys{}, Queue: enqueuer}
 
 	enqueue := func(photoID int64) {
@@ -132,7 +137,7 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := adapter.Enqueue(ctx, tx, queue.Job{Kind: scheduleriver.PhotoJobKind, Args: args}, queue.Options{Queue: testQueue, MaxAttempts: 1}); err != nil {
+		if err := adapter.Enqueue(ctx, tx, queue.Job{Kind: scheduleriver.PhotoJobKind, Args: args}, queue.Options{Queue: testQueue, MaxAttempts: 2, Backoff: 5 * time.Millisecond}); err != nil {
 			_ = tx.Rollback(context.Background())
 			t.Fatal(err)
 		}
@@ -182,17 +187,27 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 	waitJob(false)
 	enqueue(photoIDs[2])
 	waitJob(false)
+	insertPhoto(photoIDs[3], catalog.SizesProvisional, nil)
+	enqueue(photoIDs[3])
+	waitJob(true)
+	waitJob(false)
 	mu.Lock()
-	confirmedCalls, skippedCalls, missingCalls := calls[fmt.Sprint(photoIDs[0])], calls[fmt.Sprint(photoIDs[1])], calls[fmt.Sprint(photoIDs[2])]
+	confirmedCalls, skippedCalls, missingCalls, transientCalls := calls[fmt.Sprint(photoIDs[0])], calls[fmt.Sprint(photoIDs[1])], calls[fmt.Sprint(photoIDs[2])], calls[fmt.Sprint(photoIDs[3])]
 	mu.Unlock()
-	if confirmedCalls != 1 || skippedCalls != 0 || missingCalls != 1 {
-		t.Fatalf("fake Flickr calls: confirmed=%d skipped=%d stale-missing=%d", confirmedCalls, skippedCalls, missingCalls)
+	if confirmedCalls != 1 || skippedCalls != 0 || missingCalls != 1 || transientCalls != 2 {
+		t.Fatalf("fake Flickr calls: confirmed=%d skipped=%d stale-missing=%d transient-retry=%d", confirmedCalls, skippedCalls, missingCalls, transientCalls)
 	}
 	if err := pool.QueryRow(ctx, `SELECT sizes, sizes_status, sizes_checked_at FROM photos WHERE id=$1`, photoIDs[2]).Scan(&storedSizes, &storedStatus, &storedChecked); err != nil {
 		t.Fatal(err)
 	}
 	if string(storedSizes) != `[]` || storedStatus != string(catalog.SizesUnavailable) || !storedChecked.Equal(checkedAt) {
 		t.Fatalf("stale confirmed not-found outcome = %s, %s at %s", storedSizes, storedStatus, storedChecked)
+	}
+	if err := pool.QueryRow(ctx, `SELECT sizes_status FROM photos WHERE id=$1`, photoIDs[3]).Scan(&storedStatus); err != nil {
+		t.Fatal(err)
+	}
+	if storedStatus != string(catalog.SizesConfirmed) {
+		t.Fatalf("transient size result = %s, want confirmed after retry", storedStatus)
 	}
 }
 
