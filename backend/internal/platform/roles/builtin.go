@@ -49,6 +49,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/crypto"
 	"github.com/jooservices/xflickr/internal/platform/db"
 	"github.com/jooservices/xflickr/internal/platform/httpx"
+	"github.com/jooservices/xflickr/internal/platform/obs"
 	"github.com/jooservices/xflickr/internal/platform/ops"
 	opshttp "github.com/jooservices/xflickr/internal/platform/ops/adapters/http"
 	opspostgres "github.com/jooservices/xflickr/internal/platform/ops/adapters/postgres"
@@ -192,7 +193,7 @@ func (crawlRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	client := flickrclient.NewClient(flickrRESTURL(cfg), nil)
+	client := newFlickrClient(cfg)
 	engine, err := newCrawlEngine(pool, redisClient, cfg, client)
 	if err != nil {
 		return err
@@ -255,7 +256,7 @@ func (syncRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := registerPhotoSizes(queueAdapter, pool, redisClient, cfg, flickrclient.NewClient(flickrRESTURL(cfg), nil)); err != nil {
+	if err := registerPhotoSizes(queueAdapter, pool, redisClient, cfg, newFlickrClient(cfg)); err != nil {
 		return err
 	}
 	configureRoleReadiness(ctx, "sync", postgresDependency(pool), redisDependency(redisClient))
@@ -905,6 +906,14 @@ func flickrRESTURL(cfg config.Config) string {
 		return ""
 	}
 	return cfg.Flickr.UpstreamURL + "/services/rest"
+}
+
+func newFlickrClient(cfg config.Config) *flickrclient.Client {
+	return flickrclient.NewClientWithContextObserver(
+		flickrRESTURL(cfg),
+		nil,
+		flickrclient.ContextEventObserverFunc(obs.Event),
+	)
 }
 
 // flickrOAuthEndpoints overrides the OAuth URLs only when an upstream is set.

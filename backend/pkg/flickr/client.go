@@ -34,6 +34,12 @@ type EventObserver interface {
 	Event(name string, fields map[string]any)
 }
 
+// ContextEventObserver receives transport events with the request context so
+// tracing and request-scoped logging fields are preserved.
+type ContextEventObserver interface {
+	EventContext(ctx context.Context, name string, fields map[string]any)
+}
+
 // EventObserverFunc adapts a function to EventObserver.
 type EventObserverFunc func(name string, fields map[string]any)
 
@@ -43,13 +49,24 @@ func (f EventObserverFunc) Event(name string, fields map[string]any) {
 	}
 }
 
+// ContextEventObserverFunc adapts a context-aware function to
+// ContextEventObserver.
+type ContextEventObserverFunc func(context.Context, string, map[string]any)
+
+func (f ContextEventObserverFunc) EventContext(ctx context.Context, name string, fields map[string]any) {
+	if f != nil {
+		f(ctx, name, fields)
+	}
+}
+
 // Client sends Flickr REST calls and classifies Flickr and HTTP failures.
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
-	observer   EventObserver
-	now        func() time.Time
-	newNonce   func() (string, error)
+	baseURL         string
+	httpClient      *http.Client
+	observer        EventObserver
+	contextObserver ContextEventObserver
+	now             func() time.Time
+	newNonce        func() (string, error)
 }
 
 // NewClient creates a client that targets baseURL and uses httpClient. Empty
@@ -66,6 +83,14 @@ func NewClient(baseURL string, httpClient *http.Client, observers ...EventObserv
 	if len(observers) > 0 {
 		client.observer = observers[0]
 	}
+	return client
+}
+
+// NewClientWithContextObserver creates a client that forwards each call event
+// together with the call's context.
+func NewClientWithContextObserver(baseURL string, httpClient *http.Client, observer ContextEventObserver) *Client {
+	client := NewClient(baseURL, httpClient)
+	client.contextObserver = observer
 	return client
 }
 
@@ -93,7 +118,7 @@ func (c *Client) Call(ctx context.Context, creds Credentials, method string, par
 	started := time.Now()
 	defer func() {
 		meta.Latency = time.Since(started)
-		c.emitCallEvent(method, meta)
+		c.emitCallEvent(ctx, method, meta)
 	}()
 
 	method = strings.TrimSpace(method)
@@ -207,7 +232,7 @@ func (c *Client) signForm(endpoint string, creds Credentials, form url.Values) (
 	return signed, nil
 }
 
-func (c *Client) emitCallEvent(method string, meta CallMeta) {
+func (c *Client) emitCallEvent(ctx context.Context, method string, meta CallMeta) {
 	fields := map[string]any{
 		"method":     method,
 		"status":     meta.HTTPStatus,
@@ -215,11 +240,18 @@ func (c *Client) emitCallEvent(method string, meta CallMeta) {
 		"bytes":      meta.Bytes,
 		"error_code": meta.ErrorCode,
 	}
+	if c != nil && c.contextObserver != nil {
+		c.contextObserver.EventContext(ctx, "flickr.call", fields)
+		return
+	}
 	if c != nil && c.observer != nil {
 		c.observer.Event("flickr.call", fields)
 		return
 	}
-	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "flickr.call",
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "flickr.call",
 		slog.String("method", method),
 		slog.Int("status", meta.HTTPStatus),
 		slog.Int64("latency_ms", meta.Latency.Milliseconds()),

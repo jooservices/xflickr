@@ -12,6 +12,7 @@ import (
 	"github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
+	"github.com/jooservices/xflickr/internal/platform/obs"
 )
 
 const (
@@ -210,6 +211,7 @@ func requirePrincipal(sessions SessionService, admin bool) func(http.Handler) ht
 				SetSessionCookie(w, cookie.Value, result.Session.ExpiresAt)
 			}
 			ctx := WithUserID(r.Context(), result.User.ID)
+			ctx = obs.WithFields(ctx, map[string]any{"user_id": result.User.ID})
 			ctx = WithPrincipal(ctx, Principal{User: result.User, Session: result.Session, TokenHash: result.TokenHash})
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

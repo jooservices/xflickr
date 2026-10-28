@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/jooservices/xflickr/internal/media/app"
 	"github.com/jooservices/xflickr/internal/platform/httpx"
+	"github.com/jooservices/xflickr/internal/platform/obs"
 )
 
 type readinessContextKey struct{}
@@ -92,7 +94,7 @@ func healthProbeAddress() (string, error) {
 }
 
 // RunWithHealth starts one probe listener for all selected roles in this process.
-func RunWithHealth(ctx context.Context, selected []Role, version string) error {
+func RunWithHealth(ctx context.Context, selected []Role, version string) (runErr error) {
 	if ctx == nil {
 		return errors.New("health probes require a context")
 	}
@@ -107,6 +109,23 @@ func RunWithHealth(ctx context.Context, selected []Role, version string) error {
 		if role.Name() == "api" && address == apiAddress() {
 			return errors.New("OBS_HTTP_PORT must differ from HTTP_PORT when the api role is selected")
 		}
+	}
+	obsConfig, configErr := obs.ConfigFromEnvironmentWithDotEnv(".env")
+	if configErr != nil {
+		slog.ErrorContext(ctx, "OpenObserve configuration could not be loaded", "error", configErr)
+		obsConfig = obs.ConfigFromEnvironment()
+	}
+	obsConfig.Version = version
+	telemetry, telemetryErr := obs.Start(obsConfig)
+	if telemetryErr != nil {
+		slog.ErrorContext(ctx, "OpenObserve exporters are disabled", "error", telemetryErr)
+	}
+	if telemetry != nil {
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			runErr = errors.Join(runErr, telemetry.Shutdown(shutdownCtx))
+		}()
 	}
 
 	roleNames := make([]string, 0, len(selected))
@@ -123,7 +142,11 @@ func RunWithHealth(ctx context.Context, selected []Role, version string) error {
 	for _, role := range selected {
 		role := role
 		group.Go(func() error {
-			err := role.Run(roleCtx)
+			ctx := obs.WithFields(roleCtx, map[string]any{
+				"node": obsConfig.Node,
+				"role": role.Name(),
+			})
+			err := role.Run(ctx)
 			if ctx.Err() != nil || groupCtx.Err() != nil {
 				return err
 			}

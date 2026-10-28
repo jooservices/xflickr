@@ -79,6 +79,28 @@ func TestCallSuccessBuildsRequestAndEmitsEvent(t *testing.T) {
 	}
 }
 
+func TestCallPreservesRequestContextForContextAwareObserver(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"stat":"ok"}`)
+	}))
+	defer server.Close()
+	type testContextKey struct{}
+	ctx := context.WithValue(context.Background(), testContextKey{}, "request-context")
+	var observedContext context.Context
+	var observedName string
+	client := NewClientWithContextObserver(server.URL, server.Client(), ContextEventObserverFunc(func(got context.Context, name string, _ map[string]any) {
+		observedContext = got
+		observedName = name
+	}))
+	if _, _, err := client.Call(ctx, Credentials{APIKey: "test-key"}, "flickr.test.echo", nil); err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if observedName != "flickr.call" || observedContext.Value(testContextKey{}) != "request-context" {
+		t.Fatalf("observer got event %q with context value %v", observedName, observedContext.Value(testContextKey{}))
+	}
+}
+
 func TestCallMapsFlickrErrors(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

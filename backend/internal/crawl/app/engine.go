@@ -45,6 +45,7 @@ type Governor interface {
 type Request struct {
 	KeyID  int64
 	UserID int64
+	Lane   domain.Lane
 	Method string
 	Params map[string]string
 }
@@ -233,7 +234,7 @@ func (e *Engine) run(ctx context.Context, item domain.Item, facet domain.Facet) 
 	if permit == nil {
 		return e.hold(ctx, item, wait, "waiting for quota")
 	}
-	payload, callErr := e.Flickr.Call(ctx, Request{KeyID: keyID, UserID: item.UserID, Method: item.Cursor.Method, Params: pageParams(item.Cursor)})
+	payload, callErr := e.Flickr.Call(ctx, Request{KeyID: keyID, UserID: item.UserID, Lane: facet.Lane(), Method: item.Cursor.Method, Params: pageParams(item.Cursor)})
 	if doneErr := permit.Done(callErr); doneErr != nil {
 		e.logger().WarnContext(ctx, "crawl permit release failed", "work_item_id", item.ID, "error", doneErr)
 	}
