@@ -1,0 +1,906 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>XFlickr · Admin Downloads mockup</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #080b10;
+        color: #d6dee8;
+        font:
+          14px/1.45 system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+      h1,
+      h2,
+      h3,
+      h4,
+      p {
+        margin: 0;
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+      .gallery {
+        max-width: 1440px;
+        margin: auto;
+        padding: 28px;
+      }
+      .intro {
+        margin-bottom: 18px;
+      }
+      .intro h1 {
+        font-size: 26px;
+      }
+      .intro p {
+        margin-top: 5px;
+        color: #a5afbf;
+      }
+      .theme {
+        --bg: #0b0f15;
+        --surface: #11171f;
+        --sunken: #161e28;
+        --raise: #1c2632;
+        --line: #222c3a;
+        --ink: #d6dee8;
+        --muted: #8190a4;
+        --accent: #4cb4d8;
+        --ok: #3cb87c;
+        --warn: #e2ae3d;
+        --bad: #f2766b;
+        margin: 24px 0;
+        padding: 22px;
+        border: 1px solid #2b3541;
+        background: #070a0e;
+        color: var(--ink);
+      }
+      .theme.light {
+        --bg: #eef1f5;
+        --surface: #fff;
+        --sunken: #f5f7fa;
+        --raise: #e9edf3;
+        --line: #dce2ea;
+        --ink: #16202c;
+        --muted: #56657a;
+        --accent: #006482;
+        --ok: #176d42;
+        --warn: #815800;
+        --bad: #c5372c;
+        background: #dfe4eb;
+      }
+      .theme-title {
+        margin-bottom: 14px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .state {
+        margin: 14px 0 22px;
+        padding: 16px;
+        min-width: 0;
+        border: 1px solid var(--line);
+        background: var(--bg);
+      }
+      .state-label,
+      .head,
+      .toolbar,
+      .tabs,
+      .filters,
+      .row,
+      .panel-head,
+      .metric-label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .state-label {
+        margin-bottom: 10px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+      .sample {
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0;
+        text-transform: none;
+      }
+      .head {
+        align-items: flex-start;
+        margin-bottom: 14px;
+      }
+      .head h2 {
+        font-size: 23px;
+      }
+      .head p,
+      .muted,
+      .sample {
+        color: var(--muted);
+      }
+      .head p {
+        margin-top: 4px;
+      }
+      .live {
+        color: var(--ok);
+        font-size: 12px;
+      }
+      .toolbar {
+        flex-wrap: wrap;
+      }
+      .tabs,
+      .filters {
+        justify-content: flex-start;
+        flex-wrap: wrap;
+      }
+      button,
+      input,
+      select {
+        min-height: 36px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--raise);
+        color: var(--ink);
+      }
+      button {
+        cursor: default;
+        font-weight: 650;
+      }
+      button[aria-pressed="true"] {
+        border-color: var(--accent);
+        box-shadow: inset 0 0 0 1px var(--accent);
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #04131a;
+      }
+      .theme.light button.primary {
+        color: #fff;
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 8px;
+        margin: 14px 0;
+      }
+      .metric,
+      .panel,
+      .job-card,
+      .file-card {
+        min-width: 0;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--surface);
+      }
+      .metric b {
+        display: block;
+        margin-top: 6px;
+        font-size: 20px;
+      }
+      .metric span {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .metric .warning {
+        color: var(--warn);
+      }
+      .meter {
+        height: 6px;
+        margin-top: 9px;
+        overflow: hidden;
+        border-radius: 99px;
+        background: var(--line);
+      }
+      .meter i {
+        display: block;
+        width: 73%;
+        height: 100%;
+        background: var(--accent);
+      }
+      .warning-banner,
+      .error {
+        margin: 12px 0;
+        padding: 10px 12px;
+        border: 1px solid var(--warn);
+        border-radius: 6px;
+        color: var(--warn);
+        background: var(--surface);
+      }
+      .filters {
+        margin: 10px 0;
+        padding: 9px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--surface);
+      }
+      .filters input {
+        flex: 1;
+        min-width: 180px;
+        background: var(--sunken);
+      }
+      .content {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+        gap: 12px;
+      }
+      .panel h3 {
+        margin-bottom: 9px;
+        font-size: 15px;
+      }
+      .jobs {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+        font-size: 12px;
+      }
+      .jobs th,
+      .jobs td {
+        padding: 8px 6px;
+        border-top: 1px solid var(--line);
+        vertical-align: top;
+      }
+      .jobs th {
+        color: var(--muted);
+        font-size: 10px;
+        text-transform: uppercase;
+      }
+      .pill {
+        display: inline-block;
+        padding: 2px 7px;
+        border: 1px solid var(--line);
+        border-radius: 99px;
+        white-space: nowrap;
+      }
+      .pill.running {
+        color: var(--accent);
+      }
+      .pill.ready {
+        color: var(--ok);
+      }
+      .pill.failed,
+      .bad {
+        color: var(--bad);
+      }
+      .progress {
+        min-width: 75px;
+        height: 6px;
+        margin: 5px 0;
+        overflow: hidden;
+        border-radius: 99px;
+        background: var(--line);
+      }
+      .progress i {
+        display: block;
+        width: 64%;
+        height: 100%;
+        background: var(--accent);
+      }
+      .drawer {
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--surface);
+      }
+      .drawer-head {
+        padding: 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .drawer-head h3 {
+        margin: 0;
+      }
+      .drawer-body {
+        padding: 12px;
+      }
+      .facts {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 7px;
+        margin-bottom: 12px;
+      }
+      .fact {
+        padding: 8px;
+        border-radius: 5px;
+        background: var(--sunken);
+      }
+      .fact span {
+        display: block;
+        color: var(--muted);
+        font-size: 10px;
+      }
+      .fact b {
+        display: block;
+        margin-top: 3px;
+        font-size: 12px;
+      }
+      .files {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+        font-size: 11px;
+      }
+      .files th,
+      .files td {
+        padding: 7px 4px;
+        border-top: 1px solid var(--line);
+      }
+      .files th {
+        color: var(--muted);
+        font-size: 9px;
+        text-transform: uppercase;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .mobile-jobs {
+        display: none;
+      }
+      .empty {
+        padding: 32px 14px;
+        text-align: center;
+        border: 1px dashed var(--line);
+        border-radius: 7px;
+        background: var(--surface);
+      }
+      .empty h3 {
+        margin-bottom: 5px;
+      }
+      .empty p {
+        color: var(--muted);
+      }
+      .skeleton {
+        height: 12px;
+        margin: 9px 0;
+        border-radius: 4px;
+        background: linear-gradient(
+          90deg,
+          var(--sunken),
+          var(--raise),
+          var(--sunken)
+        );
+      }
+      .skeleton.short {
+        width: 32%;
+      }
+      .skeleton.medium {
+        width: 58%;
+      }
+      .skeleton.long {
+        width: 88%;
+      }
+      .state-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 9px;
+      }
+      .state-card {
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--surface);
+      }
+      .state-card h3 {
+        margin-bottom: 8px;
+        font-size: 14px;
+      }
+      .state-card p {
+        color: var(--muted);
+      }
+      @media (max-width: 900px) {
+        .gallery {
+          padding: 18px;
+        }
+        .metrics {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        .content {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 700px) {
+        .gallery {
+          padding: 10px;
+        }
+        .theme {
+          margin: 14px 0;
+          padding: 10px;
+        }
+        .state {
+          padding: 10px;
+        }
+        .head {
+          flex-direction: column;
+        }
+        .metrics {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .filters input {
+          min-width: 100%;
+        }
+        .jobs {
+          display: none;
+        }
+        .mobile-jobs {
+          display: grid;
+          gap: 8px;
+        }
+        .state-grid {
+          grid-template-columns: 1fr;
+        }
+        .files {
+          display: block;
+        }
+        .files tbody {
+          display: grid;
+          gap: 6px;
+        }
+        .files tr {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          padding: 6px;
+          border-top: 1px solid var(--line);
+        }
+        .files th {
+          display: none;
+        }
+        .files td {
+          border: 0;
+          padding: 3px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="gallery">
+      <header class="intro">
+        <h1>Admin Downloads · static preview</h1>
+        <p>
+          Dark and light themes · 1440px desktop layout · responsive at 390px ·
+          fictional sample data only.
+        </p>
+      </header>
+      <section
+        class="theme dark"
+        data-role="admin"
+        data-theme="dark"
+        aria-labelledby="dark-heading"
+      >
+        <h2 id="dark-heading" class="theme-title">Dark control room</h2>
+        <article class="state" data-state="ready" data-viewport="1440">
+          <div class="state-label">
+            <span>Normal · 1440 desktop / 390 mobile</span
+            ><span class="live">● Live · updated now</span>
+          </div>
+          <div class="head">
+            <div>
+              <h2>Downloads</h2>
+              <p>Every user's download jobs and temporary storage health.</p>
+            </div>
+            <button>Refresh</button>
+          </div>
+          <div class="metrics">
+            <div class="metric"><span>Running</span><b>14</b></div>
+            <div class="metric"><span>Throughput</span><b>42.8 MB/s</b></div>
+            <div class="metric">
+              <span>Temporary storage · all nodes</span><b>731 / 1,000 GB</b>
+              <div class="meter"><i></i></div>
+            </div>
+            <div class="metric">
+              <span>Checksum failures · 24h</span><b class="warning">34</b>
+            </div>
+            <div class="metric">
+              <span>Success rate · 24h</span><b>98.7%</b>
+            </div>
+          </div>
+          <div class="warning-banner">
+            Storage warning · 73% used · New downloads are running normally.
+          </div>
+          <section class="panel">
+            <div class="toolbar">
+              <h3>Download jobs</h3>
+              <div class="tabs">
+                <button aria-pressed="true">All</button><button>Active</button
+                ><button>Ready</button><button>Finished</button>
+              </div>
+            </div>
+            <div class="filters">
+              <select aria-label="Filter by state">
+                <option>State: All</option></select
+              ><select aria-label="Filter by node">
+                <option>Node: All</option></select
+              ><select aria-label="Time window">
+                <option>Last 24 hours</option></select
+              ><input
+                aria-label="Search safe labels"
+                placeholder="Search users or source labels"
+              />
+            </div>
+            <table class="jobs">
+              <thead>
+                <tr>
+                  <th>Job</th>
+                  <th>User</th>
+                  <th>Scope / source</th>
+                  <th>Node</th>
+                  <th>Files / bytes</th>
+                  <th>Speed</th>
+                  <th>Temp</th>
+                  <th>Delivery</th>
+                  <th>Age</th>
+                  <th>State</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>DL-2042</td>
+                  <td>User 048</td>
+                  <td>Contact · Public set</td>
+                  <td>SG-1</td>
+                  <td>
+                    <div class="progress"><i></i></div>
+                    517 / 812 · 1.2 GB
+                  </td>
+                  <td>18.4 MB/s</td>
+                  <td>1.2 GB</td>
+                  <td>Cloud</td>
+                  <td>7m</td>
+                  <td><span class="pill running">Running</span></td>
+                </tr>
+                <tr>
+                  <td>DL-2043</td>
+                  <td>User 105</td>
+                  <td>Album · Autumn set</td>
+                  <td>EU-1</td>
+                  <td>
+                    <div class="progress"><i style="width: 16%"></i></div>
+                    22 / 140 · 280 MB
+                  </td>
+                  <td>4.1 MB/s</td>
+                  <td>280 MB</td>
+                  <td>ZIP</td>
+                  <td>1m</td>
+                  <td><span class="pill running">Running</span></td>
+                </tr>
+                <tr>
+                  <td>DL-2034</td>
+                  <td>User 019</td>
+                  <td>Contact · Public set</td>
+                  <td>EU-1</td>
+                  <td>
+                    <div class="progress"><i style="width: 100%"></i></div>
+                    260 / 260 · 3.4 GB
+                  </td>
+                  <td>—</td>
+                  <td>3.4 GB</td>
+                  <td>ZIP · 11h TTL</td>
+                  <td>3h</td>
+                  <td><span class="pill failed">Ready with errors</span></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="mobile-jobs">
+              <div class="job-card">
+                <b>DL-2042 · User 048 · Running</b>
+                <p class="muted">
+                  Contact · Public set · SG-1 · 517 / 812 files · 1.2 GB · 18.4
+                  MB/s
+                </p>
+              </div>
+              <div class="job-card">
+                <b>DL-2043 · User 105 · Running</b>
+                <p class="muted">
+                  Album · Autumn set · EU-1 · 22 / 140 files · 280 MB · 4.1 MB/s
+                </p>
+              </div>
+              <div class="job-card">
+                <b>DL-2034 · User 019 · Ready with errors</b>
+                <p class="muted">
+                  Contact · Public set · EU-1 · 260 files · ZIP expires in 11h
+                </p>
+              </div>
+            </div>
+          </section>
+          <div class="content" style="margin-top: 12px">
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Temporary storage by scope</h3>
+                <span class="muted">Observed 12s ago</span>
+              </div>
+              <p>All nodes · 731 GB used of 1,000 GB · 73%</p>
+              <div class="meter"><i></i></div>
+              <p class="muted" style="margin-top: 8px">
+                SG-1 · 402 GB / 600 GB &nbsp; · &nbsp; EU-1 · 329 GB / 400 GB
+              </p>
+            </section>
+            <section class="drawer">
+              <div class="drawer-head">
+                <div class="row">
+                  <h3>DL-2034 · User 019</h3>
+                  <span class="pill failed">Ready with errors</span>
+                </div>
+                <p class="muted">Contact · Public set · Original · ZIP</p>
+              </div>
+              <div class="drawer-body">
+                <div class="facts">
+                  <div class="fact">
+                    <span>Files</span><b>260 total · 254 verified · 6 failed</b>
+                  </div>
+                  <div class="fact">
+                    <span>Progress / bytes</span><b>3.4 GB complete</b>
+                  </div>
+                  <div class="fact">
+                    <span>Node / temporary bytes</span><b>EU-1 · 3.4 GB</b>
+                  </div>
+                  <div class="fact">
+                    <span>ZIP link TTL / elapsed</span
+                    ><b>11h remaining · 3h elapsed</b>
+                  </div>
+                </div>
+                <h3 style="margin-bottom: 7px">File checksum and progress</h3>
+                <table class="files">
+                  <thead>
+                    <tr>
+                      <th>File</th>
+                      <th>Size</th>
+                      <th>Progress</th>
+                      <th>Checksum</th>
+                      <th>Tries</th>
+                      <th>State</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>File 001</td>
+                      <td>24 MB</td>
+                      <td>100%</td>
+                      <td>Verified</td>
+                      <td>1 / 3</td>
+                      <td>Ready</td>
+                    </tr>
+                    <tr>
+                      <td>File 002</td>
+                      <td>18 MB</td>
+                      <td>100%</td>
+                      <td class="bad">Failed</td>
+                      <td>3 / 3</td>
+                      <td class="bad">Failed</td>
+                    </tr>
+                    <tr>
+                      <td>File 003</td>
+                      <td>12 MB</td>
+                      <td>100%</td>
+                      <td>Verified</td>
+                      <td>1 / 3</td>
+                      <td>Ready</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="actions">
+                  <button>Retry failed files</button
+                  ><button disabled>Cancel active job</button>
+                </div>
+                <p class="sample muted" style="margin-top: 8px">
+                  Retry affects this job's eligible failed files only. Cancel is
+                  disabled for this finished job; on an active job it removes
+                  only that job's temporary assets.
+                </p>
+              </div>
+            </section>
+          </div>
+        </article>
+        <article class="state" data-state="loading">
+          <div class="state-label">
+            <span>Loading · skeleton</span
+            ><span class="muted">Loading downloads…</span>
+          </div>
+          <div class="skeleton short"></div>
+          <div class="metrics">
+            <div class="metric"><div class="skeleton"></div></div>
+            <div class="metric"><div class="skeleton"></div></div>
+            <div class="metric"><div class="skeleton"></div></div>
+            <div class="metric"><div class="skeleton"></div></div>
+            <div class="metric"><div class="skeleton"></div></div>
+          </div>
+          <div class="skeleton long"></div>
+          <div class="skeleton"></div>
+          <div class="skeleton medium"></div>
+        </article>
+        <article class="state" data-state="empty">
+          <div class="state-label"><span>Empty · no jobs</span></div>
+          <div class="empty">
+            <h3>No downloads yet</h3>
+            <p>Download jobs will appear here when users start a download.</p>
+            <button style="margin-top: 12px">Refresh</button>
+          </div>
+        </article>
+        <article class="state" data-state="error">
+          <div class="state-label"><span>Error · retry</span></div>
+          <div class="error">
+            <h3>Could not load downloads</h3>
+            <p>
+              Retry the failed section. Successful sections and last-good values
+              remain visible.
+            </p>
+            <button style="margin-top: 12px">Retry</button>
+          </div>
+        </article>
+      </section>
+      <section
+        class="theme light"
+        data-role="admin"
+        data-theme="light"
+        aria-labelledby="light-heading"
+      >
+        <h2 id="light-heading" class="theme-title">Light theme</h2>
+        <article class="state" data-state="ready" data-viewport="1440">
+          <div class="state-label">
+            <span>Normal · responsive to 390px</span
+            ><span class="live">● Live · updated now</span>
+          </div>
+          <div class="head">
+            <div>
+              <h2>Downloads</h2>
+              <p>Every user's download jobs and temporary storage health.</p>
+            </div>
+            <button>Refresh</button>
+          </div>
+          <div class="metrics">
+            <div class="metric"><span>Running</span><b>14</b></div>
+            <div class="metric"><span>Throughput</span><b>42.8 MB/s</b></div>
+            <div class="metric">
+              <span>Temporary storage · all nodes</span><b>731 / 1,000 GB</b>
+              <div class="meter"><i></i></div>
+            </div>
+            <div class="metric">
+              <span>Checksum failures · 24h</span><b class="warning">34</b>
+            </div>
+            <div class="metric">
+              <span>Success rate · 24h</span><b>98.7%</b>
+            </div>
+          </div>
+          <div class="warning-banner">
+            Storage warning · 73% used · New downloads are running normally.
+          </div>
+          <section class="panel">
+            <div class="toolbar">
+              <h3>Download jobs</h3>
+              <div class="tabs">
+                <button aria-pressed="true">All</button><button>Active</button
+                ><button>Ready</button><button>Finished</button>
+              </div>
+            </div>
+            <div class="filters">
+              <select aria-label="Filter by state">
+                <option>State: All</option></select
+              ><select aria-label="Filter by node">
+                <option>Node: All</option></select
+              ><select aria-label="Time window">
+                <option>Last 24 hours</option></select
+              ><input
+                aria-label="Search safe labels"
+                placeholder="Search users or source labels"
+              />
+            </div>
+            <table class="jobs">
+              <thead>
+                <tr>
+                  <th>Job</th>
+                  <th>User</th>
+                  <th>Scope / source</th>
+                  <th>Node</th>
+                  <th>Files / bytes</th>
+                  <th>Speed</th>
+                  <th>Temp</th>
+                  <th>Delivery</th>
+                  <th>Age</th>
+                  <th>State</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>DL-2042</td>
+                  <td>User 048</td>
+                  <td>Contact · Public set</td>
+                  <td>SG-1</td>
+                  <td>517 / 812 · 1.2 GB</td>
+                  <td>18.4 MB/s</td>
+                  <td>1.2 GB</td>
+                  <td>Cloud</td>
+                  <td>7m</td>
+                  <td><span class="pill running">Running</span></td>
+                </tr>
+                <tr>
+                  <td>DL-2034</td>
+                  <td>User 019</td>
+                  <td>Contact · Public set</td>
+                  <td>EU-1</td>
+                  <td>260 / 260 · 3.4 GB</td>
+                  <td>—</td>
+                  <td>3.4 GB</td>
+                  <td>ZIP · 11h TTL</td>
+                  <td>3h</td>
+                  <td><span class="pill failed">Ready with errors</span></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="mobile-jobs">
+              <div class="job-card">
+                <b>DL-2042 · User 048 · Running</b>
+                <p class="muted">SG-1 · 517 / 812 files · 1.2 GB</p>
+              </div>
+              <div class="job-card">
+                <b>DL-2034 · User 019 · Ready with errors</b>
+                <p class="muted">EU-1 · 260 files · ZIP expires in 11h</p>
+              </div>
+            </div>
+          </section>
+          <section class="panel" style="margin-top: 12px">
+            <h3>DL-2034 · User 019 · Ready with errors</h3>
+            <p class="muted">
+              Album · Autumn set · EU-1 · 254 verified · 6 checksum failures.
+              Drawer is shown beside the table on desktop and full-screen on
+              mobile.
+            </p>
+            <div class="actions">
+              <button>Retry failed files</button
+              ><button disabled>Cancel active job</button>
+            </div>
+          </section>
+        </article>
+        <article class="state" data-state="loading">
+          <div class="state-label"><span>Loading · skeleton</span></div>
+          <div class="skeleton short"></div>
+          <div class="metrics">
+            <div class="metric"><div class="skeleton"></div></div>
+            <div class="metric"><div class="skeleton"></div></div>
+            <div class="metric"><div class="skeleton"></div></div>
+            <div class="metric"><div class="skeleton"></div></div>
+            <div class="metric"><div class="skeleton"></div></div>
+          </div>
+          <div class="skeleton long"></div>
+          <div class="skeleton"></div>
+        </article>
+        <article class="state" data-state="empty">
+          <div class="state-label"><span>Empty · no jobs</span></div>
+          <div class="empty">
+            <h3>No downloads yet</h3>
+            <p>Download jobs will appear here when users start a download.</p>
+            <button style="margin-top: 12px">Refresh</button>
+          </div>
+        </article>
+        <article class="state" data-state="error">
+          <div class="state-label"><span>Error · retry</span></div>
+          <div class="error">
+            <h3>Could not load downloads</h3>
+            <p>
+              Retry the failed section. Successful sections and last-good values
+              remain visible.
+            </p>
+            <button style="margin-top: 12px">Retry</button>
+          </div>
+        </article>
+      </section>
+      <p class="sample">
+        Static HTML/CSS only · no JavaScript, external assets, or network
+        requests.
+      </p>
+    </main>
+  </body>
+</html>
