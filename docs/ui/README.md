@@ -54,7 +54,7 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 | `admin-nodes` | admin | `/admin/nodes` | Cluster nodes | [spec](views/admin-nodes.md) | [mockup](mockups/admin-nodes.html) | JOOXF-181 | `web/e2e/admin-nodes.spec.ts` |
 | `admin-node` | admin | `/admin/nodes/:id` | Cluster node detail | [spec](views/admin-node.md) | [mockup](mockups/admin-node.html) | JOOXF-181 | `web/e2e/admin-node.spec.ts` |
 | `admin-quota` | admin | `/admin/quota` | API quota | [spec](views/admin-quota.md) | [mockup](mockups/admin-quota.html) | JOOXF-182 | `web/e2e/admin-quota.spec.ts` |
-| `admin-metrics` | admin | `/admin/metrics` | Metrics | pending | pending | TBD | `web/e2e/admin-metrics.spec.ts` |
+| `admin-metrics` | admin | `/admin/metrics` | Metrics | [spec](views/admin-metrics.md) | [mockup](mockups/admin-metrics.html) | JOOXF-180 | `web/e2e/admin-metrics.spec.ts` |
 | `admin-events` | admin | `/admin/events` | Events and audit | pending | pending | TBD | `web/e2e/admin-events.spec.ts` |
 | `admin-issues` | admin | `/admin/issues` | Issues | pending | pending | TBD | `web/e2e/admin-issues.spec.ts` |
 | `admin-pipeline` | admin | `/admin/pipeline` | Crawl pipeline | pending | pending | TBD | `web/e2e/admin-pipeline.spec.ts` |
