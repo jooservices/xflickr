@@ -12,7 +12,7 @@ import (
 // Credential material and request/response bodies must never be added here.
 type CallRecord struct {
 	At              time.Time
-	KeyID           int64
+	KeyID           int64 // Zero means the call predates a persisted API-key row.
 	UserID          *int64
 	AccountID       *int64
 	FlickrAccount   string
@@ -80,7 +80,7 @@ func (r *CallRecorder) Record(record CallRecord) bool {
 	} else {
 		record.At = record.At.UTC()
 	}
-	if record.KeyID <= 0 || record.Method == "" || record.Status == "" || record.LatencyMS < 0 || record.Bytes < 0 {
+	if record.KeyID < 0 || record.Method == "" || record.Status == "" || record.LatencyMS < 0 || record.Bytes < 0 {
 		return r.drop()
 	}
 	select {
@@ -169,11 +169,11 @@ func (r *CallRecorder) drain(ctx context.Context, batch []CallRecord, onError fu
 
 // ValidateCallRecord is shared by storage adapters before persisting a batch.
 func ValidateCallRecord(record CallRecord) error {
-	if record.KeyID <= 0 {
-		return errors.New("quota: call record requires a key")
+	if record.KeyID < 0 {
+		return errors.New("quota: call record key id is invalid")
 	}
 	if record.Method == "" || record.Status == "" {
-		return errors.New("quota: call record requires key, method and status")
+		return errors.New("quota: call record requires method and status")
 	}
 	if record.At.IsZero() {
 		return errors.New("quota: call record time is invalid")
