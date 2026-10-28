@@ -22,9 +22,13 @@ type readRepoStub struct {
 	photo       app.Photo
 	photoOK     bool
 	listErr     error
+	lastLimit   int
+	listCalls   int
 }
 
-func (s *readRepoStub) ListPeople(context.Context, int64, sharingapp.SQLPredicate, *app.PersonCursor, int) (app.PeoplePage, error) {
+func (s *readRepoStub) ListPeople(_ context.Context, _ int64, _ sharingapp.SQLPredicate, _ *app.PersonCursor, limit int) (app.PeoplePage, error) {
+	s.lastLimit = limit
+	s.listCalls++
 	return s.people, s.listErr
 }
 
@@ -32,24 +36,118 @@ func (s *readRepoStub) GetPerson(context.Context, int64, string, sharingapp.SQLP
 	return s.person, s.personOK, s.listErr
 }
 
-func (s *readRepoStub) ListPersonPhotos(context.Context, int64, string, sharingapp.SQLPredicate, *app.PhotoCursor, int) (app.PhotosPage, error) {
+func (s *readRepoStub) ListPersonPhotos(_ context.Context, _ int64, _ string, _ sharingapp.SQLPredicate, _ *app.PhotoCursor, limit int) (app.PhotosPage, error) {
+	s.lastLimit = limit
+	s.listCalls++
 	return s.photos, s.listErr
 }
 
-func (s *readRepoStub) ListVisibleFavorites(context.Context, int64, sharingapp.SQLPredicate, *app.FavoriteCursor, int) (app.FavoritesPage, error) {
+func (s *readRepoStub) ListVisibleFavorites(_ context.Context, _ int64, _ sharingapp.SQLPredicate, _ *app.FavoriteCursor, limit int) (app.FavoritesPage, error) {
+	s.lastLimit = limit
+	s.listCalls++
 	return s.favorites, s.listErr
 }
 
-func (s *readRepoStub) ListVisibleAlbums(context.Context, int64, sharingapp.SQLPredicate, *app.AlbumCursor, int) (app.AlbumsPage, error) {
+func (s *readRepoStub) ListVisibleAlbums(_ context.Context, _ int64, _ sharingapp.SQLPredicate, _ *app.AlbumCursor, limit int) (app.AlbumsPage, error) {
+	s.lastLimit = limit
+	s.listCalls++
 	return s.albums, s.listErr
 }
 
-func (s *readRepoStub) ListVisibleAlbumPhotos(context.Context, int64, string, sharingapp.SQLPredicate, *app.AlbumPhotoCursor, int) (app.AlbumPhotosPage, error) {
+func (s *readRepoStub) ListVisibleAlbumPhotos(_ context.Context, _ int64, _ string, _ sharingapp.SQLPredicate, _ *app.AlbumPhotoCursor, limit int) (app.AlbumPhotosPage, error) {
+	s.lastLimit = limit
+	s.listCalls++
 	return s.albumPhotos, s.listErr
 }
 
 func (s *readRepoStub) GetPhoto(context.Context, int64, int64, sharingapp.SQLPredicate) (app.Photo, bool, error) {
 	return s.photo, s.photoOK, s.listErr
+}
+
+func TestListHandlersDistinguishOmittedAndZeroLimits(t *testing.T) {
+	repo := &readRepoStub{}
+	handler := Handler{Reads: app.ReadService{Repository: repo}, ActorID: func(context.Context) (int64, bool) { return 71, true }}
+
+	type listCall struct {
+		name          string
+		run           func(*int) (any, error)
+		isInvalidPage func(any) bool
+	}
+	calls := []listCall{
+		{
+			name: "people",
+			run: func(limit *int) (any, error) {
+				return handler.ListPeople(context.Background(), gen.ListPeopleRequestObject{Params: gen.ListPeopleParams{Limit: limit}})
+			},
+			isInvalidPage: func(response any) bool {
+				got, ok := response.(gen.ListPeople400JSONResponse)
+				return ok && got.Code == "invalid_page"
+			},
+		},
+		{
+			name: "person photos",
+			run: func(limit *int) (any, error) {
+				return handler.ListPersonPhotos(context.Background(), gen.ListPersonPhotosRequestObject{Nsid: "owner", Params: gen.ListPersonPhotosParams{Limit: limit}})
+			},
+			isInvalidPage: func(response any) bool {
+				got, ok := response.(gen.ListPersonPhotos400JSONResponse)
+				return ok && got.Code == "invalid_page"
+			},
+		},
+		{
+			name: "favorites",
+			run: func(limit *int) (any, error) {
+				return handler.ListFavorites(context.Background(), gen.ListFavoritesRequestObject{Params: gen.ListFavoritesParams{Limit: limit}})
+			},
+			isInvalidPage: func(response any) bool {
+				got, ok := response.(gen.ListFavorites400JSONResponse)
+				return ok && got.Code == "invalid_page"
+			},
+		},
+		{
+			name: "albums",
+			run: func(limit *int) (any, error) {
+				return handler.ListAlbums(context.Background(), gen.ListAlbumsRequestObject{Params: gen.ListAlbumsParams{Limit: limit}})
+			},
+			isInvalidPage: func(response any) bool {
+				got, ok := response.(gen.ListAlbums400JSONResponse)
+				return ok && got.Code == "invalid_page"
+			},
+		},
+		{
+			name: "album photos",
+			run: func(limit *int) (any, error) {
+				return handler.ListAlbumPhotos(context.Background(), gen.ListAlbumPhotosRequestObject{ID: "album", Params: gen.ListAlbumPhotosParams{Limit: limit}})
+			},
+			isInvalidPage: func(response any) bool {
+				got, ok := response.(gen.ListAlbumPhotos400JSONResponse)
+				return ok && got.Code == "invalid_page"
+			},
+		},
+	}
+
+	for _, call := range calls {
+		t.Run(call.name, func(t *testing.T) {
+			response, err := call.run(nil)
+			if err != nil {
+				t.Fatalf("omitted limit error=%v", err)
+			}
+			if repo.lastLimit != app.DefaultPageSize {
+				t.Fatalf("omitted limit reached repository as %d, want %d (response=%#v)", repo.lastLimit, app.DefaultPageSize, response)
+			}
+
+			zero := 0
+			previousCalls := repo.listCalls
+			repo.lastLimit = 0
+			response, err = call.run(&zero)
+			if err != nil || !call.isInvalidPage(response) {
+				t.Fatalf("zero limit response=%#v err=%v", response, err)
+			}
+			if repo.listCalls != previousCalls {
+				t.Fatalf("explicit zero reached repository; calls went from %d to %d", previousCalls, repo.listCalls)
+			}
+		})
+	}
 }
 
 func TestHandlerMapsAllCatalogReadResponses(t *testing.T) {
@@ -138,6 +236,9 @@ func TestHandlerHidesMissingRecordsAndRejectsBadPages(t *testing.T) {
 	}
 	if response, err := handler.GetPhoto(context.Background(), gen.GetPhotoRequestObject{ID: 999}); err != nil || response.(gen.GetPhoto404JSONResponse).Code != "not_found" {
 		t.Fatalf("missing photo response=%#v err=%v", response, err)
+	}
+	if response, err := handler.ListPersonPhotos(context.Background(), gen.ListPersonPhotosRequestObject{Nsid: " \t "}); err != nil || response.(gen.ListPersonPhotos404JSONResponse).Code != "not_found" {
+		t.Fatalf("blank NSID person photos response=%#v err=%v", response, err)
 	}
 	repo.listErr = app.ErrNotFound
 	if response, err := handler.ListAlbumPhotos(context.Background(), gen.ListAlbumPhotosRequestObject{ID: "secret"}); err != nil || response.(gen.ListAlbumPhotos404JSONResponse).Code != "not_found" {

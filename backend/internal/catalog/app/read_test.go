@@ -64,7 +64,7 @@ func TestReadServiceAppliesPolicyAndEncodesKeysets(t *testing.T) {
 	now := time.Date(2026, 10, 28, 10, 0, 0, 0, time.UTC)
 	repo := &readRepositoryStub{people: PeoplePage{Items: []Person{{NSID: "person"}}, NextCursor: &PersonCursor{NSID: "person"}}}
 	service := ReadService{Repository: repo}
-	page, cursor, err := service.ListPeople(context.Background(), 42, "", 0)
+	page, cursor, err := service.ListPeople(context.Background(), 42, "", DefaultPageSize)
 	if err != nil || len(page.Items) != 1 || cursor == "" {
 		t.Fatalf("page=%+v cursor=%q err=%v", page, cursor, err)
 	}
@@ -117,6 +117,12 @@ func TestReadServiceRejectsInvalidPageAndCursorWithoutReading(t *testing.T) {
 	}
 	if _, _, err := service.ListPeople(context.Background(), 1, "", MaxPageSize+1); !errors.Is(err, ErrInvalidPage) {
 		t.Fatalf("invalid limit error=%v", err)
+	}
+	if _, _, err := service.ListPeople(context.Background(), 1, "", 0); !errors.Is(err, ErrInvalidPage) {
+		t.Fatalf("zero limit error=%v", err)
+	}
+	if _, _, err := service.ListPersonPhotos(context.Background(), 1, " \t ", "", 10); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("blank NSID error=%v", err)
 	}
 	if repo.seenUser != 0 {
 		t.Fatalf("invalid request reached repository: %+v", repo)
@@ -177,6 +183,9 @@ func TestReadServicePropagatesRepositoryErrorsAndNotFound(t *testing.T) {
 	}
 	if _, err := service.GetPerson(ctx, 3, " "); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("blank person error=%v", err)
+	}
+	if _, _, err := service.ListPersonPhotos(ctx, 3, " \t ", "", 1); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("blank person photos NSID error=%v", err)
 	}
 	if _, err := service.GetPhoto(ctx, 3, 0); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("invalid photo id error=%v", err)

@@ -171,6 +171,9 @@ func (s ReadService) ListPersonPhotos(ctx context.Context, userID int64, nsid, c
 	if err := s.validate(ctx, userID); err != nil {
 		return PhotosPage{}, "", err
 	}
+	if strings.TrimSpace(nsid) == "" {
+		return PhotosPage{}, "", ErrNotFound
+	}
 	parsed, err := decodeCursor[PhotoCursor](cursor, "person-photos")
 	if err != nil {
 		return PhotosPage{}, "", err
@@ -276,9 +279,6 @@ func visibility(userID int64) sharingapp.SQLPredicate {
 }
 
 func normalizeLimit(limit int) (int, error) {
-	if limit == 0 {
-		return DefaultPageSize, nil
-	}
 	if limit < 1 || limit > MaxPageSize {
 		return 0, ErrInvalidPage
 	}

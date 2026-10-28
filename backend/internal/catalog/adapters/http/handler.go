@@ -28,7 +28,7 @@ func (h Handler) ListPeople(ctx context.Context, request gen.ListPeopleRequestOb
 	if !ok {
 		return gen.ListPeople401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
 	}
-	page, next, err := h.Reads.ListPeople(ctx, userID, stringParam(request.Params.Cursor), intParam(request.Params.Limit))
+	page, next, err := h.Reads.ListPeople(ctx, userID, stringParam(request.Params.Cursor), pageLimit(request.Params.Limit))
 	if err != nil {
 		return pageFailure[gen.ListPeopleResponseObject](err, func(e gen.Error) gen.ListPeopleResponseObject { return gen.ListPeople400JSONResponse(e) })
 	}
@@ -59,7 +59,7 @@ func (h Handler) ListPersonPhotos(ctx context.Context, request gen.ListPersonPho
 	if !ok {
 		return gen.ListPersonPhotos401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
 	}
-	page, next, err := h.Reads.ListPersonPhotos(ctx, userID, request.Nsid, stringParam(request.Params.Cursor), intParam(request.Params.Limit))
+	page, next, err := h.Reads.ListPersonPhotos(ctx, userID, request.Nsid, stringParam(request.Params.Cursor), pageLimit(request.Params.Limit))
 	if errors.Is(err, app.ErrNotFound) {
 		return gen.ListPersonPhotos404JSONResponse(notFoundError()), nil
 	}
@@ -77,7 +77,7 @@ func (h Handler) ListFavorites(ctx context.Context, request gen.ListFavoritesReq
 	if !ok {
 		return gen.ListFavorites401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
 	}
-	page, next, err := h.Reads.ListFavorites(ctx, userID, stringParam(request.Params.Cursor), intParam(request.Params.Limit))
+	page, next, err := h.Reads.ListFavorites(ctx, userID, stringParam(request.Params.Cursor), pageLimit(request.Params.Limit))
 	if errors.Is(err, app.ErrInvalidCursor) || errors.Is(err, app.ErrInvalidPage) {
 		return gen.ListFavorites400JSONResponse(invalidPageError()), nil
 	}
@@ -96,7 +96,7 @@ func (h Handler) ListAlbums(ctx context.Context, request gen.ListAlbumsRequestOb
 	if !ok {
 		return gen.ListAlbums401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
 	}
-	page, next, err := h.Reads.ListAlbums(ctx, userID, stringParam(request.Params.Cursor), intParam(request.Params.Limit))
+	page, next, err := h.Reads.ListAlbums(ctx, userID, stringParam(request.Params.Cursor), pageLimit(request.Params.Limit))
 	if errors.Is(err, app.ErrInvalidCursor) || errors.Is(err, app.ErrInvalidPage) {
 		return gen.ListAlbums400JSONResponse(invalidPageError()), nil
 	}
@@ -115,7 +115,7 @@ func (h Handler) ListAlbumPhotos(ctx context.Context, request gen.ListAlbumPhoto
 	if !ok {
 		return gen.ListAlbumPhotos401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
 	}
-	page, next, err := h.Reads.ListAlbumPhotos(ctx, userID, request.ID, stringParam(request.Params.Cursor), intParam(request.Params.Limit))
+	page, next, err := h.Reads.ListAlbumPhotos(ctx, userID, request.ID, stringParam(request.Params.Cursor), pageLimit(request.Params.Limit))
 	if errors.Is(err, app.ErrNotFound) {
 		return gen.ListAlbumPhotos404JSONResponse(notFoundError()), nil
 	}
@@ -171,9 +171,9 @@ func stringParam(value *string) string {
 	return *value
 }
 
-func intParam(value *int) int {
+func pageLimit(value *int) int {
 	if value == nil {
-		return 0
+		return app.DefaultPageSize
 	}
 	return *value
 }
