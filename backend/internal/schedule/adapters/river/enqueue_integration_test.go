@@ -948,7 +948,7 @@ func TestConnectedAccountCrawlRunsCycleThenPumpThenWorkerWithinQuota(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if queued, err := cycles.ScheduleNext(ctx, userID, time.Now().UTC(), 24*time.Hour); err != nil || !queued {
+	if queued, err := cycles.ScheduleNext(ctx, userID, time.Now().UTC(), 24*time.Hour, 30*24*time.Hour); err != nil || !queued {
 		t.Fatalf("ScheduleNext() = %v, %v; want queued", queued, err)
 	}
 	var cycleKey *int64

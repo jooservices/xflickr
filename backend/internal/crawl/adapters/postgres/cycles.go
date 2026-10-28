@@ -15,7 +15,7 @@ import (
 	"github.com/jooservices/xflickr/internal/crawl/app"
 )
 
-// CycleRepository persists the per-user cycle cursor and check scheduling.
+// CycleRepository persists the per-user cycle cursor and periodic work scheduling.
 type CycleRepository struct {
 	pool  *pgxpool.Pool
 	begin cycleBegin
@@ -84,11 +84,11 @@ func (repository *CycleRepository) UsersWithInterests(ctx context.Context) ([]in
 	return users, nil
 }
 
-// ScheduleNext atomically picks the next due person after the stored cursor,
-// queues a check item, marks that interest checked, and persists the cursor.
+// ScheduleNext atomically picks the next person after the stored cursor, queues
+// due checks and reconciliations, and persists the cursor.
 // It wraps to the first due person only after reaching the end of the cycle.
-func (repository *CycleRepository) ScheduleNext(ctx context.Context, userID int64, now time.Time, interval time.Duration) (bool, error) {
-	if err := validateCycleSchedule(ctx, repository, userID, interval); err != nil {
+func (repository *CycleRepository) ScheduleNext(ctx context.Context, userID int64, now time.Time, checkInterval, reconcileInterval time.Duration) (bool, error) {
+	if err := validateCycleSchedule(ctx, repository, userID, checkInterval, reconcileInterval); err != nil {
 		return false, err
 	}
 	tx, err := repository.begin(ctx)
@@ -100,22 +100,26 @@ func (repository *CycleRepository) ScheduleNext(ctx context.Context, userID int6
 	if err != nil {
 		return false, err
 	}
-	candidate, found, err := selectCycleCandidate(ctx, tx, userID, cursor, now.Add(-interval))
+	candidate, found, err := selectCycleCandidate(ctx, tx, userID, cursor, now.Add(-checkInterval), now.Add(-reconcileInterval))
 	if err != nil || !found {
 		return false, err
 	}
-	candidate.cycleDue = app.CycleDue(startedAt, now, interval)
-	if !candidate.due {
-		return false, commitCycleVisit(ctx, tx, userID, now, candidate)
+	candidate.cycleDue = app.CycleDue(startedAt, now, checkInterval)
+	enqueuedCheck, enqueuedReconcile := false, false
+	if candidate.dueCheck {
+		enqueuedCheck, err = enqueueCycleCheck(ctx, tx, userID, now, candidate)
+		if err != nil {
+			return false, err
+		}
 	}
-	enqueued, err := enqueueCycleCheck(ctx, tx, userID, now, candidate)
-	if err != nil {
-		return false, err
+	if candidate.dueReconcile {
+		enqueuedReconcile, err = enqueueCycleReconcile(ctx, tx, userID, now, candidate)
+		if err != nil {
+			return false, err
+		}
 	}
-	if !enqueued {
-		// An existing pending or running check already represents this visit.
-		// Move on without refreshing last_checked_at or holding the cursor here.
-		candidate.due = false
+	candidate.dueCheck = enqueuedCheck
+	if !enqueuedCheck && !enqueuedReconcile {
 		return false, commitCycleVisit(ctx, tx, userID, now, candidate)
 	}
 	if err := advanceCycle(ctx, tx, userID, now, candidate); err != nil {
@@ -124,10 +128,10 @@ func (repository *CycleRepository) ScheduleNext(ctx context.Context, userID int6
 	if err := tx.Commit(ctx); err != nil {
 		return false, fmt.Errorf("crawl: commit cycle scheduling: %w", err)
 	}
-	return true, nil
+	return enqueuedCheck || enqueuedReconcile, nil
 }
 
-func validateCycleSchedule(ctx context.Context, repository *CycleRepository, userID int64, interval time.Duration) error {
+func validateCycleSchedule(ctx context.Context, repository *CycleRepository, userID int64, checkInterval, reconcileInterval time.Duration) error {
 	if repository == nil || repository.begin == nil {
 		return errDatabaseRequired
 	}
@@ -137,8 +141,8 @@ func validateCycleSchedule(ctx context.Context, repository *CycleRepository, use
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if userID <= 0 || interval <= 0 {
-		return errors.New("crawl: valid user and interval are required")
+	if userID <= 0 || checkInterval <= 0 || reconcileInterval <= 0 {
+		return errors.New("crawl: valid user and scheduling intervals are required")
 	}
 	return nil
 }
@@ -159,7 +163,8 @@ type cycleCandidate struct {
 	lastSeen     int64
 	lastFavorite int64
 	wrapped      bool
-	due          bool
+	dueCheck     bool
+	dueReconcile bool
 	cycleDue     bool
 }
 
@@ -178,22 +183,37 @@ func loadCycleCursor(ctx context.Context, tx cycleTx, userID int64) (string, tim
 	return cursor, startedAt.Time, nil
 }
 
-func selectCycleCandidate(ctx context.Context, tx cycleTx, userID int64, cursor string, cutoff time.Time) (cycleCandidate, bool, error) {
-	person, depth, lastSeen, lastFavorite, lastChecked, found, err := selectNextInterest(ctx, tx, userID, cursor, false)
+func selectCycleCandidate(ctx context.Context, tx cycleTx, userID int64, cursor string, checkCutoff, reconcileCutoff time.Time) (cycleCandidate, bool, error) {
+	person, depth, lastSeen, lastFavorite, lastChecked, lastReconciled, found, err := selectNextInterest(ctx, tx, userID, cursor, false)
 	if err != nil {
 		return cycleCandidate{}, false, err
 	}
 	if found {
-		return cycleCandidate{person: person, depth: depth, lastSeen: lastSeen, lastFavorite: lastFavorite, due: !lastChecked.Valid || !lastChecked.Time.After(cutoff)}, true, nil
+		return cycleCandidate{
+			person:       person,
+			depth:        depth,
+			lastSeen:     lastSeen,
+			lastFavorite: lastFavorite,
+			dueCheck:     !lastChecked.Valid || !lastChecked.Time.After(checkCutoff),
+			dueReconcile: !lastReconciled.Valid || !lastReconciled.Time.After(reconcileCutoff),
+		}, true, nil
 	}
 	if cursor == "" {
 		return cycleCandidate{}, false, nil
 	}
-	person, depth, lastSeen, lastFavorite, lastChecked, found, err = selectNextInterest(ctx, tx, userID, cursor, true)
+	person, depth, lastSeen, lastFavorite, lastChecked, lastReconciled, found, err = selectNextInterest(ctx, tx, userID, cursor, true)
 	if err != nil || !found {
 		return cycleCandidate{}, false, err
 	}
-	return cycleCandidate{person: person, depth: depth, lastSeen: lastSeen, lastFavorite: lastFavorite, wrapped: true, due: !lastChecked.Valid || !lastChecked.Time.After(cutoff)}, true, nil
+	return cycleCandidate{
+		person:       person,
+		depth:        depth,
+		lastSeen:     lastSeen,
+		lastFavorite: lastFavorite,
+		wrapped:      true,
+		dueCheck:     !lastChecked.Valid || !lastChecked.Time.After(checkCutoff),
+		dueReconcile: !lastReconciled.Valid || !lastReconciled.Time.After(reconcileCutoff),
+	}, true, nil
 }
 
 func enqueueCycleCheck(ctx context.Context, tx cycleTx, userID int64, now time.Time, candidate cycleCandidate) (bool, error) {
@@ -219,8 +239,31 @@ func enqueueCycleCheck(ctx context.Context, tx cycleTx, userID int64, now time.T
 	return tag.RowsAffected() > 0, nil
 }
 
+func enqueueCycleReconcile(ctx context.Context, tx cycleTx, userID int64, now time.Time, candidate cycleCandidate) (bool, error) {
+	cursorJSON, err := json.Marshal(map[string]any{
+		"page": 1, "method": "flickr.people.getPhotos", "checkpoint_at": now.Unix(),
+		"params": map[string]string{
+			"user_id": candidate.person, "per_page": "500", "extras": app.ReconcilePhotoExtras,
+		},
+	})
+	if err != nil {
+		return false, fmt.Errorf("crawl: encode reconcile cursor: %w", err)
+	}
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO work_items (kind, subject_key, user_id, key_id, depth, cursor)
+		VALUES ('reconcile', $1, $2, (SELECT fa.key_id FROM flickr_accounts fa WHERE fa.user_id=$2 AND fa.status='ok' ORDER BY fa.id LIMIT 1), $3, $4)
+		ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO UPDATE SET
+			key_id=COALESCE(EXCLUDED.key_id, work_items.key_id), state='pending', cursor=EXCLUDED.cursor, attempts=0, last_error=NULL,
+			not_before=$5, lease_expires_at=NULL, updated_at=$5
+		WHERE work_items.state IN ('done','failed')`, candidate.person, userID, candidate.depth, cursorJSON, now)
+	if err != nil {
+		return false, fmt.Errorf("crawl: enqueue reconciliation: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 func advanceCycle(ctx context.Context, tx cycleTx, userID int64, now time.Time, candidate cycleCandidate) error {
-	if candidate.due {
+	if candidate.dueCheck {
 		if _, err := tx.Exec(ctx, `UPDATE crawl_interests SET last_checked_at=$3 WHERE user_id=$1 AND person_nsid=$2`, userID, candidate.person, now); err != nil {
 			return fmt.Errorf("crawl: mark change check scheduled: %w", err)
 		}
@@ -255,27 +298,27 @@ func advanceCycle(ctx context.Context, tx cycleTx, userID int64, now time.Time, 
 	return nil
 }
 
-func selectNextInterest(ctx context.Context, tx cycleTx, userID int64, cursor string, wrap bool) (string, int, int64, int64, pgtype.Timestamptz, bool, error) {
+func selectNextInterest(ctx context.Context, tx cycleTx, userID int64, cursor string, wrap bool) (string, int, int64, int64, pgtype.Timestamptz, pgtype.Timestamptz, bool, error) {
 	comparison := ">"
 	if wrap {
 		comparison = "<="
 	}
 	query := `SELECT person_nsid, depth,
 		COALESCE(floor(extract(epoch FROM last_seen_at))::bigint,0),
-		COALESCE(floor(extract(epoch FROM last_fave_at))::bigint,0), last_checked_at
+		COALESCE(floor(extract(epoch FROM last_fave_at))::bigint,0), last_checked_at, last_reconciled_at
 		FROM crawl_interests
 		WHERE user_id=$1 AND person_nsid ` + comparison + ` $2
 		ORDER BY person_nsid LIMIT 1 FOR UPDATE`
 	var person string
 	var depth int
 	var lastSeen, lastFavorite int64
-	var lastChecked pgtype.Timestamptz
-	err := tx.QueryRow(ctx, query, userID, cursor).Scan(&person, &depth, &lastSeen, &lastFavorite, &lastChecked)
+	var lastChecked, lastReconciled pgtype.Timestamptz
+	err := tx.QueryRow(ctx, query, userID, cursor).Scan(&person, &depth, &lastSeen, &lastFavorite, &lastChecked, &lastReconciled)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", 0, 0, 0, pgtype.Timestamptz{}, false, nil
+		return "", 0, 0, 0, pgtype.Timestamptz{}, pgtype.Timestamptz{}, false, nil
 	}
 	if err != nil {
-		return "", 0, 0, 0, pgtype.Timestamptz{}, false, fmt.Errorf("crawl: select next interest: %w", err)
+		return "", 0, 0, 0, pgtype.Timestamptz{}, pgtype.Timestamptz{}, false, fmt.Errorf("crawl: select next interest: %w", err)
 	}
-	return person, depth, lastSeen, lastFavorite, lastChecked, true, nil
+	return person, depth, lastSeen, lastFavorite, lastChecked, lastReconciled, true, nil
 }

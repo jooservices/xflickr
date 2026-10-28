@@ -18,6 +18,7 @@ import (
 	catalog "github.com/jooservices/xflickr/internal/catalog/domain"
 	"github.com/jooservices/xflickr/internal/crawl/app"
 	"github.com/jooservices/xflickr/internal/crawl/domain"
+	"github.com/jooservices/xflickr/internal/crawl/facets"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 	settingsdomain "github.com/jooservices/xflickr/internal/settings/domain"
@@ -65,6 +66,17 @@ type intFlickr struct {
 func (f *intFlickr) Call(context.Context, app.Request) (json.RawMessage, error) {
 	f.calls++
 	return json.RawMessage(`{}`), f.err
+}
+
+type reconcileIntFlickr struct{ responses map[string]json.RawMessage }
+
+func (f reconcileIntFlickr) Call(_ context.Context, request app.Request) (json.RawMessage, error) {
+	key := request.Method + ":" + request.Params["page"]
+	response, ok := f.responses[key]
+	if !ok {
+		return nil, fmt.Errorf("unexpected reconciliation request %s", key)
+	}
+	return response, nil
 }
 
 type intSettings struct{}
@@ -288,6 +300,161 @@ func TestRecoverableFlickrFailureKeepsWorkItemPending(t *testing.T) {
 				t.Fatalf("state=%s attempts=%d cursor=%+v; want %s/%d with original page/subject", state, attempts, parsed, tc.wantState, tc.wantTries)
 			}
 		})
+	}
+}
+
+func TestReconcileTombstonesOnlySafeMissingRowsAndPublishesVisibilityChanges(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	ownerUserID := insertInterestTestUser(t, ctx, pool)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	person := "reconcile-owner-" + suffix
+	photoIDs := []int64{time.Now().UnixNano(), time.Now().UnixNano() + 1, time.Now().UnixNano() + 2}
+	scannedAt := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=ANY($1::bigint[])`, []int64{userID, ownerUserID})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM crawl_interests WHERE user_id=ANY($1::bigint[]) AND person_nsid=$2`, []int64{userID, ownerUserID}, person)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM favorites WHERE person_nsid=$1`, person)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM outbox_events WHERE topic='photo.visibility_changed' AND key=ANY($1)`, []string{fmt.Sprint(photoIDs[0])})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=ANY($1::bigint[])`, photoIDs)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, person)
+	})
+
+	catalogRepository, err := catalogpg.New(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := catalogRepository.UpsertPeople(ctx, []catalog.Person{{NSID: person, Username: person}}); err != nil {
+		t.Fatal(err)
+	}
+	photos := []catalog.Photo{
+		{ID: photoIDs[0], OwnerNSID: person, LastUpdate: time.Now().UTC(), Visibility: catalog.VisibilityPublic, Raw: []byte(`{"id":"present"}`)},
+		{ID: photoIDs[1], OwnerNSID: person, LastUpdate: time.Now().UTC(), Visibility: catalog.VisibilityPublic, Raw: []byte(`{"id":"missing-public"}`)},
+		{ID: photoIDs[2], OwnerNSID: person, LastUpdate: time.Now().UTC(), Visibility: catalog.VisibilityPrivate, Raw: []byte(`{"id":"missing-private"}`)},
+	}
+	if err := catalogRepository.UpsertPhotos(ctx, photos); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalogRepository.UpsertFavoritesBatch(ctx, []catalogpg.Favorite{{PersonNSID: person, PhotoID: photoIDs[1], FaveDate: scannedAt.Add(-24 * time.Hour), SeenAt: scannedAt.Add(-2 * time.Minute)}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE photos SET last_seen_at=$2 WHERE id=ANY($1::bigint[])`, photoIDs, scannedAt.Add(-2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,last_reconciled_at) VALUES($1,$2,0,'test',$3)`, userID, person, scannedAt.Add(-31*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	var ownerKeyID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'reconcile test key',$2,'{}',3600,4,5) RETURNING id`, ownerUserID, "reconcile-key-"+suffix).Scan(&ownerKeyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed) VALUES($1,$2,$3,'owner','{}','{}')`, ownerUserID, ownerKeyID, person); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,last_reconciled_at) VALUES($1,$2,0,'test',$3)`, ownerUserID, person, scannedAt.Add(-31*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	photoResponse := json.RawMessage(fmt.Sprintf(`{"photos":{"page":1,"pages":1,"perpage":500,"photo":[{"id":%q,"owner":%q,"dateupload":"1700000000","lastupdate":"1700000100","ispublic":0,"isfriend":1,"isfamily":0}]}}`, fmt.Sprint(photoIDs[0]), person))
+	flickr := reconcileIntFlickr{responses: map[string]json.RawMessage{
+		"flickr.people.getPhotos:1":  photoResponse,
+		"flickr.favorites.getList:1": json.RawMessage(`{"photos":{"page":1,"pages":0,"perpage":500,"photo":[]}}`),
+	}}
+	cursor, err := json.Marshal(domain.Cursor{Page: 1, Method: "flickr.people.getPhotos", CheckpointAt: scannedAt.Unix(), Params: map[string]string{"user_id": person, "per_page": "500", "extras": app.ReconcilePhotoExtras}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var itemID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,depth,cursor) VALUES('reconcile',$1,$2,'ready',0,$3) RETURNING id`, person, userID, cursor).Scan(&itemID); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewEngine(pool, func(conn Conn) app.CatalogWriter {
+		repository, repositoryErr := catalogpg.New(conn)
+		if repositoryErr != nil {
+			t.Fatal(repositoryErr)
+		}
+		return repository
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := app.NewRegistry()
+	if err := registry.Register(facets.Reconcile{}); err != nil {
+		t.Fatal(err)
+	}
+	engine := &app.Engine{Registry: registry, Store: store, Units: store, Keys: intKeys{}, Governor: intGovernor{}, Flickr: flickr, Settings: intSettings{}}
+	if err := engine.Handle(ctx, itemID); err != nil {
+		t.Fatalf("photo reconciliation page: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready' WHERE id=$1`, itemID); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Handle(ctx, itemID); err != nil {
+		t.Fatalf("favorite reconciliation page: %v", err)
+	}
+
+	var publicTombstone, privateTombstone *time.Time
+	var presentVisibility string
+	if err := pool.QueryRow(ctx, `SELECT tombstoned_at FROM photos WHERE id=$1`, photoIDs[1]).Scan(&publicTombstone); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT tombstoned_at FROM photos WHERE id=$1`, photoIDs[2]).Scan(&privateTombstone); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT visibility FROM photos WHERE id=$1`, photoIDs[0]).Scan(&presentVisibility); err != nil {
+		t.Fatal(err)
+	}
+	if publicTombstone == nil || privateTombstone != nil || presentVisibility != string(catalog.VisibilityFriends) {
+		t.Fatalf("reconcile results public tombstone=%v private tombstone=%v present visibility=%q", publicTombstone, privateTombstone, presentVisibility)
+	}
+	var eventPayload []byte
+	if err := pool.QueryRow(ctx, `SELECT payload FROM outbox_events WHERE topic='photo.visibility_changed' AND key=$1`, fmt.Sprint(photoIDs[0])).Scan(&eventPayload); err != nil {
+		t.Fatalf("visibility change event: %v", err)
+	}
+	var event struct {
+		PhotoID int64  `json:"photo_id"`
+		Owner   string `json:"owner_nsid"`
+		From    string `json:"from"`
+		To      string `json:"to"`
+	}
+	if err := json.Unmarshal(eventPayload, &event); err != nil || event.PhotoID != photoIDs[0] || event.Owner != person || event.From != "public" || event.To != "friends" {
+		t.Fatalf("visibility event=%+v payload=%s err=%v", event, eventPayload, err)
+	}
+	var removedAt *time.Time
+	if err := pool.QueryRow(ctx, `SELECT removed_at FROM favorites WHERE person_nsid=$1 AND photo_id=$2`, person, photoIDs[1]).Scan(&removedAt); err != nil || removedAt != nil {
+		t.Fatalf("non-owner scan changed favorite removal state: removed_at=%v err=%v", removedAt, err)
+	}
+	if got, err := catalogRepository.ListFavorites(ctx, person, nil, 20); err != nil || len(got.Items) != 1 {
+		t.Fatalf("default favorite list=%+v err=%v", got, err)
+	}
+	var reconciledAt time.Time
+	if err := pool.QueryRow(ctx, `SELECT last_reconciled_at FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, userID, person).Scan(&reconciledAt); err != nil || !reconciledAt.After(scannedAt) {
+		t.Fatalf("reconcile completion timestamp=%s err=%v", reconciledAt, err)
+	}
+
+	var ownerItemID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,depth,cursor) VALUES('reconcile',$1,$2,'ready',0,$3) RETURNING id`, person, ownerUserID, cursor).Scan(&ownerItemID); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Handle(ctx, ownerItemID); err != nil {
+		t.Fatalf("owner photo reconciliation page: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready' WHERE id=$1`, ownerItemID); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Handle(ctx, ownerItemID); err != nil {
+		t.Fatalf("owner favorite reconciliation page: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT tombstoned_at FROM photos WHERE id=$1`, photoIDs[2]).Scan(&privateTombstone); err != nil || privateTombstone == nil {
+		t.Fatalf("owner scan did not reconcile its private photo: tombstoned_at=%v err=%v", privateTombstone, err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT removed_at FROM favorites WHERE person_nsid=$1 AND photo_id=$2`, person, photoIDs[1]).Scan(&removedAt); err != nil || removedAt == nil {
+		t.Fatalf("owner scan did not reconcile its missing favorite: removed_at=%v err=%v", removedAt, err)
+	}
+	if got, err := catalogRepository.ListFavorites(ctx, person, nil, 20); err != nil || len(got.Items) != 0 {
+		t.Fatalf("owner-scanned default favorite list=%+v err=%v", got, err)
 	}
 }
 

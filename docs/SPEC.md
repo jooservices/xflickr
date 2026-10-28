@@ -95,6 +95,13 @@ guide feature implementation; operational environment rules live in
   `total` queues the corresponding incremental photo or favorite pages with
   the same minimum date. The scheduler advances a per-user cycle cursor only
   after visiting each person, then wraps to the first person.
+- Independently reconcile each person's complete photo and favorite lists on
+  the user's `reconcile_interval` (default 30 days). Apply tombstones only after
+  every page succeeds, retain tombstoned rows, exclude removed favorites from
+  default lists, and publish `photo.visibility_changed` whenever a stored
+  photo's visibility changes. A non-owner scan must not tombstone private,
+  friends-only, or family-only rows, or remove missing favorites, based on an
+  incomplete view.
 - A `flickr.photos.getContactsPhotos` response for a connected account may flag
   multiple direct contacts for change checks in one call.
 - Schedule Flickr work in two lanes: a person lane for contacts, photos,

@@ -129,12 +129,19 @@ type ObservationWriter interface {
 	Record(ctx context.Context, itemID int64, page int, observations []domain.Observation) error
 }
 
+// ReconcileWriter applies the diff from a completed photos-and-favorites scan
+// atomically with its final page.
+type ReconcileWriter interface {
+	Complete(ctx context.Context, userID int64, person string, scannedAt, completedAt time.Time) error
+}
+
 // Writers is everything the commit transaction writes through.
 type Writers struct {
 	Work         WorkWriter
 	Catalog      CatalogWriter
 	Interests    InterestWriter
 	Observations ObservationWriter
+	Reconcile    ReconcileWriter
 }
 
 // UnitOfWork runs fn in one atomic transaction.
@@ -350,6 +357,15 @@ func sameCursor(left, right domain.Cursor) bool {
 func (e *Engine) write(ctx context.Context, w Writers, item domain.Item, result domain.Result, maxDepth int) error {
 	if err := writeCatalog(ctx, w.Catalog, result); err != nil {
 		return err
+	}
+	if result.CompleteReconcile {
+		if w.Reconcile == nil || item.UserID <= 0 || item.Subject == "" || item.Cursor.CheckpointAt <= 0 {
+			return errors.New("crawl: reconcile completion requires a valid work item and writer")
+		}
+		scannedAt := time.Unix(item.Cursor.CheckpointAt, 0).UTC()
+		if err := w.Reconcile.Complete(ctx, item.UserID, item.Subject, scannedAt, e.now()); err != nil {
+			return err
+		}
 	}
 	if len(result.Observations) > 0 {
 		if err := w.Observations.Record(ctx, item.ID, item.Cursor.Page, result.Observations); err != nil {

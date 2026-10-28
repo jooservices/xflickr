@@ -13,6 +13,7 @@ import (
 const (
 	incrementalPerPage     = 500
 	incrementalPhotoExtras = "url_sq,url_t,url_s,url_q,url_m,url_n,url_z,url_c,url_l,url_o,date_upload,last_update,owner_name,media,tags,description,license,o_dims,views"
+	ReconcilePhotoExtras   = incrementalPhotoExtras
 )
 
 // ChangeCheck handles both probes in one durable per-person work item.

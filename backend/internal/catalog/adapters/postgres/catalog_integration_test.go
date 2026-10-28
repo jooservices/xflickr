@@ -79,18 +79,21 @@ func TestCatalogUpsertsBatchIdempotencySizesAndPartitions(t *testing.T) {
 
 	photoID := photos[0].ID
 	var originalXmin string
-	if err := pool.QueryRow(ctx, `SELECT xmin::text FROM photos WHERE id = $1`, photoID).Scan(&originalXmin); err != nil {
+	var originalSeenAt time.Time
+	if err := pool.QueryRow(ctx, `SELECT xmin::text,last_seen_at FROM photos WHERE id = $1`, photoID).Scan(&originalXmin, &originalSeenAt); err != nil {
 		t.Fatal(err)
 	}
+	time.Sleep(2 * time.Millisecond)
 	if err := repository.UpsertPhotos(ctx, []domain.Photo{photos[0]}); err != nil {
 		t.Fatalf("repeat photo upsert: %v", err)
 	}
 	var unchangedXmin string
-	if err := pool.QueryRow(ctx, `SELECT xmin::text FROM photos WHERE id = $1`, photoID).Scan(&unchangedXmin); err != nil {
+	var refreshedSeenAt time.Time
+	if err := pool.QueryRow(ctx, `SELECT xmin::text,last_seen_at FROM photos WHERE id = $1`, photoID).Scan(&unchangedXmin, &refreshedSeenAt); err != nil {
 		t.Fatal(err)
 	}
-	if unchangedXmin != originalXmin {
-		t.Fatalf("unchanged photo wrote a row: xmin %s -> %s", originalXmin, unchangedXmin)
+	if unchangedXmin == originalXmin || !refreshedSeenAt.After(originalSeenAt) {
+		t.Fatalf("photo observation was not refreshed: xmin %s -> %s, last_seen_at %s -> %s", originalXmin, unchangedXmin, originalSeenAt, refreshedSeenAt)
 	}
 	var compressed []byte
 	if err := pool.QueryRow(ctx, `SELECT raw FROM photos WHERE id = $1`, photoID).Scan(&compressed); err != nil {
@@ -191,6 +194,13 @@ func TestCatalogUpsertsBatchIdempotencySizesAndPartitions(t *testing.T) {
 	var unchangedTombstoneXmin string
 	if err := pool.QueryRow(ctx, `SELECT tombstoned_at, xmin::text FROM photos WHERE id = $1`, photoID).Scan(&storedTombstone, &unchangedTombstoneXmin); err != nil || !storedTombstone.Equal(tombstoneAt) || unchangedTombstoneXmin != tombstoneXmin {
 		t.Fatalf("tombstone = %s xmin=%s, error = %v; want %s xmin=%s", storedTombstone, unchangedTombstoneXmin, err, tombstoneAt, tombstoneXmin)
+	}
+	if err := repository.UpsertPhotos(ctx, []domain.Photo{photos[0]}); err != nil {
+		t.Fatalf("upsert photo found again after tombstoning: %v", err)
+	}
+	var revivedTombstone *time.Time
+	if err := pool.QueryRow(ctx, `SELECT tombstoned_at FROM photos WHERE id=$1`, photoID).Scan(&revivedTombstone); err != nil || revivedTombstone != nil {
+		t.Fatalf("photo returned by a new scan retained its tombstone: tombstoned_at=%v err=%v", revivedTombstone, err)
 	}
 
 	var partitionCount int

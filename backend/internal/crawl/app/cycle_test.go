@@ -12,12 +12,13 @@ import (
 )
 
 type cycleStoreFake struct {
-	userID   int64
-	now      time.Time
-	interval time.Duration
-	called   bool
-	result   bool
-	err      error
+	userID            int64
+	now               time.Time
+	checkInterval     time.Duration
+	reconcileInterval time.Duration
+	called            bool
+	result            bool
+	err               error
 }
 
 type cycleUsersFake struct {
@@ -27,8 +28,8 @@ type cycleUsersFake struct {
 
 func (f cycleUsersFake) UsersWithInterests(context.Context) ([]int64, error) { return f.users, f.err }
 
-func (f *cycleStoreFake) ScheduleNext(_ context.Context, userID int64, now time.Time, interval time.Duration) (bool, error) {
-	f.called, f.userID, f.now, f.interval = true, userID, now, interval
+func (f *cycleStoreFake) ScheduleNext(_ context.Context, userID int64, now time.Time, checkInterval, reconcileInterval time.Duration) (bool, error) {
+	f.called, f.userID, f.now, f.checkInterval, f.reconcileInterval = true, userID, now, checkInterval, reconcileInterval
 	return f.result, f.err
 }
 
@@ -50,7 +51,7 @@ func TestCycleRunUserLoadsSettingsAndSchedulesNextPerson(t *testing.T) {
 	store := &cycleStoreFake{result: true}
 	cycle := Cycle{Store: store, Settings: cycleSettingsFake{effective: settingsdomain.Effective{ChangeCheckInterval: 3 * time.Hour}}, Now: func() time.Time { return now }}
 	got, err := cycle.RunUser(context.Background(), 12)
-	if err != nil || !got || !store.called || store.userID != 12 || !store.now.Equal(now) || store.interval != 3*time.Hour {
+	if err != nil || !got || !store.called || store.userID != 12 || !store.now.Equal(now) || store.checkInterval != 3*time.Hour || store.reconcileInterval != defaultReconcileInterval {
 		t.Fatalf("RunUser() = %v, %v; store=%+v", got, err, store)
 	}
 }
@@ -153,5 +154,14 @@ func TestEffectiveCheckIntervalUsesConfiguredOrDefault(t *testing.T) {
 	now := time.Now()
 	if CycleDue(now.Add(-time.Hour), now, time.Hour) != true || CycleDue(now, now, time.Hour) {
 		t.Fatal("cycle due check did not follow interval")
+	}
+}
+
+func TestEffectiveReconcileIntervalUsesConfiguredOrThirtyDayDefault(t *testing.T) {
+	if got := EffectiveReconcileInterval(settingsdomain.Effective{ReconcileInterval: 12 * time.Hour}); got != 12*time.Hour {
+		t.Fatalf("configured interval = %s", got)
+	}
+	if got := EffectiveReconcileInterval(settingsdomain.Effective{}); got != 30*24*time.Hour {
+		t.Fatalf("default interval = %s", got)
 	}
 }

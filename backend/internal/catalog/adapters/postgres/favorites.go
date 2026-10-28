@@ -40,8 +40,8 @@ func (r *Repository) UpsertFavoritesBatch(ctx context.Context, favorites []Favor
 			return errors.New("catalog: invalid favorite")
 		}
 		batch.Queue(`INSERT INTO favorites (person_nsid, photo_id, fave_date, seen_at) VALUES ($1,$2,$3,$4)
-			ON CONFLICT (person_nsid, photo_id) DO UPDATE SET fave_date=EXCLUDED.fave_date, seen_at=EXCLUDED.seen_at
-			WHERE (favorites.fave_date, favorites.seen_at) IS DISTINCT FROM (EXCLUDED.fave_date, EXCLUDED.seen_at)`, favorite.PersonNSID, favorite.PhotoID, favorite.FaveDate, seenAt(favorite.SeenAt))
+			ON CONFLICT (person_nsid, photo_id) DO UPDATE SET fave_date=EXCLUDED.fave_date, seen_at=EXCLUDED.seen_at, removed_at=NULL
+			WHERE (favorites.fave_date, favorites.seen_at) IS DISTINCT FROM (EXCLUDED.fave_date, EXCLUDED.seen_at) OR favorites.removed_at IS NOT NULL`, favorite.PersonNSID, favorite.PhotoID, favorite.FaveDate, seenAt(favorite.SeenAt))
 	}
 	return executeBatch(ctx, r.db, batch, "favorites")
 }
@@ -54,12 +54,12 @@ func (r *Repository) ListFavorites(ctx context.Context, person string, cursor *F
 	var rows pgx.Rows
 	var err error
 	if cursor == nil {
-		rows, err = r.db.Query(ctx, `SELECT person_nsid, photo_id, fave_date, seen_at FROM favorites WHERE person_nsid=$1 ORDER BY fave_date DESC, photo_id DESC LIMIT $2`, person, limit+1)
+		rows, err = r.db.Query(ctx, `SELECT person_nsid, photo_id, fave_date, seen_at FROM favorites WHERE person_nsid=$1 AND removed_at IS NULL ORDER BY fave_date DESC, photo_id DESC LIMIT $2`, person, limit+1)
 	} else {
 		if cursor.FaveDate.IsZero() || cursor.PhotoID <= 0 {
 			return FavoritePage{}, errors.New("catalog: invalid favorites cursor")
 		}
-		rows, err = r.db.Query(ctx, `SELECT person_nsid, photo_id, fave_date, seen_at FROM favorites WHERE person_nsid=$1 AND (fave_date, photo_id)<($2,$3) ORDER BY fave_date DESC, photo_id DESC LIMIT $4`, person, cursor.FaveDate, cursor.PhotoID, limit+1)
+		rows, err = r.db.Query(ctx, `SELECT person_nsid, photo_id, fave_date, seen_at FROM favorites WHERE person_nsid=$1 AND removed_at IS NULL AND (fave_date, photo_id)<($2,$3) ORDER BY fave_date DESC, photo_id DESC LIMIT $4`, person, cursor.FaveDate, cursor.PhotoID, limit+1)
 	}
 	if err != nil {
 		return FavoritePage{}, fmt.Errorf("catalog: list favorites: %w", err)

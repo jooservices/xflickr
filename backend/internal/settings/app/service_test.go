@@ -85,6 +85,7 @@ func TestEffectiveReturnsTypedDefaultsAndReusesThemUntilExpiry(t *testing.T) {
 	want := domain.Effective{
 		MaxDepth:             2,
 		ChangeCheckInterval:  24 * time.Hour,
+		ReconcileInterval:    30 * 24 * time.Hour,
 		DailyCallLimit:       0,
 		QuotaReserve:         100,
 		PerSecondRate:        4,
@@ -382,6 +383,7 @@ func TestSetUserAppliesOverridesInsideCapsAndRejectsTheRest(t *testing.T) {
 	want := domain.Effective{
 		MaxDepth:             4,
 		ChangeCheckInterval:  time.Hour,
+		ReconcileInterval:    30 * 24 * time.Hour,
 		DailyCallLimit:       12,
 		QuotaReserve:         40,
 		PerSecondRate:        2,

@@ -11,7 +11,10 @@ import (
 	settingsdomain "github.com/jooservices/xflickr/internal/settings/domain"
 )
 
-const defaultChangeCheckInterval = 24 * time.Hour
+const (
+	defaultChangeCheckInterval = 24 * time.Hour
+	defaultReconcileInterval   = 30 * 24 * time.Hour
+)
 
 var errCycleIncomplete = errors.New("crawl: cycle dependencies are required")
 
@@ -27,7 +30,7 @@ type CycleSelection struct {
 // CycleStore schedules one due person, reopens that person's completed check
 // item when needed, and advances the durable cursor atomically.
 type CycleStore interface {
-	ScheduleNext(context.Context, int64, time.Time, time.Duration) (bool, error)
+	ScheduleNext(context.Context, int64, time.Time, time.Duration, time.Duration) (bool, error)
 }
 
 // CycleUserReader lists users with at least one person to check.
@@ -87,7 +90,7 @@ func (c Cycle) RunUser(ctx context.Context, userID int64) (bool, error) {
 	if c.Now != nil {
 		now = c.Now()
 	}
-	return c.Store.ScheduleNext(ctx, userID, now, EffectiveCheckInterval(effective))
+	return c.Store.ScheduleNext(ctx, userID, now, EffectiveCheckInterval(effective), EffectiveReconcileInterval(effective))
 }
 
 // SelectCyclePerson advances through all people in NSID order. A cursor only
@@ -114,6 +117,15 @@ func EffectiveCheckInterval(settings settingsdomain.Effective) time.Duration {
 		return defaultChangeCheckInterval
 	}
 	return settings.ChangeCheckInterval
+}
+
+// EffectiveReconcileInterval applies the user's configured full-list interval,
+// retaining the 30-day product default for old or invalid effective values.
+func EffectiveReconcileInterval(settings settingsdomain.Effective) time.Duration {
+	if settings.ReconcileInterval <= 0 {
+		return defaultReconcileInterval
+	}
+	return settings.ReconcileInterval
 }
 
 // CycleDue checks whether the user's next full cycle may start.
