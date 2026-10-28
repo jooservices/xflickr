@@ -18,6 +18,9 @@ jobs:
       - name: Test the UI view catalogue gate
         run: ./docker/scripts/ui-spec-check.test.sh
 
+      - name: Test OpenObserve crawl-health freshness alerts
+        run: python3 docker/scripts/test_obs_alert_config.py
+
   stale-check:
     name: stale-check
     runs-on: ubuntu-latest

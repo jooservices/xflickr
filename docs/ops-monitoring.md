@@ -67,6 +67,7 @@ Alert definitions live in `deploy/openobserve/alerts/`:
 |---|---|
 | `xflickr_api_5xx` | A Flickr/API log has status 500 or above. |
 | `xflickr_container_down` | No container memory metric arrived for 5 minutes. |
+| `xflickr_crawl_health_stale` | Either crawl health event has no record newer than 90 seconds in the configured stream. |
 | `xflickr_database_down` | The crawl health query reports a database failure. |
 | `xflickr_disk_high` | Disk use is above 80%. |
 | `xflickr_disk_critical` | Disk use is above 90%. |
@@ -85,15 +86,17 @@ Alert definitions live in `deploy/openobserve/alerts/`:
 | `xflickr_telemetry_ship_failed` | Crawl health cannot ship to OpenObserve. |
 
 Apply them with `docker/scripts/obs-provision.sh [env-file]` (defaults to
-`.env.develop`). The script creates or updates the `xflickr_telegram_v1`
-template, the `xflickr_telegram` destination, and all 18 alerts idempotently.
+`.env.develop`). The script creates the configured metrics stream when needed,
+then creates or updates the `xflickr_telegram_v1` template, the
+`xflickr_telegram` destination, and all 19 alerts idempotently.
 The destination is cloned from `OPENOBSERVE_ALERT_SOURCE_DESTINATION` only when
 missing.
 
 ## Smoke check
 
 `docker/scripts/develop-smoke.sh` verifies that `/admin/ops/status` is protected,
-that a `crawl health` line is in the container log, and that recent
-`crawl.health` and `crawl.health.key` events with their documented fields are
-queryable in the shared stream. Set
+that a `crawl health` line is in the container log, and that `crawl.health` and
+`crawl.health.key` events with their documented fields arrived within 90 seconds
+in the configured stream. It also verifies that the enabled freshness alert
+targets the configured destination. Set
 `XFLICKR_ADMIN_COOKIE` to an admin session cookie to also read the JSON report.

@@ -8,6 +8,7 @@ GOLANGCI_LINT_VERSION="${GOLANGCI_LINT_VERSION:-v2.15.0}"
 
 "$SCRIPT_DIR/run.sh" shellcheck shellcheck "$SCRIPT_DIR"/*.sh
 "$SCRIPT_DIR/api-usage-check.test.sh"
+"$SCRIPT_DIR/run.sh" python python3 "$SCRIPT_DIR/test_obs_alert_config.py"
 "$SCRIPT_DIR/api-usage-check.sh"
 "$SCRIPT_DIR/ui-spec-check.sh"
 (

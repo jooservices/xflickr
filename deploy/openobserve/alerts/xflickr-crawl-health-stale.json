@@ -1,0 +1,20 @@
+{
+  "name": "xflickr_crawl_health_stale",
+  "stream_type": "logs",
+  "stream_name": "{{OPENOBSERVE_STREAM}}",
+  "is_real_time": false,
+  "query_condition": {
+    "type": "sql",
+    "sql": "SELECT count(CASE WHEN event='crawl.health' AND _timestamp >= now() - INTERVAL '90 seconds' THEN 1 END) AS health_recent, count(CASE WHEN event='crawl.health.key' AND _timestamp >= now() - INTERVAL '90 seconds' THEN 1 END) AS key_recent FROM \"{{OPENOBSERVE_STREAM}}\" HAVING health_recent=0 OR key_recent=0"
+  },
+  "trigger_condition": {
+    "period": 2,
+    "operator": ">=",
+    "threshold": 1,
+    "frequency": 1,
+    "silence": 15
+  },
+  "destinations": [],
+  "enabled": true,
+  "description": "Impact: Crawl health or per-key quota telemetry is missing or stale. Action: Check the configured OpenObserve destination, stream, and XFlickr telemetry delivery."
+}
