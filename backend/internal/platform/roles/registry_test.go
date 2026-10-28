@@ -703,6 +703,9 @@ func TestNewQuotaRuntimeWiresRebuildFlushAndCallLog(t *testing.T) {
 	if f.Store == nil || f.Counters == nil || f.Pruner == nil || quota.Rebuilder.Store == nil || quota.Rebuilder.Calls == nil || quota.Rebuilder.Counters == nil {
 		t.Fatalf("flusher or rebuilder wiring is incomplete: %+v", quota)
 	}
+	if quota.CallRecorder == nil || quota.Partitions.Store == nil || quota.Partitions.RetentionDays != 0 {
+		t.Fatalf("call log recorder or partition maintenance wiring is incomplete: %+v", quota)
+	}
 }
 
 func TestQuotaRuntimeStartRebuildsFlushesAndStops(t *testing.T) {

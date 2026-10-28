@@ -87,6 +87,69 @@ func TestQuotaRuntimeStartRunsEmitter(t *testing.T) {
 	}
 }
 
+type callBatchWriterFake struct{ wrote chan int }
+
+func (w callBatchWriterFake) InsertCalls(_ context.Context, records []quotaapp.CallRecord) error {
+	select {
+	case w.wrote <- len(records):
+	default:
+	}
+	return nil
+}
+
+type partitionMaintenanceFake struct{ maintained chan struct{} }
+
+func (s partitionMaintenanceFake) MaintainCallLogPartitions(context.Context, time.Time, time.Time) error {
+	select {
+	case s.maintained <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+func (partitionMaintenanceFake) RollupCalls(context.Context, time.Time, time.Time) error {
+	return nil
+}
+
+func (partitionMaintenanceFake) PruneCallRollups(context.Context, time.Time) error {
+	return nil
+}
+
+func TestQuotaRuntimeStartRunsCallRecorderAndPartitionMaintenance(t *testing.T) {
+	store := &startStore{rebuilt: make(chan struct{}, 1), flushed: make(chan struct{}, 8)}
+	written := make(chan int, 1)
+	maintained := make(chan struct{}, 1)
+	recorder := quotaapp.NewCallRecorder(callBatchWriterFake{wrote: written}, 4, 1, time.Hour, nil)
+	quota := quotaRuntime{
+		Rebuilder:    &quotaapp.Rebuilder{Store: store, Calls: startCalls{}, Counters: startCounters{}},
+		Flusher:      quotaapp.Flusher{Store: store, Counters: startCounters{}, Interval: time.Hour},
+		CallRecorder: recorder,
+		Partitions:   quotaapp.Partitions{Store: partitionMaintenanceFake{maintained: maintained}, Interval: time.Hour},
+	}
+	stop := quota.start(context.Background(), nil)
+	if !recorder.Record(quotaapp.CallRecord{At: time.Now(), KeyID: 1, Method: "flickr.test", Status: "ok"}) {
+		stop()
+		t.Fatal("call recorder rejected a valid record")
+	}
+	select {
+	case size := <-written:
+		if size != 1 {
+			stop()
+			t.Fatalf("written batch size = %d", size)
+		}
+	case <-time.After(time.Second):
+		stop()
+		t.Fatal("call recorder did not flush on shutdown")
+	}
+	select {
+	case <-maintained:
+	case <-time.After(time.Second):
+		stop()
+		t.Fatal("partition maintenance did not run at startup")
+	}
+	stop()
+}
+
 type nopSink struct{}
 
 func (nopSink) Send(context.Context, []quotaapp.Event) error { return nil }
