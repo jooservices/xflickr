@@ -11,17 +11,29 @@ import (
 // CallRecord is the non-sensitive metadata stored for one upstream call.
 // Credential material and request/response bodies must never be added here.
 type CallRecord struct {
-	At        time.Time
-	KeyID     int64
-	UserID    *int64
-	AccountID *int64
-	Node      string
-	Method    string
-	Status    string
-	ErrorCode *int64
-	LatencyMS int64
-	Bytes     int64
-	Lane      string
+	At              time.Time
+	KeyID           int64
+	UserID          *int64
+	AccountID       *int64
+	FlickrAccount   string
+	Node            string
+	Method          string
+	Status          string
+	ErrorCode       *int64
+	LatencyMS       int64
+	Bytes           int64
+	Lane            string
+	Facet           string
+	Attempt         int
+	StartedAt       time.Time
+	HTTPStatus      *int
+	FlickrStat      string
+	FlickrErrorCode *int64
+	ErrorMessage    string
+	ResponseBytes   int64
+	NodeID          string
+	RequestID       string
+	Outcome         string
 }
 
 // CallBatchWriter persists a batch of call records.
@@ -157,11 +169,28 @@ func (r *CallRecorder) drain(ctx context.Context, batch []CallRecord, onError fu
 
 // ValidateCallRecord is shared by storage adapters before persisting a batch.
 func ValidateCallRecord(record CallRecord) error {
-	if record.KeyID <= 0 || record.Method == "" || record.Status == "" {
+	if record.KeyID <= 0 {
+		return errors.New("quota: call record requires a key")
+	}
+	if record.Method == "" || record.Status == "" {
 		return errors.New("quota: call record requires key, method and status")
 	}
-	if record.At.IsZero() || record.LatencyMS < 0 || record.Bytes < 0 {
-		return errors.New("quota: call record time, latency and bytes are invalid")
+	if record.At.IsZero() {
+		return errors.New("quota: call record time is invalid")
+	}
+	if record.LatencyMS < 0 || record.Bytes < 0 || record.ResponseBytes < 0 || record.Attempt < 0 {
+		return errors.New("quota: call record latency and bytes are invalid")
+	}
+	if len(record.ErrorMessage) > 512 {
+		return errors.New("quota: call record error message is too long")
+	}
+	switch record.Outcome {
+	case "", "success", "failure", "throttled", "quota_wait":
+	default:
+		return errors.New("quota: call record outcome is invalid")
+	}
+	if record.RequestID != "" && len(record.RequestID) != 36 {
+		return errors.New("quota: call record request id is invalid")
 	}
 	return nil
 }

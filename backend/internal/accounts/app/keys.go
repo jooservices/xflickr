@@ -8,6 +8,7 @@ import (
 
 	"github.com/jooservices/xflickr/internal/accounts/domain"
 	"github.com/jooservices/xflickr/internal/platform/crypto"
+	flickrclient "github.com/jooservices/xflickr/pkg/flickr"
 )
 
 var (
@@ -103,6 +104,8 @@ func (k Keys) Create(ctx context.Context, userID int64, input CreateInput) (doma
 	if err != nil {
 		return domain.APIKey{}, err
 	}
+	ownerID := userID
+	ctx = flickrclient.WithCallContext(ctx, flickrclient.CallContext{UserID: &ownerID, Lane: "interactive", Facet: "key_validation", Attempt: 1})
 	if err := k.Probe.Echo(ctx, publicKey); err != nil {
 		if errors.Is(err, ErrKeyInvalid) {
 			return domain.APIKey{}, ErrKeyInvalid

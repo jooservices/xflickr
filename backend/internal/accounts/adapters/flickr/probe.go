@@ -24,8 +24,12 @@ type Probe struct {
 }
 
 // NewProbe calls Flickr at baseURL. An empty baseURL uses Flickr's REST endpoint.
-func NewProbe(baseURL string, httpClient *http.Client) Probe {
-	return Probe{client: flickrclient.NewClient(baseURL, httpClient), timeout: EchoTimeout}
+func NewProbe(baseURL string, httpClient *http.Client, observers ...flickrclient.CallObserver) Probe {
+	client := flickrclient.NewClient(baseURL, httpClient)
+	if len(observers) > 0 {
+		client.SetCallObserver(observers[0])
+	}
+	return Probe{client: client, timeout: EchoTimeout}
 }
 
 // Echo returns app.ErrKeyInvalid when Flickr rejects the key. Other failures

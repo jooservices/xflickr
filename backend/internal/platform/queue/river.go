@@ -341,7 +341,7 @@ func (w *dispatchWorker) Work(ctx context.Context, job *river.Job[riverArgs]) er
 	if registered.handler == nil {
 		return fmt.Errorf("queue: no handler registered for %q", job.Args.KindName)
 	}
-	return registered.handler(ctx, Job{Kind: job.Args.KindName, Args: append(json.RawMessage(nil), job.Args.Args...)})
+	return registered.handler(ctx, Job{Kind: job.Args.KindName, Args: append(json.RawMessage(nil), job.Args.Args...), Attempt: job.Attempt})
 }
 
 type deadLetterHook struct {

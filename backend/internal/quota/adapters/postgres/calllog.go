@@ -92,13 +92,26 @@ func (c CallLog) InsertCalls(ctx context.Context, records []app.CallRecord) erro
 			return err
 		}
 	}
-	columns := []string{"at", "called_at", "key_id", "user_id", "account_id", "node", "method", "status", "error_code", "latency_ms", "bytes", "lane"}
+	columns := []string{
+		"at", "called_at", "key_id", "user_id", "account_id", "node", "method", "status", "error_code", "latency_ms", "bytes", "lane",
+		"flickr_account", "facet", "attempt", "started_at", "http_status", "flickr_stat", "flickr_error_code", "error_message", "response_bytes", "node_id", "request_id", "outcome",
+	}
 	inserted, err := pool.CopyFrom(ctx, pgx.Identifier{"api_call_log"}, columns, pgx.CopyFromSlice(len(records), func(i int) ([]any, error) {
 		record := records[i]
+		startedAt := record.StartedAt
+		if startedAt.IsZero() {
+			startedAt = record.At
+		}
+		responseBytes := record.ResponseBytes
+		if responseBytes == 0 {
+			responseBytes = record.Bytes
+		}
 		return []any{
 			record.At.UTC(), record.At.UTC(), record.KeyID, nullableInt64(record.UserID), nullableInt64(record.AccountID),
 			record.Node, record.Method, record.Status, nullableInt64(record.ErrorCode),
-			record.LatencyMS, record.Bytes, record.Lane,
+			record.LatencyMS, record.Bytes, record.Lane, nullableText(record.FlickrAccount), nullableText(record.Facet), positiveAttempt(record.Attempt),
+			startedAt.UTC(), nullableInt(record.HTTPStatus), nullableText(record.FlickrStat), nullableInt64(record.FlickrErrorCode), nullableText(record.ErrorMessage),
+			responseBytes, nullableText(record.NodeID), nullableText(record.RequestID), nullableText(record.Outcome),
 		}, nil
 	}))
 	if err != nil {
@@ -108,6 +121,109 @@ func (c CallLog) InsertCalls(ctx context.Context, records []app.CallRecord) erro
 		return fmt.Errorf("quota: inserted %d of %d call records", inserted, len(records))
 	}
 	return nil
+}
+
+// Stats returns aggregate call and crawl-completion metrics for the requested window.
+func (c CallLog) Stats(ctx context.Context, window string) (app.CallStats, error) {
+	if c.Pool == nil || ctx == nil {
+		return app.CallStats{}, errors.New("quota: call log database and context are required")
+	}
+	var since time.Time
+	switch window {
+	case "1h":
+		since = time.Now().UTC().Add(-time.Hour)
+	case "24h":
+		since = time.Now().UTC().Add(-24 * time.Hour)
+	default:
+		return app.CallStats{}, errors.New("quota: window must be 1h or 24h")
+	}
+	out := app.CallStats{
+		Window: window, CallsPerHour: []app.CallOutcomeHour{}, TopErrorCodes: []app.CallErrorCode{},
+		LatencyByMethod: []app.CallMethodLatency{}, RetriesByFacet: []app.CallFacetRetries{}, CompletedPerHour: []app.CallCompletedHour{},
+	}
+	var err error
+	out.CallsPerHour, err = readCallStatsRows(ctx, c.Pool, since, "call outcomes", `SELECT date_trunc('hour', called_at), outcome, count(*) FROM api_call_log WHERE called_at >= $1 AND outcome IS NOT NULL AND method IS NOT NULL GROUP BY 1,2 ORDER BY 1,2`, func(rows pgx.Rows) (app.CallOutcomeHour, error) {
+		var row app.CallOutcomeHour
+		err := rows.Scan(&row.Hour, &row.Outcome, &row.Calls)
+		return row, err
+	})
+	if err != nil {
+		return app.CallStats{}, err
+	}
+	out.TopErrorCodes, err = readCallStatsRows(ctx, c.Pool, since, "call error codes", `SELECT COALESCE(flickr_error_code, error_code), count(*) FROM api_call_log WHERE called_at >= $1 AND method IS NOT NULL AND COALESCE(flickr_error_code, error_code) IS NOT NULL GROUP BY 1 ORDER BY count(*) DESC, 1 LIMIT 10`, func(rows pgx.Rows) (app.CallErrorCode, error) {
+		var row app.CallErrorCode
+		err := rows.Scan(&row.Code, &row.Calls)
+		return row, err
+	})
+	if err != nil {
+		return app.CallStats{}, err
+	}
+	out.LatencyByMethod, err = readCallStatsRows(ctx, c.Pool, since, "method latency", `SELECT method, percentile_cont(0.50) WITHIN GROUP (ORDER BY latency_ms), percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) FROM api_call_log WHERE called_at >= $1 AND method IS NOT NULL AND latency_ms IS NOT NULL AND outcome IS DISTINCT FROM 'quota_wait' GROUP BY method ORDER BY method`, func(rows pgx.Rows) (app.CallMethodLatency, error) {
+		var row app.CallMethodLatency
+		err := rows.Scan(&row.Method, &row.P50MS, &row.P95MS)
+		return row, err
+	})
+	if err != nil {
+		return app.CallStats{}, err
+	}
+	out.RetriesByFacet, err = readCallStatsRows(ctx, c.Pool, since, "call retries", `SELECT facet, count(*) FILTER (WHERE attempt > 1 AND outcome IS DISTINCT FROM 'quota_wait') FROM api_call_log WHERE called_at >= $1 AND method IS NOT NULL AND facet IS NOT NULL GROUP BY facet HAVING count(*) FILTER (WHERE attempt > 1 AND outcome IS DISTINCT FROM 'quota_wait') > 0 ORDER BY 2 DESC, 1`, func(rows pgx.Rows) (app.CallFacetRetries, error) {
+		var row app.CallFacetRetries
+		err := rows.Scan(&row.Facet, &row.Retries)
+		return row, err
+	})
+	if err != nil {
+		return app.CallStats{}, err
+	}
+	out.CompletedPerHour, err = readCallStatsRows(ctx, c.Pool, since, "completed work", `SELECT date_trunc('hour', updated_at), count(*) FILTER (WHERE kind='photos'), count(*) FILTER (WHERE kind='person') FROM work_items WHERE state='done' AND updated_at >= $1 GROUP BY 1 ORDER BY 1`, func(rows pgx.Rows) (app.CallCompletedHour, error) {
+		var row app.CallCompletedHour
+		err := rows.Scan(&row.Hour, &row.Photos, &row.People)
+		return row, err
+	})
+	if err != nil {
+		return app.CallStats{}, err
+	}
+	return out, nil
+}
+
+func readCallStatsRows[T any](ctx context.Context, pool queryPool, since time.Time, metric, query string, scan func(pgx.Rows) (T, error)) ([]T, error) {
+	rows, err := pool.Query(ctx, query, since)
+	if err != nil {
+		return nil, fmt.Errorf("quota: query %s: %w", metric, err)
+	}
+	defer rows.Close()
+	out := make([]T, 0)
+	for rows.Next() {
+		row, err := scan(rows)
+		if err != nil {
+			return nil, fmt.Errorf("quota: scan %s: %w", metric, err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("quota: read %s: %w", metric, err)
+	}
+	return out, nil
+}
+
+func nullableInt(value *int) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
+func nullableText(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func positiveAttempt(value int) int {
+	if value <= 0 {
+		return 1
+	}
+	return value
 }
 
 func nullableInt64(value *int64) any {

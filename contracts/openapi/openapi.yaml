@@ -72,6 +72,8 @@ paths:
     $ref: ./paths/queue.yaml#/admin_queue
   /admin/quota:
     $ref: ./paths/quota.yaml#/admin
+  /admin/calls/stats:
+    $ref: ./paths/calls.yaml#/stats
   /admin/ops/status:
     $ref: ./paths/ops.yaml#/status
   /downloads:

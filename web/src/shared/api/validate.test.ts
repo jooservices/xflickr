@@ -108,6 +108,19 @@ describe('validateBody', () => {
     });
   });
 
+  it('validates admin call statistics responses', () => {
+    expect(
+      validateBody('/admin/calls/stats?window=1h', 'GET', 200, {
+        window: '1h',
+        calls_per_hour: [],
+        top_error_codes: [],
+        latency_by_method: [],
+        retries_by_facet: [],
+        completed_per_hour: [],
+      }),
+    ).toMatchObject({ window: '1h' });
+  });
+
   it('has a route for every generated response schema', () => {
     const generated = Object.entries(contract)
       .filter(([name]) => name.endsWith('Response'))

@@ -137,6 +137,12 @@ func (v Verify) Handle(ctx context.Context, accountID int64) error {
 	if permit == nil {
 		return &QuotaWaitError{Wait: wait}
 	}
+	userID := credentials.Account.UserID
+	flickrAccountID := credentials.Account.ID
+	ctx = flickrclient.WithCallContext(ctx, flickrclient.CallContext{
+		KeyID: int64(credentials.Key.ID), UserID: &userID, AccountID: &flickrAccountID, FlickrAccount: credentials.Account.NSID,
+		Lane: "interactive", Facet: "account_verification", Attempt: 1,
+	})
 	login, callErr := v.Checker.TestLogin(ctx, flickrclient.Credentials{
 		APIKey: credentials.Key.PublicKey, APISecret: string(keySecret), Token: string(token), TokenSecret: string(tokenSecret),
 	})

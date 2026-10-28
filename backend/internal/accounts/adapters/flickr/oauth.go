@@ -25,16 +25,21 @@ type Endpoints struct {
 
 // Authorizer runs Flickr OAuth 1.0a for a member's API key.
 type Authorizer struct {
-	httpClient *http.Client
-	endpoints  Endpoints
-	timeout    time.Duration
+	httpClient   *http.Client
+	endpoints    Endpoints
+	timeout      time.Duration
+	callObserver oauth.CallObserver
 }
 
 var _ app.Authorizer = Authorizer{}
 
 // NewAuthorizer calls Flickr with httpClient. A nil client uses the default.
-func NewAuthorizer(httpClient *http.Client, endpoints Endpoints) Authorizer {
-	return Authorizer{httpClient: httpClient, endpoints: endpoints, timeout: OAuthTimeout}
+func NewAuthorizer(httpClient *http.Client, endpoints Endpoints, observers ...oauth.CallObserver) Authorizer {
+	authorizer := Authorizer{httpClient: httpClient, endpoints: endpoints, timeout: OAuthTimeout}
+	if len(observers) > 0 {
+		authorizer.callObserver = observers[0]
+	}
+	return authorizer
 }
 
 // RequestToken asks Flickr for a request token bound to callbackURL.
@@ -69,6 +74,7 @@ func (a Authorizer) AccessToken(ctx context.Context, consumer app.Consumer, requ
 func (a Authorizer) flow(consumer app.Consumer) *oauth.Flow {
 	flow := oauth.NewFlow(consumer.Key, consumer.Secret, a.httpClient)
 	flow.SetEndpoints(a.endpoints.RequestToken, a.endpoints.Authorize, a.endpoints.AccessToken)
+	flow.SetCallObserver(a.callObserver)
 	return flow
 }
 

@@ -896,6 +896,70 @@ export const GetAdminQuotaResponse = zod.object({
 });
 
 /**
+ * @summary Get Flickr call statistics
+ */
+export const GetAdminCallStatsQueryParams = zod.object({
+  window: zod.enum(['1h', '24h']).describe('Rolling period to summarize.'),
+});
+
+export const getAdminCallStatsResponseCallsPerHourItemCallsMin = 0;
+
+export const getAdminCallStatsResponseTopErrorCodesItemCallsMin = 0;
+
+export const getAdminCallStatsResponseLatencyByMethodItemP50MsMin = 0;
+
+export const getAdminCallStatsResponseLatencyByMethodItemP95MsMin = 0;
+
+export const getAdminCallStatsResponseRetriesByFacetItemRetriesMin = 0;
+
+export const getAdminCallStatsResponseCompletedPerHourItemPhotosMin = 0;
+
+export const getAdminCallStatsResponseCompletedPerHourItemPeopleMin = 0;
+
+export const GetAdminCallStatsResponse = zod.object({
+  window: zod.enum(['1h', '24h']),
+  calls_per_hour: zod.array(
+    zod.object({
+      hour: zod.iso.datetime({ offset: true }),
+      outcome: zod.enum(['success', 'failure', 'throttled', 'quota_wait']),
+      calls: zod.int().min(getAdminCallStatsResponseCallsPerHourItemCallsMin),
+    }),
+  ),
+  top_error_codes: zod.array(
+    zod.object({
+      code: zod.int(),
+      calls: zod.int().min(getAdminCallStatsResponseTopErrorCodesItemCallsMin),
+    }),
+  ),
+  latency_by_method: zod.array(
+    zod.object({
+      method: zod.string(),
+      p50_ms: zod.number().min(getAdminCallStatsResponseLatencyByMethodItemP50MsMin),
+      p95_ms: zod.number().min(getAdminCallStatsResponseLatencyByMethodItemP95MsMin),
+    }),
+  ),
+  retries_by_facet: zod.array(
+    zod.object({
+      facet: zod.string(),
+      retries: zod.int().min(getAdminCallStatsResponseRetriesByFacetItemRetriesMin),
+    }),
+  ),
+  completed_per_hour: zod.array(
+    zod.object({
+      hour: zod.iso.datetime({ offset: true }),
+      photos: zod
+        .int()
+        .min(getAdminCallStatsResponseCompletedPerHourItemPhotosMin)
+        .describe('Completed work items with kind photos.'),
+      people: zod
+        .int()
+        .min(getAdminCallStatsResponseCompletedPerHourItemPeopleMin)
+        .describe('Completed non-photo work items.'),
+    }),
+  ),
+});
+
+/**
  * Same numbers as the periodic "crawl health" log line. Large catalog counts may be planner estimates.
  * @summary Get the crawl health report
  */

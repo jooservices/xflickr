@@ -184,6 +184,8 @@ func (crawlRole) Run(ctx context.Context) error {
 		return err
 	}
 	defer pool.Close()
+	callObserver, stopCallObserver := startFlickrCallLog(ctx, pool)
+	defer stopCallObserver()
 	settingsRepository, err := settingspostgres.New(pool)
 	if err != nil {
 		return err
@@ -198,7 +200,7 @@ func (crawlRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	client := newFlickrClient(cfg)
+	client := newFlickrClient(cfg, callObserver)
 	engine, err := newCrawlEngine(pool, redisClient, cfg, client)
 	if err != nil {
 		return err
@@ -209,7 +211,7 @@ func (crawlRole) Run(ctx context.Context) error {
 	if err := registerPhotoSizes(queueAdapter, pool, redisClient, cfg, client); err != nil {
 		return err
 	}
-	verificationRepository, verifier, err := newAccountVerifier(pool, redisClient, cfg)
+	verificationRepository, verifier, err := newAccountVerifier(pool, redisClient, cfg, callObserver)
 	if err != nil {
 		return err
 	}
@@ -255,13 +257,15 @@ func (syncRole) Run(ctx context.Context) error {
 		return err
 	}
 	defer pool.Close()
+	callObserver, stopCallObserver := startFlickrCallLog(ctx, pool)
+	defer stopCallObserver()
 	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	defer redisClient.Close()
 	queueAdapter, err := queue.NewRiver(pool, map[string]int{scheduleriver.PhotoQueue: 1, scheduleriver.PhotoExtrasQueue: 1})
 	if err != nil {
 		return err
 	}
-	if err := registerPhotoSizes(queueAdapter, pool, redisClient, cfg, newFlickrClient(cfg)); err != nil {
+	if err := registerPhotoSizes(queueAdapter, pool, redisClient, cfg, newFlickrClient(cfg, callObserver)); err != nil {
 		return err
 	}
 	configureRoleReadiness(ctx, "sync", postgresDependency(pool), redisDependency(redisClient))
@@ -277,9 +281,10 @@ func registerPhotoSizes(queueAdapter *queue.River, pool *pgxpool.Pool, redisClie
 	quota := quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Recorder: quotaPostgres.CallLog{Pool: pool}}
 	handler := crawlapp.Sizes{
 		Store:  catalogRepository,
-		Flickr: photoSizesClient{Pool: pool, Client: client, Quota: quota},
+		Flickr: photoSizesClient{Pool: pool, Client: client, Quota: quota, NodeID: nodeID(cfg)},
 	}
 	if err := queueAdapter.RegisterWithOptions(scheduleriver.PhotoJobKind, func(ctx context.Context, job queue.Job) error {
+		ctx = flickrclient.WithCallContext(ctx, flickrclient.CallContext{Attempt: job.Attempt})
 		args, err := crawlapp.ParseSizesJob(job.Args)
 		if err != nil {
 			return err
@@ -292,10 +297,12 @@ func registerPhotoSizes(queueAdapter *queue.River, pool *pgxpool.Pool, redisClie
 		Store: catalogRepository,
 		Flickr: photoFacetClient{
 			Pool: pool, Client: client,
-			Quota: quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Recorder: quotaPostgres.CallLog{Pool: pool}},
+			NodeID: nodeID(cfg),
+			Quota:  quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Recorder: quotaPostgres.CallLog{Pool: pool}},
 		},
 	}
 	return queueAdapter.RegisterWithOptions(scheduleriver.PhotoFacetJobKind, func(ctx context.Context, job queue.Job) error {
+		ctx = flickrclient.WithCallContext(ctx, flickrclient.CallContext{Attempt: job.Attempt})
 		args, err := crawlapp.ParsePhotoFacetJob(job.Args)
 		if err != nil {
 			return err
@@ -310,13 +317,14 @@ type photoFacetClient struct {
 	}
 	Client *flickrclient.Client
 	Quota  quotadomain.Governor
+	NodeID string
 }
 
 func (c photoFacetClient) PhotosGetInfo(ctx context.Context, keyID int64, photoID, secret string) (flickrclient.PhotoInfo, error) {
 	var result flickrclient.PhotoInfo
-	err := c.call(ctx, keyID, func(credentials flickrclient.Credentials) error {
+	err := c.call(ctx, keyID, "flickr.photos.getInfo", "photo_info", func(callCtx context.Context, credentials flickrclient.Credentials) error {
 		var callErr error
-		result, callErr = c.Client.PhotosGetInfo(ctx, credentials, photoID, secret)
+		result, callErr = c.Client.PhotosGetInfo(callCtx, credentials, photoID, secret)
 		return callErr
 	})
 	return result, err
@@ -324,9 +332,9 @@ func (c photoFacetClient) PhotosGetInfo(ctx context.Context, keyID int64, photoI
 
 func (c photoFacetClient) PhotosGetExif(ctx context.Context, keyID int64, photoID, secret string) (flickrclient.PhotoExif, error) {
 	var result flickrclient.PhotoExif
-	err := c.call(ctx, keyID, func(credentials flickrclient.Credentials) error {
+	err := c.call(ctx, keyID, "flickr.photos.getExif", "photo_exif", func(callCtx context.Context, credentials flickrclient.Credentials) error {
 		var callErr error
-		result, callErr = c.Client.PhotosGetExif(ctx, credentials, photoID, secret)
+		result, callErr = c.Client.PhotosGetExif(callCtx, credentials, photoID, secret)
 		return callErr
 	})
 	return result, err
@@ -334,9 +342,9 @@ func (c photoFacetClient) PhotosGetExif(ctx context.Context, keyID int64, photoI
 
 func (c photoFacetClient) PhotosGetAllContexts(ctx context.Context, keyID int64, photoID string) (flickrclient.PhotoContexts, error) {
 	var result flickrclient.PhotoContexts
-	err := c.call(ctx, keyID, func(credentials flickrclient.Credentials) error {
+	err := c.call(ctx, keyID, "flickr.photos.getAllContexts", "photo_contexts", func(callCtx context.Context, credentials flickrclient.Credentials) error {
 		var callErr error
-		result, callErr = c.Client.PhotosGetAllContexts(ctx, credentials, photoID)
+		result, callErr = c.Client.PhotosGetAllContexts(callCtx, credentials, photoID)
 		return callErr
 	})
 	return result, err
@@ -344,9 +352,9 @@ func (c photoFacetClient) PhotosGetAllContexts(ctx context.Context, keyID int64,
 
 func (c photoFacetClient) PhotosCommentsGetList(ctx context.Context, keyID int64, photoID string, page int) (flickrclient.Page[flickrclient.PhotoComment], error) {
 	var result flickrclient.Page[flickrclient.PhotoComment]
-	err := c.call(ctx, keyID, func(credentials flickrclient.Credentials) error {
+	err := c.call(ctx, keyID, "flickr.photos.comments.getList", "photo_comments", func(callCtx context.Context, credentials flickrclient.Credentials) error {
 		var callErr error
-		result, callErr = c.Client.PhotosCommentsGetList(ctx, credentials, photoID, flickrclient.ListOptions{PerPage: 50, Page: page})
+		result, callErr = c.Client.PhotosCommentsGetList(callCtx, credentials, photoID, flickrclient.ListOptions{PerPage: 50, Page: page})
 		return callErr
 	})
 	return result, err
@@ -354,33 +362,38 @@ func (c photoFacetClient) PhotosCommentsGetList(ctx context.Context, keyID int64
 
 func (c photoFacetClient) PhotosGetFavorites(ctx context.Context, keyID int64, photoID string, page int) (flickrclient.Page[flickrclient.PhotoFavorite], error) {
 	var result flickrclient.Page[flickrclient.PhotoFavorite]
-	err := c.call(ctx, keyID, func(credentials flickrclient.Credentials) error {
+	err := c.call(ctx, keyID, "flickr.photos.getFavorites", "photo_favorites", func(callCtx context.Context, credentials flickrclient.Credentials) error {
 		var callErr error
-		result, callErr = c.Client.PhotosGetFavorites(ctx, credentials, photoID, flickrclient.ListOptions{PerPage: 50, Page: page})
+		result, callErr = c.Client.PhotosGetFavorites(callCtx, credentials, photoID, flickrclient.ListOptions{PerPage: 50, Page: page})
 		return callErr
 	})
 	return result, err
 }
 
-func (c photoFacetClient) call(ctx context.Context, keyID int64, request func(flickrclient.Credentials) error) error {
+func (c photoFacetClient) call(ctx context.Context, keyID int64, method, facet string, request func(context.Context, flickrclient.Credentials) error) error {
 	if c.Pool == nil || c.Client == nil || c.Quota == nil || ctx == nil || keyID <= 0 {
 		return errors.New("crawl: photo facet client dependencies are required")
 	}
 	var apiKey, status string
-	if err := c.Pool.QueryRow(ctx, `SELECT key_public, status FROM api_keys WHERE id=$1`, keyID).Scan(&apiKey, &status); err != nil {
+	var userID int64
+	if err := c.Pool.QueryRow(ctx, `SELECT key_public, status, user_id FROM api_keys WHERE id=$1`, keyID).Scan(&apiKey, &status, &userID); err != nil {
 		return fmt.Errorf("crawl: load photo facet key: %w", err)
 	}
 	if status != "valid" {
 		return errors.New("crawl: photo facet key is not valid")
 	}
+	metadata, _ := flickrclient.CallContextFrom(ctx)
+	metadata.KeyID, metadata.UserID, metadata.Lane, metadata.Facet, metadata.NodeID = keyID, &userID, "photo", facet, c.NodeID
+	ctx = flickrclient.WithCallContext(ctx, metadata)
 	permit, wait, err := c.Quota.Acquire(ctx, keyID, quotadomain.Photo)
 	if err != nil {
 		return err
 	}
 	if permit == nil {
+		c.Client.RecordQuotaWait(ctx, method)
 		return crawlapp.NewQuotaWaitError(flickrclient.ErrQuotaExceeded, wait)
 	}
-	callErr := request(flickrclient.Credentials{APIKey: apiKey})
+	callErr := request(ctx, flickrclient.Credentials{APIKey: apiKey})
 	if doneErr := permit.Done(quotadomain.Meta{Err: callErr}); doneErr != nil {
 		if callErr != nil {
 			return errors.Join(callErr, fmt.Errorf("crawl: release photo facet quota permit: %w", doneErr))
@@ -472,6 +485,7 @@ type photoSizesClient struct {
 	}
 	Client *flickrclient.Client
 	Quota  quotadomain.Governor
+	NodeID string
 }
 
 func (c photoSizesClient) GetSizes(ctx context.Context, keyID int64, photoID string) ([]flickrclient.PhotoSize, error) {
@@ -483,7 +497,8 @@ func (c photoSizesClient) GetSizesClass(ctx context.Context, keyID int64, photoI
 		return nil, errors.New("crawl: photo sizes client dependencies are required")
 	}
 	var apiKey, status string
-	if err := c.Pool.QueryRow(ctx, `SELECT key_public, status FROM api_keys WHERE id=$1`, keyID).Scan(&apiKey, &status); err != nil {
+	var userID int64
+	if err := c.Pool.QueryRow(ctx, `SELECT key_public, status, user_id FROM api_keys WHERE id=$1`, keyID).Scan(&apiKey, &status, &userID); err != nil {
 		return nil, fmt.Errorf("crawl: load photo sizes key: %w", err)
 	}
 	if status != "valid" {
@@ -492,11 +507,16 @@ func (c photoSizesClient) GetSizesClass(ctx context.Context, keyID int64, photoI
 	if !class.Valid() {
 		return nil, quotadomain.ErrInvalidClass
 	}
+	method := "flickr.photos.getSizes"
+	metadata, _ := flickrclient.CallContextFrom(ctx)
+	metadata.KeyID, metadata.UserID, metadata.Lane, metadata.Facet, metadata.NodeID = keyID, &userID, string(class), "photo_sizes", c.NodeID
+	ctx = flickrclient.WithCallContext(ctx, metadata)
 	permit, wait, err := c.Quota.Acquire(ctx, keyID, class)
 	if err != nil {
 		return nil, err
 	}
 	if permit == nil {
+		c.Client.RecordQuotaWait(ctx, method)
 		return nil, crawlapp.NewQuotaWaitError(flickrclient.ErrQuotaExceeded, wait)
 	}
 	sizes, callErr := c.Client.PhotosGetSizes(ctx, flickrclient.Credentials{APIKey: apiKey}, photoID)
@@ -622,11 +642,13 @@ func (r APIRole) Run(ctx context.Context) error {
 		return err
 	}
 	defer pool.Close()
+	callObserver, stopCallObserver := startFlickrCallLog(ctx, pool)
+	defer stopCallObserver()
 	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	defer redisClient.Close()
 	hub := platformsse.NewHub(256)
 	go listenSSEEvents(ctx, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"}, hub)
-	handlers, err := buildConfiguredAPIHandlerSetWithHub(pool, redisClient, cfg, r.version, hub, readinessFromContext(ctx))
+	handlers, err := buildConfiguredAPIHandlerSetWithObserver(pool, redisClient, cfg, r.version, hub, readinessFromContext(ctx), callObserver)
 	if err != nil {
 		return err
 	}
@@ -661,6 +683,14 @@ func buildConfiguredAPIHandlerWithHub(pool *pgxpool.Pool, redisClient redisv9.Un
 }
 
 func buildConfiguredAPIHandlerSetWithHub(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, version string, hub *platformsse.Hub, readiness ...*httpx.Readiness) (apiHandlerSet, error) {
+	var probeReadiness *httpx.Readiness
+	if len(readiness) > 0 {
+		probeReadiness = readiness[0]
+	}
+	return buildConfiguredAPIHandlerSetWithObserver(pool, redisClient, cfg, version, hub, probeReadiness, nil)
+}
+
+func buildConfiguredAPIHandlerSetWithObserver(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, version string, hub *platformsse.Hub, probeReadiness *httpx.Readiness, callObserver flickrclient.CallObserver) (apiHandlerSet, error) {
 	if pool == nil {
 		return apiHandlerSet{}, errors.New("api: postgres database is required")
 	}
@@ -668,11 +698,11 @@ func buildConfiguredAPIHandlerSetWithHub(pool *pgxpool.Pool, redisClient redisv9
 	if err != nil {
 		return apiHandlerSet{}, err
 	}
-	keys, err := buildKeyHandler(pool, cfg)
+	keys, err := buildKeyHandler(pool, cfg, callObserver)
 	if err != nil {
 		return apiHandlerSet{}, err
 	}
-	connect, err := buildConnectHandler(pool, redisClient, cfg)
+	connect, err := buildConnectHandler(pool, redisClient, cfg, callObserver)
 	if err != nil {
 		return apiHandlerSet{}, err
 	}
@@ -702,10 +732,6 @@ func buildConfiguredAPIHandlerSetWithHub(pool *pgxpool.Pool, redisClient redisv9
 	blobs, err := newBlobStore(context.Background(), cfg)
 	if err != nil {
 		return apiHandlerSet{}, err
-	}
-	var probeReadiness *httpx.Readiness
-	if len(readiness) > 0 {
-		probeReadiness = readiness[0]
 	}
 	if probeReadiness != nil {
 		probeReadiness.ConfigureRole("api", postgresDependency(pool), redisDependency(redisClient), blobStoreDependency(blobs))
@@ -739,9 +765,10 @@ func sseUserID(r *http.Request) (int64, bool) {
 
 func buildQuotaHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config) quotahttp.QuotaHandler {
 	return quotahttp.QuotaHandler{
-		States:  quotaStates(pool, redisClient, cfg),
-		Node:    nodeID(cfg),
-		ActorID: userIDFromPrincipal,
+		States:    quotaStates(pool, redisClient, cfg),
+		CallStats: quotaPostgres.CallLog{Pool: pool},
+		Node:      nodeID(cfg),
+		ActorID:   userIDFromPrincipal,
 	}
 }
 
@@ -1046,12 +1073,16 @@ func flickrRESTURL(cfg config.Config) string {
 	return cfg.Flickr.UpstreamURL + "/services/rest"
 }
 
-func newFlickrClient(cfg config.Config) *flickrclient.Client {
-	return flickrclient.NewClientWithContextObserver(
+func newFlickrClient(cfg config.Config, observers ...flickrclient.CallObserver) *flickrclient.Client {
+	client := flickrclient.NewClientWithContextObserver(
 		flickrRESTURL(cfg),
 		nil,
 		flickrclient.ContextEventObserverFunc(obs.Event),
 	)
+	if len(observers) > 0 {
+		client.SetCallObserver(observers[0])
+	}
+	return client
 }
 
 // flickrOAuthEndpoints overrides the OAuth URLs only when an upstream is set.
@@ -1063,7 +1094,7 @@ func flickrOAuthEndpoints(cfg config.Config) accountsflickr.Endpoints {
 	return accountsflickr.Endpoints{RequestToken: base + "request_token", Authorize: base + "authorize", AccessToken: base + "access_token"}
 }
 
-func buildKeyHandler(pool *pgxpool.Pool, cfg config.Config) (accountshttp.KeyHandler, error) {
+func buildKeyHandler(pool *pgxpool.Pool, cfg config.Config, observers ...flickrclient.CallObserver) (accountshttp.KeyHandler, error) {
 	if pool == nil {
 		return accountshttp.KeyHandler{}, errors.New("accounts: postgres database is required")
 	}
@@ -1082,7 +1113,7 @@ func buildKeyHandler(pool *pgxpool.Pool, cfg config.Config) (accountshttp.KeyHan
 	return accountshttp.KeyHandler{
 		Keys: accountsapp.Keys{
 			Repository: repository,
-			Probe:      accountsflickr.NewProbe(flickrRESTURL(cfg), nil),
+			Probe:      accountsflickr.NewProbe(flickrRESTURL(cfg), nil, observers...),
 			Sealer:     ring,
 			Settings:   accountsettings.Reader{Settings: settingsapp.New(settingsRepository)},
 		},
@@ -1090,7 +1121,7 @@ func buildKeyHandler(pool *pgxpool.Pool, cfg config.Config) (accountshttp.KeyHan
 	}, nil
 }
 
-func buildConnectHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config) (accountshttp.ConnectHandler, error) {
+func buildConnectHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, observers ...flickrclient.CallObserver) (accountshttp.ConnectHandler, error) {
 	if pool == nil {
 		return accountshttp.ConnectHandler{}, errors.New("accounts: postgres database is required")
 	}
@@ -1105,7 +1136,7 @@ func buildConnectHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient
 	return accountshttp.ConnectHandler{
 		Accounts: accountsapp.Connect{
 			Repository:  repository,
-			Authorizer:  accountsflickr.NewAuthorizer(nil, flickrOAuthEndpoints(cfg)),
+			Authorizer:  accountsflickr.NewAuthorizer(nil, flickrOAuthEndpoints(cfg), observers...),
 			States:      accountsredis.States{Client: redisClient, Prefix: cfg.Redis.Prefix},
 			Cipher:      ring,
 			CallbackURL: cfg.Flickr.CallbackURL,

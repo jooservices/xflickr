@@ -71,11 +71,51 @@ func TestCallSuccessBuildsRequestAndEmitsEvent(t *testing.T) {
 	if observedName != "flickr.call" {
 		t.Fatalf("event name = %q", observedName)
 	}
-	if observedFields["method"] != "flickr.photos.search" || observedFields["status"] != http.StatusOK || observedFields["bytes"] != int64(len(responseBody)) || observedFields["error_code"] != 0 {
+	if observedFields["method"] != "flickr.photos.search" || observedFields["http_status"] != http.StatusOK || observedFields["response_bytes"] != int64(len(responseBody)) || observedFields["error_code"] != 0 {
 		t.Fatalf("event fields = %#v", observedFields)
+	}
+	if _, ok := observedFields["started_at"].(string); !ok {
+		t.Fatalf("started_at has type %T", observedFields["started_at"])
 	}
 	if _, ok := observedFields["latency_ms"].(int64); !ok {
 		t.Fatalf("latency_ms has type %T, want int64", observedFields["latency_ms"])
+	}
+}
+
+func TestCallObserverCapturesAttributionAndRedactsSecrets(t *testing.T) {
+	t.Parallel()
+	const apiKey, apiSecret, token, tokenSecret = "api-key-secret", "api-secret-secret", "oauth-token-secret", "oauth-token-secret-secret"
+	body := `{"stat":"fail","code":105,"message":"upstream rejected ` + apiKey + ` ` + token + ` ` + tokenSecret + `"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, body)
+	}))
+	defer server.Close()
+
+	userID, accountID := int64(17), int64(29)
+	var observed CallRecord
+	client := NewClient(server.URL, server.Client())
+	client.SetCallObserver(CallObserverFunc(func(_ context.Context, record CallRecord) { observed = record }))
+	ctx := WithCallContext(context.Background(), CallContext{
+		KeyID: 4, UserID: &userID, AccountID: &accountID, FlickrAccount: "123@example",
+		Lane: "photo", Facet: "photo_sizes", Attempt: 3, NodeID: "worker-a",
+	})
+	_, _, err := client.Call(ctx, Credentials{APIKey: apiKey, APISecret: apiSecret, Token: token, TokenSecret: tokenSecret}, "flickr.photos.getSizes", nil)
+	if err == nil {
+		t.Fatal("Call() error = nil, want Flickr error")
+	}
+	if observed.Method != "flickr.photos.getSizes" || observed.KeyID != 4 || observed.UserID == nil || *observed.UserID != userID ||
+		observed.AccountID == nil || *observed.AccountID != accountID || observed.FlickrAccount != "123@example" || observed.Lane != "photo" ||
+		observed.Facet != "photo_sizes" || observed.Attempt != 3 || observed.NodeID != "worker-a" {
+		t.Fatalf("call attribution = %+v", observed)
+	}
+	if observed.HTTPStatus != http.StatusOK || observed.FlickrStat != "fail" || observed.FlickrErrorCode != 105 || observed.Outcome != "failure" ||
+		observed.ResponseBytes != int64(len(body)) || observed.StartedAt.IsZero() || observed.Latency < 0 || observed.RequestID == "" {
+		t.Fatalf("call observation = %+v", observed)
+	}
+	for _, secret := range []string{apiKey, apiSecret, token, tokenSecret} {
+		if strings.Contains(observed.ErrorMessage, secret) {
+			t.Fatalf("error message contains a credential: %q", observed.ErrorMessage)
+		}
 	}
 }
 

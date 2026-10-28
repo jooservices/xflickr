@@ -87,7 +87,7 @@ func newCrawlEngine(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg
 		Units:    store,
 		Keys:     crawlKeys{pool: quotaapp.KeyPool{Interests: personInterests{pool: pool}, Keys: usableKeys{pool: pool}, Quota: governor}},
 		Governor: crawlGovernor{governor: governor},
-		Flickr:   &crawlFlickr{pool: pool, client: flickr, ring: ring},
+		Flickr:   &crawlFlickr{pool: pool, client: flickr, ring: ring, nodeID: nodeID(cfg)},
 		Settings: settingsapp.New(settingsRepository),
 		Logger:   slog.Default(),
 	}, nil
@@ -185,9 +185,20 @@ type crawlFlickr struct {
 	}
 	client *flickrclient.Client
 	ring   *crypto.Keyring
+	nodeID string
 }
 
 func (f *crawlFlickr) Call(ctx context.Context, request crawlapp.Request) (json.RawMessage, error) {
+	var userID *int64
+	if request.UserID > 0 {
+		value := request.UserID
+		userID = &value
+	}
+	metadata := flickrclient.CallContext{
+		KeyID: request.KeyID, UserID: userID, Lane: string(request.Lane), Facet: request.Facet,
+		Attempt: request.Attempt, NodeID: f.nodeID,
+	}
+	ctx = flickrclient.WithCallContext(ctx, metadata)
 	fields := make(map[string]any, 3)
 	if request.KeyID > 0 {
 		fields["key_id"] = request.KeyID
@@ -199,41 +210,66 @@ func (f *crawlFlickr) Call(ctx context.Context, request crawlapp.Request) (json.
 		fields["lane"] = string(request.Lane)
 	}
 	ctx = obs.WithFields(ctx, fields)
-	creds, err := f.credentials(ctx, request)
+	creds, account, err := f.credentialsWithAttribution(ctx, request)
 	if err != nil {
 		return nil, err
 	}
+	metadata.AccountID = account.AccountID
+	metadata.FlickrAccount = account.FlickrAccount
+	ctx = flickrclient.WithCallContext(ctx, metadata)
 	payload, _, err := f.client.Call(ctx, creds, request.Method, request.Params)
 	return payload, err
 }
 
 func (f *crawlFlickr) credentials(ctx context.Context, request crawlapp.Request) (flickrclient.Credentials, error) {
+	credentials, _, err := f.credentialsWithAttribution(ctx, request)
+	return credentials, err
+}
+
+func (f *crawlFlickr) credentialsWithAttribution(ctx context.Context, request crawlapp.Request) (flickrclient.Credentials, flickrclient.CallContext, error) {
 	var public string
 	var sealedSecret crypto.Sealed
 	if err := f.pool.QueryRow(ctx, `SELECT key_public, secret_sealed FROM api_keys WHERE id=$1 AND status='valid'`, request.KeyID).Scan(&public, &sealedSecret); err != nil {
-		return flickrclient.Credentials{}, fmt.Errorf("crawl: load key %d: %w", request.KeyID, err)
+		return flickrclient.Credentials{}, flickrclient.CallContext{}, fmt.Errorf("crawl: load key %d: %w", request.KeyID, err)
 	}
 	secret, err := f.ring.Open(sealedSecret, accountsdomain.SecretAAD(request.KeyID))
 	if err != nil {
-		return flickrclient.Credentials{}, fmt.Errorf("crawl: open key %d secret: %w", request.KeyID, err)
+		return flickrclient.Credentials{}, flickrclient.CallContext{}, fmt.Errorf("crawl: open key %d secret: %w", request.KeyID, err)
 	}
 	creds := flickrclient.Credentials{APIKey: public, APISecret: string(secret)}
+	metadata := flickrclient.CallContext{}
 	if request.UserID <= 0 {
-		return creds, nil
+		return creds, metadata, nil
 	}
 	var accountID int64
+	var accountNSID string
 	var sealedToken, sealedTokenSecret crypto.Sealed
-	if err := f.pool.QueryRow(ctx, `SELECT id, token_sealed, secret_sealed FROM flickr_accounts WHERE user_id=$1 AND key_id=$2 AND status='ok' ORDER BY id LIMIT 1`, request.UserID, request.KeyID).Scan(&accountID, &sealedToken, &sealedTokenSecret); err != nil {
-		return flickrclient.Credentials{}, fmt.Errorf("crawl: load account of user %d for key %d: %w", request.UserID, request.KeyID, err)
+	if err := f.pool.QueryRow(ctx, `SELECT id, nsid, token_sealed, secret_sealed FROM flickr_accounts WHERE user_id=$1 AND key_id=$2 AND status='ok' ORDER BY id LIMIT 1`, request.UserID, request.KeyID).Scan(&accountID, &accountNSID, &sealedToken, &sealedTokenSecret); err != nil {
+		return flickrclient.Credentials{}, flickrclient.CallContext{}, fmt.Errorf("crawl: load account of user %d for key %d: %w", request.UserID, request.KeyID, err)
 	}
 	token, err := f.ring.Open(sealedToken, accountsdomain.TokenAAD(accountID))
 	if err != nil {
-		return flickrclient.Credentials{}, fmt.Errorf("crawl: open account %d token: %w", accountID, err)
+		return flickrclient.Credentials{}, flickrclient.CallContext{}, fmt.Errorf("crawl: open account %d token: %w", accountID, err)
 	}
 	tokenSecret, err := f.ring.Open(sealedTokenSecret, accountsdomain.TokenSecretAAD(accountID))
 	if err != nil {
-		return flickrclient.Credentials{}, fmt.Errorf("crawl: open account %d token secret: %w", accountID, err)
+		return flickrclient.Credentials{}, flickrclient.CallContext{}, fmt.Errorf("crawl: open account %d token secret: %w", accountID, err)
 	}
 	creds.Token, creds.TokenSecret = string(token), string(tokenSecret)
-	return creds, nil
+	metadata.AccountID, metadata.FlickrAccount = &accountID, accountNSID
+	return creds, metadata, nil
+}
+
+func (f *crawlFlickr) RecordQuotaWait(ctx context.Context, request crawlapp.Request) {
+	var userID *int64
+	if request.UserID > 0 {
+		value := request.UserID
+		userID = &value
+	}
+	metadata := flickrclient.CallContext{
+		KeyID: request.KeyID, UserID: userID, Lane: string(request.Lane), Facet: request.Facet,
+		Attempt: request.Attempt, NodeID: f.nodeID,
+	}
+	ctx = flickrclient.WithCallContext(ctx, metadata)
+	f.client.RecordQuotaWait(ctx, request.Method)
 }

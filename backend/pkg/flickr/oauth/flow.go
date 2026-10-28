@@ -62,6 +62,7 @@ type Flow struct {
 	requestTokenURL string
 	authorizeURL    string
 	accessTokenURL  string
+	callObserver    CallObserver
 }
 
 // NewFlow starts an authorization with the member's Flickr API key and secret.
@@ -91,6 +92,13 @@ func (f *Flow) SetClock(now func() time.Time) {
 func (f *Flow) SetNonceGenerator(fn func() (string, error)) {
 	if f != nil {
 		f.newNonce = fn
+	}
+}
+
+// SetCallObserver records each HTTP request made by the authorization flow.
+func (f *Flow) SetCallObserver(observer CallObserver) {
+	if f != nil {
+		f.callObserver = observer
 	}
 }
 
@@ -235,41 +243,94 @@ func (f *Flow) validate() error {
 	return nil
 }
 
-func (f *Flow) get(ctx context.Context, endpoint string, params url.Values) (url.Values, error) {
+func (f *Flow) get(ctx context.Context, endpoint string, params url.Values) (values url.Values, callErr error) {
 	if ctx == nil {
 		return nil, errors.New("oauth: context is required")
 	}
+	startedAt := time.Now().UTC()
+	metadata, _ := CallContextFrom(ctx)
+	if metadata.RequestID == "" {
+		metadata.RequestID = NewRequestID()
+	}
+	if metadata.Attempt <= 0 {
+		metadata.Attempt = 1
+	}
+	if metadata.Lane == "" {
+		metadata.Lane = "interactive"
+	}
+	ctx = WithCallContext(ctx, metadata)
+	httpStatus, responseBytes := 0, int64(0)
+	defer func() {
+		outcome := "success"
+		message := ""
+		if callErr != nil {
+			outcome = "failure"
+			message = "OAuth request failed"
+			if httpStatus == http.StatusTooManyRequests {
+				outcome = "throttled"
+			}
+		}
+		if f != nil && f.callObserver != nil {
+			f.callObserver.RecordCall(ctx, CallRecord{
+				CallContext: metadata, Method: oauthMethod(endpoint), StartedAt: startedAt,
+				Latency: time.Since(startedAt), HTTPStatus: httpStatus, ErrorMessage: message,
+				ResponseBytes: responseBytes, Outcome: outcome,
+			})
+		}
+	}()
+	values, httpStatus, responseBytes, callErr = f.readTokenResponse(ctx, endpoint, params)
+	return values, callErr
+}
+
+func (f *Flow) readTokenResponse(ctx context.Context, endpoint string, params url.Values) (url.Values, int, int64, error) {
 	parsed, err := url.Parse(endpoint)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return nil, fmt.Errorf("oauth: invalid endpoint %q", endpoint)
+		return nil, 0, 0, fmt.Errorf("oauth: invalid endpoint %q", endpoint)
 	}
 	if parsed.RawQuery != "" {
-		return nil, errors.New("oauth: endpoint must not include a query")
+		return nil, 0, 0, errors.New("oauth: endpoint must not include a query")
 	}
 	parsed.RawQuery = EncodeQuery(params)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("oauth: build request: %w", err)
+		return nil, 0, 0, fmt.Errorf("oauth: build request: %w", err)
 	}
 	request.Header.Set("Accept", "application/x-www-form-urlencoded")
 	response, err := f.httpClient.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("oauth: send request: %w", err)
+		return nil, 0, 0, fmt.Errorf("oauth: send request: %w", err)
 	}
 	defer response.Body.Close()
+	httpStatus := response.StatusCode
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		return nil, fmt.Errorf("oauth: read response: %w", err)
+		return nil, httpStatus, 0, fmt.Errorf("oauth: read response: %w", err)
 	}
+	responseBytes := int64(len(body))
 	values, err := url.ParseQuery(strings.TrimSpace(string(body)))
 	if err != nil {
-		return nil, fmt.Errorf("oauth: malformed token response: %w", err)
+		return nil, httpStatus, responseBytes, fmt.Errorf("oauth: malformed token response: %w", err)
 	}
 	if problem := values.Get("oauth_problem"); problem != "" {
-		return nil, &ProtocolError{Problem: problem, Status: response.StatusCode, DebugSBS: values.Get("debug_sbs")}
+		return nil, httpStatus, responseBytes, &ProtocolError{Problem: problem, Status: httpStatus, DebugSBS: values.Get("debug_sbs")}
 	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, &ProtocolError{Problem: "unexpected status", Status: response.StatusCode}
+	if httpStatus < 200 || httpStatus >= 300 {
+		return nil, httpStatus, responseBytes, &ProtocolError{Problem: "unexpected status", Status: httpStatus}
 	}
-	return values, nil
+	return values, httpStatus, responseBytes, nil
+}
+
+func oauthMethod(endpoint string) string {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return "oauth.call"
+	}
+	switch {
+	case strings.HasSuffix(parsed.Path, "/request_token"):
+		return "oauth.request_token"
+	case strings.HasSuffix(parsed.Path, "/access_token"):
+		return "oauth.access_token"
+	default:
+		return "oauth.call"
+	}
 }
