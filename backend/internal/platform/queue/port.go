@@ -20,10 +20,12 @@ type Job struct {
 // Options configure an individual enqueued job. Queue names are deployment
 // configuration and may be generated dynamically, for example crawl@node-1.
 type Options struct {
-	Queue        string
-	MaxAttempts  int
-	LeaseTimeout time.Duration
-	Backoff      time.Duration
+	Queue         string
+	MaxAttempts   int
+	LeaseTimeout  time.Duration
+	Backoff       time.Duration
+	UniqueByArgs  bool
+	UniqueByQueue bool
 }
 
 // Handler processes one application job.

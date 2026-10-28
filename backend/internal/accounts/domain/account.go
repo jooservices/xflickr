@@ -22,6 +22,10 @@ const (
 	ConnectedTopic = "flickr_account.connected"
 	// RevokedTopic is the outbox topic published when Flickr rejects a token.
 	RevokedTopic = "account.revoked"
+	// NotificationRequestedTopic is consumed by the notification delivery feature.
+	NotificationRequestedTopic = "notification.requested"
+	// NotificationReconnect asks the owner to reconnect an account or repair its key.
+	NotificationReconnect = "reconnect"
 
 	// InterestPerson is the interest kind registered for a connected account.
 	InterestPerson = "person"
@@ -130,4 +134,12 @@ type Revoked struct {
 	UserID    int64  `json:"user_id"`
 	KeyID     int64  `json:"key_id"`
 	NSID      string `json:"nsid"`
+}
+
+// NotificationRequested asks the notification feature to tell an owner to reconnect.
+type NotificationRequested struct {
+	AccountID int64  `json:"account_id"`
+	UserID    int64  `json:"user_id"`
+	KeyID     int64  `json:"key_id"`
+	Kind      string `json:"kind"`
 }
