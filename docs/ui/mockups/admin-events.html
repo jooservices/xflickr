@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>XFlickr · Admin Events and audit mockup</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #080b10; color: #d6dee8; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+      h1, h2, h3, h4, p { margin: 0; }
+      button, input, select { font: inherit; }
+      .gallery { max-width: 1440px; margin: auto; padding: 28px; }
+      .gallery > h1 { font-size: 26px; letter-spacing: -.02em; }
+      .intro { max-width: 900px; margin: 6px 0 8px; color: #a5afbf; }
+      .hint { margin: 0 0 26px; color: #8d99aa; font-size: 12px; }
+      .theme {
+        --bg: #0b0f15; --surface: #11171f; --sunken: #161e28; --raise: #1c2632;
+        --line: #222c3a; --ink: #d6dee8; --muted: #8190a4; --faint: #5d6b82;
+        --accent: #4cb4d8; --ok: #3cb87c; --warn: #e2ae3d; --bad: #f2766b; --info: #9590ee;
+        margin: 24px 0; padding: 22px; border: 1px solid #2b3541; background: #070a0e;
+      }
+      .theme.light {
+        --bg: #eef1f5; --surface: #fff; --sunken: #f5f7fa; --raise: #e9edf3;
+        --line: #dce2ea; --ink: #16202c; --muted: #56657a; --faint: #7d8a9c;
+        --accent: #006482; --ok: #176d42; --warn: #815800; --bad: #c5372c; --info: #5a52c9;
+        background: #dfe4eb;
+      }
+      .theme-title { margin-bottom: 16px; font-size: 20px; color: var(--ink); }
+      .state { margin: 16px 0 24px; padding: 16px; background: var(--bg); border: 1px solid var(--line); color: var(--ink); }
+      .state-label { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 10px; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+      .sample { color: var(--faint); font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+      .view { padding: 20px; background: var(--bg); }
+      .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+      .head h3 { font-size: 23px; }
+      .head p { margin-top: 4px; color: var(--muted); }
+      .tools, .filters, .chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .filters { margin-bottom: 12px; padding: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; }
+      button, input, select { min-height: 38px; padding: 0 11px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+      button { background: var(--raise); cursor: default; font-weight: 650; }
+      button.primary { color: #04131a; background: var(--accent); border-color: var(--accent); }
+      .light button.primary { color: #fff; }
+      .chips { gap: 5px; }
+      .chips button { min-height: 32px; padding: 0 9px; font-size: 12px; }
+      .chips button[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+      .meta { color: var(--muted); font-size: 12px; }
+      .panels { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 12px; }
+      .panel { min-width: 0; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+      .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+      .panel h4 { font-size: 15px; }
+      .event { display: grid; grid-template-columns: 62px 82px 80px minmax(0, 1fr); align-items: start; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line); }
+      .time { color: var(--muted); font: 11px ui-monospace, monospace; }
+      .source { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+      .severity { font-size: 11px; font-weight: 700; }
+      .severity.warn { color: var(--warn); } .severity.critical { color: var(--bad); } .severity.ok { color: var(--ok); } .severity.info { color: var(--info); }
+      .message { min-width: 0; }
+      .audit { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }
+      .audit th { color: var(--muted); font-weight: 600; }
+      .audit th, .audit td { padding: 9px 7px; border-top: 1px solid var(--line); vertical-align: top; }
+      .audit td:first-child { color: var(--muted); font: 11px ui-monospace, monospace; white-space: nowrap; }
+      .audit .summary { color: var(--muted); }
+      .badge { display: inline-block; padding: 2px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11px; }
+      .empty { margin-top: 12px; padding: 24px 16px; text-align: center; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+      .empty h4 { margin-bottom: 5px; font-size: 17px; }
+      .empty p, .error p { max-width: 600px; margin: auto; color: var(--muted); }
+      .empty button, .error button { margin-top: 12px; }
+      .error { margin: 12px 0; padding: 18px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--bad); border-radius: 8px; }
+      .error h4 { margin-bottom: 5px; font-size: 17px; }
+      .skeleton { height: 12px; margin: 10px 0; background: linear-gradient(90deg, var(--sunken), var(--raise), var(--sunken)); border-radius: 4px; }
+      .skeleton.short { width: 25%; } .skeleton.medium { width: 55%; } .skeleton.long { width: 88%; }
+      .focus:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+      @media (max-width: 1099px) {
+        .panels { grid-template-columns: minmax(0, 1fr); }
+        .audit th, .audit td { padding: 8px 6px; }
+      }
+      @media (max-width: 720px) {
+        .gallery { padding: 14px; } .theme { padding: 12px; } .state { padding: 9px; }
+        .view { padding: 12px; } .head { flex-direction: column; }
+        .tools, .filters { width: 100%; } .filters > * { flex: 1 1 140px; }
+        .chips { flex: 1 1 100%; } .panels { grid-template-columns: minmax(0, 1fr); }
+        .event { grid-template-columns: 55px 70px 72px minmax(0, 1fr); gap: 5px; }
+        .audit, .audit tbody, .audit tr, .audit td { display: block; }
+        .audit thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+        .audit tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 8px; border-top: 1px solid var(--line); }
+        .audit td { display: flex; justify-content: space-between; gap: 8px; padding: 7px; }
+        .audit td::before { content: attr(data-label); color: var(--muted); font: 600 10px/1.4 system-ui, sans-serif; text-transform: uppercase; }
+        .audit td.summary { grid-column: 1 / -1; }
+      }
+      @media (max-width: 420px) {
+        .event { grid-template-columns: 48px 64px 65px minmax(0, 1fr); font-size: 12px; }
+        .filters input { min-width: 0; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="gallery">
+      <h1>Events &amp; audit · ADMIN view concept</h1>
+      <p class="intro">Resize to 390 px to inspect the mobile layout; the content frame scales from a 1440 px desktop canvas.</p>
+      <p class="hint">Static, synthetic examples only. No scripts, external fonts, images or network requests; messages contain no user or secret data.</p>
+
+      <section class="theme dark" data-role="admin" data-theme="dark" aria-labelledby="dark-heading">
+        <h2 class="theme-title" id="dark-heading">Dark control room · default</h2>
+
+        <article class="state" data-state="ready" data-viewport="1440">
+          <div class="state-label"><span>Normal · ready</span><span class="sample">1440 px desktop · responsive to 390 px</span></div>
+          <div class="view">
+            <header class="head"><div><h3>Events &amp; audit</h3><p>Everything the system did and every admin change, newest first.</p></div><div class="tools"><span class="meta">Updated just now</span><button class="focus" type="button">Refresh</button></div></header>
+            <div class="filters"><label><span class="meta">Time range</span> <select aria-label="Time range"><option>Last 24 hours</option><option>Last hour</option><option>Last 7 days</option></select></label><div class="chips" role="group" aria-label="Severity"><button type="button" aria-pressed="true">All severities</button><button type="button">Critical</button><button type="button">Warning</button><button type="button">Success</button><button type="button">Info</button></div><label><span class="meta">Source</span> <select aria-label="Source"><option>All sources</option><option>Audit</option></select></label><label><span class="meta">Search events</span> <input class="focus" aria-label="Search events" placeholder="Filter text" /></label><span class="meta">8 events</span></div>
+            <div class="panels">
+              <section class="panel" aria-labelledby="dark-feed-title"><div class="panel-head"><h4 id="dark-feed-title">Event stream</h4><span class="badge">Live</span></div><div class="event"><span class="time">14:08:12</span><span class="source">cluster</span><span class="severity warn">Warning</span><span class="message">A crawl node missed its latest heartbeat.</span></div><div class="event"><span class="time">14:07:40</span><span class="source">quota</span><span class="severity critical">Critical</span><span class="message">An API request limit was reached.</span></div><div class="event"><span class="time">14:06:19</span><span class="source">audit</span><span class="severity info">Info</span><span class="message">A default plan setting changed.</span></div><div class="event"><span class="time">14:05:03</span><span class="source">download</span><span class="severity ok">Success</span><span class="message">A download completed successfully.</span></div></section>
+              <section class="panel" aria-labelledby="dark-audit-title"><div class="panel-head"><h4 id="dark-audit-title">Audit trail</h4><button class="focus" type="button">Export audit</button></div><label class="meta">Search audit entries <input aria-label="Search audit entries" placeholder="Actor, action or target" /></label><table class="audit"><caption class="meta">Recent administrator actions</caption><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Summary</th></tr></thead><tbody><tr><td data-label="Time">14:06:19</td><td data-label="Actor">Admin #12</td><td data-label="Action">defaults.updated</td><td data-label="Target">Default plan</td><td data-label="Summary" class="summary">A plan limit changed.</td></tr><tr><td data-label="Time">13:58:44</td><td data-label="Actor">Admin #07</td><td data-label="Action">user.disabled</td><td data-label="Target">Account #204</td><td data-label="Summary" class="summary">Account access changed.</td></tr></tbody></table></section>
+            </div>
+          </div>
+        </article>
+
+        <article class="state" data-state="loading">
+          <div class="state-label"><span>Loading · skeleton</span><span class="sample">No fabricated records</span></div>
+          <div class="view" aria-busy="true"><header class="head"><div><h3>Events &amp; audit</h3><p>Loading events…</p></div><div class="tools"><button type="button" disabled>Refresh</button><button type="button" disabled>Export audit</button></div></header><div class="panels"><section class="panel"><div class="skeleton medium"></div><div class="skeleton long"></div><div class="skeleton long"></div><div class="skeleton medium"></div></section><section class="panel"><div class="skeleton medium"></div><div class="skeleton long"></div><div class="skeleton long"></div><div class="skeleton medium"></div></section></div></div>
+        </article>
+        <article class="state" data-state="empty">
+          <div class="state-label"><span>Empty · filtered result</span><span class="sample">Request succeeded</span></div>
+          <div class="view"><header class="head"><div><h3>Events &amp; audit</h3><p>Showing results for the selected filters.</p></div><div class="tools"><button type="button">Refresh</button><button type="button">Export audit</button></div></header><section class="empty"><h4>No events match these filters</h4><p>Change the time range or clear a filter to see more events.</p><button class="primary" type="button">Clear filters</button></section><section class="panel"><div class="panel-head"><h4>Audit trail</h4></div><p class="meta">No audit entries in this range.</p></section></div>
+        </article>
+        <article class="state" data-state="error">
+          <div class="state-label"><span>Error · retry</span><span class="sample">Request failed</span></div>
+          <div class="view"><header class="head"><div><h3>Events &amp; audit</h3><p>Everything the system did and every admin change, newest first.</p></div><div class="tools"><button type="button">Refresh</button></div></header><section class="error" role="alert"><h4>Events could not load</h4><p>Operational history is temporarily unavailable.</p><button type="button">Try again</button></section></div>
+        </article>
+
+      </section>
+
+      <section class="theme light" data-role="admin" data-theme="light" aria-labelledby="light-heading">
+        <h2 class="theme-title" id="light-heading">Light control room · optional</h2>
+
+        <article class="state" data-state="ready" data-viewport="1440">
+          <div class="state-label"><span>Normal · ready</span><span class="sample">1440 px desktop · responsive to 390 px</span></div>
+          <div class="view">
+            <header class="head"><div><h3>Events &amp; audit</h3><p>Everything the system did and every admin change, newest first.</p></div><div class="tools"><span class="meta">Updated just now</span><button class="focus" type="button">Refresh</button></div></header>
+            <div class="filters"><label><span class="meta">Time range</span> <select aria-label="Time range"><option>Last 24 hours</option><option>Last hour</option><option>Last 7 days</option></select></label><div class="chips" role="group" aria-label="Severity"><button type="button" aria-pressed="true">All severities</button><button type="button">Critical</button><button type="button">Warning</button><button type="button">Success</button><button type="button">Info</button></div><label><span class="meta">Source</span> <select aria-label="Source"><option>All sources</option><option>Audit</option></select></label><label><span class="meta">Search events</span> <input class="focus" aria-label="Search events" placeholder="Filter text" /></label><span class="meta">8 events</span></div>
+            <div class="panels">
+              <section class="panel" aria-labelledby="light-feed-title"><div class="panel-head"><h4 id="light-feed-title">Event stream</h4><span class="badge">Live</span></div><div class="event"><span class="time">14:08:12</span><span class="source">cluster</span><span class="severity warn">Warning</span><span class="message">A crawl node missed its latest heartbeat.</span></div><div class="event"><span class="time">14:07:40</span><span class="source">quota</span><span class="severity critical">Critical</span><span class="message">An API request limit was reached.</span></div><div class="event"><span class="time">14:06:19</span><span class="source">audit</span><span class="severity info">Info</span><span class="message">A default plan setting changed.</span></div><div class="event"><span class="time">14:05:03</span><span class="source">download</span><span class="severity ok">Success</span><span class="message">A download completed successfully.</span></div></section>
+              <section class="panel" aria-labelledby="light-audit-title"><div class="panel-head"><h4 id="light-audit-title">Audit trail</h4><button class="focus" type="button">Export audit</button></div><label class="meta">Search audit entries <input aria-label="Search audit entries" placeholder="Actor, action or target" /></label><table class="audit"><caption class="meta">Recent administrator actions</caption><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Summary</th></tr></thead><tbody><tr><td data-label="Time">14:06:19</td><td data-label="Actor">Admin #12</td><td data-label="Action">defaults.updated</td><td data-label="Target">Default plan</td><td data-label="Summary" class="summary">A plan limit changed.</td></tr><tr><td data-label="Time">13:58:44</td><td data-label="Actor">Admin #07</td><td data-label="Action">user.disabled</td><td data-label="Target">Account #204</td><td data-label="Summary" class="summary">Account access changed.</td></tr></tbody></table></section>
+            </div>
+          </div>
+        </article>
+
+        <article class="state" data-state="loading">
+          <div class="state-label"><span>Loading · skeleton</span><span class="sample">No fabricated records</span></div>
+          <div class="view" aria-busy="true"><header class="head"><div><h3>Events &amp; audit</h3><p>Loading events…</p></div><div class="tools"><button type="button" disabled>Refresh</button><button type="button" disabled>Export audit</button></div></header><div class="panels"><section class="panel"><div class="skeleton medium"></div><div class="skeleton long"></div><div class="skeleton long"></div><div class="skeleton medium"></div></section><section class="panel"><div class="skeleton medium"></div><div class="skeleton long"></div><div class="skeleton long"></div><div class="skeleton medium"></div></section></div></div>
+        </article>
+        <article class="state" data-state="empty">
+          <div class="state-label"><span>Empty · filtered result</span><span class="sample">Request succeeded</span></div>
+          <div class="view"><header class="head"><div><h3>Events &amp; audit</h3><p>Showing results for the selected filters.</p></div><div class="tools"><button type="button">Refresh</button><button type="button">Export audit</button></div></header><section class="empty"><h4>No events match these filters</h4><p>Change the time range or clear a filter to see more events.</p><button class="primary" type="button">Clear filters</button></section><section class="panel"><div class="panel-head"><h4>Audit trail</h4></div><p class="meta">No audit entries in this range.</p></section></div>
+        </article>
+        <article class="state" data-state="error">
+          <div class="state-label"><span>Error · retry</span><span class="sample">Request failed</span></div>
+          <div class="view"><header class="head"><div><h3>Events &amp; audit</h3><p>Everything the system did and every admin change, newest first.</p></div><div class="tools"><button type="button">Refresh</button></div></header><section class="error" role="alert"><h4>Events could not load</h4><p>Operational history is temporarily unavailable.</p><button type="button">Try again</button></section></div>
+        </article>
+
+      </section>
+    </main>
+  </body>
+</html>
