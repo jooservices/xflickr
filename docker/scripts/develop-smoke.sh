@@ -97,12 +97,13 @@ observe_host="${observe_url#*://}"
 observe_host="${observe_host%%/*}"
 observe_host="${observe_host%%:*}"
 now_us="$(($(date +%s) * 1000000))"
-start_us="$((now_us - 900000000))"
+start_us="$((now_us - 90000000))"
 sql='SELECT * FROM "'"${OPENOBSERVE_STREAM:-xflickr}"'" WHERE event IN ('"'crawl.health'"', '"'crawl.health.key'"') ORDER BY _timestamp DESC LIMIT 100'
 query="$(jq -nc --arg sql "$sql" --argjson start "$start_us" --argjson end "$now_us" \
 	'{query:{sql:$sql,start_time:$start,end_time:$end,from:0,size:100}}')"
 response="$(mktemp)"
-trap 'rm -f "$response"' EXIT
+alert_response="$(mktemp)"
+trap 'rm -f "$response" "$alert_response"' EXIT
 if ! curl --silent --show-error --fail \
 	--netrc-file <(printf 'machine %s login %s password %s\n' "$observe_host" "$OPENOBSERVE_USERNAME" "$OPENOBSERVE_PASSWORD") \
 	--header 'Content-Type: application/json' --data "$query" \
@@ -125,9 +126,24 @@ if ! jq -e '
 	exit 1
 fi
 rm -f "$response"
+printf 'OpenObserve crawl health and per-key events: ok\n'
+if ! curl --silent --show-error --fail \
+	--netrc-file <(printf 'machine %s login %s password %s\n' "$observe_host" "$OPENOBSERVE_USERNAME" "$OPENOBSERVE_PASSWORD") \
+	"${observe_url%/}/api/v2/${OPENOBSERVE_ORG:-default}/alerts?stream_type=logs&stream_name=${OPENOBSERVE_STREAM:-xflickr}" > "$alert_response"; then
+	printf 'Could not read the configured OpenObserve alert.\n' >&2
+	exit 1
+fi
+if ! jq -e --arg name xflickr_crawl_health_stale --arg destination "${OPENOBSERVE_ALERT_DESTINATION:-xflickr_telegram}" '
+	(if type == "array" then . else (.list // .alerts // []) end)
+	| any(.[]?; .name == $name and .enabled == true and ((.destinations // []) | index($destination)) != null)
+' "$alert_response" >/dev/null; then
+	printf 'Configured stream is missing its enabled crawl-health freshness alert or destination.\n' >&2
+	exit 1
+fi
+rm -f "$alert_response"
 trap - EXIT
 unset OPENOBSERVE_PASSWORD
-printf 'OpenObserve crawl health and per-key events: ok\n'
+printf 'OpenObserve freshness alert, stream, and destination: ok\n'
 # Sweep every route of the app in a real browser against the deployed container: any uncaught exception, console
 # error, failed request, HTML where JSON was expected or error page fails the deploy. The sweep only reads.
 if [[ -z "${XFLICKR_SMOKE_EMAIL:-}" || -z "${XFLICKR_SMOKE_PASSWORD:-}" ]]; then

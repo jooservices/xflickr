@@ -24,15 +24,26 @@ printf 'machine %s login %s password %s\n' "$host" "$USERNAME" "$PASSWORD" > "$n
 auth=(--netrc-file "$netrc")
 
 stream_type=logs
+configured_stream="${OPENOBSERVE_STREAM:-xflickr}"
+if [[ ! "$configured_stream" =~ ^[A-Za-z0-9_-]+$ ]]; then
+	printf 'OpenObserve stream names may contain only letters, digits, underscores, or hyphens.\n' >&2
+	exit 1
+fi
 curl --silent --show-error --fail "${auth[@]}" "${URL%/}/api/${ORG}/streams?fetchSchema=false&type=${stream_type}" > "$tmp/streams.json"
-for stream_name in xflickr_logs xflickr_calls xflickr_metrics; do
+stream_names=(xflickr_logs xflickr_calls xflickr_metrics)
+if [[ " ${stream_names[*]} " != *" $configured_stream "* ]]; then stream_names+=("$configured_stream"); fi
+for stream_name in "${stream_names[@]}"; do
 		if "$SCRIPT_DIR/run.sh" python python3 - "$tmp/streams.json" "$stream_name" <<'PY'
 import json,sys
 data=json.load(open(sys.argv[1])); rows=data if isinstance(data,list) else data.get("list",[])
 raise SystemExit(0 if any(row.get("name")==sys.argv[2] for row in rows) else 1)
 PY
 		then continue; fi
-		printf '{"fields":[{"name":"_timestamp","type":"Int64"}],"settings":{}}' > "$tmp/stream.json"
+		if [[ "$stream_name" == "$configured_stream" ]]; then
+			printf '{"fields":[{"name":"_timestamp","type":"Int64"},{"name":"event","type":"Utf8"}],"settings":{}}' > "$tmp/stream.json"
+		else
+			printf '{"fields":[{"name":"_timestamp","type":"Int64"}],"settings":{}}' > "$tmp/stream.json"
+		fi
 		status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "${auth[@]}" --request POST --header 'Content-Type: application/json' --data-binary "@$tmp/stream.json" "${URL%/}/api/${ORG}/streams/${stream_name}?type=${stream_type}")"
 		if [[ "$status" != 2* ]]; then printf 'Stream %s was not created (HTTP %s).\n' "$stream_name" "$status" >&2; exit 1; fi
 	done
@@ -159,15 +170,11 @@ fi
 
 for file in "$ROOT"/deploy/openobserve/alerts/*.json; do
 	name="$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file" | head -n 1)"
-	stream="$(sed -n 's/.*"stream_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file" | head -n 1)"
-	if [[ -z "$stream" ]]; then printf 'Alert %s has no stream name.\n' "$name" >&2; exit 1; fi
 	alert_body="$tmp/alert.json"
-"$SCRIPT_DIR/run.sh" python python3 - "$file" "$alert_body" "$ALERT_DESTINATION" <<'PY'
-import json,sys
-alert=json.load(open(sys.argv[1]))
-alert["destinations"]=[sys.argv[3]]
-json.dump(alert,open(sys.argv[2],"w"))
-PY
+	"$SCRIPT_DIR/run.sh" python python3 "$SCRIPT_DIR/obs_alert_config.py" render \
+		"$file" "$alert_body" "$configured_stream" "$ALERT_DESTINATION"
+	stream="$("$SCRIPT_DIR/run.sh" python python3 "$SCRIPT_DIR/obs_alert_config.py" stream "$alert_body")"
+	if [[ -z "$stream" ]]; then printf 'Alert %s has no stream name.\n' "$name" >&2; exit 1; fi
 	curl --silent --show-error --fail "${auth[@]}" "${URL%/}/api/v2/${ORG}/alerts?stream_type=logs&stream_name=${stream}" > "$tmp/alerts.json"
 	alert_id=$("$SCRIPT_DIR/run.sh" python python3 - "$tmp/alerts.json" "$name" <<'PY'
 import json,sys
