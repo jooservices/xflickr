@@ -47,6 +47,8 @@ var environmentKeys = []string{
 	"NODE_ID",
 	"XFLICKR_VERSION",
 	"LOG_LEVEL",
+	"SENTRY_DSN",
+	"SENTRY_ENVIRONMENT",
 }
 
 // Config contains OpenObserve export settings and process identity.
@@ -60,6 +62,10 @@ type Config struct {
 	Version   string
 	LogLevel  slog.Level
 	SpillPath string
+	// SentryDSN enables error reporting to Sentry when it is not empty.
+	SentryDSN string
+	// SentryEnvironment labels reported events, for example "develop".
+	SentryEnvironment string
 }
 
 // ConfigFromEnvironment reads the observability-related environment variables.
@@ -109,6 +115,9 @@ func configFromValues(values map[string]string) Config {
 		Node:      strings.TrimSpace(value("NODE_ID")),
 		Version:   strings.TrimSpace(value("XFLICKR_VERSION")),
 		SpillPath: strings.TrimSpace(value("OPENOBSERVE_SPILL_PATH")),
+
+		SentryDSN:         strings.TrimSpace(value("SENTRY_DSN")),
+		SentryEnvironment: strings.TrimSpace(value("SENTRY_ENVIRONMENT")),
 	}
 	if cfg.URL == "" {
 		cfg.URL = defaultOpenObserveURL
@@ -136,6 +145,7 @@ type Runtime struct {
 	loggerProvider         *sdklog.LoggerProvider
 	traceProvider          *sdktrace.TracerProvider
 	metricProvider         *sdkmetric.MeterProvider
+	sentry                 *sentryReporter
 	logger                 *slog.Logger
 	previousLogger         *slog.Logger
 	previousLoggerProvider otellog.LoggerProvider
@@ -151,15 +161,21 @@ type Runtime struct {
 // remote service outage does not prevent startup.
 func Start(cfg Config) (*Runtime, error) {
 	previousLogger := slog.Default()
+	reporter, sentryErr := newSentryReporter(cfg, nil)
+	sentryHandler := reporter.Handler()
 	runtime := &Runtime{
+		sentry:                 reporter,
 		previousLogger:         previousLogger,
 		previousLoggerProvider: otel.GetLoggerProvider(),
 		previousTraceProvider:  otel.GetTracerProvider(),
 		previousMetricProvider: otel.GetMeterProvider(),
-		logger:                 slog.New(NewHandler(os.Stderr, cfg.LogLevel, nil)),
+		logger:                 slog.New(NewHandler(os.Stderr, cfg.LogLevel, sentryHandler)),
 	}
 	if cfg.LogLevel == 0 {
-		runtime.logger = slog.New(NewHandler(os.Stderr, slog.LevelInfo, nil))
+		runtime.logger = slog.New(NewHandler(os.Stderr, slog.LevelInfo, sentryHandler))
+	}
+	if sentryErr != nil {
+		runtime.logger.Warn("sentry error reporting disabled", "reason", "invalid SENTRY_DSN")
 	}
 	if cfg.Username == "" || strings.TrimSpace(cfg.URL) == "" {
 		slog.SetDefault(runtime.logger)
@@ -266,7 +282,7 @@ func Start(cfg Config) (*Runtime, error) {
 	otel.SetLoggerProvider(runtime.loggerProvider)
 	runtime.otelInstalled = true
 	bridge := otelslog.NewHandler("xflickr", otelslog.WithLoggerProvider(runtime.loggerProvider))
-	runtime.logger = slog.New(NewHandler(os.Stderr, cfg.LogLevel, bridge))
+	runtime.logger = slog.New(NewHandler(os.Stderr, cfg.LogLevel, bridge, sentryHandler))
 	slog.SetDefault(runtime.logger)
 	runtime.installed = true
 	return runtime, nil
@@ -281,6 +297,9 @@ func (r *Runtime) ForceFlush(ctx context.Context) error {
 		ctx = context.Background()
 	}
 	var failures []error
+	if !r.sentry.Flush(sentryFlushTimeout) {
+		failures = append(failures, errSentryUnsent)
+	}
 	if r.traceProvider != nil {
 		if err := r.traceProvider.ForceFlush(ctx); err != nil {
 			failures = append(failures, err)
@@ -315,13 +334,17 @@ func (r *Runtime) Shutdown(ctx context.Context) error {
 	r.shutdown = true
 	r.mu.Unlock()
 
+	var failures []error
+	if !r.sentry.Close(sentryFlushTimeout) {
+		failures = append(failures, errSentryUnsent)
+	}
+
 	if r.traceProvider != nil {
 		_ = r.traceProvider.Shutdown(ctx)
 	}
 	if r.metricProvider != nil {
 		_ = r.metricProvider.Shutdown(ctx)
 	}
-	var failures []error
 	if r.loggerProvider != nil {
 		if err := r.loggerProvider.Shutdown(ctx); err != nil {
 			failures = append(failures, err)
