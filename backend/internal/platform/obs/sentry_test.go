@@ -23,10 +23,17 @@ type recordingTransport struct {
 	mu      sync.Mutex
 	events  []*sentry.Event
 	flushed int
+	closed  int
+	// stuck makes Flush report that events remain unsent.
+	stuck bool
 }
 
 func (t *recordingTransport) Configure(sentry.ClientOptions) {}
-func (t *recordingTransport) Close()                         {}
+func (t *recordingTransport) Close() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.closed++
+}
 
 func (t *recordingTransport) SendEvent(event *sentry.Event) {
 	t.mu.Lock()
@@ -38,7 +45,7 @@ func (t *recordingTransport) Flush(time.Duration) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.flushed++
-	return true
+	return !t.stuck
 }
 
 func (t *recordingTransport) FlushWithContext(context.Context) bool { return t.Flush(0) }
@@ -246,5 +253,63 @@ func TestStartContinuesWhenSentryDSNIsInvalid(t *testing.T) {
 	}
 	if slog.Default() != previous {
 		t.Fatal("Shutdown() did not restore the previous logger")
+	}
+}
+
+func TestRuntimeReportsSentryEventsLeftUnsent(t *testing.T) {
+	reporter, transport := newTestReporter(t)
+	transport.stuck = true
+	runtime := &Runtime{sentry: reporter}
+
+	if err := runtime.ForceFlush(context.Background()); !errors.Is(err, errSentryUnsent) {
+		t.Fatalf("ForceFlush() = %v, want the unsent-events error", err)
+	}
+	if err := runtime.Shutdown(context.Background()); !errors.Is(err, errSentryUnsent) {
+		t.Fatalf("Shutdown() = %v, want the unsent-events error", err)
+	}
+}
+
+func TestShutdownClosesSentryClientEvenWhenFlushTimesOut(t *testing.T) {
+	reporter, transport := newTestReporter(t)
+	transport.stuck = true
+	logger := slog.New(reporter.Handler())
+	runtime := &Runtime{sentry: reporter}
+
+	_ = runtime.Shutdown(context.Background())
+	if transport.closed == 0 {
+		t.Fatal("Shutdown() must close the Sentry client")
+	}
+	logger.Error("logged after shutdown") // must not panic on a closed client
+}
+
+func TestSentryReporterCloseOfDisabledReporterSucceeds(t *testing.T) {
+	var reporter *sentryReporter
+	if !reporter.Close(time.Millisecond) {
+		t.Fatal("closing a disabled reporter must succeed")
+	}
+}
+
+func TestSentryHandlerPrefersAttributeNamedError(t *testing.T) {
+	reporter, transport := newTestReporter(t)
+	slog.New(reporter.Handler()).Error("job failed",
+		"cause", errors.New("secondary"), "error", errors.New("primary"))
+
+	events := transport.captured()
+	if got := events[0].Exception[len(events[0].Exception)-1].Value; got != "primary" {
+		t.Fatalf("exception = %q, want the attribute named error", got)
+	}
+	if logAttrs(events[0])["cause"] != "secondary" {
+		t.Fatalf("other error values must stay in the log context: %#v", logAttrs(events[0]))
+	}
+}
+
+func TestSentryHandlerFallsBackToFirstErrorValue(t *testing.T) {
+	reporter, transport := newTestReporter(t)
+	slog.New(reporter.Handler()).Error("job failed",
+		"err", errors.New("first"), "cause", errors.New("second"))
+
+	events := transport.captured()
+	if got := events[0].Exception[len(events[0].Exception)-1].Value; got != "first" {
+		t.Fatalf("exception = %q, want the first error value", got)
 	}
 }

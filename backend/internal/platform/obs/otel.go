@@ -297,7 +297,9 @@ func (r *Runtime) ForceFlush(ctx context.Context) error {
 		ctx = context.Background()
 	}
 	var failures []error
-	r.sentry.Flush(sentryFlushTimeout)
+	if !r.sentry.Flush(sentryFlushTimeout) {
+		failures = append(failures, errSentryUnsent)
+	}
 	if r.traceProvider != nil {
 		if err := r.traceProvider.ForceFlush(ctx); err != nil {
 			failures = append(failures, err)
@@ -332,7 +334,10 @@ func (r *Runtime) Shutdown(ctx context.Context) error {
 	r.shutdown = true
 	r.mu.Unlock()
 
-	r.sentry.Flush(sentryFlushTimeout)
+	var failures []error
+	if !r.sentry.Close(sentryFlushTimeout) {
+		failures = append(failures, errSentryUnsent)
+	}
 
 	if r.traceProvider != nil {
 		_ = r.traceProvider.Shutdown(ctx)
@@ -340,7 +345,6 @@ func (r *Runtime) Shutdown(ctx context.Context) error {
 	if r.metricProvider != nil {
 		_ = r.metricProvider.Shutdown(ctx)
 	}
-	var failures []error
 	if r.loggerProvider != nil {
 		if err := r.loggerProvider.Shutdown(ctx); err != nil {
 			failures = append(failures, err)

@@ -13,6 +13,9 @@ import (
 // sentryFlushTimeout bounds how long shutdown waits for buffered events.
 const sentryFlushTimeout = 2 * time.Second
 
+// errSentryUnsent reports that Sentry still held events when the flush timed out.
+var errSentryUnsent = errors.New("flush Sentry events: some were not sent")
+
 // sentryLogContext is the event context that carries the log record attributes.
 const sentryLogContext = "log"
 
@@ -53,12 +56,25 @@ func (r *sentryReporter) Handler() slog.Handler {
 	return sentryHandler{reporter: r}
 }
 
-// Flush waits for buffered events. A disabled reporter has nothing to flush.
+// Flush waits for buffered events and reports whether all of them were sent. A
+// disabled reporter has nothing to flush.
 func (r *sentryReporter) Flush(timeout time.Duration) bool {
 	if r == nil {
 		return true
 	}
 	return r.client.Flush(timeout)
+}
+
+// Close flushes buffered events, then releases the client's background
+// resources even when the flush times out. It reports whether every event was
+// sent. Records logged afterwards are dropped by the closed client.
+func (r *sentryReporter) Close(timeout time.Duration) bool {
+	if r == nil {
+		return true
+	}
+	flushed := r.client.Flush(timeout)
+	r.client.Close()
+	return flushed
 }
 
 // sentryHandler is an slog.Handler that reports records at error level or above.
@@ -74,7 +90,7 @@ func (sentryHandler) Enabled(_ context.Context, level slog.Level) bool {
 
 func (h sentryHandler) Handle(_ context.Context, record slog.Record) error {
 	extra := make(map[string]any, len(h.attrs)+record.NumAttrs())
-	var cause error
+	var cause sentryCause
 	collect := func(groups []string, attr slog.Attr) {
 		collectSentryAttr(extra, &cause, groups, attr)
 	}
@@ -87,8 +103,8 @@ func (h sentryHandler) Handle(_ context.Context, record slog.Record) error {
 	})
 
 	var event *sentry.Event
-	if cause != nil {
-		event = h.reporter.client.EventFromException(cause, sentry.LevelError)
+	if cause.err != nil {
+		event = h.reporter.client.EventFromException(cause.err, sentry.LevelError)
 	} else {
 		event = h.reporter.client.EventFromMessage(record.Message, sentry.LevelError)
 	}
@@ -128,9 +144,24 @@ func prefixAttr(groups []string, attr slog.Attr) slog.Attr {
 	return attr
 }
 
-// collectSentryAttr flattens an attribute into dotted keys and remembers the
-// first error value so it can be reported as an exception.
-func collectSentryAttr(extra map[string]any, cause *error, groups []string, attr slog.Attr) {
+// sentryCause remembers the error reported as the event's exception. An
+// attribute named "error" wins; otherwise the first error-valued attribute is
+// used so the issue still carries a stack trace.
+type sentryCause struct {
+	err   error
+	named bool
+}
+
+func (c *sentryCause) offer(key string, err error) {
+	if c.err != nil && (c.named || key != "error") {
+		return
+	}
+	c.err, c.named = err, key == "error"
+}
+
+// collectSentryAttr flattens an attribute into dotted keys and offers every
+// error value as the exception.
+func collectSentryAttr(extra map[string]any, cause *sentryCause, groups []string, attr slog.Attr) {
 	value := attr.Value.Resolve()
 	if value.Kind() == slog.KindGroup {
 		nested := groups
@@ -144,9 +175,7 @@ func collectSentryAttr(extra map[string]any, cause *error, groups []string, attr
 	}
 	key := strings.Join(append(append([]string(nil), groups...), attr.Key), ".")
 	if err, ok := value.Any().(error); ok {
-		if *cause == nil {
-			*cause = err
-		}
+		cause.offer(attr.Key, err)
 		extra[key] = err.Error()
 		return
 	}
