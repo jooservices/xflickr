@@ -50,3 +50,18 @@ The exporter does not perform a startup health check, so a remote OpenObserve
 outage does not block process startup. Metrics and traces use the OpenTelemetry
 SDK batch/periodic processors; only log records use the 10,000-record fallback
 buffer and shutdown spill file.
+
+## Sentry error reporting
+
+When `SENTRY_DSN` is set, every log record at error level or above becomes a
+Sentry issue. `SENTRY_ENVIRONMENT` labels the issues, and the release and server
+name come from `XFLICKR_VERSION` and `NODE_ID`. A record's attributes are sent
+as the `log` context; an `error` attribute is reported as the exception so the
+issue carries a stack trace. Records below error level are not sent.
+
+The Sentry handler sits behind the same redaction step as the other log
+outputs, so secrets and tokens are masked before they reach Sentry. An empty DSN
+disables the integration and changes nothing. An invalid DSN is reported once as
+a warning without echoing the value, and startup continues. Buffered events are
+flushed on `ForceFlush` and on shutdown. Sentry runs in its own client, with no
+global Sentry state.

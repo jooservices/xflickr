@@ -10,12 +10,16 @@ import (
 )
 
 // NewHandler creates a JSON slog handler that also forwards records to the
-// optional OpenTelemetry slog bridge. Context fields are added to both outputs.
-func NewHandler(output io.Writer, level slog.Level, otelHandler slog.Handler) slog.Handler {
+// optional extra handlers, such as the OpenTelemetry bridge or Sentry. Nil
+// handlers are ignored. Records are redacted and enriched with context fields
+// before they reach any output.
+func NewHandler(output io.Writer, level slog.Level, extra ...slog.Handler) slog.Handler {
 	jsonHandler := slog.NewJSONHandler(output, &slog.HandlerOptions{Level: level})
 	handlers := []slog.Handler{jsonHandler}
-	if otelHandler != nil {
-		handlers = append(handlers, otelHandler)
+	for _, handler := range extra {
+		if handler != nil {
+			handlers = append(handlers, handler)
+		}
 	}
 	return contextHandler{next: multiHandler{handlers: handlers}}
 }
