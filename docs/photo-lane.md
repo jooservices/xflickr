@@ -9,7 +9,9 @@ unselected, unstarred contacts (including expired selections) do not enter the
 lane, regardless of depth. Explicit photo requests for download or sync use the
 existing download flow, which queues `photo.sizes` directly with the requesting
 user's key and the interactive quota class. They do not require a starred or
-selected owner. Listing URLs and dimensions remain provisional until needed.
+selected owner. A photo being opened in the Lightbox screen (JOOXF-171) will
+enqueue an interactive size confirmation through the same download flow.
+Listing URLs and dimensions remain provisional until needed.
 Once sizes are current, enabled optional facets may be selected for photos owned by
 starred or actively selected contacts.
 
