@@ -1,0 +1,23 @@
+entry:
+  get:
+    operationId: getAPIEntry
+    tags: [common]
+    summary: Discover available top-level collections.
+    description: Safe additive entry point. Anonymous callers see public discovery; authenticated callers see user collections, with admin collections only for administrators. Existing targets remain usable during migration. No Flickr calls are made.
+    responses:
+      '200':
+        description: Available links; private to the caller.
+        headers:
+          Cache-Control:
+            schema:
+              type: string
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/rest.yaml#/RESTEntry
+      default:
+        description: A safe problem response.
+        content:
+          application/problem+json:
+            schema:
+              $ref: ../schemas/rest.yaml#/RESTProblem

@@ -21,7 +21,7 @@ func TestMergePatchCases(t *testing.T) {
 		body, media string
 		limit       int64
 		status      int
-	}{{`{"name":null}`, "application/merge-patch+json", 1024, 0}, {`{}`, "application/merge-patch+json; charset=utf-8", 1024, 0}, {`null`, "application/merge-patch+json", 1024, 400}, {`[]`, "application/merge-patch+json", 1024, 400}, {`{"name":1} {}`, "application/merge-patch+json", 1024, 400}, {`{`, "application/merge-patch+json", 1024, 400}, {`{"name":"long"}`, "application/merge-patch+json", 3, 400}, {`{}`, "application/merge-patch+json", 0, 400}, {`{}`, "application/json", 1024, 415}} {
+	}{{`{"name":null}`, "application/merge-patch+json", 1024, 0}, {`{}`, "application/merge-patch+json; charset=utf-8", 1024, 0}, {`null`, "application/merge-patch+json", 1024, 422}, {`[]`, "application/merge-patch+json", 1024, 422}, {`{"name":1} {}`, "application/merge-patch+json", 1024, 400}, {`{`, "application/merge-patch+json", 1024, 400}, {`{"name":"long"}`, "application/merge-patch+json", 3, 400}, {`{}`, "application/merge-patch+json", 0, 400}, {`{}`, "application/json", 1024, 415}} {
 		r := httptest.NewRequest("PATCH", "/", strings.NewReader(tt.body))
 		r.Header.Set("Content-Type", tt.media)
 		got, err := ReadMergePatch(r, tt.limit, "name")

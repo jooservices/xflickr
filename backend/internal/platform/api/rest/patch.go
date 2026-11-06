@@ -2,6 +2,7 @@ package rest
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -23,8 +24,15 @@ func ReadMergePatch(r *http.Request, maxBytes int64, allowed ...string) (map[str
 		return nil, NewProblem("malformed-request", "Request body cannot be read or exceeds its limit", nil)
 	}
 	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
-		return nil, NewProblem("malformed-request", "Expected a JSON object", nil)
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		var syntax *json.SyntaxError
+		if errors.As(err, &syntax) {
+			return nil, NewProblem("malformed-request", "Malformed JSON", nil)
+		}
+		return nil, NewProblem("validation-error", "Expected a JSON object", nil)
+	}
+	if fields == nil {
+		return nil, NewProblem("validation-error", "Expected a JSON object", nil)
 	}
 	permitted := make(map[string]bool, len(allowed))
 	for _, field := range allowed {

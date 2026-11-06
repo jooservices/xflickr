@@ -8,6 +8,37 @@
 import * as zod from 'zod';
 
 /**
+ * Safe additive entry point. Anonymous callers see public discovery; authenticated callers see user collections, with admin collections only for administrators. Existing targets remain usable during migration. No Flickr calls are made.
+ * @summary Discover available top-level collections.
+ */
+export const GetAPIEntryResponse = zod.object({
+  success: zod.literal(true),
+  code: zod.literal(200),
+  message: zod.string(),
+  data: zod.object({
+    links: zod
+      .object({
+        self: zod.object({
+          href: zod.string(),
+          method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+        }),
+      })
+      .catchall(
+        zod.object({
+          href: zod.string(),
+          method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+        }),
+      )
+      .describe(
+        'Relations: self, authentication-options, keys, flickr-accounts, people, albums, favorites, users, plans, flags. Only available relations are present. During additive migration these point to existing routes; later slices replace their targets.',
+      ),
+  }),
+  meta: zod.record(zod.string(), zod.unknown()),
+  errors: zod.null(),
+  trace_id: zod.string(),
+});
+
+/**
  * @summary Get public authentication options
  */
 

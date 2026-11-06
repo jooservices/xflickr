@@ -27,6 +27,7 @@ const route = (method: string, path: string, schema: ZodType): Route => ({
  * Every 2xx body is checked against one of these, the OpenAPI-derived (Orval zod) schemas; `responseSchemas.test.ts` fails when a generated response has no entry.
  */
 export const ROUTES: Route[] = [
+  route('GET', '/api/v1', contract.GetAPIEntryResponse),
   route('GET', '/auth/config', contract.GetAuthConfigResponse),
   route('GET', '/healthz', contract.GetHealthResponse),
   route('GET', '/readyz', contract.GetReadinessResponse),
