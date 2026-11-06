@@ -15,8 +15,12 @@ XFlickr enforces Go statement coverage at two levels, both at 85 percent.
   (`*_test.go`), generated files (paths containing `gen` as a directory
   component, or ending in `.gen.go`), and files excluded by
   `docker/scripts/coverage-exclude.txt` are ignored. A changed file
-  with no profile entry that still exists on disk counts as 0 percent;
-  a deleted file is skipped.
+  with no profile entry that still exists on disk counts as 0 percent
+  when it declares a function or method (a line starting with `func `,
+  outside comments); a changed file with only const, type, or var
+  declarations and no `func` declaration has no executable statements,
+  is reported as `no statements`, and passes. A deleted file is
+  skipped.
 
 ## Baseline for pre-existing files
 
