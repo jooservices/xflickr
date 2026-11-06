@@ -91,3 +91,5 @@ The current web API to contract and backend route mapping is generated in
 - [Download sizes continuation](downloads.md) — transactional sizes outcomes, idempotent handoff, and unavailable manifest failures.
 
 - [REST API route mapping](rest-api-mapping.md) — complete route audit, target contracts, consumers, open decisions and module migration order (JOOXF-314).
+
+- [Rolling quota ledger decision](adr/0005-rolling-quota-ledger.md) — atomic grant sets, recovery and deployment constraints.
