@@ -124,12 +124,47 @@ class CoverageGateTests(unittest.TestCase):
 
     def test_file_gate_missing_existing_file_fails_and_deleted_is_skipped(self) -> None:
         (self.root / "backend" / "internal" / "x").mkdir(parents=True)
-        (self.root / "backend" / "internal" / "x" / "a.go").write_text("package x\n", encoding="utf-8")
+        (self.root / "backend" / "internal" / "x" / "a.go").write_text(
+            "package x\n\nfunc Work() {}\n", encoding="utf-8"
+        )
         results, _reached, passed = evaluate_file_coverage(
             {}, ["backend/internal/x/a.go", "backend/internal/x/gone.go"], Decimal("85"), {}, self.root
         )
         self.assertFalse(passed)
         self.assertEqual([coverage.file for coverage, _status in results], ["internal/x/a.go"])
+
+    def test_file_gate_missing_file_with_only_types_passes_as_no_statements(self) -> None:
+        (self.root / "backend" / "internal" / "x").mkdir(parents=True)
+        (self.root / "backend" / "internal" / "x" / "types.go").write_text(
+            "package x\n\n// func Ignored() {}\n\nconst Answer = 42\n\ntype Config struct {\n\tName string\n}\n",
+            encoding="utf-8",
+        )
+        results, reached, passed = evaluate_file_coverage(
+            {}, ["backend/internal/x/types.go"], Decimal("85"), {}, self.root
+        )
+        self.assertTrue(passed)
+        self.assertEqual(reached, [])
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0][1], "no statements")
+        report = format_file_report(results, Decimal("85"), reached)
+        self.assertIn("no statements", report)
+        self.assertNotIn("Failing files", report)
+
+    def test_file_gate_missing_file_with_func_fails_at_zero(self) -> None:
+        (self.root / "backend" / "internal" / "x").mkdir(parents=True)
+        (self.root / "backend" / "internal" / "x" / "work.go").write_text(
+            "package x\n\nfunc Work() int { return 1 }\n", encoding="utf-8"
+        )
+        results, reached, passed = evaluate_file_coverage(
+            {}, ["backend/internal/x/work.go"], Decimal("85"), {}, self.root
+        )
+        self.assertFalse(passed)
+        self.assertEqual(reached, [])
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0][1], "FAIL")
+        report = format_file_report(results, Decimal("85"), reached)
+        self.assertIn("0.0%", report)
+        self.assertIn("Failing files: internal/x/work.go", report)
 
     def test_changed_go_files_ignores_test_generated_and_excluded(self) -> None:
         repo = self.root / "repo"
