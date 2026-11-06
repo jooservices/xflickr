@@ -35,7 +35,28 @@ class FileCoverage:
 
     @property
     def ratio(self) -> Decimal:
-        return Decimal(self.covered) / Decimal(self.total)
+        return Decimal(self.covered) / Decimal(self.total) if self.total else Decimal(0)
+
+
+def has_func_declaration(file_path: Path) -> bool:
+    in_block_comment = False
+    for raw_line in file_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if in_block_comment:
+            if "*/" in line:
+                in_block_comment = False
+            continue
+        if line.startswith("//"):
+            continue
+        if line.startswith("/*"):
+            if "*/" in line:
+                line = line.split("*/", 1)[1].strip()
+            else:
+                in_block_comment = True
+                continue
+        if line.startswith("func "):
+            return True
+    return False
 
 
 def _iter_blocks(path: Path):
@@ -286,20 +307,32 @@ def evaluate_file_coverage(
     for repo_path in changed:
         relative = profile_relative(repo_path)
         coverage = files.get(relative)
+        no_statements = False
         if coverage is None:
-            if repo_root is not None and not (repo_root / repo_path).exists():
-                continue
-            coverage = FileCoverage(relative, 0, 1)
+            if repo_root is not None:
+                file_path = repo_root / repo_path
+                if not file_path.exists():
+                    continue
+                if has_func_declaration(file_path):
+                    coverage = FileCoverage(relative, 0, 1)
+                else:
+                    coverage = FileCoverage(relative, 0, 0)
+                    no_statements = True
+            else:
+                coverage = FileCoverage(relative, 0, 1)
         seen.add(relative)
-        percent = coverage.ratio * 100
-        if relative in floors and percent < floors[relative]:
-            status = "FAIL"
-        elif percent >= threshold:
-            status = "PASS"
-        elif relative in floors:
-            status = "BASELINE"
+        if no_statements:
+            status = "no statements"
         else:
-            status = "FAIL"
+            percent = coverage.ratio * 100
+            if relative in floors and percent < floors[relative]:
+                status = "FAIL"
+            elif percent >= threshold:
+                status = "PASS"
+            elif relative in floors:
+                status = "BASELINE"
+            else:
+                status = "FAIL"
         if status == "FAIL":
             passed = False
         results.append((coverage, status))
@@ -321,6 +354,9 @@ def format_file_report(
 ) -> str:
     lines = [f"Go file coverage (minimum {threshold:.1f}%, changed files):"]
     for coverage, status in results:
+        if status == "no statements":
+            lines.append(f"  ---   {status}  {coverage.file}")
+            continue
         percent = coverage.ratio * 100
         lines.append(f"{percent:5.1f}%  {status:8}  {coverage.file}")
     failing = [coverage.file for coverage, status in results if status == "FAIL"]
