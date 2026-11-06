@@ -18,6 +18,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/api/rest"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
+	platformsse "github.com/jooservices/xflickr/internal/platform/sse"
 )
 
 // TestDiscoveryLinkJourneyIntegration uses the real HTTP stack and PostgreSQL
@@ -33,7 +34,8 @@ func TestDiscoveryLinkJourneyIntegration(t *testing.T) {
 	}
 	pool := dbtest.Open(t, dbCfg)
 	cfg := config.Config{DB: dbCfg, Blob: config.BlobConfig{Driver: "local", LocalDir: t.TempDir()}, Crypto: config.CryptoConfig{MasterKeys: "integration:" + base64.StdEncoding.EncodeToString(make([]byte, 32)), ActiveMasterKeyID: "integration"}, Identity: config.IdentityConfig{Argon2Memory: 8192, Argon2Iterations: 1, Argon2Parallelism: 1, Argon2SaltLength: 16, Argon2KeyLength: 32}}
-	handler, err := buildConfiguredAPIHandler(pool, nil, cfg, "discovery-integration")
+	hub := platformsse.NewHub(8)
+	handler, err := buildConfiguredAPIHandlerWithHub(pool, nil, cfg, "discovery-integration", hub)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,6 +58,9 @@ func TestDiscoveryLinkJourneyIntegration(t *testing.T) {
 					_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, id)
 				})
 				var err error
+				if err := hub.Publish(platformsse.Event{ID: "1", UserID: id, Type: "crawl.progress", Data: []byte(`{"pending":0}`)}); err != nil {
+					t.Fatal(err)
+				}
 				raw, _, _, err = sessions.Issue(context.Background(), id, "discovery-test", "127.0.0.1")
 				if err != nil {
 					t.Fatal(err)
@@ -66,6 +71,9 @@ func TestDiscoveryLinkJourneyIntegration(t *testing.T) {
 				r, err := http.NewRequest(http.MethodGet, server.URL+path, nil)
 				if err != nil {
 					t.Fatal(err)
+				}
+				if path == "/events" {
+					r.Header.Set("Last-Event-ID", "0")
 				}
 				if raw != "" {
 					r.AddCookie(&http.Cookie{Name: "xf_session", Value: raw})
