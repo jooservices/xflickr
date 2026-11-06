@@ -113,6 +113,18 @@ func TestQuotaEndpointsAfterCallsIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Move one grant to 20 minutes ago, proving reset follows its expiry
+	// rather than now+one hour or the rolling interval start.
+	lane := fmt.Sprintf("%squota:key:%d:rolling:interactive", prefix, keyID)
+	members, err := client.ZRangeWithScores(ctx, lane, 0, 0).Result()
+	if err != nil || len(members) != 1 {
+		t.Fatalf("read oldest grant: %v %v", members, err)
+	}
+	oldest := time.Now().Add(-20 * time.Minute).Truncate(time.Millisecond)
+	members[0].Score = float64(oldest.UnixMilli())
+	if err := client.ZAdd(ctx, lane, members...).Err(); err != nil {
+		t.Fatal(err)
+	}
 	keys := quotapostgres.Keys{Pool: pool}
 	states := app.States{Keys: keys, Budgets: budgets, Live: quotaredis.Counters{Client: client, Prefix: prefix}, History: keys}
 	current := ownerID
@@ -130,7 +142,7 @@ func TestQuotaEndpointsAfterCallsIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	if quota.KeyID != keyID || quota.Used != 4 || quota.Limit != 3600 || quota.State != gen.KeyQuotaStateOk ||
-		quota.Lanes != (gen.LaneUsage{Interactive: 1, Person: 2, Photo: 1}) || quota.ResetAt == nil || time.Until(*quota.ResetAt) < 55*time.Minute {
+		quota.Lanes != (gen.LaneUsage{Interactive: 1, Person: 2, Photo: 1}) || quota.ResetAt == nil || !quota.ResetAt.Equal(oldest.Add(time.Hour)) {
 		t.Fatalf("quota = %+v", quota)
 	}
 

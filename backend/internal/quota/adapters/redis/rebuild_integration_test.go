@@ -121,6 +121,14 @@ func TestRedisLossMidWindowDoesNotOverspend(t *testing.T) {
 		return count
 	}
 
+	// Diagnostic rows (even with a class) and expired grants must not be
+	// reconstructed as permits in the rolling ledger.
+	if _, err := pool.Exec(ctx, `INSERT INTO api_call_log(key_id,class,at,called_at,outcome)
+		VALUES ($1,'interactive',now(),now(),'quota_wait'),
+		       ($1,'interactive',now()-interval '61 minutes',now()-interval '61 minutes',NULL)`, keyID); err != nil {
+		t.Fatal(err)
+	}
+
 	before := granted(8)
 	if before != 8 {
 		t.Fatalf("granted before loss = %d", before)
@@ -144,7 +152,7 @@ func TestRedisLossMidWindowDoesNotOverspend(t *testing.T) {
 		t.Fatalf("granted after flush = %d", extra)
 	}
 	var logged int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM api_call_log WHERE key_id=$1`, keyID).Scan(&logged); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM api_call_log WHERE key_id=$1 AND outcome IS NULL AND at > now()-interval '1 hour'`, keyID).Scan(&logged); err != nil {
 		t.Fatal(err)
 	}
 	if logged != before+extra {

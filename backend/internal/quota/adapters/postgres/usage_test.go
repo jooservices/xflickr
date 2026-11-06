@@ -185,11 +185,11 @@ func TestKeyIDs(t *testing.T) {
 func TestCallLog(t *testing.T) {
 	early := at.Add(-30 * time.Minute)
 	pool := &fakePool{rows: &fakeRows{data: [][]any{
-		{"person", int64(3), at},
-		{"photo", int64(2), early},
+		{"person", at, int64(3)},
+		{"photo", early, int64(2)},
 	}}}
 	got, err := (CallLog{Pool: pool}).Usage(context.Background(), 1, at.Add(-time.Hour))
-	if err != nil || got.ByClass["person"] != 3 || got.ByClass["photo"] != 2 || !got.First.Equal(early) {
+	if err != nil || got.ByClass["person"] != 1 || got.ByClass["photo"] != 1 || !got.First.Equal(early) {
 		t.Fatalf("Usage = %+v %v", got, err)
 	}
 	pool.qErr = errors.New("down")

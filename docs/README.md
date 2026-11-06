@@ -32,7 +32,7 @@
 - [API keys](api-keys.md) — bring-your-own Flickr key validation, sealing, and
   quota caps.
 - [Quota governor](quota.md) — per-key token bucket, clock-second burst cap,
-  hourly budget, demand-based lane lending and admin floor, and cooldown behavior.
+  rolling 60-minute budget and rebuild, demand-based lane lending and admin floor, and cooldown behavior.
 - [Flickr accounts](flickr-accounts.md) — OAuth connect flow, sealed tokens,
   account status, and events.
 - [Catalog people and photos](catalog.md) — partitioned photo metadata,
@@ -91,3 +91,5 @@ The current web API to contract and backend route mapping is generated in
 - [Download sizes continuation](downloads.md) — transactional sizes outcomes, idempotent handoff, and unavailable manifest failures.
 
 - [REST API route mapping](rest-api-mapping.md) — complete route audit, target contracts, consumers, open decisions and module migration order (JOOXF-314).
+
+- [Rolling quota ledger decision](adr/0005-rolling-quota-ledger.md) — atomic grant sets, recovery and deployment constraints.

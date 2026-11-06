@@ -72,7 +72,7 @@ func newStates(live map[int64]Live, history *fakeHistory) States {
 func TestForOwnerMapsLiveCounters(t *testing.T) {
 	start := stateNow.Add(-30 * time.Minute)
 	history := &fakeHistory{usage: Usage{Used: 100}, has: true}
-	states := newStates(map[int64]Live{1: {WindowStart: start, Used: 80, ByClass: map[string]int64{"interactive": 5, "person": 40, "photo": 35}}}, history)
+	states := newStates(map[int64]Live{1: {WindowStart: start, ResetAt: start.Add(Window), Used: 80, ByClass: map[string]int64{"interactive": 5, "person": 40, "photo": 35}}}, history)
 	got, err := states.ForOwner(context.Background(), 7, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -93,8 +93,8 @@ func TestForOwnerMapsLiveCounters(t *testing.T) {
 func TestStateCoolingExhaustedAndIdle(t *testing.T) {
 	start := stateNow.Add(-10 * time.Minute)
 	states := newStates(map[int64]Live{
-		1: {WindowStart: start, Used: 100, CooldownUntil: start.Add(time.Hour)},
-		2: {WindowStart: start, Used: 50},
+		1: {WindowStart: start, ResetAt: start.Add(Window), Used: 100, CooldownUntil: start.Add(time.Hour)},
+		2: {WindowStart: start, ResetAt: start.Add(Window), Used: 50},
 	}, &fakeHistory{})
 	cooling, err := states.ForOwner(context.Background(), 7, 1)
 	if err != nil || cooling.State != domain.StateCooling {
@@ -105,8 +105,8 @@ func TestStateCoolingExhaustedAndIdle(t *testing.T) {
 		t.Fatalf("exhausted = %+v %v", exhausted, err)
 	}
 
-	// A window that ended is ignored: counters read as zero and no reset time.
-	stale := newStates(map[int64]Live{1: {WindowStart: stateNow.Add(-2 * time.Hour), Used: 100, CooldownUntil: stateNow.Add(-time.Hour), ByClass: map[string]int64{"photo": 9}}}, &fakeHistory{})
+	// The Redis reader prunes expired grants before returning an empty ledger.
+	stale := newStates(map[int64]Live{1: {CooldownUntil: stateNow.Add(-time.Hour)}}, &fakeHistory{})
 	idle, err := stale.ForOwner(context.Background(), 7, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -171,5 +171,23 @@ func TestStatesDefaultsToWallClock(t *testing.T) {
 	got, err := states.ForOwner(context.Background(), 7, 1)
 	if err != nil || !got.ResetAt.IsZero() {
 		t.Fatalf("state = %+v %v", got, err)
+	}
+}
+
+func TestRollingStateResetIsOldestExpiry(t *testing.T) {
+	reset := stateNow.Add(7 * time.Minute)
+	states := newStates(map[int64]Live{1: {WindowStart: stateNow.Add(-Window), ResetAt: reset, Used: 100, ByClass: map[string]int64{"photo": 70, "person": 30}}}, &fakeHistory{})
+	got, err := states.ForOwner(t.Context(), 7, 1)
+	if err != nil || !got.ResetAt.Equal(reset) || got.Used != 100 || got.State != domain.StateExhausted {
+		t.Fatalf("rolling state = %+v %v", got, err)
+	}
+}
+
+func TestRollingStateKeepsSnapshotWhenOldestExpiresDuringRead(t *testing.T) {
+	reset := stateNow.Add(-time.Millisecond)
+	states := newStates(map[int64]Live{1: {WindowStart: stateNow.Add(-Window), ResetAt: reset, Used: 2, ByClass: map[string]int64{"person": 2}}}, &fakeHistory{})
+	got, err := states.ForOwner(t.Context(), 7, 1)
+	if err != nil || got.Used != 2 || got.Lanes.Person != 2 || !got.ResetAt.Equal(reset) {
+		t.Fatalf("discarded Redis snapshot at oldest expiry: %+v %v", got, err)
 	}
 }

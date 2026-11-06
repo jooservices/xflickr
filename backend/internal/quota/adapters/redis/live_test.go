@@ -23,7 +23,7 @@ func TestLiveReadsWindowLanesAndCooldown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if live.Used != 3 || live.ByClass["interactive"] != 1 || live.ByClass["person"] != 2 || time.Since(live.WindowStart) > time.Minute || !live.CooldownUntil.IsZero() {
+	if live.Used != 3 || live.ByClass["interactive"] != 1 || live.ByClass["person"] != 2 || time.Since(live.WindowStart) < 59*time.Minute || live.ResetAt.IsZero() || !live.CooldownUntil.IsZero() {
 		t.Fatalf("live = %+v", live)
 	}
 
@@ -45,24 +45,11 @@ func TestLiveEmptyAndInvalid(t *testing.T) {
 		t.Fatalf("empty live = %+v %v", live, err)
 	}
 	keys := Governor{Prefix: testPrefix}.keys(1)
-	for name, set := range map[string]func(){
-		"used": func() { client.Set(context.Background(), keys[1], "x", 0) },
-		"start": func() {
-			client.Set(context.Background(), keys[1], "1", 0)
-			client.Set(context.Background(), keys[2], "x", 0)
-		},
-		"cooldown": func() {
-			client.Set(context.Background(), keys[2], "1", 0)
-			client.Set(context.Background(), keys[3], "x", 0)
-		},
-		"class": func() {
-			client.Set(context.Background(), keys[3], "1", 0)
-			client.HSet(context.Background(), keys[4], "person", "x")
-		},
-	} {
-		set()
-		if _, err := counters.Live(context.Background(), 1); err == nil {
-			t.Fatalf("%s: corrupt counter accepted", name)
+	for _, index := range []int{1, 2, 4, 3} {
+		client.Del(t.Context(), keys...)
+		client.Set(t.Context(), keys[index], "x", 0)
+		if _, err := counters.Live(t.Context(), 1); err == nil {
+			t.Fatalf("corrupt index %d accepted", index)
 		}
 	}
 	if _, err := (Counters{}).Live(context.Background(), 1); err == nil {

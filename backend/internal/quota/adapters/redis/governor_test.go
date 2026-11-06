@@ -3,7 +3,6 @@ package redis
 import (
 	"context"
 	"errors"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -125,6 +124,7 @@ func TestDoneQuotaErrorCalibratesCounterAndCooldown(t *testing.T) {
 	budget := generousBudget()
 	budget.HourlyLimit = 20
 	governor, server, _ := setupGovernor(t, budget)
+	server.SetTime(time.Unix(1800000000, 0))
 	permit, _, err := acquire(t, governor, domain.Interactive)
 	if err != nil || permit == nil {
 		t.Fatalf("acquire: %v %v", permit, err)
@@ -133,8 +133,8 @@ func TestDoneQuotaErrorCalibratesCounterAndCooldown(t *testing.T) {
 		t.Fatalf("Done(): %v", err)
 	}
 	keys := governor.keys(1)
-	if got, ok := server.Get(keys[1]); ok != nil || got != "20" {
-		t.Fatalf("calibrated hourly count = %q, present %v", got, ok)
+	if got, err := governor.Client.ZCard(t.Context(), keys[1]).Result(); err != nil || got != 20 {
+		t.Fatalf("calibrated hourly count = %d, error %v", got, err)
 	}
 	if permit, wait, err := acquire(t, governor, domain.Interactive); err != nil || permit != nil || wait <= 0 {
 		t.Fatalf("during cooldown = %v %s %v", permit, wait, err)
@@ -142,18 +142,14 @@ func TestDoneQuotaErrorCalibratesCounterAndCooldown(t *testing.T) {
 	if err := permit.Done(domain.Meta{Err: flickr.ErrQuotaExceeded}); err != nil {
 		t.Fatalf("duplicate Done(): %v", err)
 	}
-	keys = governor.keys(1)
-	if err := server.Set(keys[2], "1"); err != nil {
-		t.Fatal(err)
-	}
-	server.Del(keys[3])
+	server.SetTime(time.Unix(1800000000, 0).Add(time.Hour))
 	if permit, _, err := acquire(t, governor, domain.Interactive); err != nil || permit == nil {
 		t.Fatalf("after window = %v %v", permit, err)
 	}
 }
 
 func TestDoneNonQuotaDoesNotCalibrate(t *testing.T) {
-	governor, server, _ := setupGovernor(t, generousBudget())
+	governor, _, _ := setupGovernor(t, generousBudget())
 	permit, _, err := acquire(t, governor, domain.Interactive)
 	if err != nil || permit == nil {
 		t.Fatalf("acquire: %v %v", permit, err)
@@ -162,8 +158,8 @@ func TestDoneNonQuotaDoesNotCalibrate(t *testing.T) {
 		t.Fatalf("Done(): %v", err)
 	}
 	keys := governor.keys(1)
-	if got, ok := server.Get(keys[1]); ok != nil || got != "1" {
-		t.Fatalf("hourly count = %q, present %v, want 1", got, ok)
+	if got, err := governor.Client.ZCard(t.Context(), keys[1]).Result(); err != nil || got != 1 {
+		t.Fatalf("hourly count = %d, error %v, want 1", got, err)
 	}
 }
 
@@ -205,19 +201,17 @@ func TestAcquireFailsClosedForMissingOrInvalidBudget(t *testing.T) {
 func TestCapacityUsesHourlyRemainingAndTwoMinuteRate(t *testing.T) {
 	budget := generousBudget()
 	budget.PerSecondRate = 10
-	governor, server, client := setupGovernor(t, budget)
+	governor, _, client := setupGovernor(t, budget)
 	credits, err := governor.Capacity(context.Background(), 1, 2*time.Minute)
 	if err != nil || credits != 1200 {
 		t.Fatalf("Capacity() = %d, %v; want 1200", credits, err)
 	}
-	keys := governor.keys(1)
-	server.Set(keys[1], "3400")
-	server.Set(keys[2], strconv.FormatInt(time.Now().UnixMilli(), 10))
+	seedGrants(t, governor, domain.Interactive, 3400, time.Now())
 	credits, err = governor.Capacity(context.Background(), 1, 2*time.Minute)
 	if err != nil || credits != 100 {
 		t.Fatalf("Capacity(near hourly limit) = %d, %v; want 100", credits, err)
 	}
-	server.Set(keys[1], "3600")
+	seedGrants(t, governor, domain.Person, 200, time.Now())
 	credits, err = governor.Capacity(context.Background(), 1, 2*time.Minute)
 	if err != nil || credits != 0 {
 		t.Fatalf("Capacity(exhausted) = %d, %v; want 0", credits, err)

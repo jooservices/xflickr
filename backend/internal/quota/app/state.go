@@ -28,9 +28,10 @@ type KeyDirectory interface {
 	Active(context.Context) ([]KeyInfo, error)
 }
 
-// Live is a key's current window as held in Redis. WindowStart is zero when no
-// window is open.
+// Live is a key's rolling usage as held in Redis. WindowStart is the
+// interval start; ResetAt is the oldest grant expiry. Both are zero when empty.
 type Live struct {
+	ResetAt       time.Time
 	WindowStart   time.Time
 	Used          int64
 	ByClass       map[string]int64
@@ -61,7 +62,7 @@ type KeyState struct {
 	Used    int64
 	Limit   int64
 	Reserve int64
-	// ResetAt is the end of the open window; zero when no window is open.
+	// ResetAt is the oldest counted grant expiry; zero when the ledger is empty.
 	ResetAt time.Time
 	State   domain.State
 	Trend   domain.Trend
@@ -140,12 +141,16 @@ func (s States) state(ctx context.Context, key KeyInfo) (KeyState, error) {
 	if s.Now != nil {
 		now = s.Now()
 	}
-	open := !live.WindowStart.IsZero() && now.Before(live.WindowStart.Add(Window))
+	reset := live.ResetAt
+	// The Redis reader already prunes the ledger atomically. The oldest
+	// expiry does not end the entire rolling window, even if it passes while
+	// this snapshot travels to the application.
+	open := live.Used > 0
 	out := KeyState{Key: key, Limit: budget.HourlyLimit, Reserve: budget.Reserve}
 	reference, elapsed := now, Window
 	if open {
 		out.Used = live.Used
-		out.ResetAt = live.WindowStart.Add(Window)
+		out.ResetAt = reset
 		out.Lanes = LaneUsage{
 			Interactive: live.ByClass[string(domain.Interactive)],
 			Person:      live.ByClass[string(domain.Person)],

@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -24,7 +25,11 @@ func (m memStore) KeyIDs(context.Context) ([]int64, error) { return []int64{1}, 
 type memCalls struct{ usage app.CallUsage }
 
 func (m memCalls) Usage(context.Context, int64, time.Time) (app.CallUsage, error) {
-	return m.usage, nil
+	u := m.usage
+	if len(u.Grants) == 0 {
+		u.Grants = testGrants(u.ByClass, u.First)
+	}
+	return u, nil
 }
 
 func rebuilderFor(g Governor, store app.UsageStore, calls app.CallLog) *app.Rebuilder {
@@ -36,7 +41,7 @@ func TestAcquireFailsClosedWithoutRebuilderMarkerThenRebuilds(t *testing.T) {
 	budget.HourlyLimit = 10
 	budget.Reserve = 0
 	g, server, _ := setupGovernor(t, budget)
-	g.Rebuilder = rebuilderFor(g, memStore{has: true, usage: app.Usage{WindowStart: time.Now().Add(-5 * time.Minute), Used: 9, ByClass: map[string]int64{"interactive": 9}}}, memCalls{})
+	g.Rebuilder = rebuilderFor(g, memStore{has: true, usage: app.Usage{WindowStart: time.Now().Add(-5 * time.Minute), Used: 9, ByClass: map[string]int64{"interactive": 9}}}, memCalls{usage: app.CallUsage{First: time.Now().Add(-5 * time.Minute), ByClass: map[string]int64{"interactive": 9}}})
 
 	// Redis keys are missing: Acquire rebuilds first, then enforces the stored usage.
 	permit, _, err := acquire(t, g, domain.Interactive)
@@ -46,9 +51,9 @@ func TestAcquireFailsClosedWithoutRebuilderMarkerThenRebuilds(t *testing.T) {
 	if permit, wait, err := acquire(t, g, domain.Interactive); err != nil || permit != nil || wait <= 0 {
 		t.Fatalf("overspend after rebuild: %v %s %v", permit, wait, err)
 	}
-	used, _ := server.Get(testPrefix + "quota:key:1:hourly")
-	if used != "10" {
-		t.Fatalf("hourly = %s", used)
+	used, _ := g.Client.ZCard(t.Context(), g.keys(1)[1]).Result()
+	if used != 10 {
+		t.Fatalf("hourly = %d", used)
 	}
 
 	// Losing the keys again denies nothing extra: the rebuild runs once more.
@@ -111,6 +116,7 @@ func TestSnapshotAndRestore(t *testing.T) {
 		t.Fatalf("snapshot = %+v %v %v", usage, ok, err)
 	}
 
+	usage.Grants = testGrants(usage.ByClass, time.Now().Add(-time.Minute))
 	server.FlushAll()
 	wrote, err := c.Restore(context.Background(), usage)
 	if err != nil || !wrote {
@@ -143,22 +149,12 @@ func TestRestoreIgnoresExpiredWindowAndRejectsBadInput(t *testing.T) {
 	}
 }
 
-func TestSnapshotRejectsCorruptCounts(t *testing.T) {
-	_, server, client := setupGovernor(t, generousBudget())
+func TestSnapshotRejectsCorruptSets(t *testing.T) {
+	g, server, client := setupGovernor(t, generousBudget())
 	c := Counters{Client: client, Prefix: testPrefix}
-	server.Set(testPrefix+"quota:key:1:window", "1700000000000")
-	server.Set(testPrefix+"quota:key:1:hourly", "x")
-	if _, _, err := c.Snapshot(context.Background(), 1); err == nil {
-		t.Fatal("corrupt hourly accepted")
-	}
-	server.Set(testPrefix+"quota:key:1:hourly", "3")
-	server.HSet(testPrefix+"quota:key:1:byclass", "person", "x")
-	if _, _, err := c.Snapshot(context.Background(), 1); err == nil {
-		t.Fatal("corrupt class count accepted")
-	}
-	server.Set(testPrefix+"quota:key:1:window", "bad")
-	if _, _, err := c.Snapshot(context.Background(), 1); err == nil {
-		t.Fatal("corrupt window accepted")
+	server.Set(g.keys(1)[1], "corrupt")
+	if _, _, err := c.Snapshot(t.Context(), 1); err == nil {
+		t.Fatal("corrupt set accepted")
 	}
 }
 
@@ -183,7 +179,7 @@ func TestAcquireBlocksWhileRebuildIsRunning(t *testing.T) {
 	budget.Reserve = 0
 	g, _, _ := setupGovernor(t, budget)
 	slow := slowRebuilder{
-		inner:   rebuilderFor(g, memStore{has: true, usage: app.Usage{WindowStart: time.Now().Add(-time.Minute), Used: 7, ByClass: map[string]int64{"interactive": 7}}}, memCalls{}),
+		inner:   rebuilderFor(g, memStore{has: true, usage: app.Usage{WindowStart: time.Now().Add(-time.Minute), Used: 7, ByClass: map[string]int64{"interactive": 7}}}, memCalls{usage: app.CallUsage{First: time.Now().Add(-time.Minute), ByClass: map[string]int64{"interactive": 7}}}),
 		release: make(chan struct{}),
 		started: make(chan struct{}, 1),
 	}
@@ -247,4 +243,14 @@ func TestAcquireRecordsGrantsAndFailsClosedWhenRecordFails(t *testing.T) {
 	if permit, _, err := acquire(t, g, domain.Person); !errors.Is(err, domain.ErrGovernorOffline) || permit != nil {
 		t.Fatalf("record failure = %v %v", permit, err)
 	}
+}
+
+func testGrants(counts map[string]int64, at time.Time) []app.Grant {
+	var grants []app.Grant
+	for class, n := range counts {
+		for i := int64(0); i < n; i++ {
+			grants = append(grants, app.Grant{Class: class, At: at, Member: fmt.Sprintf("log:%s:%d", class, i)})
+		}
+	}
+	return grants
 }
