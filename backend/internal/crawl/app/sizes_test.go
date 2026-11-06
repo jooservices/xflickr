@@ -236,7 +236,7 @@ func TestSizesPlaceholderIsClassifiedOnceWithoutFlickr(t *testing.T) {
 	for _, class := range []string{"", "photo", "interactive"} {
 		t.Run(class, func(t *testing.T) {
 			handler, store, client := sizesRig()
-			store.photo.Server = "65535"
+			store.photo.Server = catalog.RestrictedPlaceholderServer
 			job := SizesJob{PhotoID: 40, KeyID: 12, Class: class}
 			if err := handler.Handle(t.Context(), job); err != nil {
 				t.Fatal(err)
@@ -259,7 +259,7 @@ func TestSizesPlaceholderIsClassifiedOnceWithoutFlickr(t *testing.T) {
 
 func TestSizesPlaceholderStorageFailureRetriesWithoutFlickr(t *testing.T) {
 	handler, store, client := sizesRig()
-	store.photo.Server = "65535"
+	store.photo.Server = catalog.RestrictedPlaceholderServer
 	store.setErr = errors.New("storage unavailable")
 	if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); !errors.Is(err, store.setErr) {
 		t.Fatalf("Handle() = %v", err)

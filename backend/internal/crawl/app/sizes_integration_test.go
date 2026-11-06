@@ -213,7 +213,7 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 	// A restricted listing is classified locally, including direct interactive
 	// jobs, and repeated delivery does not rewrite the terminal check time.
 	insertPhoto(photoIDs[4], catalog.SizesProvisional, nil)
-	if _, err := pool.Exec(ctx, `UPDATE photos SET server='65535' WHERE id=$1`, photoIDs[4]); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE photos SET server=$2 WHERE id=$1`, photoIDs[4], catalog.RestrictedPlaceholderServer); err != nil {
 		t.Fatal(err)
 	}
 	enqueue(photoIDs[4])

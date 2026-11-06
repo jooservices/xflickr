@@ -22,6 +22,17 @@ func TestCanReplaceSizes(t *testing.T) {
 	}
 }
 
+func TestPhotoHasRestrictedPlaceholder(t *testing.T) {
+	if !(Photo{Server: RestrictedPlaceholderServer}).HasRestrictedPlaceholder() {
+		t.Error("restricted placeholder server not detected")
+	}
+	for _, server := range []string{"", "1", "65534", "65536"} {
+		if (Photo{Server: server}).HasRestrictedPlaceholder() {
+			t.Errorf("server %q reported as restricted placeholder", server)
+		}
+	}
+}
+
 func TestPhotoValidate(t *testing.T) {
 	valid := Photo{ID: 1, OwnerNSID: "person@example", LastUpdate: time.Now(), Visibility: VisibilityPublic, Raw: []byte(`{}`)}
 	if err := valid.Validate(); err != nil {
