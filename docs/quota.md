@@ -23,7 +23,34 @@ one API key. A different API key has its own bucket.
 Interactive calls may use the full hourly budget. Person and photo calls leave
 the configured reserve available for interactive calls. Photo calls also stop
 at `hourly_limit * (1 - person_lane_share)`, preserving the person lane's share
-of the hourly capacity. The default person lane share is 30 percent.
+of the hourly capacity. The default `person_lane_share` is 0.30 (30 percent).
+
+The person lane leaves the photo lane's full configured share available only
+while a photo-class acquisition was attempted in the last 60 seconds. Every
+photo attempt refreshes a per-key Redis demand marker atomically in the acquire
+script, including attempts denied by rate, quota, cooldown or rebuild readiness.
+When that marker expires, the person lane leaves only `photo_lane_floor_share`
+(default 0.10, range 0–0.5) available. Administrators edit the floor in Admin
+Defaults; users cannot override it. Both shares are fractions of the hourly
+limit, with background calls always leaving the interactive reserve intact.
+
+For a photo allocation `P`, granted photo calls `U`, hourly limit `H` and
+reserve `R`, the person ceiling is `max(0, H - R) - max(0, P - U)`.
+With recent photo demand, `P = min(floor(H * (1 - person_lane_share)),
+max(0, H - R))`; otherwise replace the share with `photo_lane_floor_share`.
+At defaults (3,600 hourly, 100 reserve, 10 percent floor), an idle photo lane
+lets person work use 3,140 calls per hour. The simulated-hour acceptance target
+is at least 95 percent of this computed ceiling. Person callers blocked by
+recent photo demand retry no later than the marker's expiry.
+
+Returning photo work can use the unspent floor immediately, subject to the
+unchanged shared rate and clock-second burst cap. Already granted calls are
+never revoked; renewed demand protects the full remaining photo share from
+further person calls, but cannot recover capacity already spent. Interactive
+calls continue to use the full hourly budget.
+
+Deployment: run migrations and restart roles. The lead restores
+`person_lane_share` to 0.30 after deployment; the migration does not change it.
 
 Callers finish a permit with its result metadata. A Flickr quota-exceeded
 result recalibrates the hourly counter to the key's hourly limit and places the

@@ -144,7 +144,14 @@ guide feature implementation; operational environment rules live in
   Keep the configured reserve for user-started requests when the key approaches
   its limit. No clock second grants more calls than that key's burst. The
   per-second rate stays the sustained refill, and every role shares one bucket
-  per key.
+  per key. The person lane protects the photo lane's full configured share
+  while any photo-class permit attempt (granted or refused) occurred in the
+  last 60 seconds; otherwise it lends unused capacity above the admin-only
+  `photo_lane_floor_share` (default 0.10, range 0–0.5). Returning photo work
+  can spend its unspent floor immediately subject to rate and burst limits;
+  calls already granted are never revoked. Interactive work retains the full
+  hourly budget. At defaults the idle person ceiling is 3,140 per hour, and
+  simulated-hour utilization must reach at least 95 percent of that ceiling.
 - Store queued and retryable work in the durable buffer queue so workers can
   claim work, retry transient failures with backoff, and recover after restart.
   Respect priorities and per-key quota when dispatching jobs.
