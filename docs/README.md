@@ -93,3 +93,4 @@ The current web API to contract and backend route mapping is generated in
 - [REST API route mapping](rest-api-mapping.md) — complete route audit, target contracts, consumers, open decisions and module migration order (JOOXF-314).
 
 - [Rolling quota ledger decision](adr/0005-rolling-quota-ledger.md) — atomic grant sets, recovery and deployment constraints.
+- [Crawl call audit](crawl-call-audit.md) — per-facet call yield, numeric-count retry fix, one-hour fixture evidence and proposed follow-ups (JOOXF-310).

@@ -107,3 +107,40 @@ func TestCatalogFacetsHandleEmptyAndMalformedReplies(t *testing.T) {
 		}
 	}
 }
+
+func TestCatalogFacetsAcceptFlickrStringCounts(t *testing.T) {
+	cases := []struct {
+		name    string
+		facet   domain.Facet
+		payload string
+	}{
+		{"albums", Albums{}, `{"photosets":{"pages":1,"photoset":[{"id":"a","photos":"3"}]}}`},
+		{"galleries", Galleries{}, `{"galleries":{"pages":1,"gallery":[{"id":"g","count_photos":"4"}]}}`},
+		{"groups", Groups{}, `{"groups":{"group":[{"nsid":"g@N00","name":"Group","members":"150","pool_count":"2500"}]}}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := tc.facet.Handle(t.Context(), catalogPage("p@N01", tc.payload, 1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.HasMore {
+				t.Fatal("single response must not request another page")
+			}
+			switch tc.name {
+			case "albums":
+				if len(result.Albums) != 1 || result.Albums[0].PhotosCount != 3 {
+					t.Fatalf("albums = %#v", result.Albums)
+				}
+			case "galleries":
+				if len(result.Galleries) != 1 || result.Galleries[0].PhotosCount != 4 {
+					t.Fatalf("galleries = %#v", result.Galleries)
+				}
+			case "groups":
+				if len(result.Groups) != 1 || result.Groups[0].MembersCount != 150 || result.Groups[0].PoolCount != 2500 || len(result.PersonGroups) != 1 {
+					t.Fatalf("groups = %#v, memberships = %#v", result.Groups, result.PersonGroups)
+				}
+			}
+		})
+	}
+}
