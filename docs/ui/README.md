@@ -66,6 +66,9 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 | `admin-sharing` | admin | `/admin/sharing` | Sharing | [spec](views/admin-sharing.md) | [mockup](mockups/admin-sharing.html) | JOOXF-186 | `web/e2e/admin-sharing.spec.ts` |
 | `admin-call-log` | admin | `/admin/log` | API call log | [spec](views/admin-call-log.md) | [mockup](mockups/admin-call-log.html) | JOOXF-182 | `web/e2e/admin-log.spec.ts` |
 | `user-auth` | user | `/login`, `/register`, `/register/social`, `/login?reason=expired` | Login, register and session expired | [spec](views/user-auth.md) | [mockup](mockups/user-auth.html) | JOOXF-166, JOOXF-307 | `web/e2e/user-auth.spec.ts` |
+| `user-verify-email` | user | `/verify-email/pending`, `/verify-email?token=...`, `/verify-email/resend` | Email verification | [spec](views/user-verify-email.md) | [mockup](mockups/user-verify-email.html) | TBD | `web/e2e/user-verify-email.spec.ts` |
+| `user-password-reset` | user | `/forgot-password`, `/reset-password?token=...` | Password reset | [spec](views/user-password-reset.md) | [mockup](mockups/user-password-reset.html) | TBD | `web/e2e/user-password-reset.spec.ts` |
+| `user-two-factor` | user | `/security/two-factor`, `/login/2fa?challenge=...` | Two-factor sign-in | [spec](views/user-two-factor.md) | [mockup](mockups/user-two-factor.html) | TBD | `web/e2e/user-two-factor.spec.ts` |
 | `public-setup` | public | `/setup` | Setup wizard | pending | pending | TBD | `web/e2e/public-setup.spec.ts` |
 | `public-not-found` | public | `*` | Page not found | pending | pending | TBD | `web/e2e/public-not-found.spec.ts` |
 | `public-forbidden` | public | `/forbidden` | Access denied | pending | pending | TBD | `web/e2e/public-forbidden.spec.ts` |

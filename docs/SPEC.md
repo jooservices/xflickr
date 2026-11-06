@@ -138,7 +138,9 @@ guide feature implementation; operational environment rules live in
   not retry that photo in the sizes lane.
 - Share each key's configured hourly and per-second allowance across its lanes.
   Keep the configured reserve for user-started requests when the key approaches
-  its limit.
+  its limit. No clock second grants more calls than that key's burst. The
+  per-second rate stays the sustained refill, and every role shares one bucket
+  per key.
 - Store queued and retryable work in the durable buffer queue so workers can
   claim work, retry transient failures with backoff, and recover after restart.
   Respect priorities and per-key quota when dispatching jobs.

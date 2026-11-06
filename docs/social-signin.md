@@ -28,6 +28,10 @@ every automated test. Real provider applications are not registered in release
 
 ## Flows
 
+The route names are provisional contract requests. Final names follow the strict
+REST rules (JOOXF-314/316). The behaviour, payloads, errors and states in this
+spec are binding.
+
 1. **Sign in.** The person chooses `Continue with {provider}` on `/login` or
    `/register`. The browser leaves the single-page app with a top-level
    navigation to `GET /auth/social/{provider}/start?return_to=...`. The server

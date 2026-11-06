@@ -17,7 +17,7 @@ Let a signed-in user see and change their own details, keep their sign-in safe
 (change the password, manage passkeys and social sign-in methods, end sessions
 on other devices), manage which Flickr accounts are connected, and leave or
 delete the account. It owns no photo data. This view links to the Flickr
-accounts and Sessions cards. Social sign-in itself starts on
+accounts, Sessions and two-factor sign-in views. Social sign-in itself starts on
 [user-auth](user-auth.md); this view links and unlinks the providers after the
 person has proved ownership by signing in.
 
@@ -59,6 +59,8 @@ independently).
 2. **Password**: three `text-field` (current, new, confirm) with show/hide, the
    rules list from user-auth (8 to 128 chars, different from email), `Change
    password` button. Help: "Other devices are signed out after you change it."
+   A footer link `Two-factor sign-in` (`profile.password.two-factor`) opens
+   `/security/two-factor`, specified in [user-two-factor](user-two-factor.md).
 3. **Passkeys**: header row with title and `Add a passkey` (sm, primary) when
    the browser supports WebAuthn and `passkey_enabled`. List items: key icon,
    name (default "Passkey 1"), "Added {date} · Last used {date or never}",
@@ -349,6 +351,7 @@ than truncate. Dates and numbers use the active locale.
 | `profile.password.confirm` | Confirm new password | Nhập lại mật khẩu mới |
 | `profile.password.help` | Other devices are signed out after you change it. | Các thiết bị khác sẽ bị đăng xuất sau khi bạn đổi. |
 | `profile.password.submit` | Change password | Đổi mật khẩu |
+| `profile.password.two-factor` | Two-factor sign-in | Đăng nhập hai lớp |
 | `profile.password.error.current` | The current password is not right. | Mật khẩu hiện tại chưa đúng. |
 | `profile.passkeys.title` | Passkeys | Passkey |
 | `profile.passkeys.intro` | Sign in with your fingerprint, face or device lock instead of a password. | Đăng nhập bằng vân tay, khuôn mặt hoặc khóa thiết bị thay cho mật khẩu. |
@@ -491,8 +494,10 @@ methods with polling fallback; delete account with typed email; unsaved guard;
 
 ## Out of scope
 
-- Password reset, email change, email verification, MFA other than passkeys,
-  avatars upload, and notification preferences (none exist in this release).
+- Password reset, email change and email verification are separate public
+  views; two-factor sign-in is specified in
+  [user-two-factor](user-two-factor.md). Avatar upload and notification
+  preferences are not in this release.
 - Signing in with a social provider and the first-time completion screen
   (`user-auth`); creating provider OAuth apps or setting their credentials
   (deployment configuration, never in the UI).

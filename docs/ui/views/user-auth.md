@@ -65,8 +65,11 @@ One centred column, no scrolling on 1440 x 900 for the login form.
   enabled), footer link row.
 - Login fields: Email (`type=email`, `autocomplete=username`), Password
   (`autocomplete=current-password`, show/hide toggle at the field end). Below
-  the password: nothing else; there is no "forgot password" in this release
-  (see Out of scope). No "remember me": sessions are always 14 days sliding.
+  the password: the `Forgot password?` link (`auth.login.forgot`) goes to
+  `/forgot-password`, specified in [user-password-reset](user-password-reset.md).
+  A two-factor account continues on `/login/2fa`, specified in
+  [user-two-factor](user-two-factor.md). No "remember me": sessions are always
+  14 days sliding.
 - Register fields: Email, Password (`autocomplete=new-password`) with a live
   rules list under it, Confirm password, Terms checkbox, submit. Display name
   is not asked here; Profile sets it later.
@@ -102,6 +105,10 @@ Fields, endpoints and contract requests are in [Data and API](#data-and-api).
 
 ## Data and API
 
+The route names are provisional contract requests. Final names follow the strict
+REST rules (JOOXF-314/316). The behaviour, payloads, errors and states in this
+spec are binding.
+
 | Element | Source | Fields used |
 | --- | --- | --- |
 | Already signed in? | `GET /me` (exists) | 200 `role`, `locale`; 401 means show form |
@@ -131,6 +138,10 @@ unverified or missing provider email creates nothing; an identity already
 linked to another account returns `identity_taken`; link mode requires a
 session and is only reachable from Profile. The UI never branches on a provider
 id beyond looking up its configured name and mark.
+
+A two-factor account receives 202 `two_factor_required` with a short-lived
+`xf_2fa` cookie and continues on `/login/2fa`; the challenge contract is in
+[user-two-factor](user-two-factor.md).
 
 Contract requests are only requested here; OpenAPI is changed by the build
 tickets. Unsafe calls need `X-CSRF-Token` equal to `xf_csrf`; the first `GET
@@ -392,6 +403,7 @@ lines on 390 px rather than truncate. Dates and countdown use the active locale.
 | `auth.login.passkey` | Sign in with a passkey | Đăng nhập bằng passkey |
 | `auth.login.or` | or | hoặc |
 | `auth.login.to-register` | No account? Create one | Chưa có tài khoản? Tạo tài khoản |
+| `auth.login.forgot` | Forgot password? | Quên mật khẩu? |
 | `auth.field.email` | Email | Email |
 | `auth.field.email-help` | We use it only to sign you in. | Chúng tôi chỉ dùng để bạn đăng nhập. |
 | `auth.field.password` | Password | Mật khẩu |
@@ -472,7 +484,7 @@ suffix. Tests select by role first and by test id when text depends on language.
   `auth-theme-toggle`, `auth-hero`, `auth-card`, `auth-skeleton`.
 - Login: `auth-login-form`, `auth-login-title`, `auth-login-email`,
   `auth-login-password`, `auth-login-password-toggle`, `auth-login-submit`,
-  `auth-login-passkey`, `auth-login-to-register`.
+  `auth-login-passkey`, `auth-login-forgot`, `auth-login-to-register`.
 - Register: `auth-register-form`, `auth-register-title`,
   `auth-register-email`, `auth-register-password`,
   `auth-register-password-toggle`, `auth-register-confirm`,
@@ -514,8 +526,11 @@ completion then onboarding; `email_taken` then `Sign in instead`; `denied`,
 
 ## Out of scope
 
-- Password reset, email verification, "remember me", MFA beyond passkey, and
-  account deletion (none exist in this release).
+- Password reset, email verification and two-factor sign-in are specified in
+  [user-password-reset](user-password-reset.md),
+  [user-verify-email](user-verify-email.md) and
+  [user-two-factor](user-two-factor.md); this view owns only the password step.
+  "Remember me", other MFA methods and account deletion are not in this release.
 - Registering real provider applications, provider brand assets and provider
   consent-screen content (release 1 uses the fake provider for tests).
 - Passkey enrolment and account linking (Profile concerns) and the Setup
