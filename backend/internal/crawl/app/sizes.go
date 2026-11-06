@@ -85,7 +85,10 @@ func (s Sizes) Handle(ctx context.Context, job SizesJob) error {
 		return fmt.Errorf("crawl: load photo %d sizes state: %w", job.PhotoID, err)
 	}
 	if shouldSkipSizes(photo, exists) {
-		return nil
+		if !exists {
+			return nil
+		}
+		return s.reannounce(ctx, job.PhotoID, photo)
 	}
 	// Flickr lists restricted media with a placeholder server even when getInfo
 	// succeeds. Do not spend quota confirming a known inaccessible sizes result.
@@ -99,7 +102,7 @@ func (s Sizes) Handle(ctx context.Context, job SizesJob) error {
 			return err
 		}
 		if blocked {
-			return nil
+			return s.Store.SetSizes(ctx, job.PhotoID, []byte("[]"), catalog.SizesUnavailable, s.now())
 		}
 	}
 	var sizes []flickr.PhotoSize
@@ -109,11 +112,9 @@ func (s Sizes) Handle(ctx context.Context, job SizesJob) error {
 		sizes, err = s.Flickr.GetSizes(ctx, job.KeyID, fmt.Sprint(job.PhotoID))
 	}
 	if err != nil {
-		if s.States != nil && FailureState(access.EntityRef, err) != "" {
-			return recordEntityFailure(ctx, s.States, access, err, s.now(), 0)
-		}
-		return s.recordFlickrError(ctx, job.PhotoID, err)
+		return s.resolveFailure(ctx, job.PhotoID, access, err)
 	}
+
 	encoded, err := json.Marshal(sizes)
 	if err != nil {
 		return fmt.Errorf("crawl: encode sizes for photo %d: %w", job.PhotoID, err)
@@ -153,4 +154,27 @@ func (s Sizes) now() time.Time {
 		return s.Now().UTC()
 	}
 	return time.Now().UTC()
+}
+
+// reannounce unblocks requests created after a prior confirmation event.
+func (s Sizes) reannounce(ctx context.Context, photoID int64, photo catalog.Photo) error {
+	at := s.now()
+	if photo.SizesCheckedAt != nil {
+		at = *photo.SizesCheckedAt
+	}
+	sizes := photo.Sizes
+	if len(sizes) == 0 {
+		sizes = []byte("[]")
+	}
+	return s.Store.SetSizes(ctx, photoID, sizes, photo.SizesStatus, at)
+}
+
+func (s Sizes) resolveFailure(ctx context.Context, photoID int64, access EntityAccess, cause error) error {
+	if s.States != nil && FailureState(access.EntityRef, cause) != "" {
+		if err := recordEntityFailure(ctx, s.States, access, cause, s.now(), 0); err != nil {
+			return err
+		}
+		return s.Store.SetSizes(ctx, photoID, []byte("[]"), catalog.SizesUnavailable, s.now())
+	}
+	return s.recordFlickrError(ctx, photoID, cause)
 }

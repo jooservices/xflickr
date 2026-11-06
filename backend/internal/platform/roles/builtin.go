@@ -281,7 +281,7 @@ func registerPhotoSizes(queueAdapter *queue.River, pool *pgxpool.Pool, redisClie
 	quota := quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Recorder: quotaPostgres.CallLog{Pool: pool}}
 	handler := crawlapp.Sizes{
 		States: crawlpostgres.EntityStates{DB: pool},
-		Store:  catalogRepository,
+		Store:  catalogpostgres.ResolvedSizes{Repository: catalogRepository, Pool: pool, Publish: publishSizesResolved},
 		Flickr: photoSizesClient{Pool: pool, Client: client, Quota: quota, NodeID: nodeID(cfg)},
 	}
 	if err := queueAdapter.RegisterWithOptions(scheduleriver.PhotoJobKind, func(ctx context.Context, job queue.Job) error {
@@ -451,18 +451,23 @@ func (mediaRole) Run(ctx context.Context) error {
 	configureRoleReadiness(ctx, "media", postgresDependency(pool), redisDependency(redisClient), blobStoreDependency(blobs))
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	results := make(chan error, 3)
+	results := make(chan error, 4)
 	go func() { results <- queue.Worker{Queue: queueAdapter}.Run(runCtx) }()
 	go func() { results <- (mediaapp.Cleaner{Assets: assets, Blobs: blobs}).Run(runCtx) }()
 	go func() {
 		results <- (mediaapp.DownloadExpiryCleaner{Repository: mediapostgres.Downloads{Pool: pool}, Blobs: blobs}).Run(runCtx)
 	}()
+	go func() {
+		handler := mediaapp.SizesResolvedHandler{Repository: mediapostgres.Downloads{Pool: pool, Jobs: queueAdapter, Events: events}}
+		results <- outbox.NewConsumer(pool).Consume(runCtx, catalogapp.SizesResolvedTopic, func(ctx context.Context, event outbox.Event) error { return handler.Handle(ctx, event.Payload) })
+	}()
 	first := <-results
 	cancel()
 	second := <-results
 	third := <-results
+	fourth := <-results
 	if ctx.Err() == nil {
-		for _, result := range []error{first, second, third} {
+		for _, result := range []error{first, second, third, fourth} {
 			if result != nil {
 				return result
 			}
@@ -1292,4 +1297,8 @@ func shutdownAPIServers(servers []*http.Server) error {
 		}
 	}
 	return first
+}
+
+func publishSizesResolved(ctx context.Context, tx pgx.Tx, event catalogapp.SizesResolved) error {
+	return outbox.PublishContext(ctx, tx, catalogapp.SizesResolvedTopic, strconv.FormatInt(event.PhotoID, 10), event)
 }

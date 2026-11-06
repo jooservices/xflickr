@@ -10,6 +10,19 @@ confirmed sizes are queued as `media.fetch` work on the `media` queue. Other
 items wait for a `photo.sizes` job on the `sync` queue, using a valid Flickr key
 belonging to the requesting user and the interactive quota class.
 
+Size confirmation commits a `photo.sizes_resolved` outbox event (`photo_id`,
+`status`: `confirmed` or `unavailable`) in the same transaction as the sizes.
+The media role consumes this event and continues every item for that photo
+still in `waiting_sizes`. Confirmed items become `pending`, with `media.fetch`
+inserted through River in the same transaction. Unavailable items become
+`failed` with `sizes_unavailable` in `manifest.csv`; the final settled item
+queues packaging. Download locks serialize continuation with worker settlement.
+Duplicate events leave items that already moved on untouched. A cached terminal
+sizes result republishes the outcome for later download requests without another
+Flickr call. Restricted placeholders fail without calling Flickr.
+
+Photos whose sizes are already current and confirmed keep the direct fetch path.
+
 Once every item is ready or failed, a `media.pack` job streams ready originals
 into ZIP parts using the stored method. Each part is capped at 2 GiB and stored
 in the configured blob store. The final part contains `manifest.csv`, with a

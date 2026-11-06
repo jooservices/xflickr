@@ -130,7 +130,11 @@ func TestSizesSkipRules(t *testing.T) {
 			if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
 				t.Fatal(err)
 			}
-			if client.calls != 0 || store.sets != 0 {
+			wantSets := 1
+			if !store.exists {
+				wantSets = 0
+			}
+			if client.calls != 0 || store.sets != wantSets {
 				t.Fatalf("skip made calls: Flickr=%d writes=%d", client.calls, store.sets)
 			}
 		})
@@ -250,7 +254,7 @@ func TestSizesPlaceholderIsClassifiedOnceWithoutFlickr(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if client.calls != 0 || store.sets != 1 {
+			if client.calls != 0 || store.sets != 4 {
 				t.Fatalf("repeated placeholder: calls=%d writes=%d", client.calls, store.sets)
 			}
 		})
@@ -279,5 +283,21 @@ func TestLegacyUnavailableSizesReopenForNewVersion(t *testing.T) {
 	}
 	if client.calls != 1 || store.status != catalog.SizesConfirmed {
 		t.Fatal("new version did not reopen legacy sizes restriction")
+	}
+}
+
+func TestSizesEntityFailuresAlsoResolveDownloads(t *testing.T) {
+	for _, cause := range []error{flickr.ErrNotFound, flickr.ErrPermission, flickr.ErrResourceDenied} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			h, store, client := sizesRig()
+			h.States = &stateFake{}
+			client.err = cause
+			if err := h.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
+				t.Fatal(err)
+			}
+			if store.status != catalog.SizesUnavailable {
+				t.Fatalf("sizes outcome = %s", store.status)
+			}
+		})
 	}
 }

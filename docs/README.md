@@ -86,3 +86,4 @@ The current web API to contract and backend route mapping is generated in
 `docker/scripts/api-usage-check.sh`.
 
 - [Deleted entities and restricted facets](entity-state.md) — persistent gone state, caller restrictions and reopening rules.
+- [Download sizes continuation](downloads.md) — transactional sizes outcomes, idempotent handoff, and unavailable manifest failures.

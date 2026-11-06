@@ -58,7 +58,7 @@ func TestRepositoryRejectsInvalidCallsBeforeDatabaseAccess(t *testing.T) {
 func TestLoadSizesState(t *testing.T) {
 	updated := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
 	checked := updated.Add(time.Minute)
-	db := &photoSizesDB{row: photoSizesRow{values: []any{int64(8), updated, "confirmed", pgtype.Timestamptz{Time: checked, Valid: true}, domain.RestrictedPlaceholderServer}}}
+	db := &photoSizesDB{row: photoSizesRow{values: []any{int64(8), updated, "confirmed", pgtype.Timestamptz{Time: checked, Valid: true}, domain.RestrictedPlaceholderServer, []byte(`[]`)}}}
 	repository, err := postgres.New(db)
 	if err != nil {
 		t.Fatal(err)
@@ -104,6 +104,8 @@ func (r photoSizesRow) Scan(dest ...any) error {
 	}
 	for i := range dest {
 		switch out := dest[i].(type) {
+		case *[]byte:
+			*out = r.values[i].([]byte)
 		case *int64:
 			*out = r.values[i].(int64)
 		case *time.Time:
