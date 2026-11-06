@@ -12,20 +12,34 @@ below is new. Shared rules: [design system](../design-system.md),
 
 ## Purpose
 
-Let a person prove who they are with an email and password (or a passkey when
-enabled), create an account when registration is open, and, when a session ends
-while they work, sign in again and land on the page they left. The screens do
-not use the app shell (no tabs, tray or notifications). Behaviour of the
-in-app expired modal belongs to [user-shell](user-shell.md); this view owns the
-page it sends the user to.
+Let a person prove who they are with an email and password, a passkey when
+enabled, or a social provider (Google, Facebook, X or Apple), create an account
+when registration is open, and, when a session ends while they work, sign in
+again and land on the page they left. Social sign-in is provider-neutral: the
+same buttons and rules serve every configured provider, and the provider list
+comes from the server. The screens do not use the app shell (no tabs, tray or
+notifications). Behaviour of the in-app expired modal belongs to
+[user-shell](user-shell.md); this view owns the page it sends the user to.
+Account linking and unlinking after sign-in belong to
+[user-profile](user-profile.md).
 
 ## Route and access
 
 - `/login`: public. `/register`: public. Both accept `?return_to=<path>`;
   `/login` also accepts `?reason=expired`.
+- `/register/social?ticket=<opaque>`: public first-time social registration
+  step. It accepts only a one-time ticket issued by a provider callback; the
+  ticket is held in the URL for the page lifetime and never in
+  `localStorage`.
+- Social failures return to the page that started the flow with
+  `?social=<code>&provider=<id>` (codes in [Social errors](#social-errors)).
+  The page reads them once, shows the matching banner, then removes both
+  parameters with `history.replaceState`.
 - Already signed in: on mount `GET /me`; 200 redirects at once (replace, no
   history entry) to the validated `return_to`, else `/` (`/admin` for `role =
   admin`). 401 shows the form. Any other status shows the Error state.
+  `/register/social` is the exception: a signed-in user is redirected to
+  `return_to` or `/` and the pending ticket is discarded.
 - `return_to` is accepted only when it starts with a single `/`, has no
   `//`, `\` or scheme, is not `/login` or `/register`, and is at most 2048
   characters. Anything else is dropped silently and `/` is used.
@@ -46,8 +60,9 @@ One centred column, no scrolling on 1440 x 900 for the login form.
   `auth.hero.title`; hidden on narrower screens. Right: the form card.
 - Form card: `card` 420 px wide (full width minus 32 px on mobile), 24 px
   padding, 14 px radius, 1 px line. Top to bottom: `h1`, optional intro line,
-  banner slot (expired, error, rate limit, locked), fields, primary submit,
-  divider "or", passkey button (when enabled), footer link row.
+  banner slot (expired, social result, error, rate limit, locked), fields,
+  primary submit, divider "or", social provider group, passkey button (when
+  enabled), footer link row.
 - Login fields: Email (`type=email`, `autocomplete=username`), Password
   (`autocomplete=current-password`, show/hide toggle at the field end). Below
   the password: the `Forgot password?` link (`auth.login.forgot`) goes to
@@ -62,11 +77,26 @@ One centred column, no scrolling on 1440 x 900 for the login form.
   never blocks typing): 8 to 128 characters; must not equal the email
   (checked client side only). No composition rules and paste is allowed, so
   password managers work. A rule shows a check when met, a dot when not.
+- Social provider group: `role=group` labelled `auth.social.group`, one
+  full-width `button` per enabled provider, in server order. Label
+  `auth.social.continue` with the provider name; a provider mark sits at the
+  start. The group reuses the neutral `button` component and adds no
+  provider-specific component. It is hidden when `providers` is empty, so the
+  page works exactly as before when social sign-in is off. Sign in and register
+  share the same group and the same behaviour.
+- First-time social completion (`/register/social`): the card shows `h1`
+  `auth.social.register.title`, intro `auth.social.register.text` with the
+  provider name, read-only `text-field` for the verified email
+  (`auth.social.register.email`), `text-field` for display name prefilled from
+  the provider, the terms checkbox from register, primary
+  `auth.social.register.submit`, and a footer link
+  `auth.social.register.back`. No password fields are shown.
 - Footer link row: login "No account? Create one" (hidden when registration is
   closed); register "Already registered? Sign in".
 - Components used: `button`, `text-field`, `checkbox`, `banner`, `card`. No new
   component is introduced. The rules list is plain list markup inside
-  `text-field` help; the password toggle is an `icon-btn` inside the field.
+  `text-field` help; the password toggle is an `icon-btn` inside the field. The
+  provider mark is decorative inline content inside its button.
 
 ## Data
 
@@ -75,15 +105,23 @@ Fields, endpoints and contract requests are in [Data and API](#data-and-api).
 
 ## Data and API
 
+The route names are provisional contract requests. Final names follow the strict
+REST rules (JOOXF-314/316). The behaviour, payloads, errors and states in this
+spec are binding.
+
 | Element | Source | Fields used |
 | --- | --- | --- |
 | Already signed in? | `GET /me` (exists) | 200 `role`, `locale`; 401 means show form |
-| Page config | `GET /auth/config` **contract request** (public, no cookie; also issues `xf_csrf`) | `registration_open` bool, `passkey_enabled` bool, `terms_url`, `privacy_url` (same-origin paths), `password_min` int (8), `password_max` int (128) |
+| Page config | `GET /auth/config` **contract request** (public, no cookie; also issues `xf_csrf`) | `registration_open` bool, `passkey_enabled` bool, `terms_url`, `privacy_url` (same-origin paths), `password_min` int (8), `password_max` int (128), `providers[]` `{id, name, enabled}` in display order |
 | Sign in | `POST /auth/login` (exists) body `{email, password}` | 200 `User` (`id`, `email`, `role`, `locale`, `created_at`) and `xf_session` cookie; 401 `invalid_credentials`; 429 `rate_limited`; 400 `validation_failed` |
 | Login error detail | **contract request** on `POST /auth/login` | 429 adds header `Retry-After` and `details.retry_after_seconds`; new 423 `account_locked` with `details.locked_until` (ISO time); new 403 `account_disabled` (only after a correct password) |
 | Create account | `POST /auth/register` (exists) body `{email, password}` | 201 `User`; 409 conflict; 400 |
 | Register detail | **contract request** on `POST /auth/register` | body adds `accept_terms` (must be true) and `locale` (`en` or `vi`); 409 splits into `email_taken` and `registration_closed`; 400 `validation_failed` carries `details.fields` `{email?, password?, accept_terms?}` each a code (`invalid`, `too_short`, `too_long`, `required`) |
 | Passkey sign in | `POST /auth/passkey/options`, `POST /auth/passkey/verify` **contract request** | options: WebAuthn request options, optional body `{email}`; verify: WebAuthn assertion, 200 `User` and cookie; 401 `passkey_failed` |
+| Social start | `GET /auth/social/{provider}/start?return_to=&origin=login\|register` **contract request**, top-level navigation | 303 to the provider; the server sets an HttpOnly short-lived cookie with state, nonce, PKCE verifier, origin and validated `return_to`; 404 `provider_unavailable` when the id is unknown or disabled |
+| Social callback | `GET /auth/social/{provider}/callback` **contract request**, provider redirect | Validates state, nonce and PKCE; on success sets `xf_session` and redirects to `return_to`, else `/`; otherwise redirects to `{origin}?social=<code>&provider=<id>` |
+| Social sign-up ticket | `GET /auth/social/pending?ticket=` **contract request** (public) | `{provider:{id,name}, email, display_name, expires_at}` for `/register/social`; 410 `ticket_expired`; 404 unknown ticket |
+| Social sign-up | `POST /auth/social/complete` **contract request** body `{ticket, display_name, accept_terms, locale}` | 201 `User` and session cookie, then `/onboarding`; 400 `validation_failed` with `details.fields`; 409 `email_taken` or `identity_taken`; 410 `ticket_expired` |
 | Session expiry signal | any 401 `unauthenticated` handled by the shell | shell navigates to `/login?reason=expired&return_to=<path+query>` |
 | Error body | shared `Error` | `code`, `message` (English, never shown), `details` |
 
@@ -93,12 +131,21 @@ is the same for unknown email and wrong password; `account_locked` and
 exists; `email_taken` is only returned by register (accepted trade-off, the
 copy stays neutral). The UI never reveals which of email or password was wrong.
 
+Social identity rules decided here (server side, requested): the identity key is
+`(provider, subject)` and never the email; a provider email that matches an
+existing account returns `email_taken` and never signs in or links; an
+unverified or missing provider email creates nothing; an identity already
+linked to another account returns `identity_taken`; link mode requires a
+session and is only reachable from Profile. The UI never branches on a provider
+id beyond looking up its configured name and mark.
+
 A two-factor account receives 202 `two_factor_required` with a short-lived
 `xf_2fa` cookie and continues on `/login/2fa`; the challenge contract is in
-[user-two-factor](user-two-factor.md). Contract requests are only requested
-here; OpenAPI is changed by the build tickets. Unsafe calls need
-`X-CSRF-Token` equal to `xf_csrf`; the first `GET /auth/config` guarantees the
-cookie exists.
+[user-two-factor](user-two-factor.md).
+
+Contract requests are only requested here; OpenAPI is changed by the build
+tickets. Unsafe calls need `X-CSRF-Token` equal to `xf_csrf`; the first `GET
+/auth/config` guarantees the cookie exists.
 
 ## Actions
 
@@ -107,6 +154,11 @@ cookie exists.
 | Sign in | submit, Enter in any field | Validate; `POST /auth/login`; on 200 clear the password from memory and go to `return_to` (validated), else `/`, `/admin` for admins; apply `User.locale` to `<html lang>` |
 | Toggle password visibility | eye button | Switches `type` password/text; button `aria-pressed`; resets to hidden after submit |
 | Sign in with passkey | button (only if `passkey_enabled` and `PublicKeyCredential` exists) | Options, `navigator.credentials.get`, verify; user cancel shows nothing; failure shows `auth.error.passkey` |
+| Continue with provider | one button per enabled provider | Full-page navigation to `GET /auth/social/{provider}/start` with the validated `return_to` and the current origin; the button shows a spinner and all auth controls become read-only; browser Back only returns to this page |
+| Retry a social provider | `Try again` in the social error banner | Same navigation as above with the same provider, `return_to` and origin |
+| Sign in instead | `auth.social.email-taken-cta` | Focus moves to the email field, the social banner clears, and the normal sign-in form is used; after sign-in the person links the provider in Profile |
+| Use another method | `auth.social.register.back` | Discards the ticket and goes to `/login` without a banner |
+| Complete social sign-up | submit on `/register/social` | Validate name and terms; `POST /auth/social/complete`; on 201 apply `User.locale`, clear the ticket from the URL and go to `/onboarding` |
 | Go to register / login | footer link | Client route, keeps `return_to`, clears banners and errors |
 | Create account | submit | Validate; `POST /auth/register`; on 201 `POST /auth/login` with the same values, then `/onboarding`. If that login fails, go to `/login` with toast `auth.register.created-signin` |
 | Retry (config or network error) | button | Repeat `GET /auth/config` or the failed call, focus returns to the form |
@@ -125,6 +177,18 @@ cookie exists.
   focus moves to the banner (`tabindex=-1`), then Tab continues to the form.
 - Login failure clears the password field and keeps the email.
 - Double submit is ignored while a request is in flight.
+- A social button is not a fetch. It saves nothing in `localStorage` and leaves
+  the page, so the browser Back button returns to a fresh auth page. After the
+  callback the page reads `?social` once, shows the banner and removes the
+  query parameters.
+- The provider group renders from `GET /auth/config`; adding or removing a
+  provider changes the number of buttons without a code change. The copy and
+  test ids use the configured provider id, so a fake provider works exactly
+  like a real one.
+- `/register/social` reads the ticket from the URL, never from storage. It
+  exposes no password field and the email field is read-only because the
+  provider already verified it. Submit is blocked while sending; an expired
+  ticket replaces the card with the expired state and `Use another method`.
 - Rate limit and lock use a local countdown from `retry_after_seconds` or
   `locked_until`; when it reaches 0 the banner is replaced by an info line and
   the button is enabled again. The countdown is read by screen readers only at
@@ -147,6 +211,16 @@ adds the info banner `auth.expired.title` + `auth.expired.text` above the
 fields (focus still on Email; the banner is `role=status`). Register shows the
 rules list in its neutral state and an unchecked terms box.
 
+The social group shows one button per enabled provider in server order. With
+four real providers the login and register cards show Google, Facebook, X and
+Apple. With no provider the divider and the group are absent and the passkey
+button follows the submit button directly.
+
+`/register/social` with a valid ticket is the first-time Ready state: the
+completion card from Layout with the provider name, verified email, suggested
+display name and an unchecked terms box, focus on the display name. It has no
+password fields and no provider group.
+
 ### Loading
 
 - Page boot (`GET /me` + `GET /auth/config`): show the card skeleton only after
@@ -156,6 +230,14 @@ rules list in its neutral state and an unchecked terms box.
   submit button shows a spinner and the label `auth.login.submitting` /
   `auth.register.submitting`, passkey and links are disabled. Slow call over 10
   s keeps the spinner and adds `auth.loading.slow` under the button.
+- Social redirect: the clicked provider button shows a spinner and the label
+  `auth.social.redirecting`; every social button, the submit button, the passkey
+  button and the footer links are disabled until the browser leaves the page.
+  The button is not a request with an error state of its own; a blocked
+  navigation returns to Ready and shows `auth.social.failed`.
+- Social completion submit: the card fields are read-only, the submit button
+  shows a spinner and `auth.social.register.submitting`, and the back link is
+  disabled. Timeout after 10 s becomes the card error with the values kept.
 
 ### Empty
 
@@ -164,6 +246,13 @@ There is no data list. Empty means a closed door: `/register` while
 the form with title `auth.register.closed.title`, text
 `auth.register.closed.text` and the call to action `auth.register.closed.cta`
 ("Back to sign in"). `/login` simply hides the register link.
+
+An empty `providers[]` is not an error: the social group and its divider are
+absent and the rest of the card is unchanged. `/register/social` with a
+missing or unknown ticket shows the same closed-door treatment with title
+`auth.social.register.expired.title`, text
+`auth.social.register.expired.text` and the call to action
+`auth.social.register.back`.
 
 ### Error
 
@@ -183,12 +272,52 @@ the form with title `auth.register.closed.title`, text
   values are kept. The same banner copy is used for timeouts.
 - Passkey failure: banner `auth.error.passkey` and the password form stays.
 
+### Social errors
+
+Every social failure returns to the login or register page that started the
+flow with `?social=<code>&provider=<id>`. The banner is placed above the fields,
+takes focus (`tabindex=-1`) on arrival, and is cleared when the person starts a
+new sign-in or chooses another method. The provider name in every message comes
+from `providers[]`; no provider-specific copy exists.
+
+- Email already registered (`email_taken`): bad banner
+  `auth.social.email-taken` with `auth.social.email-taken-cta` ("Sign in
+  instead"). The message says the account exists and that the person must sign
+  in first and then link the provider in Profile. Choosing the CTA keeps the
+  email if the provider shared it, focuses the email field and clears the
+  banner. No session is created and no link is made.
+- Provider denied or cancelled (`denied`): info banner
+  `auth.social.denied`, plus `Try again` which repeats the same provider. This
+  is a normal outcome, not an error tone.
+- Unverified email from the provider (`email_unverified`): bad banner
+  `auth.social.email-unverified` and `auth.social.email-use`. No account is
+  created or linked. The email and password form stays available.
+- Identity already linked to another account (`identity_taken`): bad banner
+  `auth.social.identity-taken` and `auth.social.email-use`. Nothing is moved.
+- Provider unavailable or misconfigured (`unavailable`): bad banner
+  `auth.social.unavailable` and `auth.social.email-use`.
+- Expired or invalid state, nonce or PKCE (`state_invalid`): bad banner
+  `auth.social.state-invalid` and `Try again`. The server issues a fresh state
+  on the next start.
+- Network or provider failure (`failed`): bad banner `auth.social.failed` with
+  `Try again`; the email form is unchanged.
+- Disabled account (`account_disabled`): bad banner `auth.error.disabled`; no
+  social retry is offered.
+- Social sign-up failures on `/register/social`: 400 `validation_failed` maps to
+  the same field errors as register; 409 `email_taken` shows
+  `auth.social.email-taken` with `auth.social.email-taken-cta`; 409
+  `identity_taken` shows `auth.social.identity-taken`; 410 `ticket_expired`
+  replaces the card with the empty expired state.
+
 ### Partial and stale
 
 If only `GET /auth/config` fails but `GET /me` answered 401, the form is shown
-with safe defaults (registration link shown, passkey hidden, no terms links)
-and a small muted line `auth.config.partial`; submitting still works. Config is
-cached in memory for the page lifetime only, never in `localStorage`.
+with safe defaults (registration link shown, passkey hidden, social group
+hidden, no terms links) and a small muted line `auth.config.partial`;
+submitting still works. Config is cached in memory for the page lifetime only,
+never in `localStorage`. A social button is never shown from a cached provider
+list across page loads; a stale list would send the person to a provider the
+server no longer serves.
 
 ### Forbidden
 
@@ -229,8 +358,17 @@ rate-limit/lock countdown and the 8 s boot timeout. Cross-tab sign-in uses the
 ## Accessibility
 
 - One `h1` per screen (`auth.login.title`, `auth.register.title`,
-  `auth.expired.heading`). Form is a native `<form>` with `novalidate`; every
-  field has a visible `<label for>`; required fields say "required" in text.
+  `auth.expired.heading`, `auth.social.register.title`). Form is a native
+  `<form>` with `novalidate`; every field has a visible `<label for>`; required
+  fields say "required" in text.
+- The social provider group is a labelled `group`; every button's accessible
+  name is `auth.social.continue` with the provider name, so the mark is
+  `aria-hidden` and never carries meaning alone. The group sits after the
+  divider in focus order and before the passkey button.
+- Social result banners use `role=alert` for bad and `role=status` for the
+  cancelled (info) case. The banner receives focus when it arrives from a
+  callback, and `Try again` is the next tab stop. The completion card labels
+  the read-only provider email as such, not only by its value.
 - Errors: field message linked with `aria-describedby`, `aria-invalid`, text
   plus icon. The banner for failures is `role=alert`; the expired banner and
   the countdown are `role=status` (`aria-live=polite`). Countdown text is
@@ -310,6 +448,28 @@ lines on 390 px rather than truncate. Dates and countdown use the active locale.
 | `auth.error.disabled` | This account is disabled. Contact the administrator. | Tài khoản này đã bị vô hiệu hóa. Hãy liên hệ quản trị viên. |
 | `auth.error.server` | We could not reach XFlickr. Your input is kept. Check your connection and try again. | Không kết nối được XFlickr. Nội dung bạn nhập vẫn được giữ. Hãy kiểm tra mạng và thử lại. |
 | `auth.error.passkey` | The passkey did not work. Use your password instead. | Passkey không dùng được. Hãy dùng mật khẩu. |
+| `auth.social.group` | Continue with another account | Tiếp tục bằng tài khoản khác |
+| `auth.social.continue` | Continue with {provider} | Tiếp tục với {provider} |
+| `auth.social.redirecting` | Redirecting to {provider}… | Đang chuyển đến {provider}… |
+| `auth.social.email-taken` | An XFlickr account already uses this email. Sign in with your password, then link {provider} in Profile. | Đã có tài khoản XFlickr dùng email này. Hãy đăng nhập bằng mật khẩu rồi liên kết {provider} trong Hồ sơ. |
+| `auth.social.email-taken-cta` | Sign in instead | Đăng nhập thay thế |
+| `auth.social.denied` | {provider} sign-in was cancelled. Try again or use your email. | Đăng nhập bằng {provider} đã bị hủy. Hãy thử lại hoặc dùng email. |
+| `auth.social.email-unverified` | {provider} did not confirm your email address. Use another sign-in method. | {provider} chưa xác nhận địa chỉ email của bạn. Hãy dùng cách đăng nhập khác. |
+| `auth.social.email-use` | Use email instead | Dùng email thay thế |
+| `auth.social.identity-taken` | This {provider} account is already linked to another XFlickr account. | Tài khoản {provider} này đã liên kết với một tài khoản XFlickr khác. |
+| `auth.social.unavailable` | {provider} sign-in is not available right now. Try again later or use your email. | Đăng nhập bằng {provider} hiện không khả dụng. Hãy thử lại sau hoặc dùng email. |
+| `auth.social.state-invalid` | This sign-in attempt expired. Start again. | Lần đăng nhập này đã hết hạn. Hãy bắt đầu lại. |
+| `auth.social.failed` | We could not finish signing in with {provider}. Try again or use your email. | Không hoàn tất đăng nhập bằng {provider}. Hãy thử lại hoặc dùng email. |
+| `auth.social.retry` | Try {provider} again | Thử lại với {provider} |
+| `auth.social.register.title` | Finish creating your account | Hoàn tất tạo tài khoản |
+| `auth.social.register.text` | You signed in with {provider}. Confirm your details to create your XFlickr account. | Bạn đã đăng nhập bằng {provider}. Hãy xác nhận thông tin để tạo tài khoản XFlickr. |
+| `auth.social.register.email` | Email from {provider} | Email từ {provider} |
+| `auth.social.register.name` | Display name | Tên hiển thị |
+| `auth.social.register.submit` | Create account | Tạo tài khoản |
+| `auth.social.register.submitting` | Creating account… | Đang tạo tài khoản… |
+| `auth.social.register.back` | Use another method | Dùng cách khác |
+| `auth.social.register.expired.title` | This sign-up attempt expired | Lần đăng ký này đã hết hạn |
+| `auth.social.register.expired.text` | Start again from the sign-in or register page. | Hãy bắt đầu lại từ trang đăng nhập hoặc đăng ký. |
 | `auth.config.partial` | Some options could not load. You can still sign in. | Một số tùy chọn chưa tải được. Bạn vẫn có thể đăng nhập. |
 | `auth.loading.slow` | Still working… | Vẫn đang xử lý… |
 | `common.retry` | Try again | Thử lại |
@@ -338,6 +498,17 @@ suffix. Tests select by role first and by test id when text depends on language.
   `auth-expired-other-account`, `auth-error-banner`, `auth-error-retry`,
   `auth-ratelimit-banner`, `auth-locked-banner`, `auth-disabled-banner`,
   `auth-partial-note`.
+- Social: `auth-social-group` and one `auth-social-<provider>` per enabled
+  provider (`google`, `facebook`, `x`, `apple`; `fake` in tests). Error banners
+  are `auth-social-email-taken-banner`, `auth-social-denied-banner`,
+  `auth-social-unverified-banner`, `auth-social-identity-banner`,
+  `auth-social-unavailable-banner`, `auth-social-state-banner`,
+  `auth-social-failed-banner`; actions are `auth-social-email-taken-cta`,
+  `auth-social-retry`, `auth-social-use-email`.
+- Social completion: `auth-social-register-card`, `auth-social-register-title`,
+  `auth-social-register-email`, `auth-social-register-name`,
+  `auth-social-register-terms`, `auth-social-register-submit`,
+  `auth-social-register-back`, `auth-social-register-expired`.
 - Empty: `auth-register-closed`, `auth-register-closed-cta`.
 
 ## Test hooks
@@ -347,6 +518,11 @@ Minimum journeys: sign in and land on `/`; wrong password; rate limit and lock
 (mock 429/423); register then onboarding; closed registration; passkey button
 hidden when the flag is off; expired session returns to `return_to`; hostile
 `return_to` (`//evil.example`) falls back to `/`; EN/VI switch; 390 px layout.
+Social journeys use the fake provider: one button per configured provider and
+none when the list is empty; sign in with the fake provider; first-time
+completion then onboarding; `email_taken` then `Sign in instead`; `denied`,
+`email_unverified`, `identity_taken`, `state_invalid`, `unavailable` and
+`failed` banners; expired sign-up ticket; EN/VI copy and 390 px layout.
 
 ## Out of scope
 
@@ -354,9 +530,11 @@ hidden when the flag is off; expired session returns to `return_to`; hostile
   [user-password-reset](user-password-reset.md),
   [user-verify-email](user-verify-email.md) and
   [user-two-factor](user-two-factor.md); this view owns only the password step.
-  "Remember me", social sign-in, other MFA methods and account deletion are not
-  in this release.
-- Passkey enrolment (a Profile concern) and the Setup wizard.
+  "Remember me", other MFA methods and account deletion are not in this release.
+- Registering real provider applications, provider brand assets and provider
+  consent-screen content (release 1 uses the fake provider for tests).
+- Passkey enrolment and account linking (Profile concerns) and the Setup
+  wizard.
 - The in-app session-expired modal and global shell states (user-shell).
 - The ADMIN sign-in look (admin uses the same page; role is only known after
   login), OpenAPI edits (only requested above) and application code.

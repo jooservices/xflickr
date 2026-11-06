@@ -29,6 +29,27 @@ guide feature implementation; operational environment rules live in
   capacity for user-started actions when the configured quota policy requires
   it.
 
+## Social sign-in and linking
+
+- Users can sign in or create an account with Google, Facebook, X or Apple
+  through one provider-neutral registry. Providers are configuration; no screen
+  or rule is specific to one provider.
+- A provider identity is the pair `(provider, subject)`, never an email. It
+  belongs to exactly one account, and an account has at most one identity per
+  provider.
+- A provider email that matches an existing account never signs the person in
+  and never links automatically. The person signs in with an existing method
+  first and links the provider from Profile. Linking always requires a
+  signed-in session.
+- Account creation from a provider requires a verified email and acceptance of
+  the terms. An unverified or missing provider email creates nothing.
+- Unlinking a provider requires a signed-in session and is refused when it
+  would leave the account with no password, no passkey and no other linked
+  provider.
+- Link and unlink changes are recorded through the audit outbox. Provider
+  tokens and secrets are sealed and never returned or logged.
+- Tests use a fake provider only. No test calls a live provider.
+
 ## Sessions and access
 
 - A successful login sets the `xf_session` cookie. The cookie is HttpOnly,
