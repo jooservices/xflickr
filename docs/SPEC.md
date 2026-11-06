@@ -167,9 +167,9 @@ guide feature implementation; operational environment rules live in
   queue and job kind. Mark exhausted jobs discarded and publish them to the
   `job.dead` outbox topic.
 - Represent one unit of work per backlog row and deduplicate by work kind,
-  subject, and user. Keep page progress in a JSON cursor; only advance to the
-  next page after the current item finishes. Completed rows reopen only when
-  explicitly requested.
+  subject, and user. A work item always belongs to a user. Keep page progress
+  in a JSON cursor; only advance to the next page after the current item
+  finishes. Completed rows reopen only when explicitly requested.
 - Reuse already-crawled eligible records when sharing permits it; crawl each
   shared record once where possible.
 - Expose active crawl backlog by person and sizes lane. ETA is backlog calls
