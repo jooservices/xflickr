@@ -89,3 +89,5 @@ The current web API to contract and backend route mapping is generated in
 
 - [Deleted entities and restricted facets](entity-state.md) — persistent gone state, caller restrictions and reopening rules.
 - [Download sizes continuation](downloads.md) — transactional sizes outcomes, idempotent handoff, and unavailable manifest failures.
+
+- [REST API route mapping](rest-api-mapping.md) — complete route audit, target contracts, consumers, open decisions and module migration order (JOOXF-314).
