@@ -21,8 +21,7 @@ fi
 
 TEMP_DIR="$ROOT/.tmp"
 mkdir -p "$TEMP_DIR"
-coverage_file="$(mktemp "$TEMP_DIR/xflickr-coverage.XXXXXX")"
-trap 'rm -f "$coverage_file"' EXIT
+coverage_file="$TEMP_DIR/xflickr-coverage.out"
 
 (
 	cd "$ROOT/backend"

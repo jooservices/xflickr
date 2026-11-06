@@ -9,6 +9,11 @@ ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd -P)"
 
 "$SCRIPT_DIR/coverage-gate.sh"
 
+"$SCRIPT_DIR/run.sh" python python3 "$SCRIPT_DIR/coverage_gate.py" \
+	"$ROOT/.tmp/xflickr-coverage.out" --exclude "$SCRIPT_DIR/coverage-exclude.txt" \
+	--check-files --files-only --base "${COVERAGE_BASE:-origin/develop}" \
+	--baseline "$SCRIPT_DIR/coverage-file-baseline.txt"
+
 if [[ -f "$ROOT/web/package.json" ]]; then
 	(
 		cd "$ROOT/web"

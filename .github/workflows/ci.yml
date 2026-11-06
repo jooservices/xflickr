@@ -33,6 +33,8 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -42,6 +44,9 @@ jobs:
 
       - name: Run backend tests and enforce per-package coverage
         run: ./docker/scripts/coverage-gate.sh
+
+      - name: Enforce per-file coverage for changed Go files
+        run: python3 docker/scripts/coverage_gate.py .tmp/xflickr-coverage.out --exclude docker/scripts/coverage-exclude.txt --check-files --files-only --base origin/develop --baseline docker/scripts/coverage-file-baseline.txt
 
   stale-check:
     name: stale-check
