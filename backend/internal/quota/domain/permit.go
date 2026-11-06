@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"errors"
+	"math"
 	"time"
 )
 
@@ -23,6 +24,12 @@ func (b Budget) Validate() error {
 		return ErrInvalidBudget
 	}
 	return nil
+}
+
+// IdlePhotoProtection is the idle floor capped by the photo allocation and
+// the hourly capacity remaining after the interactive reserve.
+func (b Budget) IdlePhotoProtection() int64 {
+	return min(int64(math.Floor(float64(b.HourlyLimit)*b.PhotoLaneFloorShare)), int64(math.Floor(float64(b.HourlyLimit)*(1-b.PersonLaneShare))), max(int64(0), b.HourlyLimit-b.Reserve))
 }
 
 // Meta is the outcome reported when a caller finishes a permit. Err is the

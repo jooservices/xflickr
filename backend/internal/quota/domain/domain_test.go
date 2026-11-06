@@ -57,3 +57,10 @@ func TestQuotaError(t *testing.T) {
 }
 
 func fmtWrap(err error) error { return errors.Join(errors.New("call failed"), err) }
+
+func TestIdlePhotoProtectionClampsToPhotoAllocation(t *testing.T) {
+	budget := Budget{HourlyLimit: 3600, Reserve: 100, PersonLaneShare: 0.75, PhotoLaneFloorShare: 0.5}
+	if got := budget.HourlyLimit - budget.Reserve - budget.IdlePhotoProtection(); got != 2600 {
+		t.Fatalf("idle person ceiling = %d, want 2600", got)
+	}
+}

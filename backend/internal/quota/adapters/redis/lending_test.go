@@ -128,7 +128,7 @@ func TestRefusedPhotoAttemptsRefreshDemand(t *testing.T) {
 				server.Set(keys[3], strconv.FormatInt(now.Add(time.Hour).UnixMilli(), 10))
 			case "rebuild":
 				// Calling the script directly isolates readiness rejection from the Go rebuild retry.
-				result, err := acquireScript.Run(t.Context(), g.Client, keys, budget.PerSecondRate, budget.Burst, budget.HourlyLimit, budget.Reserve, budget.PersonLaneShare, "photo", 1, budget.PhotoLaneFloorShare).Slice()
+				result, err := acquireScript.Run(t.Context(), g.Client, keys, budget.PerSecondRate, budget.Burst, budget.HourlyLimit, budget.Reserve, budget.PersonLaneShare, "photo", 1, budget.IdlePhotoProtection()).Slice()
 				if err != nil || result[2] != "rebuild" {
 					t.Fatalf("rebuild result %v %v", result, err)
 				}
@@ -142,5 +142,14 @@ func TestRefusedPhotoAttemptsRefreshDemand(t *testing.T) {
 				t.Fatalf("demand TTL %s", ttl)
 			}
 		})
+	}
+}
+
+func TestIdleProtectionCannotExceedPhotoAllocation(t *testing.T) {
+	budget := generousBudget()
+	budget.PersonLaneShare, budget.PhotoLaneFloorShare = 0.75, 0.5
+	g, _, _ := setupGovernor(t, budget)
+	if got := drainLane(t, g, domain.Person); got != 2600 {
+		t.Fatalf("idle person grants = %d, want 2600", got)
 	}
 }

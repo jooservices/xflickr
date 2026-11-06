@@ -113,7 +113,7 @@ func (g Governor) tryAcquire(ctx context.Context, keyID int64, class domain.Clas
 	if g.Rebuilder != nil {
 		requireReady = 1
 	}
-	result, err := acquireScript.Run(ctx, g.Client, g.keys(keyID), budget.PerSecondRate, budget.Burst, budget.HourlyLimit, budget.Reserve, budget.PersonLaneShare, string(class), requireReady, budget.PhotoLaneFloorShare).Slice()
+	result, err := acquireScript.Run(ctx, g.Client, g.keys(keyID), budget.PerSecondRate, budget.Burst, budget.HourlyLimit, budget.Reserve, budget.PersonLaneShare, string(class), requireReady, budget.IdlePhotoProtection()).Slice()
 	if err != nil || len(result) < 3 {
 		return false, 0, "", domain.ErrGovernorOffline
 	}

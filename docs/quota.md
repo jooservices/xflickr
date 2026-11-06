@@ -37,7 +37,10 @@ limit, with background calls always leaving the interactive reserve intact.
 For a photo allocation `P`, granted photo calls `U`, hourly limit `H` and
 reserve `R`, the person ceiling is `max(0, H - R) - max(0, P - U)`.
 With recent photo demand, `P = min(floor(H * (1 - person_lane_share)),
-max(0, H - R))`; otherwise replace the share with `photo_lane_floor_share`.
+max(0, H - R))`; otherwise `P` is the smaller of that allocation and
+`floor(H * photo_lane_floor_share)`. The idle protection never exceeds the
+photo allocation: at person share 0.75, floor share 0.5, hourly limit 3,600
+and reserve 100, it protects 900 calls and the idle person ceiling is 2,600.
 At defaults (3,600 hourly, 100 reserve, 10 percent floor), an idle photo lane
 lets person work use 3,140 calls per hour. The simulated-hour acceptance target
 is at least 95 percent of this computed ceiling. Person callers blocked by

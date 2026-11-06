@@ -1,5 +1,5 @@
 -- KEYS: token bucket, hourly counter, window start, cooldown, per-class counts, ready marker, photo demand marker
--- ARGV: rate, burst, hourly limit, reserve, person share, class, require ready (1/0), photo floor share
+-- ARGV: rate, burst, hourly limit, reserve, person share, class, require ready (1/0), idle photo protection
 local nowParts = redis.call('TIME')
 local now = tonumber(nowParts[1]) * 1000 + math.floor(tonumber(nowParts[2]) / 1000)
 local rate = tonumber(ARGV[1])
@@ -8,7 +8,7 @@ local hourly = tonumber(ARGV[3])
 local reserve = tonumber(ARGV[4])
 local personShare = tonumber(ARGV[5])
 local class = ARGV[6]
-local photoFloorShare = tonumber(ARGV[8])
+local idlePhotoProtection = tonumber(ARGV[8])
 
 -- Every photo attempt signals demand, including attempts refused below.
 if class == 'photo' then
@@ -77,7 +77,7 @@ if class == 'photo' then
 elseif class == 'person' then
   local protected = photoShareCap
   if redis.call('EXISTS', KEYS[7]) == 0 then
-    protected = math.min(math.floor(hourly * photoFloorShare), math.max(0, hourly - reserve))
+    protected = idlePhotoProtection
   end
   ceiling = math.max(0, hourly - reserve) - math.max(0, protected - photoUsed)
 end
