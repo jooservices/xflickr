@@ -205,6 +205,18 @@ guide feature implementation; operational environment rules live in
   active backlog rows so the scheduler recomputes priority from the updated
   flags.
 
+## API and MCP
+
+- Everything a user can do in the UI is available through a strictly RESTful
+  API under `/api/v1`, following [`rest-api.md`](rest-api.md): resources as
+  nouns, the standard success envelope, `application/problem+json` errors,
+  cursor pagination, hypermedia links on every resource, and an unchanged
+  contract inside a major version.
+- Scripts and the MCP server authenticate with personal access tokens that
+  carry scopes and can be revoked; browsers use the session cookie with CSRF.
+- The MCP server exposes deterministic tools that call the same API. It
+  contains no AI inference.
+
 ## Definition of done
 
 A change is done when it meets its ticket's acceptance criteria, preserves these
