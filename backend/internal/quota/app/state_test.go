@@ -173,3 +173,12 @@ func TestStatesDefaultsToWallClock(t *testing.T) {
 		t.Fatalf("state = %+v %v", got, err)
 	}
 }
+
+func TestRollingStateResetIsOldestExpiry(t *testing.T) {
+	reset := stateNow.Add(7 * time.Minute)
+	states := newStates(map[int64]Live{1: {WindowStart: stateNow.Add(-Window), ResetAt: reset, Used: 100, ByClass: map[string]int64{"photo": 70, "person": 30}}}, &fakeHistory{})
+	got, err := states.ForOwner(t.Context(), 7, 1)
+	if err != nil || !got.ResetAt.Equal(reset) || got.Used != 100 || got.State != domain.StateExhausted {
+		t.Fatalf("rolling state = %+v %v", got, err)
+	}
+}

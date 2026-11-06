@@ -711,7 +711,7 @@ func TestNewQuotaRuntimeWiresRebuildFlushAndCallLog(t *testing.T) {
 func TestQuotaRuntimeStartRebuildsFlushesAndStops(t *testing.T) {
 	store := &startStore{rebuilt: make(chan struct{}, 1), flushed: make(chan struct{}, 8)}
 	quota := quotaRuntime{
-		Rebuilder: &quotaapp.Rebuilder{Store: store, Calls: startCalls{}, Counters: startCounters{}},
+		Rebuilder: &quotaapp.Rebuilder{Store: store, Calls: startCalls{}, Counters: startCounters{rebuilt: store.rebuilt}},
 		Flusher:   quotaapp.Flusher{Store: store, Counters: startCounters{}, Interval: 5 * time.Millisecond},
 	}
 	stop := quota.start(context.Background(), nil)
@@ -751,10 +751,6 @@ type startStore struct {
 
 func (s *startStore) Save(context.Context, quotaapp.Usage) error { return nil }
 func (s *startStore) Latest(context.Context, int64, time.Time) (quotaapp.Usage, bool, error) {
-	select {
-	case s.rebuilt <- struct{}{}:
-	default:
-	}
 	return quotaapp.Usage{}, false, nil
 }
 
@@ -775,12 +771,21 @@ func (startCalls) Usage(context.Context, int64, time.Time) (quotaapp.CallUsage, 
 	return quotaapp.CallUsage{}, nil
 }
 
-type startCounters struct{}
+type startCounters struct{ rebuilt chan struct{} }
 
 func (startCounters) Snapshot(context.Context, int64) (quotaapp.Usage, bool, error) {
 	return quotaapp.Usage{}, false, nil
 }
-func (startCounters) Restore(context.Context, quotaapp.Usage) (bool, error) { return true, nil }
+
+func (c startCounters) Restore(context.Context, quotaapp.Usage) (bool, error) {
+	if c.rebuilt != nil {
+		select {
+		case c.rebuilt <- struct{}{}:
+		default:
+		}
+	}
+	return true, nil
+}
 
 func TestAPIRoleServesHealthAndStops(t *testing.T) {
 	reservation, err := net.Listen("tcp", "127.0.0.1:0")

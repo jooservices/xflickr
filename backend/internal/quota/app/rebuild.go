@@ -18,11 +18,20 @@ type Usage struct {
 	WindowStart time.Time
 	Used        int64
 	ByClass     map[string]int64
+	Grants      []Grant
 }
 
-// CallUsage summarizes the calls recorded in api_call_log since a given time.
-// First is the time of the earliest such call and is zero when there are none.
+// Grant is one recorded permit, with a stable identity for idempotent recovery.
+type Grant struct {
+	Class  string
+	At     time.Time
+	Member string
+}
+
+// CallUsage contains exact grants and their summary since a given time.
+// First is zero when no grants were recorded.
 type CallUsage struct {
+	Grants  []Grant
 	First   time.Time
 	ByClass map[string]int64
 }
@@ -52,9 +61,8 @@ type CounterStore interface {
 	Restore(ctx context.Context, usage Usage) (bool, error)
 }
 
-// Rebuilder restores a key's Redis counters from quota_usage and api_call_log.
-// For each class it takes the larger of the two sources, so a rebuild can only
-// over-count the current window, never under-count it.
+// Rebuilder restores rolling Redis sets from exact api_call_log grant rows.
+// Persisted aggregate snapshots are history, not timestamped recovery evidence.
 type Rebuilder struct {
 	Store    UsageStore
 	Calls    CallLog
@@ -122,46 +130,18 @@ func (r *Rebuilder) RebuildAll(ctx context.Context) error {
 func (r *Rebuilder) run(ctx context.Context, keyID int64) error {
 	now := r.now()
 	since := now.Add(-Window)
-	stored, hasStored, err := r.Store.Latest(ctx, keyID, since)
-	if err != nil {
-		return fmt.Errorf("quota: load usage for key %d: %w", keyID, err)
-	}
-	logSince := since
-	if hasStored {
-		logSince = stored.WindowStart
-	}
-	calls, err := r.Calls.Usage(ctx, keyID, logSince)
+	calls, err := r.Calls.Usage(ctx, keyID, since)
 	if err != nil {
 		return fmt.Errorf("quota: load call log for key %d: %w", keyID, err)
 	}
-	merged := merge(keyID, stored, hasStored, calls)
+	merged := Usage{KeyID: keyID, WindowStart: since, ByClass: calls.ByClass, Grants: calls.Grants}
+	for _, n := range calls.ByClass {
+		merged.Used += n
+	}
 	if _, err := r.Counters.Restore(ctx, merged); err != nil {
 		return fmt.Errorf("quota: restore counters for key %d: %w", keyID, err)
 	}
 	return nil
-}
-
-func merge(keyID int64, stored Usage, hasStored bool, calls CallUsage) Usage {
-	out := Usage{KeyID: keyID, ByClass: map[string]int64{}}
-	var logged int64
-	for class, n := range calls.ByClass {
-		out.ByClass[class] = n
-		logged += n
-	}
-	switch {
-	case hasStored:
-		out.WindowStart = stored.WindowStart
-		for class, n := range stored.ByClass {
-			out.ByClass[class] = max(out.ByClass[class], n)
-		}
-		out.Used = max(stored.Used, logged)
-	case logged > 0 && !calls.First.IsZero():
-		// The real window began at or before the first logged call, so using it
-		// keeps the window at least as long as the real one.
-		out.WindowStart = calls.First
-		out.Used = logged
-	}
-	return out
 }
 
 func (r *Rebuilder) now() time.Time {

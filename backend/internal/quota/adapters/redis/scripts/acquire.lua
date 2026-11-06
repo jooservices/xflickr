@@ -1,7 +1,6 @@
--- KEYS: token bucket, hourly counter, window start, cooldown, per-class counts, ready marker, photo demand marker
+-- KEYS: bucket, interactive set, person set, cooldown, photo set, ready, photo demand, sequence
 -- ARGV: rate, burst, hourly limit, reserve, person share, class, require ready (1/0), idle photo protection
-local nowParts = redis.call('TIME')
-local now = tonumber(nowParts[1]) * 1000 + math.floor(tonumber(nowParts[2]) / 1000)
+local now, counts, used, oldest = rollingWindow(KEYS)
 local rate = tonumber(ARGV[1])
 local burst = tonumber(ARGV[2])
 local hourly = tonumber(ARGV[3])
@@ -23,17 +22,6 @@ end
 local cooldown = tonumber(redis.call('GET', KEYS[4]) or '0')
 if cooldown > now then
   return {0, cooldown - now, 'cooldown'}
-end
-
-local start = tonumber(redis.call('GET', KEYS[3]) or '0')
-local used = tonumber(redis.call('GET', KEYS[2]) or '0')
-if start == 0 or now >= start + 3600000 then
-  start = now
-  used = 0
-  redis.call('SET', KEYS[3], start, 'PX', 7200000)
-  redis.call('SET', KEYS[2], used, 'PX', 7200000)
-  redis.call('DEL', KEYS[4])
-  redis.call('DEL', KEYS[5])
 end
 
 local tokenData = redis.call('HMGET', KEYS[1], 'tokens', 'updated', 'second', 'granted')
@@ -70,7 +58,7 @@ end
 -- spent calls stay charged; otherwise unused allocation above the floor is lent.
 local ceiling = hourly
 local photoShareCap = math.min(math.floor(hourly * (1 - personShare)), math.max(0, hourly - reserve))
-local photoUsed = tonumber(redis.call('HGET', KEYS[5], 'photo') or '0')
+local photoUsed = counts[5]
 if class == 'photo' then
   ceiling = math.max(0, hourly - reserve)
   if photoUsed >= photoShareCap then ceiling = 0 end
@@ -82,7 +70,7 @@ elseif class == 'person' then
   ceiling = math.max(0, hourly - reserve) - math.max(0, protected - photoUsed)
 end
 if used >= ceiling then
-  local retry = math.max(1, start + 3600000 - now)
+  local retry = math.max(1, oldest + 3600000 - now)
   if class == 'person' then
     local demandTTL = redis.call('PTTL', KEYS[7])
     if demandTTL > 0 then retry = math.min(retry, demandTTL) end
@@ -92,8 +80,10 @@ end
 
 redis.call('HSET', KEYS[1], 'tokens', tokens - 1, 'updated', now, 'second', second, 'granted', granted + 1)
 redis.call('PEXPIRE', KEYS[1], 7200000)
-redis.call('SET', KEYS[2], used + 1, 'PX', 7200000)
-redis.call('HINCRBY', KEYS[5], class, 1)
-redis.call('PEXPIRE', KEYS[5], 7200000)
-if ARGV[7] == '1' then redis.call('PEXPIRE', KEYS[6], 7200000) end
-return {1, 0, 'ok'}
+local lane = laneKey(KEYS, class)
+local sequence = redis.call('INCR', KEYS[8])
+redis.call('PEXPIRE', KEYS[8], 7200000)
+redis.call('ZADD', lane, now, tostring(now) .. ':' .. tostring(sequence))
+redis.call('PEXPIRE', lane, 7200000)
+redis.call('SET', KEYS[6], 1, 'PX', 7200000)
+return {1, 0, 'ok', now}

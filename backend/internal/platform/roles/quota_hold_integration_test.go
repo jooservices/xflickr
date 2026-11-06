@@ -21,7 +21,7 @@ import (
 // TestHourlyCeilingHoldsPendingWorkUntilReset proves, with the real Redis
 // governor and the real pump, that a key at the 3,500 automated-call ceiling
 // (3,600 limit minus the 100-call reserve) keeps pending work buffered and
-// releases it after the hourly window resets. The 4/s rate and burst of 5 are
+// releases it after the counted background grants expire. The 4/s rate and burst of 5 are
 // shared by the person and photo lanes, and the reserve stays for interactive use.
 func TestHourlyCeilingHoldsPendingWorkUntilReset(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
@@ -44,7 +44,7 @@ func TestHourlyCeilingHoldsPendingWorkUntilReset(t *testing.T) {
 	prefix := fmt.Sprintf("%sjooxf261:%d:", cfg.Redis.Prefix, keyID)
 	base := fmt.Sprintf("%squota:key:%d:", prefix, keyID)
 	clear := func() {
-		for _, name := range []string{"bucket", "hourly", "window", "cooldown", "byclass", "ready"} {
+		for _, name := range []string{"bucket", "rolling:interactive", "rolling:person", "rolling:photo", "cooldown", "rolling:ready", "rolling:sequence", "photo_demand"} {
 			redisClient.Del(context.Background(), base+name)
 		}
 	}
@@ -73,14 +73,14 @@ func TestHourlyCeilingHoldsPendingWorkUntilReset(t *testing.T) {
 
 	// Ceiling: 3,500 automated calls spent in the current window.
 	now := time.Now().UnixMilli()
-	mustSet := func(name string, value any) {
-		t.Helper()
-		if err := redisClient.Set(ctx, base+name, value, time.Hour).Err(); err != nil {
-			t.Fatal(err)
-		}
+	redisClient.Del(ctx, base+"rolling:interactive", base+"rolling:person", base+"rolling:photo")
+	grants := make([]redisv9.Z, 3500)
+	for i := range grants {
+		grants[i] = redisv9.Z{Score: float64(now), Member: fmt.Sprintf("fixture:%d", i)}
 	}
-	mustSet("window", now)
-	mustSet("hourly", 3500)
+	if err := redisClient.ZAdd(ctx, base+"rolling:person", grants...).Err(); err != nil {
+		t.Fatal(err)
+	}
 	redisClient.Del(ctx, base+"bucket")
 	for _, class := range []quotadomain.Class{quotadomain.Person, quotadomain.Photo} {
 		if permit, wait, err := governor.Acquire(ctx, keyID, class); err != nil || permit != nil || wait <= 0 {
@@ -114,8 +114,14 @@ func TestHourlyCeilingHoldsPendingWorkUntilReset(t *testing.T) {
 		t.Fatalf("interactive call in the reserve = %v, %v; want granted", permit, err)
 	}
 
-	// Reset: the hourly window rolls over and the buffered item is promoted.
-	mustSet("window", now-int64(time.Hour/time.Millisecond)-1000)
+	// Expiry: old background grants leave the rolling window; the recent
+	// interactive grant remains charged while the buffered item is promoted.
+	for i := range grants {
+		grants[i].Score = float64(now - int64(time.Hour/time.Millisecond) - 1000)
+	}
+	if err := redisClient.ZAdd(ctx, base+"rolling:person", grants...).Err(); err != nil {
+		t.Fatal(err)
+	}
 	redisClient.Del(ctx, base+"bucket")
 	if capacity, err := governor.Capacity(ctx, keyID, 2*time.Minute); err != nil || capacity <= 0 {
 		t.Fatalf("Capacity() after reset = %d, %v; want credits again", capacity, err)

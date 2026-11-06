@@ -1,12 +1,11 @@
--- KEYS: hourly counter, window start, cooldown
--- ARGV: hourly limit
-local parts = redis.call('TIME')
-local now = tonumber(parts[1]) * 1000 + math.floor(tonumber(parts[2]) / 1000)
-local start = tonumber(redis.call('GET', KEYS[2]) or '0')
-if start == 0 or now >= start + 3600000 then
-  return 0
+-- Same KEYS as acquire; ARGV: hourly limit.
+local now, _, used, oldest = rollingWindow(KEYS)
+for i = used + 1, tonumber(ARGV[1]) do
+  local sequence = redis.call('INCR', KEYS[8])
+  redis.call('ZADD', KEYS[2], now, tostring(now) .. ':' .. tostring(sequence))
 end
-local windowEnd = start + 3600000
-redis.call('SET', KEYS[1], ARGV[1], 'PX', math.max(1, windowEnd - now))
-redis.call('SET', KEYS[3], windowEnd, 'PX', math.max(1, windowEnd - now))
-return windowEnd - now
+redis.call('PEXPIRE', KEYS[2], 7200000)
+redis.call('PEXPIRE', KEYS[8], 7200000)
+local untilTime = oldest + 3600000
+redis.call('SET', KEYS[4], untilTime, 'PX', math.max(1, untilTime - now))
+return untilTime - now

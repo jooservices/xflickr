@@ -122,8 +122,7 @@ func TestRefusedPhotoAttemptsRefreshDemand(t *testing.T) {
 			keys := g.keys(1)
 			switch reason {
 			case "hourly":
-				server.Set(keys[2], strconv.FormatInt(now.UnixMilli(), 10))
-				server.Set(keys[1], strconv.FormatInt(budget.HourlyLimit, 10))
+				seedGrants(t, g, domain.Interactive, int(budget.HourlyLimit), now)
 			case "cooldown":
 				server.Set(keys[3], strconv.FormatInt(now.Add(time.Hour).UnixMilli(), 10))
 			case "rebuild":

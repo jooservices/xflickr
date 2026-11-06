@@ -64,7 +64,7 @@ func (c *fakeCounters) Restore(_ context.Context, u Usage) (bool, error) {
 
 var base = time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 
-func TestRebuildTakesLargerOfStoredAndLogged(t *testing.T) {
+func TestRebuildUsesRollingLogRatherThanAggregateSnapshot(t *testing.T) {
 	store := &fakeStore{has: true, latest: Usage{WindowStart: base.Add(-10 * time.Minute), Used: 50, ByClass: map[string]int64{"person": 30, "photo": 20}}}
 	calls := fakeCalls{usage: CallUsage{ByClass: map[string]int64{"person": 35, "interactive": 5}}}
 	counters := &fakeCounters{}
@@ -73,22 +73,22 @@ func TestRebuildTakesLargerOfStoredAndLogged(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := counters.restored[0]
-	if got.KeyID != 3 || !got.WindowStart.Equal(store.latest.WindowStart) || got.Used != 50 {
+	if got.KeyID != 3 || !got.WindowStart.Equal(base.Add(-Window)) || got.Used != 40 {
 		t.Fatalf("restored = %+v", got)
 	}
-	if got.ByClass["person"] != 35 || got.ByClass["photo"] != 20 || got.ByClass["interactive"] != 5 {
+	if got.ByClass["person"] != 35 || got.ByClass["photo"] != 0 || got.ByClass["interactive"] != 5 {
 		t.Fatalf("by class = %v", got.ByClass)
 	}
 }
 
-func TestRebuildFromLogOnlyUsesFirstCallAsWindow(t *testing.T) {
+func TestRebuildFromLogUsesRollingInterval(t *testing.T) {
 	first := base.Add(-20 * time.Minute)
 	counters := &fakeCounters{}
 	r := &Rebuilder{Store: &fakeStore{}, Calls: fakeCalls{usage: CallUsage{First: first, ByClass: map[string]int64{"photo": 7}}}, Counters: counters, Now: func() time.Time { return base }}
 	if err := r.Rebuild(context.Background(), 1); err != nil {
 		t.Fatal(err)
 	}
-	if got := counters.restored[0]; !got.WindowStart.Equal(first) || got.Used != 7 {
+	if got := counters.restored[0]; !got.WindowStart.Equal(base.Add(-Window)) || got.Used != 7 {
 		t.Fatalf("restored = %+v", got)
 	}
 }
@@ -99,7 +99,7 @@ func TestRebuildWithNoHistoryRestoresEmptyWindow(t *testing.T) {
 	if err := r.Rebuild(context.Background(), 1); err != nil {
 		t.Fatal(err)
 	}
-	if got := counters.restored[0]; !got.WindowStart.IsZero() || got.Used != 0 {
+	if got := counters.restored[0]; got.WindowStart.IsZero() || got.Used != 0 {
 		t.Fatalf("restored = %+v", got)
 	}
 }
@@ -116,11 +116,6 @@ func TestRebuildErrors(t *testing.T) {
 		t.Fatal("zero key accepted")
 	}
 	r := ok()
-	r.Store = &fakeStore{err: boom}
-	if err := r.Rebuild(context.Background(), 1); !errors.Is(err, boom) {
-		t.Fatalf("store error = %v", err)
-	}
-	r = ok()
 	r.Calls = fakeCalls{err: boom}
 	if err := r.Rebuild(context.Background(), 1); !errors.Is(err, boom) {
 		t.Fatalf("call log error = %v", err)

@@ -32,7 +32,11 @@ func mustScript(name string) string {
 	if err != nil {
 		panic(err)
 	}
-	return string(content)
+	common, err := scripts.ReadFile("scripts/rolling.lua")
+	if err != nil {
+		panic(err)
+	}
+	return string(common) + "\n" + string(content)
 }
 
 // Governor coordinates per-key budgets and uses SHA-cached Lua scripts.
@@ -65,7 +69,7 @@ func (g Governor) Acquire(ctx context.Context, keyID int64, class domain.Class) 
 		return nil, 0, domain.ErrGovernorOffline
 	}
 	for attempt := 0; ; attempt++ {
-		allowed, wait, reason, err := g.tryAcquire(ctx, keyID, class, budget)
+		allowed, wait, reason, at, err := g.tryAcquire(ctx, keyID, class, budget)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -77,7 +81,7 @@ func (g Governor) Acquire(ctx context.Context, keyID int64, class domain.Class) 
 		if !allowed {
 			return nil, wait, nil
 		}
-		if err := g.record(ctx, keyID, class); err != nil {
+		if err := g.record(ctx, keyID, class, at); err != nil {
 			return nil, 0, err
 		}
 		return &permit{governor: g, keyID: keyID, budget: budget}, 0, nil
@@ -98,37 +102,48 @@ func (g Governor) rebuildFirst(ctx context.Context, keyID int64, reason string, 
 	return true, nil
 }
 
-func (g Governor) record(ctx context.Context, keyID int64, class domain.Class) error {
+func (g Governor) record(ctx context.Context, keyID int64, class domain.Class, at time.Time) error {
 	if g.Recorder == nil {
 		return nil
 	}
-	if err := g.Recorder.Record(ctx, keyID, string(class), time.Now()); err != nil {
+	if err := g.Recorder.Record(ctx, keyID, string(class), at); err != nil {
 		return domain.ErrGovernorOffline
 	}
 	return nil
 }
 
-func (g Governor) tryAcquire(ctx context.Context, keyID int64, class domain.Class, budget domain.Budget) (bool, time.Duration, string, error) {
+func (g Governor) tryAcquire(ctx context.Context, keyID int64, class domain.Class, budget domain.Budget) (bool, time.Duration, string, time.Time, error) {
 	requireReady := 0
 	if g.Rebuilder != nil {
 		requireReady = 1
 	}
 	result, err := acquireScript.Run(ctx, g.Client, g.keys(keyID), budget.PerSecondRate, budget.Burst, budget.HourlyLimit, budget.Reserve, budget.PersonLaneShare, string(class), requireReady, budget.IdlePhotoProtection()).Slice()
 	if err != nil || len(result) < 3 {
-		return false, 0, "", domain.ErrGovernorOffline
+		return false, 0, "", time.Time{}, domain.ErrGovernorOffline
 	}
 	allowed, okAllowed := asInt64(result[0])
 	waitMS, okWait := asInt64(result[1])
 	reason, _ := result[2].(string)
 	if !okAllowed || !okWait {
-		return false, 0, "", domain.ErrGovernorOffline
+		return false, 0, "", time.Time{}, domain.ErrGovernorOffline
 	}
-	return allowed == 1, time.Duration(waitMS) * time.Millisecond, reason, nil
+	var at time.Time
+	if allowed == 1 {
+		if len(result) != 4 {
+			return false, 0, "", time.Time{}, domain.ErrGovernorOffline
+		}
+		ms, ok := asInt64(result[3])
+		if !ok {
+			return false, 0, "", time.Time{}, domain.ErrGovernorOffline
+		}
+		at = time.UnixMilli(ms)
+	}
+	return allowed == 1, time.Duration(waitMS) * time.Millisecond, reason, at, nil
 }
 
 func (g Governor) keys(keyID int64) []string {
 	base := fmt.Sprintf("%squota:key:%d:", g.Prefix, keyID)
-	return []string{base + "bucket", base + "hourly", base + "window", base + "cooldown", base + "byclass", base + "ready", base + "photo_demand"}
+	return []string{base + "bucket", base + "rolling:interactive", base + "rolling:person", base + "cooldown", base + "rolling:photo", base + "rolling:ready", base + "photo_demand", base + "rolling:sequence"}
 }
 
 // Capacity reports conservative dispatch credits from the same hourly usage
@@ -145,42 +160,16 @@ func (g Governor) Capacity(ctx context.Context, keyID int64, window time.Duratio
 	if err != nil || budget.Validate() != nil {
 		return 0, domain.ErrGovernorOffline
 	}
-	used, start, err := readCapacityCounters(ctx, g.Client, g.keys(keyID))
+	live, err := (Counters{Client: g.Client, Prefix: g.Prefix}).Live(ctx, keyID)
 	if err != nil {
 		return 0, domain.ErrGovernorOffline
 	}
-	if start == 0 || time.Now().UnixMilli() >= start+int64(time.Hour/time.Millisecond) {
-		used = 0
-	}
+	used := live.Used
 	credits := remainingCapacity(budget, used, window)
 	if credits > int64(math.MaxInt) {
 		credits = int64(math.MaxInt)
 	}
 	return int(credits), nil
-}
-
-func readCapacityCounters(ctx context.Context, client redisv9.UniversalClient, keys []string) (int64, int64, error) {
-	pipe := client.Pipeline()
-	usedCommand := pipe.Get(ctx, keys[1])
-	startCommand := pipe.Get(ctx, keys[2])
-	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redisv9.Nil) {
-		return 0, 0, err
-	}
-	used, usedErr := usedCommand.Int64()
-	start, startErr := startCommand.Int64()
-	if errors.Is(usedErr, redisv9.Nil) {
-		used, usedErr = 0, nil
-	}
-	if errors.Is(startErr, redisv9.Nil) {
-		start, startErr = 0, nil
-	}
-	if usedErr != nil {
-		return 0, 0, usedErr
-	}
-	if startErr != nil {
-		return 0, 0, startErr
-	}
-	return used, start, nil
 }
 
 func remainingCapacity(budget domain.Budget, used int64, window time.Duration) int64 {
@@ -207,7 +196,7 @@ func (p *permit) Done(meta domain.Meta) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	keys := p.governor.keys(p.keyID)
-	_, err := calibrateScript.Run(ctx, p.governor.Client, keys[1:4:4], p.budget.HourlyLimit).Result()
+	_, err := calibrateScript.Run(ctx, p.governor.Client, keys, p.budget.HourlyLimit).Result()
 	if err != nil {
 		return fmt.Errorf("%w: %w", domain.ErrGovernorOffline, err)
 	}
