@@ -2,7 +2,11 @@
 
 The quota governor acquires a Redis-backed permit before a Flickr call. Each
 API key has an atomic token bucket for its per-second rate and an hourly
-counter whose one-hour window starts with the first acquisition in that window.
+rolling 60-minute ledger. Three sorted sets per key store interactive, person
+and photo grants, scored by Redis grant time in milliseconds. Each member uses
+the time plus a per-key sequence for uniqueness. At acquisition, grants at or
+before `now - 3,600,000 ms` are removed; usage is the sum of the three set sizes.
+Each granted lane set and the sequence expire after two hours.
 The acquisition Lua script checks both limits and changes their state in one
 Redis call. The Go adapter uses go-redis script SHA caching and fails closed
 when Redis or the key budget provider is unavailable.
@@ -56,8 +60,10 @@ Deployment: run migrations and restart roles. The lead restores
 `person_lane_share` to 0.30 after deployment; the migration does not change it.
 
 Callers finish a permit with its result metadata. A Flickr quota-exceeded
-result recalibrates the hourly counter to the key's hourly limit and places the
-key in cooldown until the current hourly window ends. The counter and cooldown
+result fills the rolling ledger to the key's hourly limit with synthetic
+interactive grants scored at Redis now, without lowering existing counts. The
+key cools down until the oldest counted grant expires; remaining synthetic
+grants continue consuming budget until their own expiry. The counter and cooldown
 are scoped by API key.
 
 ## Usage persistence and rebuild
@@ -65,20 +71,29 @@ are scoped by API key.
 A flusher copies each valid key's hourly usage from Redis into
 `quota_usage(key_id, window_start, used, by_class)` every minute. A save never
 lowers `used` for a window, and keys whose Redis counters are missing are
-skipped so lost counters never overwrite stored usage. The governor counts
-granted calls per class (`byclass` hash) so `by_class` can be stored.
+skipped so lost counters never overwrite stored usage. The per-class sorted set sizes supply `by_class`. Each snapshot
+uses `window_start = Redis now - 60 minutes`; it describes that rolling
+interval, not a new fixed window. Counts may decrease between snapshots as
+grants expire; the existing upsert still never lowers one snapshot row.
 
-When a governor is configured with a rebuilder, each key has a `ready` marker
+When a governor is configured with a rebuilder, each key has a versioned `rolling:ready` marker
 in Redis. If the marker is missing (at start or after Redis lost its keys),
 `Acquire` fails closed: it blocks while the counters are rebuilt, then retries
 once. If the rebuild fails it returns the governor-offline error; if the key
 still is not ready it returns a retry delay. Concurrent acquisitions for one key
 share a single rebuild.
 
-The rebuild reads the newest `quota_usage` window that started within the last
-hour and the `api_call_log` calls since that window began. Per class it takes
-the larger of the two, so it can over-count the window but never under-count
-it. With no stored row, the earliest logged call starts the window.
+The rebuild reads individual `api_call_log` grant rows in the last 60 minutes
+with `outcome IS NULL`, retaining their exact timestamps and classes. Diagnostic
+outcome rows do not consume a second permit. Stable log member identities make
+replay idempotent. Restore retains existing sorted-set members and never lowers
+counts. Aggregate `quota_usage` snapshots remain available to history readers;
+they are not replayed because they cannot identify when individual calls expire.
+
+The versioned marker is absent on first start after deployment, so the existing
+fail-closed path rebuilds before granting. Restart all roles together; mixing
+fixed-window and rolling-window governors is unsupported. No schema migration
+or settings change is needed for this update.
 
 `api_call_log(key_id, class, called_at)` is created by the
 `api_call_log` migration. The governor writes one row for every granted call
@@ -100,8 +115,8 @@ failing closed for any key that is not ready.
 ## Quota state endpoints and events
 
 `GET /keys/{id}/quota` returns the signed-in owner's key state: `used`,
-`limit`, `reserve`, `reset_at` (end of the open hourly window, omitted when no
-window is open), `state` and `lanes` (granted calls per interactive, person and
+`limit`, `reserve`, `reset_at` (expiry of the oldest counted grant, omitted when the
+rolling ledger is empty), `state` and `lanes` (granted calls per interactive, person and
 photo lane). A key that does not exist, is not valid, or belongs to someone else
 is a 404.
 
@@ -110,10 +125,11 @@ is a 404.
 `RequireAdmin`. `node` is `NODE_ID` (the host name when unset).
 
 `state` is `cooling` while the key's cooldown marker is set (Flickr rejected it
-and it waits for the window to end), `exhausted` when `used` reached `limit`,
-and `ok` otherwise. A window that already ended counts as empty. `trend`
-compares `used` with the previous stored window's pace at the same point in the
-hour: `rising` or `falling` beyond a 10 percent tolerance, otherwise `steady`.
+and it waits for the oldest counted grant to expire), `exhausted` when `used` reached `limit`,
+and `ok` otherwise. Expired grants no longer count, including when the endpoint is read without
+an intervening acquisition. `trend`
+compares `used` with the previous stored rolling snapshot at the same
+full-hour duration: `rising` or `falling` beyond a 10 percent tolerance, otherwise `steady`.
 Without a previous window any usage is `rising`.
 
 The scheduler role emits a `quota.state` event per valid key every minute to
@@ -121,3 +137,14 @@ OpenObserve (`/api/{org}/{stream}/_json`): `key_id`, `used`, `limit`, `reserve`,
 `reset_at`, `state`, `trend`, `lane_interactive`, `lane_person`, `lane_photo` and
 `node`. Emission is off until `OPENOBSERVE_USERNAME` is set. A failed emit is
 logged and retried on the next tick.
+
+## Rolling verification
+
+Regression tests spend late in an hour and immediately after the old boundary,
+assert the oldest expiry retry and endpoint reset, and simulate 24 hours of
+waiting work with at least 95 percent utilization of the configured allowance.
+Existing lane-demand, idle-floor and real-Redis clock-second tests remain gates.
+After deployment, the lead should inspect a full day of grant log rows
+(`outcome IS NULL`) per key with a rolling 60-minute count and verify none
+exceeds the configured limit (3,600 at defaults). Pre-deployment simulations do
+not establish that live observation.

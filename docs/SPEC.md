@@ -140,6 +140,10 @@ guide feature implementation; operational environment rules live in
   unchanged. Restrict only the caller's sizes facet after Flickr reports not
   found or permission denied, and reopen it when the photo version or
   visibility changes.
+- Enforce each key's configured hourly allowance over the preceding rolling
+  60 minutes, across all lanes; a fixed-hour boundary never releases recent
+  grants. Report reset as the oldest counted grant's expiry and rebuild exact
+  grant timestamps and classes from the durable call log after Redis loss.
 - Share each key's configured hourly and per-second allowance across its lanes.
   Keep the configured reserve for user-started requests when the key approaches
   its limit. No clock second grants more calls than that key's burst. The
