@@ -36,7 +36,7 @@ func TestCycleSchedulesPeopleInOrderBeforeWrapping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	if _, err := pool.Exec(ctx, `UPDATE crawl_interests SET last_checked_at=$3 WHERE user_id=$1 AND person_nsid=$2`, userID, people[1], now); err != nil {
 		t.Fatal(err)
 	}

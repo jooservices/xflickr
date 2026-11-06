@@ -51,7 +51,7 @@ func TestBackfillWorktreeBatchesAndGuards(t *testing.T) {
 		}
 	}
 	options := BackfillOptions{UserID: 1, AccountID: 2, BatchSize: 1}
-	before := time.Now().UTC()
+	before := time.Now().UTC().Truncate(time.Microsecond)
 	report, err := Backfill(ctx, conn, options)
 	if err != nil {
 		t.Fatal(err)
