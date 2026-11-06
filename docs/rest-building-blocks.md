@@ -70,3 +70,6 @@ claims, replay, principal isolation and expired-key replacement. Router tests
 cover anonymous/user/admin discovery and retain old route access parity.
 The OpenAPI entry response and shared schemas generate Go and TypeScript;
 web response validation opts in only `/api/v1` and preserves legacy decoding.
+
+[ADR 0006](adr/0006-rest-foundation-idempotency.md) records the package boundary
+and durable-claim recovery trade-offs for review.
