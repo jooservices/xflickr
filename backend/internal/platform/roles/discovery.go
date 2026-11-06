@@ -72,7 +72,7 @@ func (r discoveryResponse) VisitGetAPIEntryResponse(w http.ResponseWriter) error
 func (apiServer) GetAPIEntry(ctx context.Context, _ gen.GetAPIEntryRequestObject) (gen.GetAPIEntryResponseObject, error) {
 	collections := map[string]string{"authentication-options": "/auth/config"}
 	if principal, ok := identityhttp.PrincipalFrom(ctx); ok {
-		for relation, path := range map[string]string{"keys": "/keys", "flickr-accounts": "/flickr-accounts", "people": "/people", "albums": "/albums", "favorites": "/favorites"} {
+		for relation, path := range map[string]string{"me": "/me", "events": "/events", "keys": "/keys", "flickr-accounts": "/flickr-accounts", "people": "/people", "albums": "/albums", "favorites": "/favorites"} {
 			collections[relation] = path
 		}
 		if principal.User.Role == identitydomain.RoleAdmin {

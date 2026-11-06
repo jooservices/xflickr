@@ -8,7 +8,7 @@
 import type { Link } from './link';
 
 /**
- * Relations: self, authentication-options, keys, flickr-accounts, people, albums, favorites, users, plans, flags. Only available relations are present. During additive migration these point to existing routes; later slices replace their targets.
+ * Relations: self, authentication-options, me, events, keys, flickr-accounts, people, albums, favorites, users, plans, flags. Only available relations are present. During additive migration these point to existing routes; later slices replace their targets.
  */
 export interface Links {
   self: Link;

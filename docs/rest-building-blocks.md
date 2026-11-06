@@ -3,7 +3,7 @@
 Slice 0 adds `internal/platform/api/rest` without migrating existing handlers.
 `GET /api/v1` is the additive discovery entry point. Its `data.links` includes
 `self` and public authentication options. A valid session adds keys, Flickr
-accounts, people, albums and favorites; administrators also see users, plans
+accounts, people, albums, favorites, me and events; administrators also see users, plans
 and flags. Targets point to existing, usable routes during migration. No link
 advertises an unimplemented versioned collection. Discovery is private and
 uncacheable, rejects query parameters with 422 and makes no Flickr requests.

@@ -30,7 +30,7 @@ export const GetAPIEntryResponse = zod.object({
         }),
       )
       .describe(
-        'Relations: self, authentication-options, keys, flickr-accounts, people, albums, favorites, users, plans, flags. Only available relations are present. During additive migration these point to existing routes; later slices replace their targets.',
+        'Relations: self, authentication-options, me, events, keys, flickr-accounts, people, albums, favorites, users, plans, flags. Only available relations are present. During additive migration these point to existing routes; later slices replace their targets.',
       ),
   }),
   meta: zod.record(zod.string(), zod.unknown()),

@@ -11,7 +11,7 @@ Link:
       enum: [GET, POST, PUT, PATCH, DELETE]
 Links:
   type: object
-  description: 'Relations: self, authentication-options, keys, flickr-accounts, people, albums, favorites, users, plans, flags. Only available relations are present. During additive migration these point to existing routes; later slices replace their targets.'
+  description: 'Relations: self, authentication-options, me, events, keys, flickr-accounts, people, albums, favorites, users, plans, flags. Only available relations are present. During additive migration these point to existing routes; later slices replace their targets.'
   required: [self]
   properties:
     self:
