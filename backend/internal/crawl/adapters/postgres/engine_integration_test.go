@@ -272,7 +272,7 @@ func TestRecoverableFlickrFailureKeepsWorkItemPending(t *testing.T) {
 				t.Fatal(err)
 			}
 			engine := &app.Engine{Registry: registry, Store: store, Units: store, Keys: intKeys{}, Governor: intGovernor{}, Flickr: &intFlickr{err: tc.cause}, Settings: intSettings{}, Timing: app.Timing{MaxAttempts: 5, RecoverableMaxAttempts: 20, Backoff: 30 * time.Second}}
-			before := time.Now()
+			before := time.Now().Truncate(time.Microsecond)
 			if err := engine.Handle(ctx, itemID); err != nil {
 				t.Fatal(err)
 			}

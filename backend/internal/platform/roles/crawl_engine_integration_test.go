@@ -234,7 +234,7 @@ func TestCrawlWorkerKeepsRiverJobCompletedOnRecoverableFlickrFailure(t *testing.
 			if err := pool.QueryRow(ctx, `SELECT attempts, not_before, COALESCE(last_error,'') FROM work_items WHERE id=$1`, itemID).Scan(&attempts, &notBefore, &lastError); err != nil {
 				t.Fatal(err)
 			}
-			if attempts != 1 || !notBefore.After(time.Now()) || lastError == "" {
+			if attempts != 1 || !notBefore.After(time.Now().Truncate(time.Microsecond)) || lastError == "" {
 				t.Fatalf("work item attempts=%d not_before=%s last_error=%q; want 1 attempt, a future not_before and a reason", attempts, notBefore, lastError)
 			}
 			var state string
