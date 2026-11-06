@@ -34,7 +34,7 @@ func TestPumpDispatchesExactlyOneHundredOfTenThousandRows(t *testing.T) {
 	suffix := fmt.Sprintf("pump-%d", time.Now().UnixNano())
 	keyID := seedKey(t, ctx, pool, suffix)
 	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,key_id,state,priority_base) SELECT 'sync_person',$1 || '-' || n,$2,'pending',n FROM generate_series(1,10000) n`, suffix, keyID); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,priority_base) SELECT 'sync_person',$1 || '-' || n,(SELECT user_id FROM api_keys WHERE id=$2),$2,'pending',n FROM generate_series(1,10000) n`, suffix, keyID); err != nil {
 		t.Fatal(err)
 	}
 	adapter, err := queue.NewRiver(pool, nil)
@@ -85,7 +85,7 @@ func TestPumpSkipsUnavailableKeyAndDispatchesValidKey(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE api_keys SET status='revoked' WHERE id=$1`, unavailableID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,key_id,state,priority_base) VALUES ('sync_person',$1,$2,'pending',2),('sync_person',$3,$4,'pending',1)`, suffix+"-revoked-row", unavailableID, suffix+"-valid-row", validID); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,priority_base) VALUES ('sync_person',$1,(SELECT user_id FROM api_keys WHERE id=$2),$2,'pending',2),('sync_person',$3,(SELECT user_id FROM api_keys WHERE id=$4),$4,'pending',1)`, suffix+"-revoked-row", unavailableID, suffix+"-valid-row", validID); err != nil {
 		t.Fatal(err)
 	}
 	adapter, err := queue.NewRiver(pool, nil)
@@ -161,7 +161,7 @@ func TestExpiredLeaseReturnsToPendingThenExhausts(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 	suffix := fmt.Sprintf("lease-%d", time.Now().UnixNano())
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state,attempts,lease_expires_at) VALUES('sync_person',$1,'running',0,now()-interval '1 second')`, suffix); err != nil {
+	if _, err := pool.Exec(ctx, `WITH u AS (INSERT INTO users(email,password_hash,role) VALUES('workitem-test@example.test','unused','user') ON CONFLICT (email) DO NOTHING RETURNING id) INSERT INTO work_items(kind,subject_key,user_id,state,attempts,lease_expires_at) SELECT 'sync_person',$1,COALESCE((SELECT id FROM u),(SELECT id FROM users WHERE email='workitem-test@example.test')),'running',0,now()-interval '1 second'`, suffix); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
@@ -217,11 +217,11 @@ func TestFailedWorkIsSelfHealedAndRequeued(t *testing.T) {
 	defer cancel()
 	suffix := fmt.Sprintf("heal-%d", time.Now().UnixNano())
 	for name, stale := range map[string]string{"-old": "1 hour", "-new": "1 minute"} {
-		if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state,attempts,last_error,updated_at) VALUES('sync_person',$1,'failed',5,'lease expired',now()-$2::interval)`, suffix+name, stale); err != nil {
+		if _, err := pool.Exec(ctx, `WITH u AS (INSERT INTO users(email,password_hash,role) VALUES('workitem-test@example.test','unused','user') ON CONFLICT (email) DO NOTHING RETURNING id) INSERT INTO work_items(kind,subject_key,user_id,state,attempts,last_error,updated_at) SELECT 'sync_person',$1,COALESCE((SELECT id FROM u),(SELECT id FROM users WHERE email='workitem-test@example.test')),'failed',5,'lease expired',now()-$2::interval`, suffix+name, stale); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state,attempts,last_error,updated_at) VALUES('sync_person',$1,'failed',5,'flickr 5xx',now()-interval '1 hour')`, suffix+"-other"); err != nil {
+	if _, err := pool.Exec(ctx, `WITH u AS (INSERT INTO users(email,password_hash,role) VALUES('workitem-test@example.test','unused','user') ON CONFLICT (email) DO NOTHING RETURNING id) INSERT INTO work_items(kind,subject_key,user_id,state,attempts,last_error,updated_at) SELECT 'sync_person',$1,COALESCE((SELECT id FROM u),(SELECT id FROM users WHERE email='workitem-test@example.test')),'failed',5,'flickr 5xx',now()-interval '1 hour'`, suffix+"-other"); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
@@ -266,7 +266,7 @@ func TestFailedWorkIsSelfHealedAndRequeued(t *testing.T) {
 	if _, err := pool.Exec(ctx, `CREATE TABLE `+scratch+`.work_items (LIKE public.work_items INCLUDING DEFAULTS INCLUDING IDENTITY)`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO `+scratch+`.work_items(kind,subject_key,state,attempts,last_error) VALUES('sync_person','a','failed',5,'x'),('sync_person','b','failed',3,'y'),('sync_person','c','done',0,NULL)`); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO `+scratch+`.work_items(kind,subject_key,user_id,state,attempts,last_error) VALUES('sync_person','a',1,'failed',5,'x'),('sync_person','b',1,'failed',3,'y'),('sync_person','c',1,'done',0,NULL)`); err != nil {
 		t.Fatal(err)
 	}
 	poolConfig := pool.Config().Copy()
@@ -298,7 +298,7 @@ func TestReclaimLeavesItemWithLiveRiverJobAlone(t *testing.T) {
 	suffix := fmt.Sprintf("lease-job-%d", time.Now().UnixNano())
 	keyID := seedKey(t, ctx, pool, suffix)
 	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,key_id,state,lease_expires_at) VALUES('sync_person',$1,$2,'ready',now()-interval '1 second')`, suffix, keyID); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,lease_expires_at) VALUES('sync_person',$1,(SELECT user_id FROM api_keys WHERE id=$2),$2,'ready',now()-interval '1 second')`, suffix, keyID); err != nil {
 		t.Fatal(err)
 	}
 	adapter, err := queue.NewRiver(pool, nil)
@@ -359,7 +359,7 @@ func TestReclaimRollsBackWhenFailedRowCannotBeUpdated(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	suffix := fmt.Sprintf("reclaim-update-fail-%d", time.Now().UnixNano())
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state,attempts,lease_expires_at) VALUES('sync_person',$1,'ready',4,now()-interval '1 second')`, suffix); err != nil {
+	if _, err := pool.Exec(ctx, `WITH u AS (INSERT INTO users(email,password_hash,role) VALUES('workitem-test@example.test','unused','user') ON CONFLICT (email) DO NOTHING RETURNING id) INSERT INTO work_items(kind,subject_key,user_id,state,attempts,lease_expires_at) SELECT 'sync_person',$1,COALESCE((SELECT id FROM u),(SELECT id FROM users WHERE email='workitem-test@example.test')),'ready',4,now()-interval '1 second'`, suffix); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE subject_key=$1`, suffix) })
@@ -397,7 +397,7 @@ func TestReclaimReturnsOutboxFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	suffix := fmt.Sprintf("reclaim-outbox-fail-%d", time.Now().UnixNano())
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state,attempts,lease_expires_at) VALUES('sync_person',$1,'ready',4,now()-interval '1 second')`, suffix); err != nil {
+	if _, err := pool.Exec(ctx, `WITH u AS (INSERT INTO users(email,password_hash,role) VALUES('workitem-test@example.test','unused','user') ON CONFLICT (email) DO NOTHING RETURNING id) INSERT INTO work_items(kind,subject_key,user_id,state,attempts,lease_expires_at) SELECT 'sync_person',$1,COALESCE((SELECT id FROM u),(SELECT id FROM users WHERE email='workitem-test@example.test')),'ready',4,now()-interval '1 second'`, suffix); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE subject_key=$1`, suffix) })
@@ -448,7 +448,7 @@ func TestRecomputeScoresStoresFormulaResultInBatches(t *testing.T) {
 	pool := integrationPool(t)
 	ctx := t.Context()
 	suffix := fmt.Sprintf("score-%d", time.Now().UnixNano())
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state,direct_action,starred,depth,created_at) VALUES('sync_person',$1,'pending',TRUE,TRUE,1,now()-interval '10 minutes')`, suffix); err != nil {
+	if _, err := pool.Exec(ctx, `WITH u AS (INSERT INTO users(email,password_hash,role) VALUES('workitem-test@example.test','unused','user') ON CONFLICT (email) DO NOTHING RETURNING id) INSERT INTO work_items(kind,subject_key,user_id,state,direct_action,starred,depth,created_at) SELECT 'sync_person',$1,COALESCE((SELECT id FROM u),(SELECT id FROM users WHERE email='workitem-test@example.test')),'pending',TRUE,TRUE,1,now()-interval '10 minutes'`, suffix); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
@@ -587,7 +587,7 @@ func TestRecomputeScoresReturnsInvalidScoreError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	suffix := fmt.Sprintf("score-invalid-%d", time.Now().UnixNano())
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state) VALUES('person',$1,'pending')`, suffix); err != nil {
+	if _, err := pool.Exec(ctx, `WITH u AS (INSERT INTO users(email,password_hash,role) VALUES('workitem-test@example.test','unused','user') ON CONFLICT (email) DO NOTHING RETURNING id) INSERT INTO work_items(kind,subject_key,user_id,state) SELECT 'person',$1,COALESCE((SELECT id FROM u),(SELECT id FROM users WHERE email='workitem-test@example.test')),'pending'`, suffix); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE subject_key=$1`, suffix) })
@@ -606,7 +606,7 @@ func TestRecomputeScoresReturnsBacklogWriteFailure(t *testing.T) {
 	suffix := fmt.Sprintf("score-write-failure-%d", time.Now().UnixNano())
 	function := "fail_score_" + fmt.Sprint(time.Now().UnixNano())
 	trigger := "trigger_score_" + fmt.Sprint(time.Now().UnixNano())
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state) VALUES('person',$1,'pending')`, suffix); err != nil {
+	if _, err := pool.Exec(ctx, `WITH u AS (INSERT INTO users(email,password_hash,role) VALUES('workitem-test@example.test','unused','user') ON CONFLICT (email) DO NOTHING RETURNING id) INSERT INTO work_items(kind,subject_key,user_id,state) SELECT 'person',$1,COALESCE((SELECT id FROM u),(SELECT id FROM users WHERE email='workitem-test@example.test')),'pending'`, suffix); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE subject_key=$1`, suffix) })
@@ -667,7 +667,7 @@ func TestPumpStopsWhenQuotaGovernorIsOffline(t *testing.T) {
 	suffix := fmt.Sprintf("offline-%d", time.Now().UnixNano())
 	keyID := seedKey(t, ctx, pool, suffix)
 	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,key_id,state) VALUES('sync_person',$1,$2,'pending')`, suffix+"-only", keyID); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state) VALUES('sync_person',$1,(SELECT user_id FROM api_keys WHERE id=$2),$2,'pending')`, suffix+"-only", keyID); err != nil {
 		t.Fatal(err)
 	}
 	adapter, err := queue.NewRiver(pool, nil)
@@ -728,7 +728,7 @@ func TestPumpRollsBackWhenRiverInsertFails(t *testing.T) {
 	suffix := fmt.Sprintf("insert-fail-%d", time.Now().UnixNano())
 	keyID := seedKey(t, ctx, pool, suffix)
 	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,key_id,state) VALUES('sync_person',$1,$2,'pending')`, suffix+"-only", keyID); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state) VALUES('sync_person',$1,(SELECT user_id FROM api_keys WHERE id=$2),$2,'pending')`, suffix+"-only", keyID); err != nil {
 		t.Fatal(err)
 	}
 	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
@@ -754,7 +754,7 @@ func TestPumpRollsBackWhenBacklogUpdateFails(t *testing.T) {
 	suffix := fmt.Sprintf("update-fail-%d", time.Now().UnixNano())
 	keyID := seedKey(t, ctx, pool, suffix)
 	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,key_id,state) VALUES('sync_person',$1,$2,'pending')`, suffix+"-only", keyID); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state) VALUES('sync_person',$1,(SELECT user_id FROM api_keys WHERE id=$2),$2,'pending')`, suffix+"-only", keyID); err != nil {
 		t.Fatal(err)
 	}
 	function := "fail_pump_update_" + fmt.Sprint(time.Now().UnixNano())
@@ -865,7 +865,7 @@ func TestPumpAssignsOwnerKeyToKeylessPendingWork(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state) SELECT 'check',$1 || '-owned',user_id,'pending' FROM api_keys WHERE id=$2`, suffix, keyID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state) VALUES('check',$1,'pending')`, suffix+"-orphan"); err != nil {
+	if _, err := pool.Exec(ctx, `WITH u AS (INSERT INTO users(email,password_hash,role) VALUES('workitem-test@example.test','unused','user') ON CONFLICT (email) DO NOTHING RETURNING id) INSERT INTO work_items(kind,subject_key,user_id,state) SELECT 'check',$1,COALESCE((SELECT id FROM u),(SELECT id FROM users WHERE email='workitem-test@example.test')),'pending'`, suffix+"-orphan"); err != nil {
 		t.Fatal(err)
 	}
 	adapter, err := queue.NewRiver(pool, nil)
@@ -1036,7 +1036,7 @@ func TestRequeuedFailedWorkIsDispatchedOnlyThroughPumpAndQuotaGate(t *testing.T)
 	var ids []int64
 	for _, name := range []string{"-first", "-second"} {
 		var id int64
-		if err := pool.QueryRow(ctx, `INSERT INTO work_items(kind,subject_key,key_id,state,attempts,last_error) VALUES('sync_person',$1,$2,'failed',5,'lease expired') RETURNING id`, suffix+name, keyID).Scan(&id); err != nil {
+		if err := pool.QueryRow(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,attempts,last_error) VALUES('sync_person',$1,(SELECT user_id FROM api_keys WHERE id=$2),$2,'failed',5,'lease expired') RETURNING id`, suffix+name, keyID).Scan(&id); err != nil {
 			t.Fatal(err)
 		}
 		ids = append(ids, id)

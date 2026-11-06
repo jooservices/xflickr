@@ -48,7 +48,7 @@ func TestPumpWarnsAboutKeylessPendingWorkOncePerMinute(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	subject := fmt.Sprintf("keyless-warn-%d", time.Now().UnixNano())
-	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state) VALUES('check',$1,'pending')`, subject); err != nil {
+	if _, err := pool.Exec(ctx, `WITH u AS (INSERT INTO users(email,password_hash,role) VALUES('workitem-test@example.test','unused','user') ON CONFLICT (email) DO NOTHING RETURNING id) INSERT INTO work_items(kind,subject_key,user_id,state) SELECT 'check',$1,COALESCE((SELECT id FROM u),(SELECT id FROM users WHERE email='workitem-test@example.test')),'pending'`, subject); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE subject_key=$1`, subject) })
