@@ -27,6 +27,10 @@ const (
 
 var ErrInvalidPhoto = errors.New("catalog: invalid photo")
 
+// RestrictedPlaceholderServer is the listing server Flickr uses for media the
+// authenticated account cannot access.
+const RestrictedPlaceholderServer = "65535"
+
 // Photo is the catalog representation. JSON fields contain their encoded JSON
 // representation; Raw is uncompressed JSON at the domain boundary.
 type Photo struct {
@@ -78,6 +82,12 @@ func (p Photo) Validate() error {
 		return ErrInvalidPhoto
 	}
 	return nil
+}
+
+// HasRestrictedPlaceholder reports whether Flickr listed this photo with its
+// restricted placeholder server.
+func (p Photo) HasRestrictedPlaceholder() bool {
+	return p.Server == RestrictedPlaceholderServer
 }
 
 // CanReplaceSizes enforces that provisional Flickr size data cannot downgrade

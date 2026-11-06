@@ -12,7 +12,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 )
 
-func TestPhotoLaneOrdersByInterestDepthAndUpload(t *testing.T) {
+func TestPhotoLaneSelectsOnlyStarredOrActiveSelectedContacts(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
 	}
@@ -86,17 +86,23 @@ func TestPhotoLaneOrdersByInterestDepthAndUpload(t *testing.T) {
 		}
 		return ids
 	}
-	want := []int64{base + 2, base + 1, base + 4, base + 6, base + 7, base + 8}
+	want := []int64{base + 2, base + 1, base + 4}
 	if got := mine(1000, 0); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Select() ids = %v, want %v", got, want)
 	}
+	// Paging is checked against the full ordered list, so other eligible rows in
+	// the shared test database cannot change the expectation.
+	all, err := lane.Select(ctx, 1000, 0, nil)
+	if err != nil || len(all) < 3 {
+		t.Fatalf("Select(1000, 0) = %v, %v; want at least the fixture rows", all, err)
+	}
 	first, err := lane.Select(ctx, 2, 0, nil)
-	if err != nil || len(first) != 2 {
-		t.Fatalf("Select(2, 0) = %v, %v", first, err)
+	if err != nil || !reflect.DeepEqual(first, all[:2]) {
+		t.Fatalf("Select(2, 0) = %v, %v; want %v", first, err, all[:2])
 	}
 	second, err := lane.Select(ctx, 2, 2, nil)
-	if err != nil || len(second) != 2 || second[0] == first[0] || second[0] == first[1] {
-		t.Fatalf("Select(2, 2) = %v, %v; want rows after %v", second, err, first)
+	if err != nil || !reflect.DeepEqual(second, all[2:min(4, len(all))]) {
+		t.Fatalf("Select(2, 2) = %v, %v; want %v", second, err, all[2:min(4, len(all))])
 	}
 	withExtras, err := lane.Select(ctx, 1000, 0, []string{"info"})
 	if err != nil {

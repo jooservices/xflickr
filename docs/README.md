@@ -73,7 +73,7 @@
   region rules.
 - [Internationalisation and copy](ui/i18n.md) — key naming, English and
   Vietnamese rules, formatting, and plurals.
-- [Photo lane selection](photo-lane.md) — catalog-driven getSizes selection, ordering and dedupe.
+- [Photo lane selection](photo-lane.md) — on-demand getSizes selection, restricted placeholders, ordering and dedupe.
 - [Optional photo facets](photo-facets.md) — per-photo Flickr info, EXIF, contexts, comments, and favorites.
 - [Browser E2E](e2e.md) — the real full-stack Playwright suite, the route sweep and how to add a journey.
 - [REST API rules](rest-api.md) — the binding rule set for every route, the contract, the conformance test and the MCP tools.

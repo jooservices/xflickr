@@ -3,8 +3,16 @@
 Photos waiting for `getSizes` need no backlog rows. `photolane.Next(n)` (the
 `PhotoLane.Next` use case in `schedule/app`) reads the catalog directly: photos
 whose sizes are not terminally confirmed for their current `last_update` and
-that are not tombstoned, joined with `crawl_interests` through the owner. Once
-sizes are current, enabled optional facets may be selected for photos owned by
+that are not tombstoned, joined with `crawl_interests` through the owner. Only
+starred or actively selected contacts are eligible for background size work;
+unselected, unstarred contacts (including expired selections) do not enter the
+lane, regardless of depth. Explicit photo requests for download or sync use the
+existing download flow, which queues `photo.sizes` directly with the requesting
+user's key and the interactive quota class. They do not require a starred or
+selected owner. A photo being opened in the Lightbox screen (JOOXF-171) will
+enqueue an interactive size confirmation through the same download flow.
+Listing URLs and dimensions remain provisional until needed.
+Once sizes are current, enabled optional facets may be selected for photos owned by
 starred or actively selected contacts.
 
 ## Ordering
@@ -25,8 +33,18 @@ has no eligible key. A transaction-scoped advisory lock on the dedupe key keeps
 concurrent producers from inserting the same job twice. `Next` pages past
 skipped photos (bounded) so already-queued photos do not starve the lane.
 
-The `photo.sizes` handler calls `flickr.photos.getSizes`, stores the returned
-sizes as `confirmed`, and records `sizes_checked_at`. A confirmed photo is
+Before making any Flickr call, the `photo.sizes` handler checks the stored
+listing server. Server `65535` is Flickr's restricted placeholder: the handler
+records empty sizes, `unavailable`, and `sizes_checked_at` locally once. This
+is an inaccessible sizes result, not a deleted photo, and does not tombstone the
+photo or call `getInfo` to confirm it. Repeated jobs skip the terminal status
+without calls or writes, including interactive download jobs. An unchanged
+confirmed result is reused without reclassification. No new status or migration
+is required; `unavailable` retains its existing terminal semantics. Cleanup of
+already queued work is tracked separately in JOOXF-311.
+
+For other pending photos, the `photo.sizes` handler calls
+`flickr.photos.getSizes`, stores the returned sizes as `confirmed`, and records `sizes_checked_at`. A confirmed photo is
 skipped while its last update is no newer than that check. Flickr not-found and
 permission errors store an empty sizes list with status `unavailable`; those
 photos leave the lane and are not retried.
@@ -43,7 +61,9 @@ a quota bypass. Flickr error code 1 (`Photo not found`) is treated as an
 unavailable photo by this lane; code 2 (`Permission denied`) is classified
 separately and also stored as unavailable. Flickr documents that `getSizes`
 does not require OAuth, but the caller must be allowed to view the photo; code
-1 means the photo ID is invalid, while code 2 means the caller cannot view it.
+1 can also occur for existing restricted photos, as verified in JOOXF-275,
+while code 2 means the caller cannot view it. A sizes failure alone does not
+prove that the photo was deleted.
 The API client tests both classifications and the FakeFlickr integration test
 verifies the requested method, photo ID, retry, and confirmed result. See the
 [Flickr `getSizes` API reference](https://www.flickr.com/services/api/flickr.photos.getSizes.html).
@@ -67,8 +87,8 @@ are removed before info or EXIF data is persisted.
 
 ## Query and indexes
 
-`catalog/adapters/postgres/photolane.sql` ranks persons from three indexed,
-`LIMIT`ed streams (selected, starred, other by depth) and probes only the
+`catalog/adapters/postgres/photolane.sql` ranks persons from two indexed,
+`LIMIT`ed streams (selected, starred) and probes only the
 top-ranked persons through the partial index `photos_sizes_pending_idx`
 (`owner_nsid, uploaded_at DESC, id DESC`), which contains photos without a
 terminal size result and confirmed photos whose `sizes_checked_at` is older
@@ -81,7 +101,7 @@ widens until it reaches persons with work, which costs more per call. The query
 places all sizes work before optional facet work and keeps enabled facets in a
 stable order.
 
-## Measured (5M photos, 50k people and interests, 100 photos per call)
+## Historical baseline before on-demand filtering (5M photos, 50k people and interests)
 
 Warm calls took 20-31 ms (cold first call about 220 ms); `EXPLAIN (ANALYZE)`
 reported 30.9 ms execution, probing 2 persons through the photo index.
