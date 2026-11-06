@@ -7,6 +7,19 @@ The acquisition Lua script checks both limits and changes their state in one
 Redis call. The Go adapter uses go-redis script SHA caching and fails closed
 when Redis or the key budget provider is unavailable.
 
+The bucket refills at the key's per-second rate and never holds more tokens
+than the key's burst. One Redis clock second also never grants more calls than
+that burst. Refill during the same second used to be spendable immediately, so
+a full bucket plus the rest of the second granted `burst + per_second_rate - 1`
+calls (8 when the rate is 4 and the burst is 5). Those refilled tokens now stay
+in the bucket until a later second. The sustained rate is unchanged, and neither
+configured limit is raised. The script reads Redis `TIME`, so every process
+shares one clock.
+
+Every role acquires against the same key, `{prefix}quota:key:{id}:bucket`.
+The crawl, scheduler, API, and media roles do not keep separate buckets for
+one API key. A different API key has its own bucket.
+
 Interactive calls may use the full hourly budget. Person and photo calls leave
 the configured reserve available for interactive calls. Photo calls also stop
 at `hourly_limit * (1 - person_lane_share)`, preserving the person lane's share

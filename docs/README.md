@@ -27,8 +27,8 @@
   plan assignment.
 - [API keys](api-keys.md) — bring-your-own Flickr key validation, sealing, and
   quota caps.
-- [Quota governor](quota.md) — per-key token bucket, hourly budget, lane shares,
-  and cooldown behavior.
+- [Quota governor](quota.md) — per-key token bucket, clock-second burst cap,
+  hourly budget, lane shares, and cooldown behavior.
 - [Flickr accounts](flickr-accounts.md) — OAuth connect flow, sealed tokens,
   account status, and events.
 - [Catalog people and photos](catalog.md) — partitioned photo metadata,
