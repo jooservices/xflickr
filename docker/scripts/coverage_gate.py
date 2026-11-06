@@ -26,8 +26,18 @@ class PackageCoverage:
         return Decimal(self.covered) / Decimal(self.total)
 
 
-def parse_profile(path: Path) -> dict[str, PackageCoverage]:
-    packages: dict[str, list[int]] = {}
+@dataclass(frozen=True)
+class FileCoverage:
+    file: str
+    covered: int
+    total: int
+
+    @property
+    def ratio(self) -> Decimal:
+        return Decimal(self.covered) / Decimal(self.total)
+
+
+def _iter_blocks(path: Path):
     mode_seen = False
     for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         line = raw_line.strip()
@@ -44,7 +54,7 @@ def parse_profile(path: Path) -> dict[str, PackageCoverage]:
         if len(fields) != 3:
             raise ValueError(f"malformed coverage profile line {line_number}")
         location, statements_text, count_text = fields
-        file_path, separator, _position = location.partition(":")
+        file_path, separator, position = location.partition(":")
         if not separator or not file_path.startswith(MODULE_PREFIX):
             raise ValueError(f"unsupported coverage path at line {line_number}: {file_path}")
         try:
@@ -56,17 +66,47 @@ def parse_profile(path: Path) -> dict[str, PackageCoverage]:
         if statements == 0:
             continue
         relative = file_path[len(MODULE_PREFIX) :]
+        yield relative, (relative, position), statements, count > 0
+
+
+def _merged_blocks(path: Path) -> dict[tuple[str, str], list]:
+    blocks: dict[tuple[str, str], list] = {}
+    for relative, key, statements, covered in _iter_blocks(path):
+        existing = blocks.get(key)
+        if existing is None:
+            blocks[key] = [relative, statements, covered]
+        else:
+            existing[1] = max(existing[1], statements)
+            existing[2] = existing[2] or covered
+    if not blocks:
+        raise ValueError("coverage profile contains no executable statements")
+    return blocks
+
+
+def parse_profile(path: Path) -> dict[str, PackageCoverage]:
+    packages: dict[str, list[int]] = {}
+    for relative, statements, covered in _merged_blocks(path).values():
         package = posixpath.dirname(relative)
         values = packages.setdefault(package, [0, 0])
         values[1] += statements
-        if count > 0:
+        if covered:
             values[0] += statements
-
-    if not packages:
-        raise ValueError("coverage profile contains no executable statements")
     return {
         package: PackageCoverage(package, values[0], values[1])
         for package, values in packages.items()
+    }
+
+
+def parse_file_profile(path: Path) -> dict[str, FileCoverage]:
+    files: dict[str, list[int]] = {}
+    for relative, statements, covered in _merged_blocks(path).values():
+        values = files.setdefault(relative, [0, 0])
+        values[1] += statements
+        if covered:
+            values[0] += statements
+    return {
+        file: FileCoverage(file, values[0], values[1])
+        for file, values in files.items()
     }
 
 
