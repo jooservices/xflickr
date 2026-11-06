@@ -7,6 +7,7 @@ import argparse
 import fnmatch
 import os
 import posixpath
+import subprocess
 import sys
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -108,6 +109,52 @@ def parse_file_profile(path: Path) -> dict[str, FileCoverage]:
         file: FileCoverage(file, values[0], values[1])
         for file, values in files.items()
     }
+
+
+def is_generated_file(path: str) -> bool:
+    return path.endswith(".gen.go") or "gen" in posixpath.dirname(path).split("/")
+
+
+def profile_relative(path: str) -> str:
+    return path[len("backend/") :] if path.startswith("backend/") else path
+
+
+def is_excluded_file(path: str, exclusions: list[tuple[str, str]]) -> bool:
+    relative = profile_relative(path)
+    package = posixpath.dirname(relative)
+    for pattern, _reason in exclusions:
+        if fnmatch.fnmatchcase(package, pattern) or fnmatch.fnmatchcase(relative, pattern):
+            return True
+        if relative.startswith(pattern.rstrip("/") + "/"):
+            return True
+    return False
+
+
+def changed_go_files(
+    base: str,
+    exclusions: list[tuple[str, str]] | tuple[tuple[str, str], ...] = (),
+    root: Path | None = None,
+) -> list[str]:
+    if not base:
+        raise ValueError("base ref must not be empty")
+    completed = subprocess.run(
+        ["git", "diff", "--name-only", f"{base}...HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise ValueError(f"git diff against {base} failed: {completed.stderr.strip()}")
+    changed: list[str] = []
+    for line in completed.stdout.splitlines():
+        path = line.strip()
+        if not path or not path.endswith(".go") or path.endswith("_test.go"):
+            continue
+        if is_generated_file(path) or is_excluded_file(path, list(exclusions)):
+            continue
+        changed.append(path)
+    return sorted(changed)
 
 
 def parse_exclusions(path: Path) -> list[tuple[str, str]]:
