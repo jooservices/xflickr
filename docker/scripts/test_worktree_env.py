@@ -63,6 +63,13 @@ class ParseTests(unittest.TestCase):
         values = {"A": "1", "B": "two words"}
         self.assertEqual(parse_env_text(render_env(values)), values)
 
+    def test_render_keeps_dollar_quote_and_escape_characters_literal(self):
+        # The application's dotenv parser expands $NAME in unquoted values, so these must be quoted.
+        values = {"A": "pa$$word", "B": "a$WORD", "C": "it's", "D": "it's $x", "E": "back\\slash", "F": "multi\nline", "G": "${HOME}x"}
+        rendered = render_env(values)
+        self.assertEqual(parse_env_text(rendered), values)
+        self.assertIn("A='pa$$word'", rendered)
+
 
 class ValidationTests(unittest.TestCase):
     def test_accepts_short_lowercase_ids(self):
@@ -81,12 +88,15 @@ class ValidationTests(unittest.TestCase):
 
 class BuildEnvTests(unittest.TestCase):
     def build(self, existing=None):
-        return build_env(EXAMPLE, SHARED, "jooxf68", existing or {}, master_key="k1:newkey")
+        return build_env(EXAMPLE, SHARED, "jooxf68", existing or {}, master_key="k1:newkey", worktree_path="/w/a")
 
     def test_selects_worktree_resources(self):
         env = self.build()
         self.assertEqual(env["DB_NAME"], "xflickr_wtjooxf68")
         self.assertEqual(env["DB_USER"], "root")
+        self.assertEqual(env["DB_DATABASE"], "xflickr_wtjooxf68")
+        self.assertEqual(env["DB_USERNAME"], "root")
+        self.assertEqual(env["XFLICKR_WORKTREE_PATH"], "/w/a")
         self.assertEqual(env["DB_PASSWORD"], "db-secret")
         self.assertEqual(env["REDIS_DB"], "8")
         self.assertEqual(env["REDIS_PREFIX"], "xflickr_wtjooxf68:")
@@ -100,6 +110,11 @@ class BuildEnvTests(unittest.TestCase):
         kept = self.build({"XFLICKR_MASTER_KEYS": "k9:old", "XFLICKR_MASTER_KEY_ACTIVE": "k9"})
         self.assertEqual(kept["XFLICKR_MASTER_KEYS"], "k9:old")
         self.assertEqual(kept["XFLICKR_MASTER_KEY_ACTIVE"], "k9")
+
+    def test_an_existing_live_database_alias_is_overridden(self):
+        env = self.build({"DB_DATABASE": "xflickr", "DB_USERNAME": "someone"})
+        self.assertEqual(env["DB_DATABASE"], "xflickr_wtjooxf68")
+        self.assertEqual(env["DB_USERNAME"], "root")
 
     def test_missing_shared_credential_is_reported(self):
         with self.assertRaises(KeyError):
@@ -178,9 +193,10 @@ class CheckTests(unittest.TestCase):
     def tearDown(self):
         self.dir.cleanup()
 
-    def write_env(self, db="xflickr_wtjooxf68"):
+    def write_env(self, db="xflickr_wtjooxf68", alias=None, path=None):
         (self.root / ".env").write_text(
-            f"DB_NAME={db}\nDB_HOST=h\nDB_PORT=1\nDB_USER=u\nDB_PASSWORD=p\n"
+            f"DB_NAME={db}\nDB_DATABASE={alias or db}\nXFLICKR_WORKTREE_PATH={path or self.root.resolve()}\n"
+            "DB_HOST=h\nDB_PORT=1\nDB_USER=u\nDB_PASSWORD=p\n"
             "REDIS_HOST=127.0.0.1\nREDIS_PORT=6379\nSEARCH_URL=http://127.0.0.1:9200\n"
         )
 
@@ -195,6 +211,14 @@ class CheckTests(unittest.TestCase):
         for name in ("xflickr", "xflickr_test"):
             self.write_env(name)
             self.assertIn("worktree database", check_env(self.root, FakeAdmin({name}), self.up)[0])
+
+    def test_an_env_copied_from_another_worktree_is_refused(self):
+        self.write_env(path="/somewhere/else")
+        self.assertIn("another worktree", check_env(self.root, FakeAdmin({"xflickr_wtjooxf68"}), self.up)[0])
+
+    def test_a_live_database_alias_is_refused(self):
+        self.write_env(alias="xflickr")
+        self.assertIn("every database key", check_env(self.root, FakeAdmin({"xflickr_wtjooxf68"}), self.up)[0])
 
     def test_missing_database_and_unreachable_services_are_reported(self):
         self.write_env()

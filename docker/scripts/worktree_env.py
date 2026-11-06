@@ -40,12 +40,37 @@ REQUIRED_SHARED = (
 # Keys this helper owns; every other key of an existing .env is kept as it is.
 MANAGED_KEYS = frozenset(
     {
-        "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD",
+        "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_DATABASE", "DB_USERNAME", "DB_PASSWORD",
+        "XFLICKR_WORKTREE_PATH",
         "REDIS_HOST", "REDIS_PORT", "REDIS_DB", "REDIS_PASSWORD", "REDIS_PREFIX",
         "SEARCH_URL", "SEARCH_USERNAME", "SEARCH_PASSWORD", "OPENSEARCH_INDEX_PREFIX", "NODE_ID",
     }
 )
 TEST_REDIS_INDEX = "8"
+
+
+SAFE_VALUE = re.compile(r"^[A-Za-z0-9_./:@%+=,~-]*$")
+
+
+def _unquote(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] == "'":
+        return value[1:-1]
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        return re.sub(r"\\(.)", lambda m: "\n" if m.group(1) == "n" else m.group(1), value[1:-1])
+    return value
+
+
+def _quote(value: str) -> str:
+    """Quote a value so the application's dotenv parser reads it back unchanged.
+
+    Single quotes are literal; double quotes need escapes because $NAME is expanded.
+    """
+    if SAFE_VALUE.fullmatch(value):
+        return value
+    if "'" not in value and "\n" not in value:
+        return f"'{value}'"
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("\n", "\\n")
+    return f'"{escaped}"'
 
 
 def parse_env_text(text: str) -> dict[str, str]:
@@ -56,15 +81,12 @@ def parse_env_text(text: str) -> dict[str, str]:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
-        values[key.strip()] = value
+        values[key.strip()] = _unquote(value.strip())
     return values
 
 
 def render_env(values: dict[str, str]) -> str:
-    return "".join(f"{key}={value}\n" for key, value in values.items())
+    return "".join(f"{key}={_quote(value)}\n" for key, value in values.items())
 
 
 def validate_worktree_id(value: str) -> str:
@@ -86,6 +108,7 @@ def build_env(
     worktree_id: str,
     existing: dict[str, str],
     master_key: str,
+    worktree_path: str = "",
 ) -> dict[str, str]:
     """Return the .env of a worktree: example, then kept manual keys, then managed keys."""
     for key in REQUIRED_SHARED:
@@ -98,7 +121,10 @@ def build_env(
             "DB_HOST": shared["DOCKER_POSTGRES_HOST"],
             "DB_PORT": shared["DOCKER_POSTGRES_PORT"],
             "DB_NAME": database_name(worktree_id),
+            "DB_DATABASE": database_name(worktree_id),
             "DB_USER": shared["DOCKER_POSTGRES_USER"],
+            "DB_USERNAME": shared["DOCKER_POSTGRES_USER"],
+            "XFLICKR_WORKTREE_PATH": worktree_path,
             "DB_PASSWORD": shared["DOCKER_POSTGRES_PASSWORD"],
             "REDIS_HOST": shared["DOCKER_REDIS_HOST"],
             "REDIS_PORT": shared["DOCKER_REDIS_PORT"],
@@ -167,8 +193,11 @@ def check_env(root: Path, admin: DatabaseAdmin | None = None, reachable=None) ->
         return ["a generated worktree .env is required (run worktree_env.py <id>)"]
     env = parse_env_text(env_path.read_text())
     name = env.get("DB_NAME", "")
-    if not name.startswith("xflickr_wt") or name in LIVE_DATABASES:
-        return ["the .env must select a worktree database xflickr_wt<id>"]
+    selected = {name, env.get("DB_DATABASE", name)}
+    if selected != {name} or not name.startswith("xflickr_wt") or selected & LIVE_DATABASES:
+        return ["the .env must select a worktree database xflickr_wt<id> in every database key"]
+    if env.get("XFLICKR_WORKTREE_PATH") != str(root.resolve()):
+        return ["this .env was generated for another worktree; run worktree_env.py <id> here"]
     problems: list[str] = []
     if admin is None:  # pragma: no cover - needs a live PostgreSQL
         admin = PsqlAdmin(env["DB_HOST"], env["DB_PORT"], env["DB_USER"], env["DB_PASSWORD"])
@@ -246,7 +275,7 @@ def run(argv: list[str], admin: DatabaseAdmin | None = None, reachable=None) -> 
         env_path = root / ".env"
         existing = parse_env_text(env_path.read_text()) if env_path.is_file() else {}
         master_key = "k1:" + base64.b64encode(secrets.token_bytes(32)).decode()
-        env = build_env(example, shared, worktree_id, existing, master_key)
+        env = build_env(example, shared, worktree_id, existing, master_key, str(root.resolve()))
         if admin is None:
             admin = PsqlAdmin(
                 shared["DOCKER_POSTGRES_HOST"], shared["DOCKER_POSTGRES_PORT"],
