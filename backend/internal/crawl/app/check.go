@@ -31,6 +31,15 @@ func (ChangeCheck) Handle(_ context.Context, page domain.Page) (domain.Result, e
 	if err != nil {
 		return domain.Result{}, fmt.Errorf("crawl: decode change check: %w", err)
 	}
+	return changeCheckResult(page, total)
+}
+
+// Skipped advances an inaccessible probe without interpreting it as a successful scan.
+func (ChangeCheck) Skipped(_ context.Context, page domain.Page) (domain.Result, error) {
+	return changeCheckResult(page, 0)
+}
+
+func changeCheckResult(page domain.Page, total int64) (domain.Result, error) {
 	params := page.Item.Cursor.Params
 	if params == nil {
 		params = map[string]string{}

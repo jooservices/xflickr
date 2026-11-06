@@ -69,6 +69,15 @@ func TestMigrateDownToZeroAndUpUsesEmbeddedNames(t *testing.T) {
 
 func TestCallLogDownMigrationPreservesUnassociatedRows(t *testing.T) {
 	ctx, cfg, pool := prepareMigrationTest(t)
+	// Roll back migrations newer than the call-log change before testing its Down.
+	for _, source := range slices.Backward(embeddedMigrations(t)) {
+		if strings.Contains(source.name, "unassociated") {
+			break
+		}
+		if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+	}
 	requestID := "f4f2dc30-25f6-4e39-bc2a-933676de40cf"
 	if _, err := pool.Exec(ctx, `INSERT INTO api_call_log (at, called_at, method, status, outcome, request_id)
 		VALUES (now(), now(), 'flickr.test.echo', 'success', 'success', $1)`, requestID); err != nil {

@@ -49,6 +49,7 @@ func NewQuotaWaitError(cause error, wait time.Duration) *QuotaWaitError {
 
 // Sizes handles one photo.sizes River job.
 type Sizes struct {
+	States EntityStates
 	Store  SizesStore
 	Flickr SizesClient
 	Now    func() time.Time
@@ -91,6 +92,16 @@ func (s Sizes) Handle(ctx context.Context, job SizesJob) error {
 	if photo.HasRestrictedPlaceholder() {
 		return s.Store.SetSizes(ctx, job.PhotoID, []byte("[]"), catalog.SizesUnavailable, s.now())
 	}
+	access := EntityAccess{EntityRef: EntityRef{Kind: "photo", ID: fmt.Sprint(job.PhotoID)}, Facet: "sizes", KeyID: job.KeyID, Version: photo.LastUpdate}
+	if s.States != nil {
+		blocked, err := s.States.Suppressed(ctx, access, s.now())
+		if err != nil {
+			return err
+		}
+		if blocked {
+			return nil
+		}
+	}
 	var sizes []flickr.PhotoSize
 	if classified, ok := s.Flickr.(ClassifiedSizesClient); ok && job.Class != "" {
 		sizes, err = classified.GetSizesClass(ctx, job.KeyID, fmt.Sprint(job.PhotoID), quotadomain.Class(job.Class))
@@ -98,6 +109,9 @@ func (s Sizes) Handle(ctx context.Context, job SizesJob) error {
 		sizes, err = s.Flickr.GetSizes(ctx, job.KeyID, fmt.Sprint(job.PhotoID))
 	}
 	if err != nil {
+		if s.States != nil && FailureState(access.EntityRef, err) != "" {
+			return recordEntityFailure(ctx, s.States, access, err, s.now(), 0)
+		}
 		return s.recordFlickrError(ctx, job.PhotoID, err)
 	}
 	encoded, err := json.Marshal(sizes)
@@ -115,7 +129,7 @@ func (s Sizes) ready(ctx context.Context, job SizesJob) error {
 }
 
 func shouldSkipSizes(photo catalog.Photo, exists bool) bool {
-	if !exists || photo.SizesStatus == catalog.SizesUnavailable {
+	if !exists || (photo.SizesStatus == catalog.SizesUnavailable && (photo.SizesCheckedAt == nil || !photo.SizesCheckedAt.Before(photo.LastUpdate))) {
 		return true
 	}
 	return photo.SizesStatus == catalog.SizesConfirmed && photo.SizesCheckedAt != nil && !photo.SizesCheckedAt.Before(photo.LastUpdate)

@@ -28,7 +28,7 @@ WITH rows AS (
     FROM ranked AS r
     JOIN photos AS p ON p.owner_nsid = r.person_nsid
     WHERE (p.sizes_status NOT IN ('confirmed', 'unavailable')
-           OR (p.sizes_status = 'confirmed' AND p.sizes_checked_at < p.last_update))
+           OR (p.sizes_status IN ('confirmed','unavailable') AND p.sizes_checked_at < p.last_update))
       AND p.tombstoned_at IS NULL
 
     UNION ALL
