@@ -19,6 +19,9 @@ other guidance conflicts.
 - `docs/`: product rules, feature documentation, and architecture decision
   records.
 
+Read `docs/engineering-standards.md` for the code structure, style, test and
+delivery rules that every change is reviewed against.
+
 ## Architecture and module boundaries
 
 Use ports and adapters with dependencies flowing inward: **domain <- app <-
