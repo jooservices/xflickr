@@ -32,6 +32,9 @@ func TestLoadFromEnvAppliesDefaults(t *testing.T) {
 	if cfg.AI.URL != "http://127.0.0.1:11434" || cfg.AI.CaptionModel != "llama3.2" || cfg.AI.EmbeddingModel != "nomic-embed-text" {
 		t.Errorf("AI defaults = %#v", cfg.AI)
 	}
+	if cfg.Mail.SMTPAddr != "127.0.0.1:11025" || cfg.Mail.From != "no-reply@xflickr.local" || cfg.Mail.Username != "" || cfg.Mail.Password != "" {
+		t.Errorf("Mail defaults = %#v", cfg.Mail)
+	}
 	if cfg.Obs.URL != "http://127.0.0.1:15080" || cfg.Obs.Org != "default" || cfg.Obs.Stream != "xflickr" {
 		t.Errorf("Obs defaults = %#v", cfg.Obs)
 	}
@@ -84,6 +87,10 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 		"OLLAMA_URL":                  "http://ollama.internal:11434",
 		"OLLAMA_CAPTION_MODEL":        "caption-model",
 		"OLLAMA_EMBEDDING_MODEL":      "embedding-model",
+		"MAIL_SMTP_ADDR":              "smtp.internal:587",
+		"MAIL_FROM":                   "XFlickr <mailer@example.com>",
+		"MAIL_SMTP_USERNAME":          "mail-user",
+		"MAIL_SMTP_PASSWORD":          "mail-password",
 		"OPENOBSERVE_URL":             "https://observe.internal",
 		"OPENOBSERVE_USERNAME":        "observe-user",
 		"OPENOBSERVE_PASSWORD":        "observe-pass",
@@ -124,6 +131,9 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 	}
 	if cfg.AI.URL != "http://ollama.internal:11434" || cfg.AI.CaptionModel != "caption-model" || cfg.AI.EmbeddingModel != "embedding-model" {
 		t.Errorf("AI values not loaded: %#v", cfg.AI)
+	}
+	if cfg.Mail.SMTPAddr != "smtp.internal:587" || cfg.Mail.From != "\"XFlickr\" <mailer@example.com>" || cfg.Mail.Username != "mail-user" || cfg.Mail.Password != "mail-password" {
+		t.Errorf("Mail values not loaded: %#v", cfg.Mail)
 	}
 	if cfg.Obs.URL != "https://observe.internal" || cfg.Obs.Username != "observe-user" || cfg.Obs.Password != "observe-pass" || cfg.Obs.Org != "xflickr-org" || cfg.Obs.Stream != "worktree-logs" {
 		t.Errorf("Obs values not loaded: %#v", cfg.Obs)
@@ -183,6 +193,10 @@ func TestLoadFromEnvValidatesSettings(t *testing.T) {
 		{name: "blob cap", key: "BLOB_MAX_BYTES", value: "-1", want: "BLOB_MAX_BYTES"},
 		{name: "blob ttl", key: "BLOB_MAX_TTL", value: "0s", want: "BLOB_MAX_TTL"},
 		{name: "download link ttl", key: "DOWNLOAD_LINK_TTL", value: "0s", want: "DOWNLOAD_LINK_TTL"},
+		{name: "mail address without port", key: "MAIL_SMTP_ADDR", value: "127.0.0.1", want: "MAIL_SMTP_ADDR"},
+		{name: "mail address invalid port", key: "MAIL_SMTP_ADDR", value: "127.0.0.1:70000", want: "MAIL_SMTP_ADDR"},
+		{name: "mail sender", key: "MAIL_FROM", value: "not an address", want: "MAIL_FROM"},
+		{name: "mail username without password", key: "MAIL_SMTP_USERNAME", value: "user", want: "MAIL_SMTP_USERNAME"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -314,6 +328,8 @@ func TestConfigStringRedactsSecrets(t *testing.T) {
 	values["S3_ACCESS_KEY"] = "secret-s3-access"
 	values["S3_SECRET_KEY"] = "secret-s3-secret"
 	values["OPENOBSERVE_PASSWORD"] = "secret-observe-password"
+	values["MAIL_SMTP_USERNAME"] = "mail-user"
+	values["MAIL_SMTP_PASSWORD"] = "secret-mail-password"
 	values["XFLICKR_MASTER_KEYS"] = "secret-master-key-list"
 	values["XFLICKR_MASTER_KEY_ACTIVE"] = "secret-active-id"
 	values["SEARCH_URL"] = "https://url-user:url-password@search.internal/?token=url-token"
@@ -327,7 +343,7 @@ func TestConfigStringRedactsSecrets(t *testing.T) {
 	result := cfg.String()
 	for _, secret := range []string{
 		"secret-db-password", "secret-redis-password", "secret-search-password",
-		"secret-s3-access", "secret-s3-secret", "secret-observe-password",
+		"secret-s3-access", "secret-s3-secret", "secret-observe-password", "secret-mail-password",
 		"secret-master-key-list", "secret-active-id", "url-user", "url-password", "url-token", "s3-token", "observe-token",
 	} {
 		if strings.Contains(result, secret) {
@@ -364,6 +380,7 @@ func clearConfigEnvironment(t *testing.T) {
 		"SEARCH_URL", "SEARCH_USERNAME", "SEARCH_PASSWORD", "OPENSEARCH_INDEX_PREFIX",
 		"BLOB_DRIVER", "BLOB_LOCAL_DIR", "S3_ENDPOINT", "S3_REGION", "S3_BUCKET", "S3_ACCESS_KEY", "S3_SECRET_KEY", "S3_USE_PATH_STYLE",
 		"OLLAMA_URL", "OLLAMA_CAPTION_MODEL", "OLLAMA_EMBEDDING_MODEL",
+		"MAIL_SMTP_ADDR", "MAIL_FROM", "MAIL_SMTP_USERNAME", "MAIL_SMTP_PASSWORD",
 		"OPENOBSERVE_URL", "OPENOBSERVE_USERNAME", "OPENOBSERVE_PASSWORD", "OPENOBSERVE_ORG", "OPENOBSERVE_STREAM",
 		"NODE_ID", "XFLICKR_MASTER_KEYS", "XFLICKR_MASTER_KEY_ACTIVE", "HTTP_PORT", "LOG_LEVEL",
 	} {
