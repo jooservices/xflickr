@@ -999,6 +999,10 @@ export const getAdminOpsStatusResponseCallsLastHourMin = 0;
 
 export const getAdminOpsStatusResponseCallsLast10minMin = 0;
 
+export const getAdminOpsStatusResponseQuotaWaitsLastHourMin = 0;
+
+export const getAdminOpsStatusResponseQuotaWaitsLast10minMin = 0;
+
 export const getAdminOpsStatusResponsePendingItemsMin = 0;
 
 export const getAdminOpsStatusResponseOldestPendingAgeSecondsMin = 0;
@@ -1058,6 +1062,8 @@ export const GetAdminOpsStatusResponse = zod.object({
   ),
   calls_last_hour: zod.int().min(getAdminOpsStatusResponseCallsLastHourMin),
   calls_last_10min: zod.int().min(getAdminOpsStatusResponseCallsLast10minMin),
+  quota_waits_last_hour: zod.int().min(getAdminOpsStatusResponseQuotaWaitsLastHourMin).optional(),
+  quota_waits_last_10min: zod.int().min(getAdminOpsStatusResponseQuotaWaitsLast10minMin).optional(),
   pending_items: zod.int().min(getAdminOpsStatusResponsePendingItemsMin),
   oldest_pending_age_seconds: zod.int().min(getAdminOpsStatusResponseOldestPendingAgeSecondsMin),
   failed_work_items: zod.int().min(getAdminOpsStatusResponseFailedWorkItemsMin),

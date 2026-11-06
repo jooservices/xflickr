@@ -59,6 +59,20 @@ func TestSnapshotAndHealthLineIntegration(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO api_call_log(key_id,class,called_at) VALUES($1,'photo',now() - interval '30 minutes')`, keyID); err != nil {
 		t.Fatal(err)
 	}
+	before, err := (opspostgres.Store{Pool: pool}).Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO api_call_log(key_id,called_at,outcome) VALUES
+      ($1,now() - interval '2 minutes','quota_wait'),
+      ($1,now() - interval '30 minutes','quota_wait'),
+      ($1,now() - interval '2 hours','quota_wait'),
+      ($1,now() - interval '2 hours',NULL),
+      ($1,now() - interval '2 minutes','success'),
+      ($1,now() - interval '2 minutes','failure'),
+      ($1,now() - interval '2 minutes','throttled')`, keyID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,last_error) VALUES('person.photos',$1,$2,NULL,'pending',NULL),('person.photos',$3,$2,$4,'pending',NULL),('person.photos',$5,$2,$4,'pending','credential_decryption_unavailable'),('person.photos',$6,$2,$4,'failed','crawl: open key secret: crypto: authentication failed')`, suffix+"a", userID, suffix+"b", keyID, suffix+"c", suffix+"d"); err != nil {
 		t.Fatal(err)
 	}
@@ -87,6 +101,9 @@ VALUES ($1,$2,now(),'public','provisional','[]','{}',decode(repeat('cd',32),'hex
 	}
 	if snapshot.Counts.People < 1 || snapshot.WorkItems["pending"] < 3 || snapshot.Pending.Total < 3 || snapshot.Pending.WithoutKey < 1 || snapshot.Pending.Oldest.IsZero() || snapshot.CredentialDecryptionFailures < 2 {
 		t.Fatalf("snapshot=%+v", snapshot)
+	}
+	if snapshot.CallsLast10Min != before.CallsLast10Min || snapshot.QuotaWaitsLastHour != before.QuotaWaitsLastHour+2 || snapshot.QuotaWaitsLast10Min != before.QuotaWaitsLast10Min+1 {
+		t.Fatalf("grants/waits before=%+v after=%+v", before, snapshot)
 	}
 	if snapshot.Tokens["revoked"] < 1 || snapshot.CallsLast10Min < 4 {
 		t.Fatalf("tokens=%v calls10=%d", snapshot.Tokens, snapshot.CallsLast10Min)

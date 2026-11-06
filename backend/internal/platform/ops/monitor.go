@@ -136,6 +136,8 @@ func logAttrs(s Status) []any {
 		slog.Group("river_jobs", mapAttrs(s.RiverJobs)...),
 		"calls_last_hour", s.CallsLastHour,
 		"calls_last_10min", s.CallsLast10Min,
+		"quota_waits_last_hour", s.QuotaWaitsLastHour,
+		"quota_waits_last_10min", s.QuotaWaitsLast10Min,
 	}
 	keys := make([]any, 0, len(s.Keys))
 	for _, key := range s.Keys {
@@ -188,6 +190,8 @@ func Events(s Status, node string) []Event {
 		"ready_jobs":                     s.ReadyJobs,
 		"calls_last_hour":                s.CallsLastHour,
 		"calls_last_10min":               s.CallsLast10Min,
+		"quota_waits_last_hour":          s.QuotaWaitsLastHour,
+		"quota_waits_last_10min":         s.QuotaWaitsLast10Min,
 		"pending_items":                  s.PendingItems,
 		"oldest_pending_sec":             int64(s.OldestPendingAge / time.Second),
 		"failed_work_items":              s.FailedWorkItems,

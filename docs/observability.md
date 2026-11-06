@@ -36,6 +36,17 @@ exists. It is recorded with a null `key_id`, the signed-in `user_id`, lane
 submitted public key nor the secret. Unassociated calls remain in the overall
 call statistics but are excluded from per-key quota usage and hourly rollups.
 
+## Crawl health call counters
+
+The [ops monitor](ops-monitoring.md) reports granted calls using only ledger
+rows with `outcome IS NULL`. Completion telemetry (`success`, `failure`,
+`throttled`) does not spend a second call. `quota_wait` records are reported as
+`quota_waits_last_hour` and `quota_waits_last_10min` in health logs, health
+events and admin status, separately from `calls_last_hour`, `calls_last_10min`
+and per-key `used`/`remaining`. Existing granted-call field names remain stable
+for alerts. Bounded ledger queries and the minute refresh avoid scanning
+unbounded history or making any additional Flickr calls.
+
 ## Offline buffering
 
 Logs are exported asynchronously with a 10,000-record SDK queue and 512-record

@@ -32,7 +32,7 @@ func TestSnapshotBuildsHealthSummary(t *testing.T) {
 	if snapshot.Pending.Total != 14 || snapshot.Pending.WithoutKey != 15 || snapshot.Pending.NotBeforeLater != 16 || !snapshot.Pending.Oldest.Equal(oldest) {
 		t.Fatalf("pending = %+v", snapshot.Pending)
 	}
-	if snapshot.CredentialDecryptionFailures != 17 || snapshot.CallsLast10Min != 18 || len(snapshot.Keys) != 1 || snapshot.Keys[0].KeyID != 19 {
+	if snapshot.CredentialDecryptionFailures != 17 || snapshot.CallsLast10Min != 18 || snapshot.QuotaWaitsLastHour != 21 || snapshot.QuotaWaitsLast10Min != 22 || len(snapshot.Keys) != 1 || snapshot.Keys[0].KeyID != 19 {
 		t.Fatalf("other snapshot fields = %+v", snapshot)
 	}
 	if !pool.sawEstimateFallback || pool.groupedQueries != 4 {
@@ -161,7 +161,7 @@ func (db *snapshotDB) QueryRow(_ context.Context, query string, _ ...any) pgx.Ro
 	case strings.Contains(query, "credential_decryption_unavailable"):
 		values = []any{int64(17)}
 	case strings.Contains(query, "api_call_log WHERE called_at"):
-		values = []any{int64(18)}
+		values = []any{int64(18), int64(21), int64(22)}
 	case strings.Contains(query, "FROM work_items WHERE state = 'pending'"):
 		values = []any{int64(14), int64(15), int64(16), db.oldest}
 	default:

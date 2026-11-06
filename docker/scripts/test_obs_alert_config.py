@@ -2,6 +2,7 @@
 """Offline acceptance checks for configured crawl-health alert behavior."""
 
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -31,6 +32,35 @@ class OpenObserveAlertConfigTests(unittest.TestCase):
             self.assertIn("crawl.health", sql)
             self.assertIn("crawl.health.key", sql)
             self.assertEqual(json.loads(output.read_text(encoding="utf-8")), alert)
+
+    def test_granted_call_alerts_ignore_waits_and_keep_configured_delivery(self) -> None:
+        cases = [
+            ("xflickr-no-calls-pending.json", 0, 100, 1),
+            ("xflickr-no-calls-pending.json", 1, 100, 0),
+            ("xflickr-quota-near-limit.json", 89, 100, 0),
+            ("xflickr-quota-near-limit.json", 90, 100, 1),
+            ("xflickr-quota-exhausted.json", 99, 100, 0),
+            ("xflickr-quota-exhausted.json", 100, 100, 1),
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir, sqlite3.connect(":memory:") as db:
+            db.execute('CREATE TABLE crawl_metrics_custom (event TEXT, key_id INTEGER, '
+                       'calls_last_10min INTEGER, pending_items INTEGER, used INTEGER, '
+                       'remaining INTEGER, "limit" INTEGER, quota_waits_last_hour INTEGER, '
+                       'quota_waits_last_10min INTEGER)')
+            for filename, grants, limit, matches in cases:
+                with self.subTest(filename=filename, grants=grants):
+                    alert = render_alert(ROOT / "deploy/openobserve/alerts" / filename,
+                                         Path(temp_dir) / "alert.json",
+                                         "crawl_metrics_custom", "ops_notifications")
+                    self.assertEqual(alert["stream_name"], "crawl_metrics_custom")
+                    self.assertEqual(alert["destinations"], ["ops_notifications"])
+                    self.assertTrue(alert["enabled"])
+                    db.execute('DELETE FROM crawl_metrics_custom')
+                    for name in ("crawl.health", "crawl.health.key"):
+                        db.execute('INSERT INTO crawl_metrics_custom VALUES (?,?,?,?,?,?,?,?,?)',
+                                   (name, 1, grants, 2, grants, limit-grants, limit, 119000, 20000))
+                    rows = db.execute(alert["query_condition"]["sql"]).fetchall()
+                    self.assertEqual(len(rows), matches)
 
     def test_missing_stream_or_destination_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
