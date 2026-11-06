@@ -27,8 +27,11 @@ func statusFor(t *testing.T, snapshot Snapshot) Status {
 
 func TestStatusDerivesTotalsAndAge(t *testing.T) {
 	status := statusFor(t, Snapshot{
-		WorkItems: map[string]int64{"ready": 3, "pending": 2, "failed": 4},
-		RiverJobs: map[string]int64{"discarded": 5},
+		QuotaWaitsLastHour:  200,
+		QuotaWaitsLast10Min: 100,
+		CallsLast10Min:      20,
+		WorkItems:           map[string]int64{"ready": 3, "pending": 2, "failed": 4},
+		RiverJobs:           map[string]int64{"discarded": 5},
 		Keys: []KeyStatus{
 			{KeyID: 2, Label: "b", Status: "valid", CallsLastHour: 50, Limit: 100},
 			{KeyID: 1, Label: "a", Status: "valid", CallsLastHour: 150, Limit: 100},
@@ -39,7 +42,7 @@ func TestStatusDerivesTotalsAndAge(t *testing.T) {
 		DeadJobs:                     5,
 		Tokens:                       map[string]int64{"ok": 1, "revoked": 1},
 	})
-	if status.ReadyJobs != 3 || status.CallsLastHour != 200 || status.OldestPendingAge != 90*time.Second {
+	if status.QuotaWaitsLastHour != 200 || status.QuotaWaitsLast10Min != 100 || status.CallsLast10Min != 20 || status.ReadyJobs != 3 || status.CallsLastHour != 200 || status.OldestPendingAge != 90*time.Second {
 		t.Fatalf("status=%+v", status)
 	}
 	if status.Keys[0].KeyID != 1 || status.Keys[0].Remaining() != 0 || status.Keys[1].Remaining() != 50 || status.Keys[1].Used() != 50 {

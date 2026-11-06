@@ -59,6 +59,8 @@ func toStatus(s ops.Status) gen.OpsStatus {
 		Keys:                         make([]gen.OpsKey, 0, len(s.Keys)),
 		CallsLastHour:                s.CallsLastHour,
 		CallsLast10Min:               s.CallsLast10Min,
+		QuotaWaitsLastHour:           &s.QuotaWaitsLastHour,
+		QuotaWaitsLast10Min:          &s.QuotaWaitsLast10Min,
 		PendingItems:                 s.PendingItems,
 		OldestPendingAgeSeconds:      int64(s.OldestPendingAge / time.Second),
 		FailedWorkItems:              s.FailedWorkItems,

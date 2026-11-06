@@ -55,7 +55,11 @@ func (s Store) Snapshot(ctx context.Context) (ops.Snapshot, error) {
 	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM work_items WHERE (state = 'pending' AND last_error = 'credential_decryption_unavailable') OR (state = 'failed' AND last_error LIKE '%crypto: authentication failed%')`).Scan(&snap.CredentialDecryptionFailures); err != nil {
 		return ops.Snapshot{}, fmt.Errorf("ops: count credential decryption failures: %w", err)
 	}
-	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM api_call_log WHERE called_at > now() - interval '10 minutes'`).Scan(&snap.CallsLast10Min); err != nil {
+	if err := s.Pool.QueryRow(ctx, `SELECT
+  count(*) FILTER (WHERE outcome IS NULL AND called_at > now() - interval '10 minutes'),
+  count(*) FILTER (WHERE outcome = 'quota_wait'),
+  count(*) FILTER (WHERE outcome = 'quota_wait' AND called_at > now() - interval '10 minutes')
+FROM api_call_log WHERE called_at > now() - interval '1 hour'`).Scan(&snap.CallsLast10Min, &snap.QuotaWaitsLastHour, &snap.QuotaWaitsLast10Min); err != nil {
 		return ops.Snapshot{}, fmt.Errorf("ops: count recent calls: %w", err)
 	}
 	var oldest *time.Time
@@ -156,7 +160,7 @@ func (s Store) grouped(ctx context.Context, known []string, query string) (map[s
 
 func (s Store) keys(ctx context.Context) ([]ops.KeyStatus, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT k.id, k.label, k.status, k.per_hour_limit,
-  (SELECT count(*) FROM api_call_log l WHERE l.key_id = k.id AND l.called_at > now() - interval '1 hour')
+  (SELECT count(*) FROM api_call_log l WHERE l.key_id = k.id AND l.outcome IS NULL AND l.called_at > now() - interval '1 hour')
 FROM api_keys k ORDER BY k.id`)
 	if err != nil {
 		return nil, fmt.Errorf("ops: query keys: %w", err)

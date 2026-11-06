@@ -45,6 +45,10 @@ export interface OpsStatus {
   /** @minimum 0 */
   calls_last_10min: number;
   /** @minimum 0 */
+  quota_waits_last_hour?: number;
+  /** @minimum 0 */
+  quota_waits_last_10min?: number;
+  /** @minimum 0 */
   pending_items: number;
   /** @minimum 0 */
   oldest_pending_age_seconds: number;

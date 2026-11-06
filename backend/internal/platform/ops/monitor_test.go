@@ -39,6 +39,8 @@ func TestTickLogsHealthLine(t *testing.T) {
 	sink := &recordSink{}
 	monitor, logs, _ := newMonitor(Snapshot{
 		Counts:                       Counts{People: 7, Photos: 9},
+		QuotaWaitsLastHour:           120,
+		QuotaWaitsLast10Min:          30,
 		WorkItems:                    map[string]int64{"pending": 1, "ready": 2},
 		RiverJobs:                    map[string]int64{"available": 4},
 		PhotoSizesJobs:               LaneJobs{Pending: 5, Ready: 2, Running: 1},
@@ -50,7 +52,7 @@ func TestTickLogsHealthLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	line := logs.String()
-	for _, want := range []string{"crawl health", "people=7", "photos=9", "photo_sizes_pending=5", "photo_sizes_ready=2", "photo_sizes_running=1", "work_items.ready=2", "river_jobs.available=4", "keys.key_3.remaining=90", "token_status=ok", "ready_jobs=2", "calls_last_10min=0", "credential_decryption_failures=2"} {
+	for _, want := range []string{"quota_waits_last_hour=120", "quota_waits_last_10min=30", "crawl health", "people=7", "photos=9", "photo_sizes_pending=5", "photo_sizes_ready=2", "photo_sizes_running=1", "work_items.ready=2", "river_jobs.available=4", "keys.key_3.remaining=90", "token_status=ok", "ready_jobs=2", "calls_last_10min=0", "credential_decryption_failures=2"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("log line misses %q: %s", want, line)
 		}
@@ -62,7 +64,7 @@ func TestTickLogsHealthLine(t *testing.T) {
 		t.Fatalf("events=%v", sink.events)
 	}
 	health := sink.events[0][0]
-	if health["event"] != HealthEvent || health["work_items_ready"] != int64(2) || health["river_jobs_available"] != int64(4) || health["photo_sizes_pending"] != int64(5) || health["photo_sizes_ready"] != int64(2) || health["photo_sizes_running"] != int64(1) || health["failed_total"] != int64(0) || health["credential_decryption_failures"] != int64(2) || health["node"] != "node-1" {
+	if health["quota_waits_last_hour"] != int64(120) || health["quota_waits_last_10min"] != int64(30) || health["event"] != HealthEvent || health["work_items_ready"] != int64(2) || health["river_jobs_available"] != int64(4) || health["photo_sizes_pending"] != int64(5) || health["photo_sizes_ready"] != int64(2) || health["photo_sizes_running"] != int64(1) || health["failed_total"] != int64(0) || health["credential_decryption_failures"] != int64(2) || health["node"] != "node-1" {
 		t.Fatalf("health event=%v", health)
 	}
 	for _, field := range []string{"_timestamp", "pending_items", "ready_jobs", "calls_last_10min", "failed_total", "tokens_revoked", "token_status"} {

@@ -6,7 +6,7 @@
 - [Crawl observations and historical recovery](crawl-observations.md) — transactional provenance, observed kinds, and guarded batched backfill.
 - [Sharing settings and observations](sharing.md)
 - [Ops monitoring](ops-monitoring.md) — crawl health log line, admin status
-  endpoint, OpenObserve stream and alerts.
+  endpoint, granted-call and quota-wait counters, OpenObserve stream and alerts.
 - [Incident management](incident-management.md) — deduplication, acknowledgement,
   closure, and critical incident notification events.
 - [Structured logging and telemetry](observability.md) — context fields, OTLP

@@ -69,6 +69,8 @@ OpsStatus:
       items: { $ref: '#/OpsKey' }
     calls_last_hour: { type: integer, format: int64, minimum: 0 }
     calls_last_10min: { type: integer, format: int64, minimum: 0 }
+    quota_waits_last_hour: { type: integer, format: int64, minimum: 0 }
+    quota_waits_last_10min: { type: integer, format: int64, minimum: 0 }
     pending_items: { type: integer, format: int64, minimum: 0 }
     oldest_pending_age_seconds: { type: integer, format: int64, minimum: 0 }
     failed_work_items: { type: integer, format: int64, minimum: 0 }

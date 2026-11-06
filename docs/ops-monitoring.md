@@ -14,8 +14,9 @@ The `scheduler` role logs `crawl health` once at start and then every minute
 | `work_items.<state>` | Work items by state (`pending`, `ready`, `running`, `waiting`, `done`, `failed`). |
 | `ready_jobs` | Work items in the `ready` state, i.e. promoted by the scheduler and waiting for a worker. |
 | `river_jobs.<state>` | River jobs by state. |
-| `calls_last_hour`, `calls_last_10min` | Granted Flickr calls from `api_call_log`. |
-| `keys.key_<id>.{calls_last_hour,used,remaining,limit}` | Hourly usage per key against `per_hour_limit`. Key labels and secrets are never logged. |
+| `calls_last_hour`, `calls_last_10min` | Granted Flickr calls from `api_call_log` (`outcome IS NULL`), excluding quota waits and completed-call telemetry. |
+| `quota_waits_last_hour`, `quota_waits_last_10min` | Refused quota attempts (`outcome = quota_wait`); these do not spend calls. |
+| `keys.key_<id>.{calls_last_hour,used,remaining,limit}` | Granted hourly usage per key against `per_hour_limit`. Key labels and secrets are never logged. |
 | `pending_items`, `oldest_pending_age` | Pending work items and the age of the oldest. |
 | `failed_work_items`, `dead_jobs` | Failed work items and discarded River jobs (the dead-letter count). |
 | `credential_decryption_failures` | Work items whose last error indicates a stored credential could not be decrypted, including prior failures and work held for retry. A warning recommends checking configured key IDs and envelope metadata; it never includes key material. |
@@ -36,7 +37,12 @@ When `pending_items > 0` and `ready_jobs = 0` for 5 minutes the monitor logs
 `GET /admin/ops/status` (administrators only) returns the same numbers as JSON;
 see `contracts/openapi/paths/ops.yaml`. It also carries `idle_reason` whenever
 pending items exist and none is ready, and reports credential decryption work
-items as `credential_decryption_failures`.
+items as `credential_decryption_failures`. The additive optional fields
+`quota_waits_last_hour` and `quota_waits_last_10min` report waits separately
+and are emitted even when zero. Calls and quota usage keep their existing field
+names. All ledger queries retain a one-hour or shorter time bound for partition
+pruning; the report refreshes once per minute. Compare the same key and time
+window with the call log and quota endpoint, allowing one minute for refresh.
 
 ## OpenObserve
 
@@ -45,7 +51,8 @@ OpenObserve (`OPENOBSERVE_URL`, org `OPENOBSERVE_ORG`, stream
 `OPENOBSERVE_STREAM`, default `xflickr`):
 
 - one `event = crawl.health` record (flat fields: `pending_items`, `ready_jobs`,
-  `calls_last_10min`, `failed_total`, `tokens_revoked`, `token_status`,
+  `calls_last_hour`, `calls_last_10min`, `quota_waits_last_hour`,
+  `quota_waits_last_10min`, `failed_total`, `tokens_revoked`, `token_status`,
   `work_items_<state>`, `river_jobs_<state>`, catalog counts);
 - one `event = crawl.health.key` record per key (`key_id`, `used`, `remaining`, `limit`).
 
@@ -84,6 +91,10 @@ Alert definitions live in `deploy/openobserve/alerts/`:
 | `xflickr_rate_limited` | Flickr returns a 429 rate-limit response. |
 | `xflickr_auth_failed` | Flickr returns 401 or 403. |
 | `xflickr_telemetry_ship_failed` | Crawl health cannot ship to OpenObserve. |
+
+The no-calls and quota alerts read the configured stream
+(`OPENOBSERVE_STREAM`) and the existing granted-call fields on `crawl.health`
+and `crawl.health.key`. Wait counts never satisfy a call or quota threshold.
 
 Apply them with `docker/scripts/obs-provision.sh [env-file]` (defaults to
 `.env.develop`). The script creates the configured metrics stream when needed,

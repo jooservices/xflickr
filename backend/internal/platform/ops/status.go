@@ -73,6 +73,8 @@ type Snapshot struct {
 	PhotoSizesJobs               LaneJobs
 	Keys                         []KeyStatus
 	CallsLast10Min               int64
+	QuotaWaitsLastHour           int64
+	QuotaWaitsLast10Min          int64
 	Pending                      Pending
 	FailedWorkItems              int64
 	DeadJobs                     int64
@@ -103,6 +105,8 @@ type Status struct {
 	Keys                         []KeyStatus
 	CallsLastHour                int64
 	CallsLast10Min               int64
+	QuotaWaitsLastHour           int64
+	QuotaWaitsLast10Min          int64
 	PendingItems                 int64
 	OldestPendingAge             time.Duration
 	FailedWorkItems              int64
@@ -145,6 +149,8 @@ func (s Service) Status(ctx context.Context) (Status, error) {
 		PhotoSizesJobs:               snapshot.PhotoSizesJobs,
 		Keys:                         append([]KeyStatus(nil), snapshot.Keys...),
 		CallsLast10Min:               snapshot.CallsLast10Min,
+		QuotaWaitsLastHour:           snapshot.QuotaWaitsLastHour,
+		QuotaWaitsLast10Min:          snapshot.QuotaWaitsLast10Min,
 		PendingItems:                 snapshot.Pending.Total,
 		FailedWorkItems:              snapshot.FailedWorkItems,
 		DeadJobs:                     snapshot.DeadJobs,

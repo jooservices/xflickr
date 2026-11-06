@@ -21,6 +21,9 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
+	"github.com/jooservices/xflickr/internal/platform/ops"
+	opshttp "github.com/jooservices/xflickr/internal/platform/ops/adapters/http"
+	opspostgres "github.com/jooservices/xflickr/internal/platform/ops/adapters/postgres"
 	quotahttp "github.com/jooservices/xflickr/internal/quota/adapters/http"
 	quotapostgres "github.com/jooservices/xflickr/internal/quota/adapters/postgres"
 	quotaredis "github.com/jooservices/xflickr/internal/quota/adapters/redis"
@@ -101,13 +104,21 @@ func TestQuotaEndpointsAfterCallsIntegration(t *testing.T) {
 		if permit, _, err := governor.Acquire(ctx, keyID, class); err != nil || permit == nil {
 			t.Fatalf("acquire %s = %v %v", class, permit, err)
 		}
+		if _, err := pool.Exec(ctx, `INSERT INTO api_call_log(key_id,class,called_at) VALUES($1,$2,now())`, keyID, string(class)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO api_call_log(key_id,called_at,outcome)
+      SELECT $1,now(),'quota_wait' FROM generate_series(1,100)`, keyID); err != nil {
+		t.Fatal(err)
 	}
 
 	keys := quotapostgres.Keys{Pool: pool}
 	states := app.States{Keys: keys, Budgets: budgets, Live: quotaredis.Counters{Client: client, Prefix: prefix}, History: keys}
 	current := ownerID
 	handler := quotahttp.QuotaHandler{States: states, Node: "node-it", ActorID: func(context.Context) (int64, bool) { return current, true }}
-	router := gen.HandlerFromMux(quotaEndpointServer{handler: handler}, chi.NewRouter())
+	statusHandler := opshttp.Handler{Service: ops.Service{Store: opspostgres.Store{Pool: pool}}, ActorID: handler.ActorID}
+	router := gen.HandlerFromMux(quotaEndpointServer{handler: handler, status: statusHandler}, chi.NewRouter())
 
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/keys/%d/quota", keyID), nil))
@@ -121,6 +132,32 @@ func TestQuotaEndpointsAfterCallsIntegration(t *testing.T) {
 	if quota.KeyID != keyID || quota.Used != 4 || quota.Limit != 3600 || quota.State != gen.KeyQuotaStateOk ||
 		quota.Lanes != (gen.LaneUsage{Interactive: 1, Person: 2, Photo: 1}) || quota.ResetAt == nil || time.Until(*quota.ResetAt) < 55*time.Minute {
 		t.Fatalf("quota = %+v", quota)
+	}
+
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/admin/ops/status", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("ops status=%d body=%s", response.Code, response.Body.String())
+	}
+	var status gen.OpsStatus
+	if err := json.NewDecoder(response.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	var grants int64
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM api_call_log WHERE key_id=$1 AND outcome IS NULL AND called_at > now() - interval '1 hour'`, keyID).Scan(&grants); err != nil {
+		t.Fatal(err)
+	}
+	var matched bool
+	for _, key := range status.Keys {
+		if key.KeyID == keyID {
+			matched = true
+			if key.CallsLastHour != grants || key.Used != quota.Used || key.Remaining != quota.Limit-quota.Used {
+				t.Fatalf("ops=%+v quota=%+v grants=%d", key, quota, grants)
+			}
+		}
+	}
+	if !matched || status.QuotaWaitsLastHour == nil || *status.QuotaWaitsLastHour < 100 || status.QuotaWaitsLast10Min == nil || *status.QuotaWaitsLast10Min < 100 || time.Since(status.GeneratedAt) > time.Minute {
+		t.Fatalf("ops status=%+v", status)
 	}
 
 	response = httptest.NewRecorder()
@@ -152,6 +189,7 @@ func TestQuotaEndpointsAfterCallsIntegration(t *testing.T) {
 type quotaEndpointServer struct {
 	gen.Unimplemented
 	handler quotahttp.QuotaHandler
+	status  opshttp.Handler
 }
 
 func (s quotaEndpointServer) GetKeyQuota(w http.ResponseWriter, r *http.Request, id int64) {
@@ -170,4 +208,13 @@ func (s quotaEndpointServer) GetAdminQuota(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	_ = response.VisitGetAdminQuotaResponse(w)
+}
+
+func (s quotaEndpointServer) GetAdminOpsStatus(w http.ResponseWriter, r *http.Request) {
+	response, err := s.status.GetAdminOpsStatus(r.Context(), gen.GetAdminOpsStatusRequestObject{})
+	if err != nil {
+		http.Error(w, "ops request failed", http.StatusInternalServerError)
+		return
+	}
+	_ = response.VisitGetAdminOpsStatusResponse(w)
 }

@@ -1,11 +1,11 @@
 {
   "name": "xflickr_quota_near_limit",
   "stream_type": "logs",
-  "stream_name": "xflickr_metrics",
+  "stream_name": "{{OPENOBSERVE_STREAM}}",
   "is_real_time": false,
   "query_condition": {
     "type": "sql",
-    "sql": "SELECT key_id FROM \"xflickr_metrics\" WHERE metric IN ('quota_used_total','quota_limit') GROUP BY key_id HAVING max(CASE WHEN metric='quota_used_total' THEN value ELSE 0 END) >= 0.9 * max(CASE WHEN metric='quota_limit' THEN value ELSE 0 END) AND max(CASE WHEN metric='quota_limit' THEN value ELSE 0 END) > 0"
+    "sql": "SELECT key_id FROM \"{{OPENOBSERVE_STREAM}}\" WHERE event='crawl.health.key' AND \"limit\" > 0 AND used >= 0.9 * \"limit\" GROUP BY key_id"
   },
   "trigger_condition": {
     "period": 5,
@@ -16,5 +16,5 @@
   },
   "destinations": [],
   "enabled": true,
-  "description": "Impact: A Flickr API key is above 90 percent of its hourly quota. Action: Check usage and prepare for throttling or key rotation."
+  "description": "Impact: A Flickr API key is above 90 percent of its hourly quota of granted calls. Action: Check usage and prepare for throttling or key rotation."
 }

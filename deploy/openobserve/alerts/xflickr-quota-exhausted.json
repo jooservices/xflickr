@@ -1,11 +1,11 @@
 {
   "name": "xflickr_quota_exhausted",
   "stream_type": "logs",
-  "stream_name": "xflickr_metrics",
+  "stream_name": "{{OPENOBSERVE_STREAM}}",
   "is_real_time": false,
   "query_condition": {
     "type": "sql",
-    "sql": "SELECT key_id FROM \"xflickr_metrics\" WHERE metric IN ('quota_used_total','quota_limit') GROUP BY key_id HAVING max(CASE WHEN metric='quota_used_total' THEN value ELSE 0 END) >= max(CASE WHEN metric='quota_limit' THEN value ELSE 0 END) AND max(CASE WHEN metric='quota_limit' THEN value ELSE 0 END) > 0"
+    "sql": "SELECT key_id FROM \"{{OPENOBSERVE_STREAM}}\" WHERE event='crawl.health.key' AND \"limit\" > 0 AND remaining <= 0 GROUP BY key_id"
   },
   "trigger_condition": {
     "period": 5,
@@ -16,5 +16,5 @@
   },
   "destinations": [],
   "enabled": true,
-  "description": "Impact: A Flickr API key has exhausted its hourly quota. Action: Check key rotation and pending work; calls will pause until reset."
+  "description": "Impact: A Flickr API key has exhausted its hourly quota of granted calls. Action: Check key rotation and pending work; calls will pause until reset."
 }

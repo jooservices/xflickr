@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -24,6 +25,8 @@ func TestGetAdminOpsStatus(t *testing.T) {
 	generated := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 	handler := Handler{ActorID: actor, Service: fakeService{status: ops.Status{
 		GeneratedAt:                  generated,
+		QuotaWaitsLastHour:           120,
+		QuotaWaitsLast10Min:          30,
 		Counts:                       ops.Counts{People: 1, Photos: 2, PhotoSizes: 3, Favorites: 4, Albums: 5, Galleries: 6, Groups: 7},
 		WorkItems:                    map[string]int64{"pending": 2},
 		ReadyJobs:                    0,
@@ -46,6 +49,9 @@ func TestGetAdminOpsStatus(t *testing.T) {
 	if ok.Counts.PhotoSizes != 3 || ok.PhotoSizesPending != 8 || ok.PhotoSizesReady != 2 || ok.PhotoSizesRunning != 1 || ok.OldestPendingAgeSeconds != 120 || ok.TokenStatus != gen.OpsStatusTokenStatusOk || ok.PendingItems != 2 {
 		t.Fatalf("body=%+v", ok)
 	}
+	if ok.QuotaWaitsLastHour == nil || *ok.QuotaWaitsLastHour != 120 || ok.QuotaWaitsLast10Min == nil || *ok.QuotaWaitsLast10Min != 30 {
+		t.Fatalf("wait counters=%+v", ok)
+	}
 	if ok.CredentialDecryptionFailures != 3 {
 		t.Fatalf("credential decryption failures = %d", ok.CredentialDecryptionFailures)
 	}
@@ -61,6 +67,20 @@ func TestGetAdminOpsStatusOmitsIdleReason(t *testing.T) {
 	}
 	if body := response.(gen.GetAdminOpsStatus200JSONResponse); body.IdleReason != nil {
 		t.Fatalf("idle reason=%v", *body.IdleReason)
+	}
+
+	raw, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"quota_waits_last_hour", "quota_waits_last_10min"} {
+		if value, ok := body[field]; !ok || value != float64(0) {
+			t.Fatalf("%s=%v present=%t", field, value, ok)
+		}
 	}
 }
 
