@@ -25,7 +25,7 @@ func (r *Repository) LoadSizes(ctx context.Context, id int64) (domain.Photo, boo
 	var photo domain.Photo
 	var status string
 	var checked pgtype.Timestamptz
-	err := r.db.QueryRow(ctx, `SELECT id, last_update, sizes_status, sizes_checked_at FROM photos WHERE id=$1`, id).Scan(&photo.ID, &photo.LastUpdate, &status, &checked)
+	err := r.db.QueryRow(ctx, `SELECT id, last_update, sizes_status, sizes_checked_at, server FROM photos WHERE id=$1`, id).Scan(&photo.ID, &photo.LastUpdate, &status, &checked, &photo.Server)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Photo{}, false, nil
 	}

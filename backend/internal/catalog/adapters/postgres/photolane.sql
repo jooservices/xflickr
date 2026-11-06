@@ -1,5 +1,5 @@
 -- The photo lane drains size confirmation work before optional facets. Selected
--- or starred contacts are the only owners eligible for optional facets. $1 is
+-- or starred contacts are the only owners eligible for background photo work. $1 is
 -- the person probe size, $2 is the job count, and $3 is the enabled facet list.
 WITH rows AS (
     (SELECT person_nsid, 0 AS tier, CASE WHEN starred THEN 0 ELSE 1 END AS sub, depth
@@ -11,12 +11,6 @@ WITH rows AS (
     (SELECT person_nsid, 1, 0, depth
      FROM crawl_interests
      WHERE starred AND NOT (selected_until IS NOT NULL AND selected_until > now())
-     ORDER BY depth
-     LIMIT $1::int)
-    UNION ALL
-    (SELECT person_nsid, 2, 0, depth
-     FROM crawl_interests
-     WHERE NOT starred AND NOT (selected_until IS NOT NULL AND selected_until > now())
      ORDER BY depth
      LIMIT $1::int)
 ), best AS (

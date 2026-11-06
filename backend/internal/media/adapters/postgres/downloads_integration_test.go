@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	catalogdownloadspostgres "github.com/jooservices/xflickr/internal/catalog/adapters/downloads/postgres"
+	catalogpostgres "github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
 	catalogapp "github.com/jooservices/xflickr/internal/catalog/app"
 	medialocal "github.com/jooservices/xflickr/internal/media/adapters/local"
 	"github.com/jooservices/xflickr/internal/media/app"
@@ -97,6 +98,17 @@ func TestCreateAlbumDownloadWithPostgres(t *testing.T) {
 	}
 	if _, err := catalog.Candidates(ctx, "unknown", "", nil); err == nil {
 		t.Fatal("accepted unsupported candidate kind")
+	}
+	// A download does not require a background-eligible owner. These fixtures
+	// deliberately have no crawl interest, star, or selection.
+	refs, err := (catalogpostgres.PhotoLane{Pool: pool}).Select(ctx, 1000, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range refs {
+		if ref.OwnerNSID == owner {
+			t.Fatalf("undemanded photo entered background lane: %+v", ref)
+		}
 	}
 	service := app.Downloads{Catalog: catalog, Repository: Downloads{Pool: pool, Jobs: jobs}, Now: func() time.Time { return lastUpdate }}
 	created, err := service.Create(ctx, app.CreateDownloadInput{UserID: userID, Kind: mediadomain.DownloadAlbum, Subject: albumID})

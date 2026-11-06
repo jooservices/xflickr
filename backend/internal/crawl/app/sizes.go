@@ -86,6 +86,11 @@ func (s Sizes) Handle(ctx context.Context, job SizesJob) error {
 	if shouldSkipSizes(photo, exists) {
 		return nil
 	}
+	// Flickr lists restricted media with a placeholder server even when getInfo
+	// succeeds. Do not spend quota confirming a known inaccessible sizes result.
+	if photo.Server == "65535" {
+		return s.Store.SetSizes(ctx, job.PhotoID, []byte("[]"), catalog.SizesUnavailable, s.now())
+	}
 	var sizes []flickr.PhotoSize
 	if classified, ok := s.Flickr.(ClassifiedSizesClient); ok && job.Class != "" {
 		sizes, err = classified.GetSizesClass(ctx, job.KeyID, fmt.Sprint(job.PhotoID), quotadomain.Class(job.Class))

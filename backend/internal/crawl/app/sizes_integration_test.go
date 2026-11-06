@@ -39,7 +39,7 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 
 	base := time.Now().UnixNano()
 	testQueue := fmt.Sprintf("sizes_%d", base)
-	photoIDs := []int64{base, base + 1, base + 2, base + 3}
+	photoIDs := []int64{base, base + 1, base + 2, base + 3, base + 4}
 	owner := fmt.Sprintf("sizes-integration-%d@example.invalid", base)
 	if _, err := pool.Exec(ctx, `INSERT INTO people (nsid, username) VALUES ($1, $1)`, owner); err != nil {
 		t.Fatal(err)
@@ -48,11 +48,11 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'test','user') RETURNING id`, owner+"@integration.invalid").Scan(&userID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via) VALUES($1,$2,0,'integration')`, userID, owner); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred) VALUES($1,$2,0,'integration',true)`, userID, owner); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM river_job WHERE args->'args'->>'photo_id' = ANY($1)`, []string{fmt.Sprint(photoIDs[0]), fmt.Sprint(photoIDs[1]), fmt.Sprint(photoIDs[2]), fmt.Sprint(photoIDs[3])})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM river_job WHERE args->'args'->>'photo_id' = ANY($1)`, []string{fmt.Sprint(photoIDs[0]), fmt.Sprint(photoIDs[1]), fmt.Sprint(photoIDs[2]), fmt.Sprint(photoIDs[3]), fmt.Sprint(photoIDs[4])})
 		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE owner_nsid=$1`, owner)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, owner)
@@ -208,6 +208,32 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 	}
 	if storedStatus != string(catalog.SizesConfirmed) {
 		t.Fatalf("transient size result = %s, want confirmed after retry", storedStatus)
+	}
+
+	// A restricted listing is classified locally, including direct interactive
+	// jobs, and repeated delivery does not rewrite the terminal check time.
+	insertPhoto(photoIDs[4], catalog.SizesProvisional, nil)
+	if _, err := pool.Exec(ctx, `UPDATE photos SET server='65535' WHERE id=$1`, photoIDs[4]); err != nil {
+		t.Fatal(err)
+	}
+	enqueue(photoIDs[4])
+	waitJob(false)
+	enqueue(photoIDs[4])
+	waitJob(false)
+	if err := pool.QueryRow(ctx, `SELECT sizes, sizes_status, sizes_checked_at FROM photos WHERE id=$1`, photoIDs[4]).Scan(&storedSizes, &storedStatus, &storedChecked); err != nil {
+		t.Fatal(err)
+	}
+	if string(storedSizes) != "[]" || storedStatus != "unavailable" || !storedChecked.Equal(checkedAt) {
+		t.Fatalf("placeholder outcome = %s, %s at %s", storedSizes, storedStatus, storedChecked)
+	}
+	mu.Lock()
+	placeholderCalls := calls[fmt.Sprint(photoIDs[4])]
+	mu.Unlock()
+	if placeholderCalls != 0 {
+		t.Fatalf("placeholder made %d HTTP requests", placeholderCalls)
+	}
+	if ids, err := lane.Next(ctx, 10); err != nil || len(ids) != 0 {
+		t.Fatalf("terminal photos selected again: %v, %v", ids, err)
 	}
 }
 

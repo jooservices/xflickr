@@ -231,3 +231,40 @@ func TestSizesQuotaExceededWaitsInsteadOfFailing(t *testing.T) {
 		t.Fatalf("Error() = %q", got)
 	}
 }
+
+func TestSizesPlaceholderIsClassifiedOnceWithoutFlickr(t *testing.T) {
+	for _, class := range []string{"", "photo", "interactive"} {
+		t.Run(class, func(t *testing.T) {
+			handler, store, client := sizesRig()
+			store.photo.Server = "65535"
+			job := SizesJob{PhotoID: 40, KeyID: 12, Class: class}
+			if err := handler.Handle(t.Context(), job); err != nil {
+				t.Fatal(err)
+			}
+			if client.calls != 0 || store.sets != 1 || store.status != catalog.SizesUnavailable || string(store.data) != "[]" || !store.checked.Equal(handler.Now()) {
+				t.Fatalf("placeholder result: calls=%d writes=%d status=%s data=%s checked=%s", client.calls, store.sets, store.status, store.data, store.checked)
+			}
+			store.photo.SizesStatus = store.status
+			for range 3 {
+				if err := handler.Handle(t.Context(), job); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if client.calls != 0 || store.sets != 1 {
+				t.Fatalf("repeated placeholder: calls=%d writes=%d", client.calls, store.sets)
+			}
+		})
+	}
+}
+
+func TestSizesPlaceholderStorageFailureRetriesWithoutFlickr(t *testing.T) {
+	handler, store, client := sizesRig()
+	store.photo.Server = "65535"
+	store.setErr = errors.New("storage unavailable")
+	if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); !errors.Is(err, store.setErr) {
+		t.Fatalf("Handle() = %v", err)
+	}
+	if client.calls != 0 {
+		t.Fatalf("placeholder made %d Flickr calls", client.calls)
+	}
+}

@@ -58,13 +58,13 @@ func TestRepositoryRejectsInvalidCallsBeforeDatabaseAccess(t *testing.T) {
 func TestLoadSizesState(t *testing.T) {
 	updated := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
 	checked := updated.Add(time.Minute)
-	db := &photoSizesDB{row: photoSizesRow{values: []any{int64(8), updated, "confirmed", pgtype.Timestamptz{Time: checked, Valid: true}}}}
+	db := &photoSizesDB{row: photoSizesRow{values: []any{int64(8), updated, "confirmed", pgtype.Timestamptz{Time: checked, Valid: true}, "65535"}}}
 	repository, err := postgres.New(db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	photo, exists, err := repository.LoadSizes(context.Background(), 8)
-	if err != nil || !exists || photo.ID != 8 || photo.SizesStatus != domain.SizesConfirmed || photo.SizesCheckedAt == nil || !photo.SizesCheckedAt.Equal(checked) {
+	if err != nil || !exists || photo.ID != 8 || photo.Server != "65535" || photo.SizesStatus != domain.SizesConfirmed || photo.SizesCheckedAt == nil || !photo.SizesCheckedAt.Equal(checked) {
 		t.Fatalf("LoadSizes() = %+v, %v, %v", photo, exists, err)
 	}
 	if _, exists, err := repository.LoadSizes(context.Background(), 0); err == nil || exists {

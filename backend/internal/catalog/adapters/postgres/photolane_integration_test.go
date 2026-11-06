@@ -12,7 +12,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 )
 
-func TestPhotoLaneOrdersByInterestDepthAndUpload(t *testing.T) {
+func TestPhotoLaneSelectsOnlyStarredOrActiveSelectedContacts(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
 	}
@@ -86,7 +86,7 @@ func TestPhotoLaneOrdersByInterestDepthAndUpload(t *testing.T) {
 		}
 		return ids
 	}
-	want := []int64{base + 2, base + 1, base + 4, base + 6, base + 7, base + 8}
+	want := []int64{base + 2, base + 1, base + 4}
 	if got := mine(1000, 0); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Select() ids = %v, want %v", got, want)
 	}
@@ -95,7 +95,7 @@ func TestPhotoLaneOrdersByInterestDepthAndUpload(t *testing.T) {
 		t.Fatalf("Select(2, 0) = %v, %v", first, err)
 	}
 	second, err := lane.Select(ctx, 2, 2, nil)
-	if err != nil || len(second) != 2 || second[0] == first[0] || second[0] == first[1] {
+	if err != nil || len(second) != 1 || second[0] == first[0] || second[0] == first[1] {
 		t.Fatalf("Select(2, 2) = %v, %v; want rows after %v", second, err, first)
 	}
 	withExtras, err := lane.Select(ctx, 1000, 0, []string{"info"})
