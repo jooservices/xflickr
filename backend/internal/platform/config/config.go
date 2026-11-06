@@ -14,6 +14,8 @@ import (
 
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
+
+	"github.com/jooservices/xflickr/internal/platform/mail"
 )
 
 // Config contains the settings used by the application's platform adapters.
@@ -25,6 +27,7 @@ type Config struct {
 	Search   SearchConfig
 	Blob     BlobConfig
 	AI       AIConfig
+	Mail     MailConfig
 	Obs      ObsConfig
 	Node     NodeConfig
 	Crypto   CryptoConfig
@@ -96,6 +99,15 @@ type AIConfig struct {
 	URL            string `env:"OLLAMA_URL" envDefault:"http://127.0.0.1:11434"`
 	CaptionModel   string `env:"OLLAMA_CAPTION_MODEL" envDefault:"llama3.2"`
 	EmbeddingModel string `env:"OLLAMA_EMBEDDING_MODEL" envDefault:"nomic-embed-text"`
+}
+
+// MailConfig contains the SMTP sink used for transactional email. Credentials
+// are optional and stay empty for the unauthenticated development sink.
+type MailConfig struct {
+	SMTPAddr string `env:"MAIL_SMTP_ADDR" envDefault:"127.0.0.1:11025"`
+	From     string `env:"MAIL_FROM" envDefault:"no-reply@xflickr.local"`
+	Username string `env:"MAIL_SMTP_USERNAME"`
+	Password string `env:"MAIL_SMTP_PASSWORD"`
 }
 
 // ObsConfig contains OpenObserve connection settings.
@@ -241,6 +253,7 @@ func LoadFromEnv(values map[string]string) (Config, error) {
 		&cfg.Search,
 		&cfg.Blob,
 		&cfg.AI,
+		&cfg.Mail,
 		&cfg.Obs,
 		&cfg.Node,
 		&cfg.Crypto,
@@ -366,6 +379,21 @@ func (cfg *Config) validate() error {
 	if err := cfg.DB.Validate(); err != nil {
 		return err
 	}
+	settings, err := (mail.SMTPSettings{
+		Addr:     cfg.Mail.SMTPAddr,
+		From:     cfg.Mail.From,
+		Username: cfg.Mail.Username,
+		Password: cfg.Mail.Password,
+	}).Validate()
+	if err != nil {
+		return err
+	}
+	cfg.Mail = MailConfig{
+		SMTPAddr: settings.Addr,
+		From:     settings.From,
+		Username: settings.Username,
+		Password: settings.Password,
+	}
 	if cfg.Redis.Port < 1 || cfg.Redis.Port > 65535 {
 		return fmt.Errorf("REDIS_PORT must be between 1 and 65535")
 	}
@@ -421,13 +449,14 @@ func (cfg *Config) validate() error {
 // URL user information and query parameters may also contain secrets.
 func (cfg Config) String() string {
 	return fmt.Sprintf(
-		"Config{DB:{host:%q port:%d name:%q user:%q password:%s}, Redis:{host:%q port:%d db:%d prefix:%q password:%s}, Search:{endpoint_configured:%t username:%q password:%s index_prefix:%q}, Blob:{driver:%q local_dir:%q s3_endpoint_configured:%t s3_region:%q s3_bucket:%q s3_access_key:%s s3_secret_key:%s}, AI:{endpoint_configured:%t caption_model:%q embedding_model:%q}, Obs:{endpoint_configured:%t org:%q stream:%q username:%q password:%s}, Node:{id:%q}, CallLog:{retention_days:%d}, Crypto:{master_keys:%s active_master_key_id:%s}, HTTPPort:%d InternalHTTPAddr:%q LogLevel:%q}",
+		"Config{DB:{host:%q port:%d name:%q user:%q password:%s}, Redis:{host:%q port:%d db:%d prefix:%q password:%s}, Search:{endpoint_configured:%t username:%q password:%s index_prefix:%q}, Blob:{driver:%q local_dir:%q s3_endpoint_configured:%t s3_region:%q s3_bucket:%q s3_access_key:%s s3_secret_key:%s}, AI:{endpoint_configured:%t caption_model:%q embedding_model:%q}, Mail:{smtp_addr:%q from:%q username:%q password:%s}, Obs:{endpoint_configured:%t org:%q stream:%q username:%q password:%s}, Node:{id:%q}, CallLog:{retention_days:%d}, Crypto:{master_keys:%s active_master_key_id:%s}, HTTPPort:%d InternalHTTPAddr:%q LogLevel:%q}",
 		cfg.DB.Host, cfg.DB.Port, cfg.DB.Name, cfg.DB.User, mask(cfg.DB.Password),
 		cfg.Redis.Host, cfg.Redis.Port, cfg.Redis.DB, cfg.Redis.Prefix, mask(cfg.Redis.Password),
 		cfg.Search.URL != "", cfg.Search.Username, mask(cfg.Search.Password), cfg.Search.IndexPrefix,
 		cfg.Blob.Driver, cfg.Blob.LocalDir, cfg.Blob.S3Endpoint != "", cfg.Blob.S3Region, cfg.Blob.S3Bucket,
 		mask(cfg.Blob.S3AccessKey), mask(cfg.Blob.S3SecretKey),
 		cfg.AI.URL != "", cfg.AI.CaptionModel, cfg.AI.EmbeddingModel,
+		cfg.Mail.SMTPAddr, cfg.Mail.From, cfg.Mail.Username, mask(cfg.Mail.Password),
 		cfg.Obs.URL != "", cfg.Obs.Org, cfg.Obs.Stream, cfg.Obs.Username, mask(cfg.Obs.Password),
 		cfg.Node.ID, cfg.CallLog.RetentionDays, mask(cfg.Crypto.MasterKeys), mask(cfg.Crypto.ActiveMasterKeyID), cfg.HTTPPort, cfg.InternalHTTPAddr, cfg.LogLevel,
 	)

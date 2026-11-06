@@ -43,6 +43,8 @@
   capabilities, upload verification, and reusable adapter contract tests.
 - [AI captioning](ai-captioning.md) — caption port, Ollama vision requests,
   timeout, concurrency, response validation, and circuit breaker behaviour.
+- [Mail delivery](mail.md) — mail port, SMTP adapter, Mailpit sink, and fake
+  sender for tests.
 - [Downloads](downloads.md) — visible-photo requests, per-item state, and media
   queue handoff.
 - [Crawl interests](crawl-interests.md) — per-user person depth, lowest-depth

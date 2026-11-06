@@ -62,6 +62,7 @@ components:
       - internal/platform/crypto/**
       - internal/platform/db/**
       - internal/platform/httpx/**
+      - internal/platform/mail/**
       - internal/platform/obs/**
       - internal/platform/ops/**
       - internal/platform/outbox/**
