@@ -176,7 +176,7 @@ func deliveryError(ctx context.Context, err error) error {
 	var timeout net.Error
 	if errors.Is(err, os.ErrDeadlineExceeded) || (errors.As(err, &timeout) && timeout.Timeout()) {
 		if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
-			return fmt.Errorf("%v: %w", err, context.DeadlineExceeded)
+			return fmt.Errorf("%s: %w", err.Error(), context.DeadlineExceeded)
 		}
 	}
 	return err

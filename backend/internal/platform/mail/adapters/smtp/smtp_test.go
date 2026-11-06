@@ -407,7 +407,7 @@ func TestDeliveryError(t *testing.T) {
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("deliveryError() = %v, want %v", err, tt.want)
 			}
-			if tt.want == context.DeadlineExceeded && tt.ctx.Err() == nil && !strings.Contains(err.Error(), "read SMTP greeting") {
+			if errors.Is(tt.want, context.DeadlineExceeded) && tt.ctx.Err() == nil && !strings.Contains(err.Error(), "read SMTP greeting") {
 				t.Fatalf("operation context lost: %v", err)
 			}
 		})
