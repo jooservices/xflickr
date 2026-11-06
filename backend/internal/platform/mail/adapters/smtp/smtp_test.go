@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	netmail "net/mail"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -365,4 +367,49 @@ func (s *fakeSMTPServer) authenticated() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.authSeen
+}
+
+// deadlineContext models the interval before a context timer publishes its error.
+type deadlineContext struct {
+	context.Context
+	deadline time.Time
+}
+
+func (c deadlineContext) Deadline() (time.Time, bool) { return c.deadline, true }
+
+func TestDeliveryError(t *testing.T) {
+	past := deadlineContext{context.Background(), time.Now().Add(-time.Hour)}
+	future := deadlineContext{context.Background(), time.Now().Add(time.Hour)}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	expired, stop := context.WithDeadline(context.Background(), time.Now().Add(-time.Hour))
+	defer stop()
+	transport := errors.New("SMTP rejected")
+	timeout := fmt.Errorf("mail: read SMTP greeting: %w", os.ErrDeadlineExceeded)
+	netTimeout := fmt.Errorf("mail: read SMTP greeting: %w", &net.DNSError{IsTimeout: true})
+	tests := []struct {
+		name string
+		ctx  context.Context
+		err  error
+		want error
+	}{
+		{"socket deadline before context timer", past, timeout, context.DeadlineExceeded},
+		{"network timeout before context timer", past, netTimeout, context.DeadlineExceeded},
+		{"cancellation wins", canceled, timeout, context.Canceled},
+		{"published context deadline", expired, transport, context.DeadlineExceeded},
+		{"future deadline", future, timeout, timeout},
+		{"no context deadline", context.Background(), timeout, timeout},
+		{"unrelated failure after deadline", past, transport, transport},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := deliveryError(tt.ctx, tt.err)
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("deliveryError() = %v, want %v", err, tt.want)
+			}
+			if tt.want == context.DeadlineExceeded && tt.ctx.Err() == nil && !strings.Contains(err.Error(), "read SMTP greeting") {
+				t.Fatalf("operation context lost: %v", err)
+			}
+		})
+	}
 }

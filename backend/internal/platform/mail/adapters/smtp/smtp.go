@@ -4,11 +4,13 @@ package smtp
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"mime"
 	"net"
 	netmail "net/mail"
 	netsmtp "net/smtp"
+	"os"
 	"strings"
 	"time"
 
@@ -49,7 +51,7 @@ func New(settings mail.SMTPSettings) (*Sender, error) {
 }
 
 // Send validates and delivers one message. Transport failures are returned
-// unchanged apart from operation context; nothing is retried here.
+// with operation context and normalized context errors; nothing is retried here.
 func (s *Sender) Send(ctx context.Context, message mail.Message) error {
 	if ctx == nil {
 		return mail.ErrContextRequired
@@ -63,10 +65,7 @@ func (s *Sender) Send(ctx context.Context, message mail.Message) error {
 	ctx, cancel := context.WithTimeout(ctx, deliveryTimeout)
 	defer cancel()
 	if err := s.deliver(ctx, message); err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return ctxErr
-		}
-		return err
+		return deliveryError(ctx, err)
 	}
 	return nil
 }
@@ -169,3 +168,16 @@ func crlf(text string) string {
 }
 
 var _ mail.Sender = (*Sender)(nil)
+
+func deliveryError(ctx context.Context, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	var timeout net.Error
+	if errors.Is(err, os.ErrDeadlineExceeded) || (errors.As(err, &timeout) && timeout.Timeout()) {
+		if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+			return fmt.Errorf("%v: %w", err, context.DeadlineExceeded)
+		}
+	}
+	return err
+}
