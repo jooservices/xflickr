@@ -37,7 +37,7 @@ The first registered user is the admin. The stack hands the specs `E2E_BASE_URL`
 | `03-flickr-account.spec.ts` | Connect through fakeflickr OAuth: authorize, callback, the account is shown. |
 | `04-crawl.spec.ts` | Confirms the connected account and completed crawl work appear in Crawl status, changes depth (survives a reload), and verifies pause/resume responses. |
 | `05-profile.spec.ts` | The profile page. |
-| `06-photo-sizes.spec.ts` | A provisional photo remains unconfirmed until an explicit download request confirms sizes. The catalogue fixture adds an observation for the connected account in the guarded worktree database so the normal visibility policy applies. This verifies confirmation, not ZIP completion. |
+| `06-photo-sizes.spec.ts` | A provisional photo remains unconfirmed until an explicit download request confirms sizes. The catalogue fixture adds an observation for the connected account in the guarded worktree database so the normal visibility policy applies. This verifies confirmation, not ZIP completion, and uses the VM/Ubuntu PostgreSQL client at `/usr/bin/psql`. |
 | `99-route-sweep.spec.ts` | Every route at desktop and 390 px; sign-in, keys and crawl in light and dark at both widths (no sideways scroll, no overlapping controls). |
 
 The Crawl screen has no start, pause or resume control yet, and the contract has no start endpoint. Connecting an

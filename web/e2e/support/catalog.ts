@@ -38,7 +38,7 @@ export function observeCrawledPhoto(photoID: number): boolean {
     SELECT 1 FROM observations WHERE record_kind='photo' AND record_id='${photoID}'
   )`;
   return (
-    execFileSync('psql', ['-XAtq', '-v', 'ON_ERROR_STOP=1', '-c', sql], { env })
+    execFileSync('/usr/bin/psql', ['-XAtq', '-v', 'ON_ERROR_STOP=1', '-c', sql], { env })
       .toString()
       .trim() === 't'
   );
