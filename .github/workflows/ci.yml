@@ -24,6 +24,9 @@ jobs:
       - name: Test OpenObserve crawl-health freshness alerts
         run: python3 docker/scripts/test_obs_alert_config.py
 
+      - name: Test the worktree environment helper
+        run: python3 docker/scripts/test_worktree_env.py
+
   go-coverage:
     name: go-coverage
     runs-on: ubuntu-latest
