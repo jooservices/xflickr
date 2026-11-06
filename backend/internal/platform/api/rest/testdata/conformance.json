@@ -1,0 +1,14 @@
+[
+  {"name":"ok", "status":200, "content_type":"application/json", "body":true, "location":false},
+  {"name":"created", "status":201, "content_type":"application/json", "body":true, "location":true},
+  {"name":"accepted", "status":202, "content_type":"application/json", "body":true, "location":true},
+  {"name":"deleted", "status":204, "content_type":"", "body":false, "location":false},
+  {"name":"malformed-request", "status":400, "content_type":"application/problem+json", "body":true, "location":false},
+  {"name":"unauthenticated", "status":401, "content_type":"application/problem+json", "body":true, "location":false},
+  {"name":"forbidden", "status":403, "content_type":"application/problem+json", "body":true, "location":false},
+  {"name":"not-found", "status":404, "content_type":"application/problem+json", "body":true, "location":false},
+  {"name":"conflict", "status":409, "content_type":"application/problem+json", "body":true, "location":false},
+  {"name":"precondition-failed", "status":412, "content_type":"application/problem+json", "body":true, "location":false},
+  {"name":"validation-error", "status":422, "content_type":"application/problem+json", "body":true, "location":false},
+  {"name":"rate-limited", "status":429, "content_type":"application/problem+json", "body":true, "location":false}
+]
