@@ -18,6 +18,9 @@
 - [Business specification](SPEC.md) — product rules and definition of done.
 - [Sessions, CSRF, and roles](sessions.md) — session cookie, double-submit
   CSRF, and role checks.
+- [Social sign-in and account linking](social-signin.md) — provider-neutral
+  Google, Facebook, X and Apple sign-in, first-time registration, link and
+  unlink rules, and error states.
 - [Admin user management](admin-users.md) — list, disable and promote users,
   last-administrator rule, and audit port.
 - [Node registry and heartbeat](nodes.md) — one-time node tokens, isolated internal listener, and heartbeat health.

@@ -48,7 +48,7 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 | `user-sync` | user | `/sync` | Cloud sync | [spec](views/user-sync.md) | [mockup](mockups/user-sync.html) | JOOXF-178 | `web/e2e/user-sync.spec.ts` |
 | `user-sharing` | user | `/sharing` | Sharing | [spec](views/user-sharing.md) | [mockup](mockups/user-sharing.html) | JOOXF-179 | `web/e2e/user-sharing.spec.ts` |
 | `user-wizard` | user | `/onboarding` | Setup wizard: API key, Flickr connection, more accounts | [spec](views/user-wizard.md) | [mockup](mockups/user-wizard.html) | JOOXF-167 | `web/e2e/user-wizard.spec.ts` |
-| `user-profile` | user | `/profile` | Profile | [spec](views/user-profile.md) | [mockup](mockups/user-profile.html) | JOOXF-166 | `web/e2e/user-profile.spec.ts` |
+| `user-profile` | user | `/profile` | Profile | [spec](views/user-profile.md) | [mockup](mockups/user-profile.html) | JOOXF-166, JOOXF-307 | `web/e2e/user-profile.spec.ts` |
 | `admin-shell` | admin | `/admin/*` (layout) | Admin shell, rail and navigation | [spec](views/admin-shell.md) | [mockup](mockups/admin-shell.html) | JOOXF-79 | `web/e2e/admin-shell.spec.ts` |
 | `admin-overview` | admin | `/admin` | Overview | [spec](views/admin-overview.md) | [mockup](mockups/admin-overview.html) | JOOXF-180 | `web/e2e/admin-overview.spec.ts` |
 | `admin-nodes` | admin | `/admin/nodes` | Cluster nodes | [spec](views/admin-nodes.md) | [mockup](mockups/admin-nodes.html) | JOOXF-181 | `web/e2e/admin-nodes.spec.ts` |
@@ -65,7 +65,7 @@ Reference baseline: [proof of concept](poc/README.md). Shared rules:
 | `admin-defaults` | admin | `/admin/defaults` | Defaults and plans | [spec](views/admin-defaults.md) | [mockup](mockups/admin-defaults.html) | JOOXF-186 | `web/e2e/admin-defaults.spec.ts` |
 | `admin-sharing` | admin | `/admin/sharing` | Sharing | [spec](views/admin-sharing.md) | [mockup](mockups/admin-sharing.html) | JOOXF-186 | `web/e2e/admin-sharing.spec.ts` |
 | `admin-call-log` | admin | `/admin/log` | API call log | [spec](views/admin-call-log.md) | [mockup](mockups/admin-call-log.html) | JOOXF-182 | `web/e2e/admin-log.spec.ts` |
-| `user-auth` | user | `/login`, `/register`, `/login?reason=expired` | Login, register and session expired | [spec](views/user-auth.md) | [mockup](mockups/user-auth.html) | JOOXF-166 | `web/e2e/user-auth.spec.ts` |
+| `user-auth` | user | `/login`, `/register`, `/register/social`, `/login?reason=expired` | Login, register and session expired | [spec](views/user-auth.md) | [mockup](mockups/user-auth.html) | JOOXF-166, JOOXF-307 | `web/e2e/user-auth.spec.ts` |
 | `public-setup` | public | `/setup` | Setup wizard | pending | pending | TBD | `web/e2e/public-setup.spec.ts` |
 | `public-not-found` | public | `*` | Page not found | pending | pending | TBD | `web/e2e/public-not-found.spec.ts` |
 | `public-forbidden` | public | `/forbidden` | Access denied | pending | pending | TBD | `web/e2e/public-forbidden.spec.ts` |

@@ -14,15 +14,20 @@ JOOXF-166. Parent: JOOXF-64.
 ## Purpose
 
 Let a signed-in user see and change their own details, keep their sign-in safe
-(change the password, manage passkeys, end sessions on other devices), manage
-which Flickr accounts are connected, and leave or delete the account. It owns no
-photo data. This view links to the Flickr accounts and Sessions cards.
+(change the password, manage passkeys and social sign-in methods, end sessions
+on other devices), manage which Flickr accounts are connected, and leave or
+delete the account. It owns no photo data. This view links to the Flickr
+accounts and Sessions cards. Social sign-in itself starts on
+[user-auth](user-auth.md); this view links and unlinks the providers after the
+person has proved ownership by signing in.
 
 ## Route and access
 
-- `/profile` (also `/profile#security`).
+- `/profile` (also `/profile#security` and `/profile#sign-in-methods`).
   Opens inside the user shell, Profile tab active, document title
-  `Profile · XFlickr`.
+  `Profile · XFlickr`. A social link callback returns here with
+  `?linked=<provider>` or `?link_error=<code>&provider=<id>`; the view reads it
+  once, shows a toast or card banner, and removes the query parameters.
 - Access: `xf_session`. 401 is handled by the shell (expired modal). `role =
   admin` is redirected to `/admin` by the shell; the admin account page is
   another ticket.
@@ -36,9 +41,10 @@ photo data. This view links to the Flickr accounts and Sessions cards.
 
 Page head: `h1` "Profile" (no actions). Below, a 12-column grid. Desktop (>=
 1100 px): left column 5/12 (Account, Password), right column 7/12 (Passkeys,
-Sessions, Flickr accounts); Danger zone spans full width at the bottom. Below
-1100 px one column in this order: Account, Flickr accounts, Password, Passkeys,
-Sessions, Danger zone (most-used first on small screens).
+Sign-in methods, Sessions, Flickr accounts); Danger zone spans full width at the
+bottom. Below 1100 px one column in this order: Account, Flickr accounts,
+Password, Passkeys, Sign-in methods, Sessions, Danger zone (most-used first on
+small screens).
 
 Every block is a `card` with an `h2` and its own states (they load and fail
 independently).
@@ -59,17 +65,29 @@ independently).
    `Rename` and `Remove` (sm ghost). Hidden entirely when the server flag is
    off; shown with a muted note and no Add button when only the browser lacks
    support.
-4. **Active sessions**: header row with `Sign out other sessions` (sm). List
+4. **Sign-in methods**: header row with the title and a muted intro
+   ("Accounts you can use to sign in to XFlickr."). One `list-item` per
+   configured provider in server order: a neutral initial mark and the provider
+   name, status line
+   (linked email and `Linked {date}`, `Not linked`, or `Not available`), and one
+   action: `Unlink` (sm ghost) when linked, `Link {provider}` (sm) when not
+   linked and enabled, nothing when unavailable. The card is hidden when no
+   provider is configured. When unlinking would leave no password, no passkey
+   and no other provider, `Unlink` is disabled and the row shows
+   `profile.signin-methods.last`; a `Set a password` link moves focus to the
+   Password card. No provider-specific row or copy exists; the provider name and
+   mark come from the server list.
+5. **Active sessions**: header row with `Sign out other sessions` (sm). List
    items: device icon, browser and OS ("Firefox on Linux"), masked IP,
    "Last active {relative}", "Signed in {date}", a `This device` pill on the
    current one (no revoke button there), `Revoke` (sm ghost) on the others.
-5. **Flickr accounts**: header row with `Connect another` (sm primary, goes to
+6. **Flickr accounts**: header row with `Connect another` (sm primary, goes to
    `/accounts/connect`). List items: status dot (ok green check, warning for
    `reconnect_required`, bad for `revoked`), username, mono NSID, line
    "Signed in with {key label} · {permission} permission · since {date} ·
    {n} contacts", and `Disconnect` (sm ghost) or `Reconnect` (sm) for
    `reconnect_required` and `revoked`.
-6. **Danger zone**: `card` with a bad-coloured 1 px border and tint. Row 1
+7. **Danger zone**: `card` with a bad-coloured 1 px border and tint. Row 1
    "Sign out everywhere" (also ends this session, goes to `/login`) with
    button `Sign out everywhere`; row 2 "Delete account" with a short consequence
    text and the destructive button `Delete account`.
@@ -89,12 +107,15 @@ endpoints are in [Data and API](#data-and-api).
 | Element | Source | Fields used |
 | --- | --- | --- |
 | Account | `GET /me` (exists) | `id`, `email`, `role`, `locale`, `created_at` |
-| Account extras | **contract request** on `User` | add `display_name` (string, 1 to 60, default the part of email before `@`), `timezone` (IANA, default `UTC`), `passkey_enabled` (bool) |
+| Account extras | **contract request** on `User` | add `display_name` (string, 1 to 60, default the part of email before `@`), `timezone` (IANA, default `UTC`), `passkey_enabled` (bool), `has_password` (bool; false for a social-only account) |
 | Save account | `PATCH /me` **contract request** body `{display_name?, locale?, timezone?}` | 200 `User`; 400 `validation_failed` with `details.fields`; locale `en` or `vi` |
 | Change password | `POST /me/password` **contract request** body `{current_password, new_password}` | 204, then the server revokes every other session; 400 `validation_failed`; 401 `invalid_credentials` (wrong current); 429 `rate_limited` with `Retry-After` |
 | Passkeys list | `GET /me/passkeys` **contract request** | `items[]` `id`, `name`, `created_at`, `last_used_at` (nullable), `backed_up` (bool) |
 | Add passkey | `POST /me/passkeys/options`, `POST /me/passkeys/verify` **contract request** | WebAuthn creation options and attestation; body adds `name`; 201 item; 409 `passkey_exists` |
 | Rename / remove | `PATCH /me/passkeys/{id}` body `{name}`, `DELETE /me/passkeys/{id}` **contract request** | 200 item / 204; 404 means already gone (treated as success) |
+| Sign-in methods | `GET /me/sign-in-methods` **contract request** | `has_password` bool, `items[]` `{provider, name, status: linked\|not_linked\|unavailable, email?, linked_at?, can_unlink, blocked_reason?: last_sign_in_method}` in server order |
+| Link provider | `GET /auth/social/{provider}/start?mode=link&return_to=/profile` **contract request**, top-level navigation | Requires a session; 303 to the provider, then the callback attaches the identity and returns to `/profile?linked={provider}`; failures return `/profile?link_error=<code>&provider=<id>` (`identity_taken`, `denied`, `email_unverified`, `state_invalid`, `unavailable`, `failed`, `session_expired`) |
+| Unlink provider | `DELETE /me/sign-in-methods/{provider}` **contract request** | 204; 404 not linked (treated as success); 409 `last_sign_in_method`; 403 `provider_unavailable`; unsafe, needs `X-CSRF-Token` |
 | Sessions list | `GET /me/sessions` **contract request** | `items[]` `id`, `current` (bool), `user_agent_label` (server-parsed, e.g. "Firefox on Linux"), `ip_masked` (e.g. `203.0.113.x`), `created_at`, `last_seen_at`, `expires_at` |
 | Revoke one | `DELETE /me/sessions/{id}` **contract request** | 204; revoking the current id is rejected 400 `cannot_revoke_current` |
 | Revoke others | `DELETE /auth/sessions` (exists) | 204; 401; 403 `csrf_rejected` |
@@ -103,6 +124,12 @@ endpoints are in [Data and API](#data-and-api).
 | Disconnect | `DELETE /flickr-accounts/{id}` **contract request** | 204; 404 treated as success; 409 `crawl_running` carries `details.job_count` |
 | Delete account | `DELETE /me` **contract request** body `{password}` | 204 clears cookies; 401 `invalid_credentials`; the server deletes the user, sessions, passkeys and Flickr tokens, and queues removal of crawled data |
 | Error body | shared `Error` | `code`, `message` (English, never shown), `details` |
+
+The sign-in methods list is the only public view of provider state. `can_unlink`
+and `blocked_reason` are computed by the server from `has_password`, the passkey
+count and the other linked providers, so the client never guesses whether an
+unlink is safe. Link mode never creates an account; it only attaches a verified
+identity to the signed-in user.
 
 Contract requests are only requested here; OpenAPI is changed by the build
 tickets. Unsafe calls carry `X-CSRF-Token` equal to `xf_csrf`. Until the
@@ -118,6 +145,9 @@ everywhere stays).
 | Add passkey | button | Options, `navigator.credentials.create`, ask a name (`modal` with a prefilled name), verify; user cancel shows nothing; failure shows `profile.passkeys.error.add` |
 | Rename passkey | `Rename` | Inline text field replaces the name, Enter saves, Esc cancels |
 | Remove passkey | `Remove` | Confirm modal; removing the last passkey asks the password; `DELETE`; toast |
+| Link provider | `Link {provider}` | Full-page navigation to `GET /auth/social/{provider}/start?mode=link`; the row shows a spinner and all link actions are disabled; on return `?linked` shows the toast and reloads the card |
+| Unlink provider | `Unlink` | Confirm modal `profile.signin-methods.unlink.title`; `DELETE /me/sign-in-methods/{provider}`; on 204 remove the link and toast; a 409 keeps the row and shows `profile.signin-methods.last` |
+| Set a password | `Set a password` in a blocked row | Move focus to the Password card and its current-password field; no navigation |
 | Revoke session | `Revoke` | Confirm modal `profile.sessions.revoke.title`; `DELETE /me/sessions/{id}`; item removed, toast |
 | Sign out other sessions | button | Confirm modal; `DELETE /auth/sessions`; list reloads with only the current one; disabled when no other session exists |
 | Connect another | button | Client route `/accounts/connect` |
@@ -143,6 +173,14 @@ everywhere stays).
   the next item, else to the card heading.
 - Double submit is ignored while a request is in flight; the clicked button
   shows a spinner.
+- Link leaves the single-page app with a top-level navigation and stores
+  nothing in `localStorage`; browser Back returns to Profile. On return the view
+  reads `?linked` or `?link_error` once, shows the toast or the card banner, and
+  removes the query parameters. A `link_error=session_expired` is handled by the
+  shell like any other 401.
+- The card never renders an unlink action for a provider whose `can_unlink` is
+  false. It shows the reason and the `Set a password` shortcut instead, so the
+  confirm modal cannot become a dead end.
 - Date and relative times use the active locale; relative times update every
   minute while visible.
 - Keyboard: no view shortcuts; global shortcuts of the shell apply.
@@ -154,17 +192,23 @@ State scope: each card is independent; the page head is always shown.
 ### Ready
 
 All cards loaded. Typical content: one account, a password form with empty
-fields, 0 to 5 passkeys, 1 to 8 sessions (current first, then by
-`last_seen_at` descending), 1 to 3 Flickr accounts (oldest first).
+fields, 0 to 5 passkeys, one row per configured provider (linked, not linked
+or unavailable; Google, Facebook, X and Apple when all four are enabled),
+1 to 8 sessions (current first, then by `last_seen_at` descending), 1 to 3
+Flickr accounts (oldest first). A social-only account shows
+`has_password = false`, no password fields to fill in the Password card until
+the person sets one, and at least one linked provider.
 
 ### Loading
 
 Per card skeleton after 150 ms: avatar circle plus three field bars (Account);
 three field bars (Password, shown at once since it needs no data); two list-item
-bars (Passkeys, Sessions, Flickr accounts). `aria-busy` on the card, no text.
-Timeout 10 s becomes that card's Error. Saving: button spinner and label
-`profile.saving`; fields read-only. A slow call (over 10 s) adds
-`profile.loading.slow`.
+bars (Passkeys, Sign-in methods, Sessions, Flickr accounts). `aria-busy` on the
+card, no text. Timeout 10 s becomes that card's Error. Saving: button spinner
+and label `profile.saving`; fields read-only. A slow call (over 10 s) adds
+`profile.loading.slow`. Linking a provider shows the spinner in that row and
+disables every other link action; the page leaves before a 10 s timeout unless
+the browser blocks the navigation.
 
 ### Empty
 
@@ -173,6 +217,9 @@ Timeout 10 s becomes that card's Error. Saving: button spinner and label
 - Flickr accounts, none connected: title `profile.accounts.empty.title`, text
   `profile.accounts.empty.text`, call to action `Connect a Flickr account`.
   Also shown when the user disconnects the last account.
+- Sign-in methods is never empty while a provider is configured: unlinked
+  providers are shown with `Link {provider}`. With no configured provider the
+  whole card is hidden, not replaced by an empty state.
 - Sessions is never empty (the current session is always listed). Account and
   Password have no empty state.
 
@@ -188,6 +235,13 @@ Timeout 10 s becomes that card's Error. Saving: button spinner and label
   `profile.error.rate-limited`, button disabled for `Retry-After`.
 - Passkey add or remove failure: `profile.passkeys.error.add` /
   `profile.passkeys.error.remove` as a card banner; browser cancel is silent.
+- Link failure: the provider row returns to `not_linked` and the card shows a
+  bad banner for the code: `identity_taken`, `denied` (info), `unverified`,
+  `state_invalid`, `unavailable`, `failed` or `session_expired`. The row keeps
+  its `Link {provider}` action so a retry is one click.
+- Unlink failure: the row stays linked and the card shows
+  `profile.signin-methods.error.unlink`; a 409 `last_sign_in_method` also
+  disables the action and shows `profile.signin-methods.last`.
 - Revoke or disconnect failure: toast (bad) `profile.error.action`, item stays.
 - Disconnect while crawling (409): inside the modal
   `profile.accounts.error.running` with the job count.
@@ -204,6 +258,11 @@ Timeout 10 s becomes that card's Error. Saving: button spinner and label
 - A Flickr account with `status = reconnect_required` or `revoked` is shown with
   a warning or bad dot, the label `profile.accounts.status.*` and a `Reconnect`
   action; this matches the shell key-revoked banner.
+- A provider with `status = unavailable` keeps its row with `Not available`
+  and no action. Another tab linking or unlinking a provider is picked up on
+  focus and on the `auth.identities` live event; an open confirm modal for a
+  provider that changed state closes with `profile.signin-methods.changed`
+  instead of sending a stale request.
 - Another tab changing the same data is picked up by Live updates; an Account
   form with unsaved edits is never overwritten (a notice `profile.changed-elsewhere`
   offers `Reload` instead).
@@ -220,15 +279,16 @@ Timeout 10 s becomes that card's Error. Saving: button spinner and label
 
 ## Live updates
 
-Live for Sessions and Flickr accounts only. The shell's single SSE connection
-carries topics `auth.sessions` (a session was created or revoked for this user,
-for example from another device) and `flickr.accounts` (status changed, such as
-`reconnect_required`, or a connect finished in another tab). On an event the
-card refetches its list. Fallback: when SSE is down the shell polls these two
-endpoints every 30 s while the tab is visible (backoff 30, 60, 120 s), the
-Live indicator follows the shell. Account, Password and Passkeys are not live;
-they refetch on focus. The current session being revoked elsewhere arrives as a
-401 and follows Forbidden.
+Live for Sessions, Flickr accounts and Sign-in methods. The shell's single SSE
+connection carries topics `auth.sessions` (a session was created or revoked for
+this user, for example from another device), `flickr.accounts` (status changed,
+such as `reconnect_required`, or a connect finished in another tab) and
+`auth.identities` (a provider was linked or unlinked in another tab). On an
+event the card refetches its list. Fallback: when SSE is down the shell polls
+these three endpoints every 30 s while the tab is visible (backoff 30, 60,
+120 s), the Live indicator follows the shell. Account, Password and Passkeys
+are not live; they refetch on focus. The current session being revoked
+elsewhere arrives as a 401 and follows Forbidden.
 
 ## Responsive
 
@@ -237,8 +297,9 @@ they refetch on focus. The current session being revoked elsewhere arrives as a
 - < 600 px (390 px reference): one column, cards full width, 16 px side padding;
   list item actions drop below the text as a full-width row; sm buttons grow to
   44 px; header-row buttons of a card move under its title. Inputs use 16 px
-  text (no iOS zoom). Modals become bottom sheets. Reflows at 320 px without
-  loss.
+  text (no iOS zoom). Modals become bottom sheets. Sign-in method rows put the
+  provider name and status first, then a full-width `Link`/`Unlink` row; the
+  last-method note wraps under the status. Reflows at 320 px without loss.
 
 ## Accessibility
 
@@ -251,8 +312,14 @@ they refetch on focus. The current session being revoked elsewhere arrives as a
   region; card errors are `role=alert`; stale and changed-elsewhere notes
   `role=status`.
 - Lists are `ul`; every row action has an accessible name including the item
-  ("Revoke session Firefox on Linux", "Remove passkey Laptop"). Status is text
-  plus icon, never colour alone. `This device` is text.
+  ("Revoke session Firefox on Linux", "Remove passkey Laptop",
+  "Link Google", "Unlink Google"). Status is text plus icon, never colour
+  alone. `This device` is text. The provider mark is `aria-hidden` because the
+  provider name is adjacent text.
+- Sign-in method status is exposed as text (`Linked`, `Not linked`,
+  `Not available`) and a disabled `Unlink` has `aria-describedby` pointing at
+  the last-method note. The link and unlink results are announced through the
+  shell toast region; link failures are a card `role=alert`.
 - Modals: `role=dialog`, `aria-modal`, labelled, focus trap and restore. The
   destructive typed-email field has a visible label.
 - Targets >= 44 px on mobile, >= 40 px on desktop. Contrast >= 4.5:1 in light
@@ -298,6 +365,28 @@ than truncate. Dates and numbers use the active locale.
 | `profile.passkeys.remove.text` | You will no longer be able to sign in with it. | Bạn sẽ không đăng nhập bằng nó được nữa. |
 | `profile.passkeys.error.add` | The passkey could not be added. Try again. | Không thêm được passkey. Hãy thử lại. |
 | `profile.passkeys.error.remove` | The passkey could not be removed. Try again. | Không xóa được passkey. Hãy thử lại. |
+| `profile.signin-methods.title` | Sign-in methods | Cách đăng nhập |
+| `profile.signin-methods.intro` | Accounts you can use to sign in to XFlickr. | Các tài khoản bạn có thể dùng để đăng nhập XFlickr. |
+| `profile.signin-methods.meta` | {email} · Linked {date} | {email} · Đã liên kết {date} |
+| `profile.signin-methods.not-linked` | Not linked | Chưa liên kết |
+| `profile.signin-methods.unavailable` | Not available | Không khả dụng |
+| `profile.signin-methods.link` | Link {provider} | Liên kết {provider} |
+| `profile.signin-methods.unlink` | Unlink | Hủy liên kết |
+| `profile.signin-methods.unlink.title` | Unlink {provider}? | Hủy liên kết {provider}? |
+| `profile.signin-methods.unlink.text` | You will no longer sign in with {provider}. Your email and photos stay. | Bạn sẽ không đăng nhập bằng {provider} nữa. Email và ảnh của bạn vẫn còn. |
+| `profile.signin-methods.last` | Keep at least one way to sign in. Add a password or link another provider first. | Hãy giữ ít nhất một cách đăng nhập. Thêm mật khẩu hoặc liên kết nhà cung cấp khác trước. |
+| `profile.signin-methods.set-password` | Set a password | Đặt mật khẩu |
+| `profile.signin-methods.error.link` | The {provider} account was not linked. Try again. | Chưa liên kết được tài khoản {provider}. Hãy thử lại. |
+| `profile.signin-methods.error.identity-taken` | This {provider} account is already linked to another XFlickr account. | Tài khoản {provider} này đã liên kết với một tài khoản XFlickr khác. |
+| `profile.signin-methods.error.denied` | {provider} sign-in was cancelled. Nothing changed. | Đăng nhập bằng {provider} đã bị hủy. Không có thay đổi nào. |
+| `profile.signin-methods.error.unverified` | {provider} did not confirm your email address, so it was not linked. | {provider} chưa xác nhận địa chỉ email nên chưa được liên kết. |
+| `profile.signin-methods.error.state-invalid` | This linking attempt expired. Try again. | Lần liên kết này đã hết hạn. Hãy thử lại. |
+| `profile.signin-methods.error.unavailable` | {provider} linking is not available right now. Try again later. | Liên kết {provider} hiện không khả dụng. Hãy thử lại sau. |
+| `profile.signin-methods.error.failed` | We could not finish linking {provider}. Try again. | Không hoàn tất liên kết {provider}. Hãy thử lại. |
+| `profile.signin-methods.error.unlink` | The {provider} account was not unlinked. Try again. | Chưa hủy liên kết được tài khoản {provider}. Hãy thử lại. |
+| `profile.signin-methods.changed` | This changed in another tab. Reload the card. | Mục này đã thay đổi ở tab khác. Hãy tải lại thẻ. |
+| `profile.signin-methods.toast.linked` | {provider} linked | Đã liên kết {provider} |
+| `profile.signin-methods.toast.unlinked` | {provider} unlinked | Đã hủy liên kết {provider} |
 | `profile.sessions.title` | Active sessions | Phiên đăng nhập |
 | `profile.sessions.intro` | Devices signed in to your account. | Các thiết bị đang đăng nhập tài khoản của bạn. |
 | `profile.sessions.current` | This device | Thiết bị này |
@@ -359,6 +448,15 @@ entity id as suffix (`profile-session-row-{id}`).
   `profile-passkey-row-{id}`, `profile-passkey-rename-{id}`,
   `profile-passkey-remove-{id}`, `profile-passkeys-empty`,
   `profile-passkeys-empty-cta`, `profile-passkeys-unsupported`.
+- Sign-in methods: `profile-signin-methods-card`,
+  `profile-signin-method-row-{provider}`,
+  `profile-signin-method-status-{provider}`,
+  `profile-signin-method-link-{provider}`,
+  `profile-signin-method-unlink-{provider}`,
+  `profile-signin-methods-last-{provider}`,
+  `profile-signin-methods-set-password-{provider}`,
+  `profile-signin-methods-error`, `profile-signin-unlink-dialog`,
+  `profile-signin-unlink-confirm`, `profile-signin-unlink-cancel`.
 - Sessions: `profile-sessions-card`, `profile-session-row-{id}`,
   `profile-session-current`, `profile-session-revoke-{id}`,
   `profile-sessions-revoke-others`.
@@ -372,24 +470,32 @@ entity id as suffix (`profile-session-row-{id}`).
 - Dialogs and notes: `profile-confirm-dialog`, `profile-confirm-ok`,
   `profile-confirm-cancel`, `profile-stale-note`, `profile-changed-note`.
 - States (per card, suffix with the card name: `account`, `password`,
-  `passkeys`, `sessions`, `accounts`): `profile-skeleton-{card}`,
-  `profile-error-{card}`, `profile-error-retry-{card}`.
+  `passkeys`, `signin-methods`, `sessions`, `accounts`):
+  `profile-skeleton-{card}`, `profile-error-{card}`,
+  `profile-error-retry-{card}`.
 
 ## Test hooks
 
 The `data-testid` list above is the contract for `web/e2e/user-profile.spec.ts`.
 Minimum journeys: save name, language and time zone (UI switches to VI);
 change password (wrong current, success, other sessions gone); add, rename and
-remove a passkey (WebAuthn virtual authenticator); revoke one session and
-sign out the others; disconnect an account, 409 while crawling, reconnect;
-empty passkeys and empty accounts with their calls to action; per-card error
-and retry while the other cards stay usable; SSE event refreshes Sessions and
-polling fallback; delete account with typed email; unsaved guard; 390 px layout.
+remove a passkey (WebAuthn virtual authenticator); link a fake provider from
+the Sign-in methods card and see the toast on return; unlink it; blocked
+unlink with `last_sign_in_method` and the `Set a password` shortcut; each link
+error code as a card banner; revoke one session and sign out the others;
+disconnect an account, 409 while crawling, reconnect; empty passkeys and empty
+accounts with their calls to action; per-card error and retry while the other
+cards stay usable; SSE event refreshes Sessions, Flickr accounts and Sign-in
+methods with polling fallback; delete account with typed email; unsaved guard;
+390 px layout.
 
 ## Out of scope
 
 - Password reset, email change, email verification, MFA other than passkeys,
   avatars upload, and notification preferences (none exist in this release).
+- Signing in with a social provider and the first-time completion screen
+  (`user-auth`); creating provider OAuth apps or setting their credentials
+  (deployment configuration, never in the UI).
 - Setting the Flickr API key or secret (entered only in the setup/keys UI,
   never here), key management (`user-keys`) and the connect flow itself
   (`user-account-connect`).
