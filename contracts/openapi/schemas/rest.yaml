@@ -1,0 +1,106 @@
+Link:
+  type: object
+  required: [href]
+  additionalProperties: false
+  properties:
+    href:
+      type: string
+      format: uri-reference
+    method:
+      type: string
+      enum: [GET, POST, PUT, PATCH, DELETE]
+Links:
+  type: object
+  description: 'Relations: self, authentication-options, me, events, keys, flickr-accounts, people, albums, favorites, users, plans, flags. Only available relations are present. During additive migration these point to existing routes; later slices replace their targets.'
+  required: [self]
+  properties:
+    self:
+      $ref: '#/Link'
+  additionalProperties:
+    $ref: '#/Link'
+RESTEnvelope:
+  type: object
+  required: [success, code, message, data, meta, errors, trace_id]
+  additionalProperties: false
+  properties:
+    success:
+      type: boolean
+      enum: [true]
+    code:
+      type: integer
+    message:
+      type: string
+    data: {}
+    meta:
+      type: object
+      additionalProperties: true
+    errors:
+      type: 'null'
+    trace_id:
+      type: string
+RESTEntry:
+  type: object
+  required: [success, code, message, data, meta, errors, trace_id]
+  additionalProperties: false
+  properties:
+    success:
+      type: boolean
+      enum: [true]
+    code:
+      type: integer
+      enum: [200]
+    message:
+      type: string
+    data:
+      type: object
+      required: [links]
+      additionalProperties: false
+      properties:
+        links:
+          $ref: '#/Links'
+    meta:
+      type: object
+      additionalProperties: true
+    errors:
+      type: 'null'
+    trace_id:
+      type: string
+RESTProblem:
+  type: object
+  required: [type, title, status, detail, instance, trace_id, errors]
+  properties:
+    type:
+      type: string
+      description: Stable problem URI; clients branch on this value.
+      enum: [/problems/key-invalid, /problems/temp-storage-full, /problems/reconnect-required, /problems/account-locked, /problems/token-expired, /problems/validation-error, /problems/not-found, /problems/conflict, /problems/precondition-failed, /problems/rate-limited, /problems/unauthenticated, /problems/forbidden, /problems/malformed-request, /problems/unsupported-media-type, /problems/internal-error]
+    title:
+      type: string
+    status:
+      type: integer
+      minimum: 400
+      maximum: 599
+    detail:
+      type: string
+    instance:
+      type: string
+    trace_id:
+      type: string
+    errors:
+      type: [object, 'null']
+      additionalProperties:
+        type: array
+        items:
+          type: string
+RESTPagination:
+  type: object
+  required: [limit, has_more, next_cursor]
+  properties:
+    limit:
+      type: integer
+      default: 50
+      minimum: 1
+      maximum: 100
+    has_more:
+      type: boolean
+    next_cursor:
+      type: string

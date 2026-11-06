@@ -18,7 +18,7 @@ import type {
   UseQueryResult,
 } from '@tanstack/react-query';
 
-import type { Error, Health, Readiness } from '../models';
+import type { Error, Health, RESTEntry, RESTProblem, Readiness } from '../models';
 
 import { customFetch } from '../../mutator';
 
@@ -76,6 +76,139 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export type getAPIEntryResponse200 = {
+  data: RESTEntry;
+  status: 200;
+};
+
+export type getAPIEntryResponseDefault = {
+  data: RESTProblem;
+  status: Exclude<HTTPStatusCodes, 200>;
+};
+
+export type getAPIEntryResponseSuccess = getAPIEntryResponse200 & {
+  headers: Headers;
+};
+export type getAPIEntryResponseError = getAPIEntryResponseDefault & {
+  headers: Headers;
+};
+
+export type getAPIEntryResponse = getAPIEntryResponseSuccess | getAPIEntryResponseError;
+
+export const getGetAPIEntryUrl = () => {
+  return `/api/v1`;
+};
+
+/**
+ * Safe additive entry point. Anonymous callers see public discovery; authenticated callers see user collections, with admin collections only for administrators. Existing targets remain usable during migration. No Flickr calls are made.
+ * @summary Discover available top-level collections.
+ */
+export const getAPIEntry = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getAPIEntryResponse> => {
+  return customFetch<getAPIEntryResponse>(getGetAPIEntryUrl(), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getGetAPIEntryQueryKey = () => {
+  return [`/api/v1`] as const;
+};
+
+export const getGetAPIEntryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAPIEntry>>,
+  TError = RESTProblem,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAPIEntry>>, TError, TData>>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAPIEntryQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAPIEntry>>> = ({ signal }) =>
+    getAPIEntry({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAPIEntry>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetAPIEntryQueryResult = NonNullable<Awaited<ReturnType<typeof getAPIEntry>>>;
+export type GetAPIEntryQueryError = RESTProblem;
+
+export function useGetAPIEntry<
+  TData = Awaited<ReturnType<typeof getAPIEntry>>,
+  TError = RESTProblem,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAPIEntry>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAPIEntry>>,
+          TError,
+          Awaited<ReturnType<typeof getAPIEntry>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAPIEntry<
+  TData = Awaited<ReturnType<typeof getAPIEntry>>,
+  TError = RESTProblem,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAPIEntry>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAPIEntry>>,
+          TError,
+          Awaited<ReturnType<typeof getAPIEntry>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAPIEntry<
+  TData = Awaited<ReturnType<typeof getAPIEntry>>,
+  TError = RESTProblem,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAPIEntry>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Discover available top-level collections.
+ */
+
+export function useGetAPIEntry<
+  TData = Awaited<ReturnType<typeof getAPIEntry>>,
+  TError = RESTProblem,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAPIEntry>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAPIEntryQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 export type getHealthResponse200 = {
   data: Health;

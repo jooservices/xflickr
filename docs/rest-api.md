@@ -202,3 +202,15 @@ did not settle. The decisions are binding for JOOXF-316 and JOOXF-317.
   `queue-snapshots/current`, `operation-reports/current`, `call-reports/current`)
   are accepted. Parent-scoped singletons (`quota`, `plan`, `heartbeat`, crawl
   `settings`) stay as the audit shows them.
+
+## Building blocks (Slice 0)
+
+[`backend/internal/platform/api/rest`](../backend/internal/platform/api/rest)
+provides the success and problem writers, stable problem registry, link and
+entry representations, opaque cursor codec and page metadata, allowlisted JSON
+Merge Patch reader, strong ETag/If-Match checks, and idempotency storage port.
+The PostgreSQL adapter is in `rest/postgres`; migration
+`20261106220000_rest_idempotency.sql` adds its table. These helpers are opt-in:
+existing handlers and their clients keep their current contracts until their
+module migrates. See [REST building blocks](rest-building-blocks.md) for usage,
+concurrency guarantees, and the reusable JOOXF-317 conformance cases.

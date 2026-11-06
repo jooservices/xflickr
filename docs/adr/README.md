@@ -5,3 +5,5 @@ This directory contains Architecture Decision Records that capture durable techn
 - [0004: Entity disappearance and facet restrictions](0004-entity-access-state.md)
 
 - [0005: Rolling quota grant ledger](0005-rolling-quota-ledger.md)
+
+- [0006: Additive REST foundation and durable idempotency claims](0006-rest-foundation-idempotency.md)

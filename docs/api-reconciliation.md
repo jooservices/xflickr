@@ -18,6 +18,7 @@ that serve it, or `MISSING`.
 | `/admin/users/{}/plan` | `/admin/users/{id}/plan` | `/admin/users/{id}/plan` |
 | `/albums` | `/albums` | `/albums` |
 | `/albums/{}/photos` | `/albums/{id}/photos` | `/albums/{id}/photos` |
+| `/api/v1` | `/api/v1` | `/api/v1` |
 | `/auth/config` | `/auth/config` | `/auth/config` |
 | `/auth/login` | `/auth/login` | `/auth/login` |
 | `/auth/logout` | `/auth/logout` | `/auth/logout` |

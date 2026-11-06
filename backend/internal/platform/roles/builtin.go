@@ -996,6 +996,7 @@ func newAPIRoutersWithServices(identity identityhttp.Handler, keys accountshttp.
 	publicRouter.Use(identityhttp.ProtectRoutes(identity.Sessions, accessResolver(publicRouter)))
 	strict := gen.NewStrictHandlerWithOptions(server, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
+		discoveryAuthentication(identity.Sessions),
 		identityhttp.MaintainSessionCookies(identity.Sessions),
 	}, gen.StrictHTTPServerOptions{RequestErrorHandlerFunc: badRequest, ResponseErrorHandlerFunc: internalError})
 	public := gen.HandlerWithOptions(strict, gen.ChiServerOptions{BaseRouter: publicRouter, ErrorHandlerFunc: badRequest})

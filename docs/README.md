@@ -94,3 +94,4 @@ The current web API to contract and backend route mapping is generated in
 
 - [Rolling quota ledger decision](adr/0005-rolling-quota-ledger.md) — atomic grant sets, recovery and deployment constraints.
 - [Crawl call audit](crawl-call-audit.md) — per-facet call yield, numeric-count retry fix, one-hour fixture evidence and proposed follow-ups (JOOXF-310).
+- [REST building blocks](rest-building-blocks.md) — additive Slice 0 helpers, discovery, idempotency guarantees and reusable conformance cases.
