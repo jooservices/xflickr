@@ -34,19 +34,19 @@ module.
 
 ## Commands and runtimes
 
-Run commands from this worktree. Go and Node are provided by the shared runtime
-wrappers described in `docs/ENVIRONMENT.md`; do not assume host toolchains are
-installed. Examples:
+Run commands from this worktree. Go and Node are installed natively on the
+development VM; `docs/ENVIRONMENT.md` lists the shared services and the rules.
+Examples:
 
 ```sh
-/home/joos/Workspaces/scripts/docker/runtime go go test ./...
-/home/joos/Workspaces/scripts/docker/runtime node npm test
+(cd backend && go test ./...)
+(cd web && npm test)
 make lint
 make check
 ```
 
 Run repository make targets when available. Use `make dev-up` only to check
-shared services; XFlickr does not start its own database, search, or cache
+the worktree database and shared services; XFlickr does not start its own database, search, or cache
 containers. Integration tests use the shared PostgreSQL and Redis services
 configured in the generated worktree `.env`, after the environment check
 described in `docs/ENVIRONMENT.md`.
