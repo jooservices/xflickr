@@ -157,6 +157,18 @@ def changed_go_files(
     return sorted(changed)
 
 
+def repo_root() -> Path:
+    completed = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode == 0 and completed.stdout.strip():
+        return Path(completed.stdout.strip())
+    return Path.cwd()
+
+
 def parse_exclusions(path: Path) -> list[tuple[str, str]]:
     exclusions: list[tuple[str, str]] = []
     seen: set[str] = set()
@@ -208,6 +220,49 @@ def evaluate(
     return measured, excluded, passed
 
 
+def evaluate_file_coverage(
+    files: dict[str, FileCoverage],
+    changed: list[str],
+    threshold: Decimal,
+    repo_root: Path | None = None,
+) -> tuple[list[tuple[FileCoverage, str]], bool]:
+    if threshold <= 0 or threshold > 100:
+        raise ValueError("coverage threshold must be greater than 0 and at most 100")
+    results: list[tuple[FileCoverage, str]] = []
+    passed = True
+    for repo_path in changed:
+        relative = profile_relative(repo_path)
+        coverage = files.get(relative)
+        if coverage is None:
+            if repo_root is not None and not (repo_root / repo_path).exists():
+                continue
+            coverage = FileCoverage(relative, 0, 1)
+        status = "PASS" if coverage.ratio * 100 >= threshold else "FAIL"
+        if status == "FAIL":
+            passed = False
+        results.append((coverage, status))
+    results.sort(key=lambda item: (item[0].ratio, item[0].file))
+    return results, passed
+
+
+def format_file_report(
+    results: list[tuple[FileCoverage, str]],
+    threshold: Decimal,
+) -> str:
+    lines = [f"Go file coverage (minimum {threshold:.1f}%, changed files):"]
+    for coverage, status in results:
+        percent = coverage.ratio * 100
+        lines.append(f"{percent:5.1f}%  {status:4}  {coverage.file}")
+    failing = [coverage.file for coverage, status in results if status == "FAIL"]
+    if failing:
+        lines.append("Failing files: " + ", ".join(failing))
+    lines.append(
+        f"File coverage gate {'passed' if not failing else 'failed'}: "
+        f"{len(results)} changed Go file(s) checked, {len(failing)} failing."
+    )
+    return "\n".join(lines)
+
+
 def format_report(
     measured: list[tuple[PackageCoverage, str]],
     excluded: list[tuple[str, str]],
@@ -235,16 +290,31 @@ def main(argv: list[str] | None = None) -> int:
         default=os.environ.get("COVERAGE_THRESHOLD", "85"),
         help="minimum statement coverage percentage (default: 85)",
     )
+    parser.add_argument("--check-files", action="store_true", help="also run the per-file gate for changed files")
+    parser.add_argument("--base", default="origin/develop", help="base ref for changed files (default: origin/develop)")
+    parser.add_argument("--files-only", action="store_true", help="run only the per-file gate, not the package gate")
     args = parser.parse_args(argv)
     try:
         threshold = Decimal(args.threshold)
-        packages = parse_profile(args.profile)
         exclusions = parse_exclusions(args.exclude)
-        measured, excluded, passed = evaluate(packages, exclusions, threshold)
+        passed = True
+        if args.files_only:
+            if not args.check_files:
+                raise ValueError("--files-only requires --check-files")
+        else:
+            packages = parse_profile(args.profile)
+            measured, excluded, package_passed = evaluate(packages, exclusions, threshold)
+            print(format_report(measured, excluded, threshold))
+            passed = passed and package_passed
+        if args.check_files:
+            files = parse_file_profile(args.profile)
+            changed = changed_go_files(args.base, exclusions)
+            results, file_passed = evaluate_file_coverage(files, changed, threshold, repo_root())
+            print(format_file_report(results, threshold))
+            passed = passed and file_passed
     except (InvalidOperation, OSError, ValueError) as error:
         print(f"coverage gate: {error}", file=sys.stderr)
         return 2
-    print(format_report(measured, excluded, threshold))
     return 0 if passed else 1
 
 
