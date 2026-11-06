@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { ADMIN_STATE, apiWrite } from './support/auth';
+import { observeCrawledPhoto } from './support/catalog';
 import { expectNoErrorPage, monitor } from './support/monitor';
 
 test.use({ storageState: ADMIN_STATE });
@@ -9,6 +10,7 @@ test('confirms provisional photo sizes through an explicit download request', as
   await page.goto('/crawl');
   await expect(page.getByTestId('user-crawl-page')).toBeVisible();
   const photoID = 52000000001;
+  await expect.poll(() => observeCrawledPhoto(photoID), { timeout: 15_000 }).toBe(true);
   const photo = async () => {
     const response = await page.request.get(`/photos/${photoID}`);
     expect(response.status()).toBe(200);
