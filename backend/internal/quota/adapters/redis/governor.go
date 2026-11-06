@@ -113,7 +113,7 @@ func (g Governor) tryAcquire(ctx context.Context, keyID int64, class domain.Clas
 	if g.Rebuilder != nil {
 		requireReady = 1
 	}
-	result, err := acquireScript.Run(ctx, g.Client, g.keys(keyID), budget.PerSecondRate, budget.Burst, budget.HourlyLimit, budget.Reserve, budget.PersonLaneShare, string(class), requireReady).Slice()
+	result, err := acquireScript.Run(ctx, g.Client, g.keys(keyID), budget.PerSecondRate, budget.Burst, budget.HourlyLimit, budget.Reserve, budget.PersonLaneShare, string(class), requireReady, budget.PhotoLaneFloorShare).Slice()
 	if err != nil || len(result) < 3 {
 		return false, 0, "", domain.ErrGovernorOffline
 	}
@@ -128,7 +128,7 @@ func (g Governor) tryAcquire(ctx context.Context, keyID int64, class domain.Clas
 
 func (g Governor) keys(keyID int64) []string {
 	base := fmt.Sprintf("%squota:key:%d:", g.Prefix, keyID)
-	return []string{base + "bucket", base + "hourly", base + "window", base + "cooldown", base + "byclass", base + "ready"}
+	return []string{base + "bucket", base + "hourly", base + "window", base + "cooldown", base + "byclass", base + "ready", base + "photo_demand"}
 }
 
 // Capacity reports conservative dispatch credits from the same hourly usage

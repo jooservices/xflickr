@@ -46,6 +46,11 @@ func TestCallLogPartitionsBatchAndRollupIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	budget, err := (Budgets{Pool: pool}).Budget(ctx, keyID)
+	if err != nil || budget.PhotoLaneFloorShare != 0.10 || budget.PersonLaneShare != 0.30 {
+		t.Fatalf("migrated budget = %+v, err %v", budget, err)
+	}
+
 	now := time.Now().UTC()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	manager := Partitions{Pool: pool}

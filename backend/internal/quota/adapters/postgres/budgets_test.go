@@ -9,12 +9,12 @@ import (
 )
 
 func TestBudgetLoadsAndValidatesLimits(t *testing.T) {
-	query := &fakeQueryer{row: fakeRow{values: []any{int64(1800), int64(4), int64(5), []byte("100"), []byte("0.3")}}}
+	query := &fakeQueryer{row: fakeRow{values: []any{int64(1800), int64(4), int64(5), []byte("100"), []byte("0.3"), []byte("0.1")}}}
 	budget, err := (Budgets{Pool: query}).Budget(context.Background(), 7)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if budget.HourlyLimit != 1800 || budget.PerSecondRate != 4 || budget.Burst != 5 || budget.Reserve != 100 || budget.PersonLaneShare != .3 {
+	if budget.HourlyLimit != 1800 || budget.PerSecondRate != 4 || budget.Burst != 5 || budget.Reserve != 100 || budget.PersonLaneShare != .3 || budget.PhotoLaneFloorShare != .1 {
 		t.Fatalf("budget = %+v", budget)
 	}
 }
@@ -37,8 +37,11 @@ func TestBudgetRejectsMissingDependenciesAndQueryFailures(t *testing.T) {
 
 func TestBudgetRejectsInvalidStoredSettings(t *testing.T) {
 	for _, values := range [][]any{
-		{int64(100), int64(1), int64(1), []byte("bad"), []byte("0.2")},
-		{int64(100), int64(1), int64(1), []byte("0"), []byte("2")},
+		{int64(100), int64(1), int64(1), []byte("bad"), []byte("0.2"), []byte("0.1")},
+		{int64(100), int64(1), int64(1), []byte("0"), []byte("2"), []byte("0.1")},
+		{int64(100), int64(1), int64(1), []byte("0"), []byte("bad"), []byte("0.1")},
+		{int64(100), int64(1), int64(1), []byte("0"), []byte("0.3"), []byte("bad")},
+		{int64(100), int64(1), int64(1), []byte("0"), []byte("0.3"), []byte("0.51")},
 	} {
 		query := &fakeQueryer{row: fakeRow{values: values}}
 		if _, err := (Budgets{Pool: query}).Budget(context.Background(), 1); err == nil {

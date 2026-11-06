@@ -38,6 +38,7 @@ func TestMergeSeededDefaults(t *testing.T) {
 		PerSecondRate:             4,
 		Burst:                     5,
 		PersonLaneShare:           0.30,
+		PhotoLaneFloorShare:       0.10,
 		ZipTTL:                    24 * time.Hour,
 		RetryMax:                  5,
 		RetryBackoff:              30 * time.Second,
@@ -74,6 +75,7 @@ func TestJSONSchemaPerKey(t *testing.T) {
 		PerSecondRate:         `{"type":"integer","minimum":1}`,
 		Burst:                 `{"type":"integer","minimum":1}`,
 		PersonLaneShare:       `{"type":"number","minimum":0,"maximum":1}`,
+		PhotoLaneFloorShare:   `{"type":"number","minimum":0,"maximum":0.5}`,
 		RetryMax:              `{"type":"integer","minimum":0}`,
 		GroupPoolsEnabled:     `{"type":"boolean"}`,
 		PhotoInfoEnabled:      `{"type":"boolean"}`,
@@ -504,4 +506,35 @@ func definition(t *testing.T, key Key) Definition {
 
 func floatEqual(value *float64, want float64) bool {
 	return value != nil && *value == want
+}
+
+func TestPhotoLaneFloorSetting(t *testing.T) {
+	key := Key("photo_lane_floor_share")
+	def := definition(t, key)
+	if string(def.Value) != "0.10" || def.UserOverridable {
+		t.Fatalf("floor definition = %+v", def)
+	}
+	for _, raw := range []string{"0", "0.10", "0.5"} {
+		candidate := def
+		candidate.Value = json.RawMessage(raw)
+		if err := ValidateDefinition(candidate); err != nil {
+			t.Fatalf("valid floor %s: %v", raw, err)
+		}
+	}
+	for _, raw := range []string{"-0.01", "0.51", "true"} {
+		candidate := def
+		candidate.Value = json.RawMessage(raw)
+		if err := ValidateDefinition(candidate); err == nil {
+			t.Fatalf("accepted floor %s", raw)
+		}
+	}
+}
+
+func TestPhotoLaneFloorCannotBeOverriddenByUser(t *testing.T) {
+	snapshot := DefaultSnapshot()
+	snapshot.Overrides = map[Key]json.RawMessage{PhotoLaneFloorShare: json.RawMessage("0.5")}
+	got, dropped, err := Merge(snapshot)
+	if err != nil || got.PhotoLaneFloorShare != 0.10 || len(dropped) != 1 {
+		t.Fatalf("user floor: %+v dropped %v err %v", got, dropped, err)
+	}
 }
