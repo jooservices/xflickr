@@ -135,10 +135,11 @@ guide feature implementation; operational environment rules live in
 - Confirm photo sizes only on demand through the existing download/sync flow
   or for starred or actively selected contacts. Classify listing server `65535`
   as unavailable locally once, without a Flickr call or a photo tombstone.
-  Confirm other eligible photo sizes with `flickr.photos.getSizes` and record the check time.
-  Skip a confirmed result while the photo's `last_update` is unchanged. Mark a
-  photo unavailable after Flickr reports not found or permission denied, and do
-  not retry that photo in the sizes lane.
+  Confirm other eligible photo sizes with `flickr.photos.getSizes` and record the
+  check time. Skip a confirmed result while the photo's `last_update` is
+  unchanged. Restrict only the caller's sizes facet after Flickr reports not
+  found or permission denied, and reopen it when the photo version or
+  visibility changes.
 - Share each key's configured hourly and per-second allowance across its lanes.
   Keep the configured reserve for user-started requests when the key approaches
   its limit. No clock second grants more calls than that key's burst. The
@@ -166,6 +167,15 @@ guide feature implementation; operational environment rules live in
   Administrators can inspect backlog by plan and lane, oldest active item age,
   and available River jobs by worker queue. Publish aggregate `queue.state`
   snapshots through the outbox once per minute.
+
+- Record global `gone` state once when Flickr reports a person, album, gallery,
+  or group missing by its addressed ID. Skip gone subjects in scheduling,
+  change checks, reconciliation and workers. Photo deletion remains governed by
+  reconciliation tombstones.
+- Permission failures restrict only the addressed facet and caller. Photo
+  not-found failures also restrict the facet. Photo restrictions reopen only
+  on version or visibility changes; person restrictions reopen after the
+  admin-only `restricted_recheck_interval` (default 30 days).
 
 ## Downloads and cloud sync
 

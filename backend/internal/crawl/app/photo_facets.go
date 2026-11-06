@@ -72,6 +72,7 @@ type PhotoFacetClient interface {
 // PhotoFacets fetches optional metadata only after the size facet has
 // confirmed a photo for its current Flickr version.
 type PhotoFacets struct {
+	States EntityStates
 	Store  PhotoFacetStore
 	Flickr PhotoFacetClient
 	Now    func() time.Time
@@ -79,10 +80,7 @@ type PhotoFacets struct {
 
 // Handle fetches and persists one optional per-photo facet.
 func (h PhotoFacets) Handle(ctx context.Context, job PhotoFacetJob) error {
-	if ctx == nil || h.Store == nil || h.Flickr == nil || job.PhotoID <= 0 || job.KeyID <= 0 || !validPhotoFacet(job.Facet) {
-		return errors.New("crawl: photo facets dependencies and identifiers are required")
-	}
-	if err := ctx.Err(); err != nil {
+	if err := h.ready(ctx, job); err != nil {
 		return err
 	}
 	source, exists, err := h.Store.LoadPhotoFacetSource(ctx, job.PhotoID)
@@ -93,10 +91,22 @@ func (h PhotoFacets) Handle(ctx context.Context, job PhotoFacetJob) error {
 		return nil
 	}
 
+	access := EntityAccess{EntityRef: EntityRef{Kind: "photo", ID: strconv.FormatInt(job.PhotoID, 10)}, Facet: job.Facet, KeyID: job.KeyID, Version: source.LastUpdate}
+	blocked, err := entitySuppressed(ctx, h.States, access, h.now())
+	if err != nil {
+		return err
+	}
+	if blocked {
+		return nil
+	}
+
 	data, err := h.fetch(ctx, job, source)
 	if err != nil {
 		if !isTerminalPhotoFacetError(err) {
 			return fmt.Errorf("crawl: fetch photo %d %s facet: %w", job.PhotoID, job.Facet, err)
+		}
+		if h.States != nil {
+			return recordEntityFailure(ctx, h.States, access, err, h.now(), 0)
 		}
 		data, err = emptyPhotoFacet(job.Facet)
 		if err != nil {
@@ -207,4 +217,11 @@ func (h PhotoFacets) now() time.Time {
 		return h.Now().UTC()
 	}
 	return time.Now().UTC()
+}
+
+func (h PhotoFacets) ready(ctx context.Context, job PhotoFacetJob) error {
+	if ctx == nil || h.Store == nil || h.Flickr == nil || job.PhotoID <= 0 || job.KeyID <= 0 || !validPhotoFacet(job.Facet) {
+		return errors.New("crawl: photo facets dependencies and identifiers are required")
+	}
+	return ctx.Err()
 }

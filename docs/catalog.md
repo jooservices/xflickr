@@ -33,3 +33,6 @@ Photo responses contain tags as `labels`, stored Flickr size entries and their
 `sizes_status`, plus `ai_status` (`ready` when a caption enrichment exists,
 otherwise `none`). Caption text, Flickr API credentials, the source payload,
 photo secrets, and content hashes are not returned.
+
+See [Deleted entities and restricted facets](entity-state.md) for global gone
+markers, caller-specific restrictions and request suppression.

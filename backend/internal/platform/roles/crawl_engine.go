@@ -82,6 +82,7 @@ func newCrawlEngine(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg
 	}
 	governor := quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Recorder: quotaPostgres.CallLog{Pool: pool}}
 	return &crawlapp.Engine{
+		States:   crawlpostgres.EntityStates{DB: pool},
 		Registry: registry,
 		Store:    store,
 		Units:    store,

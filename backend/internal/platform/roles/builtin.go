@@ -280,6 +280,7 @@ func registerPhotoSizes(queueAdapter *queue.River, pool *pgxpool.Pool, redisClie
 	}
 	quota := quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Recorder: quotaPostgres.CallLog{Pool: pool}}
 	handler := crawlapp.Sizes{
+		States: crawlpostgres.EntityStates{DB: pool},
 		Store:  catalogRepository,
 		Flickr: photoSizesClient{Pool: pool, Client: client, Quota: quota, NodeID: nodeID(cfg)},
 	}
@@ -294,7 +295,8 @@ func registerPhotoSizes(queueAdapter *queue.River, pool *pgxpool.Pool, redisClie
 		return err
 	}
 	facetHandler := crawlapp.PhotoFacets{
-		Store: catalogRepository,
+		States: crawlpostgres.EntityStates{DB: pool},
+		Store:  catalogRepository,
 		Flickr: photoFacetClient{
 			Pool: pool, Client: client,
 			NodeID: nodeID(cfg),
@@ -547,9 +549,10 @@ func newSchedulerPump(pool *pgxpool.Pool, governor quotaRedis.Governor, store sc
 		Quota:     governor,
 	}
 	pump.PhotoLane = scheduleapp.PhotoLane{
-		Selector: catalogpostgres.PhotoLane{Pool: pool},
-		Keys:     keyPool,
-		Settings: photoFacetSettings{settings: settingsService},
+		Eligibility: crawlpostgres.EntityStates{DB: pool},
+		Selector:    catalogpostgres.PhotoLane{Pool: pool},
+		Keys:        keyPool,
+		Settings:    photoFacetSettings{settings: settingsService},
 		Queue: scheduleriver.PhotoEnqueuer{
 			Pool: pool, Jobs: queueAdapter, ReadyCap: settings.SyncReadyCap,
 			Options: queue.Options{Queue: scheduleriver.PhotoQueue, MaxAttempts: max(1, settings.RetryMax), LeaseTimeout: settings.LeaseTimeout, Backoff: settings.RetryBackoff},

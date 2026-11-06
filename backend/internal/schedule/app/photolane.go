@@ -83,13 +83,19 @@ type PhotoKeyChooser interface {
 	Choose(ctx context.Context, personNSID string, class quotadomain.Class) (quotaapp.KeyID, error)
 }
 
+// PhotoFacetEligibility prevents scheduling a closed caller/facet.
+type PhotoFacetEligibility interface {
+	PhotoFacetAllowed(context.Context, int64, int64, string) (bool, error)
+}
+
 // PhotoLane turns the catalog into photo-lane jobs without a backlog table:
 // photos with unconfirmed sizes are read straight from the catalog.
 type PhotoLane struct {
-	Selector catalogapp.PhotoSelector
-	Keys     PhotoKeyChooser
-	Queue    PhotoEnqueuer
-	Settings PhotoFacetPolicyReader
+	Eligibility PhotoFacetEligibility
+	Selector    catalogapp.PhotoSelector
+	Keys        PhotoKeyChooser
+	Queue       PhotoEnqueuer
+	Settings    PhotoFacetPolicyReader
 }
 
 // PhotoDedupeKey is the ready-queue dedupe key of a photo facet.
@@ -150,6 +156,15 @@ func (l PhotoLane) enqueue(ctx context.Context, ref catalogapp.PhotoRef) (bool, 
 	}
 	if err != nil {
 		return false, fmt.Errorf("schedule: choose key for photo %d: %w", ref.ID, err)
+	}
+	if l.Eligibility != nil {
+		allowed, err := l.Eligibility.PhotoFacetAllowed(ctx, ref.ID, int64(key), facet)
+		if err != nil {
+			return false, err
+		}
+		if !allowed {
+			return false, nil
+		}
 	}
 	queued, err := l.Queue.EnqueuePhoto(ctx, PhotoJob{
 		PhotoID: ref.ID, OwnerNSID: ref.OwnerNSID, Facet: facet, KeyID: int64(key),

@@ -164,6 +164,7 @@ type ProgressNotifier interface {
 
 // Engine runs work items for every registered facet: one task is one API page.
 type Engine struct {
+	States   EntityStates
 	Registry *Registry
 	Store    Store
 	Units    UnitOfWork
@@ -234,11 +235,17 @@ func (e *Engine) notifyProgress(ctx context.Context, userID int64) {
 }
 
 func (e *Engine) run(ctx context.Context, item domain.Item, facet domain.Facet) error {
+	if handled, err := e.suppressGlobal(ctx, item); handled || err != nil {
+		return err
+	}
 	keyID, err := e.Keys.Choose(ctx, item.Subject, facet.Lane())
 	if errors.Is(err, ErrNoKey) {
 		return e.hold(ctx, item, e.Timing.withDefaults().QuotaWait, "no eligible key")
 	}
 	if err != nil {
+		return err
+	}
+	if handled, err := e.suppressFacet(ctx, item, keyID, facet); handled || err != nil {
 		return err
 	}
 	permit, wait, err := e.Governor.Acquire(ctx, keyID, facet.Lane())
@@ -257,7 +264,7 @@ func (e *Engine) run(ctx context.Context, item domain.Item, facet domain.Facet) 
 		e.logger().WarnContext(ctx, "crawl permit release failed", "work_item_id", item.ID, "error", doneErr)
 	}
 	if callErr != nil {
-		return e.fail(ctx, item, keyID, callErr)
+		return e.callFailed(ctx, item, keyID, facet, callErr)
 	}
 	result, err := facet.Handle(ctx, domain.Page{Item: item, Number: item.Cursor.Page, Payload: payload})
 	if err != nil {
@@ -492,4 +499,66 @@ func (e *Engine) logger() *slog.Logger {
 		return e.Logger
 	}
 	return slog.Default()
+}
+
+func engineAccess(item domain.Item, keyID int64) (EntityAccess, bool) {
+	ref, ok := AddressedEntity(Request{Method: item.Cursor.Method, Params: item.Cursor.Params})
+	return EntityAccess{EntityRef: ref, Facet: item.Cursor.Method, UserID: item.UserID, KeyID: keyID}, ok
+}
+
+func (e *Engine) skipFacet(ctx context.Context, item domain.Item, facet domain.Facet) error {
+	if skipper, ok := facet.(interface {
+		Skipped(context.Context, domain.Page) (domain.Result, error)
+	}); ok {
+		result, err := skipper.Skipped(ctx, domain.Page{Item: item, Number: item.Cursor.Page})
+		if err != nil {
+			return err
+		}
+		return e.commit(ctx, item, result)
+	}
+	return e.Store.Finish(ctx, item.ID)
+}
+
+func (e *Engine) suppressGlobal(ctx context.Context, item domain.Item) (bool, error) {
+	access, ok := engineAccess(item, 0)
+	access.UserID = 0
+	if !ok {
+		return false, nil
+	}
+	blocked, err := entitySuppressed(ctx, e.States, access, e.now())
+	if err != nil || !blocked {
+		return false, err
+	}
+	return true, e.Store.Finish(ctx, item.ID)
+}
+
+func (e *Engine) suppressFacet(ctx context.Context, item domain.Item, keyID int64, facet domain.Facet) (bool, error) {
+	access, ok := engineAccess(item, keyID)
+	if !ok {
+		return false, nil
+	}
+	blocked, err := entitySuppressed(ctx, e.States, access, e.now())
+	if err != nil || !blocked {
+		return false, err
+	}
+	return true, e.skipFacet(ctx, item, facet)
+}
+
+func (e *Engine) callFailed(ctx context.Context, item domain.Item, keyID int64, facet domain.Facet, cause error) error {
+	access, ok := engineAccess(item, keyID)
+	state := FailureState(access.EntityRef, cause)
+	if e.States == nil || !ok || state == "" {
+		return e.fail(ctx, item, keyID, cause)
+	}
+	effective, err := e.Settings.Effective(ctx, item.UserID)
+	if err != nil {
+		return err
+	}
+	if err := recordEntityFailure(ctx, e.States, access, cause, e.now(), effective.RestrictedRecheckInterval); err != nil {
+		return err
+	}
+	if state == "restricted" {
+		return e.skipFacet(ctx, item, facet)
+	}
+	return e.Store.Finish(ctx, item.ID)
 }

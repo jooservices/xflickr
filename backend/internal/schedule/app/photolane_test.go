@@ -179,3 +179,33 @@ func TestPhotoLaneNextValidatesAndPropagatesErrors(t *testing.T) {
 		t.Fatalf("settings: Next() error = %v, want boom", err)
 	}
 }
+
+type eligibilityFake struct {
+	allowed bool
+	err     error
+}
+
+func (f eligibilityFake) PhotoFacetAllowed(context.Context, int64, int64, string) (bool, error) {
+	return f.allowed, f.err
+}
+
+func TestPhotoLaneSkipsRestrictedCallerFacet(t *testing.T) {
+	for _, tc := range []struct {
+		allowed bool
+		err     error
+	}{{false, nil}, {true, nil}, {false, errors.New("state unavailable")}} {
+		selector := &fakeSelector{refs: []catalogapp.PhotoRef{{ID: 1, OwnerNSID: "p", Facet: "exif"}}}
+		queue := &fakeEnqueuer{}
+		lane := PhotoLane{Selector: selector, Keys: fakeChooser{}, Queue: queue, Eligibility: eligibilityFake{allowed: tc.allowed, err: tc.err}}
+		ids, err := lane.Next(t.Context(), 1)
+		if !errors.Is(err, tc.err) {
+			t.Fatal(err)
+		}
+		if tc.allowed && len(ids) != 1 {
+			t.Fatal("eligible facet not scheduled")
+		}
+		if !tc.allowed && len(queue.jobs) != 0 {
+			t.Fatal("restricted facet scheduled")
+		}
+	}
+}

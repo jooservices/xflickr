@@ -307,7 +307,7 @@ func selectNextInterest(ctx context.Context, tx cycleTx, userID int64, cursor st
 		COALESCE(floor(extract(epoch FROM last_seen_at))::bigint,0),
 		COALESCE(floor(extract(epoch FROM last_fave_at))::bigint,0), last_checked_at, last_reconciled_at
 		FROM crawl_interests
-		WHERE user_id=$1 AND person_nsid ` + comparison + ` $2
+		WHERE user_id=$1 AND NOT EXISTS (SELECT 1 FROM entity_states e WHERE e.entity_type='person' AND e.entity_id=person_nsid) AND person_nsid ` + comparison + ` $2
 		ORDER BY person_nsid LIMIT 1 FOR UPDATE`
 	var person string
 	var depth int

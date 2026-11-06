@@ -268,3 +268,16 @@ func TestSizesPlaceholderStorageFailureRetriesWithoutFlickr(t *testing.T) {
 		t.Fatalf("placeholder made %d Flickr calls", client.calls)
 	}
 }
+
+func TestLegacyUnavailableSizesReopenForNewVersion(t *testing.T) {
+	h, store, client := sizesRig()
+	old := store.photo.LastUpdate.Add(-time.Second)
+	store.photo.SizesStatus = catalog.SizesUnavailable
+	store.photo.SizesCheckedAt = &old
+	if err := h.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
+		t.Fatal(err)
+	}
+	if client.calls != 1 || store.status != catalog.SizesConfirmed {
+		t.Fatal("new version did not reopen legacy sizes restriction")
+	}
+}
