@@ -10,7 +10,7 @@ import posixpath
 import subprocess
 import sys
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from pathlib import Path
 
 MODULE_PREFIX = "github.com/jooservices/xflickr/"
@@ -220,16 +220,69 @@ def evaluate(
     return measured, excluded, passed
 
 
+def parse_baseline(path: Path) -> dict[str, Decimal]:
+    baseline: dict[str, Decimal] = {}
+    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split()
+        if len(fields) != 2:
+            raise ValueError(f"baseline line {line_number} must be 'path percent'")
+        file, percent_text = fields
+        try:
+            percent = Decimal(percent_text)
+        except InvalidOperation as error:
+            raise ValueError(f"invalid baseline percent at line {line_number}") from error
+        if percent < 0 or percent > 100:
+            raise ValueError(f"baseline percent out of range at line {line_number}")
+        if file in baseline:
+            raise ValueError(f"duplicate baseline entry at line {line_number}: {file}")
+        baseline[file] = percent
+    return baseline
+
+
+def format_baseline(baseline: dict[str, Decimal]) -> str:
+    return "".join(f"{file} {baseline[file]:.1f}\n" for file in sorted(baseline))
+
+
+def baseline_candidates(
+    files: dict[str, FileCoverage],
+    threshold: Decimal,
+    exclusions: list[tuple[str, str]],
+) -> dict[str, Decimal]:
+    candidates: dict[str, Decimal] = {}
+    for file, coverage in files.items():
+        if coverage.ratio * 100 < threshold and not is_generated_file(file) and not is_excluded_file(file, exclusions):
+            candidates[file] = (coverage.ratio * 100).quantize(Decimal("0.1"), rounding=ROUND_DOWN)
+    return candidates
+
+
+def baseline_reached(
+    files: dict[str, FileCoverage],
+    baseline: dict[str, Decimal],
+    threshold: Decimal,
+) -> list[str]:
+    return sorted(
+        file
+        for file in baseline
+        if file in files and files[file].ratio * 100 >= threshold
+    )
+
+
 def evaluate_file_coverage(
     files: dict[str, FileCoverage],
     changed: list[str],
     threshold: Decimal,
+    baseline: dict[str, Decimal] | None = None,
     repo_root: Path | None = None,
-) -> tuple[list[tuple[FileCoverage, str]], bool]:
+) -> tuple[list[tuple[FileCoverage, str]], list[str], bool]:
     if threshold <= 0 or threshold > 100:
         raise ValueError("coverage threshold must be greater than 0 and at most 100")
+    floors = baseline or {}
     results: list[tuple[FileCoverage, str]] = []
     passed = True
+    seen: set[str] = set()
     for repo_path in changed:
         relative = profile_relative(repo_path)
         coverage = files.get(relative)
@@ -237,25 +290,44 @@ def evaluate_file_coverage(
             if repo_root is not None and not (repo_root / repo_path).exists():
                 continue
             coverage = FileCoverage(relative, 0, 1)
-        status = "PASS" if coverage.ratio * 100 >= threshold else "FAIL"
+        seen.add(relative)
+        percent = coverage.ratio * 100
+        if relative in floors and percent < floors[relative]:
+            status = "FAIL"
+        elif percent >= threshold:
+            status = "PASS"
+        elif relative in floors:
+            status = "BASELINE"
+        else:
+            status = "FAIL"
         if status == "FAIL":
             passed = False
         results.append((coverage, status))
+    for file in sorted(floors):
+        if file in seen or file not in files:
+            continue
+        coverage = files[file]
+        if coverage.ratio * 100 < floors[file]:
+            passed = False
+            results.append((coverage, "FAIL"))
     results.sort(key=lambda item: (item[0].ratio, item[0].file))
-    return results, passed
+    return results, baseline_reached(files, floors, threshold), passed
 
 
 def format_file_report(
     results: list[tuple[FileCoverage, str]],
     threshold: Decimal,
+    reached: list[str] | tuple[str, ...] = (),
 ) -> str:
     lines = [f"Go file coverage (minimum {threshold:.1f}%, changed files):"]
     for coverage, status in results:
         percent = coverage.ratio * 100
-        lines.append(f"{percent:5.1f}%  {status:4}  {coverage.file}")
+        lines.append(f"{percent:5.1f}%  {status:8}  {coverage.file}")
     failing = [coverage.file for coverage, status in results if status == "FAIL"]
     if failing:
         lines.append("Failing files: " + ", ".join(failing))
+    for file in reached:
+        lines.append(f"Baseline reached {threshold:.1f}%: {file} (delete its baseline line)")
     lines.append(
         f"File coverage gate {'passed' if not failing else 'failed'}: "
         f"{len(results)} changed Go file(s) checked, {len(failing)} failing."
@@ -293,10 +365,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check-files", action="store_true", help="also run the per-file gate for changed files")
     parser.add_argument("--base", default="origin/develop", help="base ref for changed files (default: origin/develop)")
     parser.add_argument("--files-only", action="store_true", help="run only the per-file gate, not the package gate")
+    parser.add_argument(
+        "--baseline",
+        type=Path,
+        default=Path(__file__).parent / "coverage-file-baseline.txt",
+        help="per-file baseline for pre-existing files below the threshold",
+    )
+    parser.add_argument("--write-baseline", type=Path, help="write the baseline for files below the threshold and exit")
     args = parser.parse_args(argv)
     try:
         threshold = Decimal(args.threshold)
         exclusions = parse_exclusions(args.exclude)
+        if args.write_baseline is not None:
+            files = parse_file_profile(args.profile)
+            baseline = baseline_candidates(files, threshold, exclusions)
+            args.write_baseline.write_text(format_baseline(baseline), encoding="utf-8")
+            print(f"Wrote {len(baseline)} baseline entr(ies) to {args.write_baseline}")
+            return 0
         passed = True
         if args.files_only:
             if not args.check_files:
@@ -309,8 +394,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.check_files:
             files = parse_file_profile(args.profile)
             changed = changed_go_files(args.base, exclusions)
-            results, file_passed = evaluate_file_coverage(files, changed, threshold, repo_root())
-            print(format_file_report(results, threshold))
+            baseline = parse_baseline(args.baseline) if args.baseline.exists() else {}
+            results, reached, file_passed = evaluate_file_coverage(
+                files, changed, threshold, baseline, repo_root()
+            )
+            print(format_file_report(results, threshold, reached))
             passed = passed and file_passed
     except (InvalidOperation, OSError, ValueError) as error:
         print(f"coverage gate: {error}", file=sys.stderr)
