@@ -177,6 +177,18 @@ guide feature implementation; operational environment rules live in
   on version or visibility changes; person restrictions reopen after the
   admin-only `restricted_recheck_interval` (default 30 days).
 
+- Every person and photo the crawl stores is recorded as an observation of the
+  work item's own user and of the connected Flickr account that made the call,
+  in the same transaction as the upsert, keeping the time it was first seen. A
+  crawl step with no eligible account of that user waits without calling Flickr.
+  The visibility policy depends on these observations (see
+  [`crawl-observations.md`](crawl-observations.md)).
+- Records crawled before observations existed are attributed only by the guarded
+  backfill command: it needs an explicit user and account and refuses to run
+  unless the database holds exactly that one user and that one connected
+  account; otherwise it attributes nothing and reports what it skipped. Their
+  first-seen time is approximate (the stored last-seen time, else the run time).
+
 ## Downloads and cloud sync
 
 - Download originals only as temporary files on the configured BlobStore

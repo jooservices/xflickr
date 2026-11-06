@@ -15,7 +15,9 @@ test('browses people and photos observed by the connected account crawl', async 
     .poll(
       async () => {
         const response = await page.request.get(`/people/${encodeURIComponent(nsid)}/photos`);
-        expect(response.status()).toBe(200);
+        // Before the crawl makes the person visible the read answers 404; a
+        // negative value keeps the poll retrying instead of ending it.
+        if (response.status() !== 200) return -1;
         const body = (await response.json()) as { items: Array<{ id: number }> };
         return body.items.length;
       },
