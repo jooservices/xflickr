@@ -78,6 +78,11 @@ and endpoints are in [Data and API](#data-and-api).
 
 ## Data and API
 
+The route names in this section are provisional contract requests. Final names
+are fixed by the strict REST rules of JOOXF-314 and JOOXF-316 (resources as
+nouns, the HTTP method as the verb). The behaviour, payloads, error cases and
+states documented below are binding regardless of the final names.
+
 | Element | Source | Fields used |
 | --- | --- | --- |
 | Session and state | `GET /me` (exists) | add `email_verified` (bool), `email_verified_at` (ISO time, nullable), `onboarding_complete` (bool) |

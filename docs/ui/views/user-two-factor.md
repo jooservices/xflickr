@@ -111,6 +111,11 @@ challenge and posts one code. Fields and endpoints are in
 
 ## Data and API
 
+The route names in this section are provisional contract requests. Final names
+are fixed by the strict REST rules of JOOXF-314 and JOOXF-316 (resources as
+nouns, the HTTP method as the verb). The behaviour, payloads, error cases and
+states documented below are binding regardless of the final names.
+
 | Element | Source | Fields used |
 | --- | --- | --- |
 | Page config | `GET /auth/config` (contract request from user-auth) | add `two_factor_enabled` (bool feature flag), `two_factor_challenge_ttl_minutes` (int) |
