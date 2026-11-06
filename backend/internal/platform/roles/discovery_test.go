@@ -47,7 +47,7 @@ func TestDiscoveryAnonymousAndInvalidSession(t *testing.T) {
 	for _, tt := range []struct {
 		path, cookie string
 		status       int
-	}{{"/api/v1", "", 200}, {"/api/v1?unknown=1", "", 422}, {"/api/v1", "bad", 401}, {"/api/v1", "valid", 200}} {
+	}{{"/api/v1", "", 200}, {"/api/v1?unknown=1", "", 422}, {"/api/v1?unknown=%GG", "", 400}, {"/api/v1", "bad", 401}, {"/api/v1", "valid", 200}} {
 		r := httptest.NewRequest("GET", tt.path, nil)
 		if tt.cookie != "" {
 			r.AddCookie(&http.Cookie{Name: "xf_session", Value: tt.cookie})

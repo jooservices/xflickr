@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 
 	"go.opentelemetry.io/otel/trace"
 
@@ -23,7 +24,11 @@ func discoveryAuthentication(sessions identityhttp.SessionService) gen.StrictMid
 		}
 		return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 			traceID := discoveryTraceID(ctx)
-			if len(r.URL.Query()) > 0 {
+			query, err := url.ParseQuery(r.URL.RawQuery)
+			if err != nil {
+				return nil, rest.WriteProblem(w, r, rest.NewProblem("malformed-request", "Malformed query string", nil), traceID)
+			}
+			if len(query) > 0 {
 				return nil, rest.WriteProblem(w, r, rest.NewProblem("validation-error", "No query parameters are supported", nil), traceID)
 			}
 			cookie, err := r.Cookie(identityhttp.SessionCookieName)
