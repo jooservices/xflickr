@@ -92,6 +92,7 @@ func TestEffectiveReturnsTypedDefaultsAndReusesThemUntilExpiry(t *testing.T) {
 		PerSecondRate:             4,
 		Burst:                     5,
 		PersonLaneShare:           0.30,
+		PhotoLaneFloorShare:       0.10,
 		ZipTTL:                    24 * time.Hour,
 		RetryMax:                  5,
 		RetryBackoff:              30 * time.Second,
@@ -391,6 +392,7 @@ func TestSetUserAppliesOverridesInsideCapsAndRejectsTheRest(t *testing.T) {
 		PerSecondRate:             2,
 		Burst:                     6,
 		PersonLaneShare:           0.5,
+		PhotoLaneFloorShare:       0.10,
 		ZipTTL:                    2 * time.Hour,
 		RetryMax:                  1,
 		RetryBackoff:              0,
@@ -458,6 +460,7 @@ func TestSetUserNamesTheKeyAndCapWhenRejectingAnOverride(t *testing.T) {
 			want:       "not user-overridable",
 			checkCache: true,
 		},
+		{name: "photo floor admin only", key: domain.PhotoLaneFloorShare, raw: "0.2", want: "not user-overridable", checkCache: true},
 		{name: "negative daily limit", key: domain.DailyCallLimit, raw: "-1", want: "schema cap 0", wantCap: "0", checkCache: true},
 	}
 	for _, test := range tests {
@@ -909,5 +912,25 @@ func TestDepthPolicyReportsTheDefaultCapAndOverride(t *testing.T) {
 	}
 	if _, err = New(&fakeRepository{snapshot: domain.Snapshot{Settings: map[domain.Key]domain.Definition{}}}).DepthPolicy(t.Context(), 5); err == nil {
 		t.Fatal("DepthPolicy accepted a missing setting")
+	}
+}
+
+func TestAdminUpdatesPhotoLaneFloor(t *testing.T) {
+	repository := &fakeRepository{snapshot: domain.DefaultSnapshot()}
+	service := New(repository)
+	for _, value := range []string{"0", "0.5", "0.20"} {
+		setting := repository.snapshot.Settings[domain.PhotoLaneFloorShare]
+		setting.Value = json.RawMessage(value)
+		if err := service.SetApplicationSetting(t.Context(), setting); err != nil {
+			t.Fatal(err)
+		}
+		got, err := service.Effective(t.Context(), 11)
+		var want float64
+		if err := json.Unmarshal([]byte(value), &want); err != nil {
+			t.Fatal(err)
+		}
+		if err != nil || got.PhotoLaneFloorShare != want {
+			t.Fatalf("floor = %v, err %v", got.PhotoLaneFloorShare, err)
+		}
 	}
 }

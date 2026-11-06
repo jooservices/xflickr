@@ -26,6 +26,7 @@ const (
 	PerSecondRate             Key = "per_second_rate"
 	Burst                     Key = "burst"
 	PersonLaneShare           Key = "person_lane_share"
+	PhotoLaneFloorShare       Key = "photo_lane_floor_share"
 	ZipTTL                    Key = "zip_ttl"
 	RetryMax                  Key = "retry_max"
 	RetryBackoff              Key = "retry_backoff"
@@ -63,6 +64,7 @@ type Effective struct {
 	PerSecondRate             int
 	Burst                     int
 	PersonLaneShare           float64
+	PhotoLaneFloorShare       float64
 	ZipTTL                    time.Duration
 	RetryMax                  int
 	RetryBackoff              time.Duration
@@ -176,6 +178,7 @@ var schemas = map[Key]JSONSchema{
 	PerSecondRate:             {Type: "integer", Minimum: minOne},
 	Burst:                     {Type: "integer", Minimum: minOne},
 	PersonLaneShare:           {Type: "number", Minimum: minZero, Maximum: maxOne},
+	PhotoLaneFloorShare:       {Type: "number", Minimum: minZero, Maximum: floatPointer(0.5)},
 	ZipTTL:                    {Type: "integer", Minimum: minOne, Maximum: maxDuration},
 	RetryMax:                  {Type: "integer", Minimum: minZero},
 	RetryBackoff:              {Type: "integer", Minimum: minZero, Maximum: maxDuration},
@@ -219,6 +222,7 @@ func Keys() []Key {
 		PerSecondRate,
 		Burst,
 		PersonLaneShare,
+		PhotoLaneFloorShare,
 		ZipTTL,
 		RetryMax,
 		RetryBackoff,
@@ -252,6 +256,7 @@ func Defaults() []Definition {
 		{Key: PerSecondRate, Value: json.RawMessage("4"), UserOverridable: true},
 		{Key: Burst, Value: json.RawMessage("5"), UserOverridable: true},
 		{Key: PersonLaneShare, Value: json.RawMessage("0.30"), UserOverridable: true},
+		{Key: PhotoLaneFloorShare, Value: json.RawMessage("0.10"), UserOverridable: false},
 		{Key: ZipTTL, Value: json.RawMessage("86400"), UserOverridable: true},
 		{Key: RetryMax, Value: json.RawMessage("5"), UserOverridable: true},
 		{Key: RetryBackoff, Value: json.RawMessage("30"), UserOverridable: true},
@@ -499,6 +504,9 @@ func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
 	}
 	if result.PersonLaneShare, err = decimal(values[PersonLaneShare]); err != nil {
 		return Effective{}, nil, invalidStored(PersonLaneShare, err)
+	}
+	if result.PhotoLaneFloorShare, err = decimal(values[PhotoLaneFloorShare]); err != nil {
+		return Effective{}, nil, invalidStored(PhotoLaneFloorShare, err)
 	}
 	if result.ZipTTL, err = duration(values[ZipTTL]); err != nil {
 		return Effective{}, nil, invalidStored(ZipTTL, err)

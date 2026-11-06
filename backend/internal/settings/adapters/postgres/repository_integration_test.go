@@ -494,6 +494,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		"per_second_rate":             {value: "4"},
 		"burst":                       {value: "5"},
 		"person_lane_share":           {value: "0.30"},
+		"photo_lane_floor_share":      {value: "0.10"},
 		"zip_ttl":                     {value: "86400"},
 		"retry_max":                   {value: "5"},
 		"retry_backoff":               {value: "30"},
@@ -523,7 +524,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 	}
 	for key, expected := range want {
 		item, ok := got[key]
-		wantOverridable := key != "restricted_recheck_interval" && key != "registration_open" && key != "photo_info_enabled" && key != "photo_exif_enabled" && key != "photo_contexts_enabled" && key != "photo_comments_enabled" && key != "photo_favorites_enabled" && key != "per_key_ready_cap" && key != "node_ready_cap" && key != "media_ready_cap" && key != "ai_ready_cap" && key != "sync_ready_cap" && key != "lease_timeout" && !strings.HasPrefix(key, "score_")
+		wantOverridable := key != "photo_lane_floor_share" && key != "restricted_recheck_interval" && key != "registration_open" && key != "photo_info_enabled" && key != "photo_exif_enabled" && key != "photo_contexts_enabled" && key != "photo_comments_enabled" && key != "photo_favorites_enabled" && key != "per_key_ready_cap" && key != "node_ready_cap" && key != "media_ready_cap" && key != "ai_ready_cap" && key != "sync_ready_cap" && key != "lease_timeout" && !strings.HasPrefix(key, "score_")
 		if !ok || item.overridable != wantOverridable || !jsonEqual(item.value, expected.value) || !floatPtrEqual(item.minimum, expected.min) || !floatPtrEqual(item.maximum, expected.max) {
 			t.Fatalf("seed %s = value %s overridable %v min %v max %v", key, item.value, item.overridable, item.minimum, item.maximum)
 		}
@@ -544,6 +545,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		PerSecondRate:             4,
 		Burst:                     5,
 		PersonLaneShare:           0.30,
+		PhotoLaneFloorShare:       0.10,
 		ZipTTL:                    24 * time.Hour,
 		RetryMax:                  5,
 		RetryBackoff:              30 * time.Second,

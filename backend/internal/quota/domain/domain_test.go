@@ -22,11 +22,13 @@ func TestBudgetValidate(t *testing.T) {
 		t.Fatalf("valid budget: %v", err)
 	}
 	for name, budget := range map[string]Budget{
-		"hourly":    {PerSecondRate: 1, Burst: 1},
-		"rate":      {HourlyLimit: 1, Burst: 1},
-		"burst":     {HourlyLimit: 1, PerSecondRate: 1},
-		"reserve":   {HourlyLimit: 1, PerSecondRate: 1, Burst: 1, Reserve: -1},
-		"share low": {HourlyLimit: 1, PerSecondRate: 1, Burst: 1, PersonLaneShare: -0.1},
+		"floor low":  {HourlyLimit: 1, PerSecondRate: 1, Burst: 1, PhotoLaneFloorShare: -0.1},
+		"floor high": {HourlyLimit: 1, PerSecondRate: 1, Burst: 1, PhotoLaneFloorShare: 0.51},
+		"hourly":     {PerSecondRate: 1, Burst: 1},
+		"rate":       {HourlyLimit: 1, Burst: 1},
+		"burst":      {HourlyLimit: 1, PerSecondRate: 1},
+		"reserve":    {HourlyLimit: 1, PerSecondRate: 1, Burst: 1, Reserve: -1},
+		"share low":  {HourlyLimit: 1, PerSecondRate: 1, Burst: 1, PersonLaneShare: -0.1},
 		"share high": {
 			HourlyLimit: 1, PerSecondRate: 1, Burst: 1,
 			PersonLaneShare: 1.1,
@@ -55,3 +57,10 @@ func TestQuotaError(t *testing.T) {
 }
 
 func fmtWrap(err error) error { return errors.Join(errors.New("call failed"), err) }
+
+func TestIdlePhotoProtectionClampsToPhotoAllocation(t *testing.T) {
+	budget := Budget{HourlyLimit: 3600, Reserve: 100, PersonLaneShare: 0.75, PhotoLaneFloorShare: 0.5}
+	if got := budget.HourlyLimit - budget.Reserve - budget.IdlePhotoProtection(); got != 2600 {
+		t.Fatalf("idle person ceiling = %d, want 2600", got)
+	}
+}

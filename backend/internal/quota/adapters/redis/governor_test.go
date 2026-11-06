@@ -27,7 +27,7 @@ func setupGovernor(t *testing.T, budget domain.Budget) (Governor, *miniredis.Min
 }
 
 func generousBudget() domain.Budget {
-	return domain.Budget{HourlyLimit: 3600, PerSecondRate: 10000, Burst: 10000, Reserve: 100, PersonLaneShare: 0.3}
+	return domain.Budget{HourlyLimit: 3600, PerSecondRate: 10000, Burst: 10000, Reserve: 100, PersonLaneShare: 0.3, PhotoLaneFloorShare: 0.1}
 }
 
 func acquire(t *testing.T, governor Governor, class domain.Class) (domain.Permit, time.Duration, error) {
@@ -286,7 +286,8 @@ func TestAsInt64Conversions(t *testing.T) {
 
 func TestPersonLaneCannotStarvePhotoShare(t *testing.T) {
 	budget := domain.Budget{HourlyLimit: 100, PerSecondRate: 1000, Burst: 1000, Reserve: 10, PersonLaneShare: 0.3}
-	governor, _, _ := setupGovernor(t, budget)
+	governor, server, _ := setupGovernor(t, budget)
+	server.Set(governor.keys(1)[6], "1")
 	person := 0
 	for {
 		permit, _, err := acquire(t, governor, domain.Person)

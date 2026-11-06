@@ -3,25 +3,33 @@ package domain
 import (
 	"context"
 	"errors"
+	"math"
 	"time"
 )
 
 // Budget contains one key's configured hourly and per-second limits, plus the
 // shared policy that protects interactive calls and the person lane.
 type Budget struct {
-	HourlyLimit     int64
-	PerSecondRate   int64
-	Burst           int64
-	Reserve         int64
-	PersonLaneShare float64
+	HourlyLimit         int64
+	PerSecondRate       int64
+	Burst               int64
+	Reserve             int64
+	PersonLaneShare     float64
+	PhotoLaneFloorShare float64
 }
 
 // Validate rejects values that cannot form a meaningful Redis budget.
 func (b Budget) Validate() error {
-	if b.HourlyLimit <= 0 || b.PerSecondRate <= 0 || b.Burst <= 0 || b.Reserve < 0 || b.PersonLaneShare < 0 || b.PersonLaneShare > 1 {
+	if b.HourlyLimit <= 0 || b.PerSecondRate <= 0 || b.Burst <= 0 || b.Reserve < 0 || b.PersonLaneShare < 0 || b.PersonLaneShare > 1 || b.PhotoLaneFloorShare < 0 || b.PhotoLaneFloorShare > 0.5 {
 		return ErrInvalidBudget
 	}
 	return nil
+}
+
+// IdlePhotoProtection is the idle floor capped by the photo allocation and
+// the hourly capacity remaining after the interactive reserve.
+func (b Budget) IdlePhotoProtection() int64 {
+	return min(int64(math.Floor(float64(b.HourlyLimit)*b.PhotoLaneFloorShare)), int64(math.Floor(float64(b.HourlyLimit)*(1-b.PersonLaneShare))), max(int64(0), b.HourlyLimit-b.Reserve))
 }
 
 // Meta is the outcome reported when a caller finishes a permit. Err is the
