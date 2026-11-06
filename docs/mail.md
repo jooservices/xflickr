@@ -54,3 +54,12 @@ the shared sink and runs only with `XFLICKR_INTEGRATION_TEST=1`.
 `mail.NewFake()` returns an in-memory `Sender` for unit tests. It records
 validated messages in send order, returns copies from `Sent()`, and can fail
 subsequent sends through `SetError` without recording them.
+
+## Context deadlines
+
+SMTP failures are mapped once at the adapter boundary. A completed context
+returns its cancellation or deadline error. If a socket timeout arrives before
+the context timer publishes its error, an elapsed context deadline is returned
+as `context.DeadlineExceeded`, retaining the SMTP operation in the error text.
+Timeouts before the context deadline and unrelated transport failures keep their
+original errors. Delivery does not retry or wait for the context timer.
