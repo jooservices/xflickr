@@ -83,3 +83,5 @@
 The current web API to contract and backend route mapping is generated in
 [`api-reconciliation.md`](api-reconciliation.md) by
 `docker/scripts/api-usage-check.sh`.
+
+- [Deleted entities and restricted facets](entity-state.md) — persistent gone state, caller restrictions and reopening rules.

@@ -26,4 +26,5 @@ mkdir -p "$ROOT/.tmp"
 (
 	cd "$ROOT/backend"
 	"$SCRIPT_DIR/run.sh" go go generate ./...
+	"$SCRIPT_DIR/run.sh" go go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
 )

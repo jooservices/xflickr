@@ -35,9 +35,11 @@ Dedicated tables store the result shapes:
 
 Comments and favorites request 50 records per page. Each page uses a separate
 quota permit, and the worker stops after 200 pages to bound an unexpectedly
-large response. Flickr not-found and permission errors are terminal for the
-current version and store an empty result; other API or storage errors are
-retryable.
+large response. Flickr not-found and permission errors are restricted for the
+current caller and photo version; they preserve existing data and do not
+complete the facet globally; other API or storage errors are
+retryable. A version or visibility change reopens restricted facets.
+See [Deleted entities and restricted facets](entity-state.md).
 
 The app-level settings default to `info`, `exif`, and `contexts` on, and
 `comments` and `photo_favorites` off. Change them through the admin settings

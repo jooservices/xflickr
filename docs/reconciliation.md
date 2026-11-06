@@ -25,3 +25,6 @@ When an observed photo changes visibility, the `photos` update emits one
 transactional `photo.visibility_changed` outbox event. Its key is the photo ID;
 its payload contains `photo_id`, `owner_nsid`, `from`, and `to`. The event is
 created only when the stored visibility actually changes.
+
+See [Deleted entities and restricted facets](entity-state.md) for global gone
+markers, caller-specific restrictions and request suppression.

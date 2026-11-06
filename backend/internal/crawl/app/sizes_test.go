@@ -232,7 +232,6 @@ func TestSizesQuotaExceededWaitsInsteadOfFailing(t *testing.T) {
 	}
 }
 
-<<<<<<< HEAD
 func TestSizesPlaceholderIsClassifiedOnceWithoutFlickr(t *testing.T) {
 	for _, class := range []string{"", "photo", "interactive"} {
 		t.Run(class, func(t *testing.T) {
@@ -267,7 +266,9 @@ func TestSizesPlaceholderStorageFailureRetriesWithoutFlickr(t *testing.T) {
 	}
 	if client.calls != 0 {
 		t.Fatalf("placeholder made %d Flickr calls", client.calls)
-=======
+	}
+}
+
 func TestLegacyUnavailableSizesReopenForNewVersion(t *testing.T) {
 	h, store, client := sizesRig()
 	old := store.photo.LastUpdate.Add(-time.Second)
@@ -278,6 +279,5 @@ func TestLegacyUnavailableSizesReopenForNewVersion(t *testing.T) {
 	}
 	if client.calls != 1 || store.status != catalog.SizesConfirmed {
 		t.Fatal("new version did not reopen legacy sizes restriction")
->>>>>>> 6dfd22b (fix(crawl): Persist and enforce entity access state (JOOXF-309))
 	}
 }
