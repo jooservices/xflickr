@@ -132,15 +132,8 @@ func (r Downloads) SettleItem(ctx context.Context, downloadID, photoID int64, st
 	if tag.RowsAffected() == 0 {
 		return tx.Commit(ctx)
 	}
-	var unsettled int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM download_items WHERE download_id=$1 AND state NOT IN ('ready','failed')`, downloadID).Scan(&unsettled); err != nil {
-		return fmt.Errorf("media: check unsettled download items: %w", err)
-	}
-	if unsettled == 0 {
-		args, _ := json.Marshal(map[string]int64{"download_id": downloadID})
-		if err := r.Jobs.Enqueue(ctx, tx, queue.Job{Kind: "media.pack", Args: args}, queue.Options{Queue: "media", MaxAttempts: 3, LeaseTimeout: 2 * time.Hour}); err != nil {
-			return fmt.Errorf("media: enqueue pack job: %w", err)
-		}
+	if err := enqueuePackIfSettled(ctx, tx, r.Jobs, downloadID); err != nil {
+		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("media: commit item settlement: %w", err)

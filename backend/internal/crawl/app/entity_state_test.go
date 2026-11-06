@@ -130,8 +130,8 @@ func TestEveryPhotoFacetRecordsRestrictionWithoutCompletingGlobalData(t *testing
 		if err := h.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
 			t.Fatal(err)
 		}
-		if states.state != "restricted" || store.sets != 0 {
-			t.Fatal("sizes restriction became global")
+		if states.state != "restricted" || store.status != catalog.SizesUnavailable {
+			t.Fatal("sizes restriction did not resolve waiting downloads")
 		}
 		states.blocked = true
 		if err := h.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
