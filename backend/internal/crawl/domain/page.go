@@ -54,14 +54,16 @@ func (c Cursor) Next() Cursor {
 
 // Item is a loaded work item: one task is one API page.
 type Item struct {
-	ID       int64
-	Kind     string
-	Subject  string
-	UserID   int64
-	Depth    int
-	State    string
-	Attempts int
-	Cursor   Cursor
+	// AccountID is transient call provenance; it is never inferred from the subject.
+	AccountID int64
+	ID        int64
+	Kind      string
+	Subject   string
+	UserID    int64
+	Depth     int
+	State     string
+	Attempts  int
+	Cursor    Cursor
 }
 
 // Page is one fetched Flickr page handed to a facet.

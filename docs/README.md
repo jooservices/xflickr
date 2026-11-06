@@ -3,6 +3,7 @@
 - [Download progress events](download-progress.md)
 - [Health and readiness probes](health-probes.md)
 
+- [Crawl observations and historical recovery](crawl-observations.md) — transactional provenance, observed kinds, and guarded batched backfill.
 - [Sharing settings and observations](sharing.md)
 - [Ops monitoring](ops-monitoring.md) — crawl health log line, admin status
   endpoint, OpenObserve stream and alerts.

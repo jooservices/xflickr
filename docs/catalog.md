@@ -36,3 +36,12 @@ photo secrets, and content hashes are not returned.
 
 See [Deleted entities and restricted facets](entity-state.md) for global gone
 markers, caller-specific restrictions and request suppression.
+
+## Crawl provenance and recovery
+
+People and photo upserts from the crawl now record the work user's actual
+connected account in the same page transaction. See [crawl observations](crawl-observations.md)
+for the centralized record-kind inventory and the guarded, batched backfill command.
+Backfilled `first_seen_at` values are approximate: stored `last_seen_at` when
+present, otherwise backfill run time. Only new crawl observations record the exact
+first-observed time; reruns never overwrite an existing timestamp.

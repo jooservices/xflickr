@@ -130,3 +130,26 @@ func TestObserver(t *testing.T) {
 		t.Fatalf("Observe() error = %v", err)
 	}
 }
+
+func TestWriterDeduplicatesWithinPage(t *testing.T) {
+	observer := &observerStub{}
+	writer := newWriter(1, 2, &catalogStub{}, observer)
+	if err := writer.UpsertPeople(context.Background(), []domain.Person{{NSID: "p"}, {NSID: "p"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.UpsertPhotos(context.Background(), []domain.Photo{{ID: 1}, {ID: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(observer.facts) != 2 {
+		t.Fatalf("observations=%d", len(observer.facts))
+	}
+	if _, err := New(dbtxStub{}, 0, 2); err == nil {
+		t.Fatal("invalid user accepted")
+	}
+	if err := newWriter(1, 2, &catalogStub{err: errors.New("failed")}, observer).UpsertPhotos(context.Background(), []domain.Photo{{ID: 1}}); err == nil {
+		t.Fatal("photo failure ignored")
+	}
+	if err := newWriter(1, 2, &catalogStub{}, &observerStub{err: errors.New("failed")}).UpsertPeople(context.Background(), []domain.Person{{NSID: "p"}}); err == nil {
+		t.Fatal("person observation failure ignored")
+	}
+}

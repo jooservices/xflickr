@@ -43,18 +43,30 @@ type Governor interface {
 
 // Request is one Flickr call on behalf of a work item.
 type Request struct {
-	KeyID   int64
-	UserID  int64
-	Lane    domain.Lane
-	Facet   string
-	Attempt int
-	Method  string
-	Params  map[string]string
+	AccountID int64
+	KeyID     int64
+	UserID    int64
+	Lane      domain.Lane
+	Facet     string
+	Attempt   int
+	Method    string
+	Params    map[string]string
 }
 
 // Flickr performs a call with the credentials of the key and user.
 type Flickr interface {
 	Call(ctx context.Context, request Request) (json.RawMessage, error)
+}
+
+// RequestResolver binds a call to a connected account before quota is acquired.
+// The returned key must belong to the work item's user.
+type RequestResolver interface {
+	Resolve(context.Context, Request) (Request, error)
+}
+
+// ScopedCatalogWriter binds transactional catalog writes to actual call provenance.
+type ScopedCatalogWriter interface {
+	ForObserver(context.Context, int64, int64) (CatalogWriter, error)
 }
 
 // QuotaWaitRecorder records a denied permit without counting an upstream call.
@@ -245,6 +257,15 @@ func (e *Engine) run(ctx context.Context, item domain.Item, facet domain.Facet) 
 	if err != nil {
 		return err
 	}
+	request := Request{KeyID: keyID, UserID: item.UserID, Lane: facet.Lane(), Facet: item.Kind, Attempt: item.Attempts + 1, Method: item.Cursor.Method, Params: pageParams(item.Cursor)}
+	if resolver, ok := e.Flickr.(RequestResolver); ok {
+		request, err = resolver.Resolve(ctx, request)
+		if err != nil {
+			return e.hold(ctx, item, e.Timing.withDefaults().CredentialWait, err.Error())
+		}
+		keyID = request.KeyID
+		item.AccountID = request.AccountID
+	}
 	if handled, err := e.suppressFacet(ctx, item, keyID, facet); handled || err != nil {
 		return err
 	}
@@ -253,13 +274,12 @@ func (e *Engine) run(ctx context.Context, item domain.Item, facet domain.Facet) 
 		return e.hold(ctx, item, e.Timing.withDefaults().QuotaWait, "quota governor: "+err.Error())
 	}
 	if permit == nil {
-		request := Request{KeyID: keyID, UserID: item.UserID, Lane: facet.Lane(), Facet: item.Kind, Attempt: item.Attempts + 1, Method: item.Cursor.Method, Params: pageParams(item.Cursor)}
 		if recorder, ok := e.Flickr.(QuotaWaitRecorder); ok {
 			recorder.RecordQuotaWait(ctx, request)
 		}
 		return e.hold(ctx, item, wait, "waiting for quota")
 	}
-	payload, callErr := e.Flickr.Call(ctx, Request{KeyID: keyID, UserID: item.UserID, Lane: facet.Lane(), Facet: item.Kind, Attempt: item.Attempts + 1, Method: item.Cursor.Method, Params: pageParams(item.Cursor)})
+	payload, callErr := e.Flickr.Call(ctx, request)
 	if doneErr := permit.Done(callErr); doneErr != nil {
 		e.logger().WarnContext(ctx, "crawl permit release failed", "work_item_id", item.ID, "error", doneErr)
 	}
@@ -373,6 +393,13 @@ func sameCursor(left, right domain.Cursor) bool {
 }
 
 func (e *Engine) write(ctx context.Context, w Writers, item domain.Item, result domain.Result, maxDepth int) error {
+	if scoped, ok := w.Catalog.(ScopedCatalogWriter); ok {
+		writer, err := scoped.ForObserver(ctx, item.UserID, item.AccountID)
+		if err != nil {
+			return err
+		}
+		w.Catalog = writer
+	}
 	if err := writeCatalog(ctx, w.Catalog, result); err != nil {
 		return err
 	}
