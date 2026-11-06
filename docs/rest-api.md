@@ -20,6 +20,13 @@ and an older route disagree, this document wins and the route changes.
 - Outside the versioned API stay only: the unversioned probes `/healthz` and
   `/readyz`, the node-only internal listener (`/internal/v1`), and the browser
   routes of the web app itself (for example the OAuth return page).
+- The probes `/healthz` and `/readyz` keep a small plain JSON body (`status` and
+  dependency fields; an unready probe answers `503` with the same shape) so
+  monitoring tools can read them. This is the only response-body exception.
+- The event stream `GET /api/v1/events` resumes only with the `Last-Event-ID`
+  header (a query-string fallback is not supported); browsers use a fetch-based
+  stream client. Replay is per instance and not durable. Its heartbeat, history
+  size and rate limit are admin settings.
 - `GET /api/v1` is the entry point. It returns links to the top-level
   collections the caller may use.
 
@@ -74,6 +81,7 @@ and an older route disagree, this document wins and the route changes.
   resource is `404`, never `403`), `409` state conflict (for example the last
   active administrator), `412` failed precondition, `422` valid syntax with
   invalid values, `429` rate limited (with `Retry-After`).
+- A configurable lockout is `429` with `Retry-After` and `/problems/account-locked`; an expired one-time link or code is `409` with `/problems/token-expired` and a link to restart the flow. `410` and `423` are not used.
 - Never expose stack traces, SQL, secrets or internal hosts.
 
 ## 6. Collections and pagination
@@ -101,7 +109,11 @@ and an older route disagree, this document wins and the route changes.
   applies to cookies only.
 - Every operation checks object-level and property-level permission. The
   sharing and visibility policy applies to every read. Secrets (Flickr keys and
-  secrets, tokens, access tokens after creation) are never returned.
+  secrets, tokens, access tokens after creation) are never returned. The one
+  exception is a one-time issuance response to the authenticated owner of the
+  secret (a node bootstrap token, an access token at creation, two-factor
+  enrolment secrets and recovery codes): it carries `Cache-Control: no-store`,
+  is returned once, and is never readable again, never linked and never logged.
 - Rate limits are per caller, configurable in the admin defaults, and answer
   `429` with `Retry-After`.
 
@@ -146,8 +158,8 @@ methods of today's routes are verified there.
 | `DELETE /auth/sessions` (others) | `DELETE /api/v1/me/sessions?scope=others` |
 | `POST /flickr-accounts/connect` | `POST /api/v1/flickr-authorizations` (returns the Flickr URL) |
 | `GET /flickr-accounts/callback` | web page, then `PUT /api/v1/flickr-authorizations/{state}` |
-| `POST /me/crawl/pause` and `/resume` | `PATCH /api/v1/me/crawl` with `{"paused": true}` or `false` |
-| `/me/contacts/{nsid}/star` and `/select` | `PATCH /api/v1/me/contacts/{nsid}` with `starred` or `selected_until` |
+| `PUT /me/crawl/pause` and `/resume` (one contact) | `PATCH /api/v1/me/contacts/{nsid}` with `{"paused": true}` or `false` |
+| `/me/contacts/{nsid}/star` and `/select` | `PATCH /api/v1/me/contacts/{nsid}` with `starred` or `selected` |
 | `POST /downloads/{id}/retry-failed` | `POST /api/v1/downloads/{id}/retries` |
 | `POST /downloads/{id}/parts/{n}/fetched` | `PATCH /api/v1/downloads/{id}/parts/{n}` with `{"fetched": true}` |
 | `POST /internal/nodes/heartbeat` | `PUT /internal/v1/nodes/{id}/heartbeat` |
@@ -155,3 +167,38 @@ methods of today's routes are verified there.
 | password reset (provisional) | `POST /api/v1/password-resets`, `GET` and `PUT /api/v1/password-resets/{token}` |
 | two-factor (provisional) | `POST /api/v1/me/two-factor-enrolments`, `PUT /api/v1/me/two-factor`, `POST /api/v1/me/two-factor-disablements`, `POST /api/v1/me/recovery-code-sets` |
 | social sign-in (provisional) | `POST /api/v1/social-sign-ins`, then `PUT /api/v1/social-sign-ins/{state}` |
+
+## Decisions from the route audit (JOOXF-314, lead answers)
+
+Section (b) of [`rest-api-mapping.md`](rest-api-mapping.md) listed what the rules
+did not settle. The decisions are binding for JOOXF-316 and JOOXF-317.
+
+- **D1 Pause scope.** Pause and resume stay per contact: `PATCH
+  /api/v1/me/contacts/{nsid}` with `paused`, beside `starred` and `selected`.
+  There is no whole-account pause. The starting mapping above is corrected.
+- **D2 Selection.** The client sends `{"selected": true}` or `false`; it never
+  sends a timestamp. The server sets `selected_until` to now plus the selection
+  length and returns it. Selecting again extends from now; `false` deselects.
+  The length is the admin setting `contact_selection_days` (default 7, added to
+  the settings registry and the admin defaults).
+- **D3 Plans and flags.** Each plan and flag is addressed on its own: `PATCH
+  /api/v1/admin/plans/{id}` and `/admin/flags/{key}` with `If-Match`, `POST` to
+  create a flag. The atomic bulk update is dropped; a page that saves several
+  items makes several calls and reports each result.
+- **D4 Supporting reads and transfers.** Add only the minimal reads the rules
+  need for `self` and `Location`: `/api/v1/users/{id}` (`/me` is its alias),
+  `/api/v1/sessions/{id}` (`/sessions/current` is its alias), the download,
+  part, retry, album and favorite reads. A ZIP part is downloaded with a
+  negotiated `GET` on the part resource (`Accept: application/zip`, with
+  `Content-Disposition`); owner-only expiry stays and no `file:` link reaches a
+  browser.
+- **D5 Statuses.** As in rule 5: lockout is `429`, an expired one-time flow is
+  `409`; `410` and `423` are removed from the contract.
+- **D6 Probes.** The exception in rule 1 stands; nothing else is exempt.
+- **D7 One-time secrets.** Allowed as written in rule 8.
+- **D8 Event stream.** As in rule 1: header only, per-instance replay, settings
+  in the admin defaults.
+- **Names.** The nouns proposed in the audit (`authentication-options`,
+  `queue-snapshots/current`, `operation-reports/current`, `call-reports/current`)
+  are accepted. Parent-scoped singletons (`quota`, `plan`, `heartbeat`, crawl
+  `settings`) stay as the audit shows them.
