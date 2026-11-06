@@ -307,3 +307,142 @@ func TestPersonLaneCannotStarvePhotoShare(t *testing.T) {
 		}
 	}
 }
+
+// productionSecondBudget is the live key: 4/s sustained, burst 5. Tests must
+// not raise either limit to make the overshoot disappear.
+func productionSecondBudget() domain.Budget {
+	return domain.Budget{HourlyLimit: 100_000, PerSecondRate: 4, Burst: 5, Reserve: 0, PersonLaneShare: 0}
+}
+
+// TestConcurrentRolesShareOneBucketAndStayWithinBurst is the reproduction for
+// the live overshoot: several roles hammer one key through one clock second.
+// A full bucket plus in-second refill used to grant burst+rate-1 (8) calls.
+func TestConcurrentRolesShareOneBucketAndStayWithinBurst(t *testing.T) {
+	budget := productionSecondBudget()
+	budgets := StaticBudgets{1: budget, 2: budget}
+	crawl, server, client := setupGovernor(t, budget)
+	crawl.Budgets = budgets
+	scheduler := Governor{Client: client, Prefix: crawl.Prefix, Budgets: budgets}
+	apiRole := Governor{Client: client, Prefix: crawl.Prefix, Budgets: budgets}
+	roles := []Governor{crawl, scheduler, apiRole}
+	bucketKey := crawl.keys(1)[0]
+	if scheduler.keys(1)[0] != bucketKey || apiRole.keys(1)[0] != bucketKey {
+		t.Fatal("roles do not share one bucket key for the same prefix and key")
+	}
+
+	start := time.Unix(1_700_000_000, 0)
+	grants := grantsInClockSecond(t, server, roles, 1, start)
+	if grants > int(budget.Burst) {
+		t.Fatalf("one clock second granted %d calls, burst is %d", grants, budget.Burst)
+	}
+	if grants < int(budget.Burst) {
+		t.Fatalf("one clock second granted %d calls, want the full burst of %d from a full bucket", grants, budget.Burst)
+	}
+	exists, err := client.Exists(context.Background(), bucketKey).Result()
+	if err != nil || exists != 1 {
+		t.Fatalf("shared bucket key exists = %d, %v", exists, err)
+	}
+	// Key 2 has its own bucket, so key 1's exhausted second does not block it.
+	permit, _, err := apiRole.Acquire(context.Background(), 2, domain.Interactive)
+	if err != nil || permit == nil {
+		t.Fatalf("other key during key 1's full second = %v, %v", permit, err)
+	}
+
+	// Ten more seconds, still one bucket, must not relax the sustained rate.
+	total := grants
+	for sec := 1; sec <= 10; sec++ {
+		got := grantsInClockSecond(t, server, roles, 1, start.Add(time.Duration(sec)*time.Second))
+		if got > int(budget.Burst) {
+			t.Fatalf("second %d granted %d calls, burst is %d", sec, got, budget.Burst)
+		}
+		total += got
+	}
+	rateLimit := int(budget.Burst + budget.PerSecondRate*11)
+	if total > rateLimit {
+		t.Fatalf("11 clock seconds granted %d calls, want at most %d so the rate of %d stays in force", total, rateLimit, budget.PerSecondRate)
+	}
+	t.Logf("11 clock seconds granted %d calls, ceiling %d", total, rateLimit)
+}
+
+// TestNoClockSecondExceedsBurstOverAFullHour walks every second of an hour at
+// the live 4/s and burst 5 limits. AC1 is that none of those seconds exceeds
+// the burst, and the hour must not spend faster than the sustained rate.
+func TestNoClockSecondExceedsBurstOverAFullHour(t *testing.T) {
+	budget := productionSecondBudget()
+	governor, server, _ := setupGovernor(t, budget)
+	start := time.Unix(1_800_000_000, 0)
+	total := 0
+	for sec := 0; sec < 3600; sec++ {
+		grants := drainClockSecond(t, server, governor, start.Add(time.Duration(sec)*time.Second))
+		if grants > int(budget.Burst) {
+			t.Fatalf("second %d granted %d calls, burst is %d", sec, grants, budget.Burst)
+		}
+		total += grants
+	}
+	rateLimit := int(budget.Burst + budget.PerSecondRate*3600)
+	if total > rateLimit {
+		t.Fatalf("hour granted %d calls, want at most %d so the rate of %d stays in force", total, rateLimit, budget.PerSecondRate)
+	}
+	t.Logf("hour granted %d calls, ceiling %d", total, rateLimit)
+}
+
+func grantsInClockSecond(t *testing.T, server *miniredis.Miniredis, roles []Governor, keyID int64, start time.Time) int {
+	t.Helper()
+	total := 0
+	for step := 0; step < 20; step++ {
+		server.SetTime(start.Add(time.Duration(step) * 50 * time.Millisecond))
+		total += hammerRoles(t, roles, keyID, 12)
+	}
+	return total
+}
+
+func hammerRoles(t *testing.T, roles []Governor, keyID int64, workers int) int {
+	t.Helper()
+	classes := []domain.Class{domain.Person, domain.Photo, domain.Interactive}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	grants := 0
+	var acquireErr error
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			permit, _, err := roles[i%len(roles)].Acquire(context.Background(), keyID, classes[i%len(classes)])
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil && acquireErr == nil {
+				acquireErr = err
+			}
+			if permit != nil {
+				grants++
+			}
+		}(i)
+	}
+	wg.Wait()
+	if acquireErr != nil {
+		t.Fatalf("Acquire: %v", acquireErr)
+	}
+	return grants
+}
+
+func drainClockSecond(t *testing.T, server *miniredis.Miniredis, governor Governor, start time.Time) int {
+	t.Helper()
+	grants := 0
+	for _, ms := range []int{0, 250, 500, 750, 999} {
+		server.SetTime(start.Add(time.Duration(ms) * time.Millisecond))
+		for {
+			permit, _, err := governor.Acquire(context.Background(), 1, domain.Interactive)
+			if err != nil {
+				t.Fatalf("Acquire: %v", err)
+			}
+			if permit == nil {
+				break
+			}
+			grants++
+			if grants > 32 {
+				t.Fatalf("runaway grants at %s", start)
+			}
+		}
+	}
+	return grants
+}

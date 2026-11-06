@@ -1,0 +1,34 @@
+# Reviewed Gitleaks findings in the history of develop (JOOXF-329, reviewed 2026-11-06).
+# Each fingerprint below was checked by hand and is not a secret. The real Flickr key and
+# secret appear nowhere in the tree or the history. Never add a fingerprint here without a
+# lead review of the value; a new finding must be fixed or rejected, not ignored.
+
+# Base64 chunks of the gzip-compressed OpenAPI document embedded in generated code.
+1da111c707306e5fea4de9a77cd8f01ddc871dbc:backend/internal/platform/api/gen/server.gen.go:generic-api-key:8531
+5c568dacab4d72e1107d1aa500dccac2f708323b:backend/internal/platform/api/gen/server.gen.go:generic-api-key:3576
+
+# Test constants: sequential hex digits or obvious placeholders used as fake keys in tests and E2E fixtures.
+07583783caa958728a15160458be6240bf8374e2:web/e2e/02-keys.spec.ts:generic-api-key:5
+07583783caa958728a15160458be6240bf8374e2:web/e2e/02-keys.spec.ts:generic-api-key:6
+f4d86b44647589d3ac471dce058b97f81f097a76:backend/internal/platform/config/config_test.go:generic-api-key:108
+1c8c9bce2bcbff9d3c818e1e7cd7f82987182224:web/e2e/user-keys.spec.ts:generic-api-key:5
+1c8c9bce2bcbff9d3c818e1e7cd7f82987182224:web/e2e/user-keys.spec.ts:generic-api-key:6
+828a99c2538e0573748900e700b7f45f8ffdc935:web/src/pages/setup/SetupPage.test.tsx:generic-api-key:8
+828a99c2538e0573748900e700b7f45f8ffdc935:web/src/pages/setup/SetupPage.test.tsx:generic-api-key:9
+8004df13c15105a249b3f6dfb0fa2e67fef845aa:web/e2e/setup-wizard.spec.ts:generic-api-key:13
+8004df13c15105a249b3f6dfb0fa2e67fef845aa:web/e2e/setup-wizard.spec.ts:generic-api-key:14
+9759da41841a1ce30bc521f7b9143ec789a7b1d7:web/e2e/user-wizard.spec.ts:generic-api-key:5
+9759da41841a1ce30bc521f7b9143ec789a7b1d7:web/e2e/user-wizard.spec.ts:generic-api-key:6
+1c8c9bce2bcbff9d3c818e1e7cd7f82987182224:web/src/pages/keys/KeysPage.test.tsx:generic-api-key:10
+1c8c9bce2bcbff9d3c818e1e7cd7f82987182224:web/src/pages/keys/KeysPage.test.tsx:generic-api-key:11
+968114ffa0fd04315d80ea3f0c09126ae1174f70:backend/internal/accounts/adapters/flickr/probe_test.go:generic-api-key:35
+968114ffa0fd04315d80ea3f0c09126ae1174f70:backend/internal/platform/roles/registry_test.go:generic-api-key:446
+52f91f53f9d57a338d436a470d8c7c7417334f6c:backend/internal/accounts/adapters/flickr/oauth_test.go:generic-api-key:15
+968114ffa0fd04315d80ea3f0c09126ae1174f70:backend/internal/accounts/adapters/postgres/repository_integration_test.go:generic-api-key:33
+968114ffa0fd04315d80ea3f0c09126ae1174f70:backend/internal/accounts/adapters/postgres/repository_integration_test.go:generic-api-key:34
+968114ffa0fd04315d80ea3f0c09126ae1174f70:backend/internal/accounts/adapters/postgres/repository_integration_test.go:flickr-access-token:31
+6eaf86246a82555183bc18e67383969dd5031180:backend/internal/platform/config/config_test.go:generic-api-key:94
+
+# Public OAuth 1.0 example tokens (RFC 5849 and the Flickr API documentation) used as signer test vectors.
+b0e45244b3b0b467e791db8f67d56f3be92d3ca7:backend/pkg/flickr/oauth/signer_test.go:generic-api-key:162
+b0e45244b3b0b467e791db8f67d56f3be92d3ca7:backend/pkg/flickr/oauth/signer_test.go:generic-api-key:233
