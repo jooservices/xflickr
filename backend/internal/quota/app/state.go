@@ -142,10 +142,10 @@ func (s States) state(ctx context.Context, key KeyInfo) (KeyState, error) {
 		now = s.Now()
 	}
 	reset := live.ResetAt
-	if reset.IsZero() && !live.WindowStart.IsZero() {
-		reset = live.WindowStart.Add(Window)
-	}
-	open := !reset.IsZero() && now.Before(reset)
+	// The Redis reader already prunes the ledger atomically. The oldest
+	// expiry does not end the entire rolling window, even if it passes while
+	// this snapshot travels to the application.
+	open := live.Used > 0
 	out := KeyState{Key: key, Limit: budget.HourlyLimit, Reserve: budget.Reserve}
 	reference, elapsed := now, Window
 	if open {
