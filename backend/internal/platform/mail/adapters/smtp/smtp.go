@@ -9,7 +9,6 @@ import (
 	"net"
 	netmail "net/mail"
 	netsmtp "net/smtp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -21,15 +20,6 @@ const (
 	deliveryTimeout    = 30 * time.Second
 )
 
-// Config contains the SMTP endpoint and optional authentication. Empty
-// credentials select an unauthenticated sink such as Mailpit.
-type Config struct {
-	Addr     string
-	From     string
-	Username string
-	Password string
-}
-
 // Sender delivers plain-text messages over SMTP with STARTTLS when the server
 // advertises it.
 type Sender struct {
@@ -40,31 +30,21 @@ type Sender struct {
 	password string
 }
 
-// New validates the SMTP address, sender address, and credential pair.
-func New(config Config) (*Sender, error) {
-	addr := strings.TrimSpace(config.Addr)
-	host, portText, err := net.SplitHostPort(addr)
-	if err != nil || strings.TrimSpace(host) == "" {
-		return nil, fmt.Errorf("%w: SMTP address must be host:port", mail.ErrInvalidConfiguration)
+// New validates the SMTP settings through the port's single implementation.
+func New(settings mail.SMTPSettings) (*Sender, error) {
+	settings, err := settings.Validate()
+	if err != nil {
+		return nil, err
 	}
-	port, err := strconv.Atoi(portText)
-	if err != nil || port < 1 || port > 65535 {
-		return nil, fmt.Errorf("%w: SMTP port must be between 1 and 65535", mail.ErrInvalidConfiguration)
-	}
-	from, err := netmail.ParseAddress(strings.TrimSpace(config.From))
-	if err != nil || from.Address == "" {
-		return nil, fmt.Errorf("%w: a valid sender address is required", mail.ErrInvalidConfiguration)
-	}
-	username := strings.TrimSpace(config.Username)
-	if (username == "") != (config.Password == "") {
-		return nil, fmt.Errorf("%w: SMTP username and password must be set together", mail.ErrInvalidConfiguration)
-	}
+	// Validate has already parsed these values, so they cannot fail here.
+	host, _, _ := net.SplitHostPort(settings.Addr)
+	from, _ := netmail.ParseAddress(settings.From)
 	return &Sender{
-		addr:     net.JoinHostPort(host, portText),
+		addr:     settings.Addr,
 		host:     host,
 		from:     from,
-		username: username,
-		password: config.Password,
+		username: settings.Username,
+		password: settings.Password,
 	}, nil
 }
 

@@ -15,42 +15,16 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/mail"
 )
 
-func TestNewValidatesConfiguration(t *testing.T) {
-	tests := []struct {
-		name   string
-		config Config
-		valid  bool
-	}{
-		{name: "valid without credentials", config: Config{Addr: "127.0.0.1:11025", From: "no-reply@example.com"}, valid: true},
-		{name: "valid with credentials", config: Config{Addr: "smtp.example.com:587", From: "XFlickr <no-reply@example.com>", Username: "user", Password: "secret"}, valid: true},
-		{name: "missing port", config: Config{Addr: "127.0.0.1", From: "no-reply@example.com"}},
-		{name: "missing host", config: Config{Addr: ":11025", From: "no-reply@example.com"}},
-		{name: "port zero", config: Config{Addr: "127.0.0.1:0", From: "no-reply@example.com"}},
-		{name: "port too high", config: Config{Addr: "127.0.0.1:70000", From: "no-reply@example.com"}},
-		{name: "missing sender", config: Config{Addr: "127.0.0.1:11025"}},
-		{name: "malformed sender", config: Config{Addr: "127.0.0.1:11025", From: "not an address"}},
-		{name: "username without password", config: Config{Addr: "127.0.0.1:11025", From: "no-reply@example.com", Username: "user"}},
-		{name: "password without username", config: Config{Addr: "127.0.0.1:11025", From: "no-reply@example.com", Password: "secret"}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			sender, err := New(test.config)
-			if test.valid {
-				if err != nil || sender == nil {
-					t.Fatalf("New() = %v, %v; want a sender", sender, err)
-				}
-				return
-			}
-			if sender != nil || !errors.Is(err, mail.ErrInvalidConfiguration) {
-				t.Fatalf("New() = %v, %v; want ErrInvalidConfiguration", sender, err)
-			}
-		})
+func TestNewUsesPortSettingsValidation(t *testing.T) {
+	sender, err := New(mail.SMTPSettings{Addr: "127.0.0.1", From: "no-reply@example.com"})
+	if sender != nil || !errors.Is(err, mail.ErrInvalidConfiguration) {
+		t.Fatalf("New() = %v, %v; want ErrInvalidConfiguration", sender, err)
 	}
 }
 
 func TestSendDeliversMessageWithoutAuthentication(t *testing.T) {
 	server := startFakeSMTP(t, fakeSMTPOptions{})
-	sender := newTestSender(t, Config{Addr: server.address(), From: "XFlickr <no-reply@example.com>"})
+	sender := newTestSender(t, mail.SMTPSettings{Addr: server.address(), From: "XFlickr <no-reply@example.com>"})
 
 	message := mail.Message{
 		To:      []string{"first@example.com", "second@example.com"},
@@ -88,7 +62,7 @@ func TestSendDeliversMessageWithoutAuthentication(t *testing.T) {
 
 func TestSendAuthenticatesWhenCredentialsAreConfigured(t *testing.T) {
 	server := startFakeSMTP(t, fakeSMTPOptions{requireAuth: true})
-	sender := newTestSender(t, Config{
+	sender := newTestSender(t, mail.SMTPSettings{
 		Addr:     server.address(),
 		From:     "no-reply@example.com",
 		Username: "user",
@@ -104,7 +78,7 @@ func TestSendAuthenticatesWhenCredentialsAreConfigured(t *testing.T) {
 
 func TestSendRejectsInvalidInput(t *testing.T) {
 	server := startFakeSMTP(t, fakeSMTPOptions{})
-	sender := newTestSender(t, Config{Addr: server.address(), From: "no-reply@example.com"})
+	sender := newTestSender(t, mail.SMTPSettings{Addr: server.address(), From: "no-reply@example.com"})
 
 	if err := sender.Send(nil, mail.Message{}); !errors.Is(err, mail.ErrContextRequired) {
 		t.Fatalf("Send(nil) error = %v", err)
@@ -138,7 +112,7 @@ func TestSendReportsConversationFailures(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			server := startFakeSMTP(t, fakeSMTPOptions{fail: test.fail, requireAuth: test.requireAuth})
-			config := Config{Addr: server.address(), From: "no-reply@example.com"}
+			config := mail.SMTPSettings{Addr: server.address(), From: "no-reply@example.com"}
 			if test.useAuth {
 				config.Username = "user"
 				config.Password = "secret"
@@ -161,7 +135,7 @@ func TestSendReportsDialFailure(t *testing.T) {
 	if err := listener.Close(); err != nil {
 		t.Fatal(err)
 	}
-	sender, err := New(Config{Addr: address, From: "no-reply@example.com"})
+	sender, err := New(mail.SMTPSettings{Addr: address, From: "no-reply@example.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +146,7 @@ func TestSendReportsDialFailure(t *testing.T) {
 
 func TestSendReturnsContextDeadlineWhenServerDoesNotGreet(t *testing.T) {
 	server := startFakeSMTP(t, fakeSMTPOptions{silent: true})
-	sender := newTestSender(t, Config{Addr: server.address(), From: "no-reply@example.com"})
+	sender := newTestSender(t, mail.SMTPSettings{Addr: server.address(), From: "no-reply@example.com"})
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	err := sender.Send(ctx, mail.Message{To: []string{"user@example.com"}, Subject: "Verify", Text: "Hello"})
@@ -198,9 +172,9 @@ func TestFormatEncodesHeadersAndNormalizesBody(t *testing.T) {
 	}
 }
 
-func newTestSender(t *testing.T, config Config) *Sender {
+func newTestSender(t *testing.T, settings mail.SMTPSettings) *Sender {
 	t.Helper()
-	sender, err := New(config)
+	sender, err := New(settings)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

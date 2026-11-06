@@ -1,11 +1,14 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jooservices/xflickr/internal/platform/mail"
 )
 
 func TestLoadFromEnvAppliesDefaults(t *testing.T) {
@@ -193,10 +196,6 @@ func TestLoadFromEnvValidatesSettings(t *testing.T) {
 		{name: "blob cap", key: "BLOB_MAX_BYTES", value: "-1", want: "BLOB_MAX_BYTES"},
 		{name: "blob ttl", key: "BLOB_MAX_TTL", value: "0s", want: "BLOB_MAX_TTL"},
 		{name: "download link ttl", key: "DOWNLOAD_LINK_TTL", value: "0s", want: "DOWNLOAD_LINK_TTL"},
-		{name: "mail address without port", key: "MAIL_SMTP_ADDR", value: "127.0.0.1", want: "MAIL_SMTP_ADDR"},
-		{name: "mail address invalid port", key: "MAIL_SMTP_ADDR", value: "127.0.0.1:70000", want: "MAIL_SMTP_ADDR"},
-		{name: "mail sender", key: "MAIL_FROM", value: "not an address", want: "MAIL_FROM"},
-		{name: "mail username without password", key: "MAIL_SMTP_USERNAME", value: "user", want: "MAIL_SMTP_USERNAME"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -221,6 +220,40 @@ func TestLoadFromEnvValidatesSettings(t *testing.T) {
 	_, err = LoadFromEnv(values)
 	if err == nil || !strings.Contains(err.Error(), "DOWNLOAD_LINK_TTL must not exceed BLOB_MAX_TTL") {
 		t.Errorf("link TTL beyond blob limit error = %v", err)
+	}
+}
+
+func TestLoadFromEnvReportsInvalidMailSettings(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{name: "address without port", key: "MAIL_SMTP_ADDR", value: "127.0.0.1"},
+		{name: "address with invalid port", key: "MAIL_SMTP_ADDR", value: "127.0.0.1:70000"},
+		{name: "sender", key: "MAIL_FROM", value: "not an address"},
+		{name: "username without password", key: "MAIL_SMTP_USERNAME", value: "user"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values := requiredEnv()
+			values[test.key] = test.value
+			_, err := LoadFromEnv(values)
+			if !errors.Is(err, mail.ErrInvalidConfiguration) {
+				t.Fatalf("LoadFromEnv() error = %v, want mail.ErrInvalidConfiguration", err)
+			}
+		})
+	}
+}
+
+func TestLoadReportsInvalidMailSettings(t *testing.T) {
+	clearConfigEnvironment(t)
+	for key, value := range requiredEnv() {
+		t.Setenv(key, value)
+	}
+	t.Setenv("MAIL_FROM", "not an address")
+	if _, err := Load(); !errors.Is(err, mail.ErrInvalidConfiguration) {
+		t.Fatalf("Load() error = %v, want mail.ErrInvalidConfiguration", err)
 	}
 }
 

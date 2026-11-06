@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
-	netmail "net/mail"
 	"net/url"
 	"os"
 	"strconv"
@@ -15,6 +14,8 @@ import (
 
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
+
+	"github.com/jooservices/xflickr/internal/platform/mail"
 )
 
 // Config contains the settings used by the application's platform adapters.
@@ -341,33 +342,6 @@ func (cfg DBConfig) Validate() error {
 	return nil
 }
 
-func (cfg *MailConfig) validate() error {
-	host, portText, err := net.SplitHostPort(strings.TrimSpace(cfg.SMTPAddr))
-	if err != nil || strings.TrimSpace(host) == "" {
-		return fmt.Errorf("MAIL_SMTP_ADDR must be host:port")
-	}
-	port, err := strconv.Atoi(portText)
-	if err != nil || port < 1 || port > 65535 {
-		return fmt.Errorf("MAIL_SMTP_ADDR port must be between 1 and 65535")
-	}
-	from, err := netmail.ParseAddress(strings.TrimSpace(cfg.From))
-	if err != nil || from.Address == "" {
-		return fmt.Errorf("MAIL_FROM must be a valid email address")
-	}
-	username := strings.TrimSpace(cfg.Username)
-	if (username == "") != (cfg.Password == "") {
-		return fmt.Errorf("MAIL_SMTP_USERNAME and MAIL_SMTP_PASSWORD must be set together")
-	}
-	cfg.SMTPAddr = net.JoinHostPort(host, portText)
-	if from.Name == "" {
-		cfg.From = from.Address
-	} else {
-		cfg.From = from.String()
-	}
-	cfg.Username = username
-	return nil
-}
-
 //nolint:cyclop // flat list of independent config invariants
 func (cfg *Config) validate() error {
 	if cfg.CallLog.RetentionDays < 1 || cfg.CallLog.RetentionDays > 3650 {
@@ -405,8 +379,20 @@ func (cfg *Config) validate() error {
 	if err := cfg.DB.Validate(); err != nil {
 		return err
 	}
-	if err := cfg.Mail.validate(); err != nil {
+	settings, err := (mail.SMTPSettings{
+		Addr:     cfg.Mail.SMTPAddr,
+		From:     cfg.Mail.From,
+		Username: cfg.Mail.Username,
+		Password: cfg.Mail.Password,
+	}).Validate()
+	if err != nil {
 		return err
+	}
+	cfg.Mail = MailConfig{
+		SMTPAddr: settings.Addr,
+		From:     settings.From,
+		Username: settings.Username,
+		Password: settings.Password,
 	}
 	if cfg.Redis.Port < 1 || cfg.Redis.Port > 65535 {
 		return fmt.Errorf("REDIS_PORT must be between 1 and 65535")

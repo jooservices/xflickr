@@ -32,6 +32,10 @@ Leave both credentials empty for the development sink. The settings are loaded
 by `platform/config` and listed in `.env.example`. They are infrastructure
 endpoints, so they stay deployment configuration rather than admin settings.
 
+The rules and normalisation for the address, sender, and credential pair live
+in one place, `mail.SMTPSettings.Validate`. Both `platform/config` and the SMTP
+adapter call it, so a rule changes in a single implementation.
+
 ## Development sink
 
 Development and tests send to the shared Mailpit instance on the Dev Workspaces

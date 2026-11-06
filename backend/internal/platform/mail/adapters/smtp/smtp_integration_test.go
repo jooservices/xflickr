@@ -31,7 +31,7 @@ func TestSMTPSendsToMailpitIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse MAIL_FROM: %v", err)
 	}
-	sender, err := mailsmtp.New(mailsmtp.Config{Addr: address, From: from})
+	sender, err := mailsmtp.New(mail.SMTPSettings{Addr: address, From: from})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
