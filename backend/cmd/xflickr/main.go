@@ -41,6 +41,9 @@ func executeWithCommands(ctx context.Context, args []string, envRoles string, re
 }
 
 func executeWithCommandsAndHealth(ctx context.Context, args []string, envRoles string, registry *roles.Registry, stdout, stderr io.Writer, runMigrations migrationRunner, runRotation rotationRunner, withHealth bool) int {
+	if len(args) > 0 && args[0] == "backfill-observations" {
+		return runObservationBackfill(ctx, args[1:], stdout, stderr, roles.BackfillObservations)
+	}
 	if len(args) > 0 && args[0] == "migrate" {
 		return runMigrate(ctx, args[1:], stdout, stderr, runMigrations)
 	}

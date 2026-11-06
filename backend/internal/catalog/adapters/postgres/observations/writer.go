@@ -68,7 +68,12 @@ func (w *Writer) UpsertPeople(ctx context.Context, people []domain.Person) error
 	if err := w.catalog.UpsertPeople(ctx, people); err != nil {
 		return err
 	}
+	seen := make(map[string]bool, len(people))
 	for _, person := range people {
+		if seen[person.NSID] {
+			continue
+		}
+		seen[person.NSID] = true
 		if err := w.observer.Observe(ctx, app.Observation{UserID: w.userID, FlickrAccountID: w.accountID, RecordKind: "person", RecordID: person.NSID}); err != nil {
 			return fmt.Errorf("catalog: observe person: %w", err)
 		}
@@ -83,7 +88,12 @@ func (w *Writer) UpsertPhotos(ctx context.Context, photos []domain.Photo) error 
 	if err := w.catalog.UpsertPhotos(ctx, photos); err != nil {
 		return err
 	}
+	seen := make(map[int64]bool, len(photos))
 	for _, photo := range photos {
+		if seen[photo.ID] {
+			continue
+		}
+		seen[photo.ID] = true
 		if err := w.observer.Observe(ctx, app.Observation{UserID: w.userID, FlickrAccountID: w.accountID, RecordKind: "photo", RecordID: strconv.FormatInt(photo.ID, 10)}); err != nil {
 			return fmt.Errorf("catalog: observe photo: %w", err)
 		}

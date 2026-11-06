@@ -11,3 +11,9 @@ user's choice and publishes `sharing.changed` only when the value changes. The
 outbox event and setting update commit together.
 
 See [the sharing and privacy rules](SPEC.md#sharing-and-privacy).
+
+The crawl composition root now supplies that writer for every facet and pins the
+account used to sign the call. See [crawl observations and historical recovery](crawl-observations.md)
+for the single inventory of observed record kinds, transaction/replay behavior,
+and the explicitly guarded historical backfill. Backfilled timestamps are
+approximate; sharing and photo visibility rules remain unchanged.
