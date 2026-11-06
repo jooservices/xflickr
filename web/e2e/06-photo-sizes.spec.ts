@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import { ADMIN_STATE, apiWrite } from './support/auth';
 import { observeCrawledPhoto } from './support/catalog';
 import { expectNoErrorPage, monitor } from './support/monitor';
+import { worktreeSQL } from './support/worktree';
 
 test.use({ storageState: ADMIN_STATE });
 
@@ -28,6 +29,35 @@ test('confirms provisional photo sizes through an explicit download request', as
   await expect
     .poll(async () => (await photo()).sizes_status, { timeout: 15_000 })
     .toBe('confirmed');
+  const downloadID = (created.body as { id: number }).id;
+  expect(Number.isSafeInteger(downloadID)).toBe(true);
+  await expect
+    .poll(
+      () =>
+        worktreeSQL(
+          `SELECT state IN ('pending','fetching','ready') FROM download_items WHERE download_id=${downloadID} AND photo_id=${photoID}`,
+        ),
+      { timeout: 15_000 },
+    )
+    .toBe('t');
+  expect(
+    worktreeSQL(
+      `SELECT count(*) FROM river_job WHERE args->>'kind'='media.fetch' AND args->'args'->>'download_id'='${downloadID}'`,
+    ),
+  ).toBe('1');
+  // A second explicit request reuses confirmed sizes through the direct path.
+  const repeated = await apiWrite(page, 'POST', '/downloads', {
+    kind: 'tray',
+    photo_ids: [photoID],
+  });
+  expect(repeated.status).toBe(201);
+  const repeatedID = (repeated.body as { id: number }).id;
+  expect(Number.isSafeInteger(repeatedID)).toBe(true);
+  expect(
+    worktreeSQL(
+      `SELECT state IN ('pending','fetching','ready') FROM download_items WHERE download_id=${repeatedID} AND photo_id=${photoID}`,
+    ),
+  ).toBe('t');
   await expectNoErrorPage(page, '/crawl after a direct download request');
   watch.expectClean('on-demand sizes');
 });
