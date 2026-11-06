@@ -50,8 +50,11 @@ One centred column, no scrolling on 1440 x 900 for the login form.
   divider "or", passkey button (when enabled), footer link row.
 - Login fields: Email (`type=email`, `autocomplete=username`), Password
   (`autocomplete=current-password`, show/hide toggle at the field end). Below
-  the password: nothing else; there is no "forgot password" in this release
-  (see Out of scope). No "remember me": sessions are always 14 days sliding.
+  the password: the `Forgot password?` link (`auth.login.forgot`) goes to
+  `/forgot-password`, specified in [user-password-reset](user-password-reset.md).
+  A two-factor account continues on `/login/2fa`, specified in
+  [user-two-factor](user-two-factor.md). No "remember me": sessions are always
+  14 days sliding.
 - Register fields: Email, Password (`autocomplete=new-password`) with a live
   rules list under it, Confirm password, Terms checkbox, submit. Display name
   is not asked here; Profile sets it later.
@@ -90,9 +93,12 @@ is the same for unknown email and wrong password; `account_locked` and
 exists; `email_taken` is only returned by register (accepted trade-off, the
 copy stays neutral). The UI never reveals which of email or password was wrong.
 
-Contract requests are only requested here; OpenAPI is changed by the build
-tickets. Unsafe calls need `X-CSRF-Token` equal to `xf_csrf`; the first `GET
-/auth/config` guarantees the cookie exists.
+A two-factor account receives 202 `two_factor_required` with a short-lived
+`xf_2fa` cookie and continues on `/login/2fa`; the challenge contract is in
+[user-two-factor](user-two-factor.md). Contract requests are only requested
+here; OpenAPI is changed by the build tickets. Unsafe calls need
+`X-CSRF-Token` equal to `xf_csrf`; the first `GET /auth/config` guarantees the
+cookie exists.
 
 ## Actions
 
@@ -259,6 +265,7 @@ lines on 390 px rather than truncate. Dates and countdown use the active locale.
 | `auth.login.passkey` | Sign in with a passkey | Đăng nhập bằng passkey |
 | `auth.login.or` | or | hoặc |
 | `auth.login.to-register` | No account? Create one | Chưa có tài khoản? Tạo tài khoản |
+| `auth.login.forgot` | Forgot password? | Quên mật khẩu? |
 | `auth.field.email` | Email | Email |
 | `auth.field.email-help` | We use it only to sign you in. | Chúng tôi chỉ dùng để bạn đăng nhập. |
 | `auth.field.password` | Password | Mật khẩu |
@@ -317,7 +324,7 @@ suffix. Tests select by role first and by test id when text depends on language.
   `auth-theme-toggle`, `auth-hero`, `auth-card`, `auth-skeleton`.
 - Login: `auth-login-form`, `auth-login-title`, `auth-login-email`,
   `auth-login-password`, `auth-login-password-toggle`, `auth-login-submit`,
-  `auth-login-passkey`, `auth-login-to-register`.
+  `auth-login-passkey`, `auth-login-forgot`, `auth-login-to-register`.
 - Register: `auth-register-form`, `auth-register-title`,
   `auth-register-email`, `auth-register-password`,
   `auth-register-password-toggle`, `auth-register-confirm`,
@@ -343,8 +350,12 @@ hidden when the flag is off; expired session returns to `return_to`; hostile
 
 ## Out of scope
 
-- Password reset, email verification, "remember me", social sign-in, MFA beyond
-  passkey, and account deletion (none exist in this release).
+- Password reset, email verification and two-factor sign-in are specified in
+  [user-password-reset](user-password-reset.md),
+  [user-verify-email](user-verify-email.md) and
+  [user-two-factor](user-two-factor.md); this view owns only the password step.
+  "Remember me", social sign-in, other MFA methods and account deletion are not
+  in this release.
 - Passkey enrolment (a Profile concern) and the Setup wizard.
 - The in-app session-expired modal and global shell states (user-shell).
 - The ADMIN sign-in look (admin uses the same page; role is only known after

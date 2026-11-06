@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XFlickr · Two-factor sign-in mockup (JOOXF-295)</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#dfe2e8;font:15px/1.5 system-ui,sans-serif;color:#161a22}
+.doc{padding:20px 24px}.doc h1{margin:0 0 4px;font-size:24px}.doc p{margin:0;color:#444;max-width:90ch}
+.state{padding:8px 24px 24px}.state>h2{font-size:18px;margin:18px 0 10px;text-transform:capitalize}
+.state>p.cap{margin:0 0 10px;color:#444}
+.frames{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+.frame{border:1px solid #9aa1ad;border-radius:14px;overflow:hidden;flex:none;max-width:100%;overflow-x:auto}
+.frame-h{padding:6px 12px;background:#161a22;color:#fff;font:600 12px ui-monospace,monospace;position:sticky;left:0}
+.frame[data-theme="light"]{--bg:#f6f7fa;--surface:#fff;--sunken:#eef0f5;--raise:#e7eaf1;--line:#e2e5ec;--line2:#747b88;--ink:#161a22;--muted:#5d6574;--faint:#8a92a1;--accent:#2457d6;--accent-ink:#fff;--accent-soft:#e6edfd;--fav:#d93c74;--ok:#187244;--warn:#875300;--bad:#c12824;--shade:rgba(18,22,30,.10);color-scheme:light}
+.frame[data-theme="dark"]{--bg:#0f1116;--surface:#171a21;--sunken:#1e222b;--raise:#252a35;--line:#2a2f3a;--line2:#778396;--ink:#e8eaf0;--muted:#a0a7b4;--faint:#747c8a;--accent:#7d9cff;--accent-ink:#0d1220;--accent-soft:#1f2a47;--fav:#ff6f9f;--ok:#4fc887;--warn:#f0b04a;--bad:#ff7b72;--shade:rgba(0,0,0,.4);color-scheme:dark}
+.frame{--radius:14px;--btn-r:999px;--f-disp:"Bricolage Grotesque","Figtree",system-ui,sans-serif;--f-body:"Figtree",system-ui,sans-serif;background:var(--bg);color:var(--ink);font:15px/1.5 var(--f-body)}
+.frame h1,.frame h3{font-family:var(--f-disp);font-weight:700;letter-spacing:-.01em;margin:0}
+.frame h1{font-size:clamp(24px,3vw,32px);line-height:1.15}
+.brand{display:flex;align-items:center;gap:9px;font-family:var(--f-disp);font-weight:700;font-size:19px;flex:none}
+.brand-dots{display:flex;gap:3px}.brand-dots i{width:10px;height:10px;border-radius:50%;background:var(--accent)}.brand-dots i+i{background:var(--fav)}
+.muted{color:var(--muted)}.small{font-size:.86em}.faint{color:var(--faint)}
+.mono{font-family:ui-monospace,Monaco,monospace}
+.icon-btn{width:40px;height:40px;border-radius:var(--btn-r);border:1px solid transparent;background:transparent;display:grid;place-items:center;color:var(--muted);position:relative;flex:none;padding:0;font:inherit}
+.txt-btn{border:1px solid var(--line);background:var(--surface);border-radius:var(--btn-r);padding:8px 10px;min-height:40px;font:600 12px var(--f-body);color:var(--muted);display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+button:disabled{opacity:.5}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--line2);background:var(--surface);color:var(--ink);border-radius:var(--btn-r);padding:7px 14px;min-height:40px;font:600 14px var(--f-body);white-space:nowrap}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.danger{background:var(--bad);border-color:var(--bad);color:#fff}
+.btn.ghost{background:none;border-color:transparent;color:var(--muted)}
+.btn.sm{padding:4px 10px;font-size:12.5px}
+.banner{display:flex;gap:12px;align-items:flex-start;border-radius:var(--radius);padding:12px 14px;border:1px solid;font-size:.94em;flex-wrap:wrap}
+.banner>div{flex:1;min-width:180px}.banner svg{flex:none;margin-top:2px}
+.banner.warn{border-color:color-mix(in srgb,var(--warn) 45%,transparent);background:color-mix(in srgb,var(--warn) 9%,transparent)}.banner.warn svg{color:var(--warn)}
+.banner.bad{border-color:color-mix(in srgb,var(--bad) 45%,transparent);background:color-mix(in srgb,var(--bad) 9%,transparent)}.banner.bad svg{color:var(--bad)}
+.banner.info{border-color:color-mix(in srgb,var(--accent) 40%,transparent);background:color-mix(in srgb,var(--accent) 8%,transparent)}.banner.info svg{color:var(--accent)}
+.empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:40px 16px;color:var(--muted)}
+.empty p{margin:0;max-width:46ch}.empty h3{color:var(--ink)}
+.empty .art{width:72px;height:72px;border-radius:50%;background:var(--sunken);display:grid;place-items:center;color:var(--faint)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.between{justify-content:space-between}
+.skel{background:linear-gradient(90deg,var(--sunken) 0%,var(--raise) 50%,var(--sunken) 100%);background-size:200% 100%;animation:shimmer 1.2s infinite;border-radius:8px;display:block}
+@keyframes shimmer{to{background-position:-200% 0}}
+@keyframes rot{to{transform:rotate(1turn)}}
+.spin{width:14px;height:14px;border-radius:50%;border:2px solid var(--line2);border-top-color:var(--accent);animation:rot .8s linear infinite;display:inline-block}
+@media (prefers-reduced-motion:reduce){.skel,.spin{animation:none}}
+.page{min-height:600px;display:flex;flex-direction:column}
+.m .page{min-height:760px}
+.topbar{display:flex;align-items:center;gap:12px;padding:10px 24px;background:var(--surface);border-bottom:1px solid var(--line)}
+.m .topbar{padding:10px 16px}
+.nav{display:flex;gap:4px;margin-left:12px;overflow:hidden;white-space:nowrap}
+.nav span{padding:8px 10px;color:var(--muted);font-weight:600;font-size:13.5px;border-bottom:2.5px solid transparent}
+.nav span.on{color:var(--ink);border-bottom-color:var(--accent)}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+.main{padding:28px 24px 48px;display:flex;justify-content:center}
+.m .main{padding:16px 16px 40px}
+.wrap{width:720px;max-width:100%;display:flex;flex-direction:column;gap:16px}
+.crumb{font-size:13px;color:var(--muted)}.crumb b{color:var(--ink)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px;display:flex;flex-direction:column;gap:14px}
+.card h2{font-family:var(--f-disp);font-size:19px;margin:0;letter-spacing:-.01em}
+.card p{margin:0;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 9px;font:700 11px var(--f-body);text-transform:uppercase;letter-spacing:.04em}
+.pill.on{background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 40%,transparent)}
+.pill.off{background:var(--sunken);color:var(--muted);border:1px solid var(--line2)}
+.steps{display:flex;gap:10px;font-size:12.5px;color:var(--muted);list-style:none;padding:0;margin:0}
+.steps li.on{color:var(--accent);font-weight:700}
+.qr{width:200px;height:200px;background:#fff;border:1px solid var(--line2);border-radius:8px;display:grid;place-items:center;color:#161a22;font:700 11px ui-monospace,monospace;text-align:center;padding:12px}
+.keybox{border:1px solid var(--line2);border-radius:8px;background:var(--sunken);padding:10px 12px;display:flex;align-items:center;gap:10px;font:500 13px ui-monospace,monospace;overflow-wrap:anywhere}
+.keybox .btn{margin-left:auto;flex:none}
+.codes{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0;padding:0;list-style:none}
+.codes code{display:block;border:1px solid var(--line);border-radius:6px;background:var(--sunken);padding:6px 8px;font:500 13px ui-monospace,monospace;letter-spacing:.03em}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-weight:600;font-size:13.5px}
+.field label em{font-style:normal;color:var(--muted);font-weight:400;margin-left:6px;font-size:12px}
+.inp{border:1px solid var(--line2);border-radius:10px;background:var(--surface);min-height:44px;display:flex;align-items:center;gap:8px;padding:0 12px;color:var(--ink)}
+.inp.focus{outline:2px solid var(--accent);outline-offset:2px}
+.inp.otp{font:600 24px ui-monospace,monospace;letter-spacing:.35em;justify-content:center}
+.inp .ph{color:var(--faint);font:400 15px var(--f-body);letter-spacing:normal}
+.hint{font-size:12px;color:var(--muted)}
+.err{font-size:12px;color:var(--bad)}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.m .actions .btn{width:100%}
+.foot{text-align:center;font-size:.9em}
+.foot a{color:var(--accent);font-weight:600;text-decoration:none}
+.challenge{display:flex;flex:1;align-items:center;gap:40px;padding:0 48px 48px}
+.m .challenge{display:block;padding:0 16px 32px}
+.hero{flex:0 0 55%;max-width:760px;display:flex;flex-direction:column;gap:18px}
+.hero h2{font-family:var(--f-disp);font-size:clamp(28px,4vw,44px);line-height:1.15;margin:0;letter-spacing:-.01em}
+.mosaic{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mosaic i{display:block;aspect-ratio:var(--r,1);border-radius:14px;background:linear-gradient(135deg,var(--sunken),var(--raise));border:1px solid var(--line)}
+.col{flex:1;display:flex;justify-content:center}
+.auth-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 8px 24px var(--shade);padding:24px;width:420px;max-width:100%;display:flex;flex-direction:column;gap:14px}
+.m .auth-card{width:100%;border:0;box-shadow:none;background:transparent;padding:16px 4px}
+.auth-card .art{width:56px;height:56px;border-radius:50%;background:var(--sunken);display:grid;place-items:center;color:var(--accent);align-self:center}
+.auth-card .art.ok{color:var(--ok)}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Two-factor sign-in</h1>
+<p>Reference mockup for <code>docs/ui/views/user-two-factor.md</code>. The management surface uses the user shell; the sign-in challenge uses the shared auth frame. Every state uses the USER light and dark themes.</p>
+</div>
+
+<section class="state" data-state="ready">
+<h2>Ready</h2>
+<p class="cap">Management off, enrolment steps 1–3, management on and the sign-in challenge.</p>
+<div class="frames">
+<section class="frame" data-role="user" data-theme="light" data-width="1440" style="width:1440px" aria-label="ready off · light · 1440px">
+<div class="frame-h">ready off · light · 1440px</div>
+<div class="page" data-testid="two-factor-page">
+<div class="topbar"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><nav class="nav"><span>Home</span><span>Library</span><span>Profile</span></nav><div class="top-actions"><button class="txt-btn" type="button">EN</button><button class="icon-btn" type="button">◐</button></div></div>
+<main class="main"><div class="wrap"><p class="crumb">← <b>Profile</b> · Security</p><h1 data-testid="two-factor-title">Two-factor sign-in</h1><section class="card" data-testid="two-factor-card"><div class="row between"><div><span class="pill off" data-testid="two-factor-status">Off</span><h2>Two-factor sign-in is off</h2><p>Add an authenticator app and a set of recovery codes.</p></div></div><div class="empty" data-testid="two-factor-empty"><div class="art">⛨</div><p>Your account is protected by the password only.</p><button class="btn primary" data-testid="two-factor-empty-cta" type="button">Set up two-factor</button></div></section></div></main>
+</div>
+</section>
+<section class="frame" data-role="user" data-theme="dark" data-width="390" style="width:390px" aria-label="ready off · dark · 390px">
+<div class="frame-h">ready off · dark · 390px</div>
+<div class="page m" data-testid="two-factor-page">
+<div class="topbar"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><div class="top-actions"><button class="txt-btn" type="button">EN</button><button class="icon-btn" type="button">◐</button></div></div>
+<main class="main"><div class="wrap"><p class="crumb">← <b>Profile</b> · Security</p><h1>Two-factor sign-in</h1><section class="card" data-testid="two-factor-card"><span class="pill off" data-testid="two-factor-status">Off</span><h2>Two-factor sign-in is off</h2><p>Add an authenticator app and a set of recovery codes.</p><div class="empty" data-testid="two-factor-empty"><div class="art">⛨</div><button class="btn primary" data-testid="two-factor-empty-cta" type="button">Set up two-factor</button></div></section></div></main>
+</div>
+</section>
+<section class="frame" data-role="user" data-theme="light" data-width="1440" style="width:1440px" aria-label="ready scan · light · 1440px">
+<div class="frame-h">ready scan · light · 1440px</div>
+<div class="page" data-testid="two-factor-page">
+<div class="topbar"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><nav class="nav"><span>Profile</span></nav><div class="top-actions"><button class="txt-btn" type="button">EN</button><button class="icon-btn" type="button">◐</button></div></div>
+<main class="main"><div class="wrap"><p class="crumb">← <b>Profile</b> · Security</p><h1>Two-factor sign-in</h1><section class="card" data-testid="two-factor-card"><ol class="steps"><li class="on" aria-current="step">1 Scan</li><li>2 Verify</li><li>3 Save codes</li></ol><div class="row" style="align-items:flex-start;gap:20px"><div class="qr" data-testid="two-factor-qr" role="img" aria-label="QR code for the authenticator app">QR<br>placeholder<br>200 × 200</div><div style="flex:1;min-width:220px"><h2>Scan this code with your authenticator app.</h2><p>Use Google Authenticator, 1Password, Authy or another TOTP app.</p><div class="keybox"><span data-testid="two-factor-key">JBSW Y3DP EHPK 3PXP</span><button class="btn sm" data-testid="two-factor-copy-key" type="button">Copy key</button></div><p class="hint" data-testid="two-factor-manual">Can't scan? Enter this key manually.</p></div></div><div class="actions"><button class="btn primary" type="button">Continue</button></div></section></div></main>
+</div>
+</section>
+<section class="frame" data-role="user" data-theme="dark" data-width="390" style="width:390px" aria-label="ready verify · dark · 390px">
+<div class="frame-h">ready verify · dark · 390px</div>
+<div class="page m" data-testid="two-factor-page">
+<div class="topbar"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><div class="top-actions"><button class="txt-btn" type="button">EN</button><button class="icon-btn" type="button">◐</button></div></div>
+<main class="main"><div class="wrap"><h1>Two-factor sign-in</h1><section class="card" data-testid="two-factor-card"><ol class="steps"><li>1 Scan</li><li class="on" aria-current="step">2 Verify</li><li>3 Save codes</li></ol><div class="field"><label for="tf-code">6-digit code<em>required</em></label><div class="inp otp" data-testid="two-factor-code"><span class="ph">000000</span></div><p class="hint">Enter the code shown in your authenticator app.</p></div><div class="actions"><button class="btn primary" data-testid="two-factor-code-submit" type="button">Verify code</button><button class="btn ghost" type="button">Back to the QR code</button></div></section></div></main>
+</div>
+</section>
+<section class="frame" data-role="user" data-theme="light" data-width="1440" style="width:1440px" aria-label="ready codes · light · 1440px">
+<div class="frame-h">ready codes · light · 1440px</div>
+<div class="page" data-testid="two-factor-page">
+<div class="topbar"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><nav class="nav"><span>Profile</span></nav><div class="top-actions"><button class="txt-btn" type="button">EN</button><button class="icon-btn" type="button">◐</button></div></div>
+<main class="main"><div class="wrap"><h1>Two-factor sign-in</h1><section class="card" data-testid="two-factor-card"><ol class="steps"><li>1 Scan</li><li>2 Verify</li><li class="on" aria-current="step">3 Save codes</li></ol><div class="banner warn" role="status"><span>⚠</span><div>These codes are shown once. Store them somewhere safe.</div></div><ul class="codes" data-testid="two-factor-recovery-codes"><li><code>4f7k-m2qa-9xde</code></li><li><code>8p3r-t6zn-1wcy</code></li><li><code>h5vb-0qks-7m4t</code></li><li><code>2j8d-x9ua-5reo</code></li><li><code>p6sy-3lwd-8nfh</code></li><li><code>9c1m-b7vg-4kza</code></li><li><code>q2tn-8f5e-0jux</code></li><li><code>7w4b-r1pc-6dmy</code></li><li><code>m3kp-9sxa-2vlo</code></li><li><code>5r8n-h4ez-1qbt</code></li></ul><div class="actions"><button class="btn sm" data-testid="two-factor-copy-codes" type="button">Copy all</button><button class="btn sm" data-testid="two-factor-download-codes" type="button">Download</button><button class="btn sm" data-testid="two-factor-print-codes" type="button">Print</button></div><label class="row"><input type="checkbox" data-testid="two-factor-codes-saved"> I saved these codes</label><div class="actions"><button class="btn primary" data-testid="two-factor-codes-finish" type="button" disabled>Finish</button></div></section></div></main>
+</div>
+</section>
+<section class="frame" data-role="user" data-theme="dark" data-width="390" style="width:390px" aria-label="ready on · dark · 390px">
+<div class="frame-h">ready on · dark · 390px</div>
+<div class="page m" data-testid="two-factor-page">
+<div class="topbar"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><div class="top-actions"><button class="txt-btn" type="button">EN</button><button class="icon-btn" type="button">◐</button></div></div>
+<main class="main"><div class="wrap"><p class="crumb">← <b>Profile</b> · Security</p><h1>Two-factor sign-in</h1><section class="card" data-testid="two-factor-card"><span class="pill on" data-testid="two-factor-status">On</span><h2>Authenticator app</h2><p>Enabled Oct 25, 2026 · 10 recovery codes left</p><div class="actions"><button class="btn sm" data-testid="two-factor-regenerate" type="button">Generate new codes</button><button class="btn sm ghost" data-testid="two-factor-disable" type="button">Turn off two-factor</button></div></section></div></main>
+</div>
+</section>
+<section class="frame" data-role="user" data-theme="light" data-width="1440" style="width:1440px" aria-label="ready challenge · light · 1440px">
+<div class="frame-h">ready challenge · light · 1440px</div>
+<div class="page" data-testid="auth-two-factor-page">
+<header class="topbar" style="background:transparent;border-bottom:0"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><div class="top-actions"><button class="txt-btn" type="button">EN</button><button class="icon-btn" type="button">◐</button></div></header>
+<div class="challenge"><div class="hero" aria-hidden="true"><h2>Your Flickr circle, kept and searchable</h2><div class="mosaic"><i style="--r:1.5"></i><i style="--r:1"></i><i style="--r:1.3"></i><i style="--r:1.8"></i><i style="--r:1"></i><i style="--r:1.4"></i></div></div>
+<main class="col"><section class="auth-card" data-testid="auth-two-factor-card"><h1 data-testid="auth-two-factor-title">Two-step verification</h1><p>Enter the 6-digit code for <strong data-testid="auth-two-factor-email">h•••@example.com</strong>.</p><div class="field"><label for="tf-challenge-code">6-digit code<em>required</em></label><div class="inp otp focus" data-testid="auth-two-factor-code"><span class="ph">000000</span></div></div><div class="actions"><button class="btn primary" data-testid="auth-two-factor-submit" type="button">Verify and sign in</button><a class="btn ghost" href="#" data-testid="auth-two-factor-recovery-toggle">Use a recovery code instead</a></div><p class="hint" data-testid="auth-two-factor-expires">This step expires in 10 min.</p><div class="foot"><a href="#" data-testid="auth-two-factor-cancel">Back to sign in</a></div></section></main></div>
+</div>
+</section>
+<section class="frame" data-role="user" data-theme="dark" data-width="390" style="width:390px" aria-label="ready recovery · dark · 390px">
+<div class="frame-h">ready recovery · dark · 390px</div>
+<div class="page m" data-testid="auth-two-factor-page">
+<header class="topbar" style="background:transparent;border-bottom:0"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><div class="top-actions"><button class="txt-btn" type="button">EN</button><button class="icon-btn" type="button">◐</button></div></header>
+<main class="col"><section class="auth-card" data-testid="auth-two-factor-card"><h1>Two-step verification</h1><p>Enter one of the recovery codes you saved.</p><div class="field"><label for="tf-recovery">Recovery code<em>required</em></label><div class="inp mono" data-testid="auth-two-factor-recovery"><span class="ph">xxxxx-xxxxx</span></div><p class="hint">You can use each code once.</p></div><div class="actions"><button class="btn primary" data-testid="auth-two-factor-submit" type="button">Verify and sign in</button><a class="btn ghost" href="#" data-testid="auth-two-factor-recovery-back">Use the authenticator code</a></div><p class="hint" data-testid="auth-two-factor-expires">This step expires in 9 min.</p><div class="foot"><a href="#" data-testid="auth-two-factor-cancel">Back to sign in</a></div></section></main>
+</div>
+</section>
+</div>
+</section>
+
+<section class="state" data-state="loading">
+<h2>Loading</h2>
+<p class="cap">Loading the status and verifying a code. The skeleton appears after 200 ms.</p>
+<div class="frames">
+<section class="frame" data-role="user" data-theme="light" data-width="1440" style="width:1440px" aria-label="loading · light · 1440px">
+<div class="frame-h">loading · light · 1440px</div>
+<div class="page" data-testid="two-factor-page">
+<div class="topbar"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><nav class="nav"><span>Profile</span></nav><div class="top-actions"><button class="txt-btn" type="button">EN</button></div></div>
+<main class="main"><div class="wrap"><h1>Two-factor sign-in</h1><section class="card" data-testid="two-factor-card" aria-busy="true"><span class="skel" style="width:60px;height:20px;border-radius:999px" data-testid="two-factor-skeleton"></span><span class="skel" style="width:45%;height:22px"></span><span class="skel" style="width:100%;height:14px"></span><span class="skel" style="width:100%;height:40px;border-radius:999px"></span></section></div></main>
+</div>
+</section>
+<section class="frame" data-role="user" data-theme="dark" data-width="390" style="width:390px" aria-label="loading verify · dark · 390px">
+<div class="frame-h">loading verify · dark · 390px</div>
+<div class="page m" data-testid="auth-two-factor-page">
+<header class="topbar" style="background:transparent;border-bottom:0"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><div class="top-actions"><button class="txt-btn" type="button">EN</button></div></header>
+<main class="col"><section class="auth-card" data-testid="auth-two-factor-card" aria-busy="true"><h1>Two-step verification</h1><div class="field"><label>6-digit code<em>required</em></label><div class="inp otp"><span>123456</span></div></div><div class="actions"><button class="btn primary" type="button" aria-busy="true"><span class="spin"></span> Verifying…</button></div></section></main>
+</div>
+</section>
+</div>
+</section>
+
+<section class="state" data-state="empty">
+<h2>Empty</h2>
+<p class="cap">The factor is off and no recovery codes remain.</p>
+<div class="frames">
+<section class="frame" data-role="user" data-theme="light" data-width="1440" style="width:1440px" aria-label="empty · light · 1440px">
+<div class="frame-h">empty · light · 1440px</div>
+<div class="page" data-testid="two-factor-page">
+<div class="topbar"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><nav class="nav"><span>Profile</span></nav><div class="top-actions"><button class="txt-btn" type="button">EN</button></div></div>
+<main class="main"><div class="wrap"><h1>Two-factor sign-in</h1><section class="card" data-testid="two-factor-card"><span class="pill off" data-testid="two-factor-status">Off</span><div class="empty" data-testid="two-factor-empty"><div class="art">⛨</div><h3>Two-factor sign-in is off</h3><p>Add an authenticator app and a set of recovery codes.</p><button class="btn primary" data-testid="two-factor-empty-cta" type="button">Set up two-factor</button></div></section></div></main>
+</div>
+</section>
+<section class="frame" data-role="user" data-theme="dark" data-width="390" style="width:390px" aria-label="empty codes · dark · 390px">
+<div class="frame-h">empty codes · dark · 390px</div>
+<div class="page m" data-testid="two-factor-page">
+<div class="topbar"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><div class="top-actions"><button class="txt-btn" type="button">EN</button></div></div>
+<main class="main"><div class="wrap"><h1>Two-factor sign-in</h1><section class="card" data-testid="two-factor-card"><span class="pill on" data-testid="two-factor-status">On</span><h2>Authenticator app</h2><p>You have no recovery codes left. Generate a new set.</p><div class="actions"><button class="btn sm" data-testid="two-factor-regenerate" type="button">Generate new codes</button></div></section></div></main>
+</div>
+</section>
+</div>
+</section>
+
+<section class="state" data-state="error">
+<h2>Error</h2>
+<p class="cap">Wrong code, expired challenge and a failed load.</p>
+<div class="frames">
+<section class="frame" data-role="user" data-theme="light" data-width="1440" style="width:1440px" aria-label="error code · light · 1440px">
+<div class="frame-h">error code · light · 1440px</div>
+<div class="page" data-testid="auth-two-factor-page">
+<header class="topbar" style="background:transparent;border-bottom:0"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><div class="top-actions"><button class="txt-btn" type="button">EN</button></div></header>
+<div class="challenge"><div class="hero" aria-hidden="true"><h2>Your Flickr circle, kept and searchable</h2><div class="mosaic"><i style="--r:1.5"></i><i style="--r:1"></i><i style="--r:1.3"></i></div></div>
+<main class="col"><section class="auth-card" data-testid="auth-two-factor-card"><h1>Two-step verification</h1><p>Enter the 6-digit code for <strong>h•••@example.com</strong>.</p><div class="banner bad" role="alert" data-testid="auth-two-factor-error"><span>⚠</span><div>That code is not right. 4 attempts left.</div></div><div class="field"><label>6-digit code<em>required</em></label><div class="inp otp" aria-invalid="true" data-testid="auth-two-factor-code"><span>123456</span></div></div><div class="actions"><button class="btn primary" data-testid="auth-two-factor-submit" type="button">Verify and sign in</button><a class="btn ghost" href="#" data-testid="auth-two-factor-recovery-toggle">Use a recovery code instead</a></div><div class="foot"><a href="#" data-testid="auth-two-factor-cancel">Back to sign in</a></div></section></main></div>
+</div>
+</section>
+<section class="frame" data-role="user" data-theme="dark" data-width="390" style="width:390px" aria-label="error expired · dark · 390px">
+<div class="frame-h">error expired · dark · 390px</div>
+<div class="page m" data-testid="auth-two-factor-page">
+<header class="topbar" style="background:transparent;border-bottom:0"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><div class="top-actions"><button class="txt-btn" type="button">EN</button></div></header>
+<main class="col"><section class="auth-card" data-testid="auth-two-factor-card"><h1>Two-step verification</h1><div class="banner bad" role="alert" data-testid="auth-two-factor-error"><span>⚠</span><div>This sign-in attempt expired. Sign in again.</div></div><div class="actions"><a class="btn primary" href="#" data-testid="auth-two-factor-signin">Sign in again</a></div></section></main>
+</div>
+</section>
+<section class="frame" data-role="user" data-theme="light" data-width="1440" style="width:1440px" aria-label="error load · light · 1440px">
+<div class="frame-h">error load · light · 1440px</div>
+<div class="page" data-testid="two-factor-page">
+<div class="topbar"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><nav class="nav"><span>Profile</span></nav><div class="top-actions"><button class="txt-btn" type="button">EN</button></div></div>
+<main class="main"><div class="wrap"><h1>Two-factor sign-in</h1><section class="card" data-testid="two-factor-card"><div class="banner bad" role="alert" data-testid="two-factor-error"><span>⚠</span><div>Could not load two-factor settings. Check your connection and try again.</div><button class="btn sm" data-testid="two-factor-error-retry" type="button">Try again</button></div></section></div></main>
+</div>
+</section>
+</div>
+</section>
+
+<section class="state" data-state="forbidden">
+<h2>Forbidden</h2>
+<p class="cap">A challenge without a valid short-lived cookie.</p>
+<div class="frames">
+<section class="frame" data-role="user" data-theme="light" data-width="1440" style="width:1440px" aria-label="forbidden · light · 1440px">
+<div class="frame-h">forbidden · light · 1440px</div>
+<div class="page" data-testid="auth-two-factor-page">
+<header class="topbar" style="background:transparent;border-bottom:0"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><div class="top-actions"><button class="txt-btn" type="button">EN</button></div></header>
+<div class="challenge"><div class="hero" aria-hidden="true"><h2>Your Flickr circle, kept and searchable</h2><div class="mosaic"><i style="--r:1.5"></i><i style="--r:1"></i><i style="--r:1.3"></i></div></div>
+<main class="col"><section class="auth-card" data-testid="auth-two-factor-card"><div class="empty" data-testid="auth-two-factor-forbidden"><div class="art">⚿</div><h3>This sign-in attempt is no longer valid</h3><p>Your password was accepted, but the second step expired or belongs to another browser.</p><a class="btn primary" href="#" data-testid="auth-two-factor-signin">Sign in again</a></div></section></main></div>
+</div>
+</section>
+<section class="frame" data-role="user" data-theme="dark" data-width="390" style="width:390px" aria-label="forbidden · dark · 390px">
+<div class="frame-h">forbidden · dark · 390px</div>
+<div class="page m" data-testid="auth-two-factor-page">
+<header class="topbar" style="background:transparent;border-bottom:0"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><div class="top-actions"><button class="txt-btn" type="button">EN</button></div></header>
+<main class="col"><section class="auth-card" data-testid="auth-two-factor-card"><div class="empty" data-testid="auth-two-factor-forbidden"><div class="art">⚿</div><h3>This sign-in attempt is no longer valid</h3><p>Your password was accepted, but the second step expired or belongs to another browser.</p><a class="btn primary" href="#" data-testid="auth-two-factor-signin">Sign in again</a></div></section></main>
+</div>
+</section>
+</div>
+</section>
+
+<section class="state" data-state="success">
+<h2>Success</h2>
+<p class="cap">The factor is on and the challenge passed.</p>
+<div class="frames">
+<section class="frame" data-role="user" data-theme="light" data-width="1440" style="width:1440px" aria-label="success on · light · 1440px">
+<div class="frame-h">success on · light · 1440px</div>
+<div class="page" data-testid="two-factor-page">
+<div class="topbar"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><nav class="nav"><span>Profile</span></nav><div class="top-actions"><button class="txt-btn" type="button">EN</button></div></div>
+<main class="main"><div class="wrap"><h1>Two-factor sign-in</h1><section class="card" data-testid="two-factor-card" role="status"><span class="pill on" data-testid="two-factor-status">On</span><h2>Authenticator app</h2><p>Enabled Oct 25, 2026 · 10 recovery codes left</p><div class="actions"><button class="btn sm" data-testid="two-factor-regenerate" type="button">Generate new codes</button><button class="btn sm ghost" data-testid="two-factor-disable" type="button">Turn off two-factor</button></div></section></div></main>
+</div>
+</section>
+<section class="frame" data-role="user" data-theme="dark" data-width="390" style="width:390px" aria-label="success challenge · dark · 390px">
+<div class="frame-h">success challenge · dark · 390px</div>
+<div class="page m" data-testid="auth-two-factor-page">
+<header class="topbar" style="background:transparent;border-bottom:0"><span class="brand"><span class="brand-dots"><i></i><i></i></span>XFlickr</span><div class="top-actions"><button class="txt-btn" type="button">EN</button></div></header>
+<main class="col"><section class="auth-card" data-testid="auth-two-factor-card" role="status"><div class="art ok">✓</div><h1>Signed in</h1><p>Taking you to the page you left.</p><div class="actions"><a class="btn primary" href="#">Continue</a></div></section></main>
+</div>
+</section>
+</div>
+</section>
+</body>
+</html>
