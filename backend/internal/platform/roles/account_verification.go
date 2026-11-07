@@ -14,8 +14,6 @@ import (
 	accountsapp "github.com/jooservices/xflickr/internal/accounts/app"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/queue"
-	quotaPostgres "github.com/jooservices/xflickr/internal/quota/adapters/postgres"
-	quotaRedis "github.com/jooservices/xflickr/internal/quota/adapters/redis"
 	quotadomain "github.com/jooservices/xflickr/internal/quota/domain"
 	flickrclient "github.com/jooservices/xflickr/pkg/flickr"
 )
@@ -35,7 +33,10 @@ func newAccountVerifier(pool *pgxpool.Pool, redisClient redisv9.UniversalClient,
 	if err != nil {
 		return nil, accountsapp.Verify{}, err
 	}
-	quota := quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Recorder: quotaPostgres.CallLog{Pool: pool}}
+	quota, _, err := newQuotaGovernor(pool, redisClient, cfg)
+	if err != nil {
+		return nil, accountsapp.Verify{}, err
+	}
 	verifier := accountsapp.Verify{
 		Repository: repository,
 		Checker:    accountsflickr.NewLoginProbe(flickrRESTURL(cfg), nil, observers...),
