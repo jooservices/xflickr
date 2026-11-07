@@ -22,7 +22,13 @@ func setupGovernor(t *testing.T, budget domain.Budget) (Governor, *miniredis.Min
 	server := miniredis.RunT(t)
 	client := redisv9.NewClient(&redisv9.Options{Addr: server.Addr()})
 	t.Cleanup(func() { _ = client.Close() })
-	return Governor{Client: client, Prefix: testPrefix, Budgets: StaticBudgets{1: budget}}, server, client
+	base := Governor{Client: client, Prefix: testPrefix}
+	rebuilder := rebuilderFor(base, memStore{}, memCalls{})
+	governor, err := NewGovernor(client, testPrefix, StaticBudgets{1: budget}, rebuilder, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return governor, server, client
 }
 
 func generousBudget() domain.Budget {
@@ -317,8 +323,14 @@ func TestConcurrentRolesShareOneBucketAndStayWithinBurst(t *testing.T) {
 	budgets := StaticBudgets{1: budget, 2: budget}
 	crawl, server, client := setupGovernor(t, budget)
 	crawl.Budgets = budgets
-	scheduler := Governor{Client: client, Prefix: crawl.Prefix, Budgets: budgets}
-	apiRole := Governor{Client: client, Prefix: crawl.Prefix, Budgets: budgets}
+	scheduler, err := NewGovernor(client, crawl.Prefix, budgets, crawl.Rebuilder, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiRole, err := NewGovernor(client, crawl.Prefix, budgets, crawl.Rebuilder, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	roles := []Governor{crawl, scheduler, apiRole}
 	bucketKey := crawl.keys(1)[0]
 	if scheduler.keys(1)[0] != bucketKey || apiRole.keys(1)[0] != bucketKey {
