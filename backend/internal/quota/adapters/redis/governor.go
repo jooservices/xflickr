@@ -3,7 +3,9 @@ package redis
 
 import (
 	"context"
+	"crypto/rand"
 	"embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -25,6 +27,7 @@ var (
 	acquireScript   = redisv9.NewScript(mustScript("scripts/acquire.lua"))
 	calibrateScript = redisv9.NewScript(mustScript("scripts/calibrate.lua"))
 	restoreScript   = redisv9.NewScript(mustScript("scripts/restore.lua"))
+	unlockScript    = redisv9.NewScript(mustFile("scripts/unlock.lua"))
 )
 
 func mustScript(name string) string {
@@ -39,29 +42,50 @@ func mustScript(name string) string {
 	return string(common) + "\n" + string(content)
 }
 
+func mustFile(name string) string {
+	content, err := scripts.ReadFile(name)
+	if err != nil {
+		panic(err)
+	}
+	return string(content)
+}
+
+// KeyRebuilder restores a key's rolling ledger before Acquire may grant.
+type KeyRebuilder interface {
+	Rebuild(context.Context, int64) error
+}
+
+// CallRecorder persists each granted call for later ledger rebuilds.
+type CallRecorder interface {
+	Record(ctx context.Context, keyID int64, class string, at time.Time) error
+}
+
 // Governor coordinates per-key budgets and uses SHA-cached Lua scripts.
 type Governor struct {
-	Client  redisv9.UniversalClient
-	Prefix  string
-	Budgets app.BudgetProvider
-	// Rebuilder, when set, makes Acquire fail closed for a key whose counters
-	// were lost, and rebuilds them before the call is allowed.
-	Rebuilder interface {
-		Rebuild(context.Context, int64) error
-	}
+	Client    redisv9.UniversalClient
+	Prefix    string
+	Budgets   app.BudgetProvider
+	Rebuilder KeyRebuilder
 	// Recorder, when set, logs every granted call to api_call_log so a rebuild
 	// can recover calls made after the last flush. A failed record fails closed.
-	Recorder interface {
-		Record(ctx context.Context, keyID int64, class string, at time.Time) error
-	}
+	Recorder CallRecorder
 }
 
 var _ domain.Governor = Governor{}
 
+// NewGovernor builds a governor that always fails closed until a Rebuilder has
+// restored the rolling ledger. The rebuilder is required for every role.
+func NewGovernor(client redisv9.UniversalClient, prefix string, budgets app.BudgetProvider, rebuilder KeyRebuilder, recorder CallRecorder) (Governor, error) {
+	if client == nil || budgets == nil || rebuilder == nil {
+		return Governor{}, errors.New("quota: governor requires client, budgets and rebuilder")
+	}
+	return Governor{Client: client, Prefix: prefix, Budgets: budgets, Rebuilder: rebuilder, Recorder: recorder}, nil
+}
+
 // Acquire atomically checks the per-second and hourly budgets. A denied
 // attempt returns its retry delay and a nil permit.
 func (g Governor) Acquire(ctx context.Context, keyID int64, class domain.Class) (domain.Permit, time.Duration, error) {
-	if ctx == nil || keyID <= 0 || !class.Valid() || g.Client == nil || g.Budgets == nil {
+	if !g.canAcquire(ctx, keyID, class) {
 		return nil, 0, domain.ErrGovernorOffline
 	}
 	budget, err := g.Budgets.Budget(ctx, keyID)
@@ -79,7 +103,7 @@ func (g Governor) Acquire(ctx context.Context, keyID int64, class domain.Class) 
 			continue
 		}
 		if !allowed {
-			return nil, wait, nil
+			return nil, denyWait(reason, wait), nil
 		}
 		if err := g.record(ctx, keyID, class, at); err != nil {
 			return nil, 0, err
@@ -88,18 +112,112 @@ func (g Governor) Acquire(ctx context.Context, keyID int64, class domain.Class) 
 	}
 }
 
-const reasonRebuild = "rebuild"
+func (g Governor) canAcquire(ctx context.Context, keyID int64, class domain.Class) bool {
+	return ctx != nil && keyID > 0 && class.Valid() && g.Client != nil && g.Budgets != nil && g.Rebuilder != nil
+}
 
-// rebuildFirst blocks until the counters are back when the first attempt found
-// them lost; the retry then sees the ready marker.
+func denyWait(reason string, wait time.Duration) time.Duration {
+	if reason == reasonRebuild {
+		return domain.LedgerNotReadyRetry
+	}
+	return wait
+}
+
+const (
+	reasonRebuild    = "rebuild"
+	rebuildLockTTL   = 30 * time.Second
+	rebuildPollEvery = 50 * time.Millisecond
+)
+
+// rebuildFirst runs one Redis-locked rebuild when the ledger is not ready, then
+// retries Acquire. Concurrent roles share the lock so only one rebuild runs.
 func (g Governor) rebuildFirst(ctx context.Context, keyID int64, reason string, attempt int) (bool, error) {
-	if reason != reasonRebuild || g.Rebuilder == nil || attempt != 0 {
+	if reason != reasonRebuild || attempt != 0 {
 		return false, nil
 	}
-	if err := g.Rebuilder.Rebuild(ctx, keyID); err != nil {
+	if err := g.rebuildWithLock(ctx, keyID); err != nil {
 		return false, domain.ErrGovernorOffline
 	}
 	return true, nil
+}
+
+func (g Governor) rebuildWithLock(ctx context.Context, keyID int64) error {
+	readyKey := g.keys(keyID)[5]
+	if ready, err := g.ready(ctx, readyKey); err != nil || ready {
+		return err
+	}
+	lockKey := fmt.Sprintf("%squota:key:%d:rolling:rebuild_lock", g.Prefix, keyID)
+	token, err := rebuildLockToken()
+	if err != nil {
+		return fmt.Errorf("quota: rebuild lock token: %w", err)
+	}
+	ok, err := g.Client.SetNX(ctx, lockKey, token, rebuildLockTTL).Result()
+	if err != nil {
+		return fmt.Errorf("quota: rebuild lock: %w", err)
+	}
+	if ok {
+		defer func() {
+			_ = unlockScript.Run(context.Background(), g.Client, []string{lockKey}, token).Err()
+		}()
+		return g.rebuildIfNeeded(ctx, keyID, readyKey)
+	}
+	if err := g.waitReady(ctx, readyKey, lockKey, rebuildLockTTL); err != nil {
+		return err
+	}
+	return g.rebuildIfNeeded(ctx, keyID, readyKey)
+}
+
+func rebuildLockToken() (string, error) {
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf[:]), nil
+}
+
+func (g Governor) rebuildIfNeeded(ctx context.Context, keyID int64, readyKey string) error {
+	if ready, err := g.ready(ctx, readyKey); err != nil || ready {
+		return err
+	}
+	if err := g.Rebuilder.Rebuild(ctx, keyID); err != nil {
+		return fmt.Errorf("quota: rebuild key %d: %w", keyID, err)
+	}
+	return nil
+}
+
+func (g Governor) waitReady(ctx context.Context, readyKey, lockKey string, limit time.Duration) error {
+	deadline := time.Now().Add(limit)
+	for time.Now().Before(deadline) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if ready, err := g.ready(ctx, readyKey); err != nil || ready {
+			return err
+		}
+		held, err := g.Client.Exists(ctx, lockKey).Result()
+		if err != nil {
+			return fmt.Errorf("quota: rebuild lock: %w", err)
+		}
+		if held == 0 {
+			return nil
+		}
+		timer := time.NewTimer(rebuildPollEvery)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil
+}
+
+func (g Governor) ready(ctx context.Context, readyKey string) (bool, error) {
+	n, err := g.Client.Exists(ctx, readyKey).Result()
+	if err != nil {
+		return false, fmt.Errorf("quota: ready marker: %w", err)
+	}
+	return n == 1, nil
 }
 
 func (g Governor) record(ctx context.Context, keyID int64, class domain.Class, at time.Time) error {
@@ -113,11 +231,7 @@ func (g Governor) record(ctx context.Context, keyID int64, class domain.Class, a
 }
 
 func (g Governor) tryAcquire(ctx context.Context, keyID int64, class domain.Class, budget domain.Budget) (bool, time.Duration, string, time.Time, error) {
-	requireReady := 0
-	if g.Rebuilder != nil {
-		requireReady = 1
-	}
-	result, err := acquireScript.Run(ctx, g.Client, g.keys(keyID), budget.PerSecondRate, budget.Burst, budget.HourlyLimit, budget.Reserve, budget.PersonLaneShare, string(class), requireReady, budget.IdlePhotoProtection()).Slice()
+	result, err := acquireScript.Run(ctx, g.Client, g.keys(keyID), budget.PerSecondRate, budget.Burst, budget.HourlyLimit, budget.Reserve, budget.PersonLaneShare, string(class), budget.IdlePhotoProtection()).Slice()
 	if err != nil || len(result) < 3 {
 		return false, 0, "", time.Time{}, domain.ErrGovernorOffline
 	}

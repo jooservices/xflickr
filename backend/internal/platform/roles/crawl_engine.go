@@ -22,8 +22,6 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/crypto"
 	"github.com/jooservices/xflickr/internal/platform/obs"
 	"github.com/jooservices/xflickr/internal/platform/queue"
-	quotaPostgres "github.com/jooservices/xflickr/internal/quota/adapters/postgres"
-	quotaRedis "github.com/jooservices/xflickr/internal/quota/adapters/redis"
 	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
 	quotadomain "github.com/jooservices/xflickr/internal/quota/domain"
 	scheduleriver "github.com/jooservices/xflickr/internal/schedule/adapters/river"
@@ -80,7 +78,10 @@ func newCrawlEngine(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg
 			return nil, err
 		}
 	}
-	governor := quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Recorder: quotaPostgres.CallLog{Pool: pool}}
+	governor, _, err := newQuotaGovernor(pool, redisClient, cfg)
+	if err != nil {
+		return nil, err
+	}
 	return &crawlapp.Engine{
 		States:   crawlpostgres.EntityStates{DB: pool},
 		Registry: registry,

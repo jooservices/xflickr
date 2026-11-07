@@ -40,11 +40,28 @@ func newQuotaEmitter(states quotaapp.StateReader, cfg config.Config) *quotaapp.E
 	return &quotaapp.Emitter{States: states, Sink: sink, Node: nodeID(cfg)}
 }
 
-func newQuotaRuntime(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config) quotaRuntime {
+// newQuotaGovernor builds the shared governor every role must use: one
+// constructor, mandatory rebuilder, optional call-log recorder.
+func newQuotaGovernor(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config) (quotaRedis.Governor, *quotaapp.Rebuilder, error) {
 	counters := quotaRedis.Counters{Client: redisClient, Prefix: cfg.Redis.Prefix}
 	usage := quotaPostgres.Usage{Pool: pool}
 	calls := quotaPostgres.CallLog{Pool: pool}
 	rebuilder := &quotaapp.Rebuilder{Store: usage, Calls: calls, Counters: counters}
+	governor, err := quotaRedis.NewGovernor(redisClient, cfg.Redis.Prefix, quotaPostgres.Budgets{Pool: pool}, rebuilder, calls)
+	if err != nil {
+		return quotaRedis.Governor{}, nil, err
+	}
+	return governor, rebuilder, nil
+}
+
+func newQuotaRuntime(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config) (quotaRuntime, error) {
+	counters := quotaRedis.Counters{Client: redisClient, Prefix: cfg.Redis.Prefix}
+	usage := quotaPostgres.Usage{Pool: pool}
+	calls := quotaPostgres.CallLog{Pool: pool}
+	governor, rebuilder, err := newQuotaGovernor(pool, redisClient, cfg)
+	if err != nil {
+		return quotaRuntime{}, err
+	}
 	var onDrop func()
 	if dropped, err := otel.Meter("github.com/jooservices/xflickr/internal/quota").Int64Counter("xflickr.api_call_log.dropped"); err != nil {
 		slog.Default().Error("quota: create call log dropped metric", "error", err)
@@ -52,12 +69,12 @@ func newQuotaRuntime(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cf
 		onDrop = func() { dropped.Add(context.Background(), 1) }
 	}
 	return quotaRuntime{
-		Governor:     quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Rebuilder: rebuilder, Recorder: calls},
+		Governor:     governor,
 		Rebuilder:    rebuilder,
 		Flusher:      quotaapp.Flusher{Store: usage, Counters: counters, Pruner: calls},
 		CallRecorder: quotaapp.NewCallRecorder(calls, 10_000, 500, time.Second, onDrop),
 		Partitions:   quotaapp.Partitions{Store: quotaPostgres.Partitions{Pool: pool}, RetentionDays: cfg.CallLog.RetentionDays},
-	}
+	}, nil
 }
 
 // start rebuilds every key's counters, then flushes usage every minute until

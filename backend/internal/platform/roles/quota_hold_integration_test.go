@@ -9,10 +9,12 @@ import (
 
 	redisv9 "github.com/redis/go-redis/v9"
 
+	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 	"github.com/jooservices/xflickr/internal/platform/queue"
 	quotaPostgres "github.com/jooservices/xflickr/internal/quota/adapters/postgres"
 	quotaRedis "github.com/jooservices/xflickr/internal/quota/adapters/redis"
+	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
 	quotadomain "github.com/jooservices/xflickr/internal/quota/domain"
 	scheduleriver "github.com/jooservices/xflickr/internal/schedule/adapters/river"
 	scheduleapp "github.com/jooservices/xflickr/internal/schedule/app"
@@ -50,7 +52,13 @@ func TestHourlyCeilingHoldsPendingWorkUntilReset(t *testing.T) {
 	}
 	clear()
 	t.Cleanup(clear)
-	governor := quotaRedis.Governor{Client: redisClient, Prefix: prefix, Budgets: quotaPostgres.Budgets{Pool: pool}}
+	governor, _, err := newQuotaGovernor(pool, redisClient, config.Config{Redis: config.RedisConfig{Prefix: prefix}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (quotaRedis.Counters{Client: redisClient, Prefix: prefix}).Restore(ctx, quotaapp.Usage{KeyID: keyID}); err != nil {
+		t.Fatal(err)
+	}
 	budget, err := (quotaPostgres.Budgets{Pool: pool}).Budget(ctx, keyID)
 	if err != nil {
 		t.Fatal(err)

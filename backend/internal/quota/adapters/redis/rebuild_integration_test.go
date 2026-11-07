@@ -94,7 +94,10 @@ func TestRedisLossMidWindowDoesNotOverspend(t *testing.T) {
 	counters := Counters{Client: client, Prefix: prefix}
 	store := quotapostgres.Usage{Pool: pool}
 	rebuilder := &app.Rebuilder{Store: store, Calls: quotapostgres.CallLog{Pool: pool}, Counters: counters}
-	governor := Governor{Client: client, Prefix: prefix, Budgets: StaticBudgets{keyID: budget}, Rebuilder: rebuilder, Recorder: quotapostgres.CallLog{Pool: pool}}
+	governor, err := NewGovernor(client, prefix, StaticBudgets{keyID: budget}, rebuilder, quotapostgres.CallLog{Pool: pool})
+	if err != nil {
+		t.Fatal(err)
+	}
 	flusher := app.Flusher{Store: store, Counters: counters}
 
 	granted := func(n int) int {
