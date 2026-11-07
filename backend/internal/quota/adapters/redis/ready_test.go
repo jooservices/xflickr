@@ -2,6 +2,8 @@ package redis
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -175,6 +177,127 @@ func TestNewGovernorRequiresRebuilder(t *testing.T) {
 	if _, err := NewGovernor(client, testPrefix, nil, noopRebuilder{}, nil); err == nil {
 		t.Fatal("nil budgets accepted")
 	}
+}
+
+func TestUnlockOnlyRemovesOwnLock(t *testing.T) {
+	_, _, client := setupGovernor(t, generousBudget())
+	ctx := t.Context()
+	lockKey := fmt.Sprintf("%squota:key:1:rolling:rebuild_lock", testPrefix)
+	if err := client.Set(ctx, lockKey, "holder-a", rebuildLockTTL).Err(); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate TTL expiry: another holder replaces the lock value.
+	if err := client.Set(ctx, lockKey, "holder-b", rebuildLockTTL).Err(); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := unlockScript.Run(ctx, client, []string{lockKey}, "holder-a").Int64()
+	if err != nil || removed != 0 {
+		t.Fatalf("expired holder unlock = %d err=%v, want 0 (must not delete next holder)", removed, err)
+	}
+	val, err := client.Get(ctx, lockKey).Result()
+	if err != nil || val != "holder-b" {
+		t.Fatalf("lock after foreign unlock = %q err=%v, want holder-b", val, err)
+	}
+	removed, err = unlockScript.Run(ctx, client, []string{lockKey}, "holder-b").Int64()
+	if err != nil || removed != 1 {
+		t.Fatalf("own unlock = %d err=%v, want 1", removed, err)
+	}
+	if n, err := client.Exists(ctx, lockKey).Result(); err != nil || n != 0 {
+		t.Fatalf("lock must be gone after own unlock: exists=%d err=%v", n, err)
+	}
+}
+
+func TestWaiterTakesOverWhenHolderFails(t *testing.T) {
+	budget := generousBudget()
+	budget.HourlyLimit = 50
+	budget.Reserve = 0
+	server := miniredis.RunT(t)
+	client := redisv9.NewClient(&redisv9.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+
+	at := time.Now().Add(-2 * time.Minute).Truncate(time.Millisecond)
+	const prior = 5
+	inner := rebuilderFor(Governor{Client: client, Prefix: testPrefix}, memStore{}, memCalls{usage: app.CallUsage{
+		First:   at,
+		ByClass: map[string]int64{"interactive": prior},
+		Grants:  testGrants(map[string]int64{"interactive": prior}, at),
+	}})
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	holderReb := &holdThenFailRebuilder{entered: entered, release: release, err: errors.New("rebuild failed")}
+	holder, err := NewGovernor(client, testPrefix, StaticBudgets{1: budget}, holderReb, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiter, err := NewGovernor(client, testPrefix, StaticBudgets{1: budget}, inner, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range holder.keys(1) {
+		server.Del(key)
+	}
+
+	holderDone := make(chan error, 1)
+	go func() {
+		_, _, err := holder.Acquire(context.Background(), 1, domain.Interactive)
+		holderDone <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("holder did not enter Rebuild")
+	}
+
+	type outcome struct {
+		permit domain.Permit
+		err    error
+		took   time.Duration
+	}
+	waiterDone := make(chan outcome, 1)
+	go func() {
+		start := time.Now()
+		permit, _, err := waiter.Acquire(context.Background(), 1, domain.Interactive)
+		waiterDone <- outcome{permit: permit, err: err, took: time.Since(start)}
+	}()
+
+	// Waiter must lose SetNX and enter waitReady before the holder unlocks.
+	settle := time.NewTimer(2 * rebuildPollEvery)
+	defer settle.Stop()
+	select {
+	case <-settle.C:
+	case o := <-waiterDone:
+		t.Fatalf("waiter finished before holder released: permit=%v err=%v", o.permit, o.err)
+	}
+	close(release)
+
+	o := <-waiterDone
+	if o.err != nil || o.permit == nil {
+		t.Fatalf("waiter acquire = permit=%v err=%v", o.permit, o.err)
+	}
+	if o.took > time.Second {
+		t.Fatalf("waiter waited %s; want takeover within 1s when holder fails", o.took)
+	}
+	select {
+	case err := <-holderDone:
+		if !errors.Is(err, domain.ErrGovernorOffline) {
+			t.Fatalf("holder err = %v, want ErrGovernorOffline", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("holder Acquire did not finish")
+	}
+}
+
+type holdThenFailRebuilder struct {
+	entered chan struct{}
+	release chan struct{}
+	err     error
+	once    sync.Once
+}
+
+func (r *holdThenFailRebuilder) Rebuild(context.Context, int64) error {
+	r.once.Do(func() { close(r.entered) })
+	<-r.release
+	return r.err
 }
 
 type countingRebuilder struct {
