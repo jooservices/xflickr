@@ -26,8 +26,13 @@ func TestBacklogConcurrentDedupeAndLifecycle(t *testing.T) {
 	defer cancel()
 	pool := openBacklogPool(t)
 	subject := fmt.Sprintf("integration-%d", time.Now().UnixNano())
+	var userID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'unused','user') RETURNING id`, subject+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE subject_key = $1`, subject)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, userID)
 	})
 
 	const writers = 12
@@ -45,7 +50,7 @@ func TestBacklogConcurrentDedupeAndLifecycle(t *testing.T) {
 				return
 			}
 			defer tx.Rollback(context.Background())
-			item := domain.WorkItem{Kind: "person", SubjectKey: subject, PriorityBase: priority}
+			item := domain.WorkItem{Kind: "person", SubjectKey: subject, PriorityBase: priority, UserID: &userID}
 			if err := postgres.Enqueue(ctx, tx, item); err != nil {
 				errs <- err
 				return
@@ -65,14 +70,14 @@ func TestBacklogConcurrentDedupeAndLifecycle(t *testing.T) {
 	var id int64
 	var state string
 	var priority int
-	if err := pool.QueryRow(ctx, `SELECT id, state, priority_base FROM work_items WHERE kind = 'person' AND subject_key = $1 AND user_id IS NULL`, subject).Scan(&id, &state, &priority); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT id, state, priority_base FROM work_items WHERE kind = 'person' AND subject_key = $1 AND user_id = $2`, subject, userID).Scan(&id, &state, &priority); err != nil {
 		t.Fatal(err)
 	}
 	if state != "pending" || priority != writers-1 {
 		t.Fatalf("deduplicated row state=%q priority=%d", state, priority)
 	}
 	var count int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM work_items WHERE kind = 'person' AND subject_key = $1 AND user_id IS NULL`, subject).Scan(&count); err != nil || count != 1 {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM work_items WHERE kind = 'person' AND subject_key = $1 AND user_id = $2`, subject, userID).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("dedupe row count=%d err=%v", count, err)
 	}
 
@@ -105,7 +110,7 @@ func TestBacklogConcurrentDedupeAndLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := postgres.Enqueue(ctx, withoutReopen, domain.WorkItem{Kind: "person", SubjectKey: subject, PriorityBase: 1}); err != nil {
+	if err := postgres.Enqueue(ctx, withoutReopen, domain.WorkItem{Kind: "person", SubjectKey: subject, PriorityBase: 1, UserID: &userID}); err != nil {
 		_ = withoutReopen.Rollback(context.Background())
 		t.Fatal(err)
 	}
@@ -120,7 +125,7 @@ func TestBacklogConcurrentDedupeAndLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := postgres.Enqueue(ctx, reopenTx, domain.WorkItem{Kind: "person", SubjectKey: subject, PriorityBase: 1, Reopen: true}); err != nil {
+	if err := postgres.Enqueue(ctx, reopenTx, domain.WorkItem{Kind: "person", SubjectKey: subject, PriorityBase: 1, Reopen: true, UserID: &userID}); err != nil {
 		_ = reopenTx.Rollback(context.Background())
 		t.Fatal(err)
 	}

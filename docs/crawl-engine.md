@@ -1,9 +1,9 @@
 # Crawl engine
 
-One engine runs every crawl facet. A facet implements
-`crawl/domain.Facet` (`Name`, `Lane`, `Plan`, `Handle`) and is added to the
-`Registry`; no engine change is needed. One work item is one Flickr method
-paged to its end, and one job is one page.
+One engine runs every crawl facet. A facet implements `crawl/domain.Facet`
+(`Name`, `Lane`, `Plan`, `Handle`) and is added to the `Registry`; no engine
+change is needed. One work item is one Flickr method paged to its end, and one
+job is one page. A work item always belongs to a user.
 
 ## Job flow
 

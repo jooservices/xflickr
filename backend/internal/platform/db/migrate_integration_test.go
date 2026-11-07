@@ -18,6 +18,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pressly/goose/v3"
 
@@ -403,4 +404,56 @@ func versionCounts(t *testing.T, ctx context.Context, pool *pgxpool.Pool) map[in
 		t.Fatalf("read migration version counts: %v", err)
 	}
 	return counts
+}
+
+func TestWorkItemsUserNotNullMigrationRefusesNullRows(t *testing.T) {
+	ctx, cfg, pool := prepareMigrationTest(t)
+
+	// Roll our migration back so user_id is nullable and a NULL row can be inserted.
+	if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err != nil {
+		t.Fatalf("roll back work_items user-not-null migration: %v", err)
+	}
+
+	var nullable bool
+	if err := pool.QueryRow(ctx, `SELECT NOT attnotnull FROM pg_attribute WHERE attrelid='work_items'::regclass AND attname='user_id' AND NOT attisdropped`).Scan(&nullable); err != nil || !nullable {
+		t.Fatalf("user_id nullable after rollback = %t, %v; want true", nullable, err)
+	}
+
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind, subject_key) VALUES('test','null-user-refusal')`); err != nil {
+		t.Fatalf("insert null-user row: %v", err)
+	}
+
+	if err := db.Migrate(ctx, cfg, db.MigrateUp, io.Discard); err == nil || !strings.Contains(err.Error(), "rows with NULL user_id") {
+		t.Fatalf("migrate up with a NULL user row = %v, want refusal mentioning the count", err)
+	}
+
+	var rows int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM work_items WHERE subject_key='null-user-refusal' AND user_id IS NULL`).Scan(&rows); err != nil || rows != 1 {
+		t.Fatalf("null-user row after refused migration = %d, %v; want 1", rows, err)
+	}
+
+	var notNull bool
+	if err := pool.QueryRow(ctx, `SELECT attnotnull FROM pg_attribute WHERE attrelid='work_items'::regclass AND attname='user_id' AND NOT attisdropped`).Scan(&notNull); err != nil || notNull {
+		t.Fatalf("user_id not-null after refused migration = %t, %v; want false", notNull, err)
+	}
+
+	if _, err := pool.Exec(ctx, `DELETE FROM work_items WHERE subject_key='null-user-refusal'`); err != nil {
+		t.Fatalf("remove null-user test row: %v", err)
+	}
+
+	if err := db.Migrate(ctx, cfg, db.MigrateUp, io.Discard); err != nil {
+		t.Fatalf("migrate up after removing null-user row: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT attnotnull FROM pg_attribute WHERE attrelid='work_items'::regclass AND attname='user_id' AND NOT attisdropped`).Scan(&notNull); err != nil || !notNull {
+		t.Fatalf("user_id not-null after migration = %t, %v; want true", notNull, err)
+	}
+
+	_, err := pool.Exec(ctx, `INSERT INTO work_items(kind, subject_key) VALUES('test','no-user-insert')`)
+	if err == nil {
+		t.Fatal("insert without a user succeeded, want not-null violation")
+	}
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23502" {
+		t.Fatalf("insert without a user = %v, want SQLSTATE 23502", err)
+	}
 }
