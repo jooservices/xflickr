@@ -3,7 +3,9 @@ package redis
 
 import (
 	"context"
+	"crypto/rand"
 	"embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -25,6 +27,7 @@ var (
 	acquireScript   = redisv9.NewScript(mustScript("scripts/acquire.lua"))
 	calibrateScript = redisv9.NewScript(mustScript("scripts/calibrate.lua"))
 	restoreScript   = redisv9.NewScript(mustScript("scripts/restore.lua"))
+	unlockScript    = redisv9.NewScript(mustFile("scripts/unlock.lua"))
 )
 
 func mustScript(name string) string {
@@ -37,6 +40,14 @@ func mustScript(name string) string {
 		panic(err)
 	}
 	return string(common) + "\n" + string(content)
+}
+
+func mustFile(name string) string {
+	content, err := scripts.ReadFile(name)
+	if err != nil {
+		panic(err)
+	}
+	return string(content)
 }
 
 // KeyRebuilder restores a key's rolling ledger before Acquire may grant.
@@ -136,18 +147,32 @@ func (g Governor) rebuildWithLock(ctx context.Context, keyID int64) error {
 		return err
 	}
 	lockKey := fmt.Sprintf("%squota:key:%d:rolling:rebuild_lock", g.Prefix, keyID)
-	ok, err := g.Client.SetNX(ctx, lockKey, "1", rebuildLockTTL).Result()
+	token, err := rebuildLockToken()
+	if err != nil {
+		return fmt.Errorf("quota: rebuild lock token: %w", err)
+	}
+	ok, err := g.Client.SetNX(ctx, lockKey, token, rebuildLockTTL).Result()
 	if err != nil {
 		return fmt.Errorf("quota: rebuild lock: %w", err)
 	}
 	if ok {
-		defer func() { _ = g.Client.Del(context.Background(), lockKey).Err() }()
+		defer func() {
+			_ = unlockScript.Run(context.Background(), g.Client, []string{lockKey}, token).Err()
+		}()
 		return g.rebuildIfNeeded(ctx, keyID, readyKey)
 	}
-	if err := g.waitReady(ctx, readyKey, rebuildLockTTL); err != nil {
+	if err := g.waitReady(ctx, readyKey, lockKey, rebuildLockTTL); err != nil {
 		return err
 	}
 	return g.rebuildIfNeeded(ctx, keyID, readyKey)
+}
+
+func rebuildLockToken() (string, error) {
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf[:]), nil
 }
 
 func (g Governor) rebuildIfNeeded(ctx context.Context, keyID int64, readyKey string) error {
@@ -160,7 +185,7 @@ func (g Governor) rebuildIfNeeded(ctx context.Context, keyID int64, readyKey str
 	return nil
 }
 
-func (g Governor) waitReady(ctx context.Context, readyKey string, limit time.Duration) error {
+func (g Governor) waitReady(ctx context.Context, readyKey, lockKey string, limit time.Duration) error {
 	deadline := time.Now().Add(limit)
 	for time.Now().Before(deadline) {
 		if err := ctx.Err(); err != nil {
@@ -168,6 +193,13 @@ func (g Governor) waitReady(ctx context.Context, readyKey string, limit time.Dur
 		}
 		if ready, err := g.ready(ctx, readyKey); err != nil || ready {
 			return err
+		}
+		held, err := g.Client.Exists(ctx, lockKey).Result()
+		if err != nil {
+			return fmt.Errorf("quota: rebuild lock: %w", err)
+		}
+		if held == 0 {
+			return nil
 		}
 		timer := time.NewTimer(rebuildPollEvery)
 		select {
