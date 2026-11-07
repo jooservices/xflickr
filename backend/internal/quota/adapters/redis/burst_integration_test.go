@@ -14,6 +14,7 @@ import (
 	"github.com/joho/godotenv"
 	redisv9 "github.com/redis/go-redis/v9"
 
+	"github.com/jooservices/xflickr/internal/quota/app"
 	"github.com/jooservices/xflickr/internal/quota/domain"
 )
 
@@ -56,8 +57,16 @@ func TestRealRedisClockSecondStaysWithinBurst(t *testing.T) {
 	const keyID int64 = 312312312
 	budget := productionSecondBudget()
 	budgets := StaticBudgets{keyID: budget}
-	crawl := Governor{Client: client, Prefix: prefix + "jooxf312:", Budgets: budgets}
-	scheduler := Governor{Client: client, Prefix: crawl.Prefix, Budgets: budgets}
+	rolePrefix := prefix + "jooxf312:"
+	rebuilder := rebuilderFor(Governor{Client: client, Prefix: rolePrefix}, memStore{}, memCalls{})
+	crawl, err := NewGovernor(client, rolePrefix, budgets, rebuilder, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduler, err := NewGovernor(client, rolePrefix, budgets, rebuilder, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if crawl.keys(keyID)[0] != scheduler.keys(keyID)[0] {
 		t.Fatal("roles do not share one bucket key")
 	}
@@ -70,6 +79,10 @@ func TestRealRedisClockSecondStaysWithinBurst(t *testing.T) {
 		if err := client.Del(ctx, key).Err(); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// Seed an empty ready ledger so the burst measurement is not a rebuild.
+	if _, err := (Counters{Client: client, Prefix: rolePrefix}).Restore(ctx, app.Usage{KeyID: keyID}); err != nil {
+		t.Fatal(err)
 	}
 
 	grants, slipped := grantsNearClockSecond(t, []Governor{crawl, scheduler}, keyID)
