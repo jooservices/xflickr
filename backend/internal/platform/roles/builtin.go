@@ -150,7 +150,10 @@ func (schedulerRole) Run(ctx context.Context) error {
 		return err
 	}
 	store := scheduleriver.Store{Pool: pool}
-	quota := newQuotaRuntime(pool, redisClient, cfg)
+	quota, err := newQuotaRuntime(pool, redisClient, cfg)
+	if err != nil {
+		return err
+	}
 	quota.Emitter = newQuotaEmitter(quotaStates(pool, redisClient, cfg), cfg)
 	defer quota.start(ctx, slog.Default())()
 	stopHealth := startCrawlHealth(ctx, opspostgres.Store{Pool: pool}, cfg, slog.Default())
@@ -278,7 +281,10 @@ func registerPhotoSizes(queueAdapter *queue.River, pool *pgxpool.Pool, redisClie
 	if err != nil {
 		return err
 	}
-	quota := quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Recorder: quotaPostgres.CallLog{Pool: pool}}
+	quota, _, err := newQuotaGovernor(pool, redisClient, cfg)
+	if err != nil {
+		return err
+	}
 	handler := crawlapp.Sizes{
 		States: crawlpostgres.EntityStates{DB: pool},
 		Store:  catalogpostgres.ResolvedSizes{Repository: catalogRepository, Pool: pool, Publish: publishSizesResolved},
@@ -300,7 +306,7 @@ func registerPhotoSizes(queueAdapter *queue.River, pool *pgxpool.Pool, redisClie
 		Flickr: photoFacetClient{
 			Pool: pool, Client: client,
 			NodeID: nodeID(cfg),
-			Quota:  quotaRedis.Governor{Client: redisClient, Prefix: cfg.Redis.Prefix, Budgets: quotaPostgres.Budgets{Pool: pool}, Recorder: quotaPostgres.CallLog{Pool: pool}},
+			Quota:  quota,
 		},
 	}
 	return queueAdapter.RegisterWithOptions(scheduleriver.PhotoFacetJobKind, func(ctx context.Context, job queue.Job) error {
