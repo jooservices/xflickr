@@ -43,7 +43,7 @@ func (r fakeStoreRow) Scan(dest ...any) error {
 	if r.err != nil {
 		return r.err
 	}
-	*(dest[0].(*int64)) = r.value
+	*dest[0].(*int64) = r.value
 	return nil
 }
 

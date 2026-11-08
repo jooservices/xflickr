@@ -80,10 +80,7 @@ func (f fakeSearch) DocumentCount(context.Context) (int64, error) { return f.doc
 func (f fakeSearch) StoreBytes(context.Context) (int64, error)    { return f.store, nil }
 
 func TestSearchReaderFetchesStats(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/xflickr_*/_stats/docs,store" && r.URL.Path != "/_all/_stats/docs,store" {
-			// prefix path includes star
-		}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"_all":{"primaries":{"docs":{"count":9},"store":{"size_in_bytes":100}}}}`))
 	}))
 	t.Cleanup(server.Close)

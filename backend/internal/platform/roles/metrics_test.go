@@ -45,7 +45,7 @@ func TestBuildMetricsCollectorsWithAndWithoutGrowth(t *testing.T) {
 	}
 }
 
-func TestStartMetricsCollectionWithCancelledContext(t *testing.T) {
+func TestStartMetricsCollectionWithCancelledContext(_ *testing.T) {
 	cfg := config.Config{Node: config.NodeConfig{ID: "node-test"}}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

@@ -180,4 +180,5 @@ type fakeSearchErr struct{}
 func (fakeSearchErr) DocumentCount(context.Context) (int64, error) {
 	return 0, errors.New("search down")
 }
+
 func (fakeSearchErr) StoreBytes(context.Context) (int64, error) { return 0, errors.New("search down") }

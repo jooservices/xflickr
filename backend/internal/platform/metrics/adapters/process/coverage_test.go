@@ -29,7 +29,7 @@ func TestProcessConstructorAndName(t *testing.T) {
 	}
 }
 
-func TestMiddlewareNilCounterAndZeroContentLength(t *testing.T) {
+func TestMiddlewareNilCounterAndZeroContentLength(_ *testing.T) {
 	handler := process.Middleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
