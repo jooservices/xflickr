@@ -25,7 +25,12 @@ Credentials live in the private `Workspaces/.env.docker`. Never print it, never 
 6. The Flickr API key and secret are entered only in the application UI (setup wizard and Keys screen), stored encrypted. There is no CLI or `.env` path for them and none may be added.
 7. Ollama (captions, embeddings) runs natively on the host when available; tests use the fake Captioner and Embedder. AI features are for the owner only in release 1.
 8. Deployment to other servers is out of scope for release 1.
-9. Go and Node are installed natively on the VM. `docker/scripts/run.sh` runs them directly, so `make lint`, `make test` and `make check` work on the VM and on GitHub Actions. If `WORKSPACES_RUNTIME` is set it is used instead.
+9. Go 1.27.3 and Node are installed natively on the VM. `backend/go.mod` pins
+   the Go version used by GitHub Actions; the root `Dockerfile` uses the same
+   version for its build image. `make check-go-version` verifies those pins and
+   runs in CI. `docker/scripts/run.sh` runs Go and Node directly, so `make lint`,
+   `make test` and `make check` work on the VM and on GitHub Actions. If
+   `WORKSPACES_RUNTIME` is set it is used instead.
 10. Work is done in a git worktree per ticket with its own database. Create it from the Workspaces root with `python3 scripts/git/main.py create --repo JOOservices/projects/xflickr --company JOOservices --ticket JOOXF-<n> --description "<slug>" --base develop`, then run `python3 docker/scripts/worktree_env.py <id>` inside the worktree, where `<id>` is the ticket key in lowercase without the hyphen (`JOOXF-294` becomes `jooxf294`). That creates `xflickr_wt<id>`, writes a private `.env` with a fresh master key (both `DB_NAME`/`DB_USER` and the `DB_DATABASE`/`DB_USERNAME` aliases, plus the worktree path so a copied `.env` is refused), and refuses the live and shared test databases. Running it again keeps the master key.
 11. The develop runtime on the VM is a native process built from `backend/cmd/xflickr` with its own git-ignored `.env.develop` (it holds the encryption master key: never delete or replace it). It uses the live database `xflickr`. Only the develop runtime touches the live database. It is started by hand for now; `make develop-up` and `docs/develop-environment.md` still describe the older Docker flow of the WSL workstation and do not apply on the VM until JOOXF-315 (native develop runtime) replaces them.
 12. The mandatory Gitleaks scan before push reads `.gitleaksignore`, which lists the 24 reviewed false positives of the history by fingerprint (test constants, RFC 5849 example tokens, a generated OpenAPI blob). A new finding is fixed or rejected, never added there without a lead review of the value.
