@@ -9,6 +9,11 @@ well. The exporters use
 `OPENOBSERVE_URL` as the host, append `/api/<org>/v1/{logs,traces,metrics}`, and
 send HTTP Basic authentication plus the configured `stream-name` header.
 
+Durable operations metrics for the admin dashboard are collected separately by
+[`metrics.md`](metrics.md) into PostgreSQL (`metric_samples` /
+`metric_rollups`). That path does not replace the OpenTelemetry exporters
+above.
+
 ## Context fields and redaction
 
 `obs.WithFields(ctx, fields)` attaches the supported fields `node`, `role`,
