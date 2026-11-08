@@ -5,8 +5,8 @@ import { useBlocker, useNavigate } from 'react-router';
 import { useSession } from '../../entities';
 import { SESSION_QUERY_KEY } from '../../entities/session/SessionProvider';
 import { useI18n } from '../../shared';
-import type { Locale } from '../../shared/i18n';
-import { asResult, csrfFetchOptions, signalSessionExpired } from '../../features/auth/api';
+import type { Locale } from '../../shared';
+import { csrfFetchOptions, signalSessionExpired } from '../../features/auth/api';
 import {
   changeMyPassword,
   listMySessions,
@@ -15,7 +15,7 @@ import {
   revokeOtherSessions,
   updateMe,
 } from '../../shared/api/gen/default/default';
-import type { Session } from '../../shared/api/gen/models/session';
+import type { SessionSummary } from '../../shared/api/gen/models/sessionSummary';
 import styles from './ProfilePage.module.css';
 
 export function ProfilePage() {
@@ -25,7 +25,7 @@ export function ProfilePage() {
   const navigate = useNavigate();
   const user = session.status === 'authenticated' ? session.user : undefined;
   const [language, setLanguage] = useState<Locale>(locale);
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [sessionsError, setSessionsError] = useState(false);
   const [sessionsHasLoaded, setSessionsHasLoaded] = useState(false);
@@ -45,7 +45,7 @@ export function ProfilePage() {
     Boolean(currentPassword || newPassword || confirmPassword);
   const blocker = useBlocker(dirty);
   const [confirmAction, setConfirmAction] = useState<
-    { kind: 'one'; session: Session } | { kind: 'others' } | null
+    { kind: 'one'; session: SessionSummary } | { kind: 'others' } | null
   >(null);
   const confirmationTrigger = useRef<HTMLElement | null>(null);
   const sessionsHeading = useRef<HTMLHeadingElement>(null);
@@ -95,10 +95,10 @@ export function ProfilePage() {
 
   const loadSessions = useCallback(async () => {
     try {
-      const result = await listMySessions({ credentials: 'same-origin' });
+      const result = await listMySessions(undefined, { credentials: 'same-origin' });
       signalSessionExpired(result.status);
       if (result.status !== 200) throw new Error('Could not load sessions');
-      setSessions(result.data.items ?? []);
+      setSessions(result.data.data ?? []);
       setSessionsUpdatedAt(Date.now());
       setSessionsHasLoaded(true);
       setSessionsError(false);
@@ -111,7 +111,7 @@ export function ProfilePage() {
 
   useEffect(() => {
     let active = true;
-    void listMySessions({ credentials: 'same-origin' })
+    void listMySessions(undefined, { credentials: 'same-origin' })
       .then((result) => {
         if (!active) return;
         signalSessionExpired(result.status);
@@ -119,7 +119,7 @@ export function ProfilePage() {
           setSessionsError(true);
           return;
         }
-        setSessions(result.data.items ?? []);
+        setSessions(result.data.data ?? []);
         setSessionsUpdatedAt(Date.now());
         setSessionsHasLoaded(true);
         setSessionsError(false);
@@ -148,11 +148,11 @@ export function ProfilePage() {
     setSaving(true);
     setMessage('');
     try {
-      const result = asResult<typeof user>(await updateMe({ locale: language }));
+      const result = await updateMe({ locale: language });
       if (result.status !== 200) throw new Error('Could not save profile');
       setLocale(language);
-      if (result.data)
-        client.setQueryData(SESSION_QUERY_KEY, { status: 'authenticated', user: result.data });
+      if (result.data.data)
+        client.setQueryData(SESSION_QUERY_KEY, { status: 'authenticated', user: result.data.data });
       setMessage(t('profile.toast.saved'));
       setChangedElsewhere(false);
       if (typeof BroadcastChannel !== 'undefined') {
@@ -195,17 +195,13 @@ export function ProfilePage() {
           current_password: currentPassword,
           new_password: newPassword,
         },
-        csrfFetchOptions('POST'),
+        csrfFetchOptions('PUT'),
       );
       if (result.status === 401) {
         signalSessionExpired(result.status);
         return;
       }
-      if (
-        result.status === 400 &&
-        'code' in result.data &&
-        result.data.code === 'invalid_current_password'
-      ) {
+      if (result.status === 422 && result.data.type === '/problems/invalid-current-password') {
         setPasswordError(t('profile.password.error.current'));
         setCurrentPassword('');
         return;
@@ -230,12 +226,12 @@ export function ProfilePage() {
   }
 
   async function confirmRevokeOthers() {
-    const result = await revokeOtherSessions();
+    const result = await revokeOtherSessions({ scope: 'others' }, csrfFetchOptions('DELETE'));
     if (result.status === 204) await loadSessions();
     else setSessionsError(true);
   }
 
-  async function confirmRevokeOne(item: Session) {
+  async function confirmRevokeOne(item: SessionSummary) {
     const result = await revokeMySession(Number(item.id), csrfFetchOptions('DELETE'));
     signalSessionExpired(result.status);
     if (result.status === 204 || result.status === 404)

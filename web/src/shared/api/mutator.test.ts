@@ -41,14 +41,22 @@ describe('csrfFetch', () => {
     document.cookie = 'xf_csrf=expired; path=/';
     let calls = 0;
     server.use(
-      http.get('*/me', () => HttpResponse.json({})),
+      http.get('*/api/v1/me', () => HttpResponse.json({})),
       http.post('*/mutator-test', ({ request }) => {
         calls += 1;
         if (calls === 1) {
           expect(request.headers.get('X-CSRF-Token')).toBe('expired');
           document.cookie = 'xf_csrf=fresh; path=/';
           return HttpResponse.json(
-            { code: 'csrf_rejected', message: 'CSRF token is missing or invalid' },
+            {
+              type: '/problems/csrf-rejected',
+              title: 'CSRF rejected',
+              status: 403,
+              detail: 'CSRF token is missing or invalid',
+              instance: '/api/v1/test',
+              trace_id: 'test-trace',
+              errors: null,
+            },
             { status: 403 },
           );
         }
@@ -115,13 +123,13 @@ describe('customFetch response validation', () => {
   it('rejects successful API responses with a non-JSON content type', async () => {
     server.use(
       http.get(
-        '*/me',
+        '*/api/v1/me',
         () =>
           new HttpResponse('{"email":"a@b.c"}', {
             headers: { 'Content-Type': 'text/plain' },
           }),
       ),
     );
-    await expect(customFetch('/me')).rejects.toBeInstanceOf(ApiShapeError);
+    await expect(customFetch('/api/v1/me')).rejects.toBeInstanceOf(ApiShapeError);
   });
 });

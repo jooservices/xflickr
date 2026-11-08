@@ -204,7 +204,7 @@ describe('admin shell', () => {
     expect(screen.queryByTestId('admin-role-switch')).toBeNull();
   });
 
-  it('shows the /me failure banner with Retry and no rail', () => {
+  it('shows the /api/v1/me failure banner with Retry and no rail', () => {
     const retry = vi.fn();
     renderApp({ session: { status: 'error' }, path: '/admin', retry });
 

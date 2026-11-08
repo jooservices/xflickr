@@ -6,9 +6,8 @@ import { useTheme } from '../../shared/theme';
 import { useSession } from '../../entities';
 import { useQueryClient } from '@tanstack/react-query';
 import { SESSION_QUERY_KEY } from '../../entities/session/SessionProvider';
-import { asResult, fetchCsrfConfig, validatedReturnTo } from '../../features/auth/api';
+import { fetchCsrfConfig, validatedReturnTo } from '../../features/auth/api';
 import { login, register } from '../../shared/api/gen/default/default';
-import type { AuthUser } from '../../features/auth/api';
 import styles from '../auth.module.css';
 
 export function RegisterPage() {
@@ -112,49 +111,47 @@ export function RegisterPage() {
     }
     setBusy(true);
     try {
-      const created = asResult<AuthUser>(
-        await register({ email: email.trim(), password, accept_terms: true, locale }),
-      );
+      const created = await register({ email: email.trim(), password, accept_terms: true, locale });
       if (created.status === 409) {
-        const code = (created.data as { code?: string }).code;
-        if (code === 'registration_closed') {
+        if (created.data.type === '/problems/registration-closed') {
           setConfig((current) => ({
             ...(current ?? { registration_open: true }),
             registration_open: false,
           }));
-        } else {
+        } else if (created.data.type === '/problems/email-taken') {
           setFieldErrors({ email: t('auth.error.email-taken') });
           setEmailTaken(true);
           emailRef.current?.focus();
+        } else {
+          setError(t('auth.error.server'));
         }
         return;
       }
-      if (created.status === 400) {
-        const fields =
-          (created.data as { details?: { fields?: Record<string, string> } }).details?.fields ?? {};
+      if (created.status === 422) {
+        const fields = created.data.errors ?? {};
         const mapped = {
-          ...(fields.email
+          ...(fields.email?.length
             ? {
                 email: t(
-                  fields.email === 'required'
+                  fields.email[0].includes('required')
                     ? 'auth.validation.email-required'
                     : 'auth.validation.email-invalid',
                 ),
               }
             : {}),
-          ...(fields.password
+          ...(fields.password?.length
             ? {
                 password: t(
-                  fields.password === 'too_long'
+                  fields.password[0].includes('too long')
                     ? 'auth.validation.password-long'
-                    : fields.password === 'required'
+                    : fields.password[0].includes('required')
                       ? 'auth.validation.password-required'
                       : 'auth.validation.password-short',
                   { min: 8, max: 128 },
                 ),
               }
             : {}),
-          ...(fields.accept_terms ? { terms: t('auth.validation.terms-required') } : {}),
+          ...(fields.accept_terms?.length ? { terms: t('auth.validation.terms-required') } : {}),
         };
         setFieldErrors(mapped);
         if (mapped.email) emailRef.current?.focus();
@@ -166,13 +163,13 @@ export function RegisterPage() {
         setError(t('auth.error.server'));
         return;
       }
-      const loggedIn = asResult<AuthUser>(await login({ email: email.trim(), password }));
+      const loggedIn = await login({ email: email.trim(), password });
       setPassword('');
       setConfirm('');
-      if (loggedIn.status === 200) {
+      if (loggedIn.status === 201 && loggedIn.data.data?.user) {
         queryClient.setQueryData(SESSION_QUERY_KEY, {
           status: 'authenticated',
-          user: loggedIn.data,
+          user: loggedIn.data.data.user,
         });
         localStorage.setItem('xf.signed-in', String(Date.now()));
         void navigate('/onboarding', { replace: true });

@@ -5,8 +5,11 @@
  * HTTP API shared by the XFlickr backend and web client.
  * OpenAPI spec version: 0.0.0
  */
+import type { Links } from './links';
 
 export interface SharingSetting {
   enabled: boolean;
-  changed_at: string;
+  /** @nullable */
+  changed_at: string | null;
+  links: Links;
 }

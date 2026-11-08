@@ -5,8 +5,12 @@
  * HTTP API shared by the XFlickr backend and web client.
  * OpenAPI spec version: 0.0.0
  */
-import type { Session } from './session';
 
-export interface SessionList {
-  items: Session[];
-}
+export type ListMySessionsParams = {
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  cursor?: string;
+};

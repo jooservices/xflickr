@@ -5,12 +5,15 @@
  * HTTP API shared by the XFlickr backend and web client.
  * OpenAPI spec version: 0.0.0
  */
+import type { Links } from './links';
 
-export interface Session {
+export interface SessionSummary {
   id: string;
   current: boolean;
   user_agent_label: string;
   ip_masked: string;
   last_seen_at: string;
   created_at: string;
+  expires_at: string;
+  links: Links;
 }

@@ -3,15 +3,19 @@ import { http, HttpResponse } from 'msw/http';
 import { describe, expect, it, vi } from 'vitest';
 import { server } from '../../test/server';
 import { renderApp, userSession } from '../../test/render';
+import { restProblem, sessionCollectionEnvelope, userEnvelope } from '../../test/rest';
 
 describe('ProfilePage', () => {
   it('saves the selected language to the profile endpoint', async () => {
     let body: unknown;
-    const user = userSession.status === 'authenticated' ? userSession.user : {};
+    const user =
+      userSession.status === 'authenticated'
+        ? userSession.user
+        : { id: 2, email: 'anna@example.test', role: 'user' as const, locale: 'en' };
     server.use(
-      http.get('*/me/sessions', () =>
-        HttpResponse.json({
-          items: [
+      http.get('*/api/v1/me/sessions', () =>
+        HttpResponse.json(
+          sessionCollectionEnvelope([
             {
               id: '1',
               current: true,
@@ -20,16 +24,18 @@ describe('ProfilePage', () => {
               last_seen_at: '2026-10-25T10:00:00Z',
               created_at: '2026-10-20T10:00:00Z',
             },
-          ],
-        }),
+          ]),
+        ),
       ),
-      http.patch('*/me', async ({ request }) => {
+      http.patch('*/api/v1/me', async ({ request }) => {
         body = await request.json();
-        return HttpResponse.json({
-          ...user,
-          locale: 'vi',
-          created_at: '2026-10-01T00:00:00Z',
-        });
+        return HttpResponse.json(
+          userEnvelope({
+            ...user,
+            locale: 'vi',
+            created_at: '2026-10-01T00:00:00Z',
+          }),
+        );
       }),
     );
     renderApp({ session: userSession, path: '/profile' });
@@ -43,7 +49,7 @@ describe('ProfilePage', () => {
   });
 
   it('opens the session-expired dialog when an account action returns 401', async () => {
-    server.use(http.patch('*/me', () => new HttpResponse(null, { status: 401 })));
+    server.use(http.patch('*/api/v1/me', () => new HttpResponse(null, { status: 401 })));
     renderApp({ session: userSession, path: '/profile' });
     fireEvent.change(await screen.findByTestId('profile-account-language'), {
       target: { value: 'vi' },
@@ -53,7 +59,7 @@ describe('ProfilePage', () => {
   });
 
   it('announces a locale save failure while retaining the selected language', async () => {
-    server.use(http.patch('*/me', () => new HttpResponse(null, { status: 500 })));
+    server.use(http.patch('*/api/v1/me', () => new HttpResponse(null, { status: 500 })));
     renderApp({ session: userSession, path: '/profile' });
     const language = await screen.findByTestId('profile-account-language');
     fireEvent.change(language, { target: { value: 'vi' } });
@@ -70,11 +76,11 @@ describe('ProfilePage', () => {
   it('shows session loading errors with an independent retry control', async () => {
     let loads = 0;
     server.use(
-      http.get('*/me/sessions', () => {
+      http.get('*/api/v1/me/sessions', () => {
         loads += 1;
         return loads === 1
           ? new HttpResponse(null, { status: 500 })
-          : HttpResponse.json({ items: [] });
+          : HttpResponse.json(sessionCollectionEnvelope([]));
       }),
     );
     renderApp({ session: userSession, path: '/profile' });
@@ -86,7 +92,7 @@ describe('ProfilePage', () => {
   });
 
   it('shows a card error when loading sessions rejects at the network boundary', async () => {
-    server.use(http.get('*/me/sessions', () => HttpResponse.error()));
+    server.use(http.get('*/api/v1/me/sessions', () => HttpResponse.error()));
     renderApp({ session: userSession, path: '/profile' });
     expect(await screen.findByTestId('profile-error-sessions')).toHaveTextContent(
       'Could not load Active sessions',
@@ -94,7 +100,9 @@ describe('ProfilePage', () => {
   });
 
   it('validates password confirmation before sending a request', async () => {
-    server.use(http.get('*/me/sessions', () => HttpResponse.json({ items: [] })));
+    server.use(
+      http.get('*/api/v1/me/sessions', () => HttpResponse.json(sessionCollectionEnvelope([]))),
+    );
     renderApp({ session: userSession, path: '/profile' });
     fireEvent.change(await screen.findByTestId('profile-password-current'), {
       target: { value: 'oldpassword' },
@@ -124,7 +132,7 @@ describe('ProfilePage', () => {
   });
 
   it('updates the password, clears the fields, and refreshes sessions', async () => {
-    server.use(http.post('*/me/password', () => new HttpResponse(null, { status: 204 })));
+    server.use(http.put('*/api/v1/me/password', () => new HttpResponse(null, { status: 204 })));
     renderApp({ session: userSession, path: '/profile' });
     fireEvent.change(await screen.findByTestId('profile-password-current'), {
       target: { value: 'old-password' },
@@ -142,8 +150,8 @@ describe('ProfilePage', () => {
 
   it('shows a current-password field error for invalid_current_password', async () => {
     server.use(
-      http.post('*/me/password', () =>
-        HttpResponse.json({ code: 'invalid_current_password' }, { status: 400 }),
+      http.put('*/api/v1/me/password', () =>
+        HttpResponse.json(restProblem('/problems/invalid-current-password', 422), { status: 422 }),
       ),
     );
     renderApp({ session: userSession, path: '/profile' });
@@ -164,7 +172,7 @@ describe('ProfilePage', () => {
   });
 
   it('opens the expired-session dialog when password change returns 401', async () => {
-    server.use(http.post('*/me/password', () => new HttpResponse(null, { status: 401 })));
+    server.use(http.put('*/api/v1/me/password', () => new HttpResponse(null, { status: 401 })));
     renderApp({ session: userSession, path: '/profile' });
     fireEvent.change(await screen.findByTestId('profile-password-current'), {
       target: { value: 'old-password' },
@@ -211,11 +219,11 @@ describe('ProfilePage', () => {
   it('keeps the last sessions visible and marks them stale after a failed focus refresh', async () => {
     let calls = 0;
     server.use(
-      http.get('*/me/sessions', () => {
+      http.get('*/api/v1/me/sessions', () => {
         calls += 1;
         return calls === 1
-          ? HttpResponse.json({
-              items: [
+          ? HttpResponse.json(
+              sessionCollectionEnvelope([
                 {
                   id: '1',
                   current: true,
@@ -224,8 +232,8 @@ describe('ProfilePage', () => {
                   last_seen_at: '2026-10-25T10:00:00Z',
                   created_at: '2026-10-20T10:00:00Z',
                 },
-              ],
-            })
+              ]),
+            )
           : new HttpResponse(null, { status: 500 });
       }),
     );
@@ -240,7 +248,7 @@ describe('ProfilePage', () => {
   });
 
   it('shows a general error when the password service fails', async () => {
-    server.use(http.post('*/me/password', () => new HttpResponse(null, { status: 500 })));
+    server.use(http.put('*/api/v1/me/password', () => new HttpResponse(null, { status: 500 })));
     renderApp({ session: userSession, path: '/profile' });
     fireEvent.change(await screen.findByTestId('profile-password-current'), {
       target: { value: 'old-password' },
@@ -259,9 +267,9 @@ describe('ProfilePage', () => {
 
   it('revokes one session and other sessions after confirmation', async () => {
     server.use(
-      http.get('*/me/sessions', () =>
-        HttpResponse.json({
-          items: [
+      http.get('*/api/v1/me/sessions', () =>
+        HttpResponse.json(
+          sessionCollectionEnvelope([
             {
               id: '1',
               current: true,
@@ -278,10 +286,10 @@ describe('ProfilePage', () => {
               last_seen_at: '2026-10-24T10:00:00Z',
               created_at: '2026-10-19T10:00:00Z',
             },
-          ],
-        }),
+          ]),
+        ),
       ),
-      http.delete('*/me/sessions/2', () => new HttpResponse(null, { status: 204 })),
+      http.delete('*/api/v1/me/sessions/2', () => new HttpResponse(null, { status: 204 })),
     );
     renderApp({ session: userSession, path: '/profile' });
     fireEvent.click(await screen.findByTestId('profile-session-revoke-2'));
@@ -295,9 +303,9 @@ describe('ProfilePage', () => {
   it('revokes all other sessions after confirmation', async () => {
     let revokeOthers = false;
     server.use(
-      http.get('*/me/sessions', () =>
-        HttpResponse.json({
-          items: [
+      http.get('*/api/v1/me/sessions', () =>
+        HttpResponse.json(
+          sessionCollectionEnvelope([
             {
               id: '1',
               current: true,
@@ -314,10 +322,10 @@ describe('ProfilePage', () => {
               last_seen_at: '2026-10-24T10:00:00Z',
               created_at: '2026-10-19T10:00:00Z',
             },
-          ],
-        }),
+          ]),
+        ),
       ),
-      http.delete('*/auth/sessions', () => {
+      http.delete('*/api/v1/me/sessions', () => {
         revokeOthers = true;
         return new HttpResponse(null, { status: 204 });
       }),
@@ -332,9 +340,9 @@ describe('ProfilePage', () => {
 
   it('keeps a session after revoke failure and reports the action error', async () => {
     server.use(
-      http.get('*/me/sessions', () =>
-        HttpResponse.json({
-          items: [
+      http.get('*/api/v1/me/sessions', () =>
+        HttpResponse.json(
+          sessionCollectionEnvelope([
             {
               id: '1',
               current: true,
@@ -351,10 +359,10 @@ describe('ProfilePage', () => {
               last_seen_at: '2026-10-24T10:00:00Z',
               created_at: '2026-10-19T10:00:00Z',
             },
-          ],
-        }),
+          ]),
+        ),
       ),
-      http.delete('*/me/sessions/2', () => new HttpResponse(null, { status: 500 })),
+      http.delete('*/api/v1/me/sessions/2', () => new HttpResponse(null, { status: 500 })),
     );
     renderApp({ session: userSession, path: '/profile' });
     fireEvent.click(await screen.findByTestId('profile-session-revoke-2'));
@@ -365,9 +373,9 @@ describe('ProfilePage', () => {
 
   it('traps focus in the confirmation dialog and closes on Escape', async () => {
     server.use(
-      http.get('*/me/sessions', () =>
-        HttpResponse.json({
-          items: [
+      http.get('*/api/v1/me/sessions', () =>
+        HttpResponse.json(
+          sessionCollectionEnvelope([
             {
               id: '1',
               current: true,
@@ -384,8 +392,8 @@ describe('ProfilePage', () => {
               last_seen_at: '2026-10-24T10:00:00Z',
               created_at: '2026-10-19T10:00:00Z',
             },
-          ],
-        }),
+          ]),
+        ),
       ),
     );
     renderApp({ session: userSession, path: '/profile' });
@@ -406,9 +414,9 @@ describe('ProfilePage', () => {
 
   it('shows an error when revoking other sessions fails', async () => {
     server.use(
-      http.get('*/me/sessions', () =>
-        HttpResponse.json({
-          items: [
+      http.get('*/api/v1/me/sessions', () =>
+        HttpResponse.json(
+          sessionCollectionEnvelope([
             {
               id: '1',
               current: true,
@@ -425,10 +433,10 @@ describe('ProfilePage', () => {
               last_seen_at: '2026-10-24T10:00:00Z',
               created_at: '2026-10-19T10:00:00Z',
             },
-          ],
-        }),
+          ]),
+        ),
       ),
-      http.delete('*/auth/sessions', () => new HttpResponse(null, { status: 500 })),
+      http.delete('*/api/v1/me/sessions', () => new HttpResponse(null, { status: 500 })),
     );
     renderApp({ session: userSession, path: '/profile' });
     await screen.findByTestId('profile-session-row-2');
@@ -442,8 +450,8 @@ describe('ProfilePage', () => {
   it('signs out through the logout endpoint and clears the session cache', async () => {
     let loggedOut = false;
     server.use(
-      http.get('*/me/sessions', () => HttpResponse.json({ items: [] })),
-      http.post('*/auth/logout', () => {
+      http.get('*/api/v1/me/sessions', () => HttpResponse.json(sessionCollectionEnvelope([]))),
+      http.delete('*/api/v1/sessions/current', () => {
         loggedOut = true;
         return new HttpResponse(null, { status: 204 });
       }),

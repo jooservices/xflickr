@@ -5,6 +5,7 @@
  * HTTP API shared by the XFlickr backend and web client.
  * OpenAPI spec version: 0.0.0
  */
+import type { Links } from './links';
 
 export interface AuthConfig {
   registration_open: boolean;
@@ -15,4 +16,5 @@ export interface AuthConfig {
   password_min: number;
   /** @minimum 1 */
   password_max: number;
+  links: Links;
 }

@@ -6,8 +6,10 @@ import { server } from '../../test/server';
 import { SessionProvider, fetchSession } from './SessionProvider';
 import { useSession } from './model';
 import type { ReactNode } from 'react';
+import { userEnvelope } from '../../test/rest';
+import type { RestUser } from '../../test/rest';
 
-const me = {
+const me: RestUser = {
   id: 1,
   email: 'a@x.test',
   role: 'admin',
@@ -17,7 +19,7 @@ const me = {
 
 describe('fetchSession', () => {
   it('maps 200 to an authenticated session with the role', async () => {
-    server.use(http.get('*/me', () => HttpResponse.json(me)));
+    server.use(http.get('*/api/v1/me', () => HttpResponse.json(userEnvelope(me))));
 
     await expect(fetchSession()).resolves.toEqual({
       status: 'authenticated',
@@ -26,10 +28,10 @@ describe('fetchSession', () => {
   });
 
   it('maps 401 to unauthenticated and any other status to an error', async () => {
-    server.use(http.get('*/me', () => new HttpResponse(null, { status: 401 })));
+    server.use(http.get('*/api/v1/me', () => new HttpResponse(null, { status: 401 })));
     await expect(fetchSession()).resolves.toEqual({ status: 'unauthenticated' });
 
-    server.use(http.get('*/me', () => new HttpResponse(null, { status: 503 })));
+    server.use(http.get('*/api/v1/me', () => new HttpResponse(null, { status: 503 })));
     await expect(fetchSession()).rejects.toThrow(/503/);
   });
 });
@@ -46,7 +48,7 @@ function wrapper({ children }: { children: ReactNode }) {
 
 describe('SessionProvider', () => {
   it('goes from loading to the signed-in role', async () => {
-    server.use(http.get('*/me', () => HttpResponse.json(me)));
+    server.use(http.get('*/api/v1/me', () => HttpResponse.json(userEnvelope(me))));
     render(
       <SessionProvider>
         <Probe />
@@ -59,7 +61,7 @@ describe('SessionProvider', () => {
   });
 
   it('reports an error and recovers on retry', async () => {
-    server.use(http.get('*/me', () => new HttpResponse(null, { status: 500 })));
+    server.use(http.get('*/api/v1/me', () => new HttpResponse(null, { status: 500 })));
     function Retrying() {
       const { session, retry } = useSession();
       return (
@@ -76,7 +78,7 @@ describe('SessionProvider', () => {
     );
     await screen.findByText('error');
 
-    server.use(http.get('*/me', () => HttpResponse.json(me)));
+    server.use(http.get('*/api/v1/me', () => HttpResponse.json(userEnvelope(me))));
     screen.getByRole('button').click();
 
     await waitFor(() => {

@@ -20,16 +20,16 @@ function isCsrfRejection(response: Response): Promise<boolean> {
       (body: unknown) =>
         typeof body === 'object' &&
         body !== null &&
-        'code' in body &&
-        body.code === 'csrf_rejected',
+        'type' in body &&
+        body.type === '/problems/csrf-rejected',
     )
     .catch(() => false);
 }
 
 function shouldSignalSessionExpired(input: RequestInfo | URL): boolean {
-  const path =
-    typeof input === 'string' ? input : input instanceof URL ? input.pathname : input.url;
-  return path !== '/auth/login' && path !== '/auth/register' && !path.startsWith('/auth/passkey/');
+  const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  const path = new URL(raw, globalThis.location?.origin ?? 'http://localhost').pathname;
+  return path !== '/api/v1/sessions' && path !== '/api/v1/users';
 }
 
 export function signalSessionExpired(status: number): void {
@@ -61,7 +61,7 @@ export async function csrfFetch(
 
   if (unsafe && (await isCsrfRejection(response))) {
     try {
-      await fetch('/me', { method: 'GET', credentials: 'same-origin' });
+      await fetch('/api/v1/me', { method: 'GET', credentials: 'same-origin' });
     } catch {
       // The original request still gets its single retry with the current cookie.
     }

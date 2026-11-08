@@ -57,7 +57,7 @@ export function shouldLandOnAdmin(session: Session, pathname: string): boolean {
 type AdminGuardProps = {
   /** Rendered while the role is unknown: only the top bar and a spinner. */
   loading: ReactElement;
-  /** Rendered when `GET /me` failed for a reason other than 401. */
+  /** Rendered when `GET /api/v1/me` failed for a reason other than 401. */
   failed: ReactElement;
   /** Rendered in place of the admin shell for a signed-in non-admin. */
   forbidden: ReactElement;

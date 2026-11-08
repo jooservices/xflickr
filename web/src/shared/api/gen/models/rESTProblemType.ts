@@ -27,4 +27,9 @@ export const RESTProblemType = {
   '/problems/malformed-request': '/problems/malformed-request',
   '/problems/unsupported-media-type': '/problems/unsupported-media-type',
   '/problems/internal-error': '/problems/internal-error',
+  '/problems/email-taken': '/problems/email-taken',
+  '/problems/registration-closed': '/problems/registration-closed',
+  '/problems/invalid-current-password': '/problems/invalid-current-password',
+  '/problems/csrf-rejected': '/problems/csrf-rejected',
+  '/problems/method-not-allowed': '/problems/method-not-allowed',
 } as const;

@@ -3,18 +3,12 @@ import { http, HttpResponse } from 'msw/http';
 import { describe, expect, it } from 'vitest';
 import { server } from '../../test/server';
 import { renderApp } from '../../test/render';
+import { authenticationOptions, restProblem, sessionEnvelope, userEnvelope } from '../../test/rest';
 
 describe('RegisterPage', () => {
   it('validates the password and required terms before submitting', async () => {
     server.use(
-      http.get('*/auth/config', () =>
-        HttpResponse.json({
-          registration_open: true,
-          passkey_enabled: false,
-          password_min: 8,
-          password_max: 128,
-        }),
-      ),
+      http.get('*/api/v1/authentication-options', () => HttpResponse.json(authenticationOptions())),
     );
     renderApp({ session: { status: 'unauthenticated' }, path: '/register' });
     fireEvent.change(await screen.findByTestId('auth-register-email'), {
@@ -27,13 +21,8 @@ describe('RegisterPage', () => {
 
   it('shows the closed-registration state from public configuration', async () => {
     server.use(
-      http.get('*/auth/config', () =>
-        HttpResponse.json({
-          registration_open: false,
-          passkey_enabled: false,
-          password_min: 8,
-          password_max: 128,
-        }),
+      http.get('*/api/v1/authentication-options', () =>
+        HttpResponse.json(authenticationOptions({ registration_open: false })),
       ),
     );
     renderApp({ session: { status: 'unauthenticated' }, path: '/register' });
@@ -44,15 +33,14 @@ describe('RegisterPage', () => {
 
   it('maps server validation details to field errors and focuses the first invalid field', async () => {
     server.use(
-      http.post('*/auth/register', () =>
+      http.post('*/api/v1/users', () =>
         HttpResponse.json(
-          {
-            code: 'validation_failed',
-            details: {
-              fields: { email: 'invalid', password: 'too_short', accept_terms: 'required' },
-            },
-          },
-          { status: 400 },
+          restProblem('validation-error', 422, {
+            email: ['Enter a valid email'],
+            password: ['Password is too short'],
+            accept_terms: ['Terms must be accepted'],
+          }),
+          { status: 422 },
         ),
       ),
     );
@@ -80,8 +68,8 @@ describe('RegisterPage', () => {
 
   it('changes to the closed state after registration_closed from the server', async () => {
     server.use(
-      http.post('*/auth/register', () =>
-        HttpResponse.json({ code: 'registration_closed' }, { status: 409 }),
+      http.post('*/api/v1/users', () =>
+        HttpResponse.json(restProblem('/problems/registration-closed', 409), { status: 409 }),
       ),
     );
     renderApp({ session: { status: 'unauthenticated' }, path: '/register' });
@@ -124,26 +112,35 @@ describe('RegisterPage', () => {
   it('registers and signs in before sending the new user to onboarding', async () => {
     const { router } = renderApp({ session: { status: 'unauthenticated' }, path: '/register' });
     server.use(
-      http.post('*/auth/register', () =>
+      http.post('*/api/v1/users', () =>
         HttpResponse.json(
-          {
-            id: 9,
-            email: 'new@example.test',
-            role: 'user',
-            locale: 'en',
-            created_at: '2026-01-01T00:00:00Z',
-          },
+          userEnvelope(
+            {
+              id: 9,
+              email: 'new@example.test',
+              role: 'user',
+              locale: 'en',
+              created_at: '2026-01-01T00:00:00Z',
+            },
+            201,
+          ),
           { status: 201 },
         ),
       ),
-      http.post('*/auth/login', () =>
-        HttpResponse.json({
-          id: 9,
-          email: 'new@example.test',
-          role: 'user',
-          locale: 'en',
-          created_at: '2026-01-01T00:00:00Z',
-        }),
+      http.post('*/api/v1/sessions', () =>
+        HttpResponse.json(
+          sessionEnvelope(
+            { id: 'session-9', current: true },
+            {
+              id: 9,
+              email: 'new@example.test',
+              role: 'user',
+              locale: 'en',
+              created_at: '2026-01-01T00:00:00Z',
+            },
+          ),
+          { status: 201 },
+        ),
       ),
     );
     fireEvent.change(await screen.findByTestId('auth-register-email'), {
@@ -161,7 +158,11 @@ describe('RegisterPage', () => {
   });
 
   it('shows the email conflict returned by the server', async () => {
-    server.use(http.post('*/auth/register', () => new HttpResponse(null, { status: 409 })));
+    server.use(
+      http.post('*/api/v1/users', () =>
+        HttpResponse.json(restProblem('/problems/email-taken', 409), { status: 409 }),
+      ),
+    );
     const { router } = renderApp({ session: { status: 'unauthenticated' }, path: '/register' });
     fireEvent.change(await screen.findByTestId('auth-register-email'), {
       target: { value: 'new@example.test' },
@@ -215,19 +216,22 @@ describe('RegisterPage', () => {
   it('keeps the created account and shows sign-in when automatic login fails', async () => {
     const { router } = renderApp({ session: { status: 'unauthenticated' }, path: '/register' });
     server.use(
-      http.post('*/auth/register', () =>
+      http.post('*/api/v1/users', () =>
         HttpResponse.json(
-          {
-            id: 10,
-            email: 'new@example.test',
-            role: 'user',
-            locale: 'en',
-            created_at: '2026-01-01T00:00:00Z',
-          },
+          userEnvelope(
+            {
+              id: 10,
+              email: 'new@example.test',
+              role: 'user',
+              locale: 'en',
+              created_at: '2026-01-01T00:00:00Z',
+            },
+            201,
+          ),
           { status: 201 },
         ),
       ),
-      http.post('*/auth/login', () => new HttpResponse(null, { status: 500 })),
+      http.post('*/api/v1/sessions', () => new HttpResponse(null, { status: 500 })),
     );
     fireEvent.change(await screen.findByTestId('auth-register-email'), {
       target: { value: 'new@example.test' },

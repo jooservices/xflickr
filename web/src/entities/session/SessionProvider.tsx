@@ -7,18 +7,20 @@ import type { Session, SessionValue } from './model';
 
 export const SESSION_QUERY_KEY = ['session', 'me'] as const;
 
-/** GET /me once; 401 means "no session", any other failure is an error to retry. */
+/** GET /api/v1/me once; 401 means "no session", any other failure is an error to retry. */
 export async function fetchSession(signal?: AbortSignal): Promise<Session> {
   const response = await getMe({ signal });
   if (response.status === 200) {
-    const { id, email, role, locale } = response.data;
+    const user = response.data.data;
+    if (!user) throw new Error('GET /api/v1/me returned no user');
+    const { id, email, role, locale } = user;
     return { status: 'authenticated', user: { id, email, role, locale } };
   }
   if (response.status === 401) {
     return { status: 'unauthenticated' };
   }
   // The generated type only lists 200 and 401; a 5xx still arrives here at runtime.
-  throw new Error(`GET /me answered ${String((response as { status: number }).status)}`);
+  throw new Error(`GET /api/v1/me answered ${String((response as { status: number }).status)}`);
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {

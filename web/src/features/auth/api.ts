@@ -53,12 +53,13 @@ export async function fetchCsrfConfig(): Promise<{
 }> {
   const response = await getAuthConfig();
   if (response.status !== 200) throw new Error('Auth config unavailable');
+  const options = response.data.data;
   const sameOriginPath = (value: string | undefined) =>
     value?.startsWith('/') && !value.startsWith('//') && !value.includes('\\') ? value : undefined;
   return {
-    registration_open: response.data.registration_open ?? true,
-    passkey_enabled: response.data.passkey_enabled ?? false,
-    terms_url: sameOriginPath(response.data.terms_url),
-    privacy_url: sameOriginPath(response.data.privacy_url),
+    registration_open: options?.registration_open ?? true,
+    passkey_enabled: options?.passkey_enabled ?? false,
+    terms_url: sameOriginPath(options?.terms_url),
+    privacy_url: sameOriginPath(options?.privacy_url),
   };
 }

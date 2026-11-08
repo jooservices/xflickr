@@ -5,50 +5,269 @@
  * HTTP API shared by the XFlickr backend and web client.
  * OpenAPI spec version: 0.0.0
  */
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import type {
+  DataTag,
+  DefinedInitialDataOptions,
+  DefinedUseQueryResult,
   MutationFunction,
   QueryClient,
+  QueryFunction,
+  QueryKey,
+  UndefinedInitialDataOptions,
   UseMutationOptions,
   UseMutationResult,
+  UseQueryOptions,
+  UseQueryResult,
 } from '@tanstack/react-query';
 
-import type { Error, SharingSetting, UpdateSharingRequest } from '../models';
+import type { RESTProblem, SharingEnvelope, UpdateSharingRequest } from '../models';
 
 import { customFetch } from '../../mutator';
 
+export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
+export type HTTPStatusCode2xx = 200 | 201 | 202 | 203 | 204 | 205 | 206 | 207;
+export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
+export type HTTPStatusCode4xx =
+  | 400
+  | 401
+  | 402
+  | 403
+  | 404
+  | 405
+  | 406
+  | 407
+  | 408
+  | 409
+  | 410
+  | 411
+  | 412
+  | 413
+  | 414
+  | 415
+  | 416
+  | 417
+  | 418
+  | 419
+  | 420
+  | 421
+  | 422
+  | 423
+  | 424
+  | 426
+  | 428
+  | 429
+  | 431
+  | 451;
+export type HTTPStatusCode5xx = 500 | 501 | 502 | 503 | 504 | 505 | 507 | 511;
+export type HTTPStatusCodes =
+  HTTPStatusCode1xx | HTTPStatusCode2xx | HTTPStatusCode3xx | HTTPStatusCode4xx | HTTPStatusCode5xx;
+
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
+const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
+  const result = { queryKey } as T & { queryKey: K };
+  for (const key of Object.keys(query)) {
+    // The explicit queryKey always wins, matching the previous
+    // `{ ...query, queryKey }` spread where it was set last.
+    if (key === 'queryKey') continue;
+    Object.defineProperty(result, key, {
+      enumerable: true,
+      configurable: true,
+      get: () => (query as Record<string, unknown>)[key],
+    });
+  }
+  return result;
+};
+
+export type getMeSharingResponse200 = {
+  data: SharingEnvelope;
+  status: 200;
+};
+
+export type getMeSharingResponse401 = {
+  data: RESTProblem;
+  status: 401;
+};
+
+export type getMeSharingResponseDefault = {
+  data: RESTProblem;
+  status: Exclude<HTTPStatusCodes, 200 | 401>;
+};
+
+export type getMeSharingResponseSuccess = getMeSharingResponse200 & {
+  headers: Headers;
+};
+export type getMeSharingResponseError = (getMeSharingResponse401 | getMeSharingResponseDefault) & {
+  headers: Headers;
+};
+
+export type getMeSharingResponse = getMeSharingResponseSuccess | getMeSharingResponseError;
+
+export const getGetMeSharingUrl = () => {
+  return `/api/v1/me/sharing`;
+};
+
+/**
+ * @summary Get the current user's sharing choice
+ */
+export const getMeSharing = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getMeSharingResponse> => {
+  return customFetch<getMeSharingResponse>(getGetMeSharingUrl(), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getGetMeSharingQueryKey = () => {
+  return [`/api/v1/me/sharing`] as const;
+};
+
+export const getGetMeSharingQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMeSharing>>,
+  TError = RESTProblem,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeSharing>>, TError, TData>>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetMeSharingQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMeSharing>>> = ({ signal }) =>
+    getMeSharing({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMeSharing>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetMeSharingQueryResult = NonNullable<Awaited<ReturnType<typeof getMeSharing>>>;
+export type GetMeSharingQueryError = RESTProblem;
+
+export function useGetMeSharing<
+  TData = Awaited<ReturnType<typeof getMeSharing>>,
+  TError = RESTProblem,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeSharing>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMeSharing>>,
+          TError,
+          Awaited<ReturnType<typeof getMeSharing>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetMeSharing<
+  TData = Awaited<ReturnType<typeof getMeSharing>>,
+  TError = RESTProblem,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeSharing>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMeSharing>>,
+          TError,
+          Awaited<ReturnType<typeof getMeSharing>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetMeSharing<
+  TData = Awaited<ReturnType<typeof getMeSharing>>,
+  TError = RESTProblem,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeSharing>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get the current user's sharing choice
+ */
+
+export function useGetMeSharing<
+  TData = Awaited<ReturnType<typeof getMeSharing>>,
+  TError = RESTProblem,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeSharing>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMeSharingQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 export type putMeSharingResponse200 = {
-  data: SharingSetting;
+  data: SharingEnvelope;
   status: 200;
 };
 
 export type putMeSharingResponse400 = {
-  data: Error;
+  data: RESTProblem;
   status: 400;
 };
 
 export type putMeSharingResponse401 = {
-  data: Error;
+  data: RESTProblem;
   status: 401;
+};
+
+export type putMeSharingResponse403 = {
+  data: RESTProblem;
+  status: 403;
+};
+
+export type putMeSharingResponse422 = {
+  data: RESTProblem;
+  status: 422;
+};
+
+export type putMeSharingResponseDefault = {
+  data: RESTProblem;
+  status: Exclude<HTTPStatusCodes, 200 | 400 | 401 | 403 | 422>;
 };
 
 export type putMeSharingResponseSuccess = putMeSharingResponse200 & {
   headers: Headers;
 };
-export type putMeSharingResponseError = (putMeSharingResponse400 | putMeSharingResponse401) & {
+export type putMeSharingResponseError = (
+  | putMeSharingResponse400
+  | putMeSharingResponse401
+  | putMeSharingResponse403
+  | putMeSharingResponse422
+  | putMeSharingResponseDefault
+) & {
   headers: Headers;
 };
 
 export type putMeSharingResponse = putMeSharingResponseSuccess | putMeSharingResponseError;
 
 export const getPutMeSharingUrl = () => {
-  return `/me/sharing`;
+  return `/api/v1/me/sharing`;
 };
 
 /**
- * @summary Update the current user's sharing choice
+ * @summary Replace the current user's sharing choice
  */
 export const putMeSharing = async (
   updateSharingRequest: UpdateSharingRequest,
@@ -83,7 +302,7 @@ export const putMeSharing = async (
 
 export const getPutMeSharingMutationKey = () => ['putMeSharing'] as const;
 
-export const getPutMeSharingMutationOptions = <TError = Error, TContext = unknown>(options?: {
+export const getPutMeSharingMutationOptions = <TError = RESTProblem, TContext = unknown>(options?: {
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof putMeSharing>>,
     TError,
@@ -118,13 +337,13 @@ export const getPutMeSharingMutationOptions = <TError = Error, TContext = unknow
 
 export type PutMeSharingMutationResult = NonNullable<Awaited<ReturnType<typeof putMeSharing>>>;
 export type PutMeSharingMutationBody = UpdateSharingRequest;
-export type PutMeSharingMutationError = Error;
+export type PutMeSharingMutationError = RESTProblem;
 export type PutMeSharingMutationVariables = { data: UpdateSharingRequest };
 
 /**
- * @summary Update the current user's sharing choice
+ * @summary Replace the current user's sharing choice
  */
-export const usePutMeSharing = <TError = Error, TContext = unknown>(
+export const usePutMeSharing = <TError = RESTProblem, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof putMeSharing>>,

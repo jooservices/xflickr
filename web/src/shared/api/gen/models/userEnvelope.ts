@@ -5,7 +5,9 @@
  * HTTP API shared by the XFlickr backend and web client.
  * OpenAPI spec version: 0.0.0
  */
+import type { RESTEnvelope } from './rESTEnvelope';
+import type { User } from './user';
 
-export type LoginLockedDetails = {
-  locked_until: string;
+export type UserEnvelope = RESTEnvelope & {
+  data?: User;
 };
