@@ -2,6 +2,8 @@ package roles
 
 import (
 	"context"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +23,7 @@ func TestAPIServerForwardsSharingAndOps(t *testing.T) {
 	server := apiServer{
 		Sharing: sharinghttp.Handler{
 			Change:  sharingapp.Change{Repository: repository},
+			Read:    sharingapp.Read{Repository: repository},
 			ActorID: func(context.Context) (int64, bool) { return 17, true },
 		},
 		Ops: opshttp.Handler{
@@ -33,9 +36,20 @@ func TestAPIServerForwardsSharingAndOps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sharing, ok := sharingResponse.(gen.PutMeSharing200JSONResponse)
-	if !ok || !sharing.Enabled || !repository.got.Enabled || repository.got.UserID != 17 {
-		t.Fatalf("sharing response=%T %+v saved=%+v", sharingResponse, sharing, repository.got)
+	sharingWriter := httptest.NewRecorder()
+	if err := sharingResponse.VisitPutMeSharingResponse(sharingWriter); err != nil {
+		t.Fatal(err)
+	}
+	if sharingWriter.Code != 200 || !strings.Contains(sharingWriter.Body.String(), `"enabled":true`) || !repository.got.Enabled || repository.got.UserID != 17 {
+		t.Fatalf("sharing response=%T %s saved=%+v", sharingResponse, sharingWriter.Body.String(), repository.got)
+	}
+	readResponse, err := server.GetMeSharing(context.Background(), gen.GetMeSharingRequestObject{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readWriter := httptest.NewRecorder()
+	if err := readResponse.VisitGetMeSharingResponse(readWriter); err != nil || readWriter.Code != 200 || !strings.Contains(readWriter.Body.String(), `"enabled":true`) {
+		t.Fatalf("sharing read response=%T %s err=%v", readResponse, readWriter.Body.String(), err)
 	}
 
 	opsResponse, err := server.GetAdminOpsStatus(context.Background(), gen.GetAdminOpsStatusRequestObject{})
@@ -74,6 +88,10 @@ type sharingRepositoryStub struct{ got sharingdomain.Setting }
 func (r *sharingRepositoryStub) Set(_ context.Context, setting sharingdomain.Setting) (sharingdomain.Setting, error) {
 	r.got = setting
 	return setting, nil
+}
+
+func (r *sharingRepositoryStub) Get(_ context.Context, userID int64) (sharingdomain.Setting, error) {
+	return sharingdomain.Setting{UserID: userID, Enabled: r.got.Enabled, ChangedAt: r.got.ChangedAt}, nil
 }
 
 type opsStatusStub struct{ value ops.Status }

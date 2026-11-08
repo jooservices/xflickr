@@ -3,7 +3,6 @@ package http
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
+	"github.com/jooservices/xflickr/internal/platform/api/rest"
 	"github.com/jooservices/xflickr/internal/platform/obs"
 )
 
@@ -48,6 +48,8 @@ type SessionService interface {
 	Revoke(context.Context, string) error
 	RevokeOthers(context.Context, int64, []byte) error
 	List(context.Context, int64) ([]domain.Session, error)
+	ListPage(context.Context, int64, *app.SessionCursor, int) ([]domain.Session, error)
+	FindByID(context.Context, int64, int64) (domain.Session, error)
 	RevokeByID(context.Context, int64, int64) (bool, error)
 }
 
@@ -129,7 +131,7 @@ func CSRF(next http.Handler) http.Handler {
 			if _, ok := csrfCookie(r); !ok {
 				token, err := domain.NewOpaqueToken()
 				if err != nil {
-					writeJSONError(w, http.StatusInternalServerError, codeInternal, "Internal server error")
+					writeJSONError(w, r, http.StatusInternalServerError, codeInternal, "Internal server error")
 					return
 				}
 				SetCSRFCookie(w, token, time.Now().UTC().Add(domain.SessionLifetime))
@@ -139,7 +141,7 @@ func CSRF(next http.Handler) http.Handler {
 		}
 		cookie, ok := csrfCookie(r)
 		if !ok || !csrfTokensMatch(cookie, r.Header.Get(CSRFHeaderName)) {
-			writeJSONError(w, http.StatusForbidden, codeCSRFRejected, "CSRF token is missing or invalid")
+			writeJSONError(w, r, http.StatusForbidden, codeCSRFRejected, "CSRF token is missing or invalid")
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -186,25 +188,25 @@ func requirePrincipal(sessions SessionService, admin bool) func(http.Handler) ht
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if sessions == nil {
-				writeJSONError(w, http.StatusInternalServerError, codeInternal, "Internal server error")
+				writeJSONError(w, r, http.StatusInternalServerError, codeInternal, "Internal server error")
 				return
 			}
 			cookie, err := r.Cookie(SessionCookieName)
 			if err != nil || cookie.Value == "" {
-				writeJSONError(w, http.StatusUnauthorized, codeUnauthenticated, "Authentication required")
+				writeJSONError(w, r, http.StatusUnauthorized, codeUnauthenticated, "Authentication required")
 				return
 			}
 			result, err := sessions.Authenticate(r.Context(), cookie.Value)
 			if errors.Is(err, app.ErrUnauthenticated) {
-				writeJSONError(w, http.StatusUnauthorized, codeUnauthenticated, "Authentication required")
+				writeJSONError(w, r, http.StatusUnauthorized, codeUnauthenticated, "Authentication required")
 				return
 			}
 			if err != nil {
-				writeJSONError(w, http.StatusInternalServerError, codeInternal, "Internal server error")
+				writeJSONError(w, r, http.StatusInternalServerError, codeInternal, "Internal server error")
 				return
 			}
 			if admin && result.User.Role != domain.RoleAdmin {
-				writeJSONError(w, http.StatusForbidden, codeForbidden, "Administrator role required")
+				writeJSONError(w, r, http.StatusForbidden, codeForbidden, "Administrator role required")
 				return
 			}
 			if result.Slid {
@@ -303,19 +305,23 @@ func MaintainSessionCookies(sessions SessionService) gen.StrictMiddlewareFunc {
 			if err != nil || operationID != loginOperationID {
 				return response, err
 			}
-			user, ok := response.(gen.Login200JSONResponse)
-			if !ok {
+			issuer, ok := response.(interface {
+				issueSessionUserID() int64
+				setIssuedSession(domain.Session)
+			})
+			if !ok || issuer.issueSessionUserID() <= 0 {
 				return response, nil
 			}
 			if sessions == nil {
 				return nil, errors.New("identity: session service is required")
 			}
-			raw, session, csrf, err := sessions.Issue(ctx, user.ID, r.UserAgent(), clientIP(ctx))
+			raw, session, csrf, err := sessions.Issue(ctx, issuer.issueSessionUserID(), r.UserAgent(), clientIP(ctx))
 			if err != nil {
 				return nil, err
 			}
 			SetSessionCookie(w, raw, session.ExpiresAt)
 			SetCSRFCookie(w, csrf, session.ExpiresAt)
+			issuer.setIssuedSession(session)
 			return response, nil
 		}
 	}
@@ -334,8 +340,19 @@ func revokePresentedSession(ctx context.Context, w http.ResponseWriter, r *http.
 	return sessions.Revoke(ctx, cookie.Value)
 }
 
-func writeJSONError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(gen.Error{Code: code, Message: message})
+func writeJSONError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	slug := "internal-error"
+	switch {
+	case status == http.StatusUnauthorized:
+		slug = "unauthenticated"
+	case status == http.StatusForbidden && code == codeCSRFRejected:
+		slug = "csrf-rejected"
+	case status == http.StatusForbidden:
+		slug = "forbidden"
+	case status == http.StatusBadRequest:
+		slug = "malformed-request"
+	case status == http.StatusNotFound:
+		slug = "not-found"
+	}
+	writeIdentityProblem(w, r, rest.NewProblem(slug, message, nil))
 }

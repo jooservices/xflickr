@@ -93,6 +93,33 @@ func TestSetWithTransactionFake(t *testing.T) {
 	}
 }
 
+func TestGetDefaultAndStoredSettings(t *testing.T) {
+	now := time.Unix(30, 0).UTC()
+	for _, tc := range []struct {
+		name    string
+		row     rowStub
+		want    domain.Setting
+		wantErr bool
+	}{
+		{name: "default off", row: rowStub{err: pgx.ErrNoRows}, want: domain.Setting{UserID: 7}},
+		{name: "stored choice", row: rowStub{values: []any{int64(7), true, now}}, want: domain.Setting{UserID: 7, Enabled: true, ChangedAt: now}},
+		{name: "query error", row: rowStub{err: errors.New("query")}, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &Repository{run: func(_ context.Context, fn func(settingTx) error) error {
+				return fn(txStub{selectRow: tc.row})
+			}}
+			got, err := repo.Get(context.Background(), 7)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("Get() error = %v", err)
+			}
+			if !tc.wantErr && got != tc.want {
+				t.Fatalf("setting = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestNewAndSetValidation(t *testing.T) {
 	if _, err := New(nil); err == nil {
 		t.Fatal("expected missing pool error")
@@ -114,8 +141,17 @@ func TestNewAndSetValidation(t *testing.T) {
 	if _, err := (&Repository{run: func(context.Context, func(settingTx) error) error { return nil }}).Set(context.Background(), domain.Setting{}); err == nil {
 		t.Fatal("expected missing user error")
 	}
+	if _, err := (&Repository{run: func(context.Context, func(settingTx) error) error { return nil }}).Get(context.Background(), 0); err == nil {
+		t.Fatal("expected missing reader user error")
+	}
 	wantErr := errors.New("transaction")
 	if _, err := (&Repository{run: func(context.Context, func(settingTx) error) error { return wantErr }}).Set(context.Background(), domain.Setting{UserID: 1}); !errors.Is(err, wantErr) {
 		t.Fatalf("transaction error = %v", err)
+	}
+	if _, err := (&Repository{run: func(context.Context, func(settingTx) error) error { return wantErr }}).Get(context.Background(), 1); !errors.Is(err, wantErr) {
+		t.Fatalf("read transaction error = %v", err)
+	}
+	if _, err := (&Repository{run: func(context.Context, func(settingTx) error) error { return nil }}).Get(nil, 1); err == nil {
+		t.Fatal("expected missing reader context error")
 	}
 }

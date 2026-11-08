@@ -10,13 +10,12 @@ import (
 
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
-	identitydomain "github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
 	"github.com/jooservices/xflickr/internal/platform/api/rest"
 )
 
-// discoveryAuthentication is restricted to the additive operation. Old routes
-// keep their authentication and error representations unchanged.
+// discoveryAuthentication authenticates the public API entry point when a
+// browser session cookie is present.
 func discoveryAuthentication(sessions identityhttp.SessionService) gen.StrictMiddlewareFunc {
 	return func(next gen.StrictHandlerFunc, operation string) gen.StrictHandlerFunc {
 		if operation != "GetAPIEntry" {
@@ -65,7 +64,7 @@ func discoveryTraceID(ctx context.Context) string {
 }
 
 type discoveryResponse struct {
-	collections map[string]string
+	collections map[string]rest.Link
 	traceID     string
 }
 
@@ -75,16 +74,14 @@ func (r discoveryResponse) VisitGetAPIEntryResponse(w http.ResponseWriter) error
 }
 
 func (apiServer) GetAPIEntry(ctx context.Context, _ gen.GetAPIEntryRequestObject) (gen.GetAPIEntryResponseObject, error) {
-	collections := map[string]string{"authentication-options": "/auth/config"}
-	if principal, ok := identityhttp.PrincipalFrom(ctx); ok {
-		for relation, path := range map[string]string{"me": "/me", "events": "/events", "keys": "/keys", "flickr-accounts": "/flickr-accounts", "people": "/people", "albums": "/albums", "favorites": "/favorites"} {
-			collections[relation] = path
-		}
-		if principal.User.Role == identitydomain.RoleAdmin {
-			for relation, path := range map[string]string{"users": "/admin/users", "plans": "/admin/plans", "flags": "/admin/flags"} {
-				collections[relation] = path
-			}
-		}
+	collections := map[string]rest.Link{
+		"authentication-options": rest.NewLink("/api/v1/authentication-options", http.MethodGet),
+		"users":                  rest.NewLink("/api/v1/users", http.MethodPost),
+		"sessions":               rest.NewLink("/api/v1/sessions", http.MethodPost),
+	}
+	if _, ok := identityhttp.PrincipalFrom(ctx); ok {
+		collections["me"] = rest.NewLink("/api/v1/me", http.MethodGet)
+		collections["current-session"] = rest.NewLink("/api/v1/sessions/current", http.MethodGet)
 	}
 	return discoveryResponse{collections, discoveryTraceID(ctx)}, nil
 }

@@ -161,10 +161,10 @@ func TestServeWebAssets(t *testing.T) {
 		{name: "missing asset", method: http.MethodGet, path: "/assets/missing.js", status: http.StatusNotFound},
 		{name: "head", method: http.MethodHead, path: "/", status: http.StatusOK, navigation: true},
 		{name: "unsupported method", method: http.MethodPost, path: "/register", status: http.StatusNotFound},
-		{name: "unknown api path", method: http.MethodGet, path: "/keys/usage", body: `{"code":"not_found"}`, status: http.StatusNotFound, accept: "application/json"},
-		{name: "json client", method: http.MethodGet, path: "/keys/usage", body: `{"code":"not_found"}`, status: http.StatusNotFound, accept: "application/json"},
-		{name: "json client on index", method: http.MethodGet, path: "/", body: `{"code":"not_found"}`, status: http.StatusNotFound, accept: "application/json"},
-		{name: "backend only path", method: http.MethodGet, path: "/auth/nope", body: `{"code":"not_found"}`, status: http.StatusNotFound},
+		{name: "unknown api path", method: http.MethodGet, path: "/keys/usage", body: "/problems/not-found", status: http.StatusNotFound, accept: "application/json"},
+		{name: "json client", method: http.MethodGet, path: "/keys/usage", body: "/problems/not-found", status: http.StatusNotFound, accept: "application/json"},
+		{name: "json client on index", method: http.MethodGet, path: "/", body: "/problems/not-found", status: http.StatusNotFound, accept: "application/json"},
+		{name: "backend only path", method: http.MethodGet, path: "/auth/nope", body: "/problems/not-found", status: http.StatusNotFound},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

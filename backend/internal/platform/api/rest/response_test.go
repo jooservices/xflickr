@@ -70,10 +70,25 @@ func TestProblemRegistry(t *testing.T) {
 	}
 }
 
+func TestWriteProblemAt(t *testing.T) {
+	w := httptest.NewRecorder()
+	problem := NewProblem("email-taken", "Email is already registered", FieldErrors{"email": {"Already registered"}})
+	if err := WriteProblemAt(w, "/api/v1/users", problem, "trace-id"); err != nil {
+		t.Fatal(err)
+	}
+	var body Problem
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusConflict || w.Header().Get("Content-Type") != "application/problem+json" || body.Type != "/problems/email-taken" || body.Instance != "/api/v1/users" || body.TraceID != "trace-id" || body.Errors["email"][0] == "" {
+		t.Fatalf("response = %d %q %+v", w.Code, w.Header().Get("Content-Type"), body)
+	}
+}
+
 func TestDiscovery(t *testing.T) {
-	data := Discovery(map[string]string{"people": "/people"})
+	data := Discovery(map[string]Link{"people": NewLink("/api/v1/people", "GET"), "users": NewLink("/api/v1/users", "POST")})
 	links := data["links"].(Links)
-	if links["self"].Href != "/api/v1" || links["people"].Method != "GET" {
+	if links["self"].Href != "/api/v1" || links["people"].Method != "GET" || links["users"].Method != "POST" {
 		t.Fatal(data)
 	}
 }

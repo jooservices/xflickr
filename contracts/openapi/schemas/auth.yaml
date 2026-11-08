@@ -1,193 +1,127 @@
 AuthConfig:
   type: object
   additionalProperties: false
-  required: [registration_open, passkey_enabled, password_min, password_max]
+  required: [registration_open, passkey_enabled, password_min, password_max, links]
   properties:
-    registration_open:
-      type: boolean
-    passkey_enabled:
-      type: boolean
-    terms_url:
-      type: string
-      format: uri-reference
-    privacy_url:
-      type: string
-      format: uri-reference
-    password_min:
-      type: integer
-      minimum: 1
-    password_max:
-      type: integer
-      minimum: 1
+    registration_open: { type: boolean }
+    passkey_enabled: { type: boolean }
+    terms_url: { type: string, format: uri-reference }
+    privacy_url: { type: string, format: uri-reference }
+    password_min: { type: integer, minimum: 1 }
+    password_max: { type: integer, minimum: 1 }
+    links: { $ref: ./rest.yaml#/Links }
 
 AuthRequest:
   type: object
   additionalProperties: false
   required: [email, password]
   properties:
-    email:
-      type: string
-      format: email
-      maxLength: 254
-    password:
-      type: string
-      minLength: 8
-      maxLength: 128
-      writeOnly: true
+    email: { type: string, format: email, maxLength: 254 }
+    password: { type: string, minLength: 8, maxLength: 128, writeOnly: true }
+
 RegisterRequest:
   type: object
   additionalProperties: false
   required: [email, password, accept_terms, locale]
   properties:
-    email:
-      type: string
-      format: email
-      maxLength: 254
-    password:
-      type: string
-      minLength: 8
-      maxLength: 128
-      writeOnly: true
-    accept_terms:
-      type: boolean
-      const: true
-    locale:
-      type: string
-      enum: [en, vi]
-RegisterValidationError:
-  type: object
-  required: [code, message, details]
-  properties:
-    code:
-      type: string
-      const: validation_failed
-    message:
-      type: string
-    details:
-      type: object
-      required: [fields]
-      properties:
-        fields:
-          type: object
-          properties:
-            email:
-              type: string
-              enum: [required, invalid, too_long]
-            password:
-              type: string
-              enum: [required, too_short, too_long]
-            accept_terms:
-              type: string
-              enum: [required]
-            locale:
-              type: string
-              enum: [invalid]
-RegisterConflict:
-  type: object
-  required: [code, message]
-  properties:
-    code:
-      type: string
-      enum: [email_taken, registration_closed]
-    message:
-      type: string
+    email: { type: string, format: email, maxLength: 254 }
+    password: { type: string, minLength: 8, maxLength: 128, writeOnly: true }
+    accept_terms: { type: boolean, const: true }
+    locale: { type: string, enum: [en, vi] }
+
 UpdateMeRequest:
   type: object
   additionalProperties: false
-  required: [locale]
   properties:
-    locale:
-      type: string
-      enum: [en, vi]
-LoginRateLimited:
-  type: object
-  required: [code, message, details]
-  properties:
-    code:
-      type: string
-      const: rate_limited
-    message:
-      type: string
-    details:
-      type: object
-      required: [retry_after_seconds]
-      properties:
-        retry_after_seconds:
-          type: integer
-          minimum: 1
-LoginLocked:
-  type: object
-  required: [code, message, details]
-  properties:
-    code:
-      type: string
-      const: account_locked
-    message:
-      type: string
-    details:
-      type: object
-      required: [locked_until]
-      properties:
-        locked_until:
-          type: string
-          format: date-time
-Session:
-  type: object
-  required: [id, current, user_agent_label, ip_masked, last_seen_at, created_at]
-  properties:
-    id:
-      type: string
-    current:
-      type: boolean
-    user_agent_label:
-      type: string
-    ip_masked:
-      type: string
-    last_seen_at:
-      type: string
-      format: date-time
-    created_at:
-      type: string
-      format: date-time
-SessionList:
-  type: object
-  required: [items]
-  properties:
-    items:
-      type: array
-      items:
-        $ref: '#/Session'
+    locale: { type: string, enum: [en, vi] }
+
 ChangePasswordRequest:
   type: object
   additionalProperties: false
   required: [current_password, new_password]
   properties:
-    current_password:
-      type: string
-      minLength: 8
-      maxLength: 128
-      writeOnly: true
-    new_password:
-      type: string
-      minLength: 8
-      maxLength: 128
-      writeOnly: true
+    current_password: { type: string, minLength: 8, maxLength: 128, writeOnly: true }
+    new_password: { type: string, minLength: 8, maxLength: 128, writeOnly: true }
+
 User:
   type: object
   additionalProperties: false
-  required: [id, email, role, locale, created_at]
+  required: [id, email, role, locale, created_at, links]
   properties:
-    id:
-      type: integer
-      format: int64
-    email:
-      type: string
-      format: email
-    role:
-      type: string
-      enum: [admin, user]
-    locale:
-      type: string
-    created_at:
-      type: string
-      format: date-time
+    id: { type: integer, format: int64 }
+    email: { type: string, format: email }
+    role: { type: string, enum: [admin, user] }
+    locale: { type: string }
+    created_at: { type: string, format: date-time }
+    links: { $ref: ./rest.yaml#/Links }
+
+PublicUser:
+  type: object
+  additionalProperties: false
+  required: [id, role, locale, created_at, links]
+  properties:
+    id: { type: integer, format: int64 }
+    role: { type: string, enum: [admin, user] }
+    locale: { type: string }
+    created_at: { type: string, format: date-time }
+    links: { $ref: ./rest.yaml#/Links }
+
+SessionSummary:
+  type: object
+  additionalProperties: false
+  required: [id, current, user_agent_label, ip_masked, last_seen_at, created_at, expires_at, links]
+  properties:
+    id: { type: string }
+    current: { type: boolean }
+    user_agent_label: { type: string }
+    ip_masked: { type: string }
+    last_seen_at: { type: string, format: date-time }
+    created_at: { type: string, format: date-time }
+    expires_at: { type: string, format: date-time }
+    links: { $ref: ./rest.yaml#/Links }
+
+SessionResource:
+  allOf:
+    - $ref: '#/SessionSummary'
+    - type: object
+      additionalProperties: false
+      required: [user]
+      properties:
+        user: { $ref: '#/User' }
+
+AuthenticationOptionsEnvelope:
+  allOf:
+    - $ref: ./rest.yaml#/RESTEnvelope
+    - type: object
+      properties:
+        data: { $ref: '#/AuthConfig' }
+
+UserEnvelope:
+  allOf:
+    - $ref: ./rest.yaml#/RESTEnvelope
+    - type: object
+      properties:
+        data: { $ref: '#/User' }
+
+PublicUserEnvelope:
+  allOf:
+    - $ref: ./rest.yaml#/RESTEnvelope
+    - type: object
+      properties:
+        data: { $ref: '#/PublicUser' }
+
+SessionEnvelope:
+  allOf:
+    - $ref: ./rest.yaml#/RESTEnvelope
+    - type: object
+      properties:
+        data: { $ref: '#/SessionResource' }
+
+SessionCollectionEnvelope:
+  allOf:
+    - $ref: ./rest.yaml#/RESTEnvelope
+    - type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/SessionSummary' }

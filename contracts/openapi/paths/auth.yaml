@@ -1,16 +1,22 @@
-config:
+authentication_options:
   get:
     operationId: GetAuthConfig
     summary: Get public authentication options
     responses:
       '200':
         description: Public authentication options
+        headers:
+          Cache-Control: { schema: { type: string } }
         content:
           application/json:
-            schema:
-              $ref: ../schemas/auth.yaml#/AuthConfig
+            schema: { $ref: ../schemas/auth.yaml#/AuthenticationOptionsEnvelope }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
 
-register:
+users:
   post:
     operationId: Register
     summary: Register a user
@@ -18,88 +24,182 @@ register:
       required: true
       content:
         application/json:
-          schema:
-            $ref: ../schemas/auth.yaml#/RegisterRequest
+          schema: { $ref: ../schemas/auth.yaml#/RegisterRequest }
     responses:
       '201':
         description: User created
+        headers:
+          Location: { schema: { type: string, format: uri-reference } }
+          Cache-Control: { schema: { type: string } }
         content:
           application/json:
-            schema:
-              $ref: ../schemas/auth.yaml#/User
+            schema: { $ref: ../schemas/auth.yaml#/UserEnvelope }
       '400':
-        description: Invalid registration fields
+        description: Malformed request
         content:
-          application/json:
-            schema:
-              $ref: ../schemas/auth.yaml#/RegisterValidationError
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
       '409':
         description: Registration conflict
         content:
-          application/json:
-            schema:
-              $ref: ../schemas/auth.yaml#/RegisterConflict
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '422':
+        description: Invalid registration fields
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
 
-login:
+user:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+  get:
+    operationId: GetUser
+    summary: Get a public user projection
+    responses:
+      '200':
+        description: Public user representation
+        headers:
+          Cache-Control: { schema: { type: string } }
+        content:
+          application/json:
+            schema: { $ref: ../schemas/auth.yaml#/PublicUserEnvelope }
+      '404':
+        description: User not found
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+
+sessions:
   post:
     operationId: Login
-    summary: Log in with email and password
+    summary: Create a browser session with email and password
     requestBody:
       required: true
       content:
         application/json:
-          schema:
-            $ref: ../schemas/auth.yaml#/AuthRequest
+          schema: { $ref: ../schemas/auth.yaml#/AuthRequest }
     responses:
-      '200':
-        description: Authenticated user
+      '201':
+        description: Authenticated session created
+        headers:
+          Location: { schema: { type: string, format: uri-reference } }
+          Cache-Control: { schema: { type: string } }
+          Set-Cookie: { schema: { type: string } }
         content:
           application/json:
-            schema:
-              $ref: ../schemas/auth.yaml#/User
+            schema: { $ref: ../schemas/auth.yaml#/SessionEnvelope }
       '401':
         description: Invalid email or password
-      '429':
-        description: Too many login attempts
         headers:
-          Retry-After:
-            description: Seconds until another login attempt is allowed
-            schema:
-              type: integer
-              minimum: 1
+          WWW-Authenticate: { schema: { type: string } }
         content:
-          application/json:
-            schema:
-              $ref: ../schemas/auth.yaml#/LoginRateLimited
-      '423':
-        description: Account is temporarily locked
-        content:
-          application/json:
-            schema:
-              $ref: ../schemas/auth.yaml#/LoginLocked
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
       '403':
         description: Account is disabled
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '429':
+        description: Account is rate limited or locked
+        headers:
+          Retry-After: { schema: { type: integer, minimum: 1 } }
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
 
-logout:
-  post:
-    operationId: Logout
-    summary: Log out the current session
+session_current:
+  get:
+    operationId: GetCurrentSession
+    summary: Get the current browser session
     responses:
-      '204':
-        description: Logged out
-
-sessions:
-  delete:
-    operationId: RevokeOtherSessions
-    summary: Revoke every session except the current one
-    description: Deletes every server-side session for the authenticated user except the session presented by the xf_session cookie.
-    responses:
-      '204':
-        description: Other sessions were revoked
+      '200':
+        description: Current session resource
+        headers:
+          Cache-Control: { schema: { type: string } }
+        content:
+          application/json:
+            schema: { $ref: ../schemas/auth.yaml#/SessionEnvelope }
       '401':
         description: Authentication required
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+  delete:
+    operationId: Logout
+    summary: Revoke the current browser session
+    responses:
+      '204':
+        description: Session revoked and cookies cleared
+        headers:
+          Cache-Control: { schema: { type: string } }
       '403':
         description: CSRF token is missing or invalid
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+
+session:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+  get:
+    operationId: GetSession
+    summary: Get an owned browser session
+    responses:
+      '200':
+        description: Session resource
+        headers:
+          Cache-Control: { schema: { type: string } }
+        content:
+          application/json:
+            schema: { $ref: ../schemas/auth.yaml#/SessionEnvelope }
+      '401':
+        description: Authentication required
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '404':
+        description: Session not found
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
 
 me:
   get:
@@ -108,103 +208,235 @@ me:
     responses:
       '200':
         description: Authenticated user
+        headers:
+          Cache-Control: { schema: { type: string } }
         content:
           application/json:
-            schema:
-              $ref: ../schemas/auth.yaml#/User
+            schema: { $ref: ../schemas/auth.yaml#/UserEnvelope }
       '401':
         description: Authentication required
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
   patch:
     operationId: UpdateMe
     summary: Update the authenticated user's profile
-    description: Updates the user's preferred language. Unsafe requests require a valid CSRF token.
+    description: Applies a locale-only JSON Merge Patch.
     requestBody:
       required: true
       content:
-        application/json:
-          schema:
-            $ref: ../schemas/auth.yaml#/UpdateMeRequest
+        application/merge-patch+json:
+          schema: { $ref: ../schemas/auth.yaml#/UpdateMeRequest }
     responses:
       '200':
         description: Updated user profile
+        headers:
+          Cache-Control: { schema: { type: string } }
         content:
           application/json:
-            schema:
-              $ref: ../schemas/auth.yaml#/User
+            schema: { $ref: ../schemas/auth.yaml#/UserEnvelope }
       '400':
-        description: Invalid locale
+        description: Malformed request
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
       '401':
         description: Authentication required
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
       '403':
         description: CSRF token is missing or invalid
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '415':
+        description: Unsupported media type
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '422':
+        description: Invalid locale or unknown property
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
 
-me/sessions:
+me_sessions:
   get:
     operationId: ListMySessions
-    summary: List the current user's active sessions
+    parameters:
+      - name: limit
+        in: query
+        schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      - name: cursor
+        in: query
+        schema: { type: string }
     responses:
       '200':
-        description: Active sessions
+        description: Active session resources
+        headers:
+          Cache-Control: { schema: { type: string } }
         content:
           application/json:
-            schema:
-              $ref: ../schemas/auth.yaml#/SessionList
+            schema: { $ref: ../schemas/auth.yaml#/SessionCollectionEnvelope }
       '401':
         description: Authentication required
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+  delete:
+    operationId: RevokeOtherSessions
+    summary: Revoke every session except the current one
+    parameters:
+      - name: scope
+        in: query
+        required: true
+        schema: { type: string, enum: [others] }
+    responses:
+      '204':
+        description: Other sessions were revoked
+        headers:
+          Cache-Control: { schema: { type: string } }
+      '401':
+        description: Authentication required
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '403':
+        description: CSRF token is missing or invalid
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '422':
+        description: Unsupported session scope
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
 
-me/sessions/{id}:
+my_session:
   parameters:
     - name: id
       in: path
       required: true
-      schema:
-        type: integer
-        format: int64
+      schema: { type: integer, format: int64, minimum: 1 }
+  get:
+    operationId: GetMySession
+    summary: Get an owned session from the current user's session collection
+    responses:
+      '200':
+        description: Session resource
+        headers:
+          Cache-Control: { schema: { type: string } }
+        content:
+          application/json:
+            schema: { $ref: ../schemas/auth.yaml#/SessionEnvelope }
+      '401':
+        description: Authentication required
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '404':
+        description: Session not found
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
   delete:
     operationId: RevokeMySession
     summary: Revoke one of the current user's sessions
     responses:
       '204':
         description: Session revoked
+        headers:
+          Cache-Control: { schema: { type: string } }
       '401':
         description: Authentication required
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
       '403':
         description: CSRF token is missing or invalid
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
       '404':
         description: Session not found
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
 
-me/password:
-  post:
+password:
+  put:
     operationId: ChangeMyPassword
-    summary: Change the current user's password
+    summary: Replace the current user's password
     requestBody:
       required: true
       content:
         application/json:
-          schema:
-            $ref: ../schemas/auth.yaml#/ChangePasswordRequest
+          schema: { $ref: ../schemas/auth.yaml#/ChangePasswordRequest }
     responses:
       '204':
         description: Password changed and other sessions revoked
+        headers:
+          Cache-Control: { schema: { type: string } }
       '400':
-        description: Invalid password or current password
+        description: Malformed request
         content:
-          application/json:
-            schema:
-              $ref: ../schemas/common.yaml#/Error
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
       '401':
         description: Authentication required
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
       '403':
         description: CSRF token is missing or invalid
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '422':
+        description: Invalid password or current password
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
       '429':
         description: Password change attempts are rate limited
         headers:
-          Retry-After:
-            description: Seconds until another password change attempt is allowed
-            schema:
-              type: integer
-              minimum: 1
+          Retry-After: { schema: { type: integer, minimum: 1 } }
         content:
-          application/json:
-            schema:
-              $ref: ../schemas/auth.yaml#/LoginRateLimited
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }

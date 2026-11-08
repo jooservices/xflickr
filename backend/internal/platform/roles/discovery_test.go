@@ -26,16 +26,21 @@ func TestDiscoveryPermissions(t *testing.T) {
 			routerWith(roleSessions{role: role}).ServeHTTP(w, r)
 			var body struct {
 				Data struct {
-					Links map[string]any `json:"links"`
+					Links map[string]struct {
+						Href   string `json:"href"`
+						Method string `json:"method"`
+					} `json:"links"`
 				} `json:"data"`
 			}
 			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 				t.Fatal(err)
 			}
-			if w.Code != 200 || body.Data.Links["self"] == nil {
+			if w.Code != 200 || body.Data.Links["self"].Href != "/api/v1" {
 				t.Fatal(w.Code, w.Body.String())
 			}
-			if (body.Data.Links["users"] != nil) != (role == identitydomain.RoleAdmin) {
+			if body.Data.Links["users"].Href != "/api/v1/users" || body.Data.Links["users"].Method != http.MethodPost ||
+				body.Data.Links["sessions"].Href != "/api/v1/sessions" || body.Data.Links["sessions"].Method != http.MethodPost ||
+				body.Data.Links["me"].Href != "/api/v1/me" || body.Data.Links["me"].Method != http.MethodGet {
 				t.Fatal(body)
 			}
 		})

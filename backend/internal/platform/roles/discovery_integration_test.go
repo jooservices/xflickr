@@ -95,10 +95,22 @@ func TestDiscoveryLinkJourneyIntegration(t *testing.T) {
 			if err != nil || response.StatusCode != 200 {
 				t.Fatal(response.StatusCode, err)
 			}
-			if (entry.Data.Links["users"].Href != "") != (role == "admin") {
-				t.Fatal("admin permission leak", entry)
+			if link := entry.Data.Links["users"]; link.Href == "" || link.Method != http.MethodPost {
+				t.Fatal("registration relation is missing", entry)
+			}
+			if link := entry.Data.Links["sessions"]; link.Href == "" || link.Method != http.MethodPost {
+				t.Fatal("session relation is missing", entry)
+			}
+			if (entry.Data.Links["me"].Href != "") != (role != "anonymous") {
+				t.Fatal("current-user relation has incorrect access", entry)
+			}
+			if (entry.Data.Links["current-session"].Href != "") != (role != "anonymous") {
+				t.Fatal("current-session relation has incorrect access", entry)
 			}
 			for relation, link := range entry.Data.Links {
+				if link.Method != http.MethodGet {
+					continue
+				}
 				response := get(link.Href)
 				_ = response.Body.Close()
 				if response.StatusCode != 200 {

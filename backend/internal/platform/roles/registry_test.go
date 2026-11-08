@@ -879,8 +879,15 @@ func (stubSessions) Authenticate(context.Context, string) (identityapp.Authentic
 
 func (stubSessions) Revoke(context.Context, string) error { return nil }
 
-func (stubSessions) RevokeOthers(context.Context, int64, []byte) error      { return nil }
-func (stubSessions) List(context.Context, int64) ([]domain.Session, error)  { return nil, nil }
+func (stubSessions) RevokeOthers(context.Context, int64, []byte) error     { return nil }
+func (stubSessions) List(context.Context, int64) ([]domain.Session, error) { return nil, nil }
+func (stubSessions) ListPage(context.Context, int64, *identityapp.SessionCursor, int) ([]domain.Session, error) {
+	return nil, nil
+}
+
+func (stubSessions) FindByID(context.Context, int64, int64) (domain.Session, error) {
+	return domain.Session{}, identityapp.ErrSessionNotFound
+}
 func (stubSessions) RevokeByID(context.Context, int64, int64) (bool, error) { return false, nil }
 
 func TestBuildKeyHandlerRejectsInvalidConfiguration(t *testing.T) {
@@ -935,14 +942,14 @@ func TestAPIRouterRequiresSessionAndCSRF(t *testing.T) {
 		t.Fatalf("health status=%d body=%s", healthResponse.Code, healthResponse.Body.String())
 	}
 
-	me := httptest.NewRequest(http.MethodGet, "/me", nil)
+	me := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
 	meResponse := httptest.NewRecorder()
 	router.ServeHTTP(meResponse, me)
 	if meResponse.Code != http.StatusUnauthorized {
 		t.Fatalf("me status = %d", meResponse.Code)
 	}
 
-	login := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"email":"u@example.com","password":"secret12"}`))
+	login := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(`{"email":"u@example.com","password":"secret12"}`))
 	login.Header.Set("Content-Type", "application/json")
 	loginResponse := httptest.NewRecorder()
 	router.ServeHTTP(loginResponse, login)
@@ -954,7 +961,7 @@ func TestAPIRouterRequiresSessionAndCSRF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	revoke := httptest.NewRequest(http.MethodDelete, "/auth/sessions", nil)
+	revoke := httptest.NewRequest(http.MethodDelete, "/api/v1/me/sessions?scope=others", nil)
 	revoke.AddCookie(&http.Cookie{Name: identityhttp.CSRFCookieName, Value: token})
 	revoke.Header.Set(identityhttp.CSRFHeaderName, token)
 	revokeResponse := httptest.NewRecorder()
@@ -966,7 +973,7 @@ func TestAPIRouterRequiresSessionAndCSRF(t *testing.T) {
 	keys := httptest.NewRequest(http.MethodGet, "/keys", nil)
 	keysResponse := httptest.NewRecorder()
 	router.ServeHTTP(keysResponse, keys)
-	if keysResponse.Code != http.StatusUnauthorized || !strings.Contains(keysResponse.Body.String(), `"code":"unauthenticated"`) {
+	if keysResponse.Code != http.StatusUnauthorized || !strings.Contains(keysResponse.Body.String(), `"type":"/problems/unauthenticated"`) {
 		t.Fatalf("keys status = %d body = %s", keysResponse.Code, keysResponse.Body.String())
 	}
 
@@ -974,7 +981,7 @@ func TestAPIRouterRequiresSessionAndCSRF(t *testing.T) {
 	create.Header.Set("Content-Type", "application/json")
 	createResponse := httptest.NewRecorder()
 	router.ServeHTTP(createResponse, create)
-	if createResponse.Code != http.StatusForbidden || !strings.Contains(createResponse.Body.String(), `"code":"csrf_rejected"`) || strings.Contains(createResponse.Body.String(), "not-logged") {
+	if createResponse.Code != http.StatusForbidden || !strings.Contains(createResponse.Body.String(), `"type":"/problems/csrf-rejected"`) || strings.Contains(createResponse.Body.String(), "not-logged") {
 		t.Fatalf("create status = %d body = %s", createResponse.Code, createResponse.Body.String())
 	}
 }

@@ -2,9 +2,12 @@ package postgres_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -136,8 +139,22 @@ func TestRepositoryRegistrationAndLookup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := me.(gen.GetMe200JSONResponse); !ok {
-		t.Fatalf("GET /me response = %T", me)
+	visitor, ok := me.(interface {
+		VisitGetMeResponse(http.ResponseWriter) error
+	})
+	if !ok {
+		t.Fatalf("GET /api/v1/me response = %T", me)
+	}
+	recorder := httptest.NewRecorder()
+	if err := visitor.VisitGetMeResponse(recorder); err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Success bool            `json:"success"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if recorder.Code != http.StatusOK || json.Unmarshal(recorder.Body.Bytes(), &envelope) != nil || !envelope.Success || len(envelope.Data) == 0 {
+		t.Fatalf("GET /api/v1/me response = %d %s", recorder.Code, recorder.Body.String())
 	}
 	if _, err := repository.Register(ctx, domain.User{Email: email, PasswordHash: "duplicate", Locale: "en"}, true); !errors.Is(err, app.ErrEmailExists) {
 		t.Fatalf("duplicate Register() error = %v", err)

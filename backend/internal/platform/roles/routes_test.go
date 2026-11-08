@@ -89,6 +89,63 @@ func TestEveryRouteDeclaresAccess(t *testing.T) {
 	}
 }
 
+func TestIdentityRoutesMatchMapping(t *testing.T) {
+	want := []string{
+		"GET /api/v1/authentication-options",
+		"POST /api/v1/users",
+		"GET /api/v1/users/{id}",
+		"POST /api/v1/sessions",
+		"DELETE /api/v1/sessions/current",
+		"GET /api/v1/sessions/current",
+		"GET /api/v1/sessions/{id}",
+		"DELETE /api/v1/me/sessions",
+		"GET /api/v1/me",
+		"PATCH /api/v1/me",
+		"GET /api/v1/me/sessions",
+		"GET /api/v1/me/sessions/{id}",
+		"DELETE /api/v1/me/sessions/{id}",
+		"PUT /api/v1/me/password",
+		"GET /api/v1/me/sharing",
+		"PUT /api/v1/me/sharing",
+	}
+	for _, route := range want {
+		if _, ok := routeAccess[route]; !ok {
+			t.Errorf("identity route %q is missing from the access map", route)
+		}
+	}
+	for route := range routeAccess {
+		if strings.HasPrefix(route, "GET /auth/") || strings.HasPrefix(route, "POST /auth/") ||
+			strings.HasPrefix(route, "DELETE /auth/") || route == "GET /me" || route == "PATCH /me" ||
+			strings.HasPrefix(route, "GET /me/sessions") || strings.HasPrefix(route, "DELETE /me/sessions") ||
+			route == "POST /me/password" || route == "PUT /me/sharing" {
+			t.Errorf("legacy identity route %q remains mounted", route)
+		}
+	}
+}
+
+func TestOldIdentityRoutesAreGone(t *testing.T) {
+	router := routerWith(stubSessions{})
+	for _, target := range []struct{ method, path string }{
+		{http.MethodGet, "/auth/config"},
+		{http.MethodPost, "/auth/register"},
+		{http.MethodPost, "/auth/login"},
+		{http.MethodPost, "/auth/logout"},
+		{http.MethodDelete, "/auth/sessions"},
+		{http.MethodGet, "/me"},
+		{http.MethodPatch, "/me"},
+		{http.MethodGet, "/me/sessions"},
+		{http.MethodDelete, "/me/sessions/1"},
+		{http.MethodPost, "/me/password"},
+		{http.MethodPut, "/me/sharing"},
+	} {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(target.method, target.path, nil))
+		if recorder.Code != http.StatusNotFound || recorder.Header().Get("Content-Type") != "application/problem+json" {
+			t.Errorf("%s %s = %d %q, want problem+json 404", target.method, target.path, recorder.Code, recorder.Header().Get("Content-Type"))
+		}
+	}
+}
+
 func TestRoutesEnforceDeclaredAccess(t *testing.T) {
 	anonymous := routerWith(stubSessions{})
 	asUser := routerWith(roleSessions{role: identitydomain.RoleUser})
@@ -245,9 +302,9 @@ func TestPathParameterErrorsAreJSON(t *testing.T) {
 		if strings.HasPrefix(target, "/admin") {
 			continue // plain users are refused before binding
 		}
-		var body struct{ Code, Message string }
-		if rec.Code != http.StatusBadRequest || !strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json") ||
-			json.Unmarshal(rec.Body.Bytes(), &body) != nil || body.Code != "invalid_request" || body.Message == "" {
+		var body struct{ Type, Detail string }
+		if rec.Code != http.StatusBadRequest || rec.Header().Get("Content-Type") != "application/problem+json" ||
+			json.Unmarshal(rec.Body.Bytes(), &body) != nil || body.Type != "/problems/malformed-request" || body.Detail == "" {
 			t.Fatalf("%s = %d %q %s", target, rec.Code, rec.Header().Get("Content-Type"), rec.Body.String())
 		}
 	}
@@ -256,7 +313,7 @@ func TestPathParameterErrorsAreJSON(t *testing.T) {
 func TestAPIErrorHandlers(t *testing.T) {
 	rec := httptest.NewRecorder()
 	internalError(rec, nil, context.Canceled)
-	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "canceled") || !strings.Contains(rec.Body.String(), `"code":"internal_error"`) {
+	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "canceled") || !strings.Contains(rec.Body.String(), `"type":"/problems/internal-error"`) {
 		t.Fatalf("internal error = %d %s", rec.Code, rec.Body.String())
 	}
 }

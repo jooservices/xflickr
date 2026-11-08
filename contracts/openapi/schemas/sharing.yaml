@@ -1,13 +1,22 @@
 SharingSetting:
   type: object
-  required: [enabled, changed_at]
+  additionalProperties: false
+  required: [enabled, changed_at, links]
   properties:
     enabled: { type: boolean }
-    changed_at: { type: string, format: date-time }
+    changed_at: { type: [string, 'null'], format: date-time }
+    links: { $ref: ./rest.yaml#/Links }
 
 UpdateSharingRequest:
   type: object
-  required: [enabled]
   additionalProperties: false
+  required: [enabled]
   properties:
     enabled: { type: boolean }
+
+SharingEnvelope:
+  allOf:
+    - $ref: ./rest.yaml#/RESTEnvelope
+    - type: object
+      properties:
+        data: { $ref: '#/SharingSetting' }

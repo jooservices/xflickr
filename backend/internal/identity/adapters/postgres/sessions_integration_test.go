@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,7 +123,7 @@ func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 	router := chi.NewRouter()
 	router.Use(identityhttp.CSRF)
 	router.Use(identityhttp.ProtectRoutes(service, func(r *http.Request) identityhttp.Access {
-		if r.URL.Path == "/healthz" || r.URL.Path == "/auth/login" || r.URL.Path == "/auth/logout" {
+		if r.URL.Path == "/healthz" || r.URL.Path == "/api/v1/sessions" || r.URL.Path == "/api/v1/sessions/current" {
 			return identityhttp.AccessPublic
 		}
 		return identityhttp.AccessUser
@@ -141,7 +142,7 @@ func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 	}
 
 	missing := deleteSessions(t, server, raw, "", "")
-	if missing.StatusCode != http.StatusForbidden || errorCode(t, missing) != "csrf_rejected" {
+	if missing.StatusCode != http.StatusForbidden || errorCode(t, missing) != "/problems/csrf-rejected" {
 		t.Fatalf("missing csrf status=%d", missing.StatusCode)
 	}
 	mismatched, err := domain.NewOpaqueToken()
@@ -149,7 +150,7 @@ func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 		t.Fatal(err)
 	}
 	rejected := deleteSessions(t, server, raw, csrf, mismatched)
-	if rejected.StatusCode != http.StatusForbidden || errorCode(t, rejected) != "csrf_rejected" {
+	if rejected.StatusCode != http.StatusForbidden || errorCode(t, rejected) != "/problems/csrf-rejected" {
 		t.Fatalf("mismatched csrf status=%d", rejected.StatusCode)
 	}
 	accepted := deleteSessions(t, server, raw, csrf, csrf)
@@ -213,6 +214,180 @@ func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 	}
 }
 
+func TestIdentityRESTLifecycleIntegration(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use the shared worktree database")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	pool := openSessionPool(t)
+	repository := postgres.New(pool)
+	params := domain.Argon2Params{Memory: 32 * 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
+	dummyHash, err := domain.HashPassword("unused-dummy-password", params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := app.Sessions{Repository: repository, Users: repository}
+	identity := identityhttp.Handler{
+		RegisterUseCase: app.Register{Repository: repository, Policy: integrationRegistrationPolicy{}, Params: params},
+		LoginUseCase:    app.Login{Repository: repository, Limiter: integrationLoginLimiter{}, DummyPasswordHash: dummyHash},
+		Users:           repository,
+		Sessions:        service,
+		Profile:         app.UpdateProfile{Repository: repository},
+		Password:        app.ChangePassword{Repository: repository, Sessions: repository, Params: params},
+	}
+	router := chi.NewRouter()
+	router.Use(identityhttp.RequestBodyLimit)
+	router.Use(identityhttp.PrivateIdentityCache)
+	router.Use(identityhttp.CSRF)
+	router.Use(identityhttp.ProtectRoutes(service, func(request *http.Request) identityhttp.Access {
+		if request.Method == http.MethodGet && request.URL.Path == "/api/v1/authentication-options" ||
+			request.Method == http.MethodPost && (request.URL.Path == "/api/v1/users" || request.URL.Path == "/api/v1/sessions") ||
+			request.Method == http.MethodDelete && request.URL.Path == "/api/v1/sessions/current" {
+			return identityhttp.AccessPublic
+		}
+		return identityhttp.AccessUser
+	}))
+	router.Use(identityhttp.Contract)
+	strict := gen.NewStrictHandler(identityhttp.StrictHandler{Handler: identity}, []gen.StrictMiddlewareFunc{
+		identityhttp.Middleware,
+		identityhttp.MaintainSessionCookies(service),
+	})
+	server := httptest.NewServer(gen.HandlerFromMux(strict, router))
+	t.Cleanup(server.Close)
+
+	csrfResponse, err := server.Client().Get(server.URL + "/api/v1/authentication-options")
+	if err != nil {
+		t.Fatal(err)
+	}
+	csrf := namedCookie(t, csrfResponse, identityhttp.CSRFCookieName)
+	csrfResponse.Body.Close()
+
+	email := fmt.Sprintf("jooxf353-%d@example.invalid", time.Now().UnixNano())
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE email = $1`, email)
+	})
+	write := func(method, path, body, rawSession, csrfToken string) *http.Response {
+		t.Helper()
+		request, err := http.NewRequestWithContext(ctx, method, server.URL+path, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if body != "" {
+			request.Header.Set("Content-Type", "application/json")
+		}
+		request.Header.Set(identityhttp.CSRFHeaderName, csrfToken)
+		request.AddCookie(&http.Cookie{Name: identityhttp.CSRFCookieName, Value: csrfToken})
+		if rawSession != "" {
+			request.AddCookie(&http.Cookie{Name: identityhttp.SessionCookieName, Value: rawSession})
+		}
+		response, err := server.Client().Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response
+	}
+	decode := func(response *http.Response, status int) json.RawMessage {
+		t.Helper()
+		defer response.Body.Close()
+		if response.StatusCode != status {
+			body, _ := io.ReadAll(response.Body)
+			t.Fatalf("%s %s = %d: %s", response.Request.Method, response.Request.URL.Path, response.StatusCode, body)
+		}
+		if status == http.StatusNoContent {
+			body, _ := io.ReadAll(response.Body)
+			if len(body) != 0 {
+				t.Fatalf("204 returned body %q", body)
+			}
+			return nil
+		}
+		if response.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("Content-Type = %q", response.Header.Get("Content-Type"))
+		}
+		var envelope struct {
+			Success bool            `json:"success"`
+			Code    int             `json:"code"`
+			Data    json.RawMessage `json:"data"`
+		}
+		if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+			t.Fatal(err)
+		}
+		if !envelope.Success || envelope.Code != status {
+			t.Fatalf("invalid REST envelope: %+v", envelope)
+		}
+		return envelope.Data
+	}
+
+	registration := write(http.MethodPost, "/api/v1/users", fmt.Sprintf(`{"email":%q,"password":"initial-password-1","accept_terms":true,"locale":"en"}`, email), "", csrf)
+	decode(registration, http.StatusCreated)
+	if registration.Header.Get("Location") == "" {
+		t.Fatal("registration omitted Location")
+	}
+
+	firstLogin := write(http.MethodPost, "/api/v1/sessions", fmt.Sprintf(`{"email":%q,"password":"initial-password-1"}`, email), "", csrf)
+	decode(firstLogin, http.StatusCreated)
+	firstSession := namedCookie(t, firstLogin, identityhttp.SessionCookieName)
+	firstCSRF := namedCookie(t, firstLogin, identityhttp.CSRFCookieName)
+	firstLogin.Body.Close()
+
+	me := write(http.MethodGet, "/api/v1/me", "", firstSession, firstCSRF)
+	meData := decode(me, http.StatusOK)
+	var meUser struct {
+		Email string `json:"email"`
+	}
+	if err := json.Unmarshal(meData, &meUser); err != nil || meUser.Email != email {
+		t.Fatalf("me user = %+v err=%v", meUser, err)
+	}
+
+	changed := write(http.MethodPut, "/api/v1/me/password", `{"current_password":"initial-password-1","new_password":"replacement-password-2"}`, firstSession, firstCSRF)
+	decode(changed, http.StatusNoContent)
+
+	secondLogin := write(http.MethodPost, "/api/v1/sessions", fmt.Sprintf(`{"email":%q,"password":"replacement-password-2"}`, email), "", firstCSRF)
+	decode(secondLogin, http.StatusCreated)
+	secondSession := namedCookie(t, secondLogin, identityhttp.SessionCookieName)
+	secondLogin.Body.Close()
+
+	listed := write(http.MethodGet, "/api/v1/me/sessions", "", firstSession, firstCSRF)
+	listData := decode(listed, http.StatusOK)
+	var sessionItems []json.RawMessage
+	if err := json.Unmarshal(listData, &sessionItems); err != nil || len(sessionItems) != 2 {
+		t.Fatalf("sessions = %s err=%v", listData, err)
+	}
+
+	revoked := write(http.MethodDelete, "/api/v1/me/sessions?scope=others", "", firstSession, firstCSRF)
+	decode(revoked, http.StatusNoContent)
+	if _, err := service.Authenticate(ctx, secondSession); !errors.Is(err, app.ErrUnauthenticated) {
+		t.Fatalf("other session remained active after revocation: %v", err)
+	}
+
+	loggedOut := write(http.MethodDelete, "/api/v1/sessions/current", "", firstSession, firstCSRF)
+	decode(loggedOut, http.StatusNoContent)
+	if _, err := service.Authenticate(ctx, firstSession); !errors.Is(err, app.ErrUnauthenticated) {
+		t.Fatalf("current session remained active after logout: %v", err)
+	}
+}
+
+type integrationLoginLimiter struct{}
+
+func (integrationLoginLimiter) Allow(context.Context, string, string) (bool, error) {
+	return true, nil
+}
+
+func (integrationLoginLimiter) RetryAfter(context.Context, string, string) (time.Duration, error) {
+	return 0, nil
+}
+
+func namedCookie(t *testing.T, response *http.Response, name string) string {
+	t.Helper()
+	for _, cookie := range response.Cookies() {
+		if cookie.Name == name {
+			return cookie.Value
+		}
+	}
+	t.Fatalf("response omitted %s cookie", name)
+	return ""
+}
+
 func openSessionPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	_, sourceFile, _, ok := runtime.Caller(0)
@@ -244,7 +419,7 @@ func insertSessionUser(t *testing.T, ctx context.Context, pool *pgxpool.Pool, re
 
 func deleteSessions(t *testing.T, server *httptest.Server, raw, csrf, header string) *http.Response {
 	t.Helper()
-	request, err := http.NewRequest(http.MethodDelete, server.URL+"/auth/sessions", nil)
+	request, err := http.NewRequest(http.MethodDelete, server.URL+"/api/v1/me/sessions?scope=others", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,10 +443,10 @@ func errorCode(t *testing.T, response *http.Response) string {
 	t.Helper()
 	defer response.Body.Close()
 	var payload struct {
-		Code string `json:"code"`
+		Type string `json:"type"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
 		t.Fatal(err)
 	}
-	return payload.Code
+	return payload.Type
 }

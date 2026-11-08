@@ -265,6 +265,34 @@ func TestSessionRepositoryMethodsAndErrors(t *testing.T) {
 	if _, err := testRepo(&identityPoolFake{rows: &identityRowsFake{rowErr: boom}}).ListSessions(ctx, 4); !errors.Is(err, boom) {
 		t.Fatalf("ListSessions rows error=%v", err)
 	}
+	cursor := &app.SessionCursor{LastSeenAt: now, ID: 8}
+	pagePool := &identityPoolFake{rows: &identityRowsFake{values: [][]any{sessionValues}}}
+	page, err := testRepo(pagePool).ListSessionsPage(ctx, 4, cursor, 5)
+	if err != nil || len(page) != 1 || page[0].ID != 8 {
+		t.Fatalf("ListSessionsPage=%+v err=%v", page, err)
+	}
+	if !strings.Contains(pagePool.query, "ORDER BY last_seen_at DESC, id DESC") || !strings.Contains(pagePool.query, "LIMIT $5") || pagePool.args[1] != true || pagePool.args[3] != int64(8) {
+		t.Fatalf("ListSessionsPage query=%q args=%v", pagePool.query, pagePool.args)
+	}
+	if _, err := testRepo(&identityPoolFake{queryErr: boom}).ListSessionsPage(ctx, 4, nil, 5); !errors.Is(err, boom) {
+		t.Fatalf("ListSessionsPage query error=%v", err)
+	}
+	if _, err := testRepo(&identityPoolFake{rows: &identityRowsFake{values: [][]any{sessionValues}, scanErr: boom}}).ListSessionsPage(ctx, 4, nil, 5); !errors.Is(err, boom) {
+		t.Fatalf("ListSessionsPage scan error=%v", err)
+	}
+	if _, err := testRepo(&identityPoolFake{rows: &identityRowsFake{rowErr: boom}}).ListSessionsPage(ctx, 4, nil, 5); !errors.Is(err, boom) {
+		t.Fatalf("ListSessionsPage rows error=%v", err)
+	}
+	found, err := testRepo(&identityPoolFake{rowQueue: []pgx.Row{identityRow{values: sessionValues}}}).FindSessionByID(ctx, 4, 8)
+	if err != nil || found.ID != 8 {
+		t.Fatalf("FindSessionByID=%+v err=%v", found, err)
+	}
+	if _, err := testRepo(&identityPoolFake{rowQueue: []pgx.Row{identityRow{err: pgx.ErrNoRows}}}).FindSessionByID(ctx, 4, 8); !errors.Is(err, app.ErrSessionNotFound) {
+		t.Fatalf("FindSessionByID missing error=%v", err)
+	}
+	if _, err := testRepo(&identityPoolFake{rowQueue: []pgx.Row{identityRow{err: boom}}}).FindSessionByID(ctx, 4, 8); !errors.Is(err, boom) {
+		t.Fatalf("FindSessionByID query error=%v", err)
+	}
 	for _, affected := range []int64{0, 1} {
 		got, err := testRepo(&identityPoolFake{execTag: pgconn.NewCommandTag("DELETE " + fmt.Sprint(affected))}).DeleteSessionByID(ctx, 4, 8)
 		if err != nil || got != (affected > 0) {
