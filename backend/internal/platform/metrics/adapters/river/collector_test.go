@@ -68,15 +68,16 @@ func (r *fakeRows) Next() bool {
 	r.i++
 	return true
 }
+
 func (r *fakeRows) Scan(dest ...any) error {
 	row := r.rows[r.i-1]
-	*(dest[0].(*string)) = row.queue
-	*(dest[1].(*float64)) = row.available
-	*(dest[2].(*float64)) = row.running
-	*(dest[3].(*float64)) = row.retryable
-	*(dest[4].(*float64)) = row.discarded
-	*(dest[5].(*float64)) = row.completed
-	*(dest[6].(**float64)) = row.oldest
+	*dest[0].(*string) = row.queue
+	*dest[1].(*float64) = row.available
+	*dest[2].(*float64) = row.running
+	*dest[3].(*float64) = row.retryable
+	*dest[4].(*float64) = row.discarded
+	*dest[5].(*float64) = row.completed
+	*dest[6].(**float64) = row.oldest
 	return nil
 }
 func (r *fakeRows) Values() ([]any, error) { return nil, nil }
@@ -90,8 +91,8 @@ type outboxRow struct {
 }
 
 func (r outboxRow) Scan(dest ...any) error {
-	*(dest[0].(*int64)) = r.backlog
-	*(dest[1].(**time.Time)) = r.oldest
+	*dest[0].(*int64) = r.backlog
+	*dest[1].(**time.Time) = r.oldest
 	return nil
 }
 
@@ -140,5 +141,17 @@ func TestRiverCollectorEmitsCatalogueSamples(t *testing.T) {
 	}
 	if byName[domain.MetricQueueWorkerHeartbeat] != 1 {
 		t.Fatal("missing heartbeat")
+	}
+	if collector.Name() != "river" {
+		t.Fatalf("name=%q", collector.Name())
+	}
+	if _, err := river.NewCollector(nil, fixedClock{at: now}, "crawl", "n"); err == nil {
+		t.Fatal("expected pool error")
+	}
+	if _, err := river.NewCollector(fakeQuerier{}, nil, "crawl", "n"); err == nil {
+		t.Fatal("expected clock error")
+	}
+	if _, err := collector.Collect(nil); err == nil {
+		t.Fatal("expected nil context")
 	}
 }

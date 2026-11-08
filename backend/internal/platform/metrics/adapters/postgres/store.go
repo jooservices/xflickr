@@ -66,7 +66,7 @@ func (s Store) writeChunk(ctx context.Context, samples []domain.Sample) error {
 		role := sample.Labels["role"]
 		bucket := domain.BucketFloor(sample.At)
 		base := i * 7
-		builder.WriteString(fmt.Sprintf("($%d,$%d::jsonb,$%d,$%d,$%d,$%d,$%d)", base+1, base+2, base+3, base+4, base+5, base+6, base+7))
+		fmt.Fprintf(&builder, "($%d,$%d::jsonb,$%d,$%d,$%d,$%d,$%d)", base+1, base+2, base+3, base+4, base+5, base+6, base+7)
 		args = append(args, sample.Name, string(labelsJSON), hash, node, role, bucket, sample.Value)
 	}
 	builder.WriteString(` ON CONFLICT (name, labels_hash, bucket) DO UPDATE SET value = EXCLUDED.value, labels = EXCLUDED.labels, node = EXCLUDED.node, role = EXCLUDED.role`)

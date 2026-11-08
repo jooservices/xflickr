@@ -25,6 +25,7 @@ type Runner struct {
 	Role       string
 	Node       string
 	Version    string
+	Interval   time.Duration
 
 	lastRun map[string]time.Time
 }
@@ -55,11 +56,23 @@ func NewRunner(store domain.Store, collectors []ScheduledCollector, clock domain
 	}, nil
 }
 
-// Run ticks immediately and then every minute until ctx ends.
+// Run ticks immediately and then every Interval until ctx ends.
 func (r *Runner) Run(ctx context.Context) {
-	ticker := time.NewTicker(time.Minute)
+	if ctx == nil {
+		return
+	}
+	interval := r.Interval
+	if interval <= 0 {
+		interval = time.Minute
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 		if err := r.Tick(ctx); err != nil && ctx.Err() == nil {
 			r.Logger.ErrorContext(ctx, "metrics: tick failed", "error", err)
 		}

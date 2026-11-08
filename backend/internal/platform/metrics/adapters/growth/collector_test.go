@@ -55,8 +55,7 @@ func (r valueRow) Scan(dest ...any) error {
 		return r.err
 	}
 	for i := range dest {
-		switch d := dest[i].(type) {
-		case *int64:
+		if d, ok := dest[i].(*int64); ok {
 			*d = r.values[i].(int64)
 		}
 	}
@@ -82,10 +81,11 @@ func (r *topRows) Next() bool {
 	r.i++
 	return true
 }
+
 func (r *topRows) Scan(dest ...any) error {
 	row := r.rows[r.i-1]
-	*(dest[0].(*string)) = row.name
-	*(dest[1].(*int64)) = row.size
+	*dest[0].(*string) = row.name
+	*dest[1].(*int64) = row.size
 	return nil
 }
 func (r *topRows) Values() ([]any, error) { return nil, nil }
@@ -158,4 +158,26 @@ func TestGrowthCollectorSkipsMissingRedisAndSearch(t *testing.T) {
 	if !sawMedia || sawRedis {
 		t.Fatalf("media=%v redis=%v samples=%d", sawMedia, sawRedis, len(samples))
 	}
+	collector.MainTables = nil
+	collector.TopN = 0
+	collector.Search = fakeSearchErr{}
+	collector.Redis = nil
+	collector.MediaPath = "/no/such/path"
+	collector.Disk = fakeDisk{err: errors.New("missing")}
+	samples, err = collector.Collect(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sample := range samples {
+		if sample.Name == domain.MetricGrowthESDocs || sample.Name == domain.MetricGrowthMediaUsedBytes {
+			t.Fatalf("unexpected sample %s", sample.Name)
+		}
+	}
 }
+
+type fakeSearchErr struct{}
+
+func (fakeSearchErr) DocumentCount(context.Context) (int64, error) {
+	return 0, errors.New("search down")
+}
+func (fakeSearchErr) StoreBytes(context.Context) (int64, error) { return 0, errors.New("search down") }

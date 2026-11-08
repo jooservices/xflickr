@@ -23,6 +23,7 @@ func (s *retentionStore) Rollup(_ context.Context, through time.Time) (int64, er
 	s.through = through
 	return s.rolled, nil
 }
+
 func (s *retentionStore) Purge(_ context.Context, before time.Time, limit int) (int64, error) {
 	s.before = before
 	s.limit = limit

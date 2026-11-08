@@ -28,9 +28,21 @@ type FS interface {
 
 type osFS struct{}
 
-func (osFS) ReadFile(name string) ([]byte, error) { return os.ReadFile(name) }
+func (osFS) ReadFile(name string) ([]byte, error) {
+	// Proc paths are built from a fixed ProcRoot (/proc/self), never user input.
+	data, err := os.ReadFile(name) //nolint:gosec // G304: fixed /proc/self paths only
+	if err != nil {
+		return nil, fmt.Errorf("metrics: read %s: %w", name, err)
+	}
+	return data, nil
+}
+
 func (osFS) ReadDir(name string) ([]os.DirEntry, error) {
-	return os.ReadDir(name)
+	entries, err := os.ReadDir(name)
+	if err != nil {
+		return nil, fmt.Errorf("metrics: readdir %s: %w", name, err)
+	}
+	return entries, nil
 }
 
 // Collector samples process resources once per Collect call.
@@ -153,7 +165,11 @@ func readRSS(fs FS, root string) (uint64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("metrics: parse rss pages: %w", err)
 	}
-	return pages * uint64(os.Getpagesize()), nil
+	pageSize := os.Getpagesize()
+	if pageSize <= 0 {
+		return 0, fmt.Errorf("metrics: invalid page size %d", pageSize)
+	}
+	return pages * uint64(pageSize), nil //nolint:gosec // G115: pageSize validated positive
 }
 
 func countFDs(fs FS, root string) (int, error) {

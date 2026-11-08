@@ -224,15 +224,20 @@ type localDisk struct{}
 func (localDisk) Usage(path string) (used, free uint64, err error) {
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs(path, &stat); err != nil {
-		return 0, 0, err
-	}
-	total := stat.Blocks * uint64(stat.Bsize)
-	free = stat.Bavail * uint64(stat.Bsize)
-	if total >= free {
-		used = total - free
+		return 0, 0, fmt.Errorf("metrics: statfs %s: %w", path, err)
 	}
 	if _, err := os.Stat(path); err != nil {
-		return 0, 0, err
+		return 0, 0, fmt.Errorf("metrics: stat media path: %w", err)
+	}
+	bsize := stat.Bsize
+	if bsize <= 0 {
+		return 0, 0, fmt.Errorf("metrics: invalid block size %d", bsize)
+	}
+	blockSize := uint64(bsize) //nolint:gosec // G115: bsize validated positive
+	total := stat.Blocks * blockSize
+	free = uint64(stat.Bavail) * blockSize //nolint:gosec // G115: filesystem free blocks
+	if total >= free {
+		used = total - free
 	}
 	return used, free, nil
 }

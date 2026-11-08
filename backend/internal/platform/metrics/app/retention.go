@@ -42,6 +42,9 @@ func NewRetentionJob(store domain.Store, policy domain.RetentionPolicy, clock do
 
 // Run executes retention on Every until ctx ends.
 func (j *RetentionJob) Run(ctx context.Context) {
+	if ctx == nil {
+		return
+	}
 	interval := j.Every
 	if interval <= 0 {
 		interval = time.Hour
@@ -49,6 +52,11 @@ func (j *RetentionJob) Run(ctx context.Context) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 		if err := j.Tick(ctx); err != nil && ctx.Err() == nil {
 			j.Logger.ErrorContext(ctx, "metrics: retention failed", "error", err)
 		}

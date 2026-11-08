@@ -29,8 +29,23 @@ func TestProcCPUParse(t *testing.T) {
 	if _, err := process.ParseStatCPU("broken"); err == nil {
 		t.Fatal("expected parse error")
 	}
+	short := "1 (x) R 1"
+	if _, err := process.ParseStatCPU(short); err == nil {
+		t.Fatal("expected short stat error")
+	}
+	badUtime := "1 (x) R 1 1 1 0 -1 0 0 0 0 0 x 50 0 0 20 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
+	if _, err := process.ParseStatCPU(badUtime); err == nil {
+		t.Fatal("expected utime parse error")
+	}
+	badStime := "1 (x) R 1 1 1 0 -1 0 0 0 0 0 100 y 0 0 20 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
+	if _, err := process.ParseStatCPU(badStime); err == nil {
+		t.Fatal("expected stime parse error")
+	}
 	percent := process.CPUPercent(process.CPUSample{Jiffies: 100}, process.CPUSample{Jiffies: 200}, 1, 100)
 	if percent != 100 {
 		t.Fatalf("CPUPercent=%v want 100", percent)
+	}
+	if process.CPUPercent(process.CPUSample{Jiffies: 1}, process.CPUSample{Jiffies: 2}, 1, 0) != 0 {
+		t.Fatal("expected zero for zero clock ticks")
 	}
 }

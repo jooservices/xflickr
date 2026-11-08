@@ -117,7 +117,7 @@ func NewBuiltinRegistry(version string) *Registry {
 			registerBuiltin(registry, mediaRole{})
 			continue
 		}
-		registerBuiltin(registry, idleRole{name: name})
+		registerBuiltin(registry, metricsWrappedRole{inner: idleRole{name: name}, roleName: name})
 	}
 	return registry
 }
@@ -625,23 +625,7 @@ type idleRole struct {
 func (r idleRole) Name() string { return r.name }
 
 func (r idleRole) Run(ctx context.Context) error {
-	if ctx == nil || ctx.Err() != nil {
-		return nil
-	}
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-	pool, err := openRoleDatabase(ctx, cfg.DB)
-	if err != nil {
-		return err
-	}
-	defer pool.Close()
-	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
-	defer redisClient.Close()
-	stopMetrics := startMetricsCollection(ctx, pool, redisClient, cfg, r.name, "", false, slog.Default())
-	defer stopMetrics()
-	configureRoleReadiness(ctx, r.name, postgresDependency(pool), redisDependency(redisClient))
+	configureRoleReadiness(ctx, r.name)
 	<-ctx.Done()
 	return nil
 }
