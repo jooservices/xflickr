@@ -34,6 +34,7 @@ import (
 	mediadomain "github.com/jooservices/xflickr/internal/media/domain"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
 	"github.com/jooservices/xflickr/internal/platform/config"
+	"github.com/jooservices/xflickr/internal/platform/crypto"
 	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
 	quotadomain "github.com/jooservices/xflickr/internal/quota/domain"
 	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
@@ -241,6 +242,7 @@ func (p photoSizesQueryPool) QueryRow(context.Context, string, ...any) pgx.Row {
 
 type photoSizesQueryRow struct {
 	key, status string
+	userID      int64
 	err         error
 }
 
@@ -249,6 +251,12 @@ func (r photoSizesQueryRow) Scan(dest ...any) error {
 		return r.err
 	}
 	*dest[0].(*string), *dest[1].(*string) = r.key, r.status
+	if len(dest) > 2 {
+		*dest[2].(*int64) = r.userID
+	}
+	if len(dest) > 3 {
+		*dest[3].(*crypto.Sealed) = crypto.Sealed{}
+	}
 	return nil
 }
 

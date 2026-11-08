@@ -40,6 +40,7 @@ import (
 	crawlpostgres "github.com/jooservices/xflickr/internal/crawl/adapters/postgres"
 	crawlsettings "github.com/jooservices/xflickr/internal/crawl/adapters/settings"
 	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
+	crawldomain "github.com/jooservices/xflickr/internal/crawl/domain"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identitypostgres "github.com/jooservices/xflickr/internal/identity/adapters/postgres"
 	identityredis "github.com/jooservices/xflickr/internal/identity/adapters/redis"
@@ -295,6 +296,10 @@ func registerPhotoSizes(queueAdapter *queue.River, pool *pgxpool.Pool, redisClie
 	if err != nil {
 		return err
 	}
+	ring, err := keyringFromConfig(cfg)
+	if err != nil {
+		return err
+	}
 	quota, _, err := newQuotaGovernor(pool, redisClient, cfg)
 	if err != nil {
 		return err
@@ -302,7 +307,9 @@ func registerPhotoSizes(queueAdapter *queue.River, pool *pgxpool.Pool, redisClie
 	handler := crawlapp.Sizes{
 		States: crawlpostgres.EntityStates{DB: pool},
 		Store:  catalogpostgres.ResolvedSizes{Repository: catalogRepository, Pool: pool, Publish: publishSizesResolved},
-		Flickr: photoSizesClient{Pool: pool, Client: client, Quota: quota, NodeID: nodeID(cfg)},
+		Flickr: photoSizesClient{Pool: pool, Client: client, Quota: quota, Ring: ring, NodeID: nodeID(cfg)},
+		Auth:   sizesAuthenticator{accounts: accountspostgres.SizesAuthCandidates{DB: pool}},
+		Users:  sizesKeyUser{pool: pool},
 	}
 	if err := queueAdapter.RegisterWithOptions(scheduleriver.PhotoJobKind, func(ctx context.Context, job queue.Job) error {
 		ctx = flickrclient.WithCallContext(ctx, flickrclient.CallContext{Attempt: job.Attempt})
@@ -514,7 +521,43 @@ type photoSizesClient struct {
 	}
 	Client *flickrclient.Client
 	Quota  quotadomain.Governor
+	Ring   *crypto.Keyring
 	NodeID string
+}
+
+type sizesAuthenticator struct {
+	accounts accountspostgres.SizesAuthCandidates
+}
+
+func (a sizesAuthenticator) SizesAuthCandidates(ctx context.Context, ownerNSID string, requestingUserID int64) ([]crawldomain.SizesAuthCandidate, error) {
+	rows, err := a.accounts.List(ctx, ownerNSID, requestingUserID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]crawldomain.SizesAuthCandidate, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, crawldomain.SizesAuthCandidate{
+			AccountID: row.AccountID, UserID: row.UserID, KeyID: row.KeyID, NSID: row.NSID, Owner: row.NSID == ownerNSID,
+		})
+	}
+	return out, nil
+}
+
+type sizesKeyUser struct {
+	pool interface {
+		QueryRow(context.Context, string, ...any) pgx.Row
+	}
+}
+
+func (u sizesKeyUser) UserIDForKey(ctx context.Context, keyID int64) (int64, error) {
+	if u.pool == nil || keyID <= 0 {
+		return 0, errors.New("crawl: sizes key user lookup requires a database and key")
+	}
+	var userID int64
+	if err := u.pool.QueryRow(ctx, `SELECT user_id FROM api_keys WHERE id=$1`, keyID).Scan(&userID); err != nil {
+		return 0, fmt.Errorf("crawl: load sizes key owner: %w", err)
+	}
+	return userID, nil
 }
 
 func (c photoSizesClient) GetSizes(ctx context.Context, keyID int64, photoID string) ([]flickrclient.PhotoSize, error) {
@@ -522,23 +565,31 @@ func (c photoSizesClient) GetSizes(ctx context.Context, keyID int64, photoID str
 }
 
 func (c photoSizesClient) GetSizesClass(ctx context.Context, keyID int64, photoID string, class quotadomain.Class) ([]flickrclient.PhotoSize, error) {
+	return c.getSizes(ctx, keyID, 0, photoID, class)
+}
+
+func (c photoSizesClient) GetSizesForAccount(ctx context.Context, keyID, accountID int64, photoID string, class quotadomain.Class) ([]flickrclient.PhotoSize, error) {
+	if accountID <= 0 {
+		return nil, errors.New("crawl: photo sizes account is required")
+	}
+	return c.getSizes(ctx, keyID, accountID, photoID, class)
+}
+
+func (c photoSizesClient) getSizes(ctx context.Context, keyID, accountID int64, photoID string, class quotadomain.Class) ([]flickrclient.PhotoSize, error) {
 	if c.Pool == nil || c.Client == nil || c.Quota == nil || keyID <= 0 {
 		return nil, errors.New("crawl: photo sizes client dependencies are required")
 	}
-	var apiKey, status string
-	var userID int64
-	if err := c.Pool.QueryRow(ctx, `SELECT key_public, status, user_id FROM api_keys WHERE id=$1`, keyID).Scan(&apiKey, &status, &userID); err != nil {
-		return nil, fmt.Errorf("crawl: load photo sizes key: %w", err)
-	}
-	if status != "valid" {
-		return nil, errors.New("crawl: photo sizes key is not valid")
+	if accountID > 0 && c.Ring == nil {
+		return nil, errors.New("crawl: photo sizes keyring is required for authenticated calls")
 	}
 	if !class.Valid() {
 		return nil, quotadomain.ErrInvalidClass
 	}
+	creds, metadata, err := c.sizesCredentials(ctx, keyID, accountID, class)
+	if err != nil {
+		return nil, err
+	}
 	method := "flickr.photos.getSizes"
-	metadata, _ := flickrclient.CallContextFrom(ctx)
-	metadata.KeyID, metadata.UserID, metadata.Lane, metadata.Facet, metadata.NodeID = keyID, &userID, string(class), "photo_sizes", c.NodeID
 	ctx = flickrclient.WithCallContext(ctx, metadata)
 	permit, wait, err := c.Quota.Acquire(ctx, keyID, class)
 	if err != nil {
@@ -548,11 +599,51 @@ func (c photoSizesClient) GetSizesClass(ctx context.Context, keyID int64, photoI
 		c.Client.RecordQuotaWait(ctx, method)
 		return nil, crawlapp.NewQuotaWaitError(flickrclient.ErrQuotaExceeded, wait)
 	}
-	sizes, callErr := c.Client.PhotosGetSizes(ctx, flickrclient.Credentials{APIKey: apiKey}, photoID)
+	sizes, callErr := c.Client.PhotosGetSizes(ctx, creds, photoID)
 	if doneErr := permit.Done(quotadomain.Meta{Err: callErr}); doneErr != nil {
 		return nil, fmt.Errorf("crawl: release photo sizes quota permit: %w", doneErr)
 	}
 	return sizes, callErr
+}
+
+func (c photoSizesClient) sizesCredentials(ctx context.Context, keyID, accountID int64, class quotadomain.Class) (flickrclient.Credentials, flickrclient.CallContext, error) {
+	var apiKey, status string
+	var sealedSecret crypto.Sealed
+	var userID int64
+	if err := c.Pool.QueryRow(ctx, `SELECT key_public, status, user_id, secret_sealed FROM api_keys WHERE id=$1`, keyID).Scan(&apiKey, &status, &userID, &sealedSecret); err != nil {
+		return flickrclient.Credentials{}, flickrclient.CallContext{}, fmt.Errorf("crawl: load photo sizes key: %w", err)
+	}
+	if status != "valid" {
+		return flickrclient.Credentials{}, flickrclient.CallContext{}, errors.New("crawl: photo sizes key is not valid")
+	}
+	creds := flickrclient.Credentials{APIKey: apiKey}
+	metadata, _ := flickrclient.CallContextFrom(ctx)
+	metadata.KeyID, metadata.UserID, metadata.Lane, metadata.Facet, metadata.NodeID = keyID, &userID, string(class), "photo_sizes", c.NodeID
+	if accountID <= 0 {
+		return creds, metadata, nil
+	}
+	secret, err := c.Ring.Open(sealedSecret, accountsdomain.SecretAAD(keyID))
+	if err != nil {
+		return flickrclient.Credentials{}, flickrclient.CallContext{}, fmt.Errorf("crawl: open photo sizes key %d secret: %w", keyID, err)
+	}
+	creds.APISecret = string(secret)
+	var accountNSID string
+	var sealedToken, sealedTokenSecret crypto.Sealed
+	if err := c.Pool.QueryRow(ctx, `SELECT nsid, token_sealed, secret_sealed FROM flickr_accounts WHERE id=$1 AND key_id=$2 AND status='ok'`, accountID, keyID).Scan(&accountNSID, &sealedToken, &sealedTokenSecret); err != nil {
+		return flickrclient.Credentials{}, flickrclient.CallContext{}, fmt.Errorf("crawl: load photo sizes account %d: %w", accountID, err)
+	}
+	token, err := c.Ring.Open(sealedToken, accountsdomain.TokenAAD(accountID))
+	if err != nil {
+		return flickrclient.Credentials{}, flickrclient.CallContext{}, fmt.Errorf("crawl: open account %d token: %w", accountID, err)
+	}
+	tokenSecret, err := c.Ring.Open(sealedTokenSecret, accountsdomain.TokenSecretAAD(accountID))
+	if err != nil {
+		return flickrclient.Credentials{}, flickrclient.CallContext{}, fmt.Errorf("crawl: open account %d token secret: %w", accountID, err)
+	}
+	creds.Token, creds.TokenSecret = string(token), string(tokenSecret)
+	accountRef := accountID
+	metadata.AccountID, metadata.FlickrAccount = &accountRef, accountNSID
+	return creds, metadata, nil
 }
 
 func newSchedulerPump(pool *pgxpool.Pool, governor quotaRedis.Governor, store scheduleapp.PumpStore, queueAdapter queue.JobQueue, settings scheduleapp.PumpSettings, stores ...mediaapp.BlobStore) (scheduleapp.Pump, error) {

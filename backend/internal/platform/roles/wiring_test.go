@@ -54,13 +54,15 @@ func TestRegisterPhotoSizesAndMediaRolePreconditions(t *testing.T) {
 	}
 	client := redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:1"})
 	defer client.Close()
-	if err := registerPhotoSizes(nil, pool, client, config.Config{}, flickrclient.NewClient("http://127.0.0.1:1", nil)); err == nil {
+	master := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	cfg := config.Config{Crypto: config.CryptoConfig{MasterKeys: "test:" + master, ActiveMasterKeyID: "test"}}
+	if err := registerPhotoSizes(nil, pool, client, cfg, flickrclient.NewClient("http://127.0.0.1:1", nil)); err == nil {
 		t.Fatal("photo sizes registration accepted a nil queue")
 	}
-	if err := registerPhotoSizes(adapter, pool, client, config.Config{}, flickrclient.NewClient("http://127.0.0.1:1", nil)); err != nil {
+	if err := registerPhotoSizes(adapter, pool, client, cfg, flickrclient.NewClient("http://127.0.0.1:1", nil)); err != nil {
 		t.Fatal(err)
 	}
-	if err := registerPhotoSizes(adapter, pool, client, config.Config{}, flickrclient.NewClient("http://127.0.0.1:1", nil)); err == nil {
+	if err := registerPhotoSizes(adapter, pool, client, cfg, flickrclient.NewClient("http://127.0.0.1:1", nil)); err == nil {
 		t.Fatal("duplicate photo sizes job was accepted")
 	}
 	if err := (mediaRole{}).Run(nil); err != nil {
