@@ -12,6 +12,12 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v5
 
+      - name: Check pinned Go versions
+        run: make check-go-version
+
+      - name: Test Go version check
+        run: python3 docker/scripts/test_check_go_version.py
+
       - name: Check the UI view catalogue
         run: ./docker/scripts/ui-spec-check.sh
 

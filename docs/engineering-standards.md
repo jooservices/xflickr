@@ -41,8 +41,8 @@ reviewer rejects a change that breaks them even when the tests pass.
   call log and catalog tables hold millions of rows.
 - HTTP follows `docs/rest-api.md`; the contract in `contracts/openapi` is the
   source of truth and generated code is never edited by hand. Generate with the
-  toolchain of `backend/go.mod` (see `docs/ENVIRONMENT.md`) and commit generated
-  files only when the contract changed.
+  toolchain of `backend/go.mod` (see `docs/ENVIRONMENT.md`); commit generated
+  files when the contract or its generator toolchain changes.
 
 ## Code style
 
