@@ -19,12 +19,16 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	redisv9 "github.com/redis/go-redis/v9"
 
 	accountshttp "github.com/jooservices/xflickr/internal/accounts/adapters/http"
+	accountspostgres "github.com/jooservices/xflickr/internal/accounts/adapters/postgres"
 	accountsettings "github.com/jooservices/xflickr/internal/accounts/adapters/settings"
 	accountsapp "github.com/jooservices/xflickr/internal/accounts/app"
+	accountsdomain "github.com/jooservices/xflickr/internal/accounts/domain"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identityredis "github.com/jooservices/xflickr/internal/identity/adapters/redis"
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
@@ -336,6 +340,111 @@ func TestPhotoSizesClientReportsDependencyQuotaAndCallFailures(t *testing.T) {
 		t.Fatalf("Flickr error=%v permit metadata=%+v", err, permit.meta)
 	}
 }
+
+func TestSizesAuthBridgeAndKeyUser(t *testing.T) {
+	auth := sizesAuthenticator{accounts: accountspostgres.SizesAuthCandidates{DB: sizesAuthQueryFake{rows: []accountspostgres.SizesAuthCandidate{
+		{AccountID: 11, UserID: 7, KeyID: 4, NSID: "owner@N00"},
+		{AccountID: 12, UserID: 7, KeyID: 5, NSID: "other@N00"},
+	}}}}
+	got, err := auth.SizesAuthCandidates(t.Context(), "owner@N00", 7)
+	if err != nil || len(got) != 2 || !got[0].Owner || got[1].Owner || got[0].AccountID != 11 {
+		t.Fatalf("SizesAuthCandidates() = %+v, %v", got, err)
+	}
+	if _, err := (sizesKeyUser{}).UserIDForKey(t.Context(), 4); err == nil {
+		t.Fatal("nil pool accepted")
+	}
+	userID, err := (sizesKeyUser{pool: photoSizesQueryPool{row: sizesKeyUserRow{userID: 7}}}).UserIDForKey(t.Context(), 4)
+	if err != nil || userID != 7 {
+		t.Fatalf("UserIDForKey() = %d, %v", userID, err)
+	}
+}
+
+func TestPhotoSizesClientSignsAccountCalls(t *testing.T) {
+	ring, err := crypto.NewKeyring(map[string][]byte{"test": make([]byte, 32)}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyID, accountID := int64(4), int64(9)
+	sealedSecret, err := ring.Seal([]byte("api-secret"), accountsdomain.SecretAAD(keyID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealedToken, err := ring.Seal([]byte("oauth-token"), accountsdomain.TokenAAD(accountID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealedTokenSecret, err := ring.Seal([]byte("oauth-secret"), accountsdomain.TokenSecretAAD(accountID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := &credentialPool{rows: []pgx.Row{
+		credentialRow{values: []any{"public-key", "valid", int64(7), sealedSecret}},
+		credentialRow{values: []any{"owner@N00", sealedToken, sealedTokenSecret}},
+	}}
+	var sawToken string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("parse form: %v", err)
+		}
+		sawToken = r.Form.Get("oauth_token")
+		_, _ = w.Write([]byte(`{"sizes":{"size":[{"label":"Original","width":10,"height":8,"source":"https://example.test/o","media":"photo"}]}}`))
+	}))
+	defer server.Close()
+	permit := &photoSizesTestPermit{}
+	client := photoSizesClient{
+		Pool: pool, Client: flickrclient.NewClient(server.URL, server.Client()),
+		Quota: &photoSizesTestGovernor{permit: permit}, Ring: ring,
+	}
+	if _, err := client.GetSizesForAccount(t.Context(), keyID, 0, "9", quotadomain.Photo); err == nil {
+		t.Fatal("missing account accepted")
+	}
+	sizes, err := client.GetSizesForAccount(t.Context(), keyID, accountID, "9", quotadomain.Interactive)
+	if err != nil || len(sizes) != 1 || sawToken != "oauth-token" || permit.meta.Err != nil {
+		t.Fatalf("GetSizesForAccount() = %#v, %v token=%q meta=%+v", sizes, err, sawToken, permit.meta)
+	}
+}
+
+type sizesKeyUserRow struct{ userID int64 }
+
+func (r sizesKeyUserRow) Scan(dest ...any) error {
+	*dest[0].(*int64) = r.userID
+	return nil
+}
+
+type sizesAuthQueryFake struct {
+	rows []accountspostgres.SizesAuthCandidate
+}
+
+func (f sizesAuthQueryFake) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	return &sizesAuthRowsFake{rows: f.rows}, nil
+}
+
+type sizesAuthRowsFake struct {
+	rows []accountspostgres.SizesAuthCandidate
+	i    int
+}
+
+func (r *sizesAuthRowsFake) Close()                                       {}
+func (r *sizesAuthRowsFake) Err() error                                   { return nil }
+func (r *sizesAuthRowsFake) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
+func (r *sizesAuthRowsFake) FieldDescriptions() []pgconn.FieldDescription { return nil }
+func (r *sizesAuthRowsFake) Next() bool {
+	if r.i >= len(r.rows) {
+		return false
+	}
+	r.i++
+	return true
+}
+
+func (r *sizesAuthRowsFake) Scan(dest ...any) error {
+	row := r.rows[r.i-1]
+	*dest[0].(*int64), *dest[1].(*int64), *dest[2].(*int64), *dest[3].(*string) = row.AccountID, row.UserID, row.KeyID, row.NSID
+	return nil
+}
+func (r *sizesAuthRowsFake) Values() ([]any, error) { return nil, nil }
+func (r *sizesAuthRowsFake) RawValues() [][]byte    { return nil }
+func (r *sizesAuthRowsFake) Conn() *pgx.Conn        { return nil }
+func (r *sizesAuthRowsFake) TypeMap() *pgtype.Map   { return nil }
 
 type rolesDownloadService struct{}
 
