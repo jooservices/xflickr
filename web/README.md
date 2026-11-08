@@ -4,6 +4,10 @@ React 19 + TypeScript UI for XFlickr. English is the default language; Vietnames
 is available from the language switcher. See [`docs/i18n.md`](../docs/i18n.md)
 for catalogs, glossary rules, and CI guards.
 
+The API client is generated from `../contracts/openapi/openapi.yaml`. After
+changing the contract, run `npm run gen:api`; do not edit `src/shared/api/gen`
+or `src/shared/api/zod` by hand.
+
 ## Commands
 
 ```sh

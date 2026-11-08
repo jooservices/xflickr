@@ -32,6 +32,8 @@
 - [Business specification](SPEC.md) — product rules and definition of done.
 - [Sessions, CSRF, and roles](sessions.md) — session cookie, double-submit
   CSRF, and role checks.
+- [Identity REST API](identity.md) — registration, browser sessions, the
+  authenticated user, password changes, and sharing routes.
 - [Social sign-in and account linking](social-signin.md) — provider-neutral
   Google, Facebook, X and Apple sign-in, first-time registration, link and
   unlink rules, and error states.
