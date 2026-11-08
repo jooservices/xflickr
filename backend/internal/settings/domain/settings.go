@@ -54,6 +54,7 @@ const (
 	OpsHealthStatementTimeout Key = "ops.health_statement_timeout"
 	APICallLogRetentionDays   Key = "maintenance.api_call_log_retention_days"
 	APICallLogDryRun          Key = "maintenance.api_call_log_dry_run"
+	MetricsRetentionDays      Key = "metrics.retention_days"
 )
 
 // Effective contains the merged, validated settings for one user. Durations
@@ -214,6 +215,7 @@ var schemas = map[Key]JSONSchema{
 	OpsHealthStatementTimeout: {Type: "integer", Minimum: floatPointer(1), Maximum: floatPointer(60)},
 	APICallLogRetentionDays:   {Type: "integer", Minimum: floatPointer(7), Maximum: floatPointer(365)},
 	APICallLogDryRun:          {Type: "boolean"},
+	MetricsRetentionDays:      {Type: "integer", Minimum: minOne, Maximum: floatPointer(365)},
 }
 
 // SchemaFor returns the JSON schema associated with a typed key.
@@ -257,6 +259,7 @@ func Keys() []Key {
 		OpsHealthStatementTimeout,
 		APICallLogRetentionDays,
 		APICallLogDryRun,
+		MetricsRetentionDays,
 	}
 }
 
@@ -300,6 +303,7 @@ func Defaults() []Definition {
 		{Key: OpsHealthStatementTimeout, Value: json.RawMessage("5"), UserOverridable: false, Min: floatPointer(1), Max: floatPointer(60)},
 		{Key: APICallLogRetentionDays, Value: json.RawMessage("30"), UserOverridable: false, Min: floatPointer(7), Max: floatPointer(365)},
 		{Key: APICallLogDryRun, Value: json.RawMessage("false"), UserOverridable: false},
+		{Key: MetricsRetentionDays, Value: json.RawMessage("30"), UserOverridable: false, Min: floatPointer(1), Max: floatPointer(365)},
 	}
 }
 

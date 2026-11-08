@@ -34,6 +34,14 @@ func TestRegistrationOpenReadsApplicationSetting(t *testing.T) {
 	}
 }
 
+func TestMetricsRetentionDaysReadsApplicationSetting(t *testing.T) {
+	repository := &fakeRepository{snapshot: domain.DefaultSnapshot()}
+	days, err := New(repository).MetricsRetentionDays(t.Context())
+	if err != nil || days != 30 {
+		t.Fatalf("MetricsRetentionDays() = %d, %v", days, err)
+	}
+}
+
 func TestRegistrationOpenRejectsMissingOrInvalidSetting(t *testing.T) {
 	for _, snapshot := range []domain.Snapshot{
 		{Settings: map[domain.Key]domain.Definition{}},
