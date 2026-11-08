@@ -35,6 +35,29 @@ Credentials live in the private `Workspaces/.env.docker`. Never print it, never 
 11. The develop runtime on the VM is a native process built from `backend/cmd/xflickr` with its own git-ignored `.env.develop` (it holds the encryption master key: never delete or replace it). It uses the live database `xflickr`. Only the develop runtime touches the live database. It is started by hand for now; `make develop-up` and `docs/develop-environment.md` still describe the older Docker flow of the WSL workstation and do not apply on the VM until JOOXF-315 (native develop runtime) replaces them.
 12. The mandatory Gitleaks scan before push reads `.gitleaksignore`, which lists the 24 reviewed false positives of the history by fingerprint (test constants, RFC 5849 example tokens, a generated OpenAPI blob). A new finding is fixed or rejected, never added there without a lead review of the value.
 
+## Code generation
+
+`make gen` (`docker/scripts/gen.sh`) regenerates every checked-in generated
+artifact from its source of truth:
+
+| Step | Source | Tool pin | Output |
+|---|---|---|---|
+| OpenAPI bundle | `contracts/openapi/` | Redocly via `web` npm | `.tmp/openapi.bundle.yaml` |
+| Go HTTP server | bundled OpenAPI | `go tool oapi-codegen` in `backend/go.mod` | `backend/internal/platform/api/gen/` |
+| PostgreSQL models and queries | `backend/migrations` + module `queries/` | `go tool sqlc` (`github.com/sqlc-dev/sqlc` in `backend/go.mod`, currently v1.31.1) | `backend/internal/{platform,catalog}/adapters/postgres/gen/` |
+| TypeScript client and Zod | bundled OpenAPI | Orval in `web/package.json` | `web/src/shared/api/gen`, `web/src/shared/api/zod` |
+| Other `go generate` | `//go:generate` directives | module toolchain | package-local generated files |
+
+sqlc is a build tool only: it is declared under `tool` in `backend/go.mod` and
+is not a runtime dependency. Configure both sqlc modules in
+`backend/sqlc.yaml`. Prefer sqlc overrides there for types the generator cannot
+map (for example PostgreSQL extensions); never hand-edit generated files.
+
+CI runs `make gen` then `make gen-stale`. The stale check fails when
+regeneration changes any tracked or untracked file, so a migration or query
+change that is not followed by committed sqlc output cannot merge. Running
+`make gen` twice on a clean tree must produce no diff.
+
 ## Password hashing
 
 The API uses Argon2id for account passwords. The hash cost is configurable with
