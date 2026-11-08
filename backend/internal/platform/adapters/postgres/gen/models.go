@@ -7,9 +7,98 @@ package gen
 import (
 	"database/sql/driver"
 	"fmt"
+	"net/netip"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type DownloadItemState string
+
+const (
+	DownloadItemStatePending      DownloadItemState = "pending"
+	DownloadItemStateWaitingSizes DownloadItemState = "waiting_sizes"
+	DownloadItemStateFetching     DownloadItemState = "fetching"
+	DownloadItemStateReady        DownloadItemState = "ready"
+	DownloadItemStateFailed       DownloadItemState = "failed"
+)
+
+func (e *DownloadItemState) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = DownloadItemState(s)
+	case string:
+		*e = DownloadItemState(s)
+	default:
+		return fmt.Errorf("unsupported scan type for DownloadItemState: %T", src)
+	}
+	return nil
+}
+
+type NullDownloadItemState struct {
+	DownloadItemState DownloadItemState
+	Valid             bool // Valid is true if DownloadItemState is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullDownloadItemState) Scan(value interface{}) error {
+	if value == nil {
+		ns.DownloadItemState, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.DownloadItemState.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullDownloadItemState) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.DownloadItemState), nil
+}
+
+type DownloadKind string
+
+const (
+	DownloadKindContact DownloadKind = "contact"
+	DownloadKindAlbum   DownloadKind = "album"
+	DownloadKindTray    DownloadKind = "tray"
+)
+
+func (e *DownloadKind) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = DownloadKind(s)
+	case string:
+		*e = DownloadKind(s)
+	default:
+		return fmt.Errorf("unsupported scan type for DownloadKind: %T", src)
+	}
+	return nil
+}
+
+type NullDownloadKind struct {
+	DownloadKind DownloadKind
+	Valid        bool // Valid is true if DownloadKind is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullDownloadKind) Scan(value interface{}) error {
+	if value == nil {
+		ns.DownloadKind, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.DownloadKind.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullDownloadKind) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.DownloadKind), nil
+}
 
 type RiverJobState string
 
@@ -59,6 +148,176 @@ func (ns NullRiverJobState) Value() (driver.Value, error) {
 	return string(ns.RiverJobState), nil
 }
 
+type Album struct {
+	ID             string
+	OwnerNsid      string
+	PrimaryPhotoID pgtype.Int8
+	Title          string
+	Description    string
+	PhotosCount    int64
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	SeenAt         pgtype.Timestamptz
+}
+
+type AlbumPhoto struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type AlbumPhotosP00 struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type AlbumPhotosP01 struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type AlbumPhotosP02 struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type AlbumPhotosP03 struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type AlbumPhotosP04 struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type AlbumPhotosP05 struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type AlbumPhotosP06 struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type AlbumPhotosP07 struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type AlbumPhotosP08 struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type AlbumPhotosP09 struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type AlbumPhotosP10 struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type AlbumPhotosP11 struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type AlbumPhotosP12 struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type AlbumPhotosP13 struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type AlbumPhotosP14 struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type AlbumPhotosP15 struct {
+	AlbumID  string
+	PhotoID  int64
+	Position int32
+	SeenAt   pgtype.Timestamptz
+}
+
+type ApiCallLog struct {
+	ID              int64
+	At              pgtype.Timestamptz
+	KeyID           pgtype.Int8
+	Class           pgtype.Text
+	CalledAt        pgtype.Timestamptz
+	UserID          pgtype.Int8
+	AccountID       pgtype.Int8
+	Node            pgtype.Text
+	Method          pgtype.Text
+	Status          pgtype.Text
+	ErrorCode       pgtype.Int8
+	LatencyMs       pgtype.Int8
+	Bytes           pgtype.Int8
+	Lane            pgtype.Text
+	FlickrAccount   pgtype.Text
+	Facet           pgtype.Text
+	Attempt         int32
+	StartedAt       pgtype.Timestamptz
+	HttpStatus      pgtype.Int2
+	FlickrStat      pgtype.Text
+	FlickrErrorCode pgtype.Int8
+	ErrorMessage    pgtype.Text
+	ResponseBytes   pgtype.Int8
+	NodeID          pgtype.Text
+	RequestID       pgtype.UUID
+	Outcome         pgtype.Text
+}
+
+type ApiCallRollup struct {
+	Day       pgtype.Date
+	Hour      int16
+	KeyID     int64
+	Method    string
+	CallCount int64
+	Errors    int64
+	P95Ms     int64
+}
+
 type ApiKey struct {
 	ID             int64
 	UserID         int64
@@ -80,6 +339,17 @@ type AppSetting struct {
 	Max             pgtype.Float8
 }
 
+type Asset struct {
+	ID        int64
+	PhotoID   int64
+	SizeLabel string
+	Sha256    []byte
+	Bytes     int64
+	BlobKey   string
+	ExpiresAt pgtype.Timestamptz
+	CreatedAt pgtype.Timestamptz
+}
+
 type AuditEvent struct {
 	ID        int64
 	Actor     string
@@ -87,6 +357,223 @@ type AuditEvent struct {
 	Target    string
 	Detail    []byte
 	CreatedAt pgtype.Timestamptz
+}
+
+type Contact struct {
+	PersonNsid  string
+	ContactNsid string
+	SeenAt      pgtype.Timestamptz
+}
+
+type CrawlCycle struct {
+	UserID           int64
+	CursorPersonNsid string
+	StartedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+}
+
+type CrawlInterest struct {
+	UserID           int64
+	PersonNsid       string
+	Depth            int32
+	Via              string
+	Starred          bool
+	SelectedUntil    pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	PausedAt         pgtype.Timestamptz
+	LastCheckedAt    pgtype.Timestamptz
+	LastSeenAt       pgtype.Timestamptz
+	LastFaveAt       pgtype.Timestamptz
+	LastReconciledAt pgtype.Timestamptz
+}
+
+type CrawlObservation struct {
+	ID         int64
+	WorkItemID int64
+	Page       int32
+	Kind       string
+	Subject    string
+	Data       []byte
+	ObservedAt pgtype.Timestamptz
+}
+
+type Download struct {
+	ID        int64
+	UserID    int64
+	Kind      DownloadKind
+	Subject   string
+	Status    string
+	CreatedAt pgtype.Timestamptz
+	ExpiresAt pgtype.Timestamptz
+}
+
+type DownloadItem struct {
+	DownloadID int64
+	PhotoID    int64
+	State      DownloadItemState
+	Attempts   int32
+	AssetID    pgtype.Int8
+	Error      string
+}
+
+type DownloadPart struct {
+	ID         int64
+	DownloadID int64
+	PartNumber int32
+	BlobKey    string
+	Bytes      int64
+	ExpiresAt  pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
+	FetchedAt  pgtype.Timestamptz
+}
+
+type EntityFacetRestriction struct {
+	EntityType     string
+	EntityID       string
+	Facet          string
+	UserID         int64
+	KeyID          int64
+	State          string
+	FirstSeenAt    pgtype.Timestamptz
+	Reason         string
+	RecheckAt      pgtype.Timestamptz
+	PhotoUpdatedAt pgtype.Timestamptz
+}
+
+type EntityState struct {
+	EntityType  string
+	EntityID    string
+	State       string
+	FirstSeenAt pgtype.Timestamptz
+	Reason      string
+}
+
+type Favorite struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+	RemovedAt  pgtype.Timestamptz
+}
+
+type FavoritesP00 struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+}
+
+type FavoritesP01 struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+}
+
+type FavoritesP02 struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+}
+
+type FavoritesP03 struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+}
+
+type FavoritesP04 struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+}
+
+type FavoritesP05 struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+}
+
+type FavoritesP06 struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+}
+
+type FavoritesP07 struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+}
+
+type FavoritesP08 struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+}
+
+type FavoritesP09 struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+}
+
+type FavoritesP10 struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+}
+
+type FavoritesP11 struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+}
+
+type FavoritesP12 struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+}
+
+type FavoritesP13 struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+}
+
+type FavoritesP14 struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+}
+
+type FavoritesP15 struct {
+	PersonNsid string
+	PhotoID    int64
+	FaveDate   pgtype.Timestamptz
+	SeenAt     pgtype.Timestamptz
+}
+
+type FeatureFlag struct {
+	Name      string
+	Enabled   bool
+	Audience  string
+	UserIds   []int64
+	UpdatedAt pgtype.Timestamptz
 }
 
 type FlickrAccount struct {
@@ -99,6 +586,204 @@ type FlickrAccount struct {
 	SecretSealed []byte
 	Status       string
 	CreatedAt    pgtype.Timestamptz
+}
+
+type Gallery struct {
+	ID             string
+	OwnerNsid      string
+	Title          string
+	Description    string
+	PrimaryPhotoID pgtype.Int8
+	PhotosCount    int64
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	SeenAt         pgtype.Timestamptz
+}
+
+type GalleryPhoto struct {
+	GalleryID string
+	PhotoID   int64
+	Position  int32
+	SeenAt    pgtype.Timestamptz
+}
+
+type Group struct {
+	Nsid         string
+	Name         string
+	Description  string
+	MembersCount int64
+	PoolCount    int64
+	SeenAt       pgtype.Timestamptz
+}
+
+type GroupPoolPhoto struct {
+	GroupNsid string
+	PhotoID   int64
+	SeenAt    pgtype.Timestamptz
+}
+
+type Incident struct {
+	ID        int64
+	Kind      string
+	Scope     string
+	Severity  string
+	Title     string
+	Detail    []byte
+	State     string
+	FirstSeen pgtype.Timestamptz
+	LastSeen  pgtype.Timestamptz
+	Count     int64
+	AckedBy   pgtype.Int8
+	ClosedAt  pgtype.Timestamptz
+}
+
+type Node struct {
+	Name            string
+	Roles           []string
+	Region          string
+	Version         string
+	EgressIp        *netip.Addr
+	State           string
+	CoolingUntil    pgtype.Timestamptz
+	LastHeartbeatAt pgtype.Timestamptz
+	Metrics         []byte
+	TokenHash       []byte
+}
+
+type Observation struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
+}
+
+type ObservationsP00 struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
+}
+
+type ObservationsP01 struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
+}
+
+type ObservationsP02 struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
+}
+
+type ObservationsP03 struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
+}
+
+type ObservationsP04 struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
+}
+
+type ObservationsP05 struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
+}
+
+type ObservationsP06 struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
+}
+
+type ObservationsP07 struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
+}
+
+type ObservationsP08 struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
+}
+
+type ObservationsP09 struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
+}
+
+type ObservationsP10 struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
+}
+
+type ObservationsP11 struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
+}
+
+type ObservationsP12 struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
+}
+
+type ObservationsP13 struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
+}
+
+type ObservationsP14 struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
+}
+
+type ObservationsP15 struct {
+	UserID          int64
+	FlickrAccountID int64
+	RecordKind      string
+	RecordID        string
+	FirstSeenAt     pgtype.Timestamptz
 }
 
 type OutboxEvent struct {
@@ -119,6 +804,12 @@ type Person struct {
 	PhotosCount int64
 	LastSeenAt  pgtype.Timestamptz
 	FacetState  []byte
+}
+
+type PersonGroup struct {
+	PersonNsid string
+	GroupNsid  string
+	SeenAt     pgtype.Timestamptz
 }
 
 type Photo struct {
@@ -142,6 +833,65 @@ type Photo struct {
 	Raw            []byte
 	ContentHash    []byte
 	TombstonedAt   pgtype.Timestamptz
+	LastSeenAt     pgtype.Timestamptz
+}
+
+type PhotoComment struct {
+	PhotoID     int64
+	CommentID   string
+	AuthorNsid  string
+	AuthorName  string
+	DateCreated pgtype.Timestamptz
+	Permalink   string
+	Body        string
+	FetchedAt   pgtype.Timestamptz
+}
+
+type PhotoContext struct {
+	PhotoID     int64
+	ContextType string
+	ContextID   string
+	Title       string
+	Url         string
+	FetchedAt   pgtype.Timestamptz
+}
+
+type PhotoEnrichment struct {
+	PhotoID      int64
+	Kind         string
+	Model        string
+	ModelVersion string
+	Payload      []byte
+	CreatedAt    pgtype.Timestamptz
+}
+
+type PhotoExif struct {
+	PhotoID   int64
+	Camera    string
+	Data      []byte
+	FetchedAt pgtype.Timestamptz
+}
+
+type PhotoFacetStatus struct {
+	PhotoID        int64
+	Facet          string
+	PhotoUpdatedAt pgtype.Timestamptz
+	FetchedAt      pgtype.Timestamptz
+}
+
+type PhotoFavorite struct {
+	PhotoID    int64
+	PersonNsid string
+	Username   string
+	Realname   string
+	FaveDate   pgtype.Timestamptz
+	FetchedAt  pgtype.Timestamptz
+}
+
+type PhotoInfo struct {
+	PhotoID   int64
+	Data      []byte
+	FetchedAt pgtype.Timestamptz
 }
 
 type PhotosP00 struct {
@@ -523,6 +1273,22 @@ type Plan struct {
 	ResourceShare pgtype.Numeric
 }
 
+type QuotaUsage struct {
+	KeyID       int64
+	WindowStart pgtype.Timestamptz
+	Used        int64
+	ByClass     []byte
+	UpdatedAt   pgtype.Timestamptz
+}
+
+type RestIdempotency struct {
+	Principal   string
+	Key         string
+	Fingerprint string
+	Response    []byte
+	ExpiresAt   pgtype.Timestamptz
+}
+
 type RiverJob struct {
 	ID           int64
 	State        RiverJobState
@@ -577,6 +1343,12 @@ type Session struct {
 	IpAddress  string
 }
 
+type SharingSetting struct {
+	UserID    int64
+	Enabled   bool
+	ChangedAt pgtype.Timestamptz
+}
+
 type User struct {
 	ID           int64
 	Email        string
@@ -598,7 +1370,7 @@ type WorkItem struct {
 	ID             int64
 	Kind           string
 	SubjectKey     string
-	UserID         pgtype.Int8
+	UserID         int64
 	KeyID          pgtype.Int8
 	State          string
 	Cursor         []byte
