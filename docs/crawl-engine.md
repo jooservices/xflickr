@@ -80,6 +80,36 @@ that owner as a discovery. The engine records that interest at
 on a maximum-depth page are still stored; their owners do not create deeper
 interests.
 
+## Scan-start checkpoints (JOOXF-345)
+
+An initial `photos` or `favorites` scan captures a scan-start checkpoint
+(`cursor.checkpoint_at`) before the first Flickr page is requested. The pure
+domain rule `NextCheckpoint(scanStart, pagesCommitted, old)` is the only place
+that decides what to store: a failed or partial scan keeps the previous
+interest checkpoint; only when every page of the scan has committed does the
+final page transaction write the scan-start time into
+`crawl_interests.last_seen_at` (photos) or `last_fave_at` (favorites).
+
+Later checks and incremental pages use those stored bounds as inclusive Flickr
+filters:
+
+- photos: `min_upload_date` on
+  [flickr.people.getPhotos](https://www.flickr.com/services/api/flickr.people.getPhotos.html)
+  (XFlickr does not use `min_taken_date` for crawl checkpoints)
+- favorites: `min_fave_date` on
+  [flickr.favorites.getList](https://www.flickr.com/services/api/flickr.favorites.getList.html)
+
+Inclusive bounds re-read items exactly at the checkpoint once; the upsert is
+idempotent. Late arrivals during a long scan are covered because the stored
+value is the start time, not the finish time. Checkpoints are per
+`(user_id, person_nsid)` observer scope.
+
+Existing null or zero checkpoints are repaired offline by
+`xflickr repair-checkpoints --batch-size 500` (no Flickr calls). Prefer the
+latest stored photo `last_seen_at` / favorite `seen_at`; otherwise use the
+latest `uploaded_at` / `fave_date` minus a one-hour safety margin. Non-zero
+checkpoints are never overwritten; a second run changes nothing.
+
 ## Change checks and incremental work
 
 The `check` facet probes a person's photo and favorite lists with
