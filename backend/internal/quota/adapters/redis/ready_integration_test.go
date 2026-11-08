@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -146,5 +147,96 @@ func TestRebuildFromCallLog3000Grants(t *testing.T) {
 	}
 	if final != hourly {
 		t.Fatalf("final ledger = %d, want hourly limit %d", final, hourly)
+	}
+}
+
+// TestReadyMarkerSurvivesSteadyTraffic proves grants extend an existing ready
+// marker TTL so steady traffic never triggers a rebuild that would double-count
+// live members against call-log members.
+func TestReadyMarkerSurvivesSteadyTraffic(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use the worktree Redis")
+	}
+	values, err := godotenv.Read(filepath.Join(integrationRoot(t), ".env"))
+	if err != nil {
+		t.Fatal("read shared worktree environment")
+	}
+	prefix := values["REDIS_PREFIX"]
+	db, _ := strconv.Atoi(values["REDIS_DB"])
+	if prefix == "" || prefix == "xflickr:" || db == 7 {
+		t.Fatal("refusing the live Redis index")
+	}
+	port, _ := strconv.Atoi(values["REDIS_PORT"])
+	if port == 0 {
+		port = 16382
+	}
+	host := values["REDIS_HOST"]
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	client := redisv9.NewClient(&redisv9.Options{
+		Addr:     net.JoinHostPort(host, strconv.Itoa(port)),
+		Password: values["REDIS_PASSWORD"],
+		DB:       db,
+	})
+	t.Cleanup(func() { _ = client.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := client.Ping(ctx).Err(); err != nil {
+		t.Fatalf("ping worktree Redis: %v", err)
+	}
+
+	const keyID int64 = 344344344
+	rolePrefix := prefix + "jooxf344ready:"
+	budget := domain.Budget{HourlyLimit: 3600, PerSecondRate: 10000, Burst: 10000, Reserve: 0, PersonLaneShare: 0}
+	var rebuilds atomic.Int64
+	inner := rebuilderFor(Governor{Client: client, Prefix: rolePrefix}, memStore{}, memCalls{})
+	governor, err := NewGovernor(client, rolePrefix, StaticBudgets{keyID: budget}, countingRebuilder{inner: inner, n: &rebuilds}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := governor.keys(keyID)
+	readyKey := keys[5]
+	laneKey := keys[1]
+	t.Cleanup(func() {
+		for _, key := range keys {
+			_ = client.Del(context.Background(), key).Err()
+		}
+	})
+	for _, key := range keys {
+		if err := client.Del(ctx, key).Err(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := (Counters{Client: client, Prefix: rolePrefix}).Restore(ctx, app.Usage{KeyID: keyID}); err != nil {
+		t.Fatal(err)
+	}
+	const shortTTL = 300 * time.Millisecond
+	if err := client.PExpire(ctx, readyKey, shortTTL).Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(shortTTL + 400*time.Millisecond)
+	grants := 0
+	for time.Now().Before(deadline) {
+		permit, _, err := governor.Acquire(ctx, keyID, domain.Interactive)
+		if err != nil || permit == nil {
+			t.Fatalf("grant during steady traffic = %v %v (rebuilds=%d)", permit, err, rebuilds.Load())
+		}
+		grants++
+		time.Sleep(20 * time.Millisecond)
+	}
+	if grants < 2 {
+		t.Fatalf("need several grants across the short TTL; got %d", grants)
+	}
+	if rebuilds.Load() != 0 {
+		t.Fatalf("rebuild result happened %d times; grants must extend the ready marker", rebuilds.Load())
+	}
+	if n, err := client.Exists(ctx, readyKey).Result(); err != nil || n != 1 {
+		t.Fatalf("ready marker missing after steady grants: exists=%d err=%v", n, err)
+	}
+	used, err := client.ZCard(ctx, laneKey).Result()
+	if err != nil || used != int64(grants) {
+		t.Fatalf("rolling window count = %d err=%v, want %d (no double count)", used, err, grants)
 	}
 }

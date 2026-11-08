@@ -30,26 +30,32 @@ func TestAcquireRefusesWhenLedgerNotReady(t *testing.T) {
 	}
 }
 
-func TestGrantNeverSetsReadyMarker(t *testing.T) {
+func TestGrantNeverCreatesReadyMarker(t *testing.T) {
+	g, server, _ := setupGovernor(t, generousBudget())
+	g.Rebuilder = noopRebuilder{}
+	ready := g.keys(1)[5]
+	server.Del(ready)
+	if permit, wait, err := acquire(t, g, domain.Interactive); err != nil || permit != nil || wait != domain.LedgerNotReadyRetry {
+		t.Fatalf("without ready, grant must refuse: permit=%v wait=%s err=%v", permit, wait, err)
+	}
+	if server.Exists(ready) {
+		t.Fatal("a refused acquire must not create the ready marker")
+	}
+}
+
+func TestGrantExtendsExistingReadyMarkerTTL(t *testing.T) {
 	g, server, _ := setupGovernor(t, generousBudget())
 	g.Rebuilder = noopRebuilder{}
 	ready := g.keys(1)[5]
 	server.Set(ready, "1")
-	server.SetTTL(ready, time.Second)
+	server.SetTTL(ready, 500*time.Millisecond)
 
 	if permit, _, err := acquire(t, g, domain.Interactive); err != nil || permit == nil {
 		t.Fatalf("grant with ready marker = %v %v", permit, err)
 	}
 	ttl := server.TTL(ready)
-	if ttl > 2*time.Second {
-		t.Fatalf("grant refreshed ready marker TTL to %s; only restore may set ready", ttl)
-	}
-	server.Del(ready)
-	if permit, wait, err := acquire(t, g, domain.Interactive); err != nil || permit != nil || wait != domain.LedgerNotReadyRetry {
-		t.Fatalf("after deleting ready, grant must refuse: permit=%v wait=%s err=%v", permit, wait, err)
-	}
-	if server.Exists(ready) {
-		t.Fatal("a refused acquire must not set the ready marker")
+	if ttl < time.Minute {
+		t.Fatalf("grant must extend existing ready marker TTL, got %s", ttl)
 	}
 }
 
