@@ -1,5 +1,7 @@
 -- Same KEYS as acquire. ARGV: class, timestamp ms, stable member triples.
 -- Existing members are retained; replaying the same log rows is idempotent.
+-- The ready marker lives as long as the ledger is live: restore sets it,
+-- grants extend it, Redis loss removes it.
 if redis.call('EXISTS', KEYS[6]) == 1 then return 0 end
 local now = redisNow()
 for i = 1, #ARGV, 3 do

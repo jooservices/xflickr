@@ -1,6 +1,7 @@
 -- KEYS: bucket, interactive set, person set, cooldown, photo set, ready, photo demand, sequence
 -- ARGV: rate, burst, hourly limit, reserve, person share, class, idle photo protection
--- Ready is read-only here; only restore.lua may set the ready marker.
+-- Grants never SET the ready marker; only restore.lua creates it. A successful
+-- grant only EXTENDS an existing marker TTL so steady traffic keeps the ledger live.
 local now, counts, used, oldest = rollingWindow(KEYS)
 local rate = tonumber(ARGV[1])
 local burst = tonumber(ARGV[2])
@@ -86,4 +87,6 @@ local sequence = redis.call('INCR', KEYS[8])
 redis.call('PEXPIRE', KEYS[8], 7200000)
 redis.call('ZADD', lane, now, tostring(now) .. ':' .. tostring(sequence))
 redis.call('PEXPIRE', lane, 7200000)
+-- PEXPIRE on a missing key is a no-op, so this never creates the marker.
+redis.call('PEXPIRE', KEYS[6], 7200000)
 return {1, 0, 'ok', now}
