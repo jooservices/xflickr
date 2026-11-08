@@ -86,6 +86,8 @@ type fakeTx struct {
 	enqueued     []NewWork
 	interests    []domain.Interest
 	observations []domain.Observation
+	groups       []catalog.Group
+	personGroups []catalog.PersonGroup
 	advanced     *domain.Cursor
 	finished     bool
 }
@@ -123,8 +125,14 @@ func (t *fakeTx) UpsertAlbums(context.Context, []catalog.Album) error { return t
 func (t *fakeTx) UpsertGalleries(context.Context, []catalog.Gallery) error {
 	return t.fail("galleries")
 }
-func (t *fakeTx) UpsertGroups(context.Context, []catalog.Group) error { return t.fail("groups") }
-func (t *fakeTx) UpsertPersonGroups(context.Context, []catalog.PersonGroup) error {
+
+func (t *fakeTx) UpsertGroups(_ context.Context, groups []catalog.Group) error {
+	t.groups = append(t.groups, groups...)
+	return t.fail("groups")
+}
+
+func (t *fakeTx) UpsertPersonGroups(_ context.Context, groups []catalog.PersonGroup) error {
+	t.personGroups = append(t.personGroups, groups...)
 	return t.fail("person_groups")
 }
 
