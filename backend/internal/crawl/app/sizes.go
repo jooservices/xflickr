@@ -8,6 +8,7 @@ import (
 	"time"
 
 	catalog "github.com/jooservices/xflickr/internal/catalog/domain"
+	crawldomain "github.com/jooservices/xflickr/internal/crawl/domain"
 	quotadomain "github.com/jooservices/xflickr/internal/quota/domain"
 	"github.com/jooservices/xflickr/pkg/flickr"
 )
@@ -23,8 +24,19 @@ type SizesClient interface {
 	GetSizes(ctx context.Context, keyID int64, photoID string) ([]flickr.PhotoSize, error)
 }
 
+// ClassifiedSizesClient charges getSizes to an explicit quota class.
 type ClassifiedSizesClient interface {
 	GetSizesClass(ctx context.Context, keyID int64, photoID string, class quotadomain.Class) ([]flickr.PhotoSize, error)
+}
+
+// AuthenticatedSizesClient signs getSizes with a connected account token.
+type AuthenticatedSizesClient interface {
+	GetSizesForAccount(ctx context.Context, keyID, accountID int64, photoID string, class quotadomain.Class) ([]flickr.PhotoSize, error)
+}
+
+// KeyUser resolves the XFlickr user that owns an API key.
+type KeyUser interface {
+	UserIDForKey(ctx context.Context, keyID int64) (int64, error)
 }
 
 // QuotaWaitError tells the job runner to hold a sizes job until quota resets
@@ -52,6 +64,8 @@ type Sizes struct {
 	States EntityStates
 	Store  SizesStore
 	Flickr SizesClient
+	Auth   crawldomain.SizesAuthenticator
+	Users  KeyUser
 	Now    func() time.Time
 }
 
@@ -90,36 +104,130 @@ func (s Sizes) Handle(ctx context.Context, job SizesJob) error {
 		}
 		return s.reannounce(ctx, job.PhotoID, photo)
 	}
-	// Flickr lists restricted media with a placeholder server even when getInfo
-	// succeeds. Do not spend quota confirming a known inaccessible sizes result.
-	if photo.HasRestrictedPlaceholder() {
+	access := EntityAccess{EntityRef: EntityRef{Kind: "photo", ID: fmt.Sprint(job.PhotoID)}, Facet: "sizes", KeyID: job.KeyID, Version: photo.LastUpdate}
+	placeholder := photo.HasRestrictedPlaceholder()
+	if !placeholder {
+		if s.States != nil {
+			blocked, err := s.States.Suppressed(ctx, access, s.now())
+			if err != nil {
+				return err
+			}
+			if blocked {
+				return s.Store.SetSizes(ctx, job.PhotoID, []byte("[]"), catalog.SizesUnavailable, s.now())
+			}
+		}
+		sizes, err := s.fetchAnonymous(ctx, job)
+		if err == nil {
+			return s.confirm(ctx, job.PhotoID, sizes)
+		}
+		if !sizesRestricted(err) {
+			return s.resolveFailure(ctx, job.PhotoID, access, err)
+		}
+		return s.retryAuthenticated(ctx, job, photo, true, err)
+	}
+	// Flickr lists restricted media with server 65535. Skip anonymous getSizes
+	// and retry once with a connected account that may view the photo.
+	return s.retryAuthenticated(ctx, job, photo, false, nil)
+}
+
+func (s Sizes) fetchAnonymous(ctx context.Context, job SizesJob) ([]flickr.PhotoSize, error) {
+	if classified, ok := s.Flickr.(ClassifiedSizesClient); ok && job.Class != "" {
+		return classified.GetSizesClass(ctx, job.KeyID, fmt.Sprint(job.PhotoID), quotadomain.Class(job.Class))
+	}
+	return s.Flickr.GetSizes(ctx, job.KeyID, fmt.Sprint(job.PhotoID))
+}
+
+func (s Sizes) retryAuthenticated(ctx context.Context, job SizesJob, photo catalog.Photo, restricted bool, anonymousErr error) error {
+	decision, err := s.decideAuth(ctx, job, photo, restricted)
+	if err != nil {
+		return err
+	}
+	switch decision.Kind {
+	case SizesAuthAccount:
+		return s.fetchAuthenticated(ctx, job, photo, decision.Candidate)
+	default:
+		if anonymousErr != nil {
+			access := EntityAccess{EntityRef: EntityRef{Kind: "photo", ID: fmt.Sprint(job.PhotoID)}, Facet: "sizes", KeyID: job.KeyID, Version: photo.LastUpdate}
+			return s.resolveFailure(ctx, job.PhotoID, access, anonymousErr)
+		}
 		return s.Store.SetSizes(ctx, job.PhotoID, []byte("[]"), catalog.SizesUnavailable, s.now())
 	}
-	access := EntityAccess{EntityRef: EntityRef{Kind: "photo", ID: fmt.Sprint(job.PhotoID)}, Facet: "sizes", KeyID: job.KeyID, Version: photo.LastUpdate}
-	if s.States != nil {
-		blocked, err := s.States.Suppressed(ctx, access, s.now())
+}
+
+func (s Sizes) decideAuth(ctx context.Context, job SizesJob, photo catalog.Photo, restricted bool) (SizesAuthDecision, error) {
+	var candidates []crawldomain.SizesAuthCandidate
+	if s.Auth != nil && s.Users != nil {
+		userID, err := s.Users.UserIDForKey(ctx, job.KeyID)
 		if err != nil {
-			return err
+			return SizesAuthDecision{}, fmt.Errorf("crawl: resolve sizes key %d owner: %w", job.KeyID, err)
 		}
-		if blocked {
-			return s.Store.SetSizes(ctx, job.PhotoID, []byte("[]"), catalog.SizesUnavailable, s.now())
+		candidates, err = s.Auth.SizesAuthCandidates(ctx, photo.OwnerNSID, userID)
+		if err != nil {
+			return SizesAuthDecision{}, fmt.Errorf("crawl: list sizes auth candidates for photo %d: %w", job.PhotoID, err)
 		}
 	}
-	var sizes []flickr.PhotoSize
-	if classified, ok := s.Flickr.(ClassifiedSizesClient); ok && job.Class != "" {
-		sizes, err = classified.GetSizesClass(ctx, job.KeyID, fmt.Sprint(job.PhotoID), quotadomain.Class(job.Class))
-	} else {
-		sizes, err = s.Flickr.GetSizes(ctx, job.KeyID, fmt.Sprint(job.PhotoID))
+	blocked := map[int64]bool{}
+	for _, candidate := range candidates {
+		if s.States == nil {
+			break
+		}
+		access := EntityAccess{
+			EntityRef: EntityRef{Kind: "photo", ID: fmt.Sprint(job.PhotoID)},
+			Facet:     "sizes",
+			UserID:    candidate.UserID,
+			KeyID:     candidate.KeyID,
+			Version:   photo.LastUpdate,
+		}
+		suppressed, err := s.States.Suppressed(ctx, access, s.now())
+		if err != nil {
+			return SizesAuthDecision{}, err
+		}
+		if suppressed {
+			blocked[candidate.AccountID] = true
+		}
 	}
+	return ChooseSizesAuth(SizesAuthInput{
+		Placeholder: photo.HasRestrictedPlaceholder(),
+		Restricted:  restricted,
+		OnDemand:    job.Class == string(quotadomain.Interactive),
+		Candidates:  candidates,
+		Blocked:     func(candidate crawldomain.SizesAuthCandidate) bool { return blocked[candidate.AccountID] },
+	}), nil
+}
+
+func (s Sizes) fetchAuthenticated(ctx context.Context, job SizesJob, photo catalog.Photo, candidate crawldomain.SizesAuthCandidate) error {
+	authenticated, ok := s.Flickr.(AuthenticatedSizesClient)
+	if !ok {
+		return errors.New("crawl: authenticated sizes client is required for restricted photos")
+	}
+	class := quotadomain.Photo
+	if job.Class != "" {
+		class = quotadomain.Class(job.Class)
+	}
+	access := EntityAccess{
+		EntityRef: EntityRef{Kind: "photo", ID: fmt.Sprint(job.PhotoID)},
+		Facet:     "sizes",
+		UserID:    candidate.UserID,
+		KeyID:     candidate.KeyID,
+		Version:   photo.LastUpdate,
+	}
+	sizes, err := authenticated.GetSizesForAccount(ctx, candidate.KeyID, candidate.AccountID, fmt.Sprint(job.PhotoID), class)
 	if err != nil {
 		return s.resolveFailure(ctx, job.PhotoID, access, err)
 	}
+	return s.confirm(ctx, job.PhotoID, sizes)
+}
 
+func (s Sizes) confirm(ctx context.Context, photoID int64, sizes []flickr.PhotoSize) error {
 	encoded, err := json.Marshal(sizes)
 	if err != nil {
-		return fmt.Errorf("crawl: encode sizes for photo %d: %w", job.PhotoID, err)
+		return fmt.Errorf("crawl: encode sizes for photo %d: %w", photoID, err)
 	}
-	return s.Store.SetSizes(ctx, job.PhotoID, encoded, catalog.SizesConfirmed, s.now())
+	return s.Store.SetSizes(ctx, photoID, encoded, catalog.SizesConfirmed, s.now())
+}
+
+func sizesRestricted(err error) bool {
+	return errors.Is(err, flickr.ErrNotFound) || errors.Is(err, flickr.ErrPermission) || errors.Is(err, flickr.ErrResourceDenied)
 }
 
 func (s Sizes) ready(ctx context.Context, job SizesJob) error {
