@@ -48,25 +48,35 @@ func changeCheckResult(page domain.Page, total int64) (domain.Result, error) {
 	switch page.Item.Cursor.Method {
 	case "flickr.people.getPhotos":
 		result := domain.Result{NextWorkCursor: &domain.Cursor{Page: 1, Method: "flickr.favorites.getList", CheckpointAt: checkpoint, Params: map[string]string{
-			"user_id": page.Item.Subject, "min_fave_date": params["min_fave_date"], "per_page": "1",
+			"user_id": page.Item.Subject, domain.ParamMinFaveDate: params[domain.ParamMinFaveDate], "per_page": "1",
 		}}}
 		if total > 0 {
-			result.Work = append(result.Work, domain.WorkSpec{Kind: "photos", Subject: page.Item.Subject, Method: "flickr.people.getPhotos", CheckpointAt: checkpoint, Reopen: true, Params: map[string]string{
-				"user_id": page.Item.Subject, "min_upload_date": params["min_upload_date"], "per_page": strconv.Itoa(incrementalPerPage), "extras": incrementalPhotoExtras,
-			}})
+			result.Work = append(result.Work, incrementalListWork(domain.FacetPhotos, page.Item.Subject, checkpoint, params[domain.ParamMinUploadDate]))
 		}
 		return result, nil
 	case "flickr.favorites.getList":
 		result := domain.Result{Work: catalogRefreshWork(page.Item.Subject)}
 		if total > 0 {
-			result.Work = append(result.Work, domain.WorkSpec{Kind: "favorites", Subject: page.Item.Subject, Method: "flickr.favorites.getList", CheckpointAt: checkpoint, Reopen: true, Params: map[string]string{
-				"user_id": page.Item.Subject, "min_fave_date": params["min_fave_date"], "per_page": strconv.Itoa(incrementalPerPage), "extras": incrementalPhotoExtras,
-			}})
+			result.Work = append(result.Work, incrementalListWork(domain.FacetFavorites, page.Item.Subject, checkpoint, params[domain.ParamMinFaveDate]))
 		}
 		return result, nil
 	default:
 		return domain.Result{}, fmt.Errorf("crawl: unsupported check method %q", page.Item.Cursor.Method)
 	}
+}
+
+func incrementalListWork(kind, person string, checkpointAt int64, minDate string) domain.WorkSpec {
+	params := map[string]string{
+		"user_id": person, "per_page": strconv.Itoa(incrementalPerPage), "extras": incrementalPhotoExtras,
+	}
+	method := "flickr.people.getPhotos"
+	if kind == domain.FacetFavorites {
+		method = "flickr.favorites.getList"
+		params[domain.ParamMinFaveDate] = minDate
+	} else {
+		params[domain.ParamMinUploadDate] = minDate
+	}
+	return domain.WorkSpec{Kind: kind, Subject: person, Method: method, CheckpointAt: checkpointAt, Reopen: true, Params: params}
 }
 
 // catalogRefreshWork re-reads the albums, galleries and groups lists. It runs
@@ -115,13 +125,15 @@ func (ContactsPhotos) Handle(_ context.Context, page domain.Page) (domain.Result
 // CheckRequests returns the two inexpensive Flickr probes for one person.
 // lastSeen and lastFavorite are Unix seconds from that user's crawl checkpoint.
 func CheckRequests(person string, lastSeen, lastFavorite int64) []RequestSpec {
+	photoParams := domain.PhotosCheckpointFilter(domain.ScanCheckpoint(lastSeen))
+	photoParams["user_id"] = person
+	photoParams["per_page"] = "1"
+	faveParams := domain.FavoritesCheckpointFilter(domain.ScanCheckpoint(lastFavorite))
+	faveParams["user_id"] = person
+	faveParams["per_page"] = "1"
 	return []RequestSpec{
-		{Kind: "photos", Subject: person, Method: "flickr.people.getPhotos", Params: map[string]string{
-			"user_id": person, "min_upload_date": strconv.FormatInt(lastSeen, 10), "per_page": "1",
-		}},
-		{Kind: "favorites", Subject: person, Method: "flickr.favorites.getList", Params: map[string]string{
-			"user_id": person, "min_fave_date": strconv.FormatInt(lastFavorite, 10), "per_page": "1",
-		}},
+		{Kind: domain.FacetPhotos, Subject: person, Method: "flickr.people.getPhotos", Params: photoParams},
+		{Kind: domain.FacetFavorites, Subject: person, Method: "flickr.favorites.getList", Params: faveParams},
 	}
 }
 
@@ -144,14 +156,10 @@ func IncrementalWork(person string, lastSeen, lastFavorite int64, photos, favori
 	}
 	result := make([]domain.WorkSpec, 0, 2)
 	if photoCount > 0 {
-		result = append(result, domain.WorkSpec{Kind: "photos", Subject: person, Method: "flickr.people.getPhotos", Reopen: true, Params: map[string]string{
-			"user_id": person, "min_upload_date": strconv.FormatInt(lastSeen, 10), "per_page": strconv.Itoa(incrementalPerPage), "extras": incrementalPhotoExtras,
-		}})
+		result = append(result, incrementalListWork(domain.FacetPhotos, person, 0, strconv.FormatInt(lastSeen, 10)))
 	}
 	if favoriteCount > 0 {
-		result = append(result, domain.WorkSpec{Kind: "favorites", Subject: person, Method: "flickr.favorites.getList", Reopen: true, Params: map[string]string{
-			"user_id": person, "min_fave_date": strconv.FormatInt(lastFavorite, 10), "per_page": strconv.Itoa(incrementalPerPage), "extras": incrementalPhotoExtras,
-		}})
+		result = append(result, incrementalListWork(domain.FacetFavorites, person, 0, strconv.FormatInt(lastFavorite, 10)))
 	}
 	return result, nil
 }

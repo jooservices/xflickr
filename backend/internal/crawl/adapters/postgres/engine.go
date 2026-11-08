@@ -98,6 +98,23 @@ func (e *Engine) Start(ctx context.Context, id int64) (bool, error) {
 	return tag.RowsAffected() > 0, nil
 }
 
+// StampScanStart writes checkpoint_at onto a photos/favorites cursor when it is
+// still missing. Concurrent stamps keep the first value.
+func (e *Engine) StampScanStart(ctx context.Context, id int64, at int64) error {
+	if at <= 0 {
+		return nil
+	}
+	_, err := e.conn.Exec(ctx, `
+		UPDATE work_items SET cursor = jsonb_set(cursor, '{checkpoint_at}', to_jsonb($2::bigint), true), updated_at = now()
+		WHERE id = $1
+		  AND kind IN ('photos', 'favorites')
+		  AND COALESCE((cursor->>'checkpoint_at')::bigint, 0) <= 0`, id, at)
+	if err != nil {
+		return fmt.Errorf("crawl: stamp scan-start checkpoint: %w", err)
+	}
+	return nil
+}
+
 // Defer returns a running item to pending until deferral.NotBefore.
 func (e *Engine) Defer(ctx context.Context, id int64, deferral app.Deferral) error {
 	consumed := 0
@@ -300,23 +317,54 @@ func (w workTx) Advance(ctx context.Context, id int64, cursor domain.Cursor) err
 }
 
 func (w workTx) Finish(ctx context.Context, id int64) error {
-	if _, err := w.tx.Exec(ctx, finishCrawlSQL, id); err != nil {
+	var kind, subject string
+	var userID, scanStart int64
+	err := w.tx.QueryRow(ctx, `
+		UPDATE work_items SET state = 'done', last_error=NULL, lease_expires_at=NULL, updated_at=now()
+		WHERE id=$1 AND state='running'
+		RETURNING kind, subject_key, COALESCE(user_id,0), COALESCE((cursor->>'checkpoint_at')::bigint,0)`, id,
+	).Scan(&kind, &subject, &userID, &scanStart)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
 		return fmt.Errorf("crawl: finish work item: %w", err)
+	}
+	if !domain.NeedsScanStartCheckpoint(kind) || userID <= 0 || subject == "" {
+		return nil
+	}
+	var oldUnix int64
+	if kind == domain.FacetFavorites {
+		err = w.tx.QueryRow(ctx, `
+			SELECT COALESCE(floor(extract(epoch FROM last_fave_at))::bigint, 0)
+			FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2 FOR UPDATE`, userID, subject).Scan(&oldUnix)
+	} else {
+		err = w.tx.QueryRow(ctx, `
+			SELECT COALESCE(floor(extract(epoch FROM last_seen_at))::bigint, 0)
+			FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2 FOR UPDATE`, userID, subject).Scan(&oldUnix)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("crawl: read interest checkpoint: %w", err)
+	}
+	next := domain.NextCheckpoint(domain.ScanCheckpoint(scanStart), true, domain.ScanCheckpoint(oldUnix))
+	if next == domain.ScanCheckpoint(oldUnix) {
+		return nil
+	}
+	if kind == domain.FacetFavorites {
+		_, err = w.tx.Exec(ctx, `UPDATE crawl_interests SET last_fave_at = to_timestamp($3) WHERE user_id=$1 AND person_nsid=$2`,
+			userID, subject, next.Unix())
+	} else {
+		_, err = w.tx.Exec(ctx, `UPDATE crawl_interests SET last_seen_at = to_timestamp($3) WHERE user_id=$1 AND person_nsid=$2`,
+			userID, subject, next.Unix())
+	}
+	if err != nil {
+		return fmt.Errorf("crawl: store scan checkpoint: %w", err)
 	}
 	return nil
 }
-
-const finishCrawlSQL = `WITH finished AS (
-	UPDATE work_items SET state = 'done', last_error=NULL, lease_expires_at=NULL, updated_at=now()
-	WHERE id=$1 AND state='running'
-	RETURNING kind, subject_key, user_id, COALESCE((cursor->>'checkpoint_at')::bigint,0) AS checkpoint_at
-)
-UPDATE crawl_interests AS interest SET
-	last_seen_at=CASE WHEN finished.kind='photos' THEN to_timestamp(finished.checkpoint_at) ELSE interest.last_seen_at END,
-	last_fave_at=CASE WHEN finished.kind='favorites' THEN to_timestamp(finished.checkpoint_at) ELSE interest.last_fave_at END
-FROM finished
-WHERE interest.user_id=finished.user_id AND interest.person_nsid=finished.subject_key
-	AND finished.checkpoint_at > 0 AND finished.kind IN ('photos','favorites')`
 
 type interestTx struct{ tx Conn }
 

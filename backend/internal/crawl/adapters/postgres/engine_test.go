@@ -50,6 +50,7 @@ type engConn struct {
 	failExec string
 	affected int64
 	row      engRow
+	rows     []engRow
 }
 
 func (c *engConn) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
@@ -63,7 +64,19 @@ func (c *engConn) Exec(_ context.Context, sql string, args ...any) (pgconn.Comma
 func (c *engConn) Query(context.Context, string, ...any) (pgx.Rows, error) {
 	return nil, errors.New("unused")
 }
-func (c *engConn) QueryRow(context.Context, string, ...any) pgx.Row { return c.row }
+
+func (c *engConn) QueryRow(_ context.Context, sql string, _ ...any) pgx.Row {
+	if c.failExec != "" && strings.Contains(sql, c.failExec) {
+		return engRow{err: errors.New("query failed")}
+	}
+	if len(c.rows) > 0 {
+		next := c.rows[0]
+		c.rows = c.rows[1:]
+		return next
+	}
+	return c.row
+}
+
 func (c *engConn) SendBatch(context.Context, *pgx.Batch) pgx.BatchResults {
 	return nil
 }
@@ -100,6 +113,92 @@ func TestLoadParsesCursorAndMapsMissingRows(t *testing.T) {
 	conn.row = engRow{values: []any{int64(5), "photos", "1@N01", int64(0), 2, "ready", 1, []byte(`{}`)}}
 	if _, err := newTestEngine(conn).Load(t.Context(), 5); !errors.Is(err, domain.ErrInvalidCursor) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestStampScanStart(t *testing.T) {
+	conn := &engConn{}
+	e := newTestEngine(conn)
+	if err := e.StampScanStart(t.Context(), 9, 0); err != nil {
+		t.Fatal(err)
+	}
+	if len(conn.execs) != 0 {
+		t.Fatal("zero checkpoint must not write")
+	}
+	if err := e.StampScanStart(t.Context(), 9, 1700000000); err != nil {
+		t.Fatal(err)
+	}
+	if len(conn.execs) != 1 || !strings.Contains(conn.execs[0].sql, "checkpoint_at") || conn.execs[0].args[1] != int64(1700000000) {
+		t.Fatalf("stamp exec = %#v", conn.execs)
+	}
+	conn.failExec = "checkpoint_at"
+	if err := e.StampScanStart(t.Context(), 9, 1); err == nil {
+		t.Fatal("stamp error must surface")
+	}
+}
+
+func TestWorkFinishStoresNextCheckpoint(t *testing.T) {
+	conn := &engConn{rows: []engRow{
+		{values: []any{"photos", "person", int64(7), int64(1700000000)}},
+		{values: []any{int64(0)}},
+	}}
+	err := (workTx{tx: conn}).Finish(t.Context(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conn.execs) != 1 || !strings.Contains(conn.execs[0].sql, "last_seen_at") {
+		t.Fatalf("photos finish execs = %#v", conn.execs)
+	}
+	conn = &engConn{rows: []engRow{
+		{values: []any{"favorites", "person", int64(7), int64(1700000001)}},
+		{values: []any{int64(1600000000)}},
+	}}
+	if err := (workTx{tx: conn}).Finish(t.Context(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(conn.execs) != 1 || !strings.Contains(conn.execs[0].sql, "last_fave_at") {
+		t.Fatalf("favorites finish execs = %#v", conn.execs)
+	}
+	conn = &engConn{rows: []engRow{
+		{values: []any{"photos", "person", int64(7), int64(0)}},
+		{values: []any{int64(1600000000)}},
+	}}
+	if err := (workTx{tx: conn}).Finish(t.Context(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(conn.execs) != 0 {
+		t.Fatalf("invalid scan start must keep old checkpoint, execs=%#v", conn.execs)
+	}
+	conn = &engConn{row: engRow{err: pgx.ErrNoRows}}
+	if err := (workTx{tx: conn}).Finish(t.Context(), 1); err != nil {
+		t.Fatal(err)
+	}
+	conn = &engConn{rows: []engRow{
+		{values: []any{"albums", "person", int64(7), int64(1)}},
+	}}
+	if err := (workTx{tx: conn}).Finish(t.Context(), 1); err != nil {
+		t.Fatal(err)
+	}
+	conn = &engConn{rows: []engRow{
+		{values: []any{"photos", "person", int64(7), int64(1700000000)}},
+		{err: pgx.ErrNoRows},
+	}}
+	if err := (workTx{tx: conn}).Finish(t.Context(), 1); err != nil {
+		t.Fatal(err)
+	}
+	conn = &engConn{rows: []engRow{
+		{values: []any{"photos", "person", int64(7), int64(1700000000)}},
+		{values: []any{int64(0)}},
+	}, failExec: "last_seen_at"}
+	if err := (workTx{tx: conn}).Finish(t.Context(), 1); err == nil {
+		t.Fatal("store checkpoint error must surface")
+	}
+	conn = &engConn{rows: []engRow{
+		{values: []any{"favorites", "person", int64(7), int64(1700000001)}},
+		{err: errors.New("interest read")},
+	}}
+	if err := (workTx{tx: conn}).Finish(t.Context(), 1); err == nil {
+		t.Fatal("interest read error must surface")
 	}
 }
 
@@ -185,7 +284,7 @@ func TestStopFailsOwnerItemsAndPublishes(t *testing.T) {
 }
 
 func TestDoWiresTransactionWriters(t *testing.T) {
-	conn := &engConn{}
+	conn := &engConn{row: engRow{err: pgx.ErrNoRows}}
 	e := newTestEngine(conn)
 	err := e.Do(t.Context(), func(w app.Writers) error {
 		if w.Catalog == nil || w.Work == nil {
@@ -315,7 +414,14 @@ func TestEnqueueDropsCheckForUnknownOwner(t *testing.T) {
 
 func TestWritersWrapFailures(t *testing.T) {
 	for _, fragment := range []string{"INSERT INTO work_items", "SET cursor", "SET state = 'done'", "crawl_interests", "crawl_observations"} {
-		conn := &engConn{failExec: fragment}
+		conn := &engConn{
+			failExec: fragment,
+			// Finish reads the completed work item then the interest checkpoint.
+			rows: []engRow{
+				{values: []any{"photos", "person", int64(7), int64(1700000000)}},
+				{values: []any{int64(0)}},
+			},
+		}
 		err := newTestEngine(conn).Do(t.Context(), func(w app.Writers) error {
 			steps := []func() error{
 				func() error {

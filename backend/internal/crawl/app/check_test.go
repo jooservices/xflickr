@@ -120,6 +120,22 @@ func TestFlaggedPeopleFromContactsPhotosDeduplicatesOwners(t *testing.T) {
 	}
 }
 
+func TestCheckpointScopedPerObserver(t *testing.T) {
+	// Checkpoints are per observer: the same person with different stored
+	// bounds must produce different Flickr filters and must never share values.
+	userA := CheckRequests("shared-person", 100, 200)
+	userB := CheckRequests("shared-person", 300, 400)
+	if userA[0].Params[domain.ParamMinUploadDate] == userB[0].Params[domain.ParamMinUploadDate] {
+		t.Fatalf("photo checkpoints collided: A=%#v B=%#v", userA[0].Params, userB[0].Params)
+	}
+	if userA[1].Params[domain.ParamMinFaveDate] == userB[1].Params[domain.ParamMinFaveDate] {
+		t.Fatalf("favorite checkpoints collided: A=%#v B=%#v", userA[1].Params, userB[1].Params)
+	}
+	if userA[0].Params[domain.ParamMinUploadDate] != "100" || userB[0].Params[domain.ParamMinUploadDate] != "300" {
+		t.Fatalf("observer-specific photo bounds lost: A=%#v B=%#v", userA[0].Params, userB[0].Params)
+	}
+}
+
 func TestCheckIntervalDue(t *testing.T) {
 	now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 	if !CheckIntervalDue(time.Time{}, now, time.Hour) {

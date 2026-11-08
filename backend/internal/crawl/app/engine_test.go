@@ -54,6 +54,14 @@ func (s *fakeStore) Start(context.Context, int64) (bool, error) {
 	return s.started, s.startErr
 }
 
+func (s *fakeStore) StampScanStart(_ context.Context, _ int64, at int64) error {
+	s.calls = append(s.calls, "stamp")
+	if s.item.Cursor.CheckpointAt <= 0 {
+		s.item.Cursor.CheckpointAt = at
+	}
+	return nil
+}
+
 func (s *fakeStore) Defer(_ context.Context, _ int64, d Deferral) error {
 	s.calls = append(s.calls, "defer")
 	s.deferral = d
@@ -257,6 +265,22 @@ func newRig(t *testing.T) *rig {
 		Flickr: flk, Health: health, Settings: fakeSettings{max: 3}, Now: func() time.Time { return epoch },
 	}
 	return &rig{engine: engine, store: store, tx: tx, facet: facet, flickr: flk, permit: permit, health: health, favFace: other}
+}
+
+func TestEnsureScanStartStampsPhotosBeforeFirstPage(t *testing.T) {
+	r := newRig(t)
+	r.store.item.Cursor.Page = 1
+	r.store.item.Cursor.CheckpointAt = 0
+	r.tx.current.Cursor = r.store.item.Cursor
+	if err := r.engine.Handle(t.Context(), 7); err != nil {
+		t.Fatal(err)
+	}
+	if r.store.item.Cursor.CheckpointAt != epoch.Unix() {
+		t.Fatalf("checkpoint = %d, want %d", r.store.item.Cursor.CheckpointAt, epoch.Unix())
+	}
+	if len(r.store.calls) < 2 || r.store.calls[1] != "stamp" {
+		t.Fatalf("store calls = %#v, want stamp after start", r.store.calls)
+	}
 }
 
 func TestHandleSuccessCommitsPageAndAdvances(t *testing.T) {
