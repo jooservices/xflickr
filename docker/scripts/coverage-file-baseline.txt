@@ -2,7 +2,6 @@ internal/crawl/facets/favorites.go 50.0
 internal/crawl/facets/reconcile.go 76.9
 internal/fakeflickr/dataset.go 83.3
 internal/fakeflickr/generate_image.go 67.8
-internal/identity/adapters/http/handler.go 80.6
 internal/identity/adapters/http/strict.go 69.0
 internal/identity/app/password.go 78.5
 internal/identity/app/register.go 84.6
