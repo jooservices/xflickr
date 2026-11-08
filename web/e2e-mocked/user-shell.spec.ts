@@ -127,7 +127,7 @@ test.describe('user shell', () => {
   });
 });
 
-test('shows the session-expired modal when /me answers 401', async ({ page }) => {
+test('shows the session-expired modal when /api/v1/me answers 401', async ({ page }) => {
   await mockApi(page, 'anonymous');
   await page.goto('/library');
 
