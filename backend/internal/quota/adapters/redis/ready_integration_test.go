@@ -150,9 +150,9 @@ func TestRebuildFromCallLog3000Grants(t *testing.T) {
 	}
 }
 
-// TestReadyMarkerSurvivesSteadyTraffic proves grants extend an existing ready
-// marker TTL so steady traffic never triggers a rebuild that would double-count
-// live members against call-log members.
+// TestReadyMarkerSurvivesSteadyTraffic proves a grant extends an existing ready
+// marker TTL so the marker stays live without a rebuild. Deterministic: no
+// wall-clock loops or sleeps.
 func TestReadyMarkerSurvivesSteadyTraffic(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use the worktree Redis")
@@ -211,32 +211,31 @@ func TestReadyMarkerSurvivesSteadyTraffic(t *testing.T) {
 	if _, err := (Counters{Client: client, Prefix: rolePrefix}).Restore(ctx, app.Usage{KeyID: keyID}); err != nil {
 		t.Fatal(err)
 	}
-	const shortTTL = 300 * time.Millisecond
+	const shortTTL = time.Second
 	if err := client.PExpire(ctx, readyKey, shortTTL).Err(); err != nil {
 		t.Fatal(err)
 	}
 
-	deadline := time.Now().Add(shortTTL + 400*time.Millisecond)
-	grants := 0
-	for time.Now().Before(deadline) {
-		permit, _, err := governor.Acquire(ctx, keyID, domain.Interactive)
-		if err != nil || permit == nil {
-			t.Fatalf("grant during steady traffic = %v %v (rebuilds=%d)", permit, err, rebuilds.Load())
-		}
-		grants++
-		time.Sleep(20 * time.Millisecond)
+	permit, _, err := governor.Acquire(ctx, keyID, domain.Interactive)
+	if err != nil || permit == nil {
+		t.Fatalf("grant after short ready TTL = %v %v (rebuilds=%d)", permit, err, rebuilds.Load())
 	}
-	if grants < 2 {
-		t.Fatalf("need several grants across the short TTL; got %d", grants)
+	ttl, err := client.PTTL(ctx, readyKey).Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ttl <= time.Hour {
+		t.Fatalf("grant must extend ready marker TTL above 1h, PTTL=%s", ttl)
 	}
 	if rebuilds.Load() != 0 {
-		t.Fatalf("rebuild result happened %d times; grants must extend the ready marker", rebuilds.Load())
+		t.Fatalf("rebuild ran %d times; a grant must only extend the ready marker", rebuilds.Load())
 	}
 	if n, err := client.Exists(ctx, readyKey).Result(); err != nil || n != 1 {
-		t.Fatalf("ready marker missing after steady grants: exists=%d err=%v", n, err)
+		t.Fatalf("ready marker missing after grant: exists=%d err=%v", n, err)
 	}
 	used, err := client.ZCard(ctx, laneKey).Result()
-	if err != nil || used != int64(grants) {
-		t.Fatalf("rolling window count = %d err=%v, want %d (no double count)", used, err, grants)
+	if err != nil || used != 1 {
+		t.Fatalf("rolling window count = %d err=%v, want 1", used, err)
 	}
 }
+
