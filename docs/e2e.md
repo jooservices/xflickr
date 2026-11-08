@@ -74,6 +74,16 @@ anything the monitor collects. The `/login` and `/register` screens are visited 
   `test.use({ storageState: ADMIN_STATE })`, `monitor(page)` and `expectNoErrorPage`. Use `setFlickrScenario` to
   change what `fakeflickr` answers (see [fake-flickr.md](fake-flickr.md)).
 
+## View coverage
+
+`make e2e` first runs `docker/scripts/ui-e2e-coverage.sh`, which maps
+every catalogue view ([ui/README.md](ui/README.md)) to its real-stack
+scenario in [ui/e2e-coverage.md](ui/e2e-coverage.md) and fails when a
+view has no mapped scenario file. Until every scenario is written,
+run `UI_E2E_COVERAGE=warn make e2e` to print the uncovered list
+without failing. A new catalogue view adds its row first; a new
+scenario swaps `MISSING` for its real file.
+
 ## Deploy smoke
 
 `docker/scripts/develop-smoke.sh` (run after every `make develop-up`) ends with the signed-in route sweep against the
