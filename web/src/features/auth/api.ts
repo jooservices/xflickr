@@ -1,5 +1,5 @@
 import { getAuthConfig } from '../../shared/api/gen/default/default';
-import type { Locale } from '../../shared/i18n/catalog';
+import type { Locale } from '../../shared/i18n';
 import { readCsrfToken, signalSessionExpired } from '../../shared/api/mutator';
 
 export { signalSessionExpired };

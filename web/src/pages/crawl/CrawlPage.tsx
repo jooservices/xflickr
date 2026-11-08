@@ -46,7 +46,7 @@ export function CrawlPage() {
   }, []);
 
   useEffect(() => {
-    document.title = `${t('user.crawl.title')} · XFlickr`;
+    document.title = `${t('crawl.title')} · XFlickr`;
     headingRef.current?.focus();
   }, [t]);
 
@@ -66,7 +66,7 @@ export function CrawlPage() {
     try {
       const saved = await saveDepth(depth);
       client.setQueryData(crawlKeys.settings, saved);
-      toast(t('user.crawl.toast.depth', { n: saved.depth }));
+      toast(t('crawl.toast.depth', { n: saved.depth }));
       void client.invalidateQueries({ queryKey: crawlKeys.status });
       return true;
     } catch (error) {
@@ -76,9 +76,9 @@ export function CrawlPage() {
         error.code === 'depth_above_cap'
       ) {
         const max = Number(error.details?.max_depth ?? settings.data?.depth_max ?? depth);
-        toast(t('user.crawl.error.depth-cap', { max }), 'bad');
+        toast(t('crawl.error.depth-cap', { max }), 'bad');
       } else {
-        toast(t('user.crawl.error.action-failed'), 'bad');
+        toast(t('crawl.error.action-failed'), 'bad');
       }
       return false;
     }
@@ -92,15 +92,15 @@ export function CrawlPage() {
             <Icon name="lock" size={36} />
           </span>
           <h1 tabIndex={-1} ref={headingRef} data-testid="user-crawl-title">
-            {t('user.crawl.forbidden.title')}
+            {t('crawl.forbidden.title')}
           </h1>
-          <p>{t('user.crawl.forbidden.text')}</p>
+          <p>{t('crawl.forbidden.text')}</p>
           <Link
             to="/"
             className={`${styles.btn} ${styles.primary}`}
             data-testid="user-crawl-forbidden-cta"
           >
-            {t('user.crawl.forbidden.cta')}
+            {t('crawl.forbidden.cta')}
           </Link>
         </div>
       </div>
@@ -129,7 +129,7 @@ export function CrawlPage() {
         </button>
       }
     >
-      {t('user.crawl.stale.queue', {
+      {t('crawl.stale.queue', {
         time: queue.dataUpdatedAt === 0 ? '–' : formatClock(queue.dataUpdatedAt, locale),
       })}
     </Banner>
@@ -180,7 +180,7 @@ export function CrawlPage() {
           <Icon name="info" size={30} />
         </span>
         <h2>{t('common.not-available.title')}</h2>
-        <p>{t('user.crawl.unavailable.text')}</p>
+        <p>{t('crawl.unavailable.text')}</p>
       </div>
     </>
   );
@@ -192,8 +192,8 @@ export function CrawlPage() {
         <span className={styles.blockIcon}>
           <Icon name="alert" size={30} />
         </span>
-        <h2>{t('user.crawl.error.title')}</h2>
-        <p>{t('user.crawl.error.text')}</p>
+        <h2>{t('crawl.error.title')}</h2>
+        <p>{t('crawl.error.text')}</p>
         <button
           type="button"
           className={`${styles.btn} ${styles.primary}`}
@@ -209,7 +209,7 @@ export function CrawlPage() {
       <div data-testid="user-crawl-skeleton">
         <p className={styles.loadingLine} role="status">
           <span className={styles.spin} aria-hidden="true" />
-          {t('user.crawl.loading')}
+          {t('crawl.loading')}
         </p>
         <div className={styles.g2}>
           <SkeletonBlock />
@@ -227,10 +227,10 @@ export function CrawlPage() {
       <div className={styles.head}>
         <div>
           <h1 tabIndex={-1} ref={headingRef} data-testid="user-crawl-title">
-            {t('user.crawl.title')}
+            {t('crawl.title')}
           </h1>
           <p className={styles.lead} data-testid="user-crawl-lead">
-            {t('user.crawl.lead')}
+            {t('crawl.lead')}
           </p>
         </div>
       </div>

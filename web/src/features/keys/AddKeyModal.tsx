@@ -11,9 +11,9 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 const bannerCopy: Record<NonNullable<KeyFailure['banner']>, MessageKey> = {
-  invalid: 'user.wizard.key.error.invalid',
-  network: 'user.wizard.key.error.network',
-  node: 'user.wizard.key.error.no-node',
+  invalid: 'setup.key.error.invalid',
+  network: 'setup.key.error.network',
+  node: 'setup.key.error.no-node',
 };
 
 type AddKeyModalProps = {
@@ -131,8 +131,8 @@ export function AddKeyModal({ onAdded, onClose }: AddKeyModalProps) {
         data-testid="wizard-addkey-modal"
       >
         <form onSubmit={(event) => void submit(event)} noValidate>
-          <h2 id="wizard-addkey-title">{t('user.wizard.addkey.title')}</h2>
-          <p className={styles.note}>{t('user.wizard.addkey.note')}</p>
+          <h2 id="wizard-addkey-title">{t('setup.addkey.title')}</h2>
+          <p className={styles.note}>{t('setup.addkey.note')}</p>
           {failure.banner ? (
             <div
               ref={banner}
@@ -145,7 +145,7 @@ export function AddKeyModal({ onAdded, onClose }: AddKeyModalProps) {
             </div>
           ) : null}
           <label>
-            {t('user.wizard.addkey.label')}
+            {t('setup.addkey.label')}
             <input
               ref={labelField}
               value={label}
@@ -160,11 +160,11 @@ export function AddKeyModal({ onAdded, onClose }: AddKeyModalProps) {
           </label>
           {labelError ? (
             <small id="wizard-addkey-label-err" className={styles.fieldError}>
-              <Icon name="alert" size={14} /> {t('user.wizard.addkey.error.label')}
+              <Icon name="alert" size={14} /> {t('setup.addkey.error.label')}
             </small>
           ) : null}
           <label>
-            {t('user.wizard.key.field.key')}
+            {t('setup.key.field.key')}
             <input
               ref={keyField}
               className={styles.mono}
@@ -183,19 +183,19 @@ export function AddKeyModal({ onAdded, onClose }: AddKeyModalProps) {
               data-testid="wizard-addkey-key"
             />
           </label>
-          <small id="wizard-addkey-key-help">{t('user.wizard.key.help.key')}</small>
+          <small id="wizard-addkey-key-help">{t('setup.key.help.key')}</small>
           {keyError ? (
             <small id="wizard-addkey-key-err" className={styles.fieldError}>
               <Icon name="alert" size={14} />{' '}
               {t(
                 keyError === 'duplicate'
-                  ? 'user.wizard.key.error.duplicate'
-                  : 'user.wizard.key.error.key-format',
+                  ? 'setup.key.error.duplicate'
+                  : 'setup.key.error.key-format',
               )}
             </small>
           ) : null}
           <label>
-            {t('user.wizard.key.field.secret')}
+            {t('setup.key.field.secret')}
             <span className={styles.secret}>
               <input
                 ref={secretField}
@@ -217,7 +217,7 @@ export function AddKeyModal({ onAdded, onClose }: AddKeyModalProps) {
               />
               <button
                 type="button"
-                aria-label={t(showSecret ? 'user.wizard.key.hide' : 'user.wizard.key.show')}
+                aria-label={t(showSecret ? 'setup.key.hide' : 'setup.key.show')}
                 aria-pressed={showSecret}
                 onClick={() => setShowSecret(!showSecret)}
                 data-testid="wizard-addkey-secret-toggle"
@@ -226,15 +226,15 @@ export function AddKeyModal({ onAdded, onClose }: AddKeyModalProps) {
               </button>
             </span>
           </label>
-          <small id="wizard-addkey-secret-help">{t('user.wizard.key.help.secret')}</small>
+          <small id="wizard-addkey-secret-help">{t('setup.key.help.secret')}</small>
           {secretError ? (
             <small id="wizard-addkey-secret-err" className={styles.fieldError}>
-              <Icon name="alert" size={14} /> {t('user.wizard.key.error.secret-format')}
+              <Icon name="alert" size={14} /> {t('setup.key.error.secret-format')}
             </small>
           ) : null}
           {sending ? (
             <p role="status" className={styles.note}>
-              {t('user.wizard.key.checking')}
+              {t('setup.key.checking')}
             </p>
           ) : null}
           <div className={styles.footer}>
@@ -252,7 +252,7 @@ export function AddKeyModal({ onAdded, onClose }: AddKeyModalProps) {
               disabled={sending}
               data-testid="wizard-addkey-submit"
             >
-              {t('user.wizard.addkey.submit')}
+              {t('setup.addkey.submit')}
             </button>
           </div>
         </form>

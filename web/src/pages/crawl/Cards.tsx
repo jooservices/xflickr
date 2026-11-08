@@ -31,8 +31,8 @@ export function DepthCard({ settings, onSave }: DepthCardProps) {
       aria-labelledby="user-crawl-depth-title"
       data-testid="user-crawl-depth-card"
     >
-      <h3 id="user-crawl-depth-title">{t('user.crawl.depth.title')}</h3>
-      <p className={`${styles.small} ${styles.muted}`}>{t('user.crawl.depth.help')}</p>
+      <h3 id="user-crawl-depth-title">{t('crawl.depth.title')}</h3>
+      <p className={`${styles.small} ${styles.muted}`}>{t('crawl.depth.help')}</p>
       <input
         type="range"
         className={styles.range}
@@ -41,7 +41,7 @@ export function DepthCard({ settings, onSave }: DepthCardProps) {
         step={1}
         value={value}
         aria-labelledby="user-crawl-depth-title"
-        aria-valuetext={t('user.crawl.depth.value', { n: value })}
+        aria-valuetext={t('crawl.depth.value', { n: value })}
         aria-describedby="user-crawl-depth-cap"
         onChange={(event) => {
           setDraft(Number(event.target.value));
@@ -49,8 +49,8 @@ export function DepthCard({ settings, onSave }: DepthCardProps) {
         data-testid="user-crawl-depth-slider"
       />
       <div className={`${styles.row} ${styles.between} ${styles.small}`}>
-        <span>{t('user.crawl.depth.min')}</span>
-        <b data-testid="user-crawl-depth-value">{t('user.crawl.depth.value', { n: value })}</b>
+        <span>{t('crawl.depth.min')}</span>
+        <b data-testid="user-crawl-depth-value">{t('crawl.depth.value', { n: value })}</b>
         <span>{settings.depth_max}</span>
       </div>
       <p
@@ -58,10 +58,10 @@ export function DepthCard({ settings, onSave }: DepthCardProps) {
         className={`${styles.small} ${styles.muted}`}
         data-testid="user-crawl-depth-cap"
       >
-        {t('user.crawl.depth.cap', { default: settings.depth_default, max: settings.depth_max })}
+        {t('crawl.depth.cap', { default: settings.depth_default, max: settings.depth_max })}
       </p>
       {value > settings.depth_default + 2 ? (
-        <p className={`${styles.small} ${styles.warnText}`}>{t('user.crawl.depth.warn')}</p>
+        <p className={`${styles.small} ${styles.warnText}`}>{t('crawl.depth.warn')}</p>
       ) : null}
       {changed ? (
         <button
@@ -74,7 +74,7 @@ export function DepthCard({ settings, onSave }: DepthCardProps) {
           data-testid="user-crawl-depth-save"
         >
           {sending ? <span className={styles.spin} aria-hidden="true" /> : null}
-          {t('user.crawl.depth.save')}
+          {t('crawl.depth.save')}
         </button>
       ) : null}
     </section>
@@ -100,7 +100,7 @@ export function LanesCard({ queue, unavailable }: LanesCardProps) {
       aria-labelledby="user-crawl-lanes-title"
       data-testid="user-crawl-lanes-card"
     >
-      <h3 id="user-crawl-lanes-title">{t('user.crawl.lanes.title')}</h3>
+      <h3 id="user-crawl-lanes-title">{t('crawl.lanes.title')}</h3>
       {LANES.map((lane) => {
         const row = queue?.lanes.find((item) => item.lane === lane);
         const showNumbers = !blank && row !== undefined;
@@ -109,25 +109,23 @@ export function LanesCard({ queue, unavailable }: LanesCardProps) {
         return (
           <div key={lane} className={styles.lane} data-testid={`user-crawl-lane-${lane}`}>
             <div className={`${styles.row} ${styles.between}`}>
-              <b>{t(`user.crawl.lane.${lane}`)}</b>
+              <b>{t(`crawl.lane.${lane}`)}</b>
               <span
                 className={`${styles.small} ${styles.num}`}
                 data-testid={`user-crawl-lane-backlog-${lane}`}
               >
-                {showNumbers
-                  ? t('user.crawl.lane.backlog', { count: number.format(backlog) })
-                  : DASH}
+                {showNumbers ? t('crawl.lane.backlog', { count: number.format(backlog) }) : DASH}
               </span>
             </div>
             <div className={`${styles.row} ${styles.between} ${styles.small}`}>
               <span className={styles.num} data-testid={`user-crawl-lane-eta-${lane}`}>
-                {eta === DASH ? eta : t('user.crawl.lane.eta', { time: eta })}
+                {eta === DASH ? eta : t('crawl.lane.eta', { time: eta })}
               </span>
             </div>
           </div>
         );
       })}
-      <p className={`${styles.small} ${styles.muted}`}>{t('user.crawl.lanes.hint')}</p>
+      <p className={`${styles.small} ${styles.muted}`}>{t('crawl.lanes.hint')}</p>
     </section>
   );
 }
@@ -155,7 +153,7 @@ export function PerDepth({ rows, currentDepth }: PerDepthProps) {
       aria-labelledby="user-crawl-depths-title"
       data-testid="user-crawl-depths"
     >
-      <h3 id="user-crawl-depths-title">{t('user.crawl.depths.title')}</h3>
+      <h3 id="user-crawl-depths-title">{t('crawl.depths.title')}</h3>
       <div className={styles.depths}>
         {columns.map((column) => (
           <div
@@ -166,16 +164,16 @@ export function PerDepth({ rows, currentDepth }: PerDepthProps) {
             <span className={styles.row}>
               <b>
                 {column.depth === 0
-                  ? t('user.crawl.depths.own')
-                  : t('user.crawl.depths.column', { n: column.depth })}
+                  ? t('crawl.depths.own')
+                  : t('crawl.depths.column', { n: column.depth })}
               </b>
               {column.beyond && column.total > 0 ? (
-                <Pill tone="neutral">{t('user.crawl.depth.beyond')}</Pill>
+                <Pill tone="neutral">{t('crawl.depth.beyond')}</Pill>
               ) : null}
             </span>
             <span className={`${styles.big} ${styles.num}`}>{number.format(column.total)}</span>
             <span className={`${styles.small} ${styles.muted}`}>
-              {t('user.crawl.depths.count', { count: number.format(column.total) })}
+              {t('crawl.depths.count', { count: number.format(column.total) })}
             </span>
           </div>
         ))}

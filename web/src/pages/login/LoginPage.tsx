@@ -227,7 +227,7 @@ export function LoginPage() {
                 }
                 data-testid="auth-expired-dismiss"
               >
-                ×
+                {'×'}
               </button>
             </div>
           )}
@@ -324,7 +324,7 @@ export function LoginPage() {
                   onClick={() => setShowPassword(!showPassword)}
                   data-testid="auth-login-password-toggle"
                 >
-                  ◉
+                  {'◉'}
                 </button>
               </div>
               {fieldErrors.password && (

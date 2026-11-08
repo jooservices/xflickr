@@ -124,7 +124,7 @@ function Crumb() {
       aria-label={t('shell.crumb.back-to', { name: String(label) })}
       data-testid="shell-crumb"
     >
-      <span aria-hidden="true">‹ </span>
+      <span aria-hidden="true">{'‹ '}</span>
       {String(label)}
     </Link>
   );
