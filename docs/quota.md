@@ -77,14 +77,16 @@ interval, not a new fixed window. Counts may decrease between snapshots as
 grants expire; the existing upsert still never lowers one snapshot row.
 
 Every Governor is built through one constructor that requires a Rebuilder.
-Each key has a versioned `rolling:ready` marker in Redis. Only the atomic
-restore script may set that marker; a successful grant never does. If the
-marker is missing (at start or after Redis lost its keys), `Acquire` refuses
-with a one-second retry (`ErrLedgerNotReady`), takes a short-lived Redis rebuild
-lock, rebuilds from the call log, then retries once. If the rebuild fails it
-returns the governor-offline error; if the key still is not ready it keeps
-returning the one-second retry. Concurrent acquisitions and roles share one
-rebuild through the Redis lock and the rebuilder's in-process single-flight.
+Each key has a versioned `rolling:ready` marker in Redis. The marker lives as
+long as the ledger is live: only the atomic restore script creates it,
+successful grants extend its TTL, and Redis loss removes it. A grant never
+creates the marker. If the marker is missing (at start or after Redis lost its
+keys), `Acquire` refuses with a one-second retry (`ErrLedgerNotReady`), takes a
+short-lived Redis rebuild lock, rebuilds from the call log, then retries once.
+If the rebuild fails it returns the governor-offline error; if the key still is
+not ready it keeps returning the one-second retry. Concurrent acquisitions and
+roles share one rebuild through the Redis lock and the rebuilder's in-process
+single-flight.
 
 The rebuild reads individual `api_call_log` grant rows in the last 60 minutes
 with `outcome IS NULL`, retaining their exact timestamps and classes. Diagnostic
