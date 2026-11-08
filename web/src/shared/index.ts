@@ -15,14 +15,23 @@ export {
 export type { ViewState } from './ui/states';
 export {
   DEFAULT_LOCALE,
+  I18nBridge,
   I18nProvider,
-  catalogs,
+  LanguageSwitcher,
   LOCALES,
-  formatMessage,
+  LOCALE_STORAGE_KEY,
+  Term,
+  catalogs,
+  glossaryTerms,
+  i18nInstance,
+  isGlossaryTerm,
+  isLocale,
+  otherLocale,
   translate,
+  translateErrorCode,
   useI18n,
 } from './i18n';
-export type { Locale, MessageKey, MessageParams } from './i18n';
+export type { Locale, MessageKey, MessageParams, Translate } from './i18n';
 export { useTheme } from './theme';
 export type { Theme, ThemeRole } from './theme';
 

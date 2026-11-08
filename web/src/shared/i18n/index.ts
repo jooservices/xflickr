@@ -1,6 +1,22 @@
-export { DEFAULT_LOCALE, LOCALES, catalogs, isLocale, otherLocale } from './catalog';
-export type { Locale, MessageKey } from './catalog';
-export { formatMessage } from './format';
-export type { MessageParams } from './format';
-export { I18nProvider, LOCALE_STORAGE_KEY, translate, useI18n } from './I18nProvider';
-export type { Translate } from './I18nProvider';
+export {
+  DEFAULT_LOCALE,
+  LOCALES,
+  LOCALE_STORAGE_KEY,
+  NAMESPACES,
+  catalogs,
+  glossaryTerms,
+  i18nInstance,
+  isLocale,
+  otherLocale,
+  persistLocale,
+  readStoredLocale,
+  resources,
+  splitMessageKey,
+  translate,
+  translateErrorCode,
+} from './init';
+export type { Locale, MessageKey, MessageParams, Namespace, Translate } from './init';
+export { I18nBridge, I18nProvider, useI18n } from './I18nProvider';
+export type { I18nValue } from './I18nProvider';
+export { LanguageSwitcher } from './LanguageSwitcher';
+export { DataText, Term, isGlossaryTerm } from './Term';

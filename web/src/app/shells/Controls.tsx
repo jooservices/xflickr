@@ -1,4 +1,4 @@
-import { Icon, useI18n } from '../../shared';
+import { Icon, LanguageSwitcher, useI18n } from '../../shared';
 import type { Theme } from '../../shared';
 import { useShellRuntime } from './runtime';
 import styles from './shells.module.css';
@@ -34,13 +34,8 @@ export function LiveToggle({ testId }: ControlProps) {
  * from hidden text so it never conflicts with the visible label, is the target.
  */
 export function LangToggle({ testId }: ControlProps) {
-  const { t, locale, toggleLocale } = useI18n();
-
   return (
-    <button type="button" className={styles.txtBtn} onClick={toggleLocale} data-testid={testId}>
-      <span aria-hidden="true">{locale.toUpperCase()}</span>
-      <span className={styles.srOnly}>{t('shell.lang.switch')}</span>
-    </button>
+    <LanguageSwitcher testId={testId} className={styles.txtBtn} labelClassName={styles.srOnly} />
   );
 }
 
