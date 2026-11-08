@@ -42,7 +42,7 @@ test.describe.serial('authentication on the real stack', () => {
     await page.goto('/login');
     await page.getByTestId('auth-login-email').fill(email);
     await page.getByTestId('auth-login-password').fill('not-the-password-1');
-    watch.expectFailure('POST', '/auth/login', 401);
+    watch.expectFailure('POST', '/api/v1/sessions', 401);
     await page.getByTestId('auth-login-submit').click();
     await expect(page.getByTestId('auth-error-banner')).toBeVisible();
     await expect(page.getByTestId('auth-login-email')).toHaveValue(email);
