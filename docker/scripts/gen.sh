@@ -18,6 +18,11 @@ mkdir -p "$ROOT/.tmp"
 )
 
 (
+	cd "$ROOT/backend"
+	"$SCRIPT_DIR/run.sh" go go tool sqlc generate
+)
+
+(
 	cd "$ROOT/web"
 	"$SCRIPT_DIR/run.sh" node npm exec -- orval --config orval.config.ts
 	"$SCRIPT_DIR/run.sh" node npm exec -- prettier --write src/shared/api/gen src/shared/api/zod
