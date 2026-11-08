@@ -90,10 +90,17 @@ single-flight.
 
 The rebuild reads individual `api_call_log` grant rows in the last 60 minutes
 with `outcome IS NULL`, retaining their exact timestamps and classes. Diagnostic
-outcome rows do not consume a second permit. Stable log member identities make
-replay idempotent. Restore retains existing sorted-set members and never lowers
-counts. Aggregate `quota_usage` snapshots remain available to history readers;
-they are not replayed because they cannot identify when individual calls expire.
+outcome rows do not consume a second permit. When the ready marker is absent the
+ledger is untrusted: acquire already refuses every grant until restore finishes,
+so no grant can race a rebuild. Restore therefore deletes the key's rolling lane
+sorted sets (interactive, person, photo), then replays the call-log rows with
+`ZADD NX` and sets the ready marker in the same atomic Lua call. Re-running
+restore while ready is set is a no-op, so a second restore keeps the same count.
+A grant is written to the call log immediately after it is granted; a grant whose
+log row was not yet written when the marker was lost is not restored (rare,
+bounded by log write latency). Aggregate `quota_usage` snapshots remain available
+to history readers; they are not replayed because they cannot identify when
+individual calls expire.
 
 The versioned marker is absent on first start after deployment or Redis loss,
 so every role fails closed and rebuilds before granting. Restart all roles

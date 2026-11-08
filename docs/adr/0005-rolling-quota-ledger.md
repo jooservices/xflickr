@@ -20,8 +20,9 @@ oldest counted member's expiry; person demand expiry can permit an earlier retry
 
 Rebuild before acquisition when the versioned ready marker is absent. Replay
 exact timestamps and classes from durable grant rows (`outcome IS NULL`) in the
-last hour, retaining existing members. Aggregate minute snapshots remain history
-and use `window_start = snapshot time - 60 minutes`.
+last hour after clearing the untrusted lane sets (see ADR 0007). Aggregate
+minute snapshots remain history and use `window_start = snapshot time - 60
+minutes`.
 
 ## Consequences
 
