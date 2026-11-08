@@ -239,3 +239,103 @@ func TestReadyMarkerSurvivesSteadyTraffic(t *testing.T) {
 	}
 }
 
+// TestRebuildAfterMarkerLossDoesNotDoubleCount proves that after the ready
+// marker alone is lost, a rebuild from the call log replaces lane members so
+// live <now>:<seq> names and log: identities never both count.
+func TestRebuildAfterMarkerLossDoesNotDoubleCount(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use the worktree Redis")
+	}
+	values, err := godotenv.Read(filepath.Join(integrationRoot(t), ".env"))
+	if err != nil {
+		t.Fatal("read shared worktree environment")
+	}
+	prefix := values["REDIS_PREFIX"]
+	db, _ := strconv.Atoi(values["REDIS_DB"])
+	if prefix == "" || prefix == "xflickr:" || db == 7 {
+		t.Fatal("refusing the live Redis index")
+	}
+	port, _ := strconv.Atoi(values["REDIS_PORT"])
+	if port == 0 {
+		port = 16382
+	}
+	host := values["REDIS_HOST"]
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	client := redisv9.NewClient(&redisv9.Options{
+		Addr:     net.JoinHostPort(host, strconv.Itoa(port)),
+		Password: values["REDIS_PASSWORD"],
+		DB:       db,
+	})
+	t.Cleanup(func() { _ = client.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := client.Ping(ctx).Err(); err != nil {
+		t.Fatalf("ping worktree Redis: %v", err)
+	}
+
+	const keyID int64 = 344344345
+	const prior = 12
+	rolePrefix := prefix + "jooxf344dedupe:"
+	budget := domain.Budget{HourlyLimit: 3600, PerSecondRate: 10000, Burst: 10000, Reserve: 0, PersonLaneShare: 0}
+	log := &recordingCallLog{}
+	var rebuilds atomic.Int64
+	inner := rebuilderFor(Governor{Client: client, Prefix: rolePrefix}, memStore{}, log)
+	governor, err := NewGovernor(client, rolePrefix, StaticBudgets{keyID: budget}, countingRebuilder{inner: inner, n: &rebuilds}, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := governor.keys(keyID)
+	readyKey := keys[5]
+	laneKey := keys[1]
+	t.Cleanup(func() {
+		for _, key := range keys {
+			_ = client.Del(context.Background(), key).Err()
+		}
+	})
+	for _, key := range keys {
+		if err := client.Del(ctx, key).Err(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := (Counters{Client: client, Prefix: rolePrefix}).Restore(ctx, app.Usage{KeyID: keyID}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < prior; i++ {
+		permit, _, err := governor.Acquire(ctx, keyID, domain.Interactive)
+		if err != nil || permit == nil {
+			t.Fatalf("live grant %d = %v %v", i, permit, err)
+		}
+	}
+	if n := log.len(); n != prior {
+		t.Fatalf("call log after live grants = %d, want %d", n, prior)
+	}
+	liveBefore, err := client.ZCard(ctx, laneKey).Result()
+	if err != nil || liveBefore != prior {
+		t.Fatalf("lane before marker loss = %d err=%v, want %d", liveBefore, err, prior)
+	}
+	if err := client.Del(ctx, readyKey).Err(); err != nil {
+		t.Fatal(err)
+	}
+	rebuilds.Store(0)
+
+	permit, _, err := governor.Acquire(ctx, keyID, domain.Interactive)
+	if err != nil || permit == nil {
+		t.Fatalf("acquire after marker loss = %v %v", permit, err)
+	}
+	if rebuilds.Load() != 1 {
+		t.Fatalf("rebuilds = %d, want 1 after marker loss", rebuilds.Load())
+	}
+	distinct := log.len()
+	if distinct != prior+1 {
+		t.Fatalf("call log after rebuild grant = %d, want %d", distinct, prior+1)
+	}
+	used, err := client.ZCard(ctx, laneKey).Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if used != int64(distinct) {
+		t.Fatalf("rolling window count = %d, want %d distinct grants (not %d from live+log double count)", used, distinct, 2*prior+1)
+	}
+}

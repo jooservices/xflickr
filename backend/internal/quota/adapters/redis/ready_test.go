@@ -315,3 +315,44 @@ func (c countingRebuilder) Rebuild(ctx context.Context, keyID int64) error {
 	c.n.Add(1)
 	return c.inner.Rebuild(ctx, keyID)
 }
+
+// recordingCallLog is both the Governor recorder and the Rebuilder call log.
+// Live acquire members use <now>:<seq>; recovered members use log:<n>.
+type recordingCallLog struct {
+	mu     sync.Mutex
+	grants []app.Grant
+}
+
+func (r *recordingCallLog) Record(_ context.Context, _ int64, class string, at time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.grants = append(r.grants, app.Grant{
+		Class:  class,
+		At:     at,
+		Member: fmt.Sprintf("log:%d", len(r.grants)+1),
+	})
+	return nil
+}
+
+func (r *recordingCallLog) Usage(_ context.Context, _ int64, since time.Time) (app.CallUsage, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := app.CallUsage{ByClass: map[string]int64{}}
+	for _, grant := range r.grants {
+		if grant.At.Before(since) {
+			continue
+		}
+		out.Grants = append(out.Grants, grant)
+		out.ByClass[grant.Class]++
+		if out.First.IsZero() || grant.At.Before(out.First) {
+			out.First = grant.At
+		}
+	}
+	return out, nil
+}
+
+func (r *recordingCallLog) len() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.grants)
+}
