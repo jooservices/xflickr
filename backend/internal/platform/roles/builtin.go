@@ -158,6 +158,8 @@ func (schedulerRole) Run(ctx context.Context) error {
 	defer quota.start(ctx, slog.Default())()
 	stopHealth := startCrawlHealthMonitor(ctx, pool, cfg, slog.Default())
 	defer stopHealth()
+	stopMetrics := startMetricsCollection(ctx, pool, redisClient, cfg, "scheduler", "", true, slog.Default())
+	defer stopMetrics()
 	blobs, err := newBlobStore(ctx, cfg)
 	if err != nil {
 		return err
@@ -199,6 +201,8 @@ func (crawlRole) Run(ctx context.Context) error {
 	}
 	redisClient := newRedisClient(cfg)
 	defer redisClient.Close()
+	stopMetrics := startMetricsCollection(ctx, pool, redisClient, cfg, "crawl", "", false, slog.Default())
+	defer stopMetrics()
 	queueAdapter, err := queue.NewRiver(pool, map[string]int{scheduleriver.PhotoQueue: crawlWorkers, scheduleriver.PhotoExtrasQueue: 1, accountsapp.VerifyQueue: 1})
 	if err != nil {
 		return err
@@ -264,6 +268,8 @@ func (syncRole) Run(ctx context.Context) error {
 	defer stopCallObserver()
 	redisClient := newRedisClient(cfg)
 	defer redisClient.Close()
+	stopMetrics := startMetricsCollection(ctx, pool, redisClient, cfg, "sync", "", false, slog.Default())
+	defer stopMetrics()
 	queueAdapter, err := queue.NewRiver(pool, map[string]int{scheduleriver.PhotoQueue: 1, scheduleriver.PhotoExtrasQueue: 1})
 	if err != nil {
 		return err
@@ -431,6 +437,8 @@ func (mediaRole) Run(ctx context.Context) error {
 	defer pool.Close()
 	redisClient := newRedisClient(cfg)
 	defer redisClient.Close()
+	stopMetrics := startMetricsCollection(ctx, pool, redisClient, cfg, "media", "", false, slog.Default())
+	defer stopMetrics()
 	assets, err := catalogpostgres.New(pool)
 	if err != nil {
 		return err
@@ -617,7 +625,23 @@ type idleRole struct {
 func (r idleRole) Name() string { return r.name }
 
 func (r idleRole) Run(ctx context.Context) error {
-	configureRoleReadiness(ctx, r.name)
+	if ctx == nil || ctx.Err() != nil {
+		return nil
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	pool, err := openRoleDatabase(ctx, cfg.DB)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	defer redisClient.Close()
+	stopMetrics := startMetricsCollection(ctx, pool, redisClient, cfg, r.name, "", false, slog.Default())
+	defer stopMetrics()
+	configureRoleReadiness(ctx, r.name, postgresDependency(pool), redisDependency(redisClient))
 	<-ctx.Done()
 	return nil
 }
@@ -660,6 +684,8 @@ func (r APIRole) Run(ctx context.Context) error {
 	defer stopCallObserver()
 	redisClient := newRedisClient(cfg)
 	defer redisClient.Close()
+	stopMetrics := startMetricsCollection(ctx, pool, redisClient, cfg, "api", r.version, false, slog.Default())
+	defer stopMetrics()
 	hub := platformsse.NewHub(256)
 	go listenSSEEvents(ctx, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"}, hub)
 	handlers, err := buildConfiguredAPIHandlerSetWithObserver(pool, redisClient, cfg, r.version, hub, readinessFromContext(ctx), callObserver)
