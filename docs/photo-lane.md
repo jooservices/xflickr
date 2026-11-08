@@ -34,20 +34,29 @@ concurrent producers from inserting the same job twice. `Next` pages past
 skipped photos (bounded) so already-queued photos do not starve the lane.
 
 Before making any Flickr call, the `photo.sizes` handler checks the stored
-listing server. Server `65535` is Flickr's restricted placeholder: the handler
-records empty sizes, `unavailable`, and `sizes_checked_at` locally once. This
-is an inaccessible sizes result, not a deleted photo, and does not tombstone the
-photo or call `getInfo` to confirm it. Repeated jobs skip the terminal status
-without calls or writes, including interactive download jobs. An unchanged
-confirmed result is reused without reclassification. No new status or migration
-is required; `unavailable` retains its existing terminal semantics. Cleanup of
-already queued work is tracked separately in JOOXF-311.
+listing server. Server `65535` is Flickr's restricted placeholder: anonymous
+`getSizes` is never spent on it. The handler instead retries once with the
+OAuth token of a connected account that may view the photo (the owner's
+connected account first). Background photo-lane jobs only use that owner
+account. Interactive on-demand jobs may also try the requesting user's other
+accounts. A successful signed call stores `confirmed` sizes through the usual
+writer. A failure records an `entity_facet_restrictions` row for that account
+only and stores `unavailable`, so the same account is not asked again until the
+photo version or visibility reopens the restriction. When no eligible account
+remains, the handler stores empty sizes as `unavailable` without further calls.
+Repeated jobs skip the terminal status without calls, including interactive
+download jobs. An unchanged confirmed result is reused without
+reclassification. Cleanup of already queued work is tracked separately in
+JOOXF-311.
 
 For other pending photos, the `photo.sizes` handler calls
-`flickr.photos.getSizes`, stores the returned sizes as `confirmed`, and records `sizes_checked_at`. A confirmed photo is
-skipped while its last update is no newer than that check. Flickr not-found and
-permission errors store an empty sizes list with status `unavailable`; those
-photos leave the lane and are not retried.
+`flickr.photos.getSizes` without a token first. A confirmed result is stored
+and `sizes_checked_at` is recorded. A confirmed photo is skipped while its last
+update is no newer than that check. When the anonymous call fails as not-found
+or permission denied (including Flickr code 1 on restricted media), the same
+authenticated retry rule applies: one signed attempt through the quota governor
+and call log, then a per-account restriction on failure. Other terminal Flickr
+errors still store empty sizes as `unavailable` without an authenticated retry.
 
 Quota exhaustion returns a River snooze, so it does not consume an attempt and
 the same job resumes through the quota governor when its wait expires. Other

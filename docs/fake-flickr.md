@@ -23,8 +23,11 @@ Set scenarios at startup with `FAKEFLICKR_QUOTA_PER_HOUR`,
 (answers Flickr error 100, "Invalid API Key", for that `api_key`). IP bans match the
 `X-Client-IP` request header. At runtime, POST JSON to `/__admin/scenarios` with
 the corresponding fields (`quota_per_hour`, `rate_limit_after`, `ban_ips`,
-`latency_ms`, `revoked_tokens`, and `invalid_keys`); applying a new configuration resets
-per-key call counters.
+`latency_ms`, `revoked_tokens`, `invalid_keys`, and `sizes_need_token`); applying a
+new configuration resets per-key call counters. Photos seeded with
+`restricted: true` list with server `65535` and answer `photos.getSizes` with
+Flickr code 1 unless an `oauth_token` is present; `sizes_need_token` applies the
+same getSizes rule to ordinary photo IDs for tests.
 
 `make gen` generates the embedded JPEG from fixed dimensions, colors, and
 shapes, producing reproducible image bytes. No real Flickr API credentials are

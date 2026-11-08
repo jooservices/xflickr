@@ -33,6 +33,11 @@ photos:
     owner: 10000003@N00
     title: Seed color study
     shape: color
+  - id: 52000000004
+    owner: 10000000@N00
+    title: Seed restricted own photo
+    shape: landscape
+    restricted: true
 favorites:
   - person: 10000001@N00
     photo: 52000000001

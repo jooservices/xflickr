@@ -22,9 +22,11 @@ restriction deadline while retaining the first outcome. Successful rechecks do
 not need to delete the historical row; its deadline has already elapsed.
 
 Photo-addressed not-found and permission failures restrict the individual facet
-(`sizes`, `info`, `exif`, `contexts`, `comments`, or `photo_favorites`) for the API
-key used by the photo worker. These workers resolve the connected account from
-that key. They do not tombstone a photo or mark its other facets complete.
+(`sizes`, `info`, `exif`, `contexts`, `comments`, or `photo_favorites`) for the
+XFlickr user and API key used by the photo worker. For restricted sizes retries
+the restriction is keyed to the connected account that signed the call
+(`user_id` + `key_id` of that account), so another eligible account may still
+try once. Workers do not tombstone a photo or mark its other facets complete.
 Photo restrictions have no time expiry: they reopen when Flickr's `last_update`
 advances or when reconciliation changes visibility and publishes
 `photo.visibility_changed`. The scheduler checks the chosen caller and current

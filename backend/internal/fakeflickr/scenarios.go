@@ -18,6 +18,9 @@ type ScenarioConfig struct {
 	RevokedTokens  []string `json:"revoked_tokens"`
 	// InvalidKeys are API keys Flickr answers with error 100, "Invalid API Key".
 	InvalidKeys []string `json:"invalid_keys"`
+	// SizesNeedToken photo IDs answer photos.getSizes with code 1 unless an
+	// OAuth token is present (restricted media that needs a signed caller).
+	SizesNeedToken []string `json:"sizes_need_token"`
 }
 
 type keyUsage struct {
@@ -104,6 +107,18 @@ func (s *Scenarios) invalidKey(key string) bool {
 	}
 	for _, candidate := range s.snapshot().InvalidKeys {
 		if candidate == key {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Scenarios) sizesNeedToken(photoID string) bool {
+	if photoID == "" {
+		return false
+	}
+	for _, candidate := range s.snapshot().SizesNeedToken {
+		if candidate == photoID {
 			return true
 		}
 	}
