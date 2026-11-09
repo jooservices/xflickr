@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/jooservices/xflickr/internal/platform/queue"
 	settingspostgres "github.com/jooservices/xflickr/internal/settings/adapters/postgres"
 	settingsapp "github.com/jooservices/xflickr/internal/settings/app"
