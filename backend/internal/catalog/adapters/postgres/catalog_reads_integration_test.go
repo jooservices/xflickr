@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
 	"github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
 	cataloggen "github.com/jooservices/xflickr/internal/catalog/adapters/postgres/gen"
 	"github.com/jooservices/xflickr/internal/catalog/app"
