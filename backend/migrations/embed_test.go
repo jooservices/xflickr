@@ -61,3 +61,20 @@ func TestObservationLookupMigrationBuildsPartitionIndexesConcurrently(t *testing
 		t.Fatal("migration must reuse the existing p00 lookup index instead of creating a duplicate")
 	}
 }
+
+func TestContactsKeysetIndexMigrationBuildsConcurrentlyAndRepairsOnRetry(t *testing.T) {
+	sql, err := fs.ReadFile(migrations.Files, "20261110100000_contacts_keyset_index.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	up, down, found := strings.Cut(string(sql), "-- +goose Down")
+	if !found || !strings.HasPrefix(string(sql), "-- +goose NO TRANSACTION\n") {
+		t.Fatalf("contacts index migration must disable goose transactions: %q", sql)
+	}
+	drop := strings.Index(up, "DROP INDEX CONCURRENTLY IF EXISTS contacts_contact_nsid_person_nsid_idx")
+	create := strings.Index(up, "CREATE INDEX CONCURRENTLY contacts_contact_nsid_person_nsid_idx")
+	if drop < 0 || create < 0 || drop > create ||
+		!strings.Contains(down, "DROP INDEX CONCURRENTLY IF EXISTS contacts_contact_nsid_person_nsid_idx") {
+		t.Fatalf("contacts index migration must remove stale indexes before concurrent creation and drop concurrently: %q", sql)
+	}
+}
