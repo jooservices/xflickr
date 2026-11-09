@@ -1,0 +1,205 @@
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
+import type { CatalogFavorite, CatalogPhoto } from '../../shared/api/gen/models';
+import { Icon } from '../../shared/ui';
+import { useI18n } from '../../shared/i18n';
+import { buildJustifiedRows } from './layout';
+import styles from './LibraryPage.module.css';
+
+type PhotoVisual = { id: number; photo: CatalogPhoto; url?: string; ratio: number };
+
+type PhotoGridProps = {
+  photos: CatalogFavorite[];
+  selected: ReadonlySet<number>;
+  selectionMode: boolean;
+  selectionFull: boolean;
+  onToggleTray: (photoId: number) => void;
+  onToggleSelected: (photoId: number) => void;
+};
+
+function visualFor(photo: CatalogPhoto): PhotoVisual {
+  const candidates = photo.sizes.flatMap((size) =>
+    size.url !== undefined &&
+    size.width !== undefined &&
+    size.height !== undefined &&
+    size.width > 0 &&
+    size.height > 0
+      ? [{ url: size.url, width: size.width, height: size.height }]
+      : [],
+  );
+  candidates.sort((left, right) => left.width * left.height - right.width * right.height);
+  const size = candidates.find((candidate) => candidate.width >= 320) ?? candidates[0];
+  return {
+    id: photo.id,
+    photo,
+    ...(size === undefined ? {} : { url: size.url }),
+    ratio: size === undefined ? 4 / 3 : size.width / size.height,
+  };
+}
+
+export function PhotoGrid({
+  photos,
+  selected,
+  selectionMode,
+  selectionFull,
+  onToggleTray,
+  onToggleSelected,
+}: PhotoGridProps) {
+  const { locale, t } = useI18n();
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(1200);
+  const [scrollMargin, setScrollMargin] = useState(0);
+  const visuals = useMemo(() => photos.map(({ photo }) => visualFor(photo)), [photos]);
+  const rows = useMemo(() => buildJustifiedRows(visuals, width), [visuals, width]);
+  const virtualizer = useWindowVirtualizer({
+    count: rows.length,
+    estimateSize: (index) => (rows[index]?.height ?? 190) + 12,
+    getItemKey: (index) => rows[index]?.key ?? index,
+    overscan: 4,
+    scrollMargin,
+    useFlushSync: false,
+  });
+
+  // ResizeObserver keeps natural ratios justified as the shell and filter rail reflow.
+  useEffect(() => {
+    const node = gridRef.current;
+    if (node === null || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const nextWidth = entries[0]?.contentRect.width;
+      if (nextWidth !== undefined && nextWidth > 0) setWidth(nextWidth);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    setScrollMargin(gridRef.current?.offsetTop ?? 0);
+  }, [photos.length]);
+
+  const number = new Intl.NumberFormat(locale);
+  const virtualRows = virtualizer.getVirtualItems();
+
+  return (
+    <div
+      className={styles.gridViewport}
+      ref={gridRef}
+      data-testid="user-library-grid"
+      role="region"
+      aria-label={t('user.library.results.label')}
+      aria-busy="false"
+    >
+      <div
+        className={styles.virtualCanvas}
+        style={{ height: `${String(virtualizer.getTotalSize())}px` }}
+      >
+        {virtualRows.map((virtualRow) => {
+          const row = rows[virtualRow.index];
+          if (row === undefined) return null;
+          return (
+            <div
+              key={virtualRow.key}
+              ref={virtualizer.measureElement}
+              data-index={virtualRow.index}
+              className={styles.virtualRow}
+              style={{
+                transform: `translateY(${String(virtualRow.start - scrollMargin)}px)`,
+                height: `${String(row.height + 12)}px`,
+              }}
+            >
+              <div
+                className={styles.justifiedRow}
+                role="list"
+                style={{ height: `${String(row.height)}px` }}
+              >
+                {row.tiles.map(({ item }) => {
+                  const photo = item.photo;
+                  const inTray = selected.has(photo.id);
+                  const sizesReady = photo.sizes_status === 'confirmed';
+                  const captioned = photo.ai_status === 'ready';
+                  const title = photo.title.trim() || t('user.library.photo.untitled');
+                  const alt = `${title} ${t('user.library.photo.by', { owner: photo.owner_nsid })}`;
+                  return (
+                    <article
+                      key={photo.id}
+                      className={styles.photoTile}
+                      data-testid={`user-library-photo-${String(photo.id)}`}
+                      role="listitem"
+                      style={{ flexBasis: `${String(item.ratio * row.height)}px` }}
+                    >
+                      {item.url === undefined ? (
+                        <div className={styles.photoPlaceholder} role="img" aria-label={alt} />
+                      ) : (
+                        <img
+                          className={styles.photoImage}
+                          src={item.url}
+                          alt={alt}
+                          loading="lazy"
+                        />
+                      )}
+                      <div className={styles.flags} aria-label={t('user.library.photo.statuses')}>
+                        <span
+                          className={sizesReady ? styles.readyFlag : styles.pendingFlag}
+                          data-testid={`user-library-photo-sizes-${String(photo.id)}`}
+                        >
+                          {sizesReady
+                            ? t('user.library.photo.sizes-ready')
+                            : t('user.library.photo.sizes-pending')}
+                        </span>
+                        <span
+                          className={captioned ? styles.readyFlag : styles.pendingFlag}
+                          data-testid={`user-library-photo-captioned-${String(photo.id)}`}
+                        >
+                          {captioned
+                            ? t('user.library.photo.captioned')
+                            : t('user.library.photo.caption-pending')}
+                        </span>
+                      </div>
+                      <div
+                        className={styles.photoCaption}
+                        data-testid={`user-library-photo-caption-${String(photo.id)}`}
+                      >
+                        <span>{title}</span>
+                        <small>{photo.owner_nsid}</small>
+                      </div>
+                      <div className={styles.photoActions}>
+                        {selectionMode ? (
+                          <label className={styles.selectPhoto}>
+                            <input
+                              type="checkbox"
+                              checked={inTray}
+                              disabled={selectionFull && !inTray}
+                              aria-label={t('user.library.photo.select', { title })}
+                              data-testid={`user-library-photo-select-${String(photo.id)}`}
+                              onChange={() => onToggleSelected(photo.id)}
+                            />
+                          </label>
+                        ) : null}
+                        <button
+                          className={styles.trayButton}
+                          type="button"
+                          aria-pressed={inTray}
+                          aria-label={t(
+                            inTray ? 'user.library.tray.remove' : 'user.library.tray.add',
+                            { title },
+                          )}
+                          data-testid={`user-library-photo-tray-${String(photo.id)}`}
+                          disabled={selectionFull && !inTray}
+                          onClick={() => onToggleTray(photo.id)}
+                        >
+                          <Icon name={inTray ? 'check' : 'plus'} size={17} />
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <span className={styles.srOnly} aria-live="polite">
+        {t('user.library.results.loaded', { count: number.format(photos.length) })}
+      </span>
+    </div>
+  );
+}
