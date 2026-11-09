@@ -409,14 +409,22 @@ func versionCounts(t *testing.T, ctx context.Context, pool *pgxpool.Pool) map[in
 func TestWorkItemsUserNotNullMigrationRefusesNullRows(t *testing.T) {
 	ctx, cfg, pool := prepareMigrationTest(t)
 
-	// Roll our migration back so user_id is nullable and a NULL row can be inserted.
-	if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err != nil {
-		t.Fatalf("roll back work_items user-not-null migration: %v", err)
-	}
-
+	// Roll back past any newer tip migrations until the work_items.user_id
+	// not-null constraint is gone (this suite is not always the tip).
 	var nullable bool
-	if err := pool.QueryRow(ctx, `SELECT NOT attnotnull FROM pg_attribute WHERE attrelid='work_items'::regclass AND attname='user_id' AND NOT attisdropped`).Scan(&nullable); err != nil || !nullable {
-		t.Fatalf("user_id nullable after rollback = %t, %v; want true", nullable, err)
+	for attempt := 0; attempt < 8; attempt++ {
+		if err := pool.QueryRow(ctx, `SELECT NOT attnotnull FROM pg_attribute WHERE attrelid='work_items'::regclass AND attname='user_id' AND NOT attisdropped`).Scan(&nullable); err != nil {
+			t.Fatalf("inspect user_id nullability: %v", err)
+		}
+		if nullable {
+			break
+		}
+		if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err != nil {
+			t.Fatalf("roll back toward work_items user-not-null migration: %v", err)
+		}
+	}
+	if !nullable {
+		t.Fatal("user_id still not-null after rolling back newer migrations")
 	}
 
 	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind, subject_key) VALUES('test','null-user-refusal')`); err != nil {
