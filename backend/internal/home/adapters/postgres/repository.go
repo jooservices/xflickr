@@ -36,7 +36,12 @@ func (r *Repository) Load(ctx context.Context, userID int64) (app.Snapshot, erro
 		return app.Snapshot{}, errors.New("home: repository, context, and user id are required")
 	}
 	filter := sharingapp.FilterByUserID(userID)
-	query := fmt.Sprintf(homeSnapshotSQL, filter.PhotoIDs.Expression)
+	query := fmt.Sprintf(
+		homeSnapshotSQL,
+		filter.PhotoIDs.Expression,
+		"photo."+homePhotoVisibilityPredicate,
+		"stored."+homePhotoVisibilityPredicate,
+	)
 	var snapshot app.Snapshot
 	var newPhotos, starredContacts, activity []byte
 	err := r.db.QueryRow(ctx, query, userID).Scan(
@@ -98,7 +103,7 @@ visible_photo_counts AS MATERIALIZED (
                photo.sizes_checked_at, photo.last_update
         FROM photos photo
         WHERE photo.id = visible.photo_id
-          AND photo.tombstoned_at IS NULL
+          AND %s
         LIMIT 1
     ) p
     GROUP BY p.owner_nsid
@@ -164,7 +169,7 @@ newest_photos AS (
                stored.uploaded_at, stored.sizes
         FROM photos stored
         WHERE stored.id = visible.photo_id
-          AND stored.tombstoned_at IS NULL
+          AND %s
         LIMIT 1
     ) photo
     LEFT JOIN people owner ON owner.nsid = photo.owner_nsid
@@ -229,3 +234,5 @@ FROM contact_counts
 CROSS JOIN photo_counts
 CROSS JOIN newest_json
 CROSS JOIN starred_json`
+
+const homePhotoVisibilityPredicate = "visibility = 'public' AND tombstoned_at IS NULL"
