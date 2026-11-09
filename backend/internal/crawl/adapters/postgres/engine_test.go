@@ -48,13 +48,14 @@ func (r engRow) Scan(dest ...any) error {
 }
 
 type engConn struct {
-	execs    []engExec
-	queries  []engExec
-	failExec string
-	affected int64
-	row      engRow
-	rows     []engRow
-	rowErr   error
+	execs      []engExec
+	queries    []engExec
+	rowResults []engRow
+	failExec   string
+	affected   int64
+	row        engRow
+	rows       []engRow
+	rowErr     error
 }
 
 func (c *engConn) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
@@ -68,7 +69,6 @@ func (c *engConn) Exec(_ context.Context, sql string, args ...any) (pgconn.Comma
 func (c *engConn) Query(context.Context, string, ...any) (pgx.Rows, error) {
 	return nil, errors.New("unused")
 }
-
 func (c *engConn) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
 	c.queries = append(c.queries, engExec{sql, args})
 	if c.rowErr != nil {
@@ -82,9 +82,13 @@ func (c *engConn) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
 		c.rows = c.rows[1:]
 		return next
 	}
+	if len(c.rowResults) > 0 {
+		row := c.rowResults[0]
+		c.rowResults = c.rowResults[1:]
+		return row
+	}
 	return c.row
 }
-
 func (c *engConn) SendBatch(context.Context, *pgx.Batch) pgx.BatchResults {
 	return nil
 }
@@ -606,5 +610,29 @@ func TestNewEngineValidatesArguments(t *testing.T) {
 	}
 	if engine, err := NewEngine(&pgxpool.Pool{}, func(Conn) app.CatalogWriter { return engCatalog{} }); err != nil || engine == nil {
 		t.Fatalf("NewEngine() = %v, %v; want initialized engine", engine, err)
+	}
+}
+
+func TestCompleteContactsDeletesStaleRelationshipsInKeysetBatches(t *testing.T) {
+	conn := &engConn{rowResults: []engRow{
+		{values: []any{1}},
+		{values: []any{int64(500), "friend-0500"}},
+		{values: []any{int64(12), "friend-0512"}},
+	}}
+	scannedAt := time.Date(2026, time.November, 10, 0, 0, 0, 0, time.UTC)
+	if err := (contactsReconcileTx{tx: conn}).CompleteContacts(t.Context(), 3, "account@N00", scannedAt); err != nil {
+		t.Fatal(err)
+	}
+	if len(conn.queries) != 3 {
+		t.Fatalf("queries = %d, want account lock and two bounded delete batches", len(conn.queries))
+	}
+	for i, wantCursor := range []string{"", "friend-0500"} {
+		query := conn.queries[i+1]
+		if !strings.Contains(query.sql, "ORDER BY contact_nsid") || !strings.Contains(query.sql, "LIMIT $4") {
+			t.Fatalf("batch query %d is not keyset bounded: %s", i+1, query.sql)
+		}
+		if query.args[0] != "account@N00" || query.args[1] != wantCursor || !query.args[2].(time.Time).Equal(scannedAt) || query.args[3] != 500 {
+			t.Fatalf("batch query %d args = %#v", i+1, query.args)
+		}
 	}
 }
