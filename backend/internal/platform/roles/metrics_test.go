@@ -2,6 +2,8 @@ package roles
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -73,14 +75,34 @@ func TestMetricsWrappedRoleNameAndCancelledRun(t *testing.T) {
 	}
 }
 
-func TestMetricsWrappedRoleFailsOnUnreachableDatabase(t *testing.T) {
+func TestMetricsWrappedRoleStartsInnerWhenDatabaseIsUnavailable(t *testing.T) {
 	setRoleStartupEnvironment(t)
 	withUnreachableRolePool(t)
-	role := metricsWrappedRole{inner: idleRole{name: "indexer"}, roleName: "indexer"}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	previousPing := pingRoleDatabase
+	pingRoleDatabase = func(context.Context, *pgxpool.Pool) error { return errors.New("database unavailable") }
+	t.Cleanup(func() { pingRoleDatabase = previousPing })
+
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	if err := role.Run(ctx); err == nil {
-		t.Fatal("expected unreachable database error")
+	inner := &stubRole{name: "indexer", ready: make(chan struct{})}
+	role := metricsWrappedRole{inner: inner, roleName: "indexer"}
+	done := make(chan error, 1)
+	go func() { done <- role.Run(ctx) }()
+	select {
+	case <-inner.ready:
+	case err := <-done:
+		t.Fatalf("wrapped role returned before the inner role started: %v", err)
+	case <-ctx.Done():
+		t.Fatal("inner role did not start while metrics storage was unavailable")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("wrapped role did not stop after cancellation")
 	}
 }
 
@@ -119,6 +141,64 @@ func TestMetricsWrappedRoleRunsInnerWhenPingSucceeds(t *testing.T) {
 	defer soloCancel()
 	if err := solo.Run(soloCtx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMetricsSetupRetriesAfterUnavailableDatabase(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	attempts := 0
+	runMetricsWithRetry(ctx, slog.Default(), "indexer", time.Millisecond, func(context.Context) (func(), error) {
+		attempts++
+		if attempts == 1 {
+			return nil, errors.New("database unavailable")
+		}
+		cancel()
+		return func() {}, nil
+	})
+	if attempts != 2 {
+		t.Fatalf("setup attempts=%d want 2", attempts)
+	}
+}
+
+func TestRunMetricsLoopsWaitsForRetention(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	retentionStarted := make(chan struct{})
+	allowRetentionReturn := make(chan struct{})
+	retentionDone := make(chan struct{})
+	runnerReturned := make(chan struct{})
+	runner := func(context.Context) {
+		cancel()
+		close(runnerReturned)
+	}
+	retention := func(context.Context) {
+		close(retentionStarted)
+		<-allowRetentionReturn
+		close(retentionDone)
+	}
+	done := make(chan struct{})
+	go func() {
+		runMetricsLoops(ctx, runner, retention)
+		close(done)
+	}()
+	<-retentionStarted
+	<-runnerReturned
+	select {
+	case <-done:
+		t.Fatal("metrics loops returned before retention stopped")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(allowRetentionReturn)
+	select {
+	case <-retentionDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("retention did not return")
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("metrics loops did not return after retention stopped")
 	}
 }
 
