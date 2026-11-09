@@ -121,6 +121,11 @@ Work-item priority uses the static sort key described in
 [Schedule backlog](schedule.md) and [Database performance notes](database.md).
 Star and select controls rescore the person's pending backlog immediately;
 there is no periodic aging rewrite.
+Crawl inserts and explicit reopens persist the same starred-interest value used
+to calculate their static score. For databases with pending rows from an older
+build, use the bounded correction in the
+[work-items rebuild runbook](runbooks/rebuild-work-items.md#starred-pending-work-correction)
+before starting the updated scheduler.
 
 See [Deleted entities and restricted facets](entity-state.md) for global gone
 markers, caller-specific restrictions and request suppression.

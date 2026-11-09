@@ -23,6 +23,47 @@ FROM pg_stat_user_tables
 WHERE relname IN ('work_items', 'river_job');
 ```
 
+## Starred pending work correction
+
+Earlier crawl inserts used `crawl_interests.starred` in the score without
+persisting it to `work_items.starred`. Before starting the updated scheduler on
+a database that ran that build, apply this batch in its own transaction and
+repeat until it updates zero rows. Each batch locks at most 500 pending rows,
+refreshes their static scores, and only changes `starred` from false to true;
+explicit starred values from other enqueue paths are preserved.
+
+```sql
+BEGIN;
+SET LOCAL lock_timeout = '1s';
+SET LOCAL statement_timeout = '15s';
+
+WITH batch AS (
+    SELECT w.id,
+           work_items_static_score(
+               COALESCE(p.weight, 1),
+               work_items_active_direct_action(w.direct_action, w.user_id, w.subject_key),
+               ci.starred,
+               w.depth,
+               w.created_at
+           ) AS score
+    FROM work_items AS w
+    JOIN crawl_interests AS ci
+      ON ci.user_id = w.user_id AND ci.person_nsid = w.subject_key
+    LEFT JOIN users AS u ON u.id = w.user_id
+    LEFT JOIN plans AS p ON p.id = u.plan_id
+    WHERE w.state = 'pending' AND w.starred = FALSE AND ci.starred = TRUE
+    ORDER BY w.id
+    LIMIT 500
+    FOR UPDATE OF w SKIP LOCKED
+)
+UPDATE work_items AS w
+SET starred = TRUE, score = batch.score, updated_at = now()
+FROM batch
+WHERE w.id = batch.id;
+
+COMMIT;
+```
+
 ## work_items
 
 1. Reindex each index concurrently (non-blocking for readers/writers aside
