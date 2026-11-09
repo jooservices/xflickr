@@ -7,17 +7,28 @@ ON CONFLICT (nsid) DO UPDATE SET
     profile = CASE WHEN EXCLUDED.profile <> '{}'::jsonb THEN EXCLUDED.profile ELSE people.profile END,
     icon = COALESCE(NULLIF(EXCLUDED.icon, ''), people.icon),
     photos_count = CASE WHEN EXCLUDED.photos_count > 0 THEN EXCLUDED.photos_count ELSE people.photos_count END,
-    last_seen_at = COALESCE(EXCLUDED.last_seen_at, people.last_seen_at),
+    last_seen_at = CASE
+        WHEN EXCLUDED.last_seen_at IS NULL THEN people.last_seen_at
+        WHEN people.last_seen_at IS NULL THEN EXCLUDED.last_seen_at
+        WHEN EXCLUDED.last_seen_at >= people.last_seen_at + interval '1 hour' THEN EXCLUDED.last_seen_at
+        ELSE people.last_seen_at
+    END,
     facet_state = CASE WHEN EXCLUDED.facet_state <> '{}'::jsonb THEN EXCLUDED.facet_state ELSE people.facet_state END
-WHERE (people.username, people.realname, people.profile, people.icon, people.photos_count, people.last_seen_at, people.facet_state)
+WHERE (people.username, people.realname, people.profile, people.icon, people.photos_count, people.facet_state)
     IS DISTINCT FROM
     (CASE WHEN EXCLUDED.username = EXCLUDED.nsid AND people.username <> '' THEN people.username ELSE EXCLUDED.username END,
      COALESCE(NULLIF(EXCLUDED.realname, ''), people.realname),
      CASE WHEN EXCLUDED.profile <> '{}'::jsonb THEN EXCLUDED.profile ELSE people.profile END,
      COALESCE(NULLIF(EXCLUDED.icon, ''), people.icon),
      CASE WHEN EXCLUDED.photos_count > 0 THEN EXCLUDED.photos_count ELSE people.photos_count END,
-     COALESCE(EXCLUDED.last_seen_at, people.last_seen_at),
-     CASE WHEN EXCLUDED.facet_state <> '{}'::jsonb THEN EXCLUDED.facet_state ELSE people.facet_state END);
+     CASE WHEN EXCLUDED.facet_state <> '{}'::jsonb THEN EXCLUDED.facet_state ELSE people.facet_state END)
+  OR (
+    EXCLUDED.last_seen_at IS NOT NULL
+    AND (
+        people.last_seen_at IS NULL
+        OR EXCLUDED.last_seen_at >= people.last_seen_at + interval '1 hour'
+    )
+  );
 
 -- name: UpsertPhoto :batchexec
 INSERT INTO photos (
