@@ -225,7 +225,9 @@ func TestResolveContactsAccountMatchesUserAndSubject(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=ANY($1)`, []int64{userID, otherUserID})
+		if _, err := pool.Exec(context.Background(), `DELETE FROM users WHERE id=ANY($1)`, []int64{userID, otherUserID}); err != nil {
+			t.Errorf("delete users: %v", err)
+		}
 	})
 	insertKey := func(owner int64, label string) int64 {
 		t.Helper()
@@ -255,8 +257,12 @@ func TestResolveContactsAccountMatchesUserAndSubject(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=ANY($1)`, []string{suffix + "-a", suffix + "-b"})
-		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{suffix + "-a", suffix + "-b", contactA, contactB})
+		if _, err := pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=ANY($1)`, []string{suffix + "-a", suffix + "-b"}); err != nil {
+			t.Errorf("delete contacts: %v", err)
+		}
+		if _, err := pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{suffix + "-a", suffix + "-b", contactA, contactB}); err != nil {
+			t.Errorf("delete people: %v", err)
+		}
 	})
 	catalog, err := catalogpg.New(pool)
 	if err != nil {
