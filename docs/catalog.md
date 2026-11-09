@@ -26,8 +26,10 @@ Contact relationships live in `contacts (person_nsid, contact_nsid)` with
 idempotent upserts (`seen_at` refresh). The crawl `contacts` facet writes those
 rows for each connected account's `flickr.contacts.getList` page. Every page
 uses the refresh start time as its `seen_at`; stale relationships are removed
-only when the complete paginated response succeeds. A failed or malformed
-page leaves the previous list intact. Before the relationship write,
+only when the complete paginated response succeeds. Reconciliation deletes stale
+relationships in 500-row keyset batches through the contacts primary-key index.
+A failed or malformed page leaves the previous list intact. Before the
+relationship write,
 `EnsurePeople` inserts any missing account subject with `username = nsid` and
 `ON CONFLICT DO NOTHING`, so a connected account that never had a `people` row
 still commits without overwriting a real identity.

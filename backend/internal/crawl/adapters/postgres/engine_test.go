@@ -69,6 +69,7 @@ func (c *engConn) Exec(_ context.Context, sql string, args ...any) (pgconn.Comma
 func (c *engConn) Query(context.Context, string, ...any) (pgx.Rows, error) {
 	return nil, errors.New("unused")
 }
+
 func (c *engConn) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
 	c.queries = append(c.queries, engExec{sql, args})
 	if c.rowErr != nil {
@@ -89,6 +90,7 @@ func (c *engConn) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
 	}
 	return c.row
 }
+
 func (c *engConn) SendBatch(context.Context, *pgx.Batch) pgx.BatchResults {
 	return nil
 }
@@ -634,5 +636,70 @@ func TestCompleteContactsDeletesStaleRelationshipsInKeysetBatches(t *testing.T) 
 		if query.args[0] != "account@N00" || query.args[1] != wantCursor || !query.args[2].(time.Time).Equal(scannedAt) || query.args[3] != 500 {
 			t.Fatalf("batch query %d args = %#v", i+1, query.args)
 		}
+	}
+}
+
+func TestCompleteContactsSkipsRemovedAccounts(t *testing.T) {
+	conn := &engConn{rowResults: []engRow{{err: pgx.ErrNoRows}}}
+	if err := (contactsReconcileTx{tx: conn}).CompleteContacts(t.Context(), 3, "account@N00", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if len(conn.queries) != 1 {
+		t.Fatalf("queries = %d, want only the account existence check", len(conn.queries))
+	}
+}
+
+func TestCompleteContactsReportsDatabaseErrors(t *testing.T) {
+	t.Run("account lock", func(t *testing.T) {
+		conn := &engConn{rowResults: []engRow{{err: errors.New("database unavailable")}}}
+		err := (contactsReconcileTx{tx: conn}).CompleteContacts(t.Context(), 3, "account@N00", time.Now())
+		if err == nil || !strings.Contains(err.Error(), "crawl: lock contacts account") {
+			t.Fatalf("CompleteContacts() error = %v, want account lock context", err)
+		}
+	})
+	t.Run("delete batch", func(t *testing.T) {
+		conn := &engConn{rowResults: []engRow{
+			{values: []any{1}},
+			{err: errors.New("database unavailable")},
+		}}
+		err := (contactsReconcileTx{tx: conn}).CompleteContacts(t.Context(), 3, "account@N00", time.Now())
+		if err == nil || !strings.Contains(err.Error(), "crawl: delete contacts missing from full list") {
+			t.Fatalf("CompleteContacts() error = %v, want delete batch context", err)
+		}
+	})
+	t.Run("batch cursor", func(t *testing.T) {
+		conn := &engConn{rowResults: []engRow{
+			{values: []any{1}},
+			{values: []any{int64(500), ""}},
+		}}
+		err := (contactsReconcileTx{tx: conn}).CompleteContacts(t.Context(), 3, "account@N00", time.Now())
+		if err == nil || !strings.Contains(err.Error(), "batch cursor did not advance") {
+			t.Fatalf("CompleteContacts() error = %v, want cursor progress error", err)
+		}
+	})
+}
+
+func TestCompleteContactsRejectsInvalidInput(t *testing.T) {
+	now := time.Now()
+	for _, tc := range []struct {
+		name      string
+		userID    int64
+		account   string
+		scannedAt time.Time
+	}{
+		{name: "user", userID: 0, account: "account@N00", scannedAt: now},
+		{name: "account", userID: 3, scannedAt: now},
+		{name: "checkpoint", userID: 3, account: "account@N00"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn := &engConn{}
+			err := (contactsReconcileTx{tx: conn}).CompleteContacts(t.Context(), tc.userID, tc.account, tc.scannedAt)
+			if err == nil || !strings.Contains(err.Error(), "crawl: invalid contacts reconciliation") {
+				t.Fatalf("CompleteContacts() error = %v, want invalid input", err)
+			}
+			if len(conn.queries) != 0 {
+				t.Fatalf("invalid input issued %d queries", len(conn.queries))
+			}
+		})
 	}
 }
