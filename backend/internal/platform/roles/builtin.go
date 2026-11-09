@@ -156,7 +156,7 @@ func (schedulerRole) Run(ctx context.Context) error {
 	}
 	quota.Emitter = newQuotaEmitter(quotaStates(pool, redisClient, cfg), cfg)
 	defer quota.start(ctx, slog.Default())()
-	stopHealth := startCrawlHealth(ctx, opspostgres.Store{Pool: pool}, cfg, slog.Default())
+	stopHealth := startCrawlHealthMonitor(ctx, pool, cfg, slog.Default())
 	defer stopHealth()
 	blobs, err := newBlobStore(ctx, cfg)
 	if err != nil {
@@ -754,7 +754,7 @@ func buildConfiguredAPIHandlerSetWithObserver(pool *pgxpool.Pool, redisClient re
 	if err != nil {
 		return apiHandlerSet{}, err
 	}
-	opsHandler := opshttp.Handler{Service: ops.Service{Store: opspostgres.Store{Pool: pool}}, ActorID: userIDFromPrincipal}
+	opsHandler := opshttp.Handler{Service: ops.Service{Store: opspostgres.Store{Pool: pool, DB: pool}}, ActorID: userIDFromPrincipal}
 	nodeRepository := clusterpostgres.New(pool)
 	nodeService := clusterapp.Nodes{Repository: nodeRepository}
 	nodesHandler := clusterhttp.Handler{Service: nodeService}

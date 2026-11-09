@@ -5,12 +5,13 @@ requiring SQL. Three outputs share one status query (`internal/platform/ops`).
 
 ## Crawl health log line
 
-The `scheduler` role logs `crawl health` once at start and then every minute
-(`docker logs xflickr-develop`). Fields:
+The `scheduler` role logs `crawl health` once at start and then on
+`ops.health_interval` (default 60s). Only one process holds the cluster
+advisory lock per tick; others skip. Fields:
 
 | Field | Meaning |
 |---|---|
-| `people`, `photos`, `photo_sizes`, `favorites`, `albums`, `galleries`, `groups` | Catalog sizes. `photo_sizes` counts photos with confirmed sizes. Large tables use the planner estimate and fall back to an exact count when the table has never been analysed. |
+| `people`, `photos`, `photo_sizes`, `favorites`, `albums`, `galleries`, `groups` | Catalog sizes. `photo_sizes` is the estimated count of photos with confirmed sizes. Large tables always use planner estimates in the monitor loop; `counts_estimated` is true when those values are estimates. |
 | `work_items.<state>` | Work items by state (`pending`, `ready`, `running`, `waiting`, `done`, `failed`). |
 | `ready_jobs` | Work items in the `ready` state, i.e. promoted by the scheduler and waiting for a worker. |
 | `river_jobs.<state>` | River jobs by state. |
@@ -21,6 +22,8 @@ The `scheduler` role logs `crawl health` once at start and then every minute
 | `failed_work_items`, `dead_jobs` | Failed work items and discarded River jobs (the dead-letter count). |
 | `credential_decryption_failures` | Work items whose last error indicates a stored credential could not be decrypted, including prior failures and work held for retry. A warning recommends checking configured key IDs and envelope metadata; it never includes key material. |
 | `token_status` | Worst Flickr account state: `none`, `ok`, `reconnect_required`, `revoked`. |
+| `counts_estimated` | True when catalog counts including `photo_sizes` come from planner estimates. |
+| `photo_sizes_pending` / `photo_sizes_ready` / `photo_sizes_running` | Backlog of photos needing sizes (partial index) plus waiting `photo.sizes` jobs; ready and running river jobs. See [observability](observability.md#crawl-health-snapshot-cost). |
 
 ### Idle warning
 

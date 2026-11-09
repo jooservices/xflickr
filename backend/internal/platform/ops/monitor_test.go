@@ -183,3 +183,36 @@ func TestMonitorDefaultLogger(t *testing.T) {
 		t.Fatal("nil logger")
 	}
 }
+
+func TestMonitorSkipsWhenAdvisoryLockHeld(t *testing.T) {
+	monitor, logs, _ := newMonitor(Snapshot{}, nil)
+	monitor.Service.Store = fakeStore{err: ErrSnapshotBusy}
+	if err := monitor.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	out := logs.String()
+	if !strings.Contains(out, "advisory lock held") {
+		t.Fatalf("expected skip debug log: %s", out)
+	}
+	if strings.Contains(out, "msg=\"crawl health\"") {
+		t.Fatalf("must not emit health line when lock is held: %s", out)
+	}
+}
+
+func TestDegradedSnapshotOnStatementTimeout(t *testing.T) {
+	monitor, logs, _ := newMonitor(Snapshot{
+		Degraded:        true,
+		DegradedQueries: []string{"counts"},
+		Counts:          Counts{Photos: 3},
+	}, nil)
+	if err := monitor.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	out := logs.String()
+	if !strings.Contains(out, "degraded snapshot") || !strings.Contains(out, "query=counts") {
+		t.Fatalf("expected degraded warn: %s", out)
+	}
+	if !strings.Contains(out, "msg=\"crawl health\"") || !strings.Contains(out, "photos=3") {
+		t.Fatalf("health line must still be logged: %s", out)
+	}
+}

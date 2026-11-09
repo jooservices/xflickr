@@ -72,10 +72,22 @@ func (m *Monitor) Tick(ctx context.Context) error {
 		return errors.New("ops: monitor context is required")
 	}
 	status, err := m.Service.Status(ctx)
+	if errors.Is(err, ErrSnapshotBusy) {
+		m.logger().DebugContext(ctx, "crawl health: skipped; advisory lock held")
+		return nil
+	}
 	if err != nil {
 		return err
 	}
 	logger := m.logger()
+	if status.Degraded {
+		for _, name := range status.DegradedQueries {
+			logger.WarnContext(ctx, "crawl health: degraded snapshot", "query", name)
+		}
+		if len(status.DegradedQueries) == 0 {
+			logger.WarnContext(ctx, "crawl health: degraded snapshot", "query", "unknown")
+		}
+	}
 	logger.InfoContext(ctx, "crawl health", logAttrs(status)...)
 	if status.CredentialDecryptionFailures > 0 {
 		logger.WarnContext(ctx, "crawl credentials cannot be decrypted; check configured key IDs and stored envelope metadata", "credential_decryption_failures", status.CredentialDecryptionFailures)
@@ -124,6 +136,7 @@ func logAttrs(s Status) []any {
 		"people", s.Counts.People,
 		"photos", s.Counts.Photos,
 		"photo_sizes", s.Counts.PhotoSizes,
+		"counts_estimated", s.CountsEstimated,
 		"photo_sizes_pending", s.PhotoSizesJobs.Pending,
 		"photo_sizes_ready", s.PhotoSizesJobs.Ready,
 		"photo_sizes_running", s.PhotoSizesJobs.Running,
@@ -180,6 +193,7 @@ func Events(s Status, node string) []Event {
 		"people":                         s.Counts.People,
 		"photos":                         s.Counts.Photos,
 		"photo_sizes":                    s.Counts.PhotoSizes,
+		"counts_estimated":               s.CountsEstimated,
 		"photo_sizes_pending":            s.PhotoSizesJobs.Pending,
 		"photo_sizes_ready":              s.PhotoSizesJobs.Ready,
 		"photo_sizes_running":            s.PhotoSizesJobs.Running,

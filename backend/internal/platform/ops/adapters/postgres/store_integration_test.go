@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
@@ -146,6 +147,13 @@ type failingPool struct {
 func (f *failingPool) next() bool {
 	f.calls++
 	return f.calls == f.failAt
+}
+
+func (f *failingPool) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	if f.next() {
+		return pgconn.CommandTag{}, errors.New("injected query failure")
+	}
+	return f.Querier.Exec(ctx, sql, args...)
 }
 
 func (f *failingPool) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {

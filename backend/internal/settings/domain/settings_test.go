@@ -61,9 +61,72 @@ func TestMergeSeededDefaults(t *testing.T) {
 		ScoreWeightDepth:          5,
 		ScoreWeightAgeMinutes:     0.1,
 		ScoreAgingBatchSize:       500,
+		OpsHealthInterval:         time.Minute,
+		OpsHealthStatementTimeout: 5 * time.Second,
 	}
 	if got != want {
 		t.Fatalf("effective defaults = %+v, want %+v", got, want)
+	}
+}
+
+func TestClampHealthSettings(t *testing.T) {
+	if got := ClampHealthInterval(time.Second); got != 10*time.Second {
+		t.Fatalf("interval min = %s", got)
+	}
+	if got := ClampHealthInterval(2 * time.Hour); got != time.Hour {
+		t.Fatalf("interval max = %s", got)
+	}
+	if got := ClampHealthInterval(2 * time.Minute); got != 2*time.Minute {
+		t.Fatalf("interval mid = %s", got)
+	}
+	if got := ClampHealthTimeout(0); got != time.Second {
+		t.Fatalf("timeout min = %s", got)
+	}
+	if got := ClampHealthTimeout(2 * time.Minute); got != time.Minute {
+		t.Fatalf("timeout max = %s", got)
+	}
+	if got := ClampHealthTimeout(15 * time.Second); got != 15*time.Second {
+		t.Fatalf("timeout mid = %s", got)
+	}
+}
+
+func TestHealthSettingsBounds(t *testing.T) {
+	interval := definition(t, OpsHealthInterval)
+	if string(interval.Value) != "60" || interval.UserOverridable || !floatEqual(interval.Min, 10) || !floatEqual(interval.Max, 3600) {
+		t.Fatalf("ops.health_interval default = %+v", interval)
+	}
+	timeout := definition(t, OpsHealthStatementTimeout)
+	if string(timeout.Value) != "5" || timeout.UserOverridable || !floatEqual(timeout.Min, 1) || !floatEqual(timeout.Max, 60) {
+		t.Fatalf("ops.health_statement_timeout default = %+v", timeout)
+	}
+	schema, ok := SchemaFor(OpsHealthInterval)
+	if !ok || schema.Type != "integer" || !floatEqual(schema.Minimum, 10) || !floatEqual(schema.Maximum, 3600) {
+		t.Fatalf("ops.health_interval schema = %+v", schema)
+	}
+	schema, ok = SchemaFor(OpsHealthStatementTimeout)
+	if !ok || schema.Type != "integer" || !floatEqual(schema.Minimum, 1) || !floatEqual(schema.Maximum, 60) {
+		t.Fatalf("ops.health_statement_timeout schema = %+v", schema)
+	}
+	for _, test := range []struct {
+		key Key
+		raw string
+	}{
+		{OpsHealthInterval, "9"},
+		{OpsHealthInterval, "3601"},
+		{OpsHealthStatementTimeout, "0"},
+		{OpsHealthStatementTimeout, "61"},
+	} {
+		err := ValidateValue(test.key, json.RawMessage(test.raw), nil, nil)
+		var validation *ValidationError
+		if !errors.As(err, &validation) || validation.Key != test.key {
+			t.Fatalf("%s=%s err=%v", test.key, test.raw, err)
+		}
+	}
+	if err := ValidateValue(OpsHealthInterval, json.RawMessage("10"), floatPointer(10), floatPointer(3600)); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateValue(OpsHealthStatementTimeout, json.RawMessage("60"), floatPointer(1), floatPointer(60)); err != nil {
+		t.Fatal(err)
 	}
 }
 

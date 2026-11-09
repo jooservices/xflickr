@@ -50,6 +50,8 @@ const (
 	ScoreWeightDepth          Key = "score_weight_depth"
 	ScoreWeightAgeMinutes     Key = "score_weight_age_minutes"
 	ScoreAgingBatchSize       Key = "score_aging_batch_size"
+	OpsHealthInterval         Key = "ops.health_interval"
+	OpsHealthStatementTimeout Key = "ops.health_statement_timeout"
 )
 
 // Effective contains the merged, validated settings for one user. Durations
@@ -87,6 +89,8 @@ type Effective struct {
 	ScoreWeightDepth          float64
 	ScoreWeightAgeMinutes     float64
 	ScoreAgingBatchSize       int
+	OpsHealthInterval         time.Duration
+	OpsHealthStatementTimeout time.Duration
 }
 
 // Definition is the application-level value and policy for a setting.
@@ -202,6 +206,8 @@ var schemas = map[Key]JSONSchema{
 	ScoreWeightDepth:          {Type: "number", Minimum: minZero},
 	ScoreWeightAgeMinutes:     {Type: "number", Minimum: minZero},
 	ScoreAgingBatchSize:       {Type: "integer", Minimum: minOne},
+	OpsHealthInterval:         {Type: "integer", Minimum: floatPointer(10), Maximum: floatPointer(3600)},
+	OpsHealthStatementTimeout: {Type: "integer", Minimum: floatPointer(1), Maximum: floatPointer(60)},
 }
 
 // SchemaFor returns the JSON schema associated with a typed key.
@@ -241,6 +247,8 @@ func Keys() []Key {
 		SyncReadyCap,
 		LeaseTimeout,
 		ScoreWeightPlan, ScoreWeightDirectAction, ScoreWeightStarred, ScoreWeightDepth, ScoreWeightAgeMinutes, ScoreAgingBatchSize,
+		OpsHealthInterval,
+		OpsHealthStatementTimeout,
 	}
 }
 
@@ -280,6 +288,8 @@ func Defaults() []Definition {
 		{Key: ScoreWeightDepth, Value: json.RawMessage("5"), UserOverridable: false, Min: floatPointer(0)},
 		{Key: ScoreWeightAgeMinutes, Value: json.RawMessage("0.1"), UserOverridable: false, Min: floatPointer(0)},
 		{Key: ScoreAgingBatchSize, Value: json.RawMessage("500"), UserOverridable: false, Min: floatPointer(1)},
+		{Key: OpsHealthInterval, Value: json.RawMessage("60"), UserOverridable: false, Min: floatPointer(10), Max: floatPointer(3600)},
+		{Key: OpsHealthStatementTimeout, Value: json.RawMessage("5"), UserOverridable: false, Min: floatPointer(1), Max: floatPointer(60)},
 	}
 }
 
@@ -564,6 +574,12 @@ func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
 	if result.ScoreAgingBatchSize, err = integer(values[ScoreAgingBatchSize]); err != nil {
 		return Effective{}, nil, invalidStored(ScoreAgingBatchSize, err)
 	}
+	if result.OpsHealthInterval, err = duration(values[OpsHealthInterval]); err != nil {
+		return Effective{}, nil, invalidStored(OpsHealthInterval, err)
+	}
+	if result.OpsHealthStatementTimeout, err = duration(values[OpsHealthStatementTimeout]); err != nil {
+		return Effective{}, nil, invalidStored(OpsHealthStatementTimeout, err)
+	}
 	return result, dropped, nil
 }
 
@@ -665,4 +681,30 @@ func formatCap(cap float64) string {
 
 func floatPointer(value float64) *float64 {
 	return &value
+}
+
+// ClampHealthInterval enforces ops.health_interval bounds (10s–1h).
+func ClampHealthInterval(value time.Duration) time.Duration {
+	const min = 10 * time.Second
+	const max = time.Hour
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
+}
+
+// ClampHealthTimeout enforces ops.health_statement_timeout bounds (1s–60s).
+func ClampHealthTimeout(value time.Duration) time.Duration {
+	const min = time.Second
+	const max = time.Minute
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
 }
