@@ -71,10 +71,10 @@ func TestPumpValidatesDependenciesContextAndDatabase(t *testing.T) {
 }
 
 func TestReclaimValidatesPoolAndDatabase(t *testing.T) {
-	if _, err := (Store{}).Reclaim(context.Background(), 5, 30*time.Second, time.Now()); err == nil {
+	if _, err := (Store{}).Reclaim(context.Background(), 5, 30*time.Second, 100, time.Now()); err == nil {
 		t.Fatal("Reclaim accepted nil pool")
 	}
-	if _, err := (Store{Pool: closedPool(t)}).Reclaim(context.Background(), 5, 30*time.Second, time.Now()); err == nil {
+	if _, err := (Store{Pool: closedPool(t)}).Reclaim(context.Background(), 5, 30*time.Second, 100, time.Now()); err == nil {
 		t.Fatal("Reclaim ignored database error")
 	}
 }

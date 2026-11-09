@@ -166,7 +166,7 @@ func TestExpiredLeaseReturnsToPendingThenExhausts(t *testing.T) {
 	}
 	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
 	store := scheduleriver.Store{Pool: pool}
-	if count, err := store.Reclaim(ctx, 5, 30*time.Second, time.Now()); err != nil || count < 1 {
+	if count, err := store.Reclaim(ctx, 5, 30*time.Second, 100, time.Now()); err != nil || count < 1 {
 		t.Fatalf("Reclaim() = %d, %v; want at least the expired fixture", count, err)
 	}
 	var state string
@@ -181,7 +181,7 @@ func TestExpiredLeaseReturnsToPendingThenExhausts(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready',attempts=1,lease_expires_at=now()-interval '1 second' WHERE subject_key=$1`, suffix); err != nil {
 		t.Fatal(err)
 	}
-	if count, err := store.Reclaim(ctx, 5, 30*time.Second, time.Now()); err != nil || count != 1 {
+	if count, err := store.Reclaim(ctx, 5, 30*time.Second, 100, time.Now()); err != nil || count != 1 {
 		t.Fatalf("second retry Reclaim() = %d, %v", count, err)
 	}
 	if err := pool.QueryRow(ctx, `SELECT not_before FROM work_items WHERE subject_key=$1`, suffix).Scan(&notBefore); err != nil {
@@ -193,7 +193,7 @@ func TestExpiredLeaseReturnsToPendingThenExhausts(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready',attempts=4,lease_expires_at=now()-interval '1 second' WHERE subject_key=$1`, suffix); err != nil {
 		t.Fatal(err)
 	}
-	if count, err := store.Reclaim(ctx, 5, 30*time.Second, time.Now()); err != nil || count != 1 {
+	if count, err := store.Reclaim(ctx, 5, 30*time.Second, 100, time.Now()); err != nil || count != 1 {
 		t.Fatalf("exhaust Reclaim() = %d, %v", count, err)
 	}
 	if err := pool.QueryRow(ctx, `SELECT state,attempts FROM work_items WHERE subject_key=$1`, suffix).Scan(&state, &attempts); err != nil {
@@ -234,7 +234,7 @@ func TestFailedWorkIsSelfHealedAndRequeued(t *testing.T) {
 		return st, attempts
 	}
 	store := scheduleriver.Store{Pool: pool}
-	if _, err := store.Reclaim(ctx, 5, 30*time.Second, time.Now()); err != nil {
+	if _, err := store.Reclaim(ctx, 5, 30*time.Second, 100, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if st, a := state("-old"); st != "pending" || a != 0 {
@@ -324,7 +324,7 @@ func TestReclaimLeavesItemWithLiveRiverJobAlone(t *testing.T) {
 	store := scheduleriver.Store{Pool: pool}
 	// The job still waits in the queue: the expired lease must not be reaped
 	// and the River job must stay live.
-	if _, err := store.Reclaim(ctx, 5, 30*time.Second, time.Now()); err != nil {
+	if _, err := store.Reclaim(ctx, 5, 30*time.Second, 100, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	var state string
@@ -340,7 +340,7 @@ func TestReclaimLeavesItemWithLiveRiverJobAlone(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE river_job SET state='cancelled', finalized_at=now() WHERE args->'args'->>'work_item_id'=$1`, fmt.Sprint(workID)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Reclaim(ctx, 5, 30*time.Second, time.Now()); err != nil {
+	if _, err := store.Reclaim(ctx, 5, 30*time.Second, 100, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if err := pool.QueryRow(ctx, `SELECT state, attempts FROM work_items WHERE id=$1`, workID).Scan(&state, &attempts); err != nil {
@@ -376,7 +376,7 @@ func TestReclaimRollsBackWhenFailedRowCannotBeUpdated(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON work_items`, trigger))
 		_, _ = pool.Exec(context.Background(), fmt.Sprintf(`DROP FUNCTION IF EXISTS %s()`, function))
 	})
-	if _, err := (scheduleriver.Store{Pool: pool}).Reclaim(ctx, 5, 30*time.Second, time.Now()); err == nil {
+	if _, err := (scheduleriver.Store{Pool: pool}).Reclaim(ctx, 5, 30*time.Second, 100, time.Now()); err == nil {
 		t.Fatal("Reclaim ignored failed work update")
 	}
 	var state string
@@ -414,7 +414,7 @@ func TestReclaimReturnsOutboxFailure(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON outbox_events`, trigger))
 		_, _ = pool.Exec(context.Background(), fmt.Sprintf(`DROP FUNCTION IF EXISTS %s()`, function))
 	})
-	if _, err := (scheduleriver.Store{Pool: pool}).Reclaim(ctx, 5, 30*time.Second, time.Now()); err == nil {
+	if _, err := (scheduleriver.Store{Pool: pool}).Reclaim(ctx, 5, 30*time.Second, 100, time.Now()); err == nil {
 		t.Fatal("Reclaim ignored outbox publication error")
 	}
 	var state string
@@ -436,7 +436,7 @@ func TestLoadPumpSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.RetryMax != 5 || settings.RetryBackoff != 30*time.Second || settings.LeaseTimeout != 2*time.Minute || settings.PerKeyReadyCap != 100 || settings.AgingBatchSize != 500 || settings.MaxDepth != 2 || settings.ScoreWeights.PlanWeight != 10 || settings.ScoreWeights.AgeMinutes != .1 {
+	if settings.RetryMax != 5 || settings.RetryBackoff != 30*time.Second || settings.LeaseTimeout != 2*time.Minute || settings.PerKeyReadyCap != 100 || settings.ReclaimBatchSize != 100 || settings.AgingBatchSize != 500 || settings.MaxDepth != 2 || settings.ScoreWeights.PlanWeight != 10 || settings.ScoreWeights.AgeMinutes != .1 {
 		t.Fatalf("pump settings = %+v", settings)
 	}
 }

@@ -39,6 +39,10 @@ Sizes are approximate per partition × 16 partitions unless noted.
 | `crawl_interests_paused_idx` | crawl_interests | partial | used | pause checks / enqueue filters | keep |
 | `crawl_interests_selected_idx` / `_starred_idx` / `_depth_idx` | crawl_interests | | used | `photolane.sql` ranking streams | keep |
 | `work_items_failed_updated_idx` | work_items | partial | not in audit window | Reclaim self-heal by failed state and `updated_at` | keep (JOOXF-386) |
+| `river_job_active_work_item_idx` | river_job | partial expression | not in audit window | Reclaim's live-job lookup by work item ID | keep (JOOXF-386) |
+| `work_items_active_key_count_idx` | work_items | partial | not in audit window | bounded active count by key | keep (JOOXF-386) |
+| `work_items_active_worker_count_idx` | work_items | partial | not in audit window | bounded active count by worker queue | keep (JOOXF-386) |
+| `work_items_pending_keyless_due_idx` | work_items | partial | not in audit window | keyless pending warning by due time | keep (JOOXF-386) |
 
 Existing `work_items` and River indexes are owned by JOOXF-370 and are out of
 scope for the index-drop audit above.
@@ -304,13 +308,40 @@ Existing heap and index bloat is cleared with the lead-only runbook
 
 JOOXF-386 adds `work_items_failed_updated_idx` on `updated_at` for failed
 rows. Reclaim uses it to find lease-expired failures old enough for self-heal;
-pending and active rows do not occupy this partial index. The integration
-EXPLAIN test uses 400,000 work items with four failed rows and verifies that
-self-heal uses this index without a `work_items` Seq Scan. On the same fixture,
-the Reclaim lease selector, pump counts, claim and key-assignment queries, and
-pending and expired-selection rescore queries also had no `work_items` Seq
-Scan. Confirm the production `pg_stat_user_tables` rate after deployment;
-worktree plans do not establish production behavior.
+pending and active rows do not occupy this partial index. Reclaim selects at
+most `queue.reclaim_batch_size` expired leases and self-heals at most the same
+number of failed rows per tick (default 100, admin editable). The pump bounds
+inflight counts at the configured ready caps, reads global node/queue counts
+once per tick, and reads one count per active key. The supporting partial
+indexes cover active counts and due keyless work.
+
+`river_job_active_work_item_idx` supports the anti-join that leaves a work item
+alone while a live River job owns it. The integration EXPLAIN fixture contains
+400,000 work items and 100,000 active River jobs; it asserts the self-heal and
+lease selectors use their indexes, verifies the Bitmap Index Scan child when
+the planner chooses a bitmap path, and fails on a `work_items` sequential scan
+for every recorded pump and maintenance plan. The backlog integration test
+checks that a 250-row ready and failed backlog drains in batches of 100.
+
+The new indexes use `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY`
+in migrations marked `NO TRANSACTION`, so index builds do not block table
+writes. A failed concurrent build can leave an invalid index, which makes a
+later `CREATE INDEX CONCURRENTLY IF NOT EXISTS` skip rebuilding it. Before
+retrying a failed migration, inspect only the affected index:
+
+```sql
+SELECT indexrelid::regclass, indisvalid
+FROM pg_index
+WHERE indexrelid = to_regclass('public.<index_name>');
+```
+
+If `indisvalid` is false, remove the remnant with
+`DROP INDEX CONCURRENTLY IF EXISTS public.<index_name>`, then rerun the
+migration. Do not drop a valid index as part of this recovery.
+
+Confirm the production `pg_stat_user_tables` rate over two minutes after the
+lead deploys the migration. Worktree plans do not establish production
+behavior; no production measurement or deployment was performed for this PR.
 
 ## river_job (JOOXF-370)
 

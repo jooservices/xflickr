@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -54,7 +55,18 @@ func TestReclaimSelfHealUsesFailedUpdatedIndex(t *testing.T) {
 		VALUES ('available',jsonb_build_object('args',jsonb_build_object('work_item_id',$1::text)),'sync_person','sync')`, fmt.Sprint(matchedWorkItemID)); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,not_before)
+		SELECT 'sync_person',$1||'-future-keyless-'||g,$2,'pending',now()+interval '1 day'
+		FROM generate_series(1,20000) AS g`, suffix, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state) VALUES ('sync_person',$1,$2,'pending')`, suffix+"-keyless", userID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := tx.Exec(ctx, `ANALYZE work_items`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `ANALYZE river_job`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -73,25 +85,37 @@ FROM (
 WHERE w.id = batch.id`
 	}
 	queries := []struct {
-		name string
-		sql  string
-		args []any
+		name          string
+		sql           string
+		args          []any
+		indexRelation string
+		indexName     string
 	}{
 		{
 			name: "Reclaim expired lease selection",
-			sql: `SELECT id, attempts, kind FROM work_items WHERE state IN ('ready','running') AND lease_expires_at <= $1
-				AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.state IN ` + liveRiverStates + ` AND j.args->'args'->>'work_item_id' = work_items.id::text)
-				ORDER BY lease_expires_at, id LIMIT $2 FOR UPDATE SKIP LOCKED`,
+			sql:  reclaimExpiredLeasesSQL,
 			args: []any{now, 100},
 		},
 		{
-			name: "pump inflight count",
-			sql:  `SELECT count(*) FROM work_items WHERE state IN ('ready','running') AND ($1=0 OR key_id=$1) AND ($2='' OR (CASE WHEN kind LIKE 'ai%' THEN 'ai' WHEN kind LIKE 'media%' THEN 'media' ELSE 'sync' END)=$2)`,
-			args: []any{int64(0), ""},
+			name: "pump node inflight count",
+			sql:  inflightNodeCountSQL,
+			args: []any{500},
 		},
 		{
-			name: "pump keyless pending count",
-			sql:  `SELECT count(*) FROM work_items WHERE state='pending' AND key_id IS NULL AND not_before <= now()`,
+			name: "pump key inflight count",
+			sql:  inflightKeyCountSQL,
+			args: []any{keyID, 100},
+		},
+		{
+			name: "pump worker inflight count",
+			sql:  inflightWorkerCountSQL,
+			args: []any{"sync", 100},
+		},
+		{
+			name:          "pump keyless pending probe",
+			sql:           keylessPendingExistsSQL,
+			indexRelation: "work_items",
+			indexName:     "work_items_pending_keyless_due_idx",
 		},
 		{
 			name: "pump plan backlog count",
@@ -126,9 +150,11 @@ WHERE w.id = batch.id`
 			args: rescoreArgs,
 		},
 		{
-			name: "Reclaim self-heal update",
-			sql:  reclaimSelfHealSQL,
-			args: []any{now, now.Add(-SelfHealAfter)},
+			name:          "Reclaim self-heal update",
+			sql:           reclaimSelfHealSQL,
+			args:          []any{now, now.Add(-SelfHealAfter), 100},
+			indexRelation: "work_items",
+			indexName:     "work_items_failed_updated_idx",
 		},
 	}
 
@@ -143,19 +169,31 @@ WHERE w.id = batch.id`
 			if seqScan {
 				t.Error("query performs a Seq Scan on work_items")
 			}
-			if query.name == "Reclaim self-heal update" && !containsIndexOnRelation(plan.Plan, "work_items", "work_items_failed_updated_idx") {
-				t.Error("Reclaim self-heal does not use work_items_failed_updated_idx")
+			if query.indexName != "" && !containsIndexOnRelation(plan.Plan, query.indexRelation, query.indexName) {
+				t.Errorf("query does not use %s", query.indexName)
 			}
 			if query.name == "Reclaim expired lease selection" {
-				if !containsIndexOnRelation(plan.Plan, "work_items", "work_items_ready_lease_idx") {
-					t.Error("Reclaim lease selector does not use work_items_ready_lease_idx")
-				}
 				if !containsIndexOnRelation(plan.Plan, "river_job", "river_job_active_work_item_idx") {
 					t.Error("Reclaim lease selector does not use river_job_active_work_item_idx")
+				}
+				if containsSeqScanOnRelation(plan.Plan, "river_job") {
+					t.Error("Reclaim lease selector performs a Seq Scan on river_job")
 				}
 			}
 		})
 	}
+}
+
+func containsSeqScanOnRelation(node explainNode, relation string) bool {
+	if strings.Contains(node.NodeType, "Seq Scan") && node.RelationName == relation {
+		return true
+	}
+	for _, child := range node.Plans {
+		if containsSeqScanOnRelation(child, relation) {
+			return true
+		}
+	}
+	return false
 }
 
 func containsIndexOnRelation(node explainNode, relation, index string) bool {
@@ -182,7 +220,7 @@ func TestContainsIndexOnBitmapChild(t *testing.T) {
 		NodeType:     "Bitmap Heap Scan",
 		RelationName: "work_items",
 		Plans: []explainNode{{
-			NodeType: "Bitmap Index Scan",
+			NodeType:  "Bitmap Index Scan",
 			IndexName: "work_items_failed_updated_idx",
 		}},
 	}
@@ -227,7 +265,7 @@ func TestReclaimProcessesLargeBacklogsInBatches(t *testing.T) {
 	store := Store{Pool: pool}
 	for remaining, wantBatch := backlog, batchSize; remaining > 0; remaining -= wantBatch {
 		want := min(batchSize, remaining)
-		reclaimed, err := store.Reclaim(ctx, 5, time.Second, now)
+		reclaimed, err := store.Reclaim(ctx, 5, time.Second, batchSize, now)
 		if err != nil {
 			t.Fatal(err)
 		}

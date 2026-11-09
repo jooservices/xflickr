@@ -196,7 +196,7 @@ func TestPumpReturnsBacklogAndInflightReadErrors(t *testing.T) {
 	if _, err := store.Pump(ctx, settings, internalCapacity(1), internalQueue{}); err == nil {
 		t.Fatal("Pump ignored pending key query error")
 	}
-	store = Store{Pool: pool, listKeys: func(context.Context, pgx.Tx) ([]int64, error) { return []int64{1}, nil }, inflight: func(context.Context, pgx.Tx, int64, string) (int, error) { return 0, errors.New("inflight read") }}
+	store = Store{Pool: pool, listKeys: func(context.Context, pgx.Tx) ([]int64, error) { return []int64{1}, nil }, inflight: func(context.Context, pgx.Tx, int64, string, int) (int, error) { return 0, errors.New("inflight read") }}
 	if _, err := store.Pump(ctx, settings, internalCapacity(1), internalQueue{}); err == nil {
 		t.Fatal("Pump ignored inflight query error")
 	}

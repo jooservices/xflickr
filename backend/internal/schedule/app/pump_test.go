@@ -84,7 +84,7 @@ func TestPumpRunOnceReclaimsAndDispatches(t *testing.T) {
 	store := &pumpFakeStore{}
 	pump := Pump{Store: store, Credits: fakeCredits{}, Queue: fakeQueue{}, Settings: validPumpSettings()}
 	got, err := pump.RunOnce(context.Background())
-	if err != nil || got != 3 || store.reclaims != 1 || store.pumps != 1 {
+	if err != nil || got != 3 || store.reclaims != 1 || store.reclaimBatchSize != 100 || store.pumps != 1 {
 		t.Fatalf("RunOnce() = %d, %v; store = %+v", got, err, store)
 	}
 	store.reclaimErr = errors.New("reclaim")
@@ -141,7 +141,7 @@ func TestReclaimValidationAndClock(t *testing.T) {
 		t.Fatal("Reclaim accepted missing dependencies")
 	}
 	store := &pumpFakeStore{}
-	reclaim := Reclaim{Store: store, RetryMax: 5, Backoff: 30 * time.Second, Now: func() time.Time { return time.Unix(42, 0) }}
+	reclaim := Reclaim{Store: store, RetryMax: 5, Backoff: 30 * time.Second, BatchSize: 100, Now: func() time.Time { return time.Unix(42, 0) }}
 	if _, err := reclaim.RunOnce(nil); err == nil {
 		t.Fatal("Reclaim accepted nil context")
 	}
@@ -151,6 +151,11 @@ func TestReclaimValidationAndClock(t *testing.T) {
 	reclaim.RetryMax = -1
 	if _, err := reclaim.RunOnce(context.Background()); err == nil {
 		t.Fatal("Reclaim accepted zero retry max")
+	}
+	reclaim.RetryMax = 5
+	reclaim.BatchSize = 0
+	if _, err := reclaim.RunOnce(context.Background()); err == nil {
+		t.Fatal("Reclaim accepted an empty batch size")
 	}
 }
 
@@ -227,7 +232,7 @@ func TestPumpRunLogsQueueStatePublicationFailures(t *testing.T) {
 }
 
 func validPumpSettings() PumpSettings {
-	return PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	return PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute, ReclaimBatchSize: 100}
 }
 
 type fakeCredits struct{}
@@ -243,6 +248,7 @@ type pumpFakeStore struct {
 	pumps, reclaims     int
 	pumpErr, reclaimErr error
 	reclaimTime         time.Time
+	reclaimBatchSize    int
 	lastSettings        PumpSettings
 }
 
@@ -269,8 +275,9 @@ type pressureStub struct {
 
 func (s pressureStub) Full(context.Context) (bool, error) { return s.full, s.err }
 
-func (s *pumpFakeStore) Reclaim(_ context.Context, _ int, _ time.Duration, now time.Time) (int, error) {
+func (s *pumpFakeStore) Reclaim(_ context.Context, _ int, _ time.Duration, batchSize int, now time.Time) (int, error) {
 	s.reclaims++
 	s.reclaimTime = now
+	s.reclaimBatchSize = batchSize
 	return 0, s.reclaimErr
 }

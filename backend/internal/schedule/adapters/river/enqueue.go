@@ -28,7 +28,7 @@ type Store struct {
 	Pool     *pgxpool.Pool
 	database scheduleDatabase
 	listKeys func(context.Context, pgx.Tx) ([]int64, error)
-	inflight func(context.Context, pgx.Tx, int64, string) (int, error)
+	inflight func(context.Context, pgx.Tx, int64, string, int) (int, error)
 }
 
 type scheduleDatabase interface {
@@ -95,7 +95,7 @@ func loadSettings(ctx context.Context, pool scheduleDatabase) (app.PumpSettings,
 	if ctx == nil {
 		return app.PumpSettings{}, errors.New("schedule: settings context is required")
 	}
-	settingKeys := []string{"per_key_ready_cap", "node_ready_cap", "media_ready_cap", "ai_ready_cap", "sync_ready_cap", "retry_max", "retry_backoff", "lease_timeout", "max_depth", "score_weight_plan", "score_weight_direct_action", "score_weight_starred", "score_weight_depth", "score_weight_age_minutes", "score_aging_batch_size"}
+	settingKeys := []string{"per_key_ready_cap", "node_ready_cap", "media_ready_cap", "ai_ready_cap", "sync_ready_cap", "retry_max", "retry_backoff", "lease_timeout", "max_depth", "score_weight_plan", "score_weight_direct_action", "score_weight_starred", "score_weight_depth", "score_weight_age_minutes", "score_aging_batch_size", "queue.reclaim_batch_size"}
 	rows, err := pool.Query(ctx, `SELECT key, value #>> '{}' FROM app_settings WHERE key = ANY($1)`, settingKeys)
 	if err != nil {
 		return app.PumpSettings{}, fmt.Errorf("schedule: query pump settings: %w", err)
@@ -119,8 +119,8 @@ func loadSettings(ctx context.Context, pool scheduleDatabase) (app.PumpSettings,
 	}
 	integer := func(key string) (int64, error) { return strconv.ParseInt(values[key], 10, 64) }
 	decimal := func(key string) (float64, error) { return strconv.ParseFloat(values[key], 64) }
-	ints := make(map[string]int64, 10)
-	for _, key := range []string{"per_key_ready_cap", "node_ready_cap", "media_ready_cap", "ai_ready_cap", "sync_ready_cap", "retry_max", "retry_backoff", "lease_timeout", "max_depth", "score_aging_batch_size"} {
+	ints := make(map[string]int64, 11)
+	for _, key := range []string{"per_key_ready_cap", "node_ready_cap", "media_ready_cap", "ai_ready_cap", "sync_ready_cap", "retry_max", "retry_backoff", "lease_timeout", "max_depth", "score_aging_batch_size", "queue.reclaim_batch_size"} {
 		value, parseErr := integer(key)
 		if parseErr != nil {
 			return app.PumpSettings{}, fmt.Errorf("schedule: parse pump setting %s: %w", key, parseErr)
@@ -138,7 +138,7 @@ func loadSettings(ctx context.Context, pool scheduleDatabase) (app.PumpSettings,
 		}
 		weights[i] = value
 	}
-	settings := app.PumpSettings{PerKeyReadyCap: int(ints["per_key_ready_cap"]), NodeReadyCap: int(ints["node_ready_cap"]), MediaReadyCap: int(ints["media_ready_cap"]), AIReadyCap: int(ints["ai_ready_cap"]), SyncReadyCap: int(ints["sync_ready_cap"]), RetryMax: int(ints["retry_max"]), RetryBackoff: time.Duration(ints["retry_backoff"]) * time.Second, LeaseTimeout: time.Duration(ints["lease_timeout"]) * time.Second, AgingBatchSize: int(ints["score_aging_batch_size"]), MaxDepth: int(ints["max_depth"]), ScoreWeights: domain.ScoreWeights{PlanWeight: weights[0], DirectAction: weights[1], Starred: weights[2], Depth: weights[3], AgeMinutes: weights[4]}}
+	settings := app.PumpSettings{PerKeyReadyCap: int(ints["per_key_ready_cap"]), NodeReadyCap: int(ints["node_ready_cap"]), MediaReadyCap: int(ints["media_ready_cap"]), AIReadyCap: int(ints["ai_ready_cap"]), SyncReadyCap: int(ints["sync_ready_cap"]), RetryMax: int(ints["retry_max"]), RetryBackoff: time.Duration(ints["retry_backoff"]) * time.Second, LeaseTimeout: time.Duration(ints["lease_timeout"]) * time.Second, ReclaimBatchSize: int(ints["queue.reclaim_batch_size"]), AgingBatchSize: int(ints["score_aging_batch_size"]), MaxDepth: int(ints["max_depth"]), ScoreWeights: domain.ScoreWeights{PlanWeight: weights[0], DirectAction: weights[1], Starred: weights[2], Depth: weights[3], AgeMinutes: weights[4]}}
 	if err := settings.Validate(); err != nil {
 		return app.PumpSettings{}, err
 	}
@@ -161,6 +161,16 @@ type expiredLease struct {
 	id       int64
 	attempts int
 	kind     string
+}
+
+type inflightSnapshot struct {
+	node    int
+	workers map[string]int
+}
+
+type pumpResult struct {
+	total   int
+	workers map[string]int
 }
 
 func (s Store) Pump(ctx context.Context, settings app.PumpSettings, credits app.CreditProvider, jobs queue.JobQueue) (int, error) {
@@ -345,13 +355,31 @@ func (r PersonRescorer) RescorePerson(ctx context.Context, userID int64, person 
 }
 
 func (s Store) pumpKeys(ctx context.Context, tx pgx.Tx, keys []int64, settings app.PumpSettings, credits app.CreditProvider, jobs queue.JobQueue) (int, error) {
+	if len(keys) == 0 {
+		return 0, nil
+	}
 	count := s.inflight
 	if count == nil {
 		count = countInflight
 	}
+	snapshot := inflightSnapshot{workers: make(map[string]int, 3)}
+	var err error
+	snapshot.node, err = count(ctx, tx, 0, "", settings.NodeReadyCap)
+	if err != nil {
+		return 0, err
+	}
+	for _, cap := range configuredQueues(settings) {
+		if cap.cap == 0 {
+			continue
+		}
+		snapshot.workers[cap.name], err = count(ctx, tx, 0, cap.name, cap.cap)
+		if err != nil {
+			return 0, err
+		}
+	}
 	dispatched := 0
 	for _, keyID := range keys {
-		keyCount, err := s.pumpKey(ctx, tx, keyID, settings, credits, jobs, count)
+		result, err := s.pumpKey(ctx, tx, keyID, settings, credits, jobs, count, snapshot)
 		var unavailable interface{ KeyUnavailable() bool }
 		if errors.As(err, &unavailable) && unavailable.KeyUnavailable() {
 			continue
@@ -359,60 +387,58 @@ func (s Store) pumpKeys(ctx context.Context, tx pgx.Tx, keys []int64, settings a
 		if err != nil {
 			return 0, err
 		}
-		dispatched += keyCount
+		dispatched += result.total
+		snapshot.node += result.total
+		for worker, queued := range result.workers {
+			snapshot.workers[worker] += queued
+		}
 	}
 	return dispatched, nil
 }
 
-type inflightCounter func(context.Context, pgx.Tx, int64, string) (int, error)
+type inflightCounter func(context.Context, pgx.Tx, int64, string, int) (int, error)
 
-func (s Store) pumpKey(ctx context.Context, tx pgx.Tx, keyID int64, settings app.PumpSettings, credits app.CreditProvider, jobs queue.JobQueue, count inflightCounter) (int, error) {
+func (s Store) pumpKey(ctx context.Context, tx pgx.Tx, keyID int64, settings app.PumpSettings, credits app.CreditProvider, jobs queue.JobQueue, count inflightCounter, snapshot inflightSnapshot) (pumpResult, error) {
+	result := pumpResult{workers: make(map[string]int, 3)}
 	remaining, err := credits.Capacity(ctx, keyID, 2*time.Minute)
 	if err != nil {
-		return 0, fmt.Errorf("schedule: read key %d quota credits: %w", keyID, err)
+		return result, fmt.Errorf("schedule: read key %d quota credits: %w", keyID, err)
 	}
-	keyInflight, err := count(ctx, tx, keyID, "")
+	keyInflight, err := count(ctx, tx, keyID, "", settings.PerKeyReadyCap)
 	if err != nil {
-		return 0, err
+		return result, err
 	}
-	nodeInflight, err := count(ctx, tx, 0, "")
-	if err != nil {
-		return 0, err
+	if remaining <= 0 || keyInflight >= settings.PerKeyReadyCap || snapshot.node >= settings.NodeReadyCap {
+		return result, nil
 	}
-	if remaining <= 0 || keyInflight >= settings.PerKeyReadyCap || nodeInflight >= settings.NodeReadyCap {
-		return 0, nil
-	}
-	dispatched := 0
 	for _, cap := range configuredQueues(settings) {
-		workerInflight, err := count(ctx, tx, 0, cap.name)
-		if err != nil {
-			return 0, err
-		}
+		workerInflight := snapshot.workers[cap.name] + result.workers[cap.name]
 		limit, err := app.Credits(app.CreditInput{
-			RemainingQuota: remaining - dispatched,
+			RemainingQuota: remaining - result.total,
 			PerKeyReadyCap: settings.PerKeyReadyCap,
-			KeyInflight:    keyInflight + dispatched,
+			KeyInflight:    keyInflight + result.total,
 			NodeCap:        settings.NodeReadyCap,
-			NodeInflight:   nodeInflight + dispatched,
+			NodeInflight:   snapshot.node + result.total,
 			WorkerCap:      cap.cap,
 			WorkerInflight: workerInflight,
 		})
 		if err != nil {
-			return 0, err
+			return pumpResult{}, err
 		}
 		if limit == 0 {
 			continue
 		}
 		queued, err := s.pumpQueue(ctx, tx, keyID, cap, limit, settings, jobs)
 		if err != nil {
-			return 0, err
+			return pumpResult{}, err
 		}
-		dispatched += queued
-		if dispatched >= remaining || keyInflight+dispatched >= settings.PerKeyReadyCap || nodeInflight+dispatched >= settings.NodeReadyCap {
+		result.total += queued
+		result.workers[cap.name] += queued
+		if result.total >= remaining || keyInflight+result.total >= settings.PerKeyReadyCap || snapshot.node+result.total >= settings.NodeReadyCap {
 			break
 		}
 	}
-	return dispatched, nil
+	return result, nil
 }
 
 const planBacklogSQL = `SELECT p.id, p.resource_share, count(backlog.work_item_id)::int
@@ -535,21 +561,25 @@ var (
 // warnKeylessPending logs, at most once per minute, due pending rows that no
 // key can dispatch.
 func warnKeylessPending(ctx context.Context, tx pgx.Tx) error {
-	var count int64
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM work_items WHERE state='pending' AND key_id IS NULL AND not_before <= now()`).Scan(&count); err != nil {
+	var found bool
+	if err := tx.QueryRow(ctx, keylessPendingExistsSQL).Scan(&found); err != nil {
 		return fmt.Errorf("schedule: count keyless pending work: %w", err)
 	}
-	if count == 0 {
+	if !found {
 		return nil
 	}
 	keylessWarnMu.Lock()
 	defer keylessWarnMu.Unlock()
 	if now := time.Now(); now.Sub(keylessWarnLast) >= keylessWarnInterval {
 		keylessWarnLast = now
-		slog.WarnContext(ctx, "pending work cannot be dispatched: owner has no active Flickr account key", "pending_without_key", count)
+		slog.WarnContext(ctx, "pending work cannot be dispatched: owner has no active Flickr account key", "has_pending_without_key", true)
 	}
 	return nil
 }
+
+const keylessPendingExistsSQL = `SELECT EXISTS (
+	SELECT 1 FROM work_items WHERE state='pending' AND key_id IS NULL AND not_before <= now()
+)`
 
 func pendingKeys(ctx context.Context, tx pgx.Tx) ([]int64, error) {
 	// Active keys come from the keys table. Per-key claim uses the pending
@@ -578,9 +608,32 @@ ORDER BY k.id`)
 	return keys, nil
 }
 
-func countInflight(ctx context.Context, tx pgx.Tx, keyID int64, worker string) (int, error) {
+const (
+	inflightNodeCountSQL      = `SELECT count(*) FROM (SELECT 1 FROM work_items WHERE state IN ('ready','running') LIMIT $1) AS inflight`
+	inflightKeyCountSQL       = `SELECT count(*) FROM (SELECT 1 FROM work_items WHERE state IN ('ready','running') AND key_id=$1 LIMIT $2) AS inflight`
+	inflightWorkerCountSQL    = `SELECT count(*) FROM (SELECT 1 FROM work_items WHERE state IN ('ready','running') AND worker_type=$1 LIMIT $2) AS inflight`
+	inflightKeyWorkerCountSQL = `SELECT count(*) FROM (SELECT 1 FROM work_items WHERE state IN ('ready','running') AND key_id=$1 AND worker_type=$2 LIMIT $3) AS inflight`
+)
+
+func countInflight(ctx context.Context, tx pgx.Tx, keyID int64, worker string, limit int) (int, error) {
+	if limit <= 0 {
+		return 0, nil
+	}
+	query := inflightNodeCountSQL
+	args := []any{limit}
+	switch {
+	case keyID != 0 && worker != "":
+		query = inflightKeyWorkerCountSQL
+		args = []any{keyID, worker, limit}
+	case keyID != 0:
+		query = inflightKeyCountSQL
+		args = []any{keyID, limit}
+	case worker != "":
+		query = inflightWorkerCountSQL
+		args = []any{worker, limit}
+	}
 	var count int
-	err := tx.QueryRow(ctx, `SELECT count(*) FROM work_items WHERE state IN ('ready','running') AND ($1=0 OR key_id=$1) AND ($2='' OR (CASE WHEN kind LIKE 'ai%' THEN 'ai' WHEN kind LIKE 'media%' THEN 'media' ELSE 'sync' END)=$2)`, keyID, worker).Scan(&count)
+	err := tx.QueryRow(ctx, query, args...).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: count inflight work: %w", err)
 	}
@@ -598,8 +651,20 @@ const liveRiverStates = `('available','pending','retryable','scheduled','running
 // fresh start with attempts reset.
 const SelfHealAfter = 15 * time.Minute
 
-const reclaimSelfHealSQL = `UPDATE work_items SET state='pending', attempts=0, not_before=$1, lease_expires_at=NULL, last_error=NULL, updated_at=$1
-	WHERE state='failed' AND last_error='lease expired' AND updated_at <= $2`
+const reclaimSelfHealSQL = `WITH candidates AS MATERIALIZED (
+	SELECT id FROM work_items
+	WHERE state='failed' AND last_error='lease expired' AND updated_at <= $2
+	ORDER BY updated_at
+	LIMIT $3
+	FOR UPDATE SKIP LOCKED
+)
+UPDATE work_items AS w SET state='pending', attempts=0, not_before=$1, lease_expires_at=NULL, last_error=NULL, updated_at=$1
+FROM candidates
+WHERE w.id=candidates.id`
+
+const reclaimExpiredLeasesSQL = `SELECT id, attempts, kind FROM work_items WHERE state IN ('ready','running') AND lease_expires_at <= $1
+	AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.state IN ` + liveRiverStates + ` AND j.args->'args'->>'work_item_id' = work_items.id::text)
+	ORDER BY lease_expires_at, id LIMIT $2 FOR UPDATE SKIP LOCKED`
 
 // Requeue returns failed work items (all when ids is empty) to pending with
 // attempts reset. Rows keep their payload; the normal pump and quota gate
@@ -617,21 +682,20 @@ func (s Store) Requeue(ctx context.Context, ids []int64, now time.Time) (int, er
 	return int(tag.RowsAffected()), nil
 }
 
-// Reclaim returns work items with an expired lease and no live River job to
-// pending, with exponential delay based on the already-incremented attempt.
-func (s Store) Reclaim(ctx context.Context, retryMax int, base time.Duration, now time.Time) (int, error) {
+// Reclaim processes one bounded batch of expired leases and self-heal failures.
+// Expired leases without a live River job return to pending with exponential
+// delay based on the already-incremented attempt.
+func (s Store) Reclaim(ctx context.Context, retryMax int, base time.Duration, batchSize int, now time.Time) (int, error) {
 	db := s.backend()
-	if db == nil {
-		return 0, errors.New("schedule: reclaim database is required")
+	if db == nil || batchSize < 1 {
+		return 0, errors.New("schedule: reclaim database and positive batch size are required")
 	}
 	tx, err := db.Begin(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: begin reclaim: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	rows, err := tx.Query(ctx, `SELECT id, attempts, kind FROM work_items WHERE state IN ('ready','running') AND lease_expires_at <= $1
-		AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.state IN `+liveRiverStates+` AND j.args->'args'->>'work_item_id' = work_items.id::text)
-		ORDER BY lease_expires_at, id FOR UPDATE SKIP LOCKED`, now)
+	rows, err := tx.Query(ctx, reclaimExpiredLeasesSQL, now, batchSize)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: select expired leases: %w", err)
 	}
@@ -652,7 +716,7 @@ func (s Store) Reclaim(ctx context.Context, retryMax int, base time.Duration, no
 	if err := applyExpiredLeases(ctx, tx, expiredRows, retryMax, base, now); err != nil {
 		return 0, err
 	}
-	if _, err := tx.Exec(ctx, reclaimSelfHealSQL, now, now.Add(-SelfHealAfter)); err != nil {
+	if _, err := tx.Exec(ctx, reclaimSelfHealSQL, now, now.Add(-SelfHealAfter), batchSize); err != nil {
 		return 0, fmt.Errorf("schedule: self-heal lease-expired work: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {

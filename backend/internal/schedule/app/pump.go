@@ -14,21 +14,22 @@ const PumpInterval = 2 * time.Second
 
 // PumpSettings are the dispatch caps read from application settings.
 type PumpSettings struct {
-	PerKeyReadyCap int
-	NodeReadyCap   int
-	MediaReadyCap  int
-	AIReadyCap     int
-	SyncReadyCap   int
-	RetryMax       int
-	RetryBackoff   time.Duration
-	LeaseTimeout   time.Duration
-	AgingBatchSize int
-	MaxDepth       int
-	ScoreWeights   domain.ScoreWeights
+	PerKeyReadyCap   int
+	NodeReadyCap     int
+	MediaReadyCap    int
+	AIReadyCap       int
+	SyncReadyCap     int
+	RetryMax         int
+	RetryBackoff     time.Duration
+	LeaseTimeout     time.Duration
+	ReclaimBatchSize int
+	AgingBatchSize   int
+	MaxDepth         int
+	ScoreWeights     domain.ScoreWeights
 }
 
 func (s PumpSettings) Validate() error {
-	if s.PerKeyReadyCap < 0 || s.NodeReadyCap < 0 || s.MediaReadyCap < 0 || s.AIReadyCap < 0 || s.SyncReadyCap < 0 || s.RetryMax < 0 || s.RetryBackoff < 0 || s.LeaseTimeout < 0 || s.AgingBatchSize < 0 || s.MaxDepth < 0 {
+	if s.PerKeyReadyCap < 0 || s.NodeReadyCap < 0 || s.MediaReadyCap < 0 || s.AIReadyCap < 0 || s.SyncReadyCap < 0 || s.RetryMax < 0 || s.RetryBackoff < 0 || s.LeaseTimeout < 0 || s.ReclaimBatchSize < 1 || s.AgingBatchSize < 0 || s.MaxDepth < 0 {
 		return errors.New("schedule: invalid pump settings")
 	}
 	if s.AgingBatchSize > 0 {
@@ -42,7 +43,7 @@ func (s PumpSettings) Validate() error {
 // PumpStore dispatches a bounded batch atomically and reclaims expired leases.
 type PumpStore interface {
 	Pump(context.Context, PumpSettings, CreditProvider, queue.JobQueue) (int, error)
-	Reclaim(context.Context, int, time.Duration, time.Time) (int, error)
+	Reclaim(context.Context, int, time.Duration, int, time.Time) (int, error)
 }
 
 // CreditProvider reports the remaining Flickr calls a key may spend in the
@@ -102,7 +103,7 @@ func (p Pump) RunOnce(ctx context.Context) (int, error) {
 			logger.ErrorContext(ctx, "scheduler change check pass failed", "error", err)
 		}
 	}
-	if _, err := p.Store.Reclaim(ctx, p.Settings.RetryMax, p.Settings.RetryBackoff, time.Now()); err != nil {
+	if _, err := p.Store.Reclaim(ctx, p.Settings.RetryMax, p.Settings.RetryBackoff, p.Settings.ReclaimBatchSize, time.Now()); err != nil {
 		return 0, err
 	}
 	if p.Settings.AgingBatchSize > 0 {

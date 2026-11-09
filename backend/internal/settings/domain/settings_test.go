@@ -62,6 +62,7 @@ func TestMergeSeededDefaults(t *testing.T) {
 		ScoreWeightDepth:          5,
 		ScoreWeightAgeMinutes:     0.1,
 		ScoreAgingBatchSize:       500,
+		QueueReclaimBatchSize:     100,
 		OpsHealthInterval:         time.Minute,
 		OpsHealthStatementTimeout: 5 * time.Second,
 		APICallLogRetentionDays:   30,
