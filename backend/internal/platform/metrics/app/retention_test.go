@@ -11,6 +11,7 @@ import (
 )
 
 type retentionStore struct {
+	from    time.Time
 	through time.Time
 	before  time.Time
 	limit   int
@@ -19,7 +20,8 @@ type retentionStore struct {
 }
 
 func (s *retentionStore) WriteBatch(context.Context, []domain.Sample) error { return nil }
-func (s *retentionStore) Rollup(_ context.Context, through time.Time) (int64, error) {
+func (s *retentionStore) Rollup(_ context.Context, from, through time.Time) (int64, error) {
+	s.from = from
 	s.through = through
 	return s.rolled, nil
 }
@@ -48,8 +50,8 @@ func TestRetentionJobRollsUpThenPurges(t *testing.T) {
 	if !store.through.Equal(time.Date(2026, 11, 9, 6, 0, 0, 0, time.UTC)) {
 		t.Fatalf("through=%v", store.through)
 	}
-	wantBefore := now.AddDate(0, 0, -30)
-	if !store.before.Equal(wantBefore) || store.limit != 100 {
-		t.Fatalf("before=%v limit=%d", store.before, store.limit)
+	wantBefore := domain.HourFloor(now.AddDate(0, 0, -30))
+	if !store.from.Equal(wantBefore) || !store.before.Equal(wantBefore) || store.limit != 100 {
+		t.Fatalf("from=%v before=%v limit=%d", store.from, store.before, store.limit)
 	}
 }

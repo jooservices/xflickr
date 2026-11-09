@@ -35,12 +35,41 @@ func (s Store) WriteBatch(ctx context.Context, samples []domain.Sample) error {
 	if err := domain.ValidateSamples(samples); err != nil {
 		return err
 	}
+	samples, err := dedupeSamples(samples)
+	if err != nil {
+		return err
+	}
 	for _, chunk := range domain.ChunkSamples(samples, domain.MaxWriteBatch) {
 		if err := s.writeChunk(ctx, chunk); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+type sampleKey struct {
+	name   string
+	labels string
+	bucket time.Time
+}
+
+func dedupeSamples(samples []domain.Sample) ([]domain.Sample, error) {
+	indices := make(map[sampleKey]int, len(samples))
+	unique := make([]domain.Sample, 0, len(samples))
+	for _, sample := range samples {
+		labels, err := domain.LabelsHash(sample.Labels)
+		if err != nil {
+			return nil, err
+		}
+		key := sampleKey{name: sample.Name, labels: labels, bucket: domain.BucketFloor(sample.At)}
+		if index, exists := indices[key]; exists {
+			unique[index] = sample
+			continue
+		}
+		indices[key] = len(unique)
+		unique = append(unique, sample)
+	}
+	return unique, nil
 }
 
 func (s Store) writeChunk(ctx context.Context, samples []domain.Sample) error {
@@ -76,12 +105,13 @@ func (s Store) writeChunk(ctx context.Context, samples []domain.Sample) error {
 	return nil
 }
 
-// Rollup aggregates completed minute buckets into hourly rollups through the
-// exclusive upper bound (typically the current hour floor).
-func (s Store) Rollup(ctx context.Context, through time.Time) (int64, error) {
+// Rollup aggregates completed minute buckets within [from, through) into hourly
+// rollups. Both bounds are aligned to hour floors.
+func (s Store) Rollup(ctx context.Context, from, through time.Time) (int64, error) {
 	if ctx == nil || s.Pool == nil {
 		return 0, errors.New("metrics: postgres pool is required")
 	}
+	from = domain.HourFloor(from)
 	through = domain.HourFloor(through)
 	const sql = `
 WITH candidates AS (
@@ -93,7 +123,7 @@ WITH candidates AS (
          percentile_cont(0.95) WITHIN GROUP (ORDER BY value) AS p95,
          count(*)::int AS samples
   FROM metric_samples
-  WHERE bucket < $1
+  WHERE bucket >= $1 AND bucket < $2
   GROUP BY name, labels, labels_hash, node, role, date_trunc('hour', bucket)
 ),
 upserted AS (
@@ -113,7 +143,7 @@ upserted AS (
 )
 SELECT count(*) FROM upserted`
 	var count int64
-	if err := s.Pool.QueryRow(ctx, sql, through).Scan(&count); err != nil {
+	if err := s.Pool.QueryRow(ctx, sql, from, through).Scan(&count); err != nil {
 		return 0, fmt.Errorf("metrics: rollup: %w", err)
 	}
 	return count, nil

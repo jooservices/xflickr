@@ -101,8 +101,15 @@ func (r *Runner) Tick(ctx context.Context) error {
 			interval = time.Minute
 		}
 		name := scheduled.Collector.Name()
-		if last, ok := r.lastRun[name]; ok && now.Sub(last) < interval {
-			continue
+		if last, ok := r.lastRun[name]; ok {
+			elapsed := now.Sub(last)
+			tolerance := interval / 10
+			if tolerance > time.Second {
+				tolerance = time.Second
+			}
+			if elapsed < interval && interval-elapsed > tolerance {
+				continue
+			}
 		}
 		collected, err := r.collectOne(ctx, scheduled.Collector)
 		r.lastRun[name] = now

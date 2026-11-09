@@ -14,7 +14,7 @@ type Collector interface {
 // Store persists minute samples and hourly rollups.
 type Store interface {
 	WriteBatch(ctx context.Context, samples []Sample) error
-	Rollup(ctx context.Context, through time.Time) (int64, error)
+	Rollup(ctx context.Context, from, through time.Time) (int64, error)
 	Purge(ctx context.Context, before time.Time, limit int) (int64, error)
 }
 

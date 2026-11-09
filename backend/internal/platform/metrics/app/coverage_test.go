@@ -70,6 +70,9 @@ func TestRetentionRunStopsOnCancel(t *testing.T) {
 }
 
 func TestRetentionTickClampsInvalidDaysAndNilContext(t *testing.T) {
+	if app.DefaultPurgeLimit < 4320 {
+		t.Fatalf("default purge limit=%d cannot keep up with the documented six-role baseline", app.DefaultPurgeLimit)
+	}
 	store := &retentionStore{rolled: 1, purged: 1}
 	job, err := app.NewRetentionJob(store, retentionPolicy{days: 999}, fixedClock{at: time.Date(2026, 11, 9, 6, 0, 0, 0, time.UTC)}, slog.Default())
 	if err != nil {

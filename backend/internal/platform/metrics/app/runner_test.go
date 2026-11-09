@@ -16,6 +16,10 @@ type fixedClock struct{ at time.Time }
 
 func (c fixedClock) Now() time.Time { return c.at }
 
+type mutableClock struct{ at time.Time }
+
+func (c *mutableClock) Now() time.Time { return c.at }
+
 type memoryStore struct {
 	mu      sync.Mutex
 	samples []domain.Sample
@@ -32,7 +36,7 @@ func (s *memoryStore) WriteBatch(_ context.Context, samples []domain.Sample) err
 	return nil
 }
 
-func (s *memoryStore) Rollup(context.Context, time.Time) (int64, error) { return 0, nil }
+func (s *memoryStore) Rollup(context.Context, time.Time, time.Time) (int64, error) { return 0, nil }
 func (s *memoryStore) Purge(context.Context, time.Time, int) (int64, error) {
 	return 0, nil
 }
@@ -102,6 +106,32 @@ func TestRunnerIsolatesFailingCollector(t *testing.T) {
 	}
 	if errorCount != 2 {
 		t.Fatalf("collector_errors=%v want 2", errorCount)
+	}
+}
+
+func TestRunnerToleratesSmallSchedulerDelayWithoutRunningEarly(t *testing.T) {
+	clock := &mutableClock{at: time.Date(2026, 11, 9, 6, 0, 10, 0, time.UTC)}
+	collector := &stubCollector{name: "process"}
+	runner, err := app.NewRunner(&memoryStore{}, []app.ScheduledCollector{{Collector: collector, Interval: time.Minute}}, clock, "api", "node-a", "v1", slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	clock.at = clock.at.Add(time.Minute - 50*time.Millisecond)
+	if err := runner.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if collector.calls != 2 {
+		t.Fatalf("calls=%d want 2 after scheduler jitter", collector.calls)
+	}
+	clock.at = clock.at.Add(50 * time.Second)
+	if err := runner.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if collector.calls != 2 {
+		t.Fatalf("calls=%d want 2 before the next interval", collector.calls)
 	}
 }
 

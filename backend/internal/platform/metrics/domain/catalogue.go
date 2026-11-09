@@ -87,7 +87,7 @@ func Catalogue() []Entry {
 		{Name: MetricGrowthRedisKeys, Unit: UnitCount, Description: "Redis key count when configured"},
 		{Name: MetricGrowthESDocs, Unit: UnitCount, Description: "Elasticsearch/OpenSearch document count when configured"},
 		{Name: MetricGrowthESStoreBytes, Unit: UnitBytes, Description: "Elasticsearch/OpenSearch store size when configured"},
-		{Name: MetricGrowthMediaUsedBytes, Unit: UnitBytes, Description: "Media blob directory used bytes"},
+		{Name: MetricGrowthMediaUsedBytes, Unit: UnitBytes, Description: "Used bytes of the filesystem that holds the media directory"},
 		{Name: MetricGrowthMediaFreeBytes, Unit: UnitBytes, Description: "Filesystem free space for the media directory"},
 
 		{Name: MetricCollectorErrors, Unit: UnitCount, Description: "Collectors that failed or panicked in the last tick"},

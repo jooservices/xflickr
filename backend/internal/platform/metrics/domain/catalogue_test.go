@@ -23,6 +23,9 @@ func TestCatalogueIsTheOnlySourceOfMetricNames(t *testing.T) {
 		if _, dup := seen[entry.Name]; dup {
 			t.Fatalf("duplicate catalogue name %q", entry.Name)
 		}
+		if entry.Name == domain.MetricGrowthMediaUsedBytes && entry.Description != "Used bytes of the filesystem that holds the media directory" {
+			t.Fatalf("media used description=%q", entry.Description)
+		}
 		seen[entry.Name] = struct{}{}
 	}
 	samples := []domain.Sample{{Name: domain.MetricProcessCPUPercent, At: time.Unix(0, 0), Value: 1}}

@@ -53,8 +53,10 @@ in-process `ByteCounter` updated by HTTP server middleware and an HTTP client
 
 Setting `metrics.retention_days` (default 30, min 1, max 365) is seeded in
 `app_settings` and editable by administrators. The retention job rolls up
-completed hours, then deletes at most 2000 expired minute rows per run so the
-crawl is never blocked.
+completed hours within the retention window, then deletes at most 10,000
+expired minute rows per run so the crawl is never blocked. The hour-aligned
+window keeps bounded purges from rewriting a rollup after some of its minute
+samples have been deleted.
 
 ## Overhead
 

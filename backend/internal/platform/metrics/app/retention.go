@@ -11,7 +11,7 @@ import (
 )
 
 // DefaultPurgeLimit caps how many minute rows one retention run deletes.
-const DefaultPurgeLimit = 2000
+const DefaultPurgeLimit = 10000
 
 // RetentionJob rolls up completed hours then deletes expired minute samples.
 type RetentionJob struct {
@@ -80,11 +80,11 @@ func (j *RetentionJob) Tick(ctx context.Context) error {
 	days = domain.ClampRetentionDays(days)
 	now := j.Clock.Now().UTC()
 	through := domain.HourFloor(now)
-	rolled, err := j.Store.Rollup(ctx, through)
+	before := domain.HourFloor(now.AddDate(0, 0, -days))
+	rolled, err := j.Store.Rollup(ctx, before, through)
 	if err != nil {
 		return fmt.Errorf("metrics: rollup: %w", err)
 	}
-	before := now.AddDate(0, 0, -days)
 	limit := j.Limit
 	if limit <= 0 {
 		limit = DefaultPurgeLimit

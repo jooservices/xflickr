@@ -45,6 +45,29 @@ func TestWriteBatchIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestWriteBatchDeduplicatesSamplesWithTheSameKey(t *testing.T) {
+	pool := integrationPool(t)
+	cleanupMetrics(t, pool)
+	store := postgres.Store{Pool: pool}
+	at := time.Date(2026, 11, 9, 6, 0, 0, 0, time.UTC)
+	labels := map[string]string{"role": "api", "node": "n1", "suite": "duplicate-key"}
+	samples := []domain.Sample{
+		{Name: domain.MetricProcessGoroutines, Labels: labels, At: at, Value: 10},
+		{Name: domain.MetricProcessGoroutines, Labels: labels, At: at, Value: 12},
+	}
+	if err := store.WriteBatch(t.Context(), samples); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	var value float64
+	if err := pool.QueryRow(t.Context(), `SELECT count(*), max(value) FROM metric_samples WHERE name = $1 AND labels->>'suite' = $2`, domain.MetricProcessGoroutines, "duplicate-key").Scan(&count, &value); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 || value != 12 {
+		t.Fatalf("count=%d value=%v want 1/12", count, value)
+	}
+}
+
 func TestBatchOf1200SamplesChunks(t *testing.T) {
 	pool := integrationPool(t)
 	cleanupMetrics(t, pool)
@@ -92,7 +115,7 @@ func TestRollupThenPurge(t *testing.T) {
 		t.Fatal(err)
 	}
 	through := time.Date(2026, 11, 9, 6, 0, 0, 0, time.UTC)
-	rolled, err := store.Rollup(t.Context(), through)
+	rolled, err := store.Rollup(t.Context(), hour, through)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,6 +154,41 @@ func TestRollupThenPurge(t *testing.T) {
 	}
 	if rollups != 1 {
 		t.Fatalf("rollups=%d", rollups)
+	}
+}
+
+func TestRollupDoesNotReplaceExpiredHourAfterBoundedPurge(t *testing.T) {
+	pool := integrationPool(t)
+	cleanupMetrics(t, pool)
+	store := postgres.Store{Pool: pool}
+	hour := time.Date(2026, 11, 8, 4, 0, 0, 0, time.UTC)
+	const suite = "partial-purge-rollup"
+	samples := []domain.Sample{
+		{Name: domain.MetricProcessCPUPercent, Labels: map[string]string{"role": "api", "suite": suite}, At: hour, Value: 10},
+		{Name: domain.MetricProcessCPUPercent, Labels: map[string]string{"role": "api", "suite": suite}, At: hour.Add(time.Minute), Value: 20},
+	}
+	if err := store.WriteBatch(t.Context(), samples); err != nil {
+		t.Fatal(err)
+	}
+	cutoff := time.Date(2026, 11, 8, 5, 0, 0, 0, time.UTC)
+	firstThrough := time.Date(2026, 11, 8, 5, 0, 0, 0, time.UTC)
+	if _, err := store.Rollup(t.Context(), hour, firstThrough); err != nil {
+		t.Fatal(err)
+	}
+	if purged, err := store.Purge(t.Context(), cutoff, 1); err != nil || purged != 1 {
+		t.Fatalf("Purge=%d err=%v want 1", purged, err)
+	}
+	secondThrough := time.Date(2026, 11, 8, 6, 0, 0, 0, time.UTC)
+	if _, err := store.Rollup(t.Context(), cutoff, secondThrough); err != nil {
+		t.Fatal(err)
+	}
+	var avg float64
+	var count int
+	if err := pool.QueryRow(t.Context(), `SELECT avg, samples FROM metric_rollups WHERE name = $1 AND labels->>'suite' = $2`, domain.MetricProcessCPUPercent, suite).Scan(&avg, &count); err != nil {
+		t.Fatal(err)
+	}
+	if avg != 15 || count != 2 {
+		t.Fatalf("expired hour rollup avg=%v samples=%d want 15/2", avg, count)
 	}
 }
 
@@ -200,18 +258,34 @@ func cleanupMetrics(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := context.Background()
 	// Serialize writers that share the worktree database.
-	if _, err := pool.Exec(ctx, `SELECT pg_advisory_lock(736800368)`); err != nil {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire lock connection: %v", err)
+	}
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock(736800368)`); err != nil {
+		conn.Release()
 		t.Fatalf("advisory lock: %v", err)
 	}
-	if _, err := pool.Exec(ctx, `DELETE FROM metric_samples`); err != nil {
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		defer conn.Release()
+		for _, query := range []string{`DELETE FROM metric_samples`, `DELETE FROM metric_rollups`} {
+			if _, err := conn.Exec(cleanupCtx, query); err != nil {
+				t.Errorf("cleanup metrics: %v", err)
+			}
+		}
+		var unlocked bool
+		if err := conn.QueryRow(cleanupCtx, `SELECT pg_advisory_unlock(736800368)`).Scan(&unlocked); err != nil {
+			t.Errorf("unlock metrics cleanup: %v", err)
+		} else if !unlocked {
+			t.Error("metrics cleanup lock was not held on its connection")
+		}
+	})
+	if _, err := conn.Exec(ctx, `DELETE FROM metric_samples`); err != nil {
 		t.Fatalf("cleanup samples: %v", err)
 	}
-	if _, err := pool.Exec(ctx, `DELETE FROM metric_rollups`); err != nil {
+	if _, err := conn.Exec(ctx, `DELETE FROM metric_rollups`); err != nil {
 		t.Fatalf("cleanup rollups: %v", err)
 	}
-	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM metric_samples`)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM metric_rollups`)
-		_, _ = pool.Exec(context.Background(), `SELECT pg_advisory_unlock(736800368)`)
-	})
 }

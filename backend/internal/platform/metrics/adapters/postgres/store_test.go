@@ -84,11 +84,32 @@ func TestWriteBatchChunksAndRejectsUnknownMetric(t *testing.T) {
 	}
 }
 
+func TestWriteBatchKeepsLastValueForDuplicateSampleKey(t *testing.T) {
+	pool := &fakeStorePool{}
+	store := postgres.Store{Pool: pool}
+	at := time.Date(2026, 11, 9, 6, 0, 0, 0, time.UTC)
+	samples := []domain.Sample{
+		{Name: domain.MetricCollectorErrors, Labels: map[string]string{"role": "api"}, At: at, Value: 1},
+		{Name: domain.MetricCollectorErrors, Labels: map[string]string{"role": "api"}, At: at.Add(30 * time.Second), Value: 2},
+		{Name: domain.MetricCollectorErrors, Labels: map[string]string{"role": "scheduler"}, At: at, Value: 3},
+	}
+	if err := store.WriteBatch(t.Context(), samples); err != nil {
+		t.Fatal(err)
+	}
+	if len(pool.execArgs) != 1 || len(pool.execArgs[0]) != 14 {
+		t.Fatalf("writes=%d args=%v want one statement with two samples", len(pool.execArgs), pool.execArgs)
+	}
+	args := pool.execArgs[0]
+	if args[6] != float64(2) || args[13] != float64(3) {
+		t.Fatalf("sample values=%v,%v want 2,3", args[6], args[13])
+	}
+}
+
 func TestRollupAndPurgeValidation(t *testing.T) {
 	pool := &fakeStorePool{rowValue: 4}
 	store := postgres.Store{Pool: pool}
 	through := time.Date(2026, 11, 9, 6, 30, 0, 0, time.UTC)
-	n, err := store.Rollup(t.Context(), through)
+	n, err := store.Rollup(t.Context(), through, through)
 	if err != nil || n != 4 {
 		t.Fatalf("Rollup=%d %v", n, err)
 	}
@@ -100,11 +121,11 @@ func TestRollupAndPurgeValidation(t *testing.T) {
 	if _, err := store.Purge(t.Context(), through, 0); err == nil {
 		t.Fatal("expected limit error")
 	}
-	if _, err := (postgres.Store{}).Rollup(t.Context(), through); err == nil {
+	if _, err := (postgres.Store{}).Rollup(t.Context(), through, through); err == nil {
 		t.Fatal("expected nil pool error")
 	}
 	pool.rowErr = errors.New("db down")
-	if _, err := store.Rollup(t.Context(), through); err == nil {
+	if _, err := store.Rollup(t.Context(), through, through); err == nil {
 		t.Fatal("expected rollup error")
 	}
 	pool.rowErr = nil
