@@ -52,6 +52,8 @@ const (
 	ScoreAgingBatchSize       Key = "score_aging_batch_size"
 	OpsHealthInterval         Key = "ops.health_interval"
 	OpsHealthStatementTimeout Key = "ops.health_statement_timeout"
+	APICallLogRetentionDays   Key = "maintenance.api_call_log_retention_days"
+	APICallLogDryRun          Key = "maintenance.api_call_log_dry_run"
 )
 
 // Effective contains the merged, validated settings for one user. Durations
@@ -91,6 +93,8 @@ type Effective struct {
 	ScoreAgingBatchSize       int
 	OpsHealthInterval         time.Duration
 	OpsHealthStatementTimeout time.Duration
+	APICallLogRetentionDays   int
+	APICallLogDryRun          bool
 }
 
 // Definition is the application-level value and policy for a setting.
@@ -208,6 +212,8 @@ var schemas = map[Key]JSONSchema{
 	ScoreAgingBatchSize:       {Type: "integer", Minimum: minOne},
 	OpsHealthInterval:         {Type: "integer", Minimum: floatPointer(10), Maximum: floatPointer(3600)},
 	OpsHealthStatementTimeout: {Type: "integer", Minimum: floatPointer(1), Maximum: floatPointer(60)},
+	APICallLogRetentionDays:   {Type: "integer", Minimum: floatPointer(7), Maximum: floatPointer(365)},
+	APICallLogDryRun:          {Type: "boolean"},
 }
 
 // SchemaFor returns the JSON schema associated with a typed key.
@@ -249,6 +255,8 @@ func Keys() []Key {
 		ScoreWeightPlan, ScoreWeightDirectAction, ScoreWeightStarred, ScoreWeightDepth, ScoreWeightAgeMinutes, ScoreAgingBatchSize,
 		OpsHealthInterval,
 		OpsHealthStatementTimeout,
+		APICallLogRetentionDays,
+		APICallLogDryRun,
 	}
 }
 
@@ -290,6 +298,8 @@ func Defaults() []Definition {
 		{Key: ScoreAgingBatchSize, Value: json.RawMessage("500"), UserOverridable: false, Min: floatPointer(1)},
 		{Key: OpsHealthInterval, Value: json.RawMessage("60"), UserOverridable: false, Min: floatPointer(10), Max: floatPointer(3600)},
 		{Key: OpsHealthStatementTimeout, Value: json.RawMessage("5"), UserOverridable: false, Min: floatPointer(1), Max: floatPointer(60)},
+		{Key: APICallLogRetentionDays, Value: json.RawMessage("30"), UserOverridable: false, Min: floatPointer(7), Max: floatPointer(365)},
+		{Key: APICallLogDryRun, Value: json.RawMessage("false"), UserOverridable: false},
 	}
 }
 
@@ -580,6 +590,10 @@ func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
 	if result.OpsHealthStatementTimeout, err = duration(values[OpsHealthStatementTimeout]); err != nil {
 		return Effective{}, nil, invalidStored(OpsHealthStatementTimeout, err)
 	}
+	if result.APICallLogRetentionDays, err = integer(values[APICallLogRetentionDays]); err != nil {
+		return Effective{}, nil, invalidStored(APICallLogRetentionDays, err)
+	}
+	result.APICallLogDryRun = validatedBoolean(values[APICallLogDryRun])
 	return result, dropped, nil
 }
 

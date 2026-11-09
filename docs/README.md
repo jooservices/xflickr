@@ -17,6 +17,8 @@
 - [Production runtime](production-migration.md) — the main clone on the ESXi
   services: accounts, data move, switch, rollback.
 
+- [Database layout and partitioning](database.md) — partition keys, measured
+  owner-vs-id query cost, migration cost, and api_call_log retention.
 - [Environment and shared services](ENVIRONMENT.md) — workstation, runtime, and
   database rules.
 - [Database index inventory](database.md) — keep/drop decisions, sizes, scan

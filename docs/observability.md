@@ -72,6 +72,14 @@ with `SET LOCAL statement_timeout` from `ops.health_statement_timeout`
 query name at warn, and continues; it never stops the crawl. The refresh
 interval is `ops.health_interval` (default 60s, min 10s, max 1h).
 
+## Call-log retention
+
+Daily `api_call_log` partitions older than
+`maintenance.api_call_log_retention_days` (default 30) are detached concurrently
+and dropped by the maintenance job documented in [database.md](database.md).
+Hourly `api_call_rollup` rows are refreshed for a day before that day is
+removed, so admin rollups survive retention.
+
 ## Offline buffering
 
 Logs are exported asynchronously with a 10,000-record SDK queue and 512-record

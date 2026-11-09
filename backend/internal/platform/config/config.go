@@ -68,6 +68,7 @@ type RedisConfig struct {
 	Host     string `env:"REDIS_HOST" envDefault:"127.0.0.1"`
 	Port     int    `env:"REDIS_PORT" envDefault:"16382"`
 	DB       int    `env:"REDIS_DB" envDefault:"8"`
+	Username string `env:"REDIS_USERNAME"`
 	Password string `env:"REDIS_PASSWORD"`
 	Prefix   string `env:"REDIS_PREFIX"`
 }
@@ -449,9 +450,9 @@ func (cfg *Config) validate() error {
 // URL user information and query parameters may also contain secrets.
 func (cfg Config) String() string {
 	return fmt.Sprintf(
-		"Config{DB:{host:%q port:%d name:%q user:%q password:%s}, Redis:{host:%q port:%d db:%d prefix:%q password:%s}, Search:{endpoint_configured:%t username:%q password:%s index_prefix:%q}, Blob:{driver:%q local_dir:%q s3_endpoint_configured:%t s3_region:%q s3_bucket:%q s3_access_key:%s s3_secret_key:%s}, AI:{endpoint_configured:%t caption_model:%q embedding_model:%q}, Mail:{smtp_addr:%q from:%q username:%q password:%s}, Obs:{endpoint_configured:%t org:%q stream:%q username:%q password:%s}, Node:{id:%q}, CallLog:{retention_days:%d}, Crypto:{master_keys:%s active_master_key_id:%s}, HTTPPort:%d InternalHTTPAddr:%q LogLevel:%q}",
+		"Config{DB:{host:%q port:%d name:%q user:%q password:%s}, Redis:{host:%q port:%d db:%d prefix:%q username:%q password:%s}, Search:{endpoint_configured:%t username:%q password:%s index_prefix:%q}, Blob:{driver:%q local_dir:%q s3_endpoint_configured:%t s3_region:%q s3_bucket:%q s3_access_key:%s s3_secret_key:%s}, AI:{endpoint_configured:%t caption_model:%q embedding_model:%q}, Mail:{smtp_addr:%q from:%q username:%q password:%s}, Obs:{endpoint_configured:%t org:%q stream:%q username:%q password:%s}, Node:{id:%q}, CallLog:{retention_days:%d}, Crypto:{master_keys:%s active_master_key_id:%s}, HTTPPort:%d InternalHTTPAddr:%q LogLevel:%q}",
 		cfg.DB.Host, cfg.DB.Port, cfg.DB.Name, cfg.DB.User, mask(cfg.DB.Password),
-		cfg.Redis.Host, cfg.Redis.Port, cfg.Redis.DB, cfg.Redis.Prefix, mask(cfg.Redis.Password),
+		cfg.Redis.Host, cfg.Redis.Port, cfg.Redis.DB, cfg.Redis.Prefix, cfg.Redis.Username, mask(cfg.Redis.Password),
 		cfg.Search.URL != "", cfg.Search.Username, mask(cfg.Search.Password), cfg.Search.IndexPrefix,
 		cfg.Blob.Driver, cfg.Blob.LocalDir, cfg.Blob.S3Endpoint != "", cfg.Blob.S3Region, cfg.Blob.S3Bucket,
 		mask(cfg.Blob.S3AccessKey), mask(cfg.Blob.S3SecretKey),
