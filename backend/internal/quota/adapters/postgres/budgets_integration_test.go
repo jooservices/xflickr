@@ -23,11 +23,11 @@ func TestBudgetUsesSmallestHourlyCeiling(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	pool := budgetIntegrationPool(t)
-	setBudgetSetting(t, pool, ctx, "usable_hourly_quota", "3400")
-	setBudgetSetting(t, pool, ctx, "daily_call_limit", "0")
+	setBudgetSetting(ctx, t, pool, "usable_hourly_quota", "3400")
+	setBudgetSetting(ctx, t, pool, "daily_call_limit", "0")
 
-	highKey := insertBudgetAPIKey(t, ctx, pool, 3600)
-	lowKey := insertBudgetAPIKey(t, ctx, pool, 1800)
+	highKey := insertBudgetAPIKey(ctx, t, pool, 3600)
+	lowKey := insertBudgetAPIKey(ctx, t, pool, 1800)
 	loader := Budgets{Pool: pool}
 	for _, test := range []struct {
 		name string
@@ -45,7 +45,7 @@ func TestBudgetUsesSmallestHourlyCeiling(t *testing.T) {
 		})
 	}
 
-	setBudgetSetting(t, pool, ctx, "daily_call_limit", "2500")
+	setBudgetSetting(ctx, t, pool, "daily_call_limit", "2500")
 	budget, err := loader.Budget(ctx, highKey)
 	if err != nil || budget.HourlyLimit != 2500 {
 		t.Fatalf("positive daily limit budget = %+v, %v; want 2500", budget, err)
@@ -56,13 +56,13 @@ func TestBudgetReadsChangedUsableQuota(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	pool := budgetIntegrationPool(t)
-	keyID := insertBudgetAPIKey(t, ctx, pool, 3600)
+	keyID := insertBudgetAPIKey(ctx, t, pool, 3600)
 	loader := Budgets{Pool: pool}
 	initial, err := loader.Budget(ctx, keyID)
 	if err != nil || initial.HourlyLimit != 3400 {
 		t.Fatalf("initial Budget() = %+v, %v; want 3400", initial, err)
 	}
-	setBudgetSetting(t, pool, ctx, "usable_hourly_quota", "2100")
+	setBudgetSetting(ctx, t, pool, "usable_hourly_quota", "2100")
 
 	updated, err := loader.Budget(ctx, keyID)
 	if err != nil || updated.HourlyLimit != 2100 {
@@ -74,8 +74,8 @@ func TestBudgetFailsClosedOnInvalidUsableQuota(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	pool := budgetIntegrationPool(t)
-	keyID := insertBudgetAPIKey(t, ctx, pool, 3600)
-	setBudgetSetting(t, pool, ctx, "usable_hourly_quota", `"invalid"`)
+	keyID := insertBudgetAPIKey(ctx, t, pool, 3600)
+	setBudgetSetting(ctx, t, pool, "usable_hourly_quota", `"invalid"`)
 
 	if budget, err := (Budgets{Pool: pool}).Budget(ctx, keyID); err == nil {
 		t.Fatalf("invalid setting returned budget %+v", budget)
@@ -192,7 +192,7 @@ func budgetIntegrationPool(t *testing.T) *pgxpool.Pool {
 	return dbtest.Open(t, cfg)
 }
 
-func insertBudgetAPIKey(t *testing.T, ctx context.Context, pool *pgxpool.Pool, hourly int64) int64 {
+func insertBudgetAPIKey(ctx context.Context, t *testing.T, pool *pgxpool.Pool, hourly int64) int64 {
 	t.Helper()
 	unique := fmt.Sprintf("budget-%d", time.Now().UnixNano())
 	var userID, keyID int64
@@ -215,7 +215,7 @@ func insertBudgetAPIKey(t *testing.T, ctx context.Context, pool *pgxpool.Pool, h
 	return keyID
 }
 
-func setBudgetSetting(t *testing.T, pool *pgxpool.Pool, ctx context.Context, key, raw string) {
+func setBudgetSetting(ctx context.Context, t *testing.T, pool *pgxpool.Pool, key, raw string) {
 	t.Helper()
 	var original []byte
 	if err := pool.QueryRow(ctx, `SELECT value FROM app_settings WHERE key=$1`, key).Scan(&original); err != nil {

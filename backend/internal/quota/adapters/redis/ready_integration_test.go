@@ -391,7 +391,7 @@ func TestGovernorUsableQuotaConcurrentRoles(t *testing.T) {
 		"person_lane_share":      "0",
 		"photo_lane_floor_share": "0",
 	} {
-		setRedisIntegrationSetting(t, ctx, pool, key, value)
+		setRedisIntegrationSetting(ctx, t, pool, key, value)
 	}
 	unique := fmt.Sprintf("jooxf366-%d", time.Now().UnixNano())
 	var userID, keyID int64
@@ -492,7 +492,7 @@ func TestGovernorUsableQuotaConcurrentRoles(t *testing.T) {
 	}
 }
 
-func setRedisIntegrationSetting(t *testing.T, ctx context.Context, pool *pgxpool.Pool, key, value string) {
+func setRedisIntegrationSetting(ctx context.Context, t *testing.T, pool *pgxpool.Pool, key, value string) {
 	t.Helper()
 	var original []byte
 	if err := pool.QueryRow(ctx, `SELECT value FROM app_settings WHERE key=$1`, key).Scan(&original); err != nil {
