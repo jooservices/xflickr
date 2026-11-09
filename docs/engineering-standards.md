@@ -38,7 +38,11 @@ reviewer rejects a change that breaks them even when the tests pass.
 - SQL goes through pgx with parameters, never string concatenation. Schema changes
   are goose migrations named `YYYYMMDDHHMMSS_description.sql` with `+goose Up` and
   `+goose Down`; sqlc queries live with their module. Keep queries bounded: the
-  call log and catalog tables hold millions of rows.
+  call log and catalog tables hold millions of rows. `make gen` runs the pinned
+  sqlc from `backend/go.mod` against `backend/sqlc.yaml`; commit the regenerated
+  models with the migration or query change that caused them. Never edit sqlc
+  output by hand — use overrides in `backend/sqlc.yaml` when a type needs a
+  mapping.
 - HTTP follows `docs/rest-api.md`; the contract in `contracts/openapi` is the
   source of truth and generated code is never edited by hand. Generate with the
   toolchain of `backend/go.mod` (see `docs/ENVIRONMENT.md`); commit generated
