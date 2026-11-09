@@ -162,6 +162,13 @@ func TestListContactsPaginatesAndValidates(t *testing.T) {
 	if !strings.Contains(db.query, "flickr_accounts") || !strings.Contains(db.query, "WITH contact_page AS MATERIALIZED") || !strings.Contains(db.query, "SELECT DISTINCT c.contact_nsid") || !strings.Contains(db.query, "c.contact_nsid > $2") || limitAt < 0 || detailsAt < 0 || limitAt > detailsAt || strings.Contains(strings.ToUpper(db.query), "GROUP BY") || strings.Contains(strings.ToUpper(db.query), "MIN(") || db.args[0] != userID || db.args[1] != "" || db.args[2] != 2 {
 		t.Fatalf("query=%q args=%v", db.query, db.args)
 	}
+	if strings.Contains(db.query, "p.photos_count") || !strings.Contains(db.query, "count(visible_photo.id)") ||
+		!strings.Contains(db.query, "LIMIT 1000") ||
+		!strings.Contains(db.query, "observations") ||
+		!strings.Contains(db.query, "sharing_settings") || !strings.Contains(db.query, "photos.visibility = 'public'") ||
+		!strings.Contains(db.query, "photos.tombstoned_at IS NULL") {
+		t.Fatalf("contact count is not a bounded caller-visible photo count: %q", db.query)
+	}
 	db.rows = &readsRows{rows: [][]any{{"c-z", "Z", "", "", int64(0), "acct"}}}
 	if _, err := repository.ListContacts(ctx, userID, &app.ContactCursor{NSID: "c-a"}, 1); err != nil {
 		t.Fatalf("cursor list: %v", err)
@@ -212,6 +219,9 @@ func TestVisibleReadsValidatePolicyAndPaginatePeopleAndPhotos(t *testing.T) {
 	if !strings.Contains(db.query, predicate.Expression) || db.args[0] != userID || db.args[1] != 2 {
 		t.Fatalf("people query scope=%q args=%v", db.query, db.args)
 	}
+	if !strings.Contains(db.query, "count(visible_photo.id)") || !strings.Contains(db.query, "LIMIT 1000") {
+		t.Fatalf("people query must bound caller-visible photo counts: %q", db.query)
+	}
 	db.rows = &readsRows{rows: [][]any{{"owner-z", "Z", "", "icon", int64(0)}}}
 	if _, err := repository.ListPeople(ctx, userID, predicate, &app.PersonCursor{NSID: "owner-a"}, 1); err != nil {
 		t.Fatalf("cursor people: %v", err)
@@ -243,6 +253,9 @@ func TestVisibleReadsValidatePolicyAndPaginatePeopleAndPhotos(t *testing.T) {
 	person, ok, err := repository.GetPerson(ctx, userID, "owner", predicate)
 	if err != nil || !ok || person.NSID != "owner" || person.PhotosCount != 1 {
 		t.Fatalf("person=%+v ok=%v err=%v", person, ok, err)
+	}
+	if !strings.Contains(db.query, "count(visible_photo.id)") || !strings.Contains(db.query, "LIMIT 1000") {
+		t.Fatalf("person query must bound caller-visible photo counts: %q", db.query)
 	}
 	db.row = &readsRow{err: pgx.ErrNoRows}
 	if _, ok, err := repository.GetPerson(ctx, userID, "missing", predicate); err != nil || ok {

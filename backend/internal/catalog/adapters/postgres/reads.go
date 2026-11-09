@@ -13,7 +13,6 @@ import (
 
 	"github.com/jooservices/xflickr/internal/catalog/app"
 	sharingapp "github.com/jooservices/xflickr/internal/sharing/app"
-	sharingdomain "github.com/jooservices/xflickr/internal/sharing/domain"
 )
 
 var _ app.ReadRepository = (*Repository)(nil)
@@ -32,7 +31,7 @@ func validateRead(ctx context.Context, r *Repository, userID int64, predicate sh
 	if ctx == nil || r == nil || r.db == nil || userID <= 0 || limit < 1 || limit > app.MaxPageSize {
 		return errors.New("catalog: invalid read request")
 	}
-	expected := sharingapp.Filter(sharingdomain.User{ID: userID}).SQL
+	expected := sharingapp.PhotoVisibilityPredicate(userID)
 	if predicate.Expression != expected.Expression || len(predicate.Args) != 1 {
 		return errors.New("catalog: invalid visibility predicate")
 	}
@@ -73,12 +72,32 @@ func scanPhoto(row rowScanner) (app.Photo, error) {
 	return photo, nil
 }
 
+const maxVisiblePhotoCount = 1000
+
+func visiblePhotoCount(ownerNSID string, userID int64) string {
+	visibleObservation := sharingapp.VisiblePhotoObservation(userID)
+	return fmt.Sprintf(`(SELECT count(visible_photo.id)
+FROM (
+SELECT photos.id
+FROM photos
+WHERE photos.owner_nsid=%s
+AND photos.tombstoned_at IS NULL
+AND EXISTS (
+    SELECT 1 FROM observations o
+    WHERE o.record_kind='photo'
+    AND o.record_id=photos.id::text
+    AND %s
+)
+LIMIT %d
+) AS visible_photo)`, ownerNSID, visibleObservation.Expression, maxVisiblePhotoCount)
+}
+
 func (r *Repository) ListPeople(ctx context.Context, userID int64, predicate sharingapp.SQLPredicate, cursor *app.PersonCursor, limit int) (app.PeoplePage, error) {
 	if err := validateRead(ctx, r, userID, predicate, limit); err != nil {
 		return app.PeoplePage{}, err
 	}
 	query := `SELECT people.nsid, people.username, people.realname, people.icon,
-(SELECT count(*) FROM photos WHERE photos.owner_nsid=people.nsid AND photos.tombstoned_at IS NULL AND ` + predicate.Expression + `)
+` + visiblePhotoCount("people.nsid", userID) + `
 FROM people
 WHERE ((EXISTS (SELECT 1 FROM observations o WHERE o.user_id=$1 AND o.record_kind='person' AND o.record_id=people.nsid))
 OR EXISTS (SELECT 1 FROM photos WHERE photos.owner_nsid=people.nsid AND photos.tombstoned_at IS NULL AND ` + predicate.Expression + `))`
@@ -125,7 +144,7 @@ func (r *Repository) GetPerson(ctx context.Context, userID int64, nsid string, p
 		return app.Person{}, false, err
 	}
 	query := `SELECT people.nsid, people.username, people.realname, people.icon,
-(SELECT count(*) FROM photos WHERE photos.owner_nsid=people.nsid AND photos.tombstoned_at IS NULL AND ` + predicate.Expression + `)
+` + visiblePhotoCount("people.nsid", userID) + `
 FROM people WHERE people.nsid=$2 AND (
 EXISTS (SELECT 1 FROM observations o WHERE o.user_id=$1 AND o.record_kind='person' AND o.record_id=people.nsid)
 OR EXISTS (SELECT 1 FROM photos WHERE photos.owner_nsid=people.nsid AND photos.tombstoned_at IS NULL AND ` + predicate.Expression + `))`
@@ -687,7 +706,8 @@ func (r *Repository) ListContacts(ctx context.Context, userID int64, cursor *app
 	ORDER BY c.contact_nsid ASC
 	LIMIT $3
 )
-SELECT p.nsid, p.username, p.realname, p.icon, p.photos_count,
+SELECT p.nsid, p.username, p.realname, p.icon,
+` + visiblePhotoCount("contact_page.contact_nsid", userID) + `,
 	(SELECT c.person_nsid FROM contacts c
 	 WHERE c.contact_nsid=contact_page.contact_nsid AND EXISTS (
 		SELECT 1 FROM flickr_accounts fa
