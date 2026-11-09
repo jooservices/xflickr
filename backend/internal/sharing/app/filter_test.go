@@ -11,7 +11,7 @@ import (
 func TestFilterBuildsEquivalentSQLAndSearchRules(t *testing.T) {
 	filter := Filter(domain.User{ID: 42})
 	for _, fragment := range []string{
-		"o.user_id = $1", "o.record_kind = 'photo'", "photos.visibility = 'public'",
+		"photos.id IN (", "o.user_id = $1", "o.user_id = ss.user_id", "o.record_kind = 'photo'", "shared_photo.visibility = 'public'", "LIMIT 1", "OFFSET 0",
 		"sharing_settings", "ss.enabled",
 	} {
 		if !strings.Contains(filter.SQL.Expression, fragment) {
@@ -20,6 +20,9 @@ func TestFilterBuildsEquivalentSQLAndSearchRules(t *testing.T) {
 	}
 	if len(filter.SQL.Args) != 1 || filter.SQL.Args[0] != int64(42) {
 		t.Fatalf("SQL args = %#v, want user id 42", filter.SQL.Args)
+	}
+	if filter.PhotoIDs.Expression == "" || len(filter.PhotoIDs.Args) != 1 || filter.PhotoIDs.Args[0] != int64(42) {
+		t.Fatalf("photo ID query = %+v, want the same user-scoped visibility rule", filter.PhotoIDs)
 	}
 	encoded, err := json.Marshal(filter.Search)
 	if err != nil {

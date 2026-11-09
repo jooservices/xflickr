@@ -72,9 +72,10 @@ func TestHomeSnapshotIsUserScopedVisibleAndBounded(t *testing.T) {
 	}
 	for i, nsid := range personIDs {
 		depth := 2
-		if i == 0 {
+		switch i {
+		case 0:
 			depth = 0
-		} else if i == 1 {
+		case 1:
 			depth = 1
 		}
 		if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred) VALUES($1,$2,$3,'home-test',$4)`, userID, nsid, depth, i >= 1 && i <= 6); err != nil {
@@ -137,7 +138,7 @@ func TestHomeSnapshotIsUserScopedVisibleAndBounded(t *testing.T) {
 	if snapshot.Photos.Total != 15 || snapshot.Photos.SizesReady != 14 || snapshot.Photos.Captioned != 2 {
 		t.Fatalf("photos = %+v", snapshot.Photos)
 	}
-	if len(snapshot.NewPhotos) != 12 || snapshot.NewPhotos[0].ID != sharedPublicID || snapshot.NewPhotos[0].ThumbnailURL == "" {
+	if len(snapshot.NewPhotos) != 12 || snapshot.NewPhotos[0].ID != sharedPublicID || snapshot.NewPhotos[0].ThumbnailURL == nil || *snapshot.NewPhotos[0].ThumbnailURL == "" {
 		t.Fatalf("new photos count or newest thumbnail is wrong: %+v", snapshot.NewPhotos)
 	}
 	if len(snapshot.StarredContacts) != 5 {

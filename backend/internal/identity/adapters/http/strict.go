@@ -117,6 +117,12 @@ var errSharingServedBySharing = errors.New("identity: sharing settings are serve
 
 var errCatalogServedByCatalog = errors.New("identity: catalog reads are served by the catalog module")
 
+var errHomeServedByHome = errors.New("identity: home snapshots are served by the home module")
+
+func (StrictHandler) GetMeHome(context.Context, gen.GetMeHomeRequestObject) (gen.GetMeHomeResponseObject, error) {
+	return nil, errHomeServedByHome
+}
+
 func (StrictHandler) ListPeople(context.Context, gen.ListPeopleRequestObject) (gen.ListPeopleResponseObject, error) {
 	return nil, errCatalogServedByCatalog
 }

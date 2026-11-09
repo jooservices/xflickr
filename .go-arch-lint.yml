@@ -34,6 +34,8 @@ components:
   catalog-adapters: { in: internal/catalog/adapters/** }
   catalog-adapters-gen: { in: internal/catalog/adapters/postgres/gen/** }
   catalog-observation-adapters: { in: internal/catalog/adapters/postgres/observations/** }
+  home-app:         { in: internal/home/app/** }
+  home-adapters:    { in: internal/home/adapters/** }
   crawl-domain:     { in: internal/crawl/domain/** }
   crawl-app:        { in: internal/crawl/app/** }
   crawl-adapters:   { in: internal/crawl/adapters/** }
@@ -107,6 +109,8 @@ deps:
     mayDependOn: [catalog-domain]
   catalog-adapters:
     mayDependOn: [catalog-domain, catalog-app, catalog-adapters-gen]
+  home-adapters:
+    mayDependOn: [home-app, sharing-app, platform]
   catalog-observation-adapters:
     mayDependOn: [catalog-domain, catalog-app, catalog-adapters, catalog-adapters-gen]
   sharing-app:
@@ -159,6 +163,8 @@ deps:
       - catalog-domain
       - catalog-app
       - catalog-adapters
+      - home-app
+      - home-adapters
       - crawl-domain
       - crawl-app
       - crawl-adapters

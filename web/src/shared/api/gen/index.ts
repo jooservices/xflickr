@@ -10,6 +10,7 @@ export * from './common/common';
 export * from './crawl/crawl';
 export * from './default/default';
 export * from './flickr-accounts/flickr-accounts';
+export * from './home/home';
 export * from './internal/internal';
 export * from './keys/keys';
 export * from './sharing/sharing';

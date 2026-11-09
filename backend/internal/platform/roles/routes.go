@@ -48,6 +48,7 @@ var routeAccess = map[string]identityhttp.Access{
 	"GET /me/crawl":                      identityhttp.AccessUser,
 	"GET /me/crawl/queue":                identityhttp.AccessUser,
 	"GET /me/crawl/settings":             identityhttp.AccessUser,
+	"GET /me/home":                       identityhttp.AccessUser,
 	"PUT /me/crawl/settings":             identityhttp.AccessUser,
 	"PUT /me/crawl/pause":                identityhttp.AccessUser,
 	"PUT /me/crawl/resume":               identityhttp.AccessUser,

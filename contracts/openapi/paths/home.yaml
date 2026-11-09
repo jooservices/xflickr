@@ -1,0 +1,22 @@
+snapshot:
+  get:
+    operationId: GetMeHome
+    tags: [home]
+    summary: Get the signed-in user's Home snapshot
+    security: [{ SessionCookie: [] }]
+    responses:
+      '200':
+        description: User-scoped Home snapshot
+        content:
+          application/json:
+            schema: { $ref: ../schemas/home.yaml#/HomeSnapshot }
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '500':
+        description: Home snapshot could not be read
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }

@@ -52,6 +52,7 @@ that serve it, or `MISSING`.
 | `/me/crawl/queue` | `/me/crawl/queue` | `/me/crawl/queue` |
 | `/me/crawl/resume` | `/me/crawl/resume` | `/me/crawl/resume` |
 | `/me/crawl/settings` | `/me/crawl/settings` | `/me/crawl/settings` |
+| `/me/home` | `/me/home` | `/me/home` |
 | `/people` | `/people` | `/people` |
 | `/people/{}` | `/people/{nsid}` | `/people/{nsid}` |
 | `/people/{}/photos` | `/people/{nsid}/photos` | `/people/{nsid}/photos` |

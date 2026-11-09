@@ -37,6 +37,9 @@ import (
 	crawlpostgres "github.com/jooservices/xflickr/internal/crawl/adapters/postgres"
 	crawlsettings "github.com/jooservices/xflickr/internal/crawl/adapters/settings"
 	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
+	homehttp "github.com/jooservices/xflickr/internal/home/adapters/http"
+	homepostgres "github.com/jooservices/xflickr/internal/home/adapters/postgres"
+	homeapp "github.com/jooservices/xflickr/internal/home/app"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identitypostgres "github.com/jooservices/xflickr/internal/identity/adapters/postgres"
 	identityredis "github.com/jooservices/xflickr/internal/identity/adapters/redis"
@@ -748,6 +751,11 @@ func buildConfiguredAPIHandlerSetWithObserver(pool *pgxpool.Pool, redisClient re
 		return apiHandlerSet{}, err
 	}
 	catalogReads := cataloghttp.Handler{Reads: catalogapp.ReadService{Repository: catalogRepository}, ActorID: userIDFromPrincipal}
+	homeRepository, err := homepostgres.New(pool)
+	if err != nil {
+		return apiHandlerSet{}, err
+	}
+	home := homehttp.Handler{Snapshot: homeapp.Service{Reader: homeRepository}, ActorID: userIDFromPrincipal}
 	crawl, err := buildCrawlHandlerWithEvents(pool, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"})
 	if err != nil {
 		return apiHandlerSet{}, err
@@ -778,7 +786,7 @@ func buildConfiguredAPIHandlerSetWithObserver(pool *pgxpool.Pool, redisClient re
 	nodeRepository := clusterpostgres.New(pool)
 	nodeService := clusterapp.Nodes{Repository: nodeRepository}
 	nodesHandler := clusterhttp.Handler{Service: nodeService}
-	return newAPIRoutersWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}, probeReadiness, flags, catalogReads, nodesHandler), nil
+	return newAPIRoutersWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}, probeReadiness, flags, catalogReads, nodesHandler, home), nil
 }
 
 func buildFeatureFlagHandler(pool *pgxpool.Pool) (settingshttp.Handler, error) {
@@ -846,6 +854,7 @@ type apiServer struct {
 	Readiness *httpx.Readiness
 	Flags     settingshttp.Handler
 	Catalog   cataloghttp.Handler
+	Home      homehttp.Handler
 	Nodes     clusterhttp.Handler
 	planHandler
 }
@@ -884,6 +893,10 @@ func (s apiServer) ListAlbumPhotos(ctx context.Context, request gen.ListAlbumPho
 
 func (s apiServer) GetPhoto(ctx context.Context, request gen.GetPhotoRequestObject) (gen.GetPhotoResponseObject, error) {
 	return s.Catalog.GetPhoto(ctx, request)
+}
+
+func (s apiServer) GetMeHome(ctx context.Context, request gen.GetMeHomeRequestObject) (gen.GetMeHomeResponseObject, error) {
+	return s.Home.GetMeHome(ctx, request)
 }
 
 func (s apiServer) GetAdminFlags(ctx context.Context, request gen.GetAdminFlagsRequestObject) (gen.GetAdminFlagsResponseObject, error) {
@@ -998,6 +1011,7 @@ func newAPIRoutersWithServices(identity identityhttp.Handler, keys accountshttp.
 	var opsHandler opshttp.Handler
 	var flagsHandler settingshttp.Handler
 	var catalogHandler cataloghttp.Handler
+	var homeHandler homehttp.Handler
 	var nodesHandler clusterhttp.Handler
 	var streamHandler platformsse.Handler
 	var readiness *httpx.Readiness
@@ -1017,11 +1031,14 @@ func newAPIRoutersWithServices(identity identityhttp.Handler, keys accountshttp.
 		if catalog, ok := option.(cataloghttp.Handler); ok {
 			catalogHandler = catalog
 		}
+		if home, ok := option.(homehttp.Handler); ok {
+			homeHandler = home
+		}
 		if nodes, ok := option.(clusterhttp.Handler); ok {
 			nodesHandler = nodes
 		}
 	}
-	server := apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, Ops: opsHandler, Stream: streamHandler, Readiness: readiness, Flags: flagsHandler, Catalog: catalogHandler, Nodes: nodesHandler, planHandler: planHandler{Handler: plans}}
+	server := apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, Ops: opsHandler, Stream: streamHandler, Readiness: readiness, Flags: flagsHandler, Catalog: catalogHandler, Home: homeHandler, Nodes: nodesHandler, planHandler: planHandler{Handler: plans}}
 	publicRouter := chi.NewRouter()
 	serveWebAssets(publicRouter, os.Getenv("XFLICKR_WEB_DIR"))
 	publicRouter.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {

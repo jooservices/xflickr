@@ -55,7 +55,7 @@ func TestGetAdminOpsStatus(t *testing.T) {
 	if ok.CredentialDecryptionFailures != 3 {
 		t.Fatalf("credential decryption failures = %d", ok.CredentialDecryptionFailures)
 	}
-	if len(ok.Keys) != 1 || ok.Keys[0].Remaining != 60 || ok.Keys[0].Used != 40 || ok.IdleReason == nil || *ok.IdleReason != gen.NoKey {
+	if len(ok.Keys) != 1 || ok.Keys[0].Remaining != 60 || ok.Keys[0].Used != 40 || ok.IdleReason == nil || *ok.IdleReason != gen.OpsStatusIdleReasonNoKey {
 		t.Fatalf("keys=%+v idle=%v", ok.Keys, ok.IdleReason)
 	}
 }

@@ -1,0 +1,80 @@
+HomeSnapshot:
+  type: object
+  additionalProperties: false
+  required: [generated_at, contacts, photos, new_photos, starred_contacts, activity]
+  properties:
+    generated_at: { type: string, format: date-time }
+    contacts: { $ref: '#/HomeContactCounts' }
+    photos: { $ref: '#/HomePhotoCounts' }
+    new_photos:
+      type: array
+      maxItems: 12
+      items: { $ref: '#/HomePhoto' }
+    starred_contacts:
+      type: array
+      maxItems: 5
+      items: { $ref: '#/HomeStarredContact' }
+    activity:
+      type: array
+      maxItems: 5
+      items: { $ref: '#/HomeActivity' }
+
+HomeContactCounts:
+  type: object
+  additionalProperties: false
+  required: [total, direct, discovered]
+  properties:
+    total: { type: integer, format: int64, minimum: 0 }
+    direct: { type: integer, format: int64, minimum: 0 }
+    discovered: { type: integer, format: int64, minimum: 0 }
+
+HomePhotoCounts:
+  type: object
+  additionalProperties: false
+  required: [total, sizes_ready, captioned]
+  properties:
+    total: { type: integer, format: int64, minimum: 0 }
+    sizes_ready: { type: integer, format: int64, minimum: 0 }
+    captioned: { type: integer, format: int64, minimum: 0 }
+
+HomePhoto:
+  type: object
+  additionalProperties: false
+  required: [id, title, thumbnail_url, owner_nsid, owner_name, captioned]
+  properties:
+    id: { type: integer, format: int64, minimum: 1 }
+    title: { type: string }
+    thumbnail_url: { type: [string, 'null'], format: uri, description: The best stored thumbnail URL, or null when no size URL is available. }
+    owner_nsid: { type: string }
+    owner_name: { type: string }
+    taken_at: { type: [string, 'null'], format: date-time }
+    captioned: { type: boolean }
+
+HomeStarredContact:
+  type: object
+  additionalProperties: false
+  required: [nsid, name, icon_url, photos_count, sizes_ready, sizes_total, crawl_state]
+  properties:
+    nsid: { type: string }
+    name: { type: string }
+    icon_url: { type: string }
+    photos_count: { type: integer, format: int64, minimum: 0 }
+    sizes_ready: { type: integer, format: int64, minimum: 0 }
+    sizes_total: { type: integer, format: int64, minimum: 0 }
+    crawl_state:
+      type: string
+      enum: [idle, crawling, waiting, attention]
+      x-enum-varnames: [HomeCrawlStateIdle, HomeCrawlStateCrawling, HomeCrawlStateWaiting, HomeCrawlStateAttention]
+
+HomeActivity:
+  type: object
+  additionalProperties: false
+  required: [id, kind, message_key, count, contact_name, occurred_at, severity]
+  properties:
+    id: { type: string }
+    kind: { type: string, enum: [crawl, download, quota] }
+    message_key: { type: string, enum: [new_photos, sizes_confirmed, quota_updated, unknown] }
+    count: { type: integer, format: int64, minimum: 0 }
+    contact_name: { type: string }
+    occurred_at: { type: string, format: date-time }
+    severity: { type: string, enum: [info, warning, error] }

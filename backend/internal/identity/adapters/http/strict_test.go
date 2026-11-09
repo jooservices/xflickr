@@ -192,3 +192,9 @@ func TestStrictHandlerLeavesNodeEndpointsToCluster(t *testing.T) {
 		t.Fatalf("heartbeat error = %v", err)
 	}
 }
+
+func TestStrictHandlerLeavesHomeToHomeModule(t *testing.T) {
+	if _, err := (StrictHandler{}).GetMeHome(t.Context(), gen.GetMeHomeRequestObject{}); !errors.Is(err, errHomeServedByHome) {
+		t.Fatalf("home error = %v", err)
+	}
+}

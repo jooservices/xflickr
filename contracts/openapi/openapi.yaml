@@ -66,6 +66,8 @@ paths:
     $ref: ./paths/crawl.yaml#/status
   /me/crawl/settings:
     $ref: ./paths/crawl.yaml#/settings
+  /me/home:
+    $ref: ./paths/home.yaml#/snapshot
   /me/contacts/{nsid}/star:
     $ref: ./paths/crawl.yaml#/star
   /me/contacts/{nsid}/select:
