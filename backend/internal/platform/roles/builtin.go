@@ -295,7 +295,11 @@ func registerHomeStatsRefresh(queueAdapter *queue.River, pool *pgxpool.Pool) err
 		return err
 	}
 	refresher := homeapp.Refresher{Processor: repository, BatchSize: homeapp.RefreshBatchSize}
-	return queueAdapter.RegisterWithOptions(homeapp.RefreshJobKind, func(ctx context.Context, job queue.Job) error {
+	return queueAdapter.RegisterWithOptions(homeapp.RefreshJobKind, homeStatsRefreshHandler(refresher), queue.Options{Queue: "home", LeaseTimeout: 30 * time.Minute})
+}
+
+func homeStatsRefreshHandler(refresher homeapp.Refresher) queue.Handler {
+	return func(ctx context.Context, job queue.Job) error {
 		args, err := homeapp.ParseRefreshJob(job.Args)
 		if err != nil {
 			return err
@@ -305,7 +309,7 @@ func registerHomeStatsRefresh(queueAdapter *queue.River, pool *pgxpool.Pool) err
 			return err
 		}
 		return queue.Snooze(time.Second)
-	}, queue.Options{Queue: "home", LeaseTimeout: 30 * time.Minute})
+	}
 }
 
 // registerPhotoSizes registers the photo-size job on the sync queue.
