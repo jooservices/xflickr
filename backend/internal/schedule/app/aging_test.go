@@ -50,6 +50,28 @@ func TestWeightsRescoreValidatesDependencies(t *testing.T) {
 	}
 }
 
+func TestWeightsRescorePropagatesStoreErrors(t *testing.T) {
+	store := &rescoreFake{fingerprint: "stale", computed: "current", loadErr: errors.New("load failed")}
+	job := WeightsRescore{Store: store, BatchSize: 5, Weights: domain.ScoreWeights{}}
+	if _, err := job.RunBatch(context.Background()); err == nil {
+		t.Fatal("ignored fingerprint load failure")
+	}
+
+	store.loadErr = nil
+	store.rescoreErr = errors.New("rescore failed")
+	if _, err := job.RunBatch(context.Background()); err == nil {
+		t.Fatal("ignored pending rescore failure")
+	}
+
+	store.rescoreErr = nil
+	store.batchResult = 1
+	store.storeErr = errors.New("store failed")
+	got, err := job.RunBatch(context.Background())
+	if err == nil || got != 1 {
+		t.Fatalf("store fingerprint failure = %d, %v", got, err)
+	}
+}
+
 type rescoreFake struct {
 	fingerprint string
 	computed    string
@@ -59,11 +81,15 @@ type rescoreFake struct {
 	computeErr  error
 	loadErr     error
 	storeErr    error
+	rescoreErr  error
 }
 
 func (s *rescoreFake) RescorePendingBatch(_ context.Context, batch int, _ domain.ScoreWeights, _ int) (int, error) {
 	s.calls++
 	s.batch = batch
+	if s.rescoreErr != nil {
+		return 0, s.rescoreErr
+	}
 	if s.batchResult != 0 {
 		return s.batchResult, nil
 	}

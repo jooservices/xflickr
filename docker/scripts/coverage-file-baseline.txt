@@ -1,4 +1,3 @@
-internal/crawl/adapters/postgres/engine.go 83.3
 internal/crawl/facets/favorites.go 50.0
 internal/crawl/facets/reconcile.go 76.9
 internal/fakeflickr/dataset.go 83.3

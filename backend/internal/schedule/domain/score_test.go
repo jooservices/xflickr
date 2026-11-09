@@ -27,6 +27,31 @@ func TestScoreRejectsNegativeValues(t *testing.T) {
 	}
 }
 
+func TestScoreRejectsNonFiniteAndOverflow(t *testing.T) {
+	if _, err := Score(ScoreInput{}, ScoreWeights{PlanWeight: math.NaN()}); err == nil {
+		t.Fatal("Score accepted NaN weight")
+	}
+	if _, err := Score(ScoreInput{}, ScoreWeights{AgeMinutes: math.Inf(1)}); err == nil {
+		t.Fatal("Score accepted infinite weight")
+	}
+	if _, err := Score(ScoreInput{AgeMinutes: math.MaxFloat64}, ScoreWeights{AgeMinutes: math.MaxFloat64}); err == nil {
+		t.Fatal("Score accepted overflow to infinity")
+	}
+	if _, err := Score(ScoreInput{PlanWeight: math.MaxInt}, ScoreWeights{PlanWeight: math.MaxFloat64}); err == nil {
+		t.Fatal("Score accepted base overflow to infinity")
+	}
+	created := time.Unix(1_700_000_000, 0).UTC()
+	if _, err := StaticScore(StaticScoreInput{CreatedAt: created, Depth: -1, MaxDepth: 0}, ScoreWeights{}); err == nil {
+		t.Fatal("StaticScore accepted negative depth")
+	}
+	if _, err := StaticScore(StaticScoreInput{CreatedAt: created, PlanWeight: math.MaxInt}, ScoreWeights{PlanWeight: math.MaxFloat64}); err == nil {
+		t.Fatal("StaticScore accepted base overflow to infinity")
+	}
+	if _, err := StaticScore(StaticScoreInput{CreatedAt: time.Unix(120, 0).UTC()}, ScoreWeights{AgeMinutes: math.MaxFloat64}); err == nil {
+		t.Fatal("StaticScore accepted age-term overflow to infinity")
+	}
+}
+
 func TestStaticScoreOrderingMatchesAgedScore(t *testing.T) {
 	rng := rand.New(rand.NewPCG(370, 1))
 	weights := ScoreWeights{PlanWeight: 10, DirectAction: 100, Starred: 20, Depth: 5, AgeMinutes: .1}
