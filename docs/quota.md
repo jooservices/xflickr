@@ -11,9 +11,26 @@ The acquisition Lua script checks both limits and changes their state in one
 Redis call. The Go adapter uses go-redis script SHA caching and fails closed
 when Redis or the key budget provider is unavailable.
 
+The PostgreSQL budget provider reads the current settings on every acquisition.
+Its effective hourly grant ceiling is the smallest of the key's
+`per_hour_limit`,
+`usable_hourly_quota` (default 3,400), and a positive `daily_call_limit`.
+`usable_hourly_quota` is global configuration applied independently to each key;
+it does not pool capacity across keys and users cannot override it. A committed
+setting change applies to the next acquisition without restarting a role. A
+read error or invalid ceiling fails closed. Lowering the ceiling leaves existing
+grants in the ledger; they continue counting until they expire from the rolling
+60-minute window.
+
+This slice wires the stored default into the governor. It does not yet provide
+an admin edit API or UI, an audit record for admin changes, or an accurate
+effective-limit value from `GET /admin/quota`. Direct database changes are for
+integration tests only.
+
 The bucket refills at the key's per-second rate and never holds more tokens
-than the key's burst. One Redis clock second also never grants more calls than
-that burst. Refill during the same second used to be spendable immediately, so
+than the key's burst. The defaults are a sustained refill rate of 4 per second
+and a burst of 5. One Redis clock second also never grants more calls than that
+burst. Refill during the same second used to be spendable immediately, so
 a full bucket plus the rest of the second granted `burst + per_second_rate - 1`
 calls (8 when the rate is 4 and the burst is 5). Those refilled tokens now stay
 in the bucket until a later second. The sustained rate is unchanged, and neither
@@ -24,8 +41,10 @@ Every role acquires against the same key, `{prefix}quota:key:{id}:bucket`.
 The crawl, scheduler, API, and media roles do not keep separate buckets for
 one API key. A different API key has its own bucket.
 
-Interactive calls may use the full hourly budget. Person and photo calls leave
-the configured reserve available for interactive calls. Photo calls also stop
+Interactive calls may use the full effective hourly grant ceiling. Person and
+photo calls leave the configured reserve available for interactive calls. When
+the reserve is at least the ceiling, background calls are blocked while
+interactive calls can still use the ceiling. Photo calls also stop
 at `hourly_limit * (1 - person_lane_share)`, preserving the person lane's share
 of the hourly capacity. The default `person_lane_share` is 0.30 (30 percent).
 
@@ -38,8 +57,9 @@ When that marker expires, the person lane leaves only `photo_lane_floor_share`
 Defaults; users cannot override it. Both shares are fractions of the hourly
 limit, with background calls always leaving the interactive reserve intact.
 
-For a photo allocation `P`, granted photo calls `U`, hourly limit `H` and
-reserve `R`, the person ceiling is `max(0, H - R) - max(0, P - U)`.
+For a photo allocation `P`, granted photo calls `U`, effective hourly grant
+ceiling `H` and reserve `R`, the person ceiling is
+`max(0, H - R) - max(0, P - U)`.
 With recent photo demand, `P = min(floor(H * (1 - person_lane_share)),
 max(0, H - R))`; otherwise `P` is the smaller of that allocation and
 `floor(H * photo_lane_floor_share)`. The idle protection never exceeds the
@@ -60,11 +80,11 @@ Deployment: run migrations and restart roles. The lead restores
 `person_lane_share` to 0.30 after deployment; the migration does not change it.
 
 Callers finish a permit with its result metadata. A Flickr quota-exceeded
-result fills the rolling ledger to the key's hourly limit with synthetic
-interactive grants scored at Redis now, without lowering existing counts. The
-key cools down until the oldest counted grant expires; remaining synthetic
-grants continue consuming budget until their own expiry. The counter and cooldown
-are scoped by API key.
+result fills the rolling ledger to the effective hourly grant ceiling with
+synthetic interactive grants scored at Redis now, without lowering existing
+counts. The key cools down until the oldest counted grant expires; remaining
+synthetic grants continue consuming budget until their own expiry. The counter
+and cooldown are scoped by API key.
 
 ## Usage persistence and rebuild
 

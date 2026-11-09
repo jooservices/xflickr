@@ -22,6 +22,7 @@ const (
 	RestrictedRecheckInterval Key = "restricted_recheck_interval"
 	ReconcileInterval         Key = "reconcile_interval"
 	DailyCallLimit            Key = "daily_call_limit"
+	UsableHourlyQuota         Key = "usable_hourly_quota"
 	QuotaReserve              Key = "quota_reserve"
 	PerSecondRate             Key = "per_second_rate"
 	Burst                     Key = "burst"
@@ -67,6 +68,7 @@ type Effective struct {
 	RestrictedRecheckInterval time.Duration
 	ReconcileInterval         time.Duration
 	DailyCallLimit            int64 // zero means unlimited
+	UsableHourlyQuota         int64
 	QuotaReserve              int64
 	PerSecondRate             int
 	Burst                     int
@@ -187,6 +189,7 @@ var schemas = map[Key]JSONSchema{
 	RestrictedRecheckInterval: {Type: "integer", Minimum: minOne, Maximum: maxDuration},
 	ReconcileInterval:         {Type: "integer", Minimum: minOne, Maximum: maxDuration},
 	DailyCallLimit:            {Type: "integer", Minimum: minZero},
+	UsableHourlyQuota:         {Type: "integer", Minimum: minOne},
 	QuotaReserve:              {Type: "integer", Minimum: minZero},
 	PerSecondRate:             {Type: "integer", Minimum: minOne},
 	Burst:                     {Type: "integer", Minimum: minOne},
@@ -238,6 +241,7 @@ func Keys() []Key {
 		ReconcileInterval,
 		RestrictedRecheckInterval,
 		DailyCallLimit,
+		UsableHourlyQuota,
 		QuotaReserve,
 		PerSecondRate,
 		Burst,
@@ -279,6 +283,7 @@ func Defaults() []Definition {
 		{Key: RestrictedRecheckInterval, Value: json.RawMessage("2592000"), UserOverridable: false},
 		{Key: ReconcileInterval, Value: json.RawMessage("2592000"), UserOverridable: true},
 		{Key: DailyCallLimit, Value: json.RawMessage("0"), UserOverridable: true},
+		{Key: UsableHourlyQuota, Value: json.RawMessage("3400"), UserOverridable: false, Min: floatPointer(1)},
 		{Key: QuotaReserve, Value: json.RawMessage("100"), UserOverridable: true},
 		{Key: PerSecondRate, Value: json.RawMessage("4"), UserOverridable: true},
 		{Key: Burst, Value: json.RawMessage("5"), UserOverridable: true},
@@ -531,6 +536,9 @@ func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
 	}
 	if result.DailyCallLimit, err = integer64(values[DailyCallLimit]); err != nil {
 		return Effective{}, nil, invalidStored(DailyCallLimit, err)
+	}
+	if result.UsableHourlyQuota, err = integer64(values[UsableHourlyQuota]); err != nil {
+		return Effective{}, nil, invalidStored(UsableHourlyQuota, err)
 	}
 	if result.QuotaReserve, err = integer64(values[QuotaReserve]); err != nil {
 		return Effective{}, nil, invalidStored(QuotaReserve, err)

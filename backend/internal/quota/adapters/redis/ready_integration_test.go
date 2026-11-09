@@ -7,10 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	redisv9 "github.com/redis/go-redis/v9"
 
@@ -338,4 +340,172 @@ func TestRebuildAfterMarkerLossDoesNotDoubleCount(t *testing.T) {
 	if used != int64(distinct) {
 		t.Fatalf("rolling window count = %d, want %d distinct grants (not %d from live+log double count)", used, distinct, 2*prior+1)
 	}
+}
+
+func TestGovernorUsableQuotaConcurrentRoles(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use the isolated worktree services")
+	}
+	root := integrationRoot(t)
+	cfg, err := config.LoadDatabaseWithDotEnv(filepath.Join(root, ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Name != "xflickr_wtjooxf366" {
+		t.Fatal("refusing non-ticket worktree database")
+	}
+	pool := dbtest.Open(t, cfg)
+	values, err := godotenv.Read(filepath.Join(root, ".env"))
+	if err != nil {
+		t.Fatal("read worktree Redis configuration")
+	}
+	basePrefix := values["REDIS_PREFIX"]
+	db, _ := strconv.Atoi(values["REDIS_DB"])
+	if basePrefix == "" || basePrefix == "xflickr:" || db == 7 {
+		t.Fatal("refusing the live Redis namespace")
+	}
+	port, _ := strconv.Atoi(values["REDIS_PORT"])
+	if port == 0 {
+		port = 16382
+	}
+	host := values["REDIS_HOST"]
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	client := redisv9.NewClient(&redisv9.Options{
+		Addr:     net.JoinHostPort(host, strconv.Itoa(port)),
+		Password: values["REDIS_PASSWORD"],
+		DB:       db,
+	})
+	t.Cleanup(func() { _ = client.Close() })
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	if err := client.Ping(ctx).Err(); err != nil {
+		t.Fatalf("ping worktree Redis: %v", err)
+	}
+
+	for key, value := range map[string]string{
+		"usable_hourly_quota":    "20",
+		"daily_call_limit":       "0",
+		"quota_reserve":          "0",
+		"person_lane_share":      "0",
+		"photo_lane_floor_share": "0",
+	} {
+		setRedisIntegrationSetting(t, ctx, pool, key, value)
+	}
+	unique := fmt.Sprintf("jooxf366-%d", time.Now().UnixNano())
+	var userID, keyID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users (email, password_hash, role, locale)
+		VALUES ($1, 'integration-hash', 'user', 'en') RETURNING id`, unique+"@example.invalid").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM users WHERE id=$1`, userID); err != nil {
+			t.Errorf("cleanup quota test user: %v", err)
+		}
+	})
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys
+		(user_id, label, key_public, secret_sealed, per_hour_limit, per_second_limit, burst)
+		VALUES ($1, $2, $2, '{}'::jsonb, 100, 1000, 1000) RETURNING id`, userID, unique).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+
+	prefix := fmt.Sprintf("%sjooxf366:%d:", basePrefix, keyID)
+	counters := Counters{Client: client, Prefix: prefix}
+	rebuilder := &app.Rebuilder{
+		Store:    quotapostgres.Usage{Pool: pool},
+		Calls:    quotapostgres.CallLog{Pool: pool},
+		Counters: counters,
+	}
+	budgets := quotapostgres.Budgets{Pool: pool}
+	crawl, err := NewGovernor(client, prefix, budgets, rebuilder, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduler, err := NewGovernor(client, prefix, budgets, rebuilder, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if crawl.keys(keyID)[1] != scheduler.keys(keyID)[1] {
+		t.Fatal("roles do not share the same rolling ledger")
+	}
+	t.Cleanup(func() {
+		for _, key := range crawl.keys(keyID) {
+			_ = client.Del(context.Background(), key).Err()
+		}
+	})
+	for _, key := range crawl.keys(keyID) {
+		if err := client.Del(ctx, key).Err(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := counters.Restore(ctx, app.Usage{KeyID: keyID}); err != nil {
+		t.Fatalf("prepare rolling ledger: %v", err)
+	}
+
+	roles := []Governor{crawl, scheduler}
+	start := make(chan struct{})
+	results := make(chan error, len(roles))
+	var grants atomic.Int64
+	var workers sync.WaitGroup
+	for _, role := range roles {
+		role := role
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			<-start
+			for attempt := 0; attempt < 24; attempt++ {
+				permit, _, err := role.Acquire(ctx, keyID, domain.Interactive)
+				if err != nil {
+					results <- err
+					return
+				}
+				if permit != nil {
+					grants.Add(1)
+				}
+			}
+			results <- nil
+		}()
+	}
+	close(start)
+	workers.Wait()
+	for range roles {
+		if err := <-results; err != nil {
+			t.Fatalf("concurrent role acquire: %v", err)
+		}
+	}
+	if grants.Load() != 20 {
+		t.Fatalf("concurrent roles granted %d calls, want usable quota 20", grants.Load())
+	}
+	used := int64(0)
+	for _, index := range []int{1, 2, 4} {
+		count, err := client.ZCard(ctx, crawl.keys(keyID)[index]).Result()
+		if err != nil {
+			t.Fatal(err)
+		}
+		used += count
+	}
+	if used != 20 {
+		t.Fatalf("shared rolling ledger contains %d grants, want 20", used)
+	}
+}
+
+func setRedisIntegrationSetting(t *testing.T, ctx context.Context, pool *pgxpool.Pool, key, value string) {
+	t.Helper()
+	var original []byte
+	if err := pool.QueryRow(ctx, `SELECT value FROM app_settings WHERE key=$1`, key).Scan(&original); err != nil {
+		t.Fatalf("read %s setting: %v", key, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE app_settings SET value=$1::jsonb WHERE key=$2`, value, key); err != nil {
+		t.Fatalf("update %s setting: %v", key, err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if _, err := pool.Exec(cleanupCtx, `UPDATE app_settings SET value=$1::jsonb WHERE key=$2`, string(original), key); err != nil {
+			t.Errorf("restore %s setting: %v", key, err)
+		}
+	})
 }
