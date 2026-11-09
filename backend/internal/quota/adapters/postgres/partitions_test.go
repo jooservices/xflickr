@@ -67,17 +67,21 @@ func (tx *partitionTxFake) Rollback(context.Context) error {
 	return nil
 }
 
-func TestMaintainCallLogPartitionsCreatesAndDropsOnlyDailyPartitions(t *testing.T) {
-	rows := &fakeRows{data: [][]any{{"api_call_log_20261026"}}}
-	tx := &partitionTxFake{queryRows: rows}
+func TestMaintainCallLogPartitionsCreatesDailyPartitions(t *testing.T) {
+	tx := &partitionTxFake{}
 	pool := &partitionDBFake{tx: tx}
 	oldest := time.Date(2026, 10, 27, 12, 0, 0, 0, time.FixedZone("local", -5*60*60))
 	through := oldest.AddDate(0, 0, 2)
 	if err := (Partitions{Pool: pool}).MaintainCallLogPartitions(context.Background(), oldest, through); err != nil {
 		t.Fatal(err)
 	}
-	if !tx.committed || len(tx.execs) != 4 || !strings.Contains(tx.execs[0], "api_call_log_20261027") || tx.execs[3] != `DROP TABLE "api_call_log_20261026"` {
+	if !tx.committed || len(tx.execs) != 3 || !strings.Contains(tx.execs[0], "api_call_log_20261027") {
 		t.Fatalf("commit=%v execs=%q", tx.committed, tx.execs)
+	}
+	for _, exec := range tx.execs {
+		if strings.Contains(exec, "DROP TABLE") {
+			t.Fatalf("create path must not drop partitions: %q", tx.execs)
+		}
 	}
 	if !tx.rolledBack {
 		t.Fatal("transaction rollback was not attempted after commit")
@@ -114,11 +118,7 @@ func TestMaintainCallLogPartitionsReportsTransactionErrors(t *testing.T) {
 	}{
 		{name: "begin", pool: &partitionDBFake{beginErr: boom}},
 		{name: "create", pool: &partitionDBFake{tx: &partitionTxFake{execErrAt: 1, execErr: boom}}},
-		{name: "query", pool: &partitionDBFake{tx: &partitionTxFake{queryErr: boom}}},
-		{name: "scan", pool: &partitionDBFake{tx: &partitionTxFake{queryRows: &fakeRows{data: [][]any{{int64(4)}}}}}},
-		{name: "rows", pool: &partitionDBFake{tx: &partitionTxFake{queryRows: &fakeRows{err: boom}}}},
-		{name: "drop", pool: &partitionDBFake{tx: &partitionTxFake{queryRows: &fakeRows{data: [][]any{{"api_call_log_20261020"}}}, execErrAt: 2, execErr: boom}}},
-		{name: "commit", pool: &partitionDBFake{tx: &partitionTxFake{queryRows: &fakeRows{}, commitErr: boom}}},
+		{name: "commit", pool: &partitionDBFake{tx: &partitionTxFake{commitErr: boom}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
