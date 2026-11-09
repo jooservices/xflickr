@@ -43,14 +43,15 @@ type Governor interface {
 
 // Request is one Flickr call on behalf of a work item.
 type Request struct {
-	AccountID int64
-	KeyID     int64
-	UserID    int64
-	Lane      domain.Lane
-	Facet     string
-	Attempt   int
-	Method    string
-	Params    map[string]string
+	AccountID   int64
+	KeyID       int64
+	UserID      int64
+	SubjectNSID string
+	Lane        domain.Lane
+	Facet       string
+	Attempt     int
+	Method      string
+	Params      map[string]string
 }
 
 // Flickr performs a call with the credentials of the key and user.
@@ -289,7 +290,7 @@ func (e *Engine) run(ctx context.Context, item domain.Item, facet domain.Facet) 
 	if err != nil {
 		return err
 	}
-	request := Request{KeyID: keyID, UserID: item.UserID, Lane: facet.Lane(), Facet: item.Kind, Attempt: item.Attempts + 1, Method: item.Cursor.Method, Params: pageParams(item.Cursor)}
+	request := Request{KeyID: keyID, UserID: item.UserID, SubjectNSID: item.Subject, Lane: facet.Lane(), Facet: item.Kind, Attempt: item.Attempts + 1, Method: item.Cursor.Method, Params: pageParams(item.Cursor)}
 	if resolver, ok := e.Flickr.(RequestResolver); ok {
 		request, err = resolver.Resolve(ctx, request)
 		if err != nil {
