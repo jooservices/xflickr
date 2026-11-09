@@ -90,13 +90,16 @@ func TestCreateAlbumDownloadWithPostgres(t *testing.T) {
 	}
 	catalogRepository := catalogdownloadspostgres.Repository{Pool: pool}
 	catalog := catalogapp.DownloadCatalog{Photos: catalogRepository}
-	if got, err := catalog.Candidates(ctx, string(mediadomain.DownloadContact), owner, nil); err != nil || len(got) != 3 {
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via) VALUES($1,$2,0,'test')`, userID, owner); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := catalog.Candidates(ctx, userID, string(mediadomain.DownloadContact), owner, nil); err != nil || len(got) != 3 {
 		t.Fatalf("contact candidates = %d, %v", len(got), err)
 	}
-	if got, err := catalog.Candidates(ctx, string(mediadomain.DownloadTray), "", photoIDs); err != nil || len(got) != 3 {
+	if got, err := catalog.Candidates(ctx, userID, string(mediadomain.DownloadTray), "", photoIDs); err != nil || len(got) != 3 {
 		t.Fatalf("tray candidates = %d, %v", len(got), err)
 	}
-	if _, err := catalog.Candidates(ctx, "unknown", "", nil); err == nil {
+	if _, err := catalog.Candidates(ctx, userID, "unknown", "", nil); err == nil {
 		t.Fatal("accepted unsupported candidate kind")
 	}
 	// A download does not require a background-eligible owner. These fixtures

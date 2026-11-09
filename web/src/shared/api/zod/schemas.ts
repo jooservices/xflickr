@@ -1497,6 +1497,407 @@ export const UpdateMeCrawlSettingsResponse = zod
   .describe("The current user's crawl depth and the administrator limits.");
 
 /**
+ * @summary List the signed-in user's discovered contacts
+ */
+export const listMeCrawlInterestsQueryFilterDefault = `all`;
+export const listMeCrawlInterestsQueryQMax = 100;
+
+export const listMeCrawlInterestsQuerySortDefault = `updated`;
+export const listMeCrawlInterestsQueryCursorMax = 1024;
+
+export const listMeCrawlInterestsQueryLimitDefault = 30;
+export const listMeCrawlInterestsQueryLimitMax = 100;
+
+export const ListMeCrawlInterestsQueryParams = zod.object({
+  filter: zod
+    .enum(['all', 'starred', 'crawling', 'needs_attention'])
+    .default(listMeCrawlInterestsQueryFilterDefault),
+  q: zod.string().max(listMeCrawlInterestsQueryQMax).optional(),
+  sort: zod.enum(['updated', 'name', 'photos']).default(listMeCrawlInterestsQuerySortDefault),
+  cursor: zod.string().max(listMeCrawlInterestsQueryCursorMax).optional(),
+  limit: zod
+    .int()
+    .min(1)
+    .max(listMeCrawlInterestsQueryLimitMax)
+    .default(listMeCrawlInterestsQueryLimitDefault),
+});
+
+export const listMeCrawlInterestsResponseItemsItemDepthMin = 0;
+
+export const listMeCrawlInterestsResponseItemsItemPhotosCrawledMin = 0;
+
+export const listMeCrawlInterestsResponseItemsItemPhotosTotalMin = 0;
+
+export const listMeCrawlInterestsResponseItemsItemFavoritesCountMin = 0;
+
+export const listMeCrawlInterestsResponseItemsItemSizesPercentMin = 0;
+export const listMeCrawlInterestsResponseItemsItemSizesPercentMax = 100;
+
+export const listMeCrawlInterestsResponseItemsItemRecentPhotosMax = 3;
+
+export const listMeCrawlInterestsResponseCountsAllMin = 0;
+
+export const listMeCrawlInterestsResponseCountsStarredMin = 0;
+
+export const listMeCrawlInterestsResponseCountsCrawlingMin = 0;
+
+export const listMeCrawlInterestsResponseCountsNeedsAttentionMin = 0;
+
+export const ListMeCrawlInterestsResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      nsid: zod.string(),
+      name: zod.string(),
+      username: zod.string(),
+      avatar_url: zod.url().nullable(),
+      depth: zod.int().min(listMeCrawlInterestsResponseItemsItemDepthMin),
+      starred: zod.boolean(),
+      status: zod.enum(['done', 'crawling', 'checking', 'queued', 'paused', 'error']),
+      photos_crawled: zod.int().min(listMeCrawlInterestsResponseItemsItemPhotosCrawledMin),
+      photos_total: zod.int().min(listMeCrawlInterestsResponseItemsItemPhotosTotalMin),
+      favorites_count: zod.int().min(listMeCrawlInterestsResponseItemsItemFavoritesCountMin),
+      sizes_percent: zod
+        .int()
+        .min(listMeCrawlInterestsResponseItemsItemSizesPercentMin)
+        .max(listMeCrawlInterestsResponseItemsItemSizesPercentMax),
+      last_check_at: zod.iso.datetime({ offset: true }).nullable(),
+      recent_photos: zod
+        .array(
+          zod.object({
+            id: zod.string(),
+            thumbnail_url: zod.url().nullable(),
+            alt: zod.string(),
+          }),
+        )
+        .max(listMeCrawlInterestsResponseItemsItemRecentPhotosMax),
+    }),
+  ),
+  counts: zod.object({
+    all: zod.int().min(listMeCrawlInterestsResponseCountsAllMin),
+    starred: zod.int().min(listMeCrawlInterestsResponseCountsStarredMin),
+    crawling: zod.int().min(listMeCrawlInterestsResponseCountsCrawlingMin),
+    needs_attention: zod.int().min(listMeCrawlInterestsResponseCountsNeedsAttentionMin),
+  }),
+  next_cursor: zod.string().nullable(),
+  updated_at: zod.iso.datetime({ offset: true }).nullable(),
+});
+
+/**
+ * @summary Get contact identity and user-scoped crawl progress
+ */
+export const getMeContactPathNsidMax = 255;
+
+export const GetMeContactParams = zod.object({
+  nsid: zod.string().min(1).max(getMeContactPathNsidMax),
+});
+
+export const getMeContactResponseDepthMin = 0;
+
+export const getMeContactResponsePhotoRecordsCrawledMin = 0;
+
+export const getMeContactResponsePhotoRecordsTotalMin = 0;
+
+export const getMeContactResponseSizesCompletedMin = 0;
+export const getMeContactResponseSizesCompletedMax = 100;
+
+export const getMeContactResponseFacetsItemCompletedMin = 0;
+
+export const getMeContactResponseFacetsItemTotalMin = 0;
+
+export const getMeContactResponseCountsPhotosMin = 0;
+
+export const getMeContactResponseCountsFavoritesMin = 0;
+
+export const getMeContactResponseCountsAlbumsMin = 0;
+
+export const getMeContactResponseCountsGalleriesMin = 0;
+
+export const getMeContactResponseCountsGroupsMin = 0;
+
+export const GetMeContactResponse = zod.object({
+  nsid: zod.string(),
+  username: zod.string(),
+  real_name: zod.string(),
+  avatar_url: zod.url().nullable(),
+  cover_photo_url: zod.url().nullable(),
+  location: zod.string().nullable(),
+  depth: zod.int().min(getMeContactResponseDepthMin),
+  found_via: zod.array(
+    zod.object({
+      nsid: zod.string(),
+      label: zod.string(),
+    }),
+  ),
+  starred: zod.boolean(),
+  paused: zod.boolean(),
+  crawl_status: zod.enum(['pending', 'running', 'complete', 'partial', 'failed', 'paused']),
+  photo_records_crawled: zod.int().min(getMeContactResponsePhotoRecordsCrawledMin),
+  photo_records_total: zod.int().min(getMeContactResponsePhotoRecordsTotalMin).nullable(),
+  sizes_completed: zod
+    .int()
+    .min(getMeContactResponseSizesCompletedMin)
+    .max(getMeContactResponseSizesCompletedMax),
+  facets: zod.array(
+    zod.object({
+      name: zod.enum(['photos', 'favorites', 'albums', 'galleries', 'groups']),
+      completed: zod.int().min(getMeContactResponseFacetsItemCompletedMin),
+      total: zod.int().min(getMeContactResponseFacetsItemTotalMin).nullable(),
+      status: zod.enum(['pending', 'running', 'complete', 'partial', 'failed']),
+      updated_at: zod.iso.datetime({ offset: true }).nullable(),
+    }),
+  ),
+  counts: zod.object({
+    photos: zod.int().min(getMeContactResponseCountsPhotosMin),
+    favorites: zod.int().min(getMeContactResponseCountsFavoritesMin),
+    albums: zod.int().min(getMeContactResponseCountsAlbumsMin),
+    galleries: zod.int().min(getMeContactResponseCountsGalleriesMin),
+    groups: zod.int().min(getMeContactResponseCountsGroupsMin),
+  }),
+  updated_at: zod.iso.datetime({ offset: true }).nullable(),
+});
+
+/**
+ * @summary List photos visible for one contact
+ */
+export const listMeContactPhotosPathNsidMax = 255;
+
+export const ListMeContactPhotosParams = zod.object({
+  nsid: zod.string().min(1).max(listMeContactPhotosPathNsidMax),
+});
+
+export const listMeContactPhotosQueryCursorMax = 1024;
+
+export const listMeContactPhotosQueryLimitDefault = 30;
+export const listMeContactPhotosQueryLimitMax = 100;
+
+export const ListMeContactPhotosQueryParams = zod.object({
+  cursor: zod.string().max(listMeContactPhotosQueryCursorMax).optional(),
+  limit: zod
+    .int()
+    .min(1)
+    .max(listMeContactPhotosQueryLimitMax)
+    .default(listMeContactPhotosQueryLimitDefault),
+});
+
+export const listMeContactPhotosResponseTotalMin = 0;
+
+export const ListMeContactPhotosResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.string(),
+      title: zod.string(),
+      thumbnail_url: zod.url().nullable(),
+      width: zod.int().min(1).nullable(),
+      height: zod.int().min(1).nullable(),
+      taken_at: zod.iso.datetime({ offset: true }).nullable(),
+      sizes_available: zod.boolean(),
+    }),
+  ),
+  total: zod.int().min(listMeContactPhotosResponseTotalMin),
+  next_cursor: zod.string().nullable(),
+  updated_at: zod.iso.datetime({ offset: true }).nullable(),
+});
+
+/**
+ * @summary List photos favorited by a contact
+ */
+export const listMeContactFavoritesPathNsidMax = 255;
+
+export const ListMeContactFavoritesParams = zod.object({
+  nsid: zod.string().min(1).max(listMeContactFavoritesPathNsidMax),
+});
+
+export const listMeContactFavoritesQueryCursorMax = 1024;
+
+export const listMeContactFavoritesQueryLimitDefault = 30;
+export const listMeContactFavoritesQueryLimitMax = 100;
+
+export const ListMeContactFavoritesQueryParams = zod.object({
+  cursor: zod.string().max(listMeContactFavoritesQueryCursorMax).optional(),
+  limit: zod
+    .int()
+    .min(1)
+    .max(listMeContactFavoritesQueryLimitMax)
+    .default(listMeContactFavoritesQueryLimitDefault),
+});
+
+export const listMeContactFavoritesResponseTotalMin = 0;
+
+export const ListMeContactFavoritesResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.string(),
+      title: zod.string(),
+      thumbnail_url: zod.url().nullable(),
+      width: zod.int().min(1).nullable(),
+      height: zod.int().min(1).nullable(),
+      taken_at: zod.iso.datetime({ offset: true }).nullable(),
+      sizes_available: zod.boolean(),
+      owner_nsid: zod.string(),
+      owner_name: zod.string().nullable(),
+      owner_avatar_url: zod.url().nullable(),
+    }),
+  ),
+  total: zod.int().min(listMeContactFavoritesResponseTotalMin),
+  next_cursor: zod.string().nullable(),
+  updated_at: zod.iso.datetime({ offset: true }).nullable(),
+});
+
+/**
+ * @summary List albums owned by a contact
+ */
+export const listMeContactAlbumsPathNsidMax = 255;
+
+export const ListMeContactAlbumsParams = zod.object({
+  nsid: zod.string().min(1).max(listMeContactAlbumsPathNsidMax),
+});
+
+export const listMeContactAlbumsResponseItemsItemStoredCountMin = 0;
+
+export const listMeContactAlbumsResponseItemsItemTotalCountMin = 0;
+
+export const listMeContactAlbumsResponseItemsItemCoverPhotoUrlsMax = 3;
+
+export const listMeContactAlbumsResponseTotalMin = 0;
+
+export const ListMeContactAlbumsResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.string(),
+      title: zod.string(),
+      owner_name: zod.string(),
+      stored_count: zod.int().min(listMeContactAlbumsResponseItemsItemStoredCountMin),
+      total_count: zod.int().min(listMeContactAlbumsResponseItemsItemTotalCountMin),
+      cover_photo_urls: zod
+        .array(zod.url())
+        .max(listMeContactAlbumsResponseItemsItemCoverPhotoUrlsMax),
+    }),
+  ),
+  total: zod.int().min(listMeContactAlbumsResponseTotalMin),
+  updated_at: zod.iso.datetime({ offset: true }).nullable(),
+});
+
+/**
+ * @summary List galleries owned by a contact
+ */
+export const listMeContactGalleriesPathNsidMax = 255;
+
+export const ListMeContactGalleriesParams = zod.object({
+  nsid: zod.string().min(1).max(listMeContactGalleriesPathNsidMax),
+});
+
+export const listMeContactGalleriesResponseItemsItemPhotoCountMin = 0;
+
+export const listMeContactGalleriesResponseTotalMin = 0;
+
+export const ListMeContactGalleriesResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.string(),
+      title: zod.string(),
+      photo_count: zod.int().min(listMeContactGalleriesResponseItemsItemPhotoCountMin),
+    }),
+  ),
+  total: zod.int().min(listMeContactGalleriesResponseTotalMin),
+  updated_at: zod.iso.datetime({ offset: true }).nullable(),
+});
+
+/**
+ * @summary List groups associated with a contact
+ */
+export const listMeContactGroupsPathNsidMax = 255;
+
+export const ListMeContactGroupsParams = zod.object({
+  nsid: zod.string().min(1).max(listMeContactGroupsPathNsidMax),
+});
+
+export const listMeContactGroupsResponseItemsItemMembersCountMin = 0;
+
+export const listMeContactGroupsResponseTotalMin = 0;
+
+export const ListMeContactGroupsResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      nsid: zod.string(),
+      name: zod.string(),
+      members_count: zod.int().min(listMeContactGroupsResponseItemsItemMembersCountMin),
+      pool_crawl_enabled: zod.boolean(),
+    }),
+  ),
+  total: zod.int().min(listMeContactGroupsResponseTotalMin),
+  updated_at: zod.iso.datetime({ offset: true }).nullable(),
+});
+
+/**
+ * @summary Get user-scoped contact crawl details
+ */
+export const getMeContactAboutPathNsidMax = 255;
+
+export const GetMeContactAboutParams = zod.object({
+  nsid: zod.string().min(1).max(getMeContactAboutPathNsidMax),
+});
+
+export const getMeContactAboutResponseFacetsItemCompletedMin = 0;
+
+export const getMeContactAboutResponseFacetsItemTotalMin = 0;
+
+export const getMeContactAboutResponseTombstonesCountMin = 0;
+
+export const GetMeContactAboutResponse = zod.object({
+  last_change_check_at: zod.iso.datetime({ offset: true }).nullable(),
+  facets: zod.array(
+    zod.object({
+      name: zod.enum(['photos', 'favorites', 'albums', 'galleries', 'groups']),
+      completed: zod.int().min(getMeContactAboutResponseFacetsItemCompletedMin),
+      total: zod.int().min(getMeContactAboutResponseFacetsItemTotalMin).nullable(),
+      status: zod.enum(['pending', 'running', 'complete', 'partial', 'failed']),
+      updated_at: zod.iso.datetime({ offset: true }).nullable(),
+    }),
+  ),
+  tombstones: zod.object({
+    count: zod.int().min(getMeContactAboutResponseTombstonesCountMin),
+    updated_at: zod.iso.datetime({ offset: true }).nullable(),
+  }),
+  updated_at: zod.iso.datetime({ offset: true }).nullable(),
+});
+
+/**
+ * @summary Prioritise pending size work for a contact
+ */
+export const prioritiseMeContactSizesPathNsidMax = 255;
+
+export const PrioritiseMeContactSizesParams = zod.object({
+  nsid: zod.string().min(1).max(prioritiseMeContactSizesPathNsidMax),
+});
+
+export const prioritiseMeContactSizesResponsePrioritisedMin = 0;
+
+export const PrioritiseMeContactSizesResponse = zod.object({
+  prioritised: zod.int().min(prioritiseMeContactSizesResponsePrioritisedMin),
+});
+
+/**
+ * @summary Change pool crawling preference for one group
+ */
+export const setMeContactGroupPoolCrawlPathNsidMax = 255;
+
+export const setMeContactGroupPoolCrawlPathGroupNsidMax = 255;
+
+export const SetMeContactGroupPoolCrawlParams = zod.object({
+  nsid: zod.string().min(1).max(setMeContactGroupPoolCrawlPathNsidMax),
+  group_nsid: zod.string().min(1).max(setMeContactGroupPoolCrawlPathGroupNsidMax),
+});
+
+export const SetMeContactGroupPoolCrawlBody = zod.object({
+  enabled: zod.boolean(),
+});
+
+export const SetMeContactGroupPoolCrawlResponse = zod.object({
+  enabled: zod.boolean(),
+  changed_at: zod.iso.datetime({ offset: true }),
+});
+
+/**
  * @summary Star or unstar a contact
  */
 export const starMyContactPathNsidMax = 255;
@@ -1835,14 +2236,14 @@ export const GetAdminOpsStatusResponse = zod.object({
 export const createDownloadBodyPhotoIdsMax = 500;
 
 export const CreateDownloadBody = zod.object({
-  kind: zod.enum(['contact', 'album', 'tray']),
+  kind: zod.enum(['contact', 'album', 'favorites', 'tray']),
   subject: zod.string().min(1).optional(),
   photo_ids: zod.array(zod.int()).min(1).max(createDownloadBodyPhotoIdsMax).optional(),
 });
 
 export const CreateDownloadResponse = zod.object({
   id: zod.int(),
-  kind: zod.enum(['contact', 'album', 'tray']),
+  kind: zod.enum(['contact', 'album', 'favorites', 'tray']),
   subject: zod.string(),
   status: zod.string(),
   created_at: zod.iso.datetime({ offset: true }),

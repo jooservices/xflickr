@@ -12,5 +12,6 @@ export type CreateDownloadRequestKind =
 export const CreateDownloadRequestKind = {
   contact: 'contact',
   album: 'album',
+  favorites: 'favorites',
   tray: 'tray',
 } as const;

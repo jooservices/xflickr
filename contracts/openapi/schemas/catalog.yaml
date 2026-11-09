@@ -96,3 +96,194 @@ CatalogAlbumPage:
     items: { type: array, items: { $ref: '#/CatalogAlbum' } }
     next_cursor: { type: string }
   required: [items]
+
+ContactCounts:
+  type: object
+  additionalProperties: false
+  required: [photos, favorites, albums, galleries, groups]
+  properties:
+    photos: { type: integer, format: int64, minimum: 0 }
+    favorites: { type: integer, format: int64, minimum: 0 }
+    albums: { type: integer, format: int64, minimum: 0 }
+    galleries: { type: integer, format: int64, minimum: 0 }
+    groups: { type: integer, format: int64, minimum: 0 }
+
+ContactFacet:
+  type: object
+  additionalProperties: false
+  required: [name, completed, total, status, updated_at]
+  properties:
+    name: { type: string, enum: [photos, favorites, albums, galleries, groups] }
+    completed: { type: integer, format: int64, minimum: 0 }
+    total: { type: [integer, 'null'], format: int64, minimum: 0 }
+    status: { type: string, enum: [pending, running, complete, partial, failed] }
+    updated_at: { type: [string, 'null'], format: date-time }
+
+ContactDetail:
+  type: object
+  additionalProperties: false
+  required: [nsid, username, real_name, avatar_url, cover_photo_url, location, depth, found_via, starred, paused, crawl_status, photo_records_crawled, photo_records_total, sizes_completed, facets, counts, updated_at]
+  properties:
+    nsid: { type: string }
+    username: { type: string }
+    real_name: { type: string }
+    avatar_url: { type: [string, 'null'], format: uri }
+    cover_photo_url: { type: [string, 'null'], format: uri }
+    location: { type: [string, 'null'] }
+    depth: { type: integer, minimum: 0 }
+    found_via:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [nsid, label]
+        properties:
+          nsid: { type: string }
+          label: { type: string }
+    starred: { type: boolean }
+    paused: { type: boolean }
+    crawl_status: { type: string, enum: [pending, running, complete, partial, failed, paused] }
+    photo_records_crawled: { type: integer, format: int64, minimum: 0 }
+    photo_records_total: { type: [integer, 'null'], format: int64, minimum: 0 }
+    sizes_completed: { type: integer, minimum: 0, maximum: 100 }
+    facets: { type: array, items: { $ref: '#/ContactFacet' } }
+    counts: { $ref: '#/ContactCounts' }
+    updated_at: { type: [string, 'null'], format: date-time }
+
+ContactPhoto:
+  type: object
+  additionalProperties: false
+  required: [id, title, thumbnail_url, width, height, taken_at, sizes_available]
+  properties:
+    id: { type: string }
+    title: { type: string }
+    thumbnail_url: { type: [string, 'null'], format: uri }
+    width: { type: [integer, 'null'], minimum: 1 }
+    height: { type: [integer, 'null'], minimum: 1 }
+    taken_at: { type: [string, 'null'], format: date-time }
+    sizes_available: { type: boolean }
+
+ContactPhotoPage:
+  type: object
+  additionalProperties: false
+  required: [items, total, next_cursor, updated_at]
+  properties:
+    items: { type: array, items: { $ref: '#/ContactPhoto' } }
+    total: { type: integer, format: int64, minimum: 0 }
+    next_cursor: { type: [string, 'null'] }
+    updated_at: { type: [string, 'null'], format: date-time }
+
+ContactFavorite:
+  type: object
+  additionalProperties: false
+  required: [id, title, thumbnail_url, width, height, taken_at, sizes_available, owner_nsid, owner_name, owner_avatar_url]
+  properties:
+    id: { type: string }
+    title: { type: string }
+    thumbnail_url: { type: [string, 'null'], format: uri }
+    width: { type: [integer, 'null'], minimum: 1 }
+    height: { type: [integer, 'null'], minimum: 1 }
+    taken_at: { type: [string, 'null'], format: date-time }
+    sizes_available: { type: boolean }
+    owner_nsid: { type: string }
+    owner_name: { type: [string, 'null'] }
+    owner_avatar_url: { type: [string, 'null'], format: uri }
+
+ContactFavoritePage:
+  type: object
+  additionalProperties: false
+  required: [items, total, next_cursor, updated_at]
+  properties:
+    items: { type: array, items: { $ref: '#/ContactFavorite' } }
+    total: { type: integer, format: int64, minimum: 0 }
+    next_cursor: { type: [string, 'null'] }
+    updated_at: { type: [string, 'null'], format: date-time }
+
+ContactAlbum:
+  type: object
+  additionalProperties: false
+  required: [id, title, owner_name, stored_count, total_count, cover_photo_urls]
+  properties:
+    id: { type: string }
+    title: { type: string }
+    owner_name: { type: string }
+    stored_count: { type: integer, format: int64, minimum: 0 }
+    total_count: { type: integer, format: int64, minimum: 0 }
+    cover_photo_urls: { type: array, maxItems: 3, items: { type: string, format: uri } }
+
+ContactAlbumPage:
+  type: object
+  additionalProperties: false
+  required: [items, total, updated_at]
+  properties:
+    items: { type: array, items: { $ref: '#/ContactAlbum' } }
+    total: { type: integer, format: int64, minimum: 0 }
+    updated_at: { type: [string, 'null'], format: date-time }
+
+ContactGallery:
+  type: object
+  additionalProperties: false
+  required: [id, title, photo_count]
+  properties:
+    id: { type: string }
+    title: { type: string }
+    photo_count: { type: integer, format: int64, minimum: 0 }
+
+ContactGalleryPage:
+  type: object
+  additionalProperties: false
+  required: [items, total, updated_at]
+  properties:
+    items: { type: array, items: { $ref: '#/ContactGallery' } }
+    total: { type: integer, format: int64, minimum: 0 }
+    updated_at: { type: [string, 'null'], format: date-time }
+
+ContactGroup:
+  type: object
+  additionalProperties: false
+  required: [nsid, name, members_count, pool_crawl_enabled]
+  properties:
+    nsid: { type: string }
+    name: { type: string }
+    members_count: { type: integer, format: int64, minimum: 0 }
+    pool_crawl_enabled: { type: boolean }
+
+ContactGroupPage:
+  type: object
+  additionalProperties: false
+  required: [items, total, updated_at]
+  properties:
+    items: { type: array, items: { $ref: '#/ContactGroup' } }
+    total: { type: integer, format: int64, minimum: 0 }
+    updated_at: { type: [string, 'null'], format: date-time }
+
+ContactAbout:
+  type: object
+  additionalProperties: false
+  required: [last_change_check_at, facets, tombstones, updated_at]
+  properties:
+    last_change_check_at: { type: [string, 'null'], format: date-time }
+    facets: { type: array, items: { $ref: '#/ContactFacet' } }
+    tombstones:
+      type: object
+      additionalProperties: false
+      required: [count, updated_at]
+      properties:
+        count: { type: integer, format: int64, minimum: 0 }
+        updated_at: { type: [string, 'null'], format: date-time }
+    updated_at: { type: [string, 'null'], format: date-time }
+
+ContactGroupPoolCrawlRequest:
+  type: object
+  additionalProperties: false
+  required: [enabled]
+  properties:
+    enabled: { type: boolean }
+
+ContactGroupPoolCrawlResponse:
+  type: object
+  additionalProperties: false
+  required: [enabled, changed_at]
+  properties:
+    enabled: { type: boolean }
+    changed_at: { type: string, format: date-time }

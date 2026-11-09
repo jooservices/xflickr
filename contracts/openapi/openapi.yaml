@@ -66,6 +66,26 @@ paths:
     $ref: ./paths/crawl.yaml#/status
   /me/crawl/settings:
     $ref: ./paths/crawl.yaml#/settings
+  /me/crawl/interests:
+    $ref: ./paths/crawl.yaml#/interests
+  /me/contacts/{nsid}:
+    $ref: ./paths/contact.yaml#/contact
+  /me/contacts/{nsid}/photos:
+    $ref: ./paths/contact.yaml#/photos
+  /me/contacts/{nsid}/favorites:
+    $ref: ./paths/contact.yaml#/favorites
+  /me/contacts/{nsid}/albums:
+    $ref: ./paths/contact.yaml#/albums
+  /me/contacts/{nsid}/galleries:
+    $ref: ./paths/contact.yaml#/galleries
+  /me/contacts/{nsid}/groups:
+    $ref: ./paths/contact.yaml#/groups
+  /me/contacts/{nsid}/about:
+    $ref: ./paths/contact.yaml#/about
+  /me/contacts/{nsid}/sizes-priority:
+    $ref: ./paths/crawl.yaml#/sizes_priority
+  /me/contacts/{nsid}/groups/{group_nsid}/pool-crawl:
+    $ref: ./paths/contact.yaml#/pool_crawl
   /me/contacts/{nsid}/star:
     $ref: ./paths/crawl.yaml#/star
   /me/contacts/{nsid}/select:

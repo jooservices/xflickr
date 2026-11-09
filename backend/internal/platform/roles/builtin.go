@@ -747,7 +747,7 @@ func buildConfiguredAPIHandlerSetWithObserver(pool *pgxpool.Pool, redisClient re
 	if err != nil {
 		return apiHandlerSet{}, err
 	}
-	catalogReads := cataloghttp.Handler{Reads: catalogapp.ReadService{Repository: catalogRepository}, ActorID: userIDFromPrincipal}
+	catalogReads := cataloghttp.Handler{Reads: catalogapp.ReadService{Repository: catalogRepository}, ContactReads: catalogapp.ContactReads{Repository: catalogRepository}, ActorID: userIDFromPrincipal}
 	crawl, err := buildCrawlHandlerWithEvents(pool, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"})
 	if err != nil {
 		return apiHandlerSet{}, err
@@ -1349,4 +1349,44 @@ func shutdownAPIServers(servers []*http.Server) error {
 
 func publishSizesResolved(ctx context.Context, tx pgx.Tx, event catalogapp.SizesResolved) error {
 	return outbox.PublishContext(ctx, tx, catalogapp.SizesResolvedTopic, strconv.FormatInt(event.PhotoID, 10), event)
+}
+
+func (s apiServer) ListMeCrawlInterests(ctx context.Context, request gen.ListMeCrawlInterestsRequestObject) (gen.ListMeCrawlInterestsResponseObject, error) {
+	return s.Catalog.ListMeCrawlInterests(ctx, request)
+}
+
+func (s apiServer) GetMeContact(ctx context.Context, request gen.GetMeContactRequestObject) (gen.GetMeContactResponseObject, error) {
+	return s.Catalog.GetMeContact(ctx, request)
+}
+
+func (s apiServer) ListMeContactPhotos(ctx context.Context, request gen.ListMeContactPhotosRequestObject) (gen.ListMeContactPhotosResponseObject, error) {
+	return s.Catalog.ListMeContactPhotos(ctx, request)
+}
+
+func (s apiServer) ListMeContactFavorites(ctx context.Context, request gen.ListMeContactFavoritesRequestObject) (gen.ListMeContactFavoritesResponseObject, error) {
+	return s.Catalog.ListMeContactFavorites(ctx, request)
+}
+
+func (s apiServer) ListMeContactAlbums(ctx context.Context, request gen.ListMeContactAlbumsRequestObject) (gen.ListMeContactAlbumsResponseObject, error) {
+	return s.Catalog.ListMeContactAlbums(ctx, request)
+}
+
+func (s apiServer) ListMeContactGalleries(ctx context.Context, request gen.ListMeContactGalleriesRequestObject) (gen.ListMeContactGalleriesResponseObject, error) {
+	return s.Catalog.ListMeContactGalleries(ctx, request)
+}
+
+func (s apiServer) ListMeContactGroups(ctx context.Context, request gen.ListMeContactGroupsRequestObject) (gen.ListMeContactGroupsResponseObject, error) {
+	return s.Catalog.ListMeContactGroups(ctx, request)
+}
+
+func (s apiServer) GetMeContactAbout(ctx context.Context, request gen.GetMeContactAboutRequestObject) (gen.GetMeContactAboutResponseObject, error) {
+	return s.Catalog.GetMeContactAbout(ctx, request)
+}
+
+func (s apiServer) SetMeContactGroupPoolCrawl(ctx context.Context, request gen.SetMeContactGroupPoolCrawlRequestObject) (gen.SetMeContactGroupPoolCrawlResponseObject, error) {
+	return s.Catalog.SetMeContactGroupPoolCrawl(ctx, request)
+}
+
+func (s apiServer) PrioritiseMeContactSizes(ctx context.Context, request gen.PrioritiseMeContactSizesRequestObject) (gen.PrioritiseMeContactSizesResponseObject, error) {
+	return s.Catalog.PrioritiseMeContactSizes(ctx, request)
 }

@@ -1,0 +1,129 @@
+contact:
+  get:
+    operationId: getMeContact
+    tags: [catalog]
+    summary: Get contact identity and user-scoped crawl progress
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+    responses:
+      '200': { description: Contact visible to the signed-in user, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/ContactDetail } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '403': { description: Contact is forbidden, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '404': { description: Contact not found or not visible, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '500': { description: Contact could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+
+photos:
+  get:
+    operationId: listMeContactPhotos
+    tags: [catalog]
+    summary: List photos visible for one contact
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
+      - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+    responses:
+      '200': { description: Contact photo page, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/ContactPhotoPage } } }}
+      '400': { description: Invalid page request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '403': { description: Contact is forbidden, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '404': { description: Contact not found or not visible, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '500': { description: Photos could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+
+favorites:
+  get:
+    operationId: listMeContactFavorites
+    tags: [catalog]
+    summary: List photos favorited by a contact
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
+      - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+    responses:
+      '200': { description: Contact favorite page, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/ContactFavoritePage } } }}
+      '400': { description: Invalid page request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '403': { description: Contact is forbidden, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '404': { description: Contact not found or not visible, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '500': { description: Favorites could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+
+albums:
+  get:
+    operationId: listMeContactAlbums
+    tags: [catalog]
+    summary: List albums owned by a contact
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+    responses:
+      '200': { description: Contact albums, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/ContactAlbumPage } } }}
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '403': { description: Contact is forbidden, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '404': { description: Contact not found or not visible, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '500': { description: Albums could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+
+galleries:
+  get:
+    operationId: listMeContactGalleries
+    tags: [catalog]
+    summary: List galleries owned by a contact
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+    responses:
+      '200': { description: Contact galleries, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/ContactGalleryPage } } }}
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '403': { description: Contact is forbidden, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '404': { description: Contact not found or not visible, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '500': { description: Galleries could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+
+groups:
+  get:
+    operationId: listMeContactGroups
+    tags: [catalog]
+    summary: List groups associated with a contact
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+    responses:
+      '200': { description: Contact groups, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/ContactGroupPage } } }}
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '403': { description: Contact is forbidden, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '404': { description: Contact not found or not visible, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '500': { description: Groups could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+
+about:
+  get:
+    operationId: getMeContactAbout
+    tags: [catalog]
+    summary: Get user-scoped contact crawl details
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+    responses:
+      '200': { description: Contact crawl details, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/ContactAbout } } }}
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '403': { description: Contact is forbidden, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '404': { description: Contact not found or not visible, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '500': { description: About data could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+
+pool_crawl:
+  put:
+    operationId: setMeContactGroupPoolCrawl
+    tags: [catalog]
+    summary: Change pool crawling preference for one group
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { name: group_nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: ../schemas/catalog.yaml#/ContactGroupPoolCrawlRequest }
+    responses:
+      '200': { description: Updated group preference, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/ContactGroupPoolCrawlResponse } } }}
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
+      '404': { description: Contact or group not found, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}

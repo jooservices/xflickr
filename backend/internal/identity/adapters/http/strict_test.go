@@ -192,3 +192,56 @@ func TestStrictHandlerLeavesNodeEndpointsToCluster(t *testing.T) {
 		t.Fatalf("heartbeat error = %v", err)
 	}
 }
+
+func TestStrictContactRoutesRemainOwnedByCatalog(t *testing.T) {
+	handler := StrictHandler{}
+	calls := []struct {
+		name string
+		call func() error
+	}{
+		{"interests", func() error {
+			_, err := handler.ListMeCrawlInterests(t.Context(), gen.ListMeCrawlInterestsRequestObject{})
+			return err
+		}},
+		{"detail", func() error { _, err := handler.GetMeContact(t.Context(), gen.GetMeContactRequestObject{}); return err }},
+		{"about", func() error {
+			_, err := handler.GetMeContactAbout(t.Context(), gen.GetMeContactAboutRequestObject{})
+			return err
+		}},
+		{"albums", func() error {
+			_, err := handler.ListMeContactAlbums(t.Context(), gen.ListMeContactAlbumsRequestObject{})
+			return err
+		}},
+		{"favorites", func() error {
+			_, err := handler.ListMeContactFavorites(t.Context(), gen.ListMeContactFavoritesRequestObject{})
+			return err
+		}},
+		{"galleries", func() error {
+			_, err := handler.ListMeContactGalleries(t.Context(), gen.ListMeContactGalleriesRequestObject{})
+			return err
+		}},
+		{"groups", func() error {
+			_, err := handler.ListMeContactGroups(t.Context(), gen.ListMeContactGroupsRequestObject{})
+			return err
+		}},
+		{"group preference", func() error {
+			_, err := handler.SetMeContactGroupPoolCrawl(t.Context(), gen.SetMeContactGroupPoolCrawlRequestObject{})
+			return err
+		}},
+		{"photos", func() error {
+			_, err := handler.ListMeContactPhotos(t.Context(), gen.ListMeContactPhotosRequestObject{})
+			return err
+		}},
+		{"sizes priority", func() error {
+			_, err := handler.PrioritiseMeContactSizes(t.Context(), gen.PrioritiseMeContactSizesRequestObject{})
+			return err
+		}},
+	}
+	for _, tc := range calls {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.call(); !errors.Is(err, errCatalogServedByCatalog) {
+				t.Fatalf("contact route error = %v", err)
+			}
+		})
+	}
+}

@@ -23,10 +23,13 @@ import type {
 
 import type {
   CrawlContactRequest,
+  CrawlInterestPage,
   CrawlQueue,
   CrawlSettings,
   CrawlStatus,
   Error,
+  ListMeCrawlInterestsParams,
+  SizesPriorityResponse,
   StarContactRequest,
   UpdateCrawlSettingsRequest,
 } from '../models';
@@ -577,6 +580,296 @@ export const useUpdateMeCrawlSettings = <TError = Error, TContext = unknown>(
   TContext
 > => {
   return useMutation(getUpdateMeCrawlSettingsMutationOptions(options), queryClient);
+};
+export type listMeCrawlInterestsResponse200 = {
+  data: CrawlInterestPage;
+  status: 200;
+};
+
+export type listMeCrawlInterestsResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type listMeCrawlInterestsResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type listMeCrawlInterestsResponse500 = {
+  data: Error;
+  status: 500;
+};
+
+export type listMeCrawlInterestsResponseSuccess = listMeCrawlInterestsResponse200 & {
+  headers: Headers;
+};
+export type listMeCrawlInterestsResponseError = (
+  | listMeCrawlInterestsResponse400
+  | listMeCrawlInterestsResponse401
+  | listMeCrawlInterestsResponse500
+) & {
+  headers: Headers;
+};
+
+export type listMeCrawlInterestsResponse =
+  listMeCrawlInterestsResponseSuccess | listMeCrawlInterestsResponseError;
+
+export const getListMeCrawlInterestsUrl = (params?: ListMeCrawlInterestsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/me/crawl/interests?${stringifiedParams}`
+    : `/me/crawl/interests`;
+};
+
+/**
+ * @summary List the signed-in user's discovered contacts
+ */
+export const listMeCrawlInterests = async (
+  params?: ListMeCrawlInterestsParams,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<listMeCrawlInterestsResponse> => {
+  return customFetch<listMeCrawlInterestsResponse>(getListMeCrawlInterestsUrl(params), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getListMeCrawlInterestsQueryKey = (params?: ListMeCrawlInterestsParams) => {
+  return [`/me/crawl/interests`, ...(params ? [params] : [])] as const;
+};
+
+export const getListMeCrawlInterestsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listMeCrawlInterests>>,
+  TError = Error,
+>(
+  params?: ListMeCrawlInterestsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeCrawlInterests>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListMeCrawlInterestsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listMeCrawlInterests>>> = ({ signal }) =>
+    listMeCrawlInterests(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listMeCrawlInterests>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListMeCrawlInterestsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listMeCrawlInterests>>
+>;
+export type ListMeCrawlInterestsQueryError = Error;
+
+export function useListMeCrawlInterests<
+  TData = Awaited<ReturnType<typeof listMeCrawlInterests>>,
+  TError = Error,
+>(
+  params: undefined | ListMeCrawlInterestsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeCrawlInterests>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMeCrawlInterests>>,
+          TError,
+          Awaited<ReturnType<typeof listMeCrawlInterests>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListMeCrawlInterests<
+  TData = Awaited<ReturnType<typeof listMeCrawlInterests>>,
+  TError = Error,
+>(
+  params?: ListMeCrawlInterestsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeCrawlInterests>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMeCrawlInterests>>,
+          TError,
+          Awaited<ReturnType<typeof listMeCrawlInterests>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListMeCrawlInterests<
+  TData = Awaited<ReturnType<typeof listMeCrawlInterests>>,
+  TError = Error,
+>(
+  params?: ListMeCrawlInterestsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeCrawlInterests>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List the signed-in user's discovered contacts
+ */
+
+export function useListMeCrawlInterests<
+  TData = Awaited<ReturnType<typeof listMeCrawlInterests>>,
+  TError = Error,
+>(
+  params?: ListMeCrawlInterestsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeCrawlInterests>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListMeCrawlInterestsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type prioritiseMeContactSizesResponse200 = {
+  data: SizesPriorityResponse;
+  status: 200;
+};
+
+export type prioritiseMeContactSizesResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type prioritiseMeContactSizesResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type prioritiseMeContactSizesResponseSuccess = prioritiseMeContactSizesResponse200 & {
+  headers: Headers;
+};
+export type prioritiseMeContactSizesResponseError = (
+  prioritiseMeContactSizesResponse401 | prioritiseMeContactSizesResponse404
+) & {
+  headers: Headers;
+};
+
+export type prioritiseMeContactSizesResponse =
+  prioritiseMeContactSizesResponseSuccess | prioritiseMeContactSizesResponseError;
+
+export const getPrioritiseMeContactSizesUrl = (nsid: string) => {
+  return `/me/contacts/${nsid}/sizes-priority`;
+};
+
+/**
+ * @summary Prioritise pending size work for a contact
+ */
+export const prioritiseMeContactSizes = async (
+  nsid: string,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<prioritiseMeContactSizesResponse> => {
+  return customFetch<prioritiseMeContactSizesResponse>(getPrioritiseMeContactSizesUrl(nsid), {
+    ...options,
+    method: 'PUT',
+  });
+};
+
+export const getPrioritiseMeContactSizesMutationKey = () => ['prioritiseMeContactSizes'] as const;
+
+export const getPrioritiseMeContactSizesMutationOptions = <
+  TError = Error,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof prioritiseMeContactSizes>>,
+    TError,
+    PrioritiseMeContactSizesMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof prioritiseMeContactSizes>>,
+  TError,
+  PrioritiseMeContactSizesMutationVariables,
+  TContext
+> => {
+  const mutationKey = getPrioritiseMeContactSizesMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof prioritiseMeContactSizes>>,
+    PrioritiseMeContactSizesMutationVariables
+  > = (props) => {
+    const { nsid } = props ?? {};
+
+    return prioritiseMeContactSizes(nsid, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PrioritiseMeContactSizesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof prioritiseMeContactSizes>>
+>;
+
+export type PrioritiseMeContactSizesMutationError = Error;
+export type PrioritiseMeContactSizesMutationVariables = { nsid: string };
+
+/**
+ * @summary Prioritise pending size work for a contact
+ */
+export const usePrioritiseMeContactSizes = <TError = Error, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof prioritiseMeContactSizes>>,
+      TError,
+      PrioritiseMeContactSizesMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof prioritiseMeContactSizes>>,
+  TError,
+  PrioritiseMeContactSizesMutationVariables,
+  TContext
+> => {
+  return useMutation(getPrioritiseMeContactSizesMutationOptions(options), queryClient);
 };
 export type starMyContactResponse204 = {
   data: void;

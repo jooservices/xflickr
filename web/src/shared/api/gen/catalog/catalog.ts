@@ -5,15 +5,18 @@
  * HTTP API shared by the XFlickr backend and web client.
  * OpenAPI spec version: 0.0.0
  */
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
   DefinedUseQueryResult,
+  MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from '@tanstack/react-query';
@@ -25,10 +28,21 @@ import type {
   CatalogPersonPage,
   CatalogPhoto,
   CatalogPhotoPage,
+  ContactAbout,
+  ContactAlbumPage,
+  ContactDetail,
+  ContactFavoritePage,
+  ContactGalleryPage,
+  ContactGroupPage,
+  ContactGroupPoolCrawlRequest,
+  ContactGroupPoolCrawlResponse,
+  ContactPhotoPage,
   Error,
   ListAlbumPhotosParams,
   ListAlbumsParams,
   ListFavoritesParams,
+  ListMeContactFavoritesParams,
+  ListMeContactPhotosParams,
   ListPeopleParams,
   ListPersonPhotosParams,
 } from '../models';
@@ -52,6 +66,1402 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   return result;
 };
 
+export type getMeContactResponse200 = {
+  data: ContactDetail;
+  status: 200;
+};
+
+export type getMeContactResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type getMeContactResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type getMeContactResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type getMeContactResponse500 = {
+  data: Error;
+  status: 500;
+};
+
+export type getMeContactResponseSuccess = getMeContactResponse200 & {
+  headers: Headers;
+};
+export type getMeContactResponseError = (
+  | getMeContactResponse401
+  | getMeContactResponse403
+  | getMeContactResponse404
+  | getMeContactResponse500
+) & {
+  headers: Headers;
+};
+
+export type getMeContactResponse = getMeContactResponseSuccess | getMeContactResponseError;
+
+export const getGetMeContactUrl = (nsid: string) => {
+  return `/me/contacts/${nsid}`;
+};
+
+/**
+ * @summary Get contact identity and user-scoped crawl progress
+ */
+export const getMeContact = async (
+  nsid: string,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getMeContactResponse> => {
+  return customFetch<getMeContactResponse>(getGetMeContactUrl(nsid), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getGetMeContactQueryKey = (nsid: string) => {
+  return [`/me/contacts/${nsid}`] as const;
+};
+
+export const getGetMeContactQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMeContact>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeContact>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetMeContactQueryKey(nsid);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMeContact>>> = ({ signal }) =>
+    getMeContact(nsid, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: nsid !== null && nsid !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getMeContact>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type GetMeContactQueryResult = NonNullable<Awaited<ReturnType<typeof getMeContact>>>;
+export type GetMeContactQueryError = Error;
+
+export function useGetMeContact<TData = Awaited<ReturnType<typeof getMeContact>>, TError = Error>(
+  nsid: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeContact>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMeContact>>,
+          TError,
+          Awaited<ReturnType<typeof getMeContact>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetMeContact<TData = Awaited<ReturnType<typeof getMeContact>>, TError = Error>(
+  nsid: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeContact>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMeContact>>,
+          TError,
+          Awaited<ReturnType<typeof getMeContact>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetMeContact<TData = Awaited<ReturnType<typeof getMeContact>>, TError = Error>(
+  nsid: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeContact>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get contact identity and user-scoped crawl progress
+ */
+
+export function useGetMeContact<TData = Awaited<ReturnType<typeof getMeContact>>, TError = Error>(
+  nsid: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeContact>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMeContactQueryOptions(nsid, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type listMeContactPhotosResponse200 = {
+  data: ContactPhotoPage;
+  status: 200;
+};
+
+export type listMeContactPhotosResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type listMeContactPhotosResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type listMeContactPhotosResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type listMeContactPhotosResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type listMeContactPhotosResponse500 = {
+  data: Error;
+  status: 500;
+};
+
+export type listMeContactPhotosResponseSuccess = listMeContactPhotosResponse200 & {
+  headers: Headers;
+};
+export type listMeContactPhotosResponseError = (
+  | listMeContactPhotosResponse400
+  | listMeContactPhotosResponse401
+  | listMeContactPhotosResponse403
+  | listMeContactPhotosResponse404
+  | listMeContactPhotosResponse500
+) & {
+  headers: Headers;
+};
+
+export type listMeContactPhotosResponse =
+  listMeContactPhotosResponseSuccess | listMeContactPhotosResponseError;
+
+export const getListMeContactPhotosUrl = (nsid: string, params?: ListMeContactPhotosParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/me/contacts/${nsid}/photos?${stringifiedParams}`
+    : `/me/contacts/${nsid}/photos`;
+};
+
+/**
+ * @summary List photos visible for one contact
+ */
+export const listMeContactPhotos = async (
+  nsid: string,
+  params?: ListMeContactPhotosParams,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<listMeContactPhotosResponse> => {
+  return customFetch<listMeContactPhotosResponse>(getListMeContactPhotosUrl(nsid, params), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getListMeContactPhotosQueryKey = (
+  nsid: string,
+  params?: ListMeContactPhotosParams,
+) => {
+  return [`/me/contacts/${nsid}/photos`, ...(params ? [params] : [])] as const;
+};
+
+export const getListMeContactPhotosQueryOptions = <
+  TData = Awaited<ReturnType<typeof listMeContactPhotos>>,
+  TError = Error,
+>(
+  nsid: string,
+  params?: ListMeContactPhotosParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactPhotos>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListMeContactPhotosQueryKey(nsid, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listMeContactPhotos>>> = ({ signal }) =>
+    listMeContactPhotos(nsid, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: nsid !== null && nsid !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof listMeContactPhotos>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ListMeContactPhotosQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listMeContactPhotos>>
+>;
+export type ListMeContactPhotosQueryError = Error;
+
+export function useListMeContactPhotos<
+  TData = Awaited<ReturnType<typeof listMeContactPhotos>>,
+  TError = Error,
+>(
+  nsid: string,
+  params: undefined | ListMeContactPhotosParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactPhotos>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMeContactPhotos>>,
+          TError,
+          Awaited<ReturnType<typeof listMeContactPhotos>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListMeContactPhotos<
+  TData = Awaited<ReturnType<typeof listMeContactPhotos>>,
+  TError = Error,
+>(
+  nsid: string,
+  params?: ListMeContactPhotosParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactPhotos>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMeContactPhotos>>,
+          TError,
+          Awaited<ReturnType<typeof listMeContactPhotos>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListMeContactPhotos<
+  TData = Awaited<ReturnType<typeof listMeContactPhotos>>,
+  TError = Error,
+>(
+  nsid: string,
+  params?: ListMeContactPhotosParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactPhotos>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List photos visible for one contact
+ */
+
+export function useListMeContactPhotos<
+  TData = Awaited<ReturnType<typeof listMeContactPhotos>>,
+  TError = Error,
+>(
+  nsid: string,
+  params?: ListMeContactPhotosParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactPhotos>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListMeContactPhotosQueryOptions(nsid, params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type listMeContactFavoritesResponse200 = {
+  data: ContactFavoritePage;
+  status: 200;
+};
+
+export type listMeContactFavoritesResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type listMeContactFavoritesResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type listMeContactFavoritesResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type listMeContactFavoritesResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type listMeContactFavoritesResponse500 = {
+  data: Error;
+  status: 500;
+};
+
+export type listMeContactFavoritesResponseSuccess = listMeContactFavoritesResponse200 & {
+  headers: Headers;
+};
+export type listMeContactFavoritesResponseError = (
+  | listMeContactFavoritesResponse400
+  | listMeContactFavoritesResponse401
+  | listMeContactFavoritesResponse403
+  | listMeContactFavoritesResponse404
+  | listMeContactFavoritesResponse500
+) & {
+  headers: Headers;
+};
+
+export type listMeContactFavoritesResponse =
+  listMeContactFavoritesResponseSuccess | listMeContactFavoritesResponseError;
+
+export const getListMeContactFavoritesUrl = (
+  nsid: string,
+  params?: ListMeContactFavoritesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/me/contacts/${nsid}/favorites?${stringifiedParams}`
+    : `/me/contacts/${nsid}/favorites`;
+};
+
+/**
+ * @summary List photos favorited by a contact
+ */
+export const listMeContactFavorites = async (
+  nsid: string,
+  params?: ListMeContactFavoritesParams,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<listMeContactFavoritesResponse> => {
+  return customFetch<listMeContactFavoritesResponse>(getListMeContactFavoritesUrl(nsid, params), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getListMeContactFavoritesQueryKey = (
+  nsid: string,
+  params?: ListMeContactFavoritesParams,
+) => {
+  return [`/me/contacts/${nsid}/favorites`, ...(params ? [params] : [])] as const;
+};
+
+export const getListMeContactFavoritesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listMeContactFavorites>>,
+  TError = Error,
+>(
+  nsid: string,
+  params?: ListMeContactFavoritesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactFavorites>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListMeContactFavoritesQueryKey(nsid, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listMeContactFavorites>>> = ({ signal }) =>
+    listMeContactFavorites(nsid, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: nsid !== null && nsid !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof listMeContactFavorites>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ListMeContactFavoritesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listMeContactFavorites>>
+>;
+export type ListMeContactFavoritesQueryError = Error;
+
+export function useListMeContactFavorites<
+  TData = Awaited<ReturnType<typeof listMeContactFavorites>>,
+  TError = Error,
+>(
+  nsid: string,
+  params: undefined | ListMeContactFavoritesParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactFavorites>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMeContactFavorites>>,
+          TError,
+          Awaited<ReturnType<typeof listMeContactFavorites>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListMeContactFavorites<
+  TData = Awaited<ReturnType<typeof listMeContactFavorites>>,
+  TError = Error,
+>(
+  nsid: string,
+  params?: ListMeContactFavoritesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactFavorites>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMeContactFavorites>>,
+          TError,
+          Awaited<ReturnType<typeof listMeContactFavorites>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListMeContactFavorites<
+  TData = Awaited<ReturnType<typeof listMeContactFavorites>>,
+  TError = Error,
+>(
+  nsid: string,
+  params?: ListMeContactFavoritesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactFavorites>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List photos favorited by a contact
+ */
+
+export function useListMeContactFavorites<
+  TData = Awaited<ReturnType<typeof listMeContactFavorites>>,
+  TError = Error,
+>(
+  nsid: string,
+  params?: ListMeContactFavoritesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactFavorites>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListMeContactFavoritesQueryOptions(nsid, params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type listMeContactAlbumsResponse200 = {
+  data: ContactAlbumPage;
+  status: 200;
+};
+
+export type listMeContactAlbumsResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type listMeContactAlbumsResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type listMeContactAlbumsResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type listMeContactAlbumsResponse500 = {
+  data: Error;
+  status: 500;
+};
+
+export type listMeContactAlbumsResponseSuccess = listMeContactAlbumsResponse200 & {
+  headers: Headers;
+};
+export type listMeContactAlbumsResponseError = (
+  | listMeContactAlbumsResponse401
+  | listMeContactAlbumsResponse403
+  | listMeContactAlbumsResponse404
+  | listMeContactAlbumsResponse500
+) & {
+  headers: Headers;
+};
+
+export type listMeContactAlbumsResponse =
+  listMeContactAlbumsResponseSuccess | listMeContactAlbumsResponseError;
+
+export const getListMeContactAlbumsUrl = (nsid: string) => {
+  return `/me/contacts/${nsid}/albums`;
+};
+
+/**
+ * @summary List albums owned by a contact
+ */
+export const listMeContactAlbums = async (
+  nsid: string,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<listMeContactAlbumsResponse> => {
+  return customFetch<listMeContactAlbumsResponse>(getListMeContactAlbumsUrl(nsid), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getListMeContactAlbumsQueryKey = (nsid: string) => {
+  return [`/me/contacts/${nsid}/albums`] as const;
+};
+
+export const getListMeContactAlbumsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listMeContactAlbums>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactAlbums>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListMeContactAlbumsQueryKey(nsid);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listMeContactAlbums>>> = ({ signal }) =>
+    listMeContactAlbums(nsid, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: nsid !== null && nsid !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof listMeContactAlbums>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ListMeContactAlbumsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listMeContactAlbums>>
+>;
+export type ListMeContactAlbumsQueryError = Error;
+
+export function useListMeContactAlbums<
+  TData = Awaited<ReturnType<typeof listMeContactAlbums>>,
+  TError = Error,
+>(
+  nsid: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactAlbums>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMeContactAlbums>>,
+          TError,
+          Awaited<ReturnType<typeof listMeContactAlbums>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListMeContactAlbums<
+  TData = Awaited<ReturnType<typeof listMeContactAlbums>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactAlbums>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMeContactAlbums>>,
+          TError,
+          Awaited<ReturnType<typeof listMeContactAlbums>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListMeContactAlbums<
+  TData = Awaited<ReturnType<typeof listMeContactAlbums>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactAlbums>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List albums owned by a contact
+ */
+
+export function useListMeContactAlbums<
+  TData = Awaited<ReturnType<typeof listMeContactAlbums>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactAlbums>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListMeContactAlbumsQueryOptions(nsid, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type listMeContactGalleriesResponse200 = {
+  data: ContactGalleryPage;
+  status: 200;
+};
+
+export type listMeContactGalleriesResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type listMeContactGalleriesResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type listMeContactGalleriesResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type listMeContactGalleriesResponse500 = {
+  data: Error;
+  status: 500;
+};
+
+export type listMeContactGalleriesResponseSuccess = listMeContactGalleriesResponse200 & {
+  headers: Headers;
+};
+export type listMeContactGalleriesResponseError = (
+  | listMeContactGalleriesResponse401
+  | listMeContactGalleriesResponse403
+  | listMeContactGalleriesResponse404
+  | listMeContactGalleriesResponse500
+) & {
+  headers: Headers;
+};
+
+export type listMeContactGalleriesResponse =
+  listMeContactGalleriesResponseSuccess | listMeContactGalleriesResponseError;
+
+export const getListMeContactGalleriesUrl = (nsid: string) => {
+  return `/me/contacts/${nsid}/galleries`;
+};
+
+/**
+ * @summary List galleries owned by a contact
+ */
+export const listMeContactGalleries = async (
+  nsid: string,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<listMeContactGalleriesResponse> => {
+  return customFetch<listMeContactGalleriesResponse>(getListMeContactGalleriesUrl(nsid), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getListMeContactGalleriesQueryKey = (nsid: string) => {
+  return [`/me/contacts/${nsid}/galleries`] as const;
+};
+
+export const getListMeContactGalleriesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listMeContactGalleries>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactGalleries>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListMeContactGalleriesQueryKey(nsid);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listMeContactGalleries>>> = ({ signal }) =>
+    listMeContactGalleries(nsid, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: nsid !== null && nsid !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof listMeContactGalleries>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ListMeContactGalleriesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listMeContactGalleries>>
+>;
+export type ListMeContactGalleriesQueryError = Error;
+
+export function useListMeContactGalleries<
+  TData = Awaited<ReturnType<typeof listMeContactGalleries>>,
+  TError = Error,
+>(
+  nsid: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactGalleries>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMeContactGalleries>>,
+          TError,
+          Awaited<ReturnType<typeof listMeContactGalleries>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListMeContactGalleries<
+  TData = Awaited<ReturnType<typeof listMeContactGalleries>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactGalleries>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMeContactGalleries>>,
+          TError,
+          Awaited<ReturnType<typeof listMeContactGalleries>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListMeContactGalleries<
+  TData = Awaited<ReturnType<typeof listMeContactGalleries>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactGalleries>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List galleries owned by a contact
+ */
+
+export function useListMeContactGalleries<
+  TData = Awaited<ReturnType<typeof listMeContactGalleries>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactGalleries>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListMeContactGalleriesQueryOptions(nsid, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type listMeContactGroupsResponse200 = {
+  data: ContactGroupPage;
+  status: 200;
+};
+
+export type listMeContactGroupsResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type listMeContactGroupsResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type listMeContactGroupsResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type listMeContactGroupsResponse500 = {
+  data: Error;
+  status: 500;
+};
+
+export type listMeContactGroupsResponseSuccess = listMeContactGroupsResponse200 & {
+  headers: Headers;
+};
+export type listMeContactGroupsResponseError = (
+  | listMeContactGroupsResponse401
+  | listMeContactGroupsResponse403
+  | listMeContactGroupsResponse404
+  | listMeContactGroupsResponse500
+) & {
+  headers: Headers;
+};
+
+export type listMeContactGroupsResponse =
+  listMeContactGroupsResponseSuccess | listMeContactGroupsResponseError;
+
+export const getListMeContactGroupsUrl = (nsid: string) => {
+  return `/me/contacts/${nsid}/groups`;
+};
+
+/**
+ * @summary List groups associated with a contact
+ */
+export const listMeContactGroups = async (
+  nsid: string,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<listMeContactGroupsResponse> => {
+  return customFetch<listMeContactGroupsResponse>(getListMeContactGroupsUrl(nsid), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getListMeContactGroupsQueryKey = (nsid: string) => {
+  return [`/me/contacts/${nsid}/groups`] as const;
+};
+
+export const getListMeContactGroupsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listMeContactGroups>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactGroups>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListMeContactGroupsQueryKey(nsid);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listMeContactGroups>>> = ({ signal }) =>
+    listMeContactGroups(nsid, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: nsid !== null && nsid !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof listMeContactGroups>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ListMeContactGroupsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listMeContactGroups>>
+>;
+export type ListMeContactGroupsQueryError = Error;
+
+export function useListMeContactGroups<
+  TData = Awaited<ReturnType<typeof listMeContactGroups>>,
+  TError = Error,
+>(
+  nsid: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactGroups>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMeContactGroups>>,
+          TError,
+          Awaited<ReturnType<typeof listMeContactGroups>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListMeContactGroups<
+  TData = Awaited<ReturnType<typeof listMeContactGroups>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactGroups>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMeContactGroups>>,
+          TError,
+          Awaited<ReturnType<typeof listMeContactGroups>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListMeContactGroups<
+  TData = Awaited<ReturnType<typeof listMeContactGroups>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactGroups>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List groups associated with a contact
+ */
+
+export function useListMeContactGroups<
+  TData = Awaited<ReturnType<typeof listMeContactGroups>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listMeContactGroups>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListMeContactGroupsQueryOptions(nsid, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type getMeContactAboutResponse200 = {
+  data: ContactAbout;
+  status: 200;
+};
+
+export type getMeContactAboutResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type getMeContactAboutResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type getMeContactAboutResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type getMeContactAboutResponse500 = {
+  data: Error;
+  status: 500;
+};
+
+export type getMeContactAboutResponseSuccess = getMeContactAboutResponse200 & {
+  headers: Headers;
+};
+export type getMeContactAboutResponseError = (
+  | getMeContactAboutResponse401
+  | getMeContactAboutResponse403
+  | getMeContactAboutResponse404
+  | getMeContactAboutResponse500
+) & {
+  headers: Headers;
+};
+
+export type getMeContactAboutResponse =
+  getMeContactAboutResponseSuccess | getMeContactAboutResponseError;
+
+export const getGetMeContactAboutUrl = (nsid: string) => {
+  return `/me/contacts/${nsid}/about`;
+};
+
+/**
+ * @summary Get user-scoped contact crawl details
+ */
+export const getMeContactAbout = async (
+  nsid: string,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getMeContactAboutResponse> => {
+  return customFetch<getMeContactAboutResponse>(getGetMeContactAboutUrl(nsid), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getGetMeContactAboutQueryKey = (nsid: string) => {
+  return [`/me/contacts/${nsid}/about`] as const;
+};
+
+export const getGetMeContactAboutQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMeContactAbout>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeContactAbout>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetMeContactAboutQueryKey(nsid);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMeContactAbout>>> = ({ signal }) =>
+    getMeContactAbout(nsid, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: nsid !== null && nsid !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getMeContactAbout>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type GetMeContactAboutQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMeContactAbout>>
+>;
+export type GetMeContactAboutQueryError = Error;
+
+export function useGetMeContactAbout<
+  TData = Awaited<ReturnType<typeof getMeContactAbout>>,
+  TError = Error,
+>(
+  nsid: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeContactAbout>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMeContactAbout>>,
+          TError,
+          Awaited<ReturnType<typeof getMeContactAbout>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetMeContactAbout<
+  TData = Awaited<ReturnType<typeof getMeContactAbout>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeContactAbout>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMeContactAbout>>,
+          TError,
+          Awaited<ReturnType<typeof getMeContactAbout>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetMeContactAbout<
+  TData = Awaited<ReturnType<typeof getMeContactAbout>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeContactAbout>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get user-scoped contact crawl details
+ */
+
+export function useGetMeContactAbout<
+  TData = Awaited<ReturnType<typeof getMeContactAbout>>,
+  TError = Error,
+>(
+  nsid: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeContactAbout>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMeContactAboutQueryOptions(nsid, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type setMeContactGroupPoolCrawlResponse200 = {
+  data: ContactGroupPoolCrawlResponse;
+  status: 200;
+};
+
+export type setMeContactGroupPoolCrawlResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type setMeContactGroupPoolCrawlResponse404 = {
+  data: Error;
+  status: 404;
+};
+
+export type setMeContactGroupPoolCrawlResponseSuccess = setMeContactGroupPoolCrawlResponse200 & {
+  headers: Headers;
+};
+export type setMeContactGroupPoolCrawlResponseError = (
+  setMeContactGroupPoolCrawlResponse401 | setMeContactGroupPoolCrawlResponse404
+) & {
+  headers: Headers;
+};
+
+export type setMeContactGroupPoolCrawlResponse =
+  setMeContactGroupPoolCrawlResponseSuccess | setMeContactGroupPoolCrawlResponseError;
+
+export const getSetMeContactGroupPoolCrawlUrl = (nsid: string, groupNsid: string) => {
+  return `/me/contacts/${nsid}/groups/${groupNsid}/pool-crawl`;
+};
+
+/**
+ * @summary Change pool crawling preference for one group
+ */
+export const setMeContactGroupPoolCrawl = async (
+  nsid: string,
+  groupNsid: string,
+  contactGroupPoolCrawlRequest: ContactGroupPoolCrawlRequest,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<setMeContactGroupPoolCrawlResponse> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit['headers']>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  return customFetch<setMeContactGroupPoolCrawlResponse>(
+    getSetMeContactGroupPoolCrawlUrl(nsid, groupNsid),
+    {
+      ...options,
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+      body: JSON.stringify(contactGroupPoolCrawlRequest),
+    },
+  );
+};
+
+export const getSetMeContactGroupPoolCrawlMutationKey = () =>
+  ['setMeContactGroupPoolCrawl'] as const;
+
+export const getSetMeContactGroupPoolCrawlMutationOptions = <
+  TError = Error,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setMeContactGroupPoolCrawl>>,
+    TError,
+    SetMeContactGroupPoolCrawlMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setMeContactGroupPoolCrawl>>,
+  TError,
+  SetMeContactGroupPoolCrawlMutationVariables,
+  TContext
+> => {
+  const mutationKey = getSetMeContactGroupPoolCrawlMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setMeContactGroupPoolCrawl>>,
+    SetMeContactGroupPoolCrawlMutationVariables
+  > = (props) => {
+    const { nsid, groupNsid, data } = props ?? {};
+
+    return setMeContactGroupPoolCrawl(nsid, groupNsid, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetMeContactGroupPoolCrawlMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setMeContactGroupPoolCrawl>>
+>;
+export type SetMeContactGroupPoolCrawlMutationBody = ContactGroupPoolCrawlRequest;
+export type SetMeContactGroupPoolCrawlMutationError = Error;
+export type SetMeContactGroupPoolCrawlMutationVariables = {
+  nsid: string;
+  groupNsid: string;
+  data: ContactGroupPoolCrawlRequest;
+};
+
+/**
+ * @summary Change pool crawling preference for one group
+ */
+export const useSetMeContactGroupPoolCrawl = <TError = Error, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof setMeContactGroupPoolCrawl>>,
+      TError,
+      SetMeContactGroupPoolCrawlMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof setMeContactGroupPoolCrawl>>,
+  TError,
+  SetMeContactGroupPoolCrawlMutationVariables,
+  TContext
+> => {
+  return useMutation(getSetMeContactGroupPoolCrawlMutationOptions(options), queryClient);
+};
 export type listPeopleResponse200 = {
   data: CatalogPersonPage;
   status: 200;

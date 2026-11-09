@@ -8,9 +8,10 @@ import (
 type DownloadKind string
 
 const (
-	DownloadContact DownloadKind = "contact"
-	DownloadAlbum   DownloadKind = "album"
-	DownloadTray    DownloadKind = "tray"
+	DownloadContact   DownloadKind = "contact"
+	DownloadAlbum     DownloadKind = "album"
+	DownloadFavorites DownloadKind = "favorites"
+	DownloadTray      DownloadKind = "tray"
 )
 
 type ItemState string
@@ -54,7 +55,7 @@ func (d Download) Validate() error {
 		return ErrInvalidDownload
 	}
 	switch d.Kind {
-	case DownloadContact, DownloadAlbum, DownloadTray:
+	case DownloadContact, DownloadAlbum, DownloadFavorites, DownloadTray:
 	default:
 		return ErrInvalidDownload
 	}

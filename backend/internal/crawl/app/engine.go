@@ -162,6 +162,11 @@ type ReconcileWriter interface {
 	Complete(ctx context.Context, userID int64, person string, scannedAt, completedAt time.Time) error
 }
 
+// ContactProgressWriter updates contact-scoped summaries in the page transaction.
+type ContactProgressWriter interface {
+	Record(ctx context.Context, item domain.Item, result domain.Result) error
+}
+
 // Writers is everything the commit transaction writes through.
 type Writers struct {
 	Work         WorkWriter
@@ -169,6 +174,7 @@ type Writers struct {
 	Interests    InterestWriter
 	Observations ObservationWriter
 	Reconcile    ReconcileWriter
+	Progress     ContactProgressWriter
 }
 
 // UnitOfWork runs fn in one atomic transaction.
@@ -459,6 +465,11 @@ func (e *Engine) write(ctx context.Context, w Writers, item domain.Item, result 
 	}
 	if err := writeCatalog(ctx, w.Catalog, pageWriter, result); err != nil {
 		return err
+	}
+	if w.Progress != nil {
+		if err := w.Progress.Record(ctx, item, result); err != nil {
+			return err
+		}
 	}
 	if err := e.completeReconciliation(ctx, w, item, result); err != nil {
 		return err

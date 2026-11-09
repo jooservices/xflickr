@@ -18,22 +18,29 @@ type Repository struct {
 
 var _ catalogapp.DownloadPhotoRepository = Repository{}
 
-func (r Repository) DownloadCandidates(ctx context.Context, kind, subject string, ids []int64) ([]catalogapp.DownloadCandidate, error) {
-	if r.Pool == nil || ctx == nil {
-		return nil, errors.New("catalog: download database and context are required")
-	}
-	var rows pgx.Rows
-	var err error
+func downloadCandidateRows(ctx context.Context, pool interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}, kind string, userID int64, subject string, ids []int64,
+) (pgx.Rows, error) {
 	switch kind {
 	case "contact":
-		rows, err = r.Pool.Query(ctx, `WITH selected AS (SELECT p.id,p.owner_nsid,p.visibility,p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update AS sizes_confirmed FROM photos p WHERE p.owner_nsid=$1 AND p.tombstoned_at IS NULL ORDER BY p.id LIMIT 501) SELECT p.id,p.owner_nsid,p.visibility,p.sizes_confirmed,o.user_id,COALESCE(ss.enabled,false) FROM selected p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id ORDER BY p.id`, subject)
+		return pool.Query(ctx, `WITH selected AS (SELECT p.id,p.owner_nsid,p.visibility,p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update AS sizes_confirmed FROM photos p WHERE p.owner_nsid=$2 AND p.tombstoned_at IS NULL AND EXISTS(SELECT 1 FROM crawl_interests ci WHERE ci.user_id=$1 AND ci.person_nsid=$2) ORDER BY p.id LIMIT 501) SELECT p.id,p.owner_nsid,p.visibility,p.sizes_confirmed,o.user_id,COALESCE(ss.enabled,false) FROM selected p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id ORDER BY p.id`, userID, subject)
 	case "album":
-		rows, err = r.Pool.Query(ctx, `WITH selected AS (SELECT p.id,p.owner_nsid,p.visibility,p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update AS sizes_confirmed,ap.position FROM album_photos ap JOIN photos p ON p.id=ap.photo_id WHERE ap.album_id=$1 AND p.tombstoned_at IS NULL ORDER BY ap.position,p.id LIMIT 501) SELECT p.id,p.owner_nsid,p.visibility,p.sizes_confirmed,o.user_id,COALESCE(ss.enabled,false) FROM selected p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id ORDER BY p.position,p.id`, subject)
+		return pool.Query(ctx, `WITH selected AS (SELECT p.id,p.owner_nsid,p.visibility,p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update AS sizes_confirmed,ap.position FROM album_photos ap JOIN photos p ON p.id=ap.photo_id WHERE ap.album_id=$1 AND p.tombstoned_at IS NULL ORDER BY ap.position,p.id LIMIT 501) SELECT p.id,p.owner_nsid,p.visibility,p.sizes_confirmed,o.user_id,COALESCE(ss.enabled,false) FROM selected p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id ORDER BY p.position,p.id`, subject)
+	case "favorites":
+		return pool.Query(ctx, `WITH selected AS (SELECT p.id,p.owner_nsid,p.visibility,p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update AS sizes_confirmed,f.fave_date FROM favorites f JOIN photos p ON p.id=f.photo_id WHERE f.person_nsid=$2 AND f.removed_at IS NULL AND p.tombstoned_at IS NULL AND EXISTS(SELECT 1 FROM crawl_interests ci WHERE ci.user_id=$1 AND ci.person_nsid=$2) ORDER BY f.fave_date DESC,p.id DESC LIMIT 501) SELECT p.id,p.owner_nsid,p.visibility,p.sizes_confirmed,o.user_id,COALESCE(ss.enabled,false) FROM selected p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id ORDER BY p.fave_date DESC,p.id DESC`, userID, subject)
 	case "tray":
-		rows, err = r.Pool.Query(ctx, `SELECT p.id,p.owner_nsid,p.visibility,p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update, o.user_id, COALESCE(ss.enabled,false) FROM photos p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id WHERE p.id=ANY($1::bigint[]) AND p.tombstoned_at IS NULL ORDER BY p.id`, ids)
+		return pool.Query(ctx, `SELECT p.id,p.owner_nsid,p.visibility,p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update, o.user_id, COALESCE(ss.enabled,false) FROM photos p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id WHERE p.id=ANY($1::bigint[]) AND p.tombstoned_at IS NULL ORDER BY p.id`, ids)
 	default:
 		return nil, errors.New("catalog: invalid download kind")
 	}
+}
+
+func (r Repository) DownloadCandidates(ctx context.Context, userID int64, kind, subject string, ids []int64) ([]catalogapp.DownloadCandidate, error) {
+	if r.Pool == nil || ctx == nil || userID <= 0 {
+		return nil, errors.New("catalog: download database and context are required")
+	}
+	rows, err := downloadCandidateRows(ctx, r.Pool, kind, userID, subject, ids)
 	if err != nil {
 		return nil, fmt.Errorf("catalog: select download photos: %w", err)
 	}

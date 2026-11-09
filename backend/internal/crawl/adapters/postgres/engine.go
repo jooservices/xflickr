@@ -232,7 +232,7 @@ func (e *Engine) Do(ctx context.Context, fn func(app.Writers) error) error {
 	return e.run(ctx, func(tx Conn) error {
 		return fn(app.Writers{
 			Work: workTx{tx}, Catalog: e.catalog(tx), Interests: interestTx{tx},
-			Observations: observationTx{tx}, Reconcile: reconcileTx{tx},
+			Observations: observationTx{tx}, Reconcile: reconcileTx{tx}, Progress: contactProgressTx{tx},
 		})
 	})
 }

@@ -79,6 +79,65 @@ CrawlContactRequest:
   properties:
     nsid: { type: string, minLength: 1, maxLength: 255 }
 
+CrawlInterestStatus:
+  type: string
+  enum: [done, crawling, checking, queued, paused, error]
+
+CrawlInterestRecentPhoto:
+  type: object
+  additionalProperties: false
+  required: [id, thumbnail_url, alt]
+  properties:
+    id: { type: string }
+    thumbnail_url: { type: [string, 'null'], format: uri }
+    alt: { type: string }
+
+CrawlInterest:
+  type: object
+  additionalProperties: false
+  required: [nsid, name, username, avatar_url, depth, starred, status, photos_crawled, photos_total, favorites_count, sizes_percent, last_check_at, recent_photos]
+  properties:
+    nsid: { type: string }
+    name: { type: string }
+    username: { type: string }
+    avatar_url: { type: [string, 'null'], format: uri }
+    depth: { type: integer, minimum: 0 }
+    starred: { type: boolean }
+    status: { $ref: '#/CrawlInterestStatus' }
+    photos_crawled: { type: integer, format: int64, minimum: 0 }
+    photos_total: { type: integer, format: int64, minimum: 0 }
+    favorites_count: { type: integer, format: int64, minimum: 0 }
+    sizes_percent: { type: integer, minimum: 0, maximum: 100 }
+    last_check_at: { type: [string, 'null'], format: date-time }
+    recent_photos: { type: array, maxItems: 3, items: { $ref: '#/CrawlInterestRecentPhoto' } }
+
+CrawlInterestCounts:
+  type: object
+  additionalProperties: false
+  required: [all, starred, crawling, needs_attention]
+  properties:
+    all: { type: integer, format: int64, minimum: 0 }
+    starred: { type: integer, format: int64, minimum: 0 }
+    crawling: { type: integer, format: int64, minimum: 0 }
+    needs_attention: { type: integer, format: int64, minimum: 0 }
+
+CrawlInterestPage:
+  type: object
+  additionalProperties: false
+  required: [items, counts, next_cursor, updated_at]
+  properties:
+    items: { type: array, items: { $ref: '#/CrawlInterest' } }
+    counts: { $ref: '#/CrawlInterestCounts' }
+    next_cursor: { type: [string, 'null'] }
+    updated_at: { type: [string, 'null'], format: date-time }
+
+SizesPriorityResponse:
+  type: object
+  additionalProperties: false
+  required: [prioritised]
+  properties:
+    prioritised: { type: integer, format: int64, minimum: 0 }
+
 QueueLane:
   type: object
   required: [lane, backlog_calls, effective_calls_per_hour, eta_hours]

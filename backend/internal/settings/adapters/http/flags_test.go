@@ -66,7 +66,7 @@ func TestGetAdminFlagsMapsResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	flags, ok := response.(gen.GetAdminFlags200JSONResponse)
-	if !ok || len(flags) != 2 || flags[0].Name != "targeted" || flags[0].Audience != gen.UserIds || len(flags[0].UserIds) != 2 || flags[1].Name != "public" || flags[1].UserIds == nil {
+	if !ok || len(flags) != 2 || flags[0].Name != "targeted" || flags[0].Audience != gen.FeatureFlagAudienceUserIds || len(flags[0].UserIds) != 2 || flags[1].Name != "public" || flags[1].UserIds == nil {
 		t.Fatalf("response = %#v", response)
 	}
 	if _, err := (Handler{}).GetAdminFlags(context.Background(), gen.GetAdminFlagsRequestObject{}); err == nil {
@@ -221,8 +221,8 @@ func TestUpdateAdminFlagsMapsRequestAndValidation(t *testing.T) {
 	handler := Handler{Flags: service}
 	request := gen.UpdateAdminFlagsRequestObject{Body: &gen.UpdateAdminFlagsRequest{
 		Flags: []gen.FeatureFlag{
-			{Name: "admin", Enabled: true, Audience: gen.Admins, UserIds: []int64{}},
-			{Name: "targeted", Enabled: true, Audience: gen.UserIds, UserIds: []int64{2, 5}},
+			{Name: "admin", Enabled: true, Audience: gen.FeatureFlagAudienceAdmins, UserIds: []int64{}},
+			{Name: "targeted", Enabled: true, Audience: gen.FeatureFlagAudienceUserIds, UserIds: []int64{2, 5}},
 		},
 	}}
 	response, err := handler.UpdateAdminFlags(context.Background(), request)
@@ -236,8 +236,8 @@ func TestUpdateAdminFlagsMapsRequestAndValidation(t *testing.T) {
 	for _, invalid := range []gen.UpdateAdminFlagsRequestObject{
 		{},
 		{Body: &gen.UpdateAdminFlagsRequest{}},
-		{Body: &gen.UpdateAdminFlagsRequest{Flags: []gen.FeatureFlag{{Name: "INVALID", Audience: gen.All}}}},
-		{Body: &gen.UpdateAdminFlagsRequest{Flags: []gen.FeatureFlag{{Name: "duplicate", Audience: gen.All}, {Name: "duplicate", Audience: gen.All}}}},
+		{Body: &gen.UpdateAdminFlagsRequest{Flags: []gen.FeatureFlag{{Name: "INVALID", Audience: gen.FeatureFlagAudienceAll}}}},
+		{Body: &gen.UpdateAdminFlagsRequest{Flags: []gen.FeatureFlag{{Name: "duplicate", Audience: gen.FeatureFlagAudienceAll}, {Name: "duplicate", Audience: gen.FeatureFlagAudienceAll}}}},
 	} {
 		response, err := handler.UpdateAdminFlags(context.Background(), invalid)
 		if err != nil {

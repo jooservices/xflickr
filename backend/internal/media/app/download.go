@@ -55,7 +55,7 @@ func (s Downloads) Create(ctx context.Context, input CreateDownloadInput) (media
 			return mediadomain.Download{}, err
 		}
 	}
-	candidates, err := s.Catalog.Candidates(ctx, string(input.Kind), input.Subject, input.PhotoIDs)
+	candidates, err := s.Catalog.Candidates(ctx, input.UserID, string(input.Kind), input.Subject, input.PhotoIDs)
 	if err != nil {
 		return mediadomain.Download{}, err
 	}
@@ -106,7 +106,7 @@ func selectVisibleDownloadItems(userID int64, candidates []catalogapp.DownloadCa
 
 func validDownloadSelection(input CreateDownloadInput) bool {
 	if strings.TrimSpace(input.Subject) != "" && len(input.PhotoIDs) == 0 {
-		return input.Kind == mediadomain.DownloadContact || input.Kind == mediadomain.DownloadAlbum
+		return input.Kind == mediadomain.DownloadContact || input.Kind == mediadomain.DownloadAlbum || input.Kind == mediadomain.DownloadFavorites
 	}
 	if input.Kind != mediadomain.DownloadTray || strings.TrimSpace(input.Subject) != "" || len(input.PhotoIDs) == 0 || len(input.PhotoIDs) > MaxDownloadItems {
 		return false

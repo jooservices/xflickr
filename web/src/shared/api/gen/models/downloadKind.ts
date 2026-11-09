@@ -11,5 +11,6 @@ export type DownloadKind = (typeof DownloadKind)[keyof typeof DownloadKind];
 export const DownloadKind = {
   contact: 'contact',
   album: 'album',
+  favorites: 'favorites',
   tray: 'tray',
 } as const;

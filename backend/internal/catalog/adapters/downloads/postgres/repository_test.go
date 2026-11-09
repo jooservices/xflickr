@@ -19,9 +19,9 @@ func TestDownloadCandidatesReadsKindsAndDeduplicatesObservers(t *testing.T) {
 		{int64(2), "owner", "private", false, (*int64)(nil), false},
 	}}
 	db := &candidateDB{rows: rows}
-	for _, kind := range []string{"contact", "album", "tray"} {
+	for _, kind := range []string{"contact", "album", "favorites", "tray"} {
 		rows.position = 0
-		got, err := (Repository{Pool: db}).DownloadCandidates(ctx, kind, "owner", []int64{1, 2})
+		got, err := (Repository{Pool: db}).DownloadCandidates(ctx, 7, kind, "owner", []int64{1, 2})
 		if err != nil || len(got) != 2 {
 			t.Fatalf("%s candidates=%+v err=%v", kind, got, err)
 		}
@@ -40,27 +40,27 @@ func TestDownloadCandidatesReadsKindsAndDeduplicatesObservers(t *testing.T) {
 func TestDownloadCandidatesValidatesAndReportsDatabaseErrors(t *testing.T) {
 	ctx := context.Background()
 	db := &candidateDB{rows: &candidateRows{}}
-	if _, err := (Repository{}).DownloadCandidates(ctx, "contact", "owner", nil); err == nil {
+	if _, err := (Repository{}).DownloadCandidates(ctx, 7, "contact", "owner", nil); err == nil {
 		t.Fatal("missing pool was accepted")
 	}
-	if _, err := (Repository{Pool: db}).DownloadCandidates(nil, "contact", "owner", nil); err == nil {
+	if _, err := (Repository{Pool: db}).DownloadCandidates(nil, 7, "contact", "owner", nil); err == nil {
 		t.Fatal("missing context was accepted")
 	}
-	if _, err := (Repository{Pool: db}).DownloadCandidates(ctx, "unknown", "owner", nil); err == nil {
+	if _, err := (Repository{Pool: db}).DownloadCandidates(ctx, 7, "unknown", "owner", nil); err == nil {
 		t.Fatal("invalid kind was accepted")
 	}
 	boom := errors.New("database failed")
 	db.queryErr = boom
-	if _, err := (Repository{Pool: db}).DownloadCandidates(ctx, "contact", "owner", nil); !errors.Is(err, boom) {
+	if _, err := (Repository{Pool: db}).DownloadCandidates(ctx, 7, "contact", "owner", nil); !errors.Is(err, boom) {
 		t.Fatalf("query error=%v", err)
 	}
 	db.queryErr = nil
 	db.rows = &candidateRows{values: [][]any{{int64(1), "owner", "public", true, (*int64)(nil), false}}, scanErr: boom}
-	if _, err := (Repository{Pool: db}).DownloadCandidates(ctx, "contact", "owner", nil); !errors.Is(err, boom) {
+	if _, err := (Repository{Pool: db}).DownloadCandidates(ctx, 7, "contact", "owner", nil); !errors.Is(err, boom) {
 		t.Fatalf("scan error=%v", err)
 	}
 	db.rows = &candidateRows{rowErr: boom}
-	if _, err := (Repository{Pool: db}).DownloadCandidates(ctx, "contact", "owner", nil); !errors.Is(err, boom) {
+	if _, err := (Repository{Pool: db}).DownloadCandidates(ctx, 7, "contact", "owner", nil); !errors.Is(err, boom) {
 		t.Fatalf("rows error=%v", err)
 	}
 }

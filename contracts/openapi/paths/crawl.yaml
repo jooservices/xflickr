@@ -108,3 +108,34 @@ settings:
       '400': { description: Invalid request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
       '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
       '422': { description: 'Depth above the administrator limit (code depth_above_cap; details.max_depth)', content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+
+interests:
+  get:
+    operationId: ListMeCrawlInterests
+    tags: [crawl]
+    summary: List the signed-in user's discovered contacts
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: filter, in: query, schema: { type: string, enum: [all, starred, crawling, needs_attention], default: all } }
+      - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+      - { name: sort, in: query, schema: { type: string, enum: [updated, name, photos], default: updated } }
+      - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
+      - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+    responses:
+      '200': { description: User-scoped contacts page, content: { application/json: { schema: { $ref: ../schemas/queue.yaml#/CrawlInterestPage } } } }
+      '400': { description: 'Invalid filter, sort, cursor, or limit', content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '500': { description: Interests could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+
+sizes_priority:
+  put:
+    operationId: PrioritiseMeContactSizes
+    tags: [crawl]
+    summary: Prioritise pending size work for a contact
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+    responses:
+      '200': { description: Number of pending size items reprioritised, content: { application/json: { schema: { $ref: ../schemas/queue.yaml#/SizesPriorityResponse } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '404': { description: Contact not found, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }

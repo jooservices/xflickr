@@ -42,6 +42,9 @@ func TestDownloadCandidatesFromPostgres(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via) VALUES($1,$2,0,'test')`, userID, owner); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.Exec(ctx, `INSERT INTO albums(id,owner_nsid,title) VALUES($1,$2,'test')`, album, owner); err != nil {
 		t.Fatal(err)
 	}
@@ -55,23 +58,26 @@ func TestDownloadCandidatesFromPostgres(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) VALUES($1,$2,'photo',$3)`, userID, accountID, fmt.Sprint(photoID)); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO favorites(person_nsid,photo_id,fave_date) VALUES($1,$2,$3)`, owner, photoID, now); err != nil {
+		t.Fatal(err)
+	}
 	repository := Repository{Pool: pool}
 	for _, request := range []struct {
 		kind, subject string
 		ids           []int64
-	}{{"contact", owner, nil}, {"album", album, nil}, {"tray", "", []int64{photoID}}} {
-		got, err := repository.DownloadCandidates(ctx, request.kind, request.subject, request.ids)
+	}{{"contact", owner, nil}, {"album", album, nil}, {"favorites", owner, nil}, {"tray", "", []int64{photoID}}} {
+		got, err := repository.DownloadCandidates(ctx, userID, request.kind, request.subject, request.ids)
 		if err != nil || len(got) != 1 || got[0].PhotoID != photoID || !got[0].SizesConfirmed || len(got[0].Observers) != 1 {
 			t.Fatalf("%s candidates=%+v err=%v", request.kind, got, err)
 		}
 	}
-	if _, err := (Repository{}).DownloadCandidates(ctx, "tray", "", nil); err == nil {
+	if _, err := (Repository{}).DownloadCandidates(ctx, userID, "tray", "", nil); err == nil {
 		t.Fatal("accepted missing database")
 	}
-	if _, err := repository.DownloadCandidates(nil, "tray", "", nil); err == nil {
+	if _, err := repository.DownloadCandidates(nil, userID, "tray", "", nil); err == nil {
 		t.Fatal("accepted missing context")
 	}
-	if _, err := repository.DownloadCandidates(ctx, "unknown", "", nil); err == nil {
+	if _, err := repository.DownloadCandidates(ctx, userID, "unknown", "", nil); err == nil {
 		t.Fatal("accepted invalid kind")
 	}
 }

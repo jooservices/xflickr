@@ -4,6 +4,9 @@ package http
 import (
 	"context"
 	"errors"
+	"net/url"
+	"strings"
+	"time"
 
 	"github.com/jooservices/xflickr/internal/catalog/app"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
@@ -12,8 +15,9 @@ import (
 // Handler implements authenticated catalog read endpoints. ActorID is
 // populated by the identity middleware from the signed-in session.
 type Handler struct {
-	Reads   app.ReadService
-	ActorID func(context.Context) (int64, bool)
+	Reads        app.ReadService
+	ContactReads app.ContactReads
+	ActorID      func(context.Context) (int64, bool)
 }
 
 func (h Handler) actor(ctx context.Context) (int64, bool) {
@@ -208,4 +212,250 @@ func pageFailure[T any](err error, badRequest func(gen.Error) T) (T, error) {
 		return badRequest(invalidPageError()), nil
 	}
 	return zero, err
+}
+
+func (h Handler) ListMeCrawlInterests(ctx context.Context, request gen.ListMeCrawlInterestsRequestObject) (gen.ListMeCrawlInterestsResponseObject, error) {
+	userID, ok := h.actor(ctx)
+	if !ok {
+		return gen.ListMeCrawlInterests401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
+	}
+	filter, sortBy := "all", "updated"
+	if request.Params.Filter != nil {
+		filter = string(*request.Params.Filter)
+	}
+	if request.Params.Sort != nil {
+		sortBy = string(*request.Params.Sort)
+	}
+	page, err := h.ContactReads.ListInterests(ctx, userID, filter, stringParam(request.Params.Q), sortBy, stringParam(request.Params.Cursor), contactLimit(request.Params.Limit))
+	if errors.Is(err, app.ErrInvalidPage) || errors.Is(err, app.ErrInvalidCursor) {
+		return gen.ListMeCrawlInterests400JSONResponse(invalidPageError()), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	items := make([]gen.CrawlInterest, 0, len(page.Items))
+	for _, value := range page.Items {
+		recent := make([]gen.CrawlInterestRecentPhoto, 0, len(value.RecentPhotos))
+		for _, photo := range value.RecentPhotos {
+			recent = append(recent, gen.CrawlInterestRecentPhoto{ID: photo.ID, Alt: photo.Alt, ThumbnailURL: photo.ThumbnailURL})
+		}
+		items = append(items, gen.CrawlInterest{Nsid: value.NSID, Name: value.Name, Username: value.Username, AvatarURL: validURL(value.AvatarURL), Depth: value.Depth, Starred: value.Starred, Status: gen.CrawlInterestStatus(value.Status), PhotosCrawled: value.PhotosCrawled, PhotosTotal: value.PhotosTotal, FavoritesCount: value.FavoritesCount, SizesPercent: value.SizesPercent, LastCheckAt: value.LastCheckAt, RecentPhotos: recent})
+	}
+	return gen.ListMeCrawlInterests200JSONResponse(gen.CrawlInterestPage{Items: items, Counts: gen.CrawlInterestCounts{All: page.Counts.All, Starred: page.Counts.Starred, Crawling: page.Counts.Crawling, NeedsAttention: page.Counts.NeedsAttention}, NextCursor: page.NextCursor, UpdatedAt: page.UpdatedAt}), nil
+}
+
+func (h Handler) GetMeContact(ctx context.Context, request gen.GetMeContactRequestObject) (gen.GetMeContactResponseObject, error) {
+	userID, ok := h.actor(ctx)
+	if !ok {
+		return gen.GetMeContact401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
+	}
+	value, err := h.ContactReads.GetContact(ctx, userID, request.Nsid)
+	if errors.Is(err, app.ErrNotFound) {
+		return gen.GetMeContact404JSONResponse(notFoundError()), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return gen.GetMeContact200JSONResponse(contactDetail(value)), nil
+}
+
+func (h Handler) ListMeContactPhotos(ctx context.Context, request gen.ListMeContactPhotosRequestObject) (gen.ListMeContactPhotosResponseObject, error) {
+	userID, ok := h.actor(ctx)
+	if !ok {
+		return gen.ListMeContactPhotos401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
+	}
+	page, err := h.ContactReads.ListContactPhotos(ctx, userID, request.Nsid, stringParam(request.Params.Cursor), contactLimit(request.Params.Limit))
+	if errors.Is(err, app.ErrNotFound) {
+		return gen.ListMeContactPhotos404JSONResponse(notFoundError()), nil
+	}
+	if errors.Is(err, app.ErrInvalidPage) || errors.Is(err, app.ErrInvalidCursor) {
+		return gen.ListMeContactPhotos400JSONResponse(invalidPageError()), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	items := make([]gen.ContactPhoto, 0, len(page.Items))
+	for _, value := range page.Items {
+		items = append(items, gen.ContactPhoto{ID: value.ID, Title: value.Title, ThumbnailURL: validURL(value.ThumbnailURL), Width: positive(value.Width), Height: positive(value.Height), TakenAt: value.TakenAt, SizesAvailable: value.SizesAvailable})
+	}
+	return gen.ListMeContactPhotos200JSONResponse(gen.ContactPhotoPage{Items: items, Total: page.Total, NextCursor: page.NextCursor, UpdatedAt: page.UpdatedAt}), nil
+}
+
+func (h Handler) ListMeContactFavorites(ctx context.Context, request gen.ListMeContactFavoritesRequestObject) (gen.ListMeContactFavoritesResponseObject, error) {
+	userID, ok := h.actor(ctx)
+	if !ok {
+		return gen.ListMeContactFavorites401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
+	}
+	page, err := h.ContactReads.ListContactFavorites(ctx, userID, request.Nsid, stringParam(request.Params.Cursor), contactLimit(request.Params.Limit))
+	if errors.Is(err, app.ErrNotFound) {
+		return gen.ListMeContactFavorites404JSONResponse(notFoundError()), nil
+	}
+	if errors.Is(err, app.ErrInvalidPage) || errors.Is(err, app.ErrInvalidCursor) {
+		return gen.ListMeContactFavorites400JSONResponse(invalidPageError()), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	items := make([]gen.ContactFavorite, 0, len(page.Items))
+	for _, value := range page.Items {
+		items = append(items, gen.ContactFavorite{ID: value.ID, Title: value.Title, ThumbnailURL: validURL(value.ThumbnailURL), Width: positive(value.Width), Height: positive(value.Height), TakenAt: value.TakenAt, SizesAvailable: value.SizesAvailable, OwnerNsid: value.OwnerNSID, OwnerName: value.OwnerName, OwnerAvatarURL: validURL(value.OwnerAvatarURL)})
+	}
+	return gen.ListMeContactFavorites200JSONResponse(gen.ContactFavoritePage{Items: items, Total: page.Total, NextCursor: page.NextCursor, UpdatedAt: page.UpdatedAt}), nil
+}
+
+func (h Handler) ListMeContactAlbums(ctx context.Context, request gen.ListMeContactAlbumsRequestObject) (gen.ListMeContactAlbumsResponseObject, error) {
+	userID, ok := h.actor(ctx)
+	if !ok {
+		return gen.ListMeContactAlbums401JSONResponse(gen.Error{Code: "unauthenticated"}), nil
+	}
+	page, err := h.ContactReads.ListContactAlbums(ctx, userID, request.Nsid)
+	if errors.Is(err, app.ErrNotFound) {
+		return gen.ListMeContactAlbums404JSONResponse(notFoundError()), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	items := make([]gen.ContactAlbum, 0, len(page.Items))
+	for _, v := range page.Items {
+		items = append(items, gen.ContactAlbum{ID: v.ID, Title: v.Title, OwnerName: v.OwnerName, StoredCount: v.StoredCount, TotalCount: v.TotalCount, CoverPhotoUrls: v.CoverPhotoURLs})
+	}
+	return gen.ListMeContactAlbums200JSONResponse(gen.ContactAlbumPage{Items: items, Total: page.Total, UpdatedAt: page.UpdatedAt}), nil
+}
+
+func (h Handler) ListMeContactGalleries(ctx context.Context, request gen.ListMeContactGalleriesRequestObject) (gen.ListMeContactGalleriesResponseObject, error) {
+	userID, ok := h.actor(ctx)
+	if !ok {
+		return gen.ListMeContactGalleries401JSONResponse(gen.Error{Code: "unauthenticated"}), nil
+	}
+	page, err := h.ContactReads.ListContactGalleries(ctx, userID, request.Nsid)
+	if errors.Is(err, app.ErrNotFound) {
+		return gen.ListMeContactGalleries404JSONResponse(notFoundError()), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	items := make([]gen.ContactGallery, 0, len(page.Items))
+	for _, v := range page.Items {
+		items = append(items, gen.ContactGallery{ID: v.ID, Title: v.Title, PhotoCount: v.PhotoCount})
+	}
+	return gen.ListMeContactGalleries200JSONResponse(gen.ContactGalleryPage{Items: items, Total: page.Total, UpdatedAt: page.UpdatedAt}), nil
+}
+
+func (h Handler) ListMeContactGroups(ctx context.Context, request gen.ListMeContactGroupsRequestObject) (gen.ListMeContactGroupsResponseObject, error) {
+	userID, ok := h.actor(ctx)
+	if !ok {
+		return gen.ListMeContactGroups401JSONResponse(gen.Error{Code: "unauthenticated"}), nil
+	}
+	page, err := h.ContactReads.ListContactGroups(ctx, userID, request.Nsid)
+	if errors.Is(err, app.ErrNotFound) {
+		return gen.ListMeContactGroups404JSONResponse(notFoundError()), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	items := make([]gen.ContactGroup, 0, len(page.Items))
+	for _, v := range page.Items {
+		items = append(items, gen.ContactGroup{Nsid: v.NSID, Name: v.Name, MembersCount: v.MembersCount, PoolCrawlEnabled: v.PoolCrawlEnabled})
+	}
+	return gen.ListMeContactGroups200JSONResponse(gen.ContactGroupPage{Items: items, Total: page.Total, UpdatedAt: page.UpdatedAt}), nil
+}
+
+func (h Handler) GetMeContactAbout(ctx context.Context, request gen.GetMeContactAboutRequestObject) (gen.GetMeContactAboutResponseObject, error) {
+	userID, ok := h.actor(ctx)
+	if !ok {
+		return gen.GetMeContactAbout401JSONResponse(gen.Error{Code: "unauthenticated"}), nil
+	}
+	value, err := h.ContactReads.GetContactAbout(ctx, userID, request.Nsid)
+	if errors.Is(err, app.ErrNotFound) {
+		return gen.GetMeContactAbout404JSONResponse(notFoundError()), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	facets := contactFacets(value.Facets)
+	return gen.GetMeContactAbout200JSONResponse(gen.ContactAbout{LastChangeCheckAt: value.LastChangeCheckAt, Facets: facets, Tombstones: struct {
+		Count     int64      `json:"count"`
+		UpdatedAt *time.Time `json:"updated_at"`
+	}{Count: value.TombstoneCount, UpdatedAt: value.TombstoneUpdatedAt}, UpdatedAt: value.UpdatedAt}), nil
+}
+
+func (h Handler) SetMeContactGroupPoolCrawl(ctx context.Context, request gen.SetMeContactGroupPoolCrawlRequestObject) (gen.SetMeContactGroupPoolCrawlResponseObject, error) {
+	userID, ok := h.actor(ctx)
+	if !ok {
+		return gen.SetMeContactGroupPoolCrawl401JSONResponse(gen.Error{Code: "unauthenticated"}), nil
+	}
+	if request.Body == nil {
+		return gen.SetMeContactGroupPoolCrawl404JSONResponse(gen.Error{Code: "invalid_request", Message: "Enabled value is required"}), nil
+	}
+	value, err := h.ContactReads.SetContactGroupPoolCrawl(ctx, userID, request.Nsid, request.GroupNsid, request.Body.Enabled)
+	if errors.Is(err, app.ErrNotFound) {
+		return gen.SetMeContactGroupPoolCrawl404JSONResponse(notFoundError()), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return gen.SetMeContactGroupPoolCrawl200JSONResponse(gen.ContactGroupPoolCrawlResponse{Enabled: value.Enabled, ChangedAt: value.ChangedAt}), nil
+}
+
+func (h Handler) PrioritiseMeContactSizes(ctx context.Context, request gen.PrioritiseMeContactSizesRequestObject) (gen.PrioritiseMeContactSizesResponseObject, error) {
+	userID, ok := h.actor(ctx)
+	if !ok {
+		return gen.PrioritiseMeContactSizes401JSONResponse(gen.Error{Code: "unauthenticated"}), nil
+	}
+	count, err := h.ContactReads.PrioritiseContactSizes(ctx, userID, request.Nsid)
+	if errors.Is(err, app.ErrNotFound) {
+		return gen.PrioritiseMeContactSizes404JSONResponse(notFoundError()), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return gen.PrioritiseMeContactSizes200JSONResponse(gen.SizesPriorityResponse{Prioritised: count}), nil
+}
+
+func contactDetail(value app.ContactDetail) gen.ContactDetail {
+	found := make([]struct {
+		Label string `json:"label"`
+		Nsid  string `json:"nsid"`
+	}, 0, len(value.FoundVia))
+	for _, item := range value.FoundVia {
+		found = append(found, struct {
+			Label string `json:"label"`
+			Nsid  string `json:"nsid"`
+		}{Label: item.Label, Nsid: item.NSID})
+	}
+	return gen.ContactDetail{Nsid: value.NSID, Username: value.Username, RealName: value.RealName, AvatarURL: validURL(value.AvatarURL), CoverPhotoURL: validURL(value.CoverPhotoURL), Location: value.Location, Depth: value.Depth, FoundVia: found, Starred: value.Starred, Paused: value.Paused, CrawlStatus: gen.ContactDetailCrawlStatus(value.CrawlStatus), PhotoRecordsCrawled: value.PhotoRecordsCrawled, PhotoRecordsTotal: value.PhotoRecordsTotal, SizesCompleted: value.SizesCompleted, Facets: contactFacets(value.Facets), Counts: gen.ContactCounts{Photos: value.Counts.Photos, Favorites: value.Counts.Favorites, Albums: value.Counts.Albums, Galleries: value.Counts.Galleries, Groups: value.Counts.Groups}, UpdatedAt: value.UpdatedAt}
+}
+
+func contactFacets(values []app.ContactFacet) []gen.ContactFacet {
+	result := make([]gen.ContactFacet, 0, len(values))
+	for _, v := range values {
+		result = append(result, gen.ContactFacet{Name: gen.ContactFacetName(v.Name), Completed: v.Completed, Total: v.Total, Status: gen.ContactFacetStatus(v.Status), UpdatedAt: v.UpdatedAt})
+	}
+	return result
+}
+
+func contactLimit(value *int) int {
+	if value == nil {
+		return app.DefaultPageSize
+	}
+	return *value
+}
+
+func positive(value *int) *int {
+	if value == nil || *value < 1 {
+		return nil
+	}
+	return value
+}
+
+func validURL(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	parsed, err := url.Parse(strings.TrimSpace(*value))
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
+		return nil
+	}
+	clean := parsed.String()
+	return &clean
 }

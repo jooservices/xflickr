@@ -104,7 +104,26 @@ func (r *Repository) SetSizes(ctx context.Context, id int64, sizes []byte, statu
 	if id <= 0 || !validSizesStatus(string(status)) || !jsonDocument(sizes) || checkedAt.IsZero() {
 		return errors.New("catalog: invalid sizes update")
 	}
-	return r.queries.SetSizes(ctx, gen.SetSizesParams{ID: id, Sizes: sizes, SizesStatus: string(status), SizesCheckedAt: toPgTime(checkedAt)})
+	_, err := r.db.Exec(ctx, `WITH previous AS (
+		SELECT id,owner_nsid,sizes_status,sizes_checked_at,last_update FROM photos WHERE id=$1 FOR UPDATE
+	), changed AS (
+		UPDATE photos p SET sizes=$2,sizes_status=$3,sizes_checked_at=$4
+		FROM previous old WHERE p.id=old.id
+			AND (old.sizes_status<>'confirmed' OR $3 IN ('confirmed','unavailable'))
+			AND (p.sizes,p.sizes_status,p.sizes_checked_at) IS DISTINCT FROM ($2,$3,$4)
+		RETURNING p.id,p.owner_nsid,p.sizes_status,p.sizes_checked_at,p.last_update,
+			old.sizes_status AS old_status,old.sizes_checked_at AS old_checked_at,old.last_update AS old_last_update
+	)
+	UPDATE crawl_interests ci SET sizes_completed=LEAST(ci.photos_crawled,ci.sizes_completed+1)
+	FROM changed photo
+	WHERE (photo.old_status<>'confirmed' OR photo.old_checked_at IS NULL OR photo.old_checked_at<photo.old_last_update)
+	AND photo.sizes_status='confirmed' AND photo.sizes_checked_at>=photo.last_update
+	AND ci.person_nsid=photo.owner_nsid AND ci.photos_crawled>ci.sizes_completed
+	AND EXISTS(SELECT 1 FROM observations o WHERE o.user_id=ci.user_id AND o.record_kind='photo' AND o.record_id=photo.id::text)`, id, sizes, string(status), toPgTime(checkedAt))
+	if err != nil {
+		return fmt.Errorf("catalog: update photo sizes and contact progress: %w", err)
+	}
+	return nil
 }
 
 // MarkTombstone marks an existing photo once. Repeating the call is a no-op.
