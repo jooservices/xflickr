@@ -89,10 +89,11 @@ if ! reset_sql 2>/dev/null; then
 fi
 
 # Host-side overrides of the generated .env, which names the container-network hosts. The Redis prefix is unique per run.
-export DB_HOST=127.0.0.1 DB_PORT="$db_port" REDIS_HOST=127.0.0.1 REDIS_PORT="$(env_value REDIS_PORT)"
-if [[ -z "${REDIS_PORT:-}" ]]; then
-	export REDIS_PORT=16382
+redis_port="$(env_value REDIS_PORT)"
+if [[ -z "$redis_port" ]]; then
+	redis_port=16382
 fi
+export DB_HOST=127.0.0.1 DB_PORT="$db_port" REDIS_HOST=127.0.0.1 REDIS_PORT="$redis_port"
 REDIS_PREFIX="$(env_value REDIS_PREFIX)${run_id}:"
 export REDIS_PREFIX
 export NODE_ID=e2e OPENSEARCH_INDEX_PREFIX="xflickr_${run_id}_"

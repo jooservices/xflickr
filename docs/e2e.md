@@ -20,8 +20,10 @@ E2E_HOLD=1 ./docker/scripts/e2e.sh   # start the stack and keep it up for manual
 1. builds `xflickr` and `fakeflickr` through the shared Go runtime and the web bundle through the Node runtime;
 2. resets the worktree database (`DROP SCHEMA public`, then `migrate up`); it refuses any database whose name
    does not start with `xflickr_wt`, so the live `xflickr` database is never touched;
-3. starts `fakeflickr` and the app (roles `api,scheduler,crawl`) on free local ports. The Redis prefix is unique
-   per run, the master key is random, and `FLICKR_UPSTREAM_URL` points the app at `fakeflickr`;
+3. starts `fakeflickr` and the app (roles `api,scheduler,crawl,media`) on free local ports. The Redis prefix is
+   unique per run, the master key is random, and `FLICKR_UPSTREAM_URL` points the app at `fakeflickr`. Host
+   `psql` resets the worktree database when reachable; otherwise the shared Docker Postgres container is used.
+   The `media` role consumes `photo.sizes_resolved` so download items leave `waiting_sizes`;
 4. runs Playwright on the host with Google Chrome (Playwright never runs in Docker; `docker/scripts/playwright.sh`).
 
 The first registered user is the admin. The stack hands the specs `E2E_BASE_URL`, `E2E_FAKEFLICKR_URL`,
