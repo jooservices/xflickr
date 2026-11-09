@@ -300,13 +300,7 @@ func (s *Server) response(method string, r *http.Request) (map[string]any, bool)
 		}
 		return page("photosets", "photoset", rows, len(rows)), true
 	case "galleries.getList":
-		rows := []any{}
-		for _, g := range s.dataset.Galleries {
-			if g.Owner == person.NSID {
-				rows = append(rows, map[string]any{"id": g.ID, "gallery_id": g.ID, "owner": g.Owner, "username": person.Username, "primary_photo_id": first(g.Photos), "count_photos": len(g.Photos), "count_total": len(g.Photos), "count_comments": 0, "title": content(g.Title), "description": content("Seed gallery")})
-			}
-		}
-		return page("galleries", "gallery", rows, len(rows)), true
+		return s.galleryList(person, r)
 	case "people.getGroups", "people.getPublicGroups":
 		rows := []any{}
 		for _, g := range s.dataset.Groups {
@@ -362,6 +356,31 @@ func (s *Server) favoritePhotos(owner string, r *http.Request) []any {
 		}
 	}
 	return rows
+}
+
+func (s *Server) galleryList(person Person, r *http.Request) (map[string]any, bool) {
+	continuation := r.Form.Get("continuation")
+	offset, err := strconv.Atoi(continuation)
+	if err != nil || offset < 0 {
+		return flickrFailure(1, "Invalid gallery continuation")
+	}
+	perPage := min(parsePositive(r.Form.Get("per_page"), 100), 500)
+	rows := make([]any, 0)
+	for _, gallery := range s.dataset.Galleries {
+		if gallery.Owner == person.NSID {
+			rows = append(rows, map[string]any{"id": gallery.ID, "gallery_id": gallery.ID, "owner": gallery.Owner, "username": person.Username, "primary_photo_id": first(gallery.Photos), "count_photos": len(gallery.Photos), "count_total": len(gallery.Photos), "count_comments": 0, "title": content(gallery.Title), "description": content("Seed gallery")})
+		}
+	}
+	start := min(offset, len(rows))
+	end := min(start+perPage, len(rows))
+	next := "-1"
+	if end < len(rows) {
+		next = strconv.Itoa(end)
+	}
+	return map[string]any{"stat": "ok", "galleries": map[string]any{
+		"page": offset/perPage + 1, "pages": max(1, (len(rows)+perPage-1)/perPage), "perpage": perPage,
+		"per_page": perPage, "total": len(rows), "continuation": next, "gallery": rows[start:end],
+	}}, true
 }
 
 func (s *Server) personJSON(p Person, r *http.Request) map[string]any {

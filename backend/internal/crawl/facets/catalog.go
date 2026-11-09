@@ -55,14 +55,15 @@ type Galleries struct{}
 func (Galleries) Name() string      { return "galleries" }
 func (Galleries) Lane() domain.Lane { return domain.LanePerson }
 func (Galleries) Plan(_ context.Context, p domain.Person) []domain.WorkSpec {
-	return []domain.WorkSpec{{Subject: p.NSID, Method: "flickr.galleries.getList", Params: map[string]string{"user_id": p.NSID, "per_page": catalogPageSize}}}
+	return []domain.WorkSpec{{Subject: p.NSID, Method: "flickr.galleries.getList", Params: map[string]string{"user_id": p.NSID, "per_page": catalogPageSize, "continuation": "0"}}}
 }
 
 func (Galleries) Handle(_ context.Context, p domain.Page) (domain.Result, error) {
 	var e struct {
 		Galleries struct {
-			Pages int `json:"pages"`
-			Items []struct {
+			Pages        int    `json:"pages"`
+			Continuation string `json:"continuation"`
+			Items        []struct {
 				ID          string     `json:"id"`
 				Owner       string     `json:"owner"`
 				Primary     string     `json:"primary_photo_id"`
@@ -89,7 +90,23 @@ func (Galleries) Handle(_ context.Context, p domain.Page) (domain.Result, error)
 		primary, _ := strconv.ParseInt(x.Primary, 10, 64)
 		out.Galleries = append(out.Galleries, catalog.Gallery{ID: x.ID, OwnerNSID: owner, Title: x.Title.value(), Description: x.Description.value(), PrimaryPhotoID: positive(primary), PhotosCount: int64(x.Count), CreatedAt: timeValue(x.Created), UpdatedAt: timeValue(x.Updated)})
 	}
-	out.HasMore = p.Number < e.Galleries.Pages && len(e.Galleries.Items) > 0
+	if e.Galleries.Continuation == "" {
+		out.HasMore = p.Number < e.Galleries.Pages && len(e.Galleries.Items) > 0
+		return out, nil
+	}
+	out.NextCursor = e.Galleries.Continuation
+	if e.Galleries.Continuation == "-1" {
+		return out, nil
+	}
+	if e.Galleries.Continuation == p.Item.Cursor.Continuation {
+		out.CursorWarning = "repeated continuation"
+		return out, nil
+	}
+	if len(e.Galleries.Items) == 0 {
+		out.CursorWarning = "empty page with nonterminal continuation"
+		return out, nil
+	}
+	out.HasMore = true
 	return out, nil
 }
 

@@ -18,6 +18,7 @@ const (
 // carries the request, so one item pages one Flickr method to its end.
 type Cursor struct {
 	Page         int               `json:"page"`
+	Continuation string            `json:"continuation,omitempty"`
 	Method       string            `json:"method"`
 	Params       map[string]string `json:"params,omitempty"`
 	CheckpointAt int64             `json:"checkpoint_at,omitempty"`
@@ -43,12 +44,29 @@ func ParseCursor(raw []byte) (Cursor, error) {
 
 // NewCursor returns the first-page cursor for a spec.
 func NewCursor(spec WorkSpec) Cursor {
-	return Cursor{Page: 1, Method: spec.Method, Params: spec.Params, CheckpointAt: spec.CheckpointAt}
+	params := spec.Params
+	continuation := ""
+	if value, ok := params["continuation"]; ok {
+		continuation = value
+		params = make(map[string]string, len(spec.Params)-1)
+		for key, value := range spec.Params {
+			if key != "continuation" {
+				params[key] = value
+			}
+		}
+	}
+	return Cursor{Page: 1, Continuation: continuation, Method: spec.Method, Params: params, CheckpointAt: spec.CheckpointAt}
 }
 
 // Next returns the cursor for the following page.
 func (c Cursor) Next() Cursor {
 	c.Page++
+	return c
+}
+
+// WithContinuation returns c with an opaque remote continuation value.
+func (c Cursor) WithContinuation(value string) Cursor {
+	c.Continuation = value
 	return c
 }
 

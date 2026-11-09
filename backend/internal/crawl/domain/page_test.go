@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 )
@@ -25,6 +26,25 @@ func TestNewCursorStartsAtFirstPage(t *testing.T) {
 	cursor := NewCursor(WorkSpec{Subject: "s", Method: "m", Params: map[string]string{"a": "b"}})
 	if cursor.Page != 1 || cursor.Method != "m" || cursor.Params["a"] != "b" {
 		t.Fatalf("cursor = %+v", cursor)
+	}
+}
+
+func TestNewCursorMovesContinuationIntoCursor(t *testing.T) {
+	params := map[string]string{"user_id": "owner", "continuation": "0"}
+	cursor := NewCursor(WorkSpec{Subject: "owner", Method: "flickr.galleries.getList", Params: params})
+	if cursor.Page != 1 || cursor.Continuation != "0" || cursor.Params["continuation"] != "" || cursor.Params["user_id"] != "owner" {
+		t.Fatalf("cursor = %+v", cursor)
+	}
+	if params["continuation"] != "0" {
+		t.Fatalf("NewCursor mutated spec params: %#v", params)
+	}
+	encoded, err := json.Marshal(cursor.WithContinuation("opaque:/next?token=a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseCursor(encoded)
+	if err != nil || parsed.Continuation != "opaque:/next?token=a" {
+		t.Fatalf("parsed cursor = %+v, %v", parsed, err)
 	}
 }
 

@@ -132,6 +132,41 @@ func TestFakeFlickrContractForTypedMethods(t *testing.T) {
 	}
 }
 
+func TestFakeFlickrGalleriesGetListFollowsContinuation(t *testing.T) {
+	dataset, err := LoadDataset("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := "10000000@N00"
+	var first Gallery
+	for _, gallery := range dataset.Galleries {
+		if gallery.Owner == owner {
+			first = gallery
+			break
+		}
+	}
+	if first.ID == "" {
+		t.Fatal("seed dataset has no gallery for test owner")
+	}
+	second := first
+	second.ID += "-second"
+	second.Title = "Second gallery"
+	dataset.Galleries = append(dataset.Galleries, second)
+	server := httptest.NewServer(NewServer(dataset, NewScenarios(ScenarioConfig{})))
+	defer server.Close()
+	client := flickr.NewClient(server.URL+"/services/rest", server.Client())
+	creds := flickr.Credentials{APIKey: "public-test-key"}
+
+	firstPage, err := client.GalleriesGetList(t.Context(), creds, owner, flickr.ListOptions{PerPage: 1})
+	if err != nil || len(firstPage.Items) != 1 || firstPage.Continuation != "1" {
+		t.Fatalf("first page = %+v, %v", firstPage, err)
+	}
+	secondPage, err := client.GalleriesGetList(t.Context(), creds, owner, flickr.ListOptions{PerPage: 1, Continuation: firstPage.Continuation})
+	if err != nil || len(secondPage.Items) != 1 || secondPage.Continuation != "-1" || secondPage.Items[0].ID == firstPage.Items[0].ID {
+		t.Fatalf("second page = %+v, %v", secondPage, err)
+	}
+}
+
 func sameIDs(got, want []string) bool {
 	if len(got) != len(want) {
 		return false

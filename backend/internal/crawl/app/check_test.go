@@ -60,16 +60,16 @@ func TestChangeCheckUsesOneItemForBothProbesAndPlansOnlyChangedWork(t *testing.T
 	}
 	item := domain.Item{Subject: "person", Cursor: domain.Cursor{Method: "flickr.people.getPhotos", CheckpointAt: 77, Params: map[string]string{"min_upload_date": "10", "min_fave_date": "20"}}}
 	result, err := checker.Handle(context.Background(), domain.Page{Item: item, Payload: json.RawMessage(`{"photos":{"total":"1"}}`)})
-	if err != nil || result.NextCursor == nil || result.NextCursor.Method != "flickr.favorites.getList" || len(result.Work) != 1 {
+	if err != nil || result.NextWorkCursor == nil || result.NextWorkCursor.Method != "flickr.favorites.getList" || len(result.Work) != 1 {
 		t.Fatalf("photo check result = %#v, %v", result, err)
 	}
 	work := result.Work[0]
 	if work.Kind != "photos" || work.Params["min_upload_date"] != "10" || work.Params["per_page"] != "500" || work.Params["extras"] != incrementalPhotoExtras || !work.Reopen || work.CheckpointAt != 77 {
 		t.Fatalf("incremental photo work = %#v", work)
 	}
-	item.Cursor = *result.NextCursor
+	item.Cursor = *result.NextWorkCursor
 	result, err = checker.Handle(context.Background(), domain.Page{Item: item, Payload: json.RawMessage(`{"photos":{"total":0}}`)})
-	if err != nil || result.NextCursor != nil || len(result.Work) != 3 {
+	if err != nil || result.NextWorkCursor != nil || len(result.Work) != 3 {
 		t.Fatalf("unchanged favorite result = %#v, %v", result, err)
 	}
 	item.Cursor.Method = "flickr.favorites.getList"
