@@ -206,3 +206,9 @@ func TestStrictHandlerLeavesNodeEndpointsToCluster(t *testing.T) {
 		t.Fatalf("heartbeat error = %v", err)
 	}
 }
+
+func TestStrictHandlerLeavesContactsToCatalog(t *testing.T) {
+	if _, err := (StrictHandler{}).ListContacts(t.Context(), gen.ListContactsRequestObject{}); !errors.Is(err, errCatalogServedByCatalog) {
+		t.Fatalf("contacts list error=%v", err)
+	}
+}

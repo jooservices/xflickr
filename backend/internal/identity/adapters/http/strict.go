@@ -121,6 +121,10 @@ func (StrictHandler) ListPeople(context.Context, gen.ListPeopleRequestObject) (g
 	return nil, errCatalogServedByCatalog
 }
 
+func (StrictHandler) ListContacts(context.Context, gen.ListContactsRequestObject) (gen.ListContactsResponseObject, error) {
+	return nil, errCatalogServedByCatalog
+}
+
 func (StrictHandler) GetPerson(context.Context, gen.GetPersonRequestObject) (gen.GetPersonResponseObject, error) {
 	return nil, errCatalogServedByCatalog
 }
