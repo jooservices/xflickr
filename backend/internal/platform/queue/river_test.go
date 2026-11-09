@@ -1,9 +1,11 @@
 package queue
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -295,6 +297,44 @@ func TestDeadLetterHookRequiresPool(t *testing.T) {
 	}
 	if err := publishDeadLetter(context.Background(), disconnectedPool(t), "job.dead", "1", map[string]any{}); err == nil {
 		t.Fatal("publishDeadLetter() succeeded without PostgreSQL")
+	}
+}
+
+func TestDeadLetterHookLogsAnErrorForSentryWithoutArguments(t *testing.T) {
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	encoded, _ := json.Marshal(riverArgs{KindName: "favorites", Args: json.RawMessage(`{"person":"secret-nsid"}`), Queue: "sync"})
+	row := &rivertype.JobRow{ID: 7, Attempt: 5, MaxAttempts: 5, EncodedArgs: encoded}
+	hook := &deadLetterHook{publish: func(context.Context, string, string, any) error { return nil }}
+	if got := hook.WorkEnd(context.Background(), row, errors.New("deadlock detected")); got == nil {
+		t.Fatal("WorkEnd() swallowed the final error")
+	}
+	var record map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &record); err != nil {
+		t.Fatalf("log output is not one JSON record: %v: %s", err, buf.String())
+	}
+	if record["level"] != "ERROR" || record["kind"] != "favorites" || record["queue"] != "sync" || record["error"] != "deadlock detected" {
+		t.Fatalf("log record = %v", record)
+	}
+	if strings.Contains(buf.String(), "secret-nsid") {
+		t.Fatalf("job arguments were logged: %s", buf.String())
+	}
+}
+
+func TestDeadLetterHookLogsUnreadableArguments(t *testing.T) {
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	row := &rivertype.JobRow{ID: 9, Attempt: 2, MaxAttempts: 2, EncodedArgs: []byte("{")}
+	hook := &deadLetterHook{publish: func(context.Context, string, string, any) error { return nil }}
+	if got := hook.WorkEnd(context.Background(), row, errors.New("failed")); got == nil {
+		t.Fatal("WorkEnd() swallowed the final error")
+	}
+	if !strings.Contains(buf.String(), `"level":"ERROR"`) || !strings.Contains(buf.String(), "unreadable arguments") {
+		t.Fatalf("log output = %s", buf.String())
 	}
 }
 

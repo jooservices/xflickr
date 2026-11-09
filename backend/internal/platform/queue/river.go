@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"sync"
 	"time"
@@ -363,8 +364,13 @@ func (h *deadLetterHook) WorkEnd(ctx context.Context, row *rivertype.JobRow, wor
 	}
 	var args riverArgs
 	if err := json.Unmarshal(row.EncodedArgs, &args); err != nil {
+		slog.ErrorContext(ctx, "queue: job dead-lettered with unreadable arguments", "job_id", row.ID, "attempts", row.Attempt, "error", workErr)
 		return errors.Join(workErr, fmt.Errorf("queue: decode exhausted River job: %w", err))
 	}
+	// Persistent failures used to be visible only in the database (296 discarded
+	// jobs never reached Sentry). The error attribute is what the Sentry handler
+	// groups by; arguments are not logged because they may hold personal data.
+	slog.ErrorContext(ctx, "queue: job dead-lettered", "kind", args.KindName, "queue", args.Queue, "job_id", row.ID, "attempts", row.Attempt, "error", workErr)
 	if h.publish == nil {
 		return errors.Join(workErr, errors.New("queue: dead letter outbox publisher is required"))
 	}
