@@ -123,9 +123,38 @@ type explainNode struct {
 	NodeType         string        `json:"Node Type"`
 	RelationName     string        `json:"Relation Name"`
 	IndexName        string        `json:"Index Name"`
+	ActualRows       float64       `json:"Actual Rows"`
+	ActualLoops      float64       `json:"Actual Loops"`
+	RowsRemoved      float64       `json:"Rows Removed by Filter"`
 	SharedHitBlocks  int           `json:"Shared Hit Blocks"`
 	SharedReadBlocks int           `json:"Shared Read Blocks"`
 	Plans            []explainNode `json:"Plans"`
+}
+
+func maxActualRowsOnIndex(node explainNode, relation, index string) float64 {
+	rows := float64(0)
+	if node.RelationName == relation && node.IndexName == index && node.ActualRows > rows {
+		rows = node.ActualRows
+	}
+	for _, child := range node.Plans {
+		if childRows := maxActualRowsOnIndex(child, relation, index); childRows > rows {
+			rows = childRows
+		}
+	}
+	return rows
+}
+
+func maxActualLoopsOnRelation(node explainNode, relation string) float64 {
+	loops := float64(0)
+	if node.RelationName == relation && node.ActualLoops > loops {
+		loops = node.ActualLoops
+	}
+	for _, child := range node.Plans {
+		if childLoops := maxActualLoopsOnRelation(child, relation); childLoops > loops {
+			loops = childLoops
+		}
+	}
+	return loops
 }
 
 func explainStatement(ctx context.Context, tx pgx.Tx, query string, args ...any) (explainDocument, error) {

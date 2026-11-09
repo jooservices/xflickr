@@ -98,6 +98,32 @@ func TestPumpRunOnceReclaimsAndDispatches(t *testing.T) {
 	}
 }
 
+func TestPumpReloadsSettingsBetweenTicks(t *testing.T) {
+	store := &pumpFakeStore{}
+	settings := &mutablePumpSettings{value: validPumpSettings()}
+	pump := Pump{
+		Store:          store,
+		Credits:        fakeCredits{},
+		Queue:          fakeQueue{},
+		Settings:       validPumpSettings(),
+		SettingsSource: settings,
+	}
+	if _, err := pump.RunOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if store.reclaimBatchSize != 100 {
+		t.Fatalf("first reclaim batch size = %d, want 100", store.reclaimBatchSize)
+	}
+
+	settings.value.ReclaimBatchSize = 7
+	if _, err := pump.RunOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if store.reclaimBatchSize != 7 {
+		t.Fatalf("reclaim batch size after settings change = %d, want 7", store.reclaimBatchSize)
+	}
+}
+
 func TestPumpDispatchesPhotoLaneWithinSyncCap(t *testing.T) {
 	lane := &photoLaneFake{ids: []int64{41, 42}}
 	pump := Pump{Store: &pumpFakeStore{}, Credits: fakeCredits{}, Queue: fakeQueue{}, Settings: validPumpSettings(), PhotoLane: lane}
@@ -233,6 +259,12 @@ func TestPumpRunLogsQueueStatePublicationFailures(t *testing.T) {
 
 func validPumpSettings() PumpSettings {
 	return PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute, ReclaimBatchSize: 100}
+}
+
+type mutablePumpSettings struct{ value PumpSettings }
+
+func (s *mutablePumpSettings) LoadPumpSettings(context.Context) (PumpSettings, error) {
+	return s.value, nil
 }
 
 type fakeCredits struct{}

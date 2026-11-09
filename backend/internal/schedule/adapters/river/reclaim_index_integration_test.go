@@ -35,10 +35,13 @@ func TestReclaimSelfHealUsesFailedUpdatedIndex(t *testing.T) {
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,last_error,updated_at,lease_expires_at)
 		SELECT 'sync_person',$1||'-'||g,$2,$3,
-			CASE WHEN g <= 4 THEN 'failed' WHEN g <= 8 THEN 'ready' ELSE 'pending' END,
-			CASE WHEN g <= 2 THEN 'lease expired' WHEN g <= 4 THEN 'other error' END,
-			CASE WHEN g <= 2 THEN now()-interval '30 minutes' ELSE now() END,
-			CASE WHEN g BETWEEN 5 AND 8 THEN now()-interval '30 minutes' END
+			CASE WHEN g <= 4 OR g BETWEEN 1000 AND 100999 THEN 'failed'
+				WHEN g BETWEEN 5 AND 8 OR g BETWEEN 20000 AND 30010 THEN 'ready'
+				ELSE 'pending' END,
+			CASE WHEN g <= 2 THEN 'lease expired' WHEN g <= 4 THEN 'other error'
+				WHEN g BETWEEN 1000 AND 100999 THEN 'historical failure' END,
+			CASE WHEN g <= 2 OR g BETWEEN 1000 AND 100999 THEN now()-interval '30 minutes' ELSE now() END,
+			CASE WHEN g BETWEEN 5 AND 8 OR g BETWEEN 20000 AND 30010 THEN now()-interval '30 minutes' END
 		FROM generate_series(1,400000) AS g`, suffix, userID, keyID); err != nil {
 		t.Fatal(err)
 	}
@@ -53,6 +56,13 @@ func TestReclaimSelfHealUsesFailedUpdatedIndex(t *testing.T) {
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO river_job(state,args,kind,queue)
 		VALUES ('available',jsonb_build_object('args',jsonb_build_object('work_item_id',$1::text)),'sync_person','sync')`, fmt.Sprint(matchedWorkItemID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO river_job(state,args,kind,queue)
+		SELECT 'available',jsonb_build_object('args',jsonb_build_object('work_item_id',w.id::text)),
+			'sync_person','sync'
+		FROM work_items w
+		WHERE w.subject_key BETWEEN $1 AND $2`, suffix+"-20000", suffix+"-30000"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,not_before)
@@ -90,16 +100,23 @@ WHERE w.id = batch.id`
 		args          []any
 		indexRelation string
 		indexName     string
+		maxRows       int
+		maxBuffers    int
 	}{
 		{
-			name: "Reclaim expired lease selection",
-			sql:  reclaimExpiredLeasesSQL,
-			args: []any{now, 100},
+			name:          "Reclaim expired lease selection",
+			sql:           reclaimExpiredLeasesSQL,
+			args:          []any{now, 100},
+			indexRelation: "work_items",
+			indexName:     "work_items_expired_lease_cursor_idx",
 		},
 		{
-			name: "pump node inflight count",
-			sql:  inflightNodeCountSQL,
-			args: []any{500},
+			name:          "pump node inflight count",
+			sql:           inflightNodeCountSQL,
+			args:          []any{500},
+			indexRelation: "work_items",
+			indexName:     "work_items_active_node_count_idx",
+			maxRows:       500,
 		},
 		{
 			name: "pump key inflight count",
@@ -154,7 +171,9 @@ WHERE w.id = batch.id`
 			sql:           reclaimSelfHealSQL,
 			args:          []any{now, now.Add(-SelfHealAfter), 100},
 			indexRelation: "work_items",
-			indexName:     "work_items_failed_updated_idx",
+			indexName:     "work_items_failed_lease_expired_idx",
+			maxRows:       100,
+			maxBuffers:    500,
 		},
 	}
 
@@ -172,7 +191,21 @@ WHERE w.id = batch.id`
 			if query.indexName != "" && !containsIndexOnRelation(plan.Plan, query.indexRelation, query.indexName) {
 				t.Errorf("query does not use %s", query.indexName)
 			}
+			if query.maxRows > 0 {
+				if actual := maxActualRowsOnIndex(plan.Plan, query.indexRelation, query.indexName); actual > float64(query.maxRows) {
+					t.Errorf("%s read %.0f rows through %s, want at most %d", query.name, actual, query.indexName, query.maxRows)
+				}
+			}
+			if query.maxBuffers > 0 {
+				buffers := plan.Plan.SharedHitBlocks + plan.Plan.SharedReadBlocks
+				if buffers > query.maxBuffers {
+					t.Errorf("%s touched %d shared buffers, want at most %d", query.name, buffers, query.maxBuffers)
+				}
+			}
 			if query.name == "Reclaim expired lease selection" {
+				if loops := maxActualLoopsOnRelation(plan.Plan, "river_job"); loops > 100 {
+					t.Errorf("Reclaim inspected River jobs %.0f times, want at most 100", loops)
+				}
 				if !containsIndexOnRelation(plan.Plan, "river_job", "river_job_active_work_item_idx") {
 					t.Error("Reclaim lease selector does not use river_job_active_work_item_idx")
 				}
@@ -221,11 +254,78 @@ func TestContainsIndexOnBitmapChild(t *testing.T) {
 		RelationName: "work_items",
 		Plans: []explainNode{{
 			NodeType:  "Bitmap Index Scan",
-			IndexName: "work_items_failed_updated_idx",
+			IndexName: "work_items_failed_lease_expired_idx",
 		}},
 	}
-	if !containsIndexOnRelation(plan, "work_items", "work_items_failed_updated_idx") {
+	if !containsIndexOnRelation(plan, "work_items", "work_items_failed_lease_expired_idx") {
 		t.Fatal("did not recognize index on a Bitmap Index Scan child")
+	}
+}
+
+func TestAssignOwnerKeysProcessesOrderedBatches(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run with XFLICKR_INTEGRATION_TEST=1 to use the worktree database")
+	}
+	pool := internalIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	suffix := fmt.Sprintf("keyless-batch-%d", time.Now().UnixNano())
+	const batchSize = 100
+	const rowsPerOwner = 150
+	keyID := seedKey(t, ctx, pool, suffix)
+	var ownerID, orphanID int64
+	if err := pool.QueryRow(ctx, `SELECT user_id FROM api_keys WHERE id=$1`, keyID).Scan(&ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'unused','user') RETURNING id`, suffix+"-orphan@example.test").Scan(&orphanID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE subject_key LIKE $1`, suffix+"-%")
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE email LIKE $1`, suffix+"%")
+	})
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+	if _, err := tx.Exec(ctx, `INSERT INTO schedule_meta(key,value) VALUES ('keyless_owner_cursor','0')
+		ON CONFLICT (key) DO UPDATE SET value='0'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state)
+		SELECT 'sync_person',$1||'-orphan-'||g,$2,'pending' FROM generate_series(1,$3) AS g`, suffix, orphanID, rowsPerOwner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state)
+		SELECT 'sync_person',$1||'-owned-'||g,$2,'pending' FROM generate_series(1,$3) AS g`, suffix, ownerID, rowsPerOwner); err != nil {
+		t.Fatal(err)
+	}
+	assigned := func() int {
+		t.Helper()
+		var count int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM work_items WHERE subject_key LIKE $1 AND key_id IS NOT NULL`, suffix+"-owned-%").Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		return count
+	}
+	if err := assignOwnerKeys(ctx, tx); err != nil {
+		t.Fatal(err)
+	}
+	firstBatch := assigned()
+	if firstBatch > batchSize {
+		t.Fatalf("first pump assigned %d owned keyless rows, want at most %d", firstBatch, batchSize)
+	}
+	if err := assignOwnerKeys(ctx, tx); err != nil {
+		t.Fatal(err)
+	}
+	if secondBatch := assigned(); secondBatch <= firstBatch {
+		t.Fatalf("second pump assigned %d owned keyless rows, want progress beyond %d after skipping ownerless rows", secondBatch, firstBatch)
+	}
+	for assigned() < rowsPerOwner {
+		if err := assignOwnerKeys(ctx, tx); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
