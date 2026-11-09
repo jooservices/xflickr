@@ -23,7 +23,7 @@ advisory lock per tick; others skip. Fields:
 | `credential_decryption_failures` | Work items whose last error indicates a stored credential could not be decrypted, including prior failures and work held for retry. A warning recommends checking configured key IDs and envelope metadata; it never includes key material. |
 | `token_status` | Worst Flickr account state: `none`, `ok`, `reconnect_required`, `revoked`. |
 | `counts_estimated` | True when catalog counts including `photo_sizes` come from planner estimates. |
-| `photo_sizes_pending` / `photo_sizes_ready` / `photo_sizes_running` | Backlog of photos needing sizes (partial index) plus waiting `photo.sizes` jobs; ready and running river jobs. See [observability](observability.md#crawl-health-snapshot-cost). |
+| `photo_sizes_pending` / `photo_sizes_ready` / `photo_sizes_running` | Waiting `photo.sizes` river jobs (`pending`/`scheduled`/`retryable`), then ready and running river jobs. Photos are never counted, so zero does not mean no photo needs sizes. See [observability](observability.md#crawl-health-snapshot-cost). |
 
 ### Idle warning
 

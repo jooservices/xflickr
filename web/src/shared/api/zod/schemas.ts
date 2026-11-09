@@ -1078,7 +1078,7 @@ export const GetAdminOpsStatusResponse = zod.object({
     .int()
     .min(getAdminOpsStatusResponsePhotoSizesPendingMin)
     .describe(
-      'Photos matching photos_sizes_pending_idx plus photo.sizes river jobs still waiting (pending/scheduled/retryable). Queued photos may be counted twice; this is a backlog signal',
+      'photo.sizes river jobs still waiting (pending/scheduled/retryable). Photos are never counted (a count scans the whole partitioned table); this is a backlog signal and not a photo total.',
     ),
   photo_sizes_ready: zod
     .int()
