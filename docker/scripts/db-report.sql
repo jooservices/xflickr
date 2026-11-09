@@ -61,15 +61,21 @@ group by p.relname
 order by sum(pg_total_relation_size(c.oid)) desc;
 
 \echo
-\echo '== 6. Large indexes never scanned (candidates, see docs/database.md)'
-select s.relname as "table", s.indexrelname as "index", pg_size_pretty(pg_relation_size(s.indexrelid)) as size
-from pg_stat_user_indexes s
-join pg_index i on i.indexrelid = s.indexrelid
-where s.idx_scan = 0 and not i.indisunique and pg_relation_size(s.indexrelid) > 50 * 1024 * 1024
-order by pg_relation_size(s.indexrelid) desc
+\echo '== 6. Large indexes never scanned (scans summed over the partitions of each parent index)'
+with idx as (
+    select s.indexrelid, coalesce(p.inhparent, s.indexrelid) as root, s.idx_scan, pg_relation_size(s.indexrelid) as bytes
+    from pg_stat_user_indexes s
+    join pg_index i on i.indexrelid = s.indexrelid
+    left join pg_inherits p on p.inhrelid = s.indexrelid
+    where not i.indisunique
+)
+select root::regclass as index_name, count(*) as partitions, sum(idx_scan) as scans, pg_size_pretty(sum(bytes)) as size
+from idx
+group by root
+having sum(idx_scan) = 0 and sum(bytes) > 50 * 1024 * 1024
+order by sum(bytes) desc
 limit 12;
 
-\echo
 \echo '== 7. Active queries now: by wait type, and anything running longer than 10 s'
 select coalesce(wait_event_type, 'cpu') as waiting_on, count(*) as active
 from pg_stat_activity
