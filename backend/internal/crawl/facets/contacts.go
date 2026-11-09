@@ -17,6 +17,24 @@ import (
 // own contacts.
 type Contacts struct{}
 
+type contactsResponse struct {
+	Contacts *contactsPage `json:"contacts"`
+}
+
+type contactsPage struct {
+	Pages *int             `json:"pages"`
+	Items *[]contactRecord `json:"contact"`
+}
+
+type contactRecord struct {
+	NSID     string     `json:"nsid"`
+	Username string     `json:"username"`
+	Realname string     `json:"realname"`
+	Ignored  flickr.Int `json:"ignored"`
+	Friend   flickr.Int `json:"friend"`
+	Family   flickr.Int `json:"family"`
+}
+
 func (Contacts) Name() string      { return "contacts" }
 func (Contacts) Lane() domain.Lane { return domain.LanePerson }
 
@@ -32,29 +50,10 @@ func (Contacts) Plan(_ context.Context, p domain.Person) []domain.WorkSpec {
 }
 
 func (Contacts) Handle(_ context.Context, p domain.Page) (domain.Result, error) {
-	var e struct {
-		Contacts *struct {
-			Pages *int `json:"pages"`
-			Items *[]struct {
-				NSID     string     `json:"nsid"`
-				Username string     `json:"username"`
-				Realname string     `json:"realname"`
-				Ignored  flickr.Int `json:"ignored"`
-				Friend   flickr.Int `json:"friend"`
-				Family   flickr.Int `json:"family"`
-			} `json:"contact"`
-		} `json:"contacts"`
+	items, pages, err := decodeContactsPage(p)
+	if err != nil {
+		return domain.Result{}, err
 	}
-	if err := json.Unmarshal(p.Payload, &e); err != nil {
-		return domain.Result{}, fmt.Errorf("crawl facets: decode contacts: %w", err)
-	}
-	if e.Contacts == nil || e.Contacts.Pages == nil || e.Contacts.Items == nil || *e.Contacts.Pages < 1 || p.Number < 1 || p.Number > *e.Contacts.Pages {
-		return domain.Result{}, fmt.Errorf("crawl facets: invalid contacts pagination metadata")
-	}
-	if p.Number < *e.Contacts.Pages && len(*e.Contacts.Items) == 0 {
-		return domain.Result{}, fmt.Errorf("crawl facets: empty nonfinal contacts page")
-	}
-	items := *e.Contacts.Items
 	out := domain.Result{
 		People:      make([]catalog.Person, 0, len(items)),
 		Contacts:    make([]catalog.Contact, 0, len(items)),
@@ -81,8 +80,27 @@ func (Contacts) Handle(_ context.Context, p domain.Page) (domain.Result, error) 
 		out.Contacts = append(out.Contacts, catalog.Contact{PersonNSID: p.Item.Subject, ContactNSID: item.NSID, SeenAt: seenAt})
 		out.Discoveries = append(out.Discoveries, domain.Discovery{NSID: item.NSID, Via: "contact"})
 	}
-	out.HasMore = p.Number < *e.Contacts.Pages
+	out.HasMore = p.Number < pages
 	return out, nil
+}
+
+func decodeContactsPage(p domain.Page) ([]contactRecord, int, error) {
+	var response contactsResponse
+	if err := json.Unmarshal(p.Payload, &response); err != nil {
+		return nil, 0, fmt.Errorf("crawl facets: decode contacts: %w", err)
+	}
+	if response.Contacts == nil || response.Contacts.Pages == nil || response.Contacts.Items == nil {
+		return nil, 0, fmt.Errorf("crawl facets: invalid contacts pagination metadata")
+	}
+	pages := *response.Contacts.Pages
+	if pages < 1 || p.Number < 1 || p.Number > pages {
+		return nil, 0, fmt.Errorf("crawl facets: invalid contacts pagination metadata")
+	}
+	items := *response.Contacts.Items
+	if p.Number < pages && len(items) == 0 {
+		return nil, 0, fmt.Errorf("crawl facets: empty nonfinal contacts page")
+	}
+	return items, pages, nil
 }
 
 var _ domain.Facet = Contacts{}
