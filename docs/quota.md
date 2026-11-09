@@ -76,24 +76,36 @@ uses `window_start = Redis now - 60 minutes`; it describes that rolling
 interval, not a new fixed window. Counts may decrease between snapshots as
 grants expire; the existing upsert still never lowers one snapshot row.
 
-When a governor is configured with a rebuilder, each key has a versioned `rolling:ready` marker
-in Redis. If the marker is missing (at start or after Redis lost its keys),
-`Acquire` fails closed: it blocks while the counters are rebuilt, then retries
-once. If the rebuild fails it returns the governor-offline error; if the key
-still is not ready it returns a retry delay. Concurrent acquisitions for one key
-share a single rebuild.
+Every Governor is built through one constructor that requires a Rebuilder.
+Each key has a versioned `rolling:ready` marker in Redis. The marker lives as
+long as the ledger is live: only the atomic restore script creates it,
+successful grants extend its TTL, and Redis loss removes it. A grant never
+creates the marker. If the marker is missing (at start or after Redis lost its
+keys), `Acquire` refuses with a one-second retry (`ErrLedgerNotReady`), takes a
+short-lived Redis rebuild lock, rebuilds from the call log, then retries once.
+If the rebuild fails it returns the governor-offline error; if the key still is
+not ready it keeps returning the one-second retry. Concurrent acquisitions and
+roles share one rebuild through the Redis lock and the rebuilder's in-process
+single-flight.
 
 The rebuild reads individual `api_call_log` grant rows in the last 60 minutes
 with `outcome IS NULL`, retaining their exact timestamps and classes. Diagnostic
-outcome rows do not consume a second permit. Stable log member identities make
-replay idempotent. Restore retains existing sorted-set members and never lowers
-counts. Aggregate `quota_usage` snapshots remain available to history readers;
-they are not replayed because they cannot identify when individual calls expire.
+outcome rows do not consume a second permit. When the ready marker is absent the
+ledger is untrusted: acquire already refuses every grant until restore finishes,
+so no grant can race a rebuild. Restore therefore deletes the key's rolling lane
+sorted sets (interactive, person, photo), then replays the call-log rows with
+`ZADD NX` and sets the ready marker in the same atomic Lua call. Re-running
+restore while ready is set is a no-op, so a second restore keeps the same count.
+A grant is written to the call log immediately after it is granted; a grant whose
+log row was not yet written when the marker was lost is not restored (rare,
+bounded by log write latency). Aggregate `quota_usage` snapshots remain available
+to history readers; they are not replayed because they cannot identify when
+individual calls expire.
 
-The versioned marker is absent on first start after deployment, so the existing
-fail-closed path rebuilds before granting. Restart all roles together; mixing
-fixed-window and rolling-window governors is unsupported. No schema migration
-or settings change is needed for this update.
+The versioned marker is absent on first start after deployment or Redis loss,
+so every role fails closed and rebuilds before granting. Restart all roles
+together; mixing fixed-window and rolling-window governors is unsupported. No
+schema migration or settings change is needed for this update.
 
 `api_call_log(key_id, class, called_at)` is created by the
 `api_call_log` migration. The governor writes one row for every granted call
@@ -107,10 +119,11 @@ The initial `flickr.test.echo` used to validate a new public API key is logged
 with `key_id IS NULL` because its key row does not exist yet. It has no quota
 class and is excluded from per-key recovery and rollups.
 
-The scheduler role builds one rebuilder, rebuilds every tracked key at start,
-and runs the flusher in the background until shutdown, when it flushes a last
-time. Failures of the start rebuild or of a flush are logged; `Acquire` keeps
-failing closed for any key that is not ready.
+Every role (scheduler, crawl, sync/photo, account verification) shares the same
+governor constructor and rebuilder wiring. The scheduler role also rebuilds
+every tracked key at start and runs the flusher in the background until
+shutdown, when it flushes a last time. Failures of the start rebuild or of a
+flush are logged; `Acquire` keeps failing closed for any key that is not ready.
 
 ## Quota state endpoints and events
 

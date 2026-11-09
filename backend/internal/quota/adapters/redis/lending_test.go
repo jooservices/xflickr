@@ -122,8 +122,12 @@ func TestRefusedPhotoAttemptsRefreshDemand(t *testing.T) {
 			keys := g.keys(1)
 			switch reason {
 			case "hourly":
+				// Seed a ready ledger. Without the ready marker Acquire would rebuild
+				// from an empty call log and replace these live members.
 				seedGrants(t, g, domain.Interactive, int(budget.HourlyLimit), now)
+				server.Set(keys[5], "1")
 			case "cooldown":
+				server.Set(keys[5], "1")
 				server.Set(keys[3], strconv.FormatInt(now.Add(time.Hour).UnixMilli(), 10))
 			case "rebuild":
 				// Calling the script directly isolates readiness rejection from the Go rebuild retry.

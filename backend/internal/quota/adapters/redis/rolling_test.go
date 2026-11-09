@@ -111,15 +111,19 @@ func TestRollingPhotoShareRetryUsesOldestCountedGrant(t *testing.T) {
 	s.SetTime(start)
 	seedGrants(t, g, domain.Interactive, 1, start.Add(-30*time.Minute))
 	seedGrants(t, g, domain.Photo, 5, start.Add(-10*time.Minute))
+	// Live seeds must keep the ready marker so Acquire does not rebuild and
+	// replace them from an empty call log.
+	s.Set(g.keys(1)[5], "1")
 	if p, w, e := acquire(t, g, domain.Photo); e != nil || p != nil || w != 30*time.Minute {
 		t.Fatalf("photo reset: %v %s %v", p, w, e)
 	}
 }
 
-func TestRollingRebuildRetainsExactTimesAndExistingCounts(t *testing.T) {
+func TestRollingRebuildReplacesLanesFromCallLog(t *testing.T) {
 	g, s, c := setupGovernor(t, generousBudget())
 	now := time.Now().Truncate(time.Millisecond)
 	s.SetTime(now)
+	// Orphan live members must not survive restore: the call log is authoritative.
 	seedGrants(t, g, domain.Photo, 2, now.Add(-10*time.Minute))
 	counters := Counters{Client: c, Prefix: g.Prefix}
 	grants := []app.Grant{
@@ -131,12 +135,12 @@ func TestRollingRebuildRetainsExactTimesAndExistingCounts(t *testing.T) {
 		t.Fatal(e)
 	}
 	live, e := counters.Live(t.Context(), 1)
-	if e != nil || live.Used != 4 || live.ByClass["person"] != 1 || live.ByClass["photo"] != 3 || !live.ResetAt.Equal(now.Add(time.Minute)) {
+	if e != nil || live.Used != 2 || live.ByClass["person"] != 1 || live.ByClass["photo"] != 1 || live.ByClass["interactive"] != 0 || !live.ResetAt.Equal(now.Add(time.Minute)) {
 		t.Fatalf("restored: %+v %v", live, e)
 	}
 	s.SetTime(now.Add(time.Minute))
 	live, e = counters.Live(t.Context(), 1)
-	if e != nil || live.Used != 3 || live.ByClass["person"] != 0 {
+	if e != nil || live.Used != 1 || live.ByClass["person"] != 0 || live.ByClass["photo"] != 1 {
 		t.Fatalf("exact expiry: %+v %v", live, e)
 	}
 }

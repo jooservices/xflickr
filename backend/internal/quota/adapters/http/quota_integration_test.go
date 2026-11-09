@@ -99,7 +99,18 @@ func TestQuotaEndpointsAfterCallsIntegration(t *testing.T) {
 	t.Cleanup(clearKeys)
 
 	budgets := quotapostgres.Budgets{Pool: pool}
-	governor := quotaredis.Governor{Client: client, Prefix: prefix, Budgets: budgets}
+	rebuilder := &app.Rebuilder{
+		Store:    quotapostgres.Usage{Pool: pool},
+		Calls:    quotapostgres.CallLog{Pool: pool},
+		Counters: quotaredis.Counters{Client: client, Prefix: prefix},
+	}
+	governor, err := quotaredis.NewGovernor(client, prefix, budgets, rebuilder, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (quotaredis.Counters{Client: client, Prefix: prefix}).Restore(ctx, app.Usage{KeyID: keyID}); err != nil {
+		t.Fatal(err)
+	}
 	for _, class := range []domain.Class{domain.Interactive, domain.Person, domain.Person, domain.Photo} {
 		if permit, _, err := governor.Acquire(ctx, keyID, class); err != nil || permit == nil {
 			t.Fatalf("acquire %s = %v %v", class, permit, err)

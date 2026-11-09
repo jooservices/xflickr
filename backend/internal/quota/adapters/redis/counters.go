@@ -62,7 +62,9 @@ func (c Counters) Snapshot(ctx context.Context, keyID int64) (app.Usage, bool, e
 	return app.Usage{KeyID: keyID, WindowStart: time.UnixMilli(v[0]).Add(-time.Hour), Used: v[2] + v[3] + v[4], ByClass: classes}, true, nil
 }
 
-// Restore retains existing counts and replays exact grant timestamps.
+// Restore replaces rolling lane sets from usage.Grants when the ready marker
+// is absent, then marks the ledger ready. Existing lane members are discarded
+// because the call log is authoritative for the last hour after marker loss.
 func (c Counters) Restore(ctx context.Context, usage app.Usage) (bool, error) {
 	if ctx == nil || usage.KeyID <= 0 || c.Client == nil {
 		return false, errors.New("quota: counters are not configured")

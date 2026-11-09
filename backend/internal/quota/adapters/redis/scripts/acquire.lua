@@ -1,5 +1,7 @@
 -- KEYS: bucket, interactive set, person set, cooldown, photo set, ready, photo demand, sequence
--- ARGV: rate, burst, hourly limit, reserve, person share, class, require ready (1/0), idle photo protection
+-- ARGV: rate, burst, hourly limit, reserve, person share, class, idle photo protection
+-- Grants never SET the ready marker; only restore.lua creates it. A successful
+-- grant only EXTENDS an existing marker TTL so steady traffic keeps the ledger live.
 local now, counts, used, oldest = rollingWindow(KEYS)
 local rate = tonumber(ARGV[1])
 local burst = tonumber(ARGV[2])
@@ -7,15 +9,15 @@ local hourly = tonumber(ARGV[3])
 local reserve = tonumber(ARGV[4])
 local personShare = tonumber(ARGV[5])
 local class = ARGV[6]
-local idlePhotoProtection = tonumber(ARGV[8])
+local idlePhotoProtection = tonumber(ARGV[7])
 
 -- Every photo attempt signals demand, including attempts refused below.
 if class == 'photo' then
   redis.call('SET', KEYS[7], '1', 'PX', 60000)
 end
 
--- Fail closed until the counters were rebuilt after a Redis loss.
-if ARGV[7] == '1' and redis.call('EXISTS', KEYS[6]) == 0 then
+-- Fail closed until restore rebuilt the rolling ledger. Grants never set ready.
+if redis.call('EXISTS', KEYS[6]) == 0 then
   return {0, 1000, 'rebuild'}
 end
 
@@ -85,5 +87,6 @@ local sequence = redis.call('INCR', KEYS[8])
 redis.call('PEXPIRE', KEYS[8], 7200000)
 redis.call('ZADD', lane, now, tostring(now) .. ':' .. tostring(sequence))
 redis.call('PEXPIRE', lane, 7200000)
-redis.call('SET', KEYS[6], 1, 'PX', 7200000)
+-- PEXPIRE on a missing key is a no-op, so this never creates the marker.
+redis.call('PEXPIRE', KEYS[6], 7200000)
 return {1, 0, 'ok', now}

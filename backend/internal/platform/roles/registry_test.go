@@ -678,7 +678,10 @@ func TestNewSchedulerPumpWiresQueueStatePublisher(t *testing.T) {
 	client := redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:1"})
 	defer client.Close()
 	settings := scheduleapp.PumpSettings{RetryMax: 4}
-	quota := newQuotaRuntime(&pgxpool.Pool{}, client, config.Config{})
+	quota, err := newQuotaRuntime(&pgxpool.Pool{}, client, config.Config{})
+	if err != nil {
+		t.Fatalf("newQuotaRuntime() error = %v", err)
+	}
 	pump, err := newSchedulerPump(&pgxpool.Pool{}, quota.Governor, nil, nil, settings)
 	if err != nil {
 		t.Fatalf("newSchedulerPump() error = %v", err)
@@ -691,7 +694,10 @@ func TestNewSchedulerPumpWiresQueueStatePublisher(t *testing.T) {
 func TestNewQuotaRuntimeWiresRebuildFlushAndCallLog(t *testing.T) {
 	client := redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:1"})
 	defer client.Close()
-	quota := newQuotaRuntime(&pgxpool.Pool{}, client, config.Config{Redis: config.RedisConfig{Prefix: "wt:"}})
+	quota, err := newQuotaRuntime(&pgxpool.Pool{}, client, config.Config{Redis: config.RedisConfig{Prefix: "wt:"}})
+	if err != nil {
+		t.Fatalf("newQuotaRuntime() error = %v", err)
+	}
 	governor := quota.Governor
 	if governor.Rebuilder == nil || governor.Recorder == nil || governor.Budgets == nil || governor.Prefix != "wt:" {
 		t.Fatalf("governor wiring = %+v", governor)

@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	redisv9 "github.com/redis/go-redis/v9"
+
 	catalogpg "github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
 	catalogapp "github.com/jooservices/xflickr/internal/catalog/app"
 	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
@@ -103,7 +105,13 @@ func TestCrawlObservationsAtomicReplayAndVisibility(t *testing.T) {
 		_, _ = fmt.Fprintf(w, `{"stat":"ok","photos":{"pages":1,"photo":[%s,%s%s]}}`, photo, photo, extra)
 	}))
 	defer fake.Close()
-	engine, err := newCrawlEngine(pool, nil, cfg, flickrclient.NewClient(fake.URL, nil))
+	redisClient := redisv9.NewClient(&redisv9.Options{
+		Addr:     fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port),
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+	t.Cleanup(func() { _ = redisClient.Close() })
+	engine, err := newCrawlEngine(pool, redisClient, cfg, flickrclient.NewClient(fake.URL, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
