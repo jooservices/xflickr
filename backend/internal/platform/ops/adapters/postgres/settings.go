@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strconv"
 	"time"
 )
@@ -22,7 +23,7 @@ func DefaultHealthSettings() HealthSettings {
 // from app_settings. Missing or invalid rows fall back to defaults and caps.
 func LoadHealthSettings(ctx context.Context, q Querier) (HealthSettings, error) {
 	out := DefaultHealthSettings()
-	if ctx == nil || q == nil {
+	if ctx == nil || nilQuerier(q) {
 		return out, fmt.Errorf("ops: health settings query requires context and querier")
 	}
 	rows, err := q.Query(ctx, `SELECT key, value #>> '{}' FROM app_settings WHERE key = ANY($1)`,
@@ -61,4 +62,12 @@ func clampDuration(value, min, max time.Duration) time.Duration {
 		return max
 	}
 	return value
+}
+
+func nilQuerier(q Querier) bool {
+	if q == nil {
+		return true
+	}
+	value := reflect.ValueOf(q)
+	return value.Kind() == reflect.Pointer && value.IsNil()
 }

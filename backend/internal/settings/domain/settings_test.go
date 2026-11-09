@@ -69,6 +69,27 @@ func TestMergeSeededDefaults(t *testing.T) {
 	}
 }
 
+func TestClampHealthSettings(t *testing.T) {
+	if got := ClampHealthInterval(time.Second); got != 10*time.Second {
+		t.Fatalf("interval min = %s", got)
+	}
+	if got := ClampHealthInterval(2 * time.Hour); got != time.Hour {
+		t.Fatalf("interval max = %s", got)
+	}
+	if got := ClampHealthInterval(2 * time.Minute); got != 2*time.Minute {
+		t.Fatalf("interval mid = %s", got)
+	}
+	if got := ClampHealthTimeout(0); got != time.Second {
+		t.Fatalf("timeout min = %s", got)
+	}
+	if got := ClampHealthTimeout(2 * time.Minute); got != time.Minute {
+		t.Fatalf("timeout max = %s", got)
+	}
+	if got := ClampHealthTimeout(15 * time.Second); got != 15*time.Second {
+		t.Fatalf("timeout mid = %s", got)
+	}
+}
+
 func TestHealthSettingsBounds(t *testing.T) {
 	interval := definition(t, OpsHealthInterval)
 	if string(interval.Value) != "60" || interval.UserOverridable || !floatEqual(interval.Min, 10) || !floatEqual(interval.Max, 3600) {

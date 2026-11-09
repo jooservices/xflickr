@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -57,12 +56,6 @@ func TestExclusiveStoreAcquireAndLockErrors(t *testing.T) {
 	}
 }
 
-func TestPoolAdapterRequiresPool(t *testing.T) {
-	if _, err := (PoolAdapter{}).Acquire(context.Background()); err == nil {
-		t.Fatal("expected error")
-	}
-}
-
 func TestLoadHealthSettingsDefaults(t *testing.T) {
 	got, err := LoadHealthSettings(context.Background(), &snapshotDB{})
 	if err != nil {
@@ -74,12 +67,6 @@ func TestLoadHealthSettingsDefaults(t *testing.T) {
 	}
 	if _, err := LoadHealthSettings(nil, &snapshotDB{}); err == nil {
 		t.Fatal("expected nil context error")
-	}
-	if clampDuration(0, 10*time.Second, time.Minute) != 10*time.Second {
-		t.Fatal("clamp min")
-	}
-	if clampDuration(2*time.Minute, 10*time.Second, time.Minute) != time.Minute {
-		t.Fatal("clamp max")
 	}
 }
 

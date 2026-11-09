@@ -7,7 +7,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jooservices/xflickr/internal/platform/ops"
 )
@@ -27,23 +26,6 @@ type LockConn interface {
 // share one PostgreSQL session.
 type ConnPool interface {
 	Acquire(context.Context) (LockConn, error)
-}
-
-// PoolAdapter adapts *pgxpool.Pool to ConnPool.
-type PoolAdapter struct {
-	Pool *pgxpool.Pool
-}
-
-// Acquire returns a session connection for the health advisory lock.
-func (a PoolAdapter) Acquire(ctx context.Context) (LockConn, error) {
-	if a.Pool == nil {
-		return nil, errors.New("ops: health lock pool is required")
-	}
-	conn, err := a.Pool.Acquire(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("ops: acquire health lock connection: %w", err)
-	}
-	return conn, nil
 }
 
 // ExclusiveStore serialises Snapshot behind HealthLockKey. When the lock is

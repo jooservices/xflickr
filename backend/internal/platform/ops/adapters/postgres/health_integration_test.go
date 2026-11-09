@@ -38,13 +38,13 @@ func TestOnlyOneMonitorRunsAtATime(t *testing.T) {
 	pool := openOpsIntegrationPool(t)
 	inner := opspostgres.Store{Pool: pool, DB: pool, StatementTimeout: time.Minute}
 	lockKey := opspostgres.HealthLockKey + 369
-	adapter := opspostgres.PoolAdapter{Pool: pool}
+	locker := pgxLockPool{pool: pool}
 	first := opspostgres.ExclusiveStore{
 		Inner: blockingStore{delay: 400 * time.Millisecond, inner: inner},
-		Pool:  adapter,
+		Pool:  locker,
 		Key:   lockKey,
 	}
-	second := opspostgres.ExclusiveStore{Inner: inner, Pool: adapter, Key: lockKey}
+	second := opspostgres.ExclusiveStore{Inner: inner, Pool: locker, Key: lockKey}
 
 	var busy atomic.Int64
 	var wg sync.WaitGroup
@@ -73,6 +73,12 @@ func TestOnlyOneMonitorRunsAtATime(t *testing.T) {
 	if busy.Load() != 1 {
 		t.Fatal("expected the second monitor to observe the advisory lock")
 	}
+}
+
+type pgxLockPool struct{ pool *pgxpool.Pool }
+
+func (p pgxLockPool) Acquire(ctx context.Context) (opspostgres.LockConn, error) {
+	return p.pool.Acquire(ctx)
 }
 
 type blockingStore struct {
@@ -157,7 +163,7 @@ func TestPhotoSizesPendingUsesPartialIndex(t *testing.T) {
 	startID := time.Now().UnixNano()
 	if _, err := pool.Exec(ctx, `
 INSERT INTO photos(id, owner_nsid, last_update, visibility, sizes_status, sizes, raw, content_hash)
-SELECT $1 + g, $2, now(), 'public', 'provisional', '[]'::jsonb, '{}'::bytea, decode(repeat('aa', 32), 'hex')
+SELECT $1 + g, $2, now(), 'public', 'provisional', '[]'::jsonb, '{}'::jsonb, decode(repeat('aa', 32), 'hex')
 FROM generate_series(1, $3) AS g`, startID, suffix, rowsWanted); err != nil {
 		t.Fatal(err)
 	}

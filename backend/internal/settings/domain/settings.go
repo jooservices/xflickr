@@ -682,3 +682,29 @@ func formatCap(cap float64) string {
 func floatPointer(value float64) *float64 {
 	return &value
 }
+
+// ClampHealthInterval enforces ops.health_interval bounds (10s–1h).
+func ClampHealthInterval(value time.Duration) time.Duration {
+	const min = 10 * time.Second
+	const max = time.Hour
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
+}
+
+// ClampHealthTimeout enforces ops.health_statement_timeout bounds (1s–60s).
+func ClampHealthTimeout(value time.Duration) time.Duration {
+	const min = time.Second
+	const max = time.Minute
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
+}

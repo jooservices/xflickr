@@ -156,16 +156,7 @@ func (schedulerRole) Run(ctx context.Context) error {
 	}
 	quota.Emitter = newQuotaEmitter(quotaStates(pool, redisClient, cfg), cfg)
 	defer quota.start(ctx, slog.Default())()
-	healthSettings, err := opspostgres.LoadHealthSettings(ctx, pool)
-	if err != nil {
-		slog.Default().WarnContext(ctx, "crawl health: load settings failed; using defaults", "error", err)
-		healthSettings = opspostgres.DefaultHealthSettings()
-	}
-	healthStore := opspostgres.ExclusiveStore{
-		Inner: opspostgres.Store{Pool: pool, DB: pool, StatementTimeout: healthSettings.StatementTimeout},
-		Pool:  opspostgres.PoolAdapter{Pool: pool},
-	}
-	stopHealth := startCrawlHealth(ctx, healthStore, cfg, slog.Default(), healthSettings.Interval)
+	stopHealth := startCrawlHealthMonitor(ctx, pool, cfg, slog.Default())
 	defer stopHealth()
 	blobs, err := newBlobStore(ctx, cfg)
 	if err != nil {
