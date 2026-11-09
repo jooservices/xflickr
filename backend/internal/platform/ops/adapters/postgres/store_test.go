@@ -65,7 +65,7 @@ func TestSnapshotBuildsHealthSummary(t *testing.T) {
 	if snapshot.WorkItems["failed"] != 9 || snapshot.RiverJobs["discarded"] != 10 || snapshot.FailedWorkItems != 9 || snapshot.DeadJobs != 10 {
 		t.Fatalf("work=%v river=%v", snapshot.WorkItems, snapshot.RiverJobs)
 	}
-	if snapshot.PhotoSizesJobs != (ops.LaneJobs{Pending: 11, Ready: 12, Running: 13}) {
+	if snapshot.PhotoSizesJobs != (ops.LaneJobs{Pending: 6, Ready: 12, Running: 13}) {
 		t.Fatalf("photo sizes = %+v", snapshot.PhotoSizesJobs)
 	}
 	if snapshot.Pending.Total != 14 || snapshot.Pending.WithoutKey != 15 || snapshot.Pending.NotBeforeLater != 16 || !snapshot.Pending.Oldest.Equal(oldest) {
@@ -73,6 +73,9 @@ func TestSnapshotBuildsHealthSummary(t *testing.T) {
 	}
 	if snapshot.CredentialDecryptionFailures != 17 || snapshot.CallsLast10Min != 18 || snapshot.QuotaWaitsLastHour != 21 || snapshot.QuotaWaitsLast10Min != 22 || len(snapshot.Keys) != 1 || snapshot.Keys[0].KeyID != 19 {
 		t.Fatalf("other snapshot fields = %+v", snapshot)
+	}
+	if pool.photoSizesScan {
+		t.Fatal("the snapshot must not count photos needing sizes: it scans the whole partitioned table")
 	}
 	if pool.groupedQueries != 4 {
 		t.Fatalf("grouped=%d", pool.groupedQueries)
@@ -213,6 +216,7 @@ type snapshotDB struct {
 	scanErr        error
 	rowsErr        error
 	exactPhotos    bool
+	photoSizesScan bool
 	exactFavorites bool
 	timeoutQuery   string
 	timeoutOnCall  int
@@ -324,9 +328,10 @@ func (db *snapshotDB) QueryRow(_ context.Context, query string, _ ...any) pgx.Ro
 	var values []any
 	switch {
 	case strings.Contains(query, "FROM photos") && strings.Contains(query, "tombstoned_at IS NULL"):
+		db.photoSizesScan = true
 		values = []any{int64(5)}
 	case strings.Contains(query, "FROM river_job") && strings.Contains(query, "photo.sizes"):
-		values = []any{int64(6), int64(12), int64(13)} // waiting=6 => pending 5+6=11
+		values = []any{int64(6), int64(12), int64(13)} // pending is the waiting River jobs only
 	case strings.Contains(query, "most_common_freqs") || strings.Contains(query, "WITH ORDINALITY"):
 		values = []any{int64(8)}
 	case strings.Contains(query, "pg_class c"):

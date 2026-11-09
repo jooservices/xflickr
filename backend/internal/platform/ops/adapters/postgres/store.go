@@ -220,20 +220,11 @@ FROM work_items WHERE state = 'pending'`).Scan(&snap.Pending.Total, &snap.Pendin
 	return snap, nil
 }
 
-// photosNeedingSizesSQL matches photos_sizes_pending_idx so PostgreSQL can use
-// an index-only scan. photo_sizes_pending is this count plus waiting photo.sizes
-// river jobs (pending/scheduled/retryable); jobs already queued may be counted
-// twice and the field is an operational backlog signal, not a unique photo total.
-const photosNeedingSizesSQL = `SELECT count(*) FROM photos
-WHERE tombstoned_at IS NULL
-  AND (sizes_status NOT IN ('confirmed', 'unavailable')
-       OR (sizes_status = 'confirmed' AND sizes_checked_at < last_update))`
-
+// photoSizesJobs reports the photo.sizes backlog from River jobs only. It never
+// counts photos: about half of the catalog can be waiting for sizes, so an exact
+// count is a scan of the whole partitioned table (61 GB in production) even
+// with the partial index. The field is a backlog signal, not a photo total.
 func (s Store) photoSizesJobs(ctx context.Context, q Querier, snap *ops.Snapshot) (ops.LaneJobs, error) {
-	var needing int64
-	if err := s.queryRow(ctx, q, snap, "photo_sizes_pending_photos", photosNeedingSizesSQL).Scan(&needing); err != nil {
-		return ops.LaneJobs{}, err
-	}
 	var waiting, ready, running int64
 	if err := s.queryRow(ctx, q, snap, "photo_sizes_river", `SELECT
   count(*) FILTER (WHERE state IN ('pending','scheduled','retryable')),
@@ -244,7 +235,7 @@ WHERE args->>'kind'='photo.sizes'
   AND state IN ('available','pending','scheduled','retryable','running')`).Scan(&waiting, &ready, &running); err != nil {
 		return ops.LaneJobs{}, err
 	}
-	return ops.LaneJobs{Pending: needing + waiting, Ready: ready, Running: running}, nil
+	return ops.LaneJobs{Pending: waiting, Ready: ready, Running: running}, nil
 }
 
 // estimateSQL reads a table size. Partitioned catalog tables hold millions of
