@@ -11,11 +11,11 @@ import (
 func TestFilterBuildsEquivalentSQLAndSearchRules(t *testing.T) {
 	filter := Filter(domain.User{ID: 42})
 	for _, fragment := range []string{
-		"EXISTS (SELECT 1 FROM observations own_observation",
+		"FROM observations own_observation",
 		"own_observation.user_id = $1",
 		"own_observation.record_kind = 'photo'",
 		"own_observation.record_id = photos.id::text",
-		"EXISTS (SELECT 1 FROM observations shared_observation",
+		"FROM observations shared_observation",
 		"shared_observation.record_kind = 'photo'",
 		"shared_observation.record_id = photos.id::text",
 		"setting.user_id = shared_observation.user_id",

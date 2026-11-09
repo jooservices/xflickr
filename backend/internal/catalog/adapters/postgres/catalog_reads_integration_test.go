@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/jooservices/xflickr/internal/catalog/app"
 	"github.com/jooservices/xflickr/internal/catalog/domain"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
+	sharingapp "github.com/jooservices/xflickr/internal/sharing/app"
 )
 
 func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
@@ -134,6 +136,20 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if photo, err := reads.GetPhoto(ctx, user1ID, photoIDs[1]); err != nil || photo.ID != photoIDs[1] {
 		t.Fatalf("shared photo=%+v err=%v", photo, err)
 	}
+	filter := sharingapp.FilterByUserID(user1ID).SQL
+	planArgs := append(append([]any{}, filter.Args...), photoIDs[1])
+	var rawPlan []byte
+	planQuery := `EXPLAIN (FORMAT JSON)
+SELECT photos.id FROM photos
+WHERE photos.id = $2 AND ` + filter.Expression
+	if err := pool.QueryRow(ctx, planQuery, planArgs...).Scan(&rawPlan); err != nil {
+		t.Fatalf("explain photo-by-ID visibility lookup: %v", err)
+	}
+	plan := string(rawPlan)
+	if !strings.Contains(plan, "Index Scan") || strings.Contains(plan, "Seq Scan on observations") {
+		t.Fatalf("photo-by-ID visibility plan does not use bounded lookups: %s", plan)
+	}
+	t.Logf("photo-by-ID visibility EXPLAIN: %s", plan)
 	favorites, _, err := reads.ListFavorites(ctx, user1ID, "", 10)
 	if err != nil || len(favorites.Items) != 1 || favorites.Items[0].Photo.ID != photoIDs[1] {
 		t.Fatalf("visible favorites=%+v err=%v", favorites, err)
