@@ -66,6 +66,7 @@ components:
       - internal/platform/obs/**
       - internal/platform/ops/**
       - internal/platform/outbox/**
+      - internal/platform/maintenance/**
       - internal/platform/queue/**
       - internal/platform/sse/**
   # Standalone fake Flickr service used by contract and E2E tests.

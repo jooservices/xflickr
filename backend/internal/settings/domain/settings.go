@@ -50,6 +50,10 @@ const (
 	ScoreWeightDepth          Key = "score_weight_depth"
 	ScoreWeightAgeMinutes     Key = "score_weight_age_minutes"
 	ScoreAgingBatchSize       Key = "score_aging_batch_size"
+	OpsHealthInterval         Key = "ops.health_interval"
+	OpsHealthStatementTimeout Key = "ops.health_statement_timeout"
+	APICallLogRetentionDays   Key = "maintenance.api_call_log_retention_days"
+	APICallLogDryRun          Key = "maintenance.api_call_log_dry_run"
 )
 
 // Effective contains the merged, validated settings for one user. Durations
@@ -87,6 +91,10 @@ type Effective struct {
 	ScoreWeightDepth          float64
 	ScoreWeightAgeMinutes     float64
 	ScoreAgingBatchSize       int
+	OpsHealthInterval         time.Duration
+	OpsHealthStatementTimeout time.Duration
+	APICallLogRetentionDays   int
+	APICallLogDryRun          bool
 }
 
 // Definition is the application-level value and policy for a setting.
@@ -202,6 +210,10 @@ var schemas = map[Key]JSONSchema{
 	ScoreWeightDepth:          {Type: "number", Minimum: minZero},
 	ScoreWeightAgeMinutes:     {Type: "number", Minimum: minZero},
 	ScoreAgingBatchSize:       {Type: "integer", Minimum: minOne},
+	OpsHealthInterval:         {Type: "integer", Minimum: floatPointer(10), Maximum: floatPointer(3600)},
+	OpsHealthStatementTimeout: {Type: "integer", Minimum: floatPointer(1), Maximum: floatPointer(60)},
+	APICallLogRetentionDays:   {Type: "integer", Minimum: floatPointer(7), Maximum: floatPointer(365)},
+	APICallLogDryRun:          {Type: "boolean"},
 }
 
 // SchemaFor returns the JSON schema associated with a typed key.
@@ -241,6 +253,10 @@ func Keys() []Key {
 		SyncReadyCap,
 		LeaseTimeout,
 		ScoreWeightPlan, ScoreWeightDirectAction, ScoreWeightStarred, ScoreWeightDepth, ScoreWeightAgeMinutes, ScoreAgingBatchSize,
+		OpsHealthInterval,
+		OpsHealthStatementTimeout,
+		APICallLogRetentionDays,
+		APICallLogDryRun,
 	}
 }
 
@@ -280,6 +296,10 @@ func Defaults() []Definition {
 		{Key: ScoreWeightDepth, Value: json.RawMessage("5"), UserOverridable: false, Min: floatPointer(0)},
 		{Key: ScoreWeightAgeMinutes, Value: json.RawMessage("0.1"), UserOverridable: false, Min: floatPointer(0)},
 		{Key: ScoreAgingBatchSize, Value: json.RawMessage("500"), UserOverridable: false, Min: floatPointer(1)},
+		{Key: OpsHealthInterval, Value: json.RawMessage("60"), UserOverridable: false, Min: floatPointer(10), Max: floatPointer(3600)},
+		{Key: OpsHealthStatementTimeout, Value: json.RawMessage("5"), UserOverridable: false, Min: floatPointer(1), Max: floatPointer(60)},
+		{Key: APICallLogRetentionDays, Value: json.RawMessage("30"), UserOverridable: false, Min: floatPointer(7), Max: floatPointer(365)},
+		{Key: APICallLogDryRun, Value: json.RawMessage("false"), UserOverridable: false},
 	}
 }
 
@@ -432,10 +452,13 @@ func integralToken(number json.Number) bool {
 //
 //nolint:cyclop // per-setting merge rules; tracked for a table-driven refactor
 func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
-	if len(snapshot.Settings) != len(schemas) {
-		return Effective{}, nil, fmt.Errorf("settings: got %d application settings, want %d", len(snapshot.Settings), len(schemas))
-	}
+	// Extra rows are ignored on purpose: a database that is newer than this
+	// binary (a migration added a setting) or a rollback to the previous binary
+	// must not stop the crawl. Only a missing registered key is an error.
 	for key, setting := range snapshot.Settings {
+		if _, known := schemas[key]; !known {
+			continue
+		}
 		if setting.Key != key {
 			return Effective{}, nil, fmt.Errorf("settings: application setting map key %q does not match row key %q", key, setting.Key)
 		}
@@ -449,9 +472,11 @@ func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
 		}
 	}
 
-	values := make(map[Key]json.RawMessage, len(snapshot.Settings))
+	values := make(map[Key]json.RawMessage, len(schemas))
 	for key, setting := range snapshot.Settings {
-		values[key] = setting.Value
+		if _, known := schemas[key]; known {
+			values[key] = setting.Value
+		}
 	}
 	overrideKeys := make([]Key, 0, len(snapshot.Overrides))
 	for key := range snapshot.Overrides {
@@ -564,6 +589,16 @@ func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
 	if result.ScoreAgingBatchSize, err = integer(values[ScoreAgingBatchSize]); err != nil {
 		return Effective{}, nil, invalidStored(ScoreAgingBatchSize, err)
 	}
+	if result.OpsHealthInterval, err = duration(values[OpsHealthInterval]); err != nil {
+		return Effective{}, nil, invalidStored(OpsHealthInterval, err)
+	}
+	if result.OpsHealthStatementTimeout, err = duration(values[OpsHealthStatementTimeout]); err != nil {
+		return Effective{}, nil, invalidStored(OpsHealthStatementTimeout, err)
+	}
+	if result.APICallLogRetentionDays, err = integer(values[APICallLogRetentionDays]); err != nil {
+		return Effective{}, nil, invalidStored(APICallLogRetentionDays, err)
+	}
+	result.APICallLogDryRun = validatedBoolean(values[APICallLogDryRun])
 	return result, dropped, nil
 }
 
@@ -665,4 +700,30 @@ func formatCap(cap float64) string {
 
 func floatPointer(value float64) *float64 {
 	return &value
+}
+
+// ClampHealthInterval enforces ops.health_interval bounds (10s–1h).
+func ClampHealthInterval(value time.Duration) time.Duration {
+	const min = 10 * time.Second
+	const max = time.Hour
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
+}
+
+// ClampHealthTimeout enforces ops.health_statement_timeout bounds (1s–60s).
+func ClampHealthTimeout(value time.Duration) time.Duration {
+	const min = time.Second
+	const max = time.Minute
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
 }

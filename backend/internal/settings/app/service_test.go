@@ -109,6 +109,9 @@ func TestEffectiveReturnsTypedDefaultsAndReusesThemUntilExpiry(t *testing.T) {
 		LeaseTimeout:              2 * time.Minute,
 		ScoreWeightPlan:           10, ScoreWeightDirectAction: 100, ScoreWeightStarred: 20,
 		ScoreWeightDepth: 5, ScoreWeightAgeMinutes: 0.1, ScoreAgingBatchSize: 500,
+		OpsHealthInterval:         time.Minute,
+		OpsHealthStatementTimeout: 5 * time.Second,
+		APICallLogRetentionDays:   30, APICallLogDryRun: false,
 	}
 	if got != want {
 		t.Fatalf("Effective() = %+v, want %+v", got, want)
@@ -409,6 +412,9 @@ func TestSetUserAppliesOverridesInsideCapsAndRejectsTheRest(t *testing.T) {
 		LeaseTimeout:              2 * time.Minute,
 		ScoreWeightPlan:           10, ScoreWeightDirectAction: 100, ScoreWeightStarred: 20,
 		ScoreWeightDepth: 5, ScoreWeightAgeMinutes: 0.1, ScoreAgingBatchSize: 500,
+		OpsHealthInterval:         time.Minute,
+		OpsHealthStatementTimeout: 5 * time.Second,
+		APICallLogRetentionDays:   30, APICallLogDryRun: false,
 	}
 	if got != want {
 		t.Fatalf("Effective() = %+v, want %+v", got, want)

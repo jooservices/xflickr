@@ -139,7 +139,7 @@ func (schedulerRole) Run(ctx context.Context) error {
 		return err
 	}
 	defer pool.Close()
-	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	redisClient := newRedisClient(cfg)
 	defer redisClient.Close()
 	queueAdapter, err := queue.NewRiver(pool, nil)
 	if err != nil {
@@ -156,7 +156,7 @@ func (schedulerRole) Run(ctx context.Context) error {
 	}
 	quota.Emitter = newQuotaEmitter(quotaStates(pool, redisClient, cfg), cfg)
 	defer quota.start(ctx, slog.Default())()
-	stopHealth := startCrawlHealth(ctx, opspostgres.Store{Pool: pool}, cfg, slog.Default())
+	stopHealth := startCrawlHealthMonitor(ctx, pool, cfg, slog.Default())
 	defer stopHealth()
 	blobs, err := newBlobStore(ctx, cfg)
 	if err != nil {
@@ -197,7 +197,7 @@ func (crawlRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	redisClient := newRedisClient(cfg)
 	defer redisClient.Close()
 	queueAdapter, err := queue.NewRiver(pool, map[string]int{scheduleriver.PhotoQueue: crawlWorkers, scheduleriver.PhotoExtrasQueue: 1, accountsapp.VerifyQueue: 1})
 	if err != nil {
@@ -262,7 +262,7 @@ func (syncRole) Run(ctx context.Context) error {
 	defer pool.Close()
 	callObserver, stopCallObserver := startFlickrCallLog(ctx, pool)
 	defer stopCallObserver()
-	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	redisClient := newRedisClient(cfg)
 	defer redisClient.Close()
 	queueAdapter, err := queue.NewRiver(pool, map[string]int{scheduleriver.PhotoQueue: 1, scheduleriver.PhotoExtrasQueue: 1})
 	if err != nil {
@@ -429,7 +429,7 @@ func (mediaRole) Run(ctx context.Context) error {
 		return err
 	}
 	defer pool.Close()
-	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	redisClient := newRedisClient(cfg)
 	defer redisClient.Close()
 	assets, err := catalogpostgres.New(pool)
 	if err != nil {
@@ -658,7 +658,7 @@ func (r APIRole) Run(ctx context.Context) error {
 	defer pool.Close()
 	callObserver, stopCallObserver := startFlickrCallLog(ctx, pool)
 	defer stopCallObserver()
-	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(cfg.Redis.Host, strconv.Itoa(cfg.Redis.Port)), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	redisClient := newRedisClient(cfg)
 	defer redisClient.Close()
 	hub := platformsse.NewHub(256)
 	go listenSSEEvents(ctx, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"}, hub)
@@ -754,7 +754,7 @@ func buildConfiguredAPIHandlerSetWithObserver(pool *pgxpool.Pool, redisClient re
 	if err != nil {
 		return apiHandlerSet{}, err
 	}
-	opsHandler := opshttp.Handler{Service: ops.Service{Store: opspostgres.Store{Pool: pool}}, ActorID: userIDFromPrincipal}
+	opsHandler := opshttp.Handler{Service: ops.Service{Store: opspostgres.Store{Pool: pool, DB: pool}}, ActorID: userIDFromPrincipal}
 	nodeRepository := clusterpostgres.New(pool)
 	nodeService := clusterapp.Nodes{Repository: nodeRepository}
 	nodesHandler := clusterhttp.Handler{Service: nodeService}

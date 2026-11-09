@@ -10,10 +10,15 @@
 - [Incident management](incident-management.md) — deduplication, acknowledgement,
   closure, and critical incident notification events.
 - [Structured logging and telemetry](observability.md) — context fields, OTLP
-  export, event helper, and offline log spill behavior.
+  export, event helper, offline log spill behavior, and cheap crawl-health
+  snapshot estimates / lock / timeout.
 - [Database report](db-report.md) — read-only before/after report of table,
   index, queue, worker and crawl-throughput figures.
+- [Production runtime](production-migration.md) — the main clone on the ESXi
+  services: accounts, data move, switch, rollback.
 
+- [Database layout and partitioning](database.md) — partition keys, measured
+  owner-vs-id query cost, migration cost, and api_call_log retention.
 - [Environment and shared services](ENVIRONMENT.md) — workstation, runtime, and
   database rules.
 - [Database index inventory](database.md) — keep/drop decisions, sizes, scan

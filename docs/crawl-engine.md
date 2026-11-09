@@ -111,3 +111,13 @@ job.
 
 See [Deleted entities and restricted facets](entity-state.md) for global gone
 markers, caller-specific restrictions and request suppression.
+
+## Photo sizes backlog in crawl health
+
+The crawl-health field `photo_sizes_pending` counts photos that still need
+sizes work through `photos_sizes_pending_idx` (provisional / none / stale
+confirmed, not tombstoned) and adds waiting `photo.sizes` river jobs. It is a
+backlog signal and may double-count a photo that already has a queued job.
+Ready and running size jobs are reported separately. Details and the advisory
+lock / statement timeout settings live in
+[observability](observability.md#crawl-health-snapshot-cost).

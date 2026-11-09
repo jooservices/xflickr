@@ -190,13 +190,10 @@ func TestCallLogPartitionsBatchAndRollupIntegration(t *testing.T) {
 	if err := quotaCalls.InsertCalls(ctx, []app.CallRecord{{At: oldDay.Add(12 * time.Hour), KeyID: keyID, Method: "flickr.old", Status: "ok"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.MaintainCallLogPartitions(ctx, today.AddDate(0, 0, -30), today.AddDate(0, 0, 7)); err != nil {
-		t.Fatal(err)
-	}
 	var oldPartitionExists bool
 	oldPartition := "api_call_log_" + oldDay.Format("20060102")
-	if err := pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, oldPartition).Scan(&oldPartitionExists); err != nil || oldPartitionExists {
-		t.Fatalf("expired partition exists=%t err=%v", oldPartitionExists, err)
+	if err := pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, oldPartition).Scan(&oldPartitionExists); err != nil || !oldPartitionExists {
+		t.Fatalf("create-only maintainer removed partition exists=%t err=%v", oldPartitionExists, err)
 	}
 
 	oldRollupDay := today.AddDate(0, 0, -401)

@@ -15,6 +15,8 @@ import type { OpsStatusWorkItems } from './opsStatusWorkItems';
 export interface OpsStatus {
   generated_at: string;
   counts: OpsCounts;
+  /** True when catalog counts (including photo_sizes) come from planner estimates rather than exact scans. */
+  counts_estimated?: boolean;
   /** Work items by state. */
   work_items: OpsStatusWorkItems;
   /**
@@ -25,7 +27,7 @@ export interface OpsStatus {
   /** River jobs by state. */
   river_jobs: OpsStatusRiverJobs;
   /**
-   * Provisional photos not yet queued plus queued jobs waiting for execution.
+   * Photos matching photos_sizes_pending_idx plus photo.sizes river jobs still waiting (pending/scheduled/retryable). Queued photos may be counted twice; this is a backlog signal
    * @minimum 0
    */
   photo_sizes_pending: number;

@@ -44,12 +44,14 @@ func (h Handler) GetAdminOpsStatus(ctx context.Context, _ gen.GetAdminOpsStatusR
 }
 
 func toStatus(s ops.Status) gen.OpsStatus {
+	countsEstimated := s.CountsEstimated
 	out := gen.OpsStatus{
 		GeneratedAt: s.GeneratedAt,
 		Counts: gen.OpsCounts{
 			People: s.Counts.People, Photos: s.Counts.Photos, PhotoSizes: s.Counts.PhotoSizes,
 			Favorites: s.Counts.Favorites, Albums: s.Counts.Albums, Galleries: s.Counts.Galleries, Groups: s.Counts.Groups,
 		},
+		CountsEstimated:              &countsEstimated,
 		WorkItems:                    s.WorkItems,
 		ReadyJobs:                    s.ReadyJobs,
 		RiverJobs:                    s.RiverJobs,

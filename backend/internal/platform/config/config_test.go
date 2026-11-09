@@ -20,7 +20,7 @@ func TestLoadFromEnvAppliesDefaults(t *testing.T) {
 	if cfg.DB.Port != 5432 || cfg.DB.SSLMode != "disable" {
 		t.Errorf("DB defaults = port %d, sslmode %q", cfg.DB.Port, cfg.DB.SSLMode)
 	}
-	if cfg.Redis.Host != "127.0.0.1" || cfg.Redis.Port != 16382 || cfg.Redis.DB != 8 {
+	if cfg.Redis.Host != "127.0.0.1" || cfg.Redis.Port != 16382 || cfg.Redis.DB != 8 || cfg.Redis.Username != "" {
 		t.Errorf("Redis defaults = %#v", cfg.Redis)
 	}
 	if cfg.Search.URL != "http://127.0.0.1:19200" {
@@ -70,6 +70,7 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 		"REDIS_HOST":                  "redis.internal",
 		"REDIS_PORT":                  "16383",
 		"REDIS_DB":                    "9",
+		"REDIS_USERNAME":              "xflickr",
 		"REDIS_PASSWORD":              "redis-pass",
 		"REDIS_PREFIX":                "xflickr_wt68:",
 		"SEARCH_URL":                  "http://search.internal:9200",
@@ -120,7 +121,7 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 	if cfg.DB.MaxConns != 35 || cfg.DB.MinConns != 4 || cfg.DB.MaxConnLifetime != 45*time.Minute || cfg.DB.MaxConnIdleTime != 12*time.Minute || cfg.DB.HealthCheckPeriod != 30*time.Second {
 		t.Errorf("DB pool values not loaded: %#v", cfg.DB)
 	}
-	if cfg.Redis.Host != "redis.internal" || cfg.Redis.Port != 16383 || cfg.Redis.DB != 9 || cfg.Redis.Password != "redis-pass" || cfg.Redis.Prefix != "xflickr_wt68:" {
+	if cfg.Redis.Host != "redis.internal" || cfg.Redis.Port != 16383 || cfg.Redis.DB != 9 || cfg.Redis.Username != "xflickr" || cfg.Redis.Password != "redis-pass" || cfg.Redis.Prefix != "xflickr_wt68:" {
 		t.Errorf("Redis values not loaded: %#v", cfg.Redis)
 	}
 	if cfg.Search.URL != "http://search.internal:9200" || cfg.Search.Username != "search-user" || cfg.Search.Password != "search-pass" || cfg.Search.IndexPrefix != "xflickr_wt68_" {
