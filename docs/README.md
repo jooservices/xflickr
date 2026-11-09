@@ -97,6 +97,8 @@
   queue handoff.
 - [Crawl interests](crawl-interests.md) — per-user person depth, lowest-depth
   deduplication, progress reporting, contact priority controls, and pause/resume.
+- [Contact screens](contact-screens.md) — session-scoped contact interests,
+  paginated list and detail sections, progress summaries, and contact actions.
 - [Crawl engine](crawl-engine.md) — facet interface, registry, page job flow
   and error outcomes.
 - [Group membership crawl](group-membership-crawl.md) — response validation,

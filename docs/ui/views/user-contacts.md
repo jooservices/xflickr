@@ -50,18 +50,22 @@ mobile padding), in this order:
 
 ## Data and API
 
-The existing API does not provide a contacts list. Do not call Flickr from the
-browser. The list operation below is a contract request to be delivered before
-the JOOXF-173 build. `GET /me/crawl/interests` is already requested by the Crawl
-view; extend its response for this view rather than adding another list
-operation. Existing user-scoped crawl settings and star operations are used.
+Do not call Flickr from the browser. `GET /me/crawl/interests` returns the
+signed-in user's crawl interests, not every person visible in the shared
+catalog. Its filters and sort order are applied before pagination. Contact
+identity is the Flickr NSID; the backend does not invent a second person ID.
 
 | Element | Source | Fields used |
 | --- | --- | --- |
-| Contact cards and filter counts | `GET /me/crawl/interests?filter=&q=&sort=&cursor=&limit=30` **contract request / extension** | `items[]`: `person_id`, `nsid`, `name`, `username`, `avatar_url`, `depth`, `starred`, `status` (`done`, `crawling`, `checking`, `queued`, `paused`, `error`), `photos_crawled`, `photos_total`, `favorites_count`, `sizes_percent`, `last_check_at`, `recent_photos[]` (`id`, `thumbnail_url`, `alt`); `counts` by `all`, `starred`, `crawling`, `needs_attention`; `next_cursor`, `updated_at` |
+| Contact cards and filter counts | `GET /me/crawl/interests?filter=&q=&sort=&cursor=&limit=30` | `items[]`: `nsid`, `name`, `username`, `avatar_url`, `depth`, `starred`, `status` (`done`, `crawling`, `checking`, `queued`, `paused`, `error`), `photos_crawled`, `photos_total`, `favorites_count`, `sizes_percent`, `last_check_at`, `recent_photos[]` (`id`, `thumbnail_url`, `alt`); `counts` by `all`, `starred`, `crawling`, `needs_attention`; `next_cursor`, `updated_at` |
 | Effective depth | `GET /me/crawl/settings` (exists; shared with Crawl view) | `depth` |
 | Star toggle | `PUT /me/contacts/{nsid}/star` (exists), body `{starred: boolean}` | 204 success; 400/401/404 error |
 | Crawl state refresh | `GET /events` (exists, authenticated SSE; use shell connection) | `crawl.progress` `{person_id, status, photos_crawled, sizes_percent}`; `crawl.queue` snapshot where emitted by the user channel |
+
+The implemented endpoint limits each request to 100 contacts and returns a
+sort-bound cursor. Photo totals come from the stored catalog summary. Recent
+thumbnails are limited to three and use the same visibility rule as photo
+reads. A failed later page keeps loaded cards and offers an inline retry.
 
 The list request accepts `filter` (`all`, `starred`, `crawling`,
 `needs_attention`), `q` (trimmed search text), `sort` (`updated`, `name`,
@@ -152,7 +156,7 @@ any cached list data for this route; do not render stale cards.
 
 This view is live. Use the shell's authenticated `GET /events` SSE connection;
 do not open another stream. On `crawl.progress`, update the matching card by
-`person_id` for status, `photos_crawled`, and `sizes_percent`; do not reorder
+`nsid` for status, `photos_crawled`, and `sizes_percent`; do not reorder
 cards solely because progress changed. Coalesce a `crawl.queue` event or a
 star mutation for 500ms, then refresh counts and the visible page while keeping
 focus. Ignore events for contacts outside the current result. Resume SSE using

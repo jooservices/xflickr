@@ -26,6 +26,115 @@
   background: var(--surface);
 }
 
+.breadcrumb {
+  align-self: flex-start;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.cover,
+.coverFallback {
+  width: 100%;
+  height: 150px;
+  flex: 0 0 100%;
+  border-radius: var(--radius);
+  object-fit: cover;
+}
+
+.coverFallback {
+  background: linear-gradient(125deg, var(--sunken), var(--surface), var(--sunken));
+}
+
+.identity {
+  min-width: 0;
+  flex: 1 1 240px;
+}
+
+.identity h1 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.identity p {
+  margin: 5px 0 0;
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.crawl,
+.tabContent {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.sectionHeading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sectionHeading h2 {
+  margin: 0;
+  font: 700 17px/1.3 var(--f-disp);
+}
+.status {
+  color: var(--muted);
+}
+.crawlCounts {
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+
+.facets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.facet {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+}
+.facetLabel {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  font-size: 0.9em;
+}
+.facetLabel span:last-child {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--sunken);
+}
+.track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
 .avatarWrap {
   display: grid;
   width: 88px;
@@ -71,6 +180,11 @@
 .identity p {
   margin: 5px 0 0;
   color: var(--muted);
+}
+
+.identityDepth::before {
+  content: '\00b7';
+  margin-inline: 0.5em;
 }
 
 .nsid {
@@ -120,6 +234,222 @@
 .stub h2,
 .stub p {
   margin: 0;
+}
+
+.activeTab:focus-visible,
+.tab:focus-visible,
+.breadcrumb:focus-visible,
+.button:focus-visible,
+.photoButton:focus-visible,
+.linkButton:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-offset);
+}
+
+.photoGrid,
+.contentGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+  margin: 18px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.photoCard,
+.albumCard,
+.galleryCard {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.photoButton {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 0 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.photoButton img,
+.photoPlaceholder,
+.albumCard img {
+  display: block;
+  width: 100%;
+  height: 150px;
+  background: var(--sunken);
+  object-fit: cover;
+}
+
+.photoButton span:last-child,
+.ownerLink {
+  margin: 0 10px;
+  overflow-wrap: anywhere;
+}
+.photoPlaceholder {
+  height: 150px;
+}
+.ownerLink {
+  display: inline-block;
+  margin-bottom: 10px;
+  color: var(--accent);
+}
+.albumCard a {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  gap: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+.albumCard strong,
+.albumCard span,
+.galleryCard strong,
+.galleryCard span {
+  margin: 0 10px 10px;
+}
+.galleryCard {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 90px;
+  padding-top: 10px;
+}
+
+.empty,
+.actionError,
+.actionSuccess {
+  padding: 16px;
+  border-radius: var(--radius);
+  background: var(--sunken);
+}
+.empty h2,
+.empty p {
+  margin: 0 0 8px;
+}
+.actionError {
+  color: var(--danger, #a22);
+}
+.actionSuccess {
+  color: var(--success, #26734d);
+}
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.overlay {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 65%);
+}
+.dialog,
+.lightbox {
+  position: relative;
+  width: min(100%, 560px);
+  max-height: min(90vh, 900px);
+  overflow: auto;
+  padding: 26px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 16px 60px rgb(0 0 0 / 30%);
+}
+.lightbox {
+  width: min(100%, 1000px);
+  text-align: center;
+}
+.lightbox img {
+  max-width: 100%;
+  max-height: 75vh;
+  object-fit: contain;
+}
+.dialogClose {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 24px;
+  cursor: pointer;
+}
+.dialogClose::before {
+  content: '\00d7';
+}
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.tableWrap {
+  overflow-x: auto;
+}
+.groupTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+.groupTable th,
+.groupTable td {
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.switchLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.aboutList {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.4fr) 1fr;
+  gap: 8px 16px;
+}
+.aboutList dt {
+  color: var(--muted);
+}
+.aboutList dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.tombstones {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--sunken);
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .sectionHeading h2,
@@ -258,6 +588,16 @@
   }
   .facets {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .cover,
+  .coverFallback {
+    height: 110px;
+  }
+  .aboutList {
+    grid-template-columns: 1fr;
+  }
+  .aboutList dd {
+    margin-bottom: 8px;
   }
 }
 

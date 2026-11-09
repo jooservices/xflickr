@@ -5,7 +5,7 @@ import type { MessageKey } from '../../shared/i18n';
 import type { ApiKey } from '../../shared/api/gen/models';
 import { clean, keyPattern, saveKey, secretPattern } from '../../features/keys/api';
 import type { KeyFailure } from '../../features/keys/api';
-import { useDialog } from './useDialog';
+import { useDialog } from '../../shared/ui/useDialog';
 import styles from './keys.module.css';
 
 const bannerCopy: Record<NonNullable<KeyFailure['banner']>, MessageKey> = {

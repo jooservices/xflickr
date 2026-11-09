@@ -4,25 +4,26 @@ import type { RefObject } from 'react';
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-/**
- * Modal behaviour: Esc closes, Tab stays inside `container`, and focus returns to
- * the control that was focused before the dialog opened (when it still exists).
- * `focusFirst` runs once on open to place focus.
- */
+/** Keeps modal focus inside its container and returns it to the opener on close. */
 export function useDialog(
   container: RefObject<HTMLElement | null>,
   onClose: () => void,
   focusFirst: () => void,
+  enabled = true,
+  returnFocus?: () => HTMLElement | null,
 ): void {
   const closeRef = useRef(onClose);
   const firstRef = useRef(focusFirst);
+  const returnRef = useRef(returnFocus);
 
   useEffect(() => {
     closeRef.current = onClose;
     firstRef.current = focusFirst;
-  }, [onClose, focusFirst]);
+    returnRef.current = returnFocus;
+  }, [onClose, focusFirst, returnFocus]);
 
   useEffect(() => {
+    if (!enabled) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     firstRef.current();
     const onKeyDown = (event: KeyboardEvent) => {
@@ -48,7 +49,8 @@ export function useDialog(
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      if (opener !== document.body && opener?.isConnected === true) opener.focus();
+      const target = returnRef.current?.() ?? opener;
+      if (target !== document.body && target?.isConnected === true) target.focus();
     };
-  }, [container]);
+  }, [container, enabled]);
 }

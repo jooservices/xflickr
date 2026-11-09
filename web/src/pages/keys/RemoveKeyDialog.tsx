@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { useI18n } from '../../shared';
-import { useDialog } from './useDialog';
+import { useDialog } from '../../shared/ui/useDialog';
 import styles from './keys.module.css';
 
 type RemoveKeyDialogProps = {
