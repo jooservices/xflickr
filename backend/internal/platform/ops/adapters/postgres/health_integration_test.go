@@ -2,7 +2,6 @@ package postgres_test
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -154,93 +153,5 @@ WHERE c.relkind IN ('r', 'p')
 	}
 	if !snap.CountsEstimated {
 		t.Fatalf("expected estimated counts: %+v", snap)
-	}
-}
-
-func TestPhotoSizesPendingUsesPartialIndex(t *testing.T) {
-	pool := openOpsIntegrationPool(t)
-	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Minute)
-	defer cancel()
-
-	suffix := fmt.Sprintf("plan%d", time.Now().UnixNano())
-	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1) ON CONFLICT DO NOTHING`, suffix); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		// Batch deletes avoid a multi-hour single DELETE when XFLICKR_LARGE_PLAN_TEST=1.
-		cleanCtx, cleanCancel := context.WithTimeout(context.Background(), 30*time.Minute)
-		defer cleanCancel()
-		for {
-			tag, err := pool.Exec(cleanCtx, `DELETE FROM photos WHERE id IN (
-				SELECT id FROM photos WHERE owner_nsid=$1 LIMIT 50000)`, suffix)
-			if err != nil || tag.RowsAffected() == 0 {
-				break
-			}
-		}
-		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, suffix)
-	})
-
-	rowsWanted := int64(5_000)
-	if os.Getenv("XFLICKR_LARGE_PLAN_TEST") == "1" {
-		rowsWanted = 3_000_000
-	}
-	startID := time.Now().Unix()*1_000_000 + int64(time.Now().Nanosecond()%1_000_000)
-	if _, err := pool.Exec(ctx, `
-INSERT INTO photos(id, owner_nsid, last_update, visibility, sizes_status, sizes, raw, content_hash)
-SELECT $1::bigint + g::bigint, $2, now(), 'public', 'provisional', '[]'::jsonb, '{}'::jsonb, decode(repeat('aa', 32), 'hex')
-FROM generate_series(1, $3::int) AS g`, startID, suffix, rowsWanted); err != nil {
-		t.Fatal(err)
-	}
-	// VACUUM clears dead index entries left by prior large plan runs so the
-	// planner can take an index-only scan and the count stays under timeout.
-	if _, err := pool.Exec(ctx, `VACUUM (ANALYZE) photos`); err != nil {
-		t.Fatal(err)
-	}
-
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Release()
-	if _, err := conn.Exec(ctx, `SET enable_seqscan = off`); err != nil {
-		t.Fatal(err)
-	}
-	explainSQL := `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) SELECT count(*) FROM photos
-WHERE tombstoned_at IS NULL
-  AND (sizes_status NOT IN ('confirmed', 'unavailable')
-       OR (sizes_status = 'confirmed' AND sizes_checked_at < last_update))`
-	rows, err := conn.Query(ctx, explainSQL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var plans []string
-	for rows.Next() {
-		var line string
-		if err := rows.Scan(&line); err != nil {
-			rows.Close()
-			t.Fatal(err)
-		}
-		plans = append(plans, line)
-	}
-	rows.Close()
-	joined := strings.Join(plans, "\n")
-	t.Logf("photo sizes pending plan (%d rows):\n%s", rowsWanted, joined)
-	// Partition children of photos_sizes_pending_idx are named
-	// photos_pNN_owner_nsid_uploaded_at_id_idx.
-	usesPendingIndex := strings.Contains(joined, "photos_sizes_pending_idx") ||
-		strings.Contains(joined, "owner_nsid_uploaded_at_id_idx")
-	if !usesPendingIndex || (!strings.Contains(joined, "Index Only Scan") && !strings.Contains(joined, "Index Scan")) {
-		t.Fatalf("expected index scan on photos_sizes_pending_idx children:\n%s", joined)
-	}
-	if strings.Contains(joined, "Seq Scan on photos") {
-		t.Fatalf("pending count must not seq-scan photos partitions:\n%s", joined)
-	}
-
-	snap, err := (opspostgres.Store{Pool: pool, DB: pool, StatementTimeout: time.Minute}).Snapshot(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if snap.PhotoSizesJobs.Pending < rowsWanted {
-		t.Fatalf("pending=%d want at least %d", snap.PhotoSizesJobs.Pending, rowsWanted)
 	}
 }

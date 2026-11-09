@@ -62,11 +62,11 @@ across partitions, plus `pg_stats` frequencies for confirmed sizes). Exact
 `counts_estimated` is true on the status JSON and log line when those values
 are estimates.
 
-`photo_sizes_pending` is the count of photos matching the partial index
-`photos_sizes_pending_idx` (photos that still need sizes work) plus
-`photo.sizes` river jobs still waiting (`pending` / `scheduled` /
-`retryable`). Queued photos may appear in both terms; the field is a backlog
-signal, not a unique photo total. Ready and running counts come only from
+`photo_sizes_pending` is the number of `photo.sizes` river jobs still waiting
+(`pending` / `scheduled` / `retryable`). Photos are never counted: about half of the
+catalog can need sizes, so any count is a scan of the whole partitioned table
+(61 GB in production, JOOXF-384). The field is a backlog signal, not a photo total.
+Ready and running counts come only from
 `river_job` via the expression index on `(args->>'kind')` for active states.
 
 Only one process runs the snapshot per tick: the monitor wraps the store with
