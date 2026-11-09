@@ -20,12 +20,21 @@ view spec.
   sections, or `-` when the spec is still pending. Template suffixes
   keep `{...}`; `/` separates template alternatives.
 - Check it with `docker/scripts/ui-e2e-coverage.sh`. `make e2e` runs
-  it before Playwright. The checker fails unless every catalogue
-  view is mapped to an existing scenario file or its row is marked
-  `deferred: <reason>`. Set `UI_E2E_COVERAGE=warn` to print the
-  uncovered list without failing while the missing scenarios are
-  still being written. The checker output is the authoritative
-  covered/missing count; the paragraph above is a snapshot.
+  it before Playwright. The checker fails only when a missing view
+  is not listed in the baseline (`e2e-coverage-baseline.txt`, one
+  view slug per line, header lines start with `#`): a new catalogue
+  view, or a view that lost its scenario, fails. Missing views in
+  the baseline are reported as `known gap` and do not fail, and a
+  row marked `deferred: <reason>` never fails. When you add the
+  scenario for a baseline view, delete its baseline line; the
+  checker fails with `Baseline view now covered: <slug> (delete its
+  baseline line)` until you do, so the baseline can only shrink. A
+  baseline slug that is not in the catalogue also fails as a stale
+  line. Today the baseline lists 40 known gaps, the ones above.
+  Set `UI_E2E_COVERAGE=warn` to print the uncovered list without
+  failing while the missing scenarios are still being written. The
+  checker output is the authoritative covered/missing count; the
+  paragraph above is a snapshot.
 
 | view slug | scenario file | scenario id | test ids |
 |---|---|---|---|

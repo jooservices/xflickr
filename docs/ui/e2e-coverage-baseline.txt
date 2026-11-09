@@ -1,0 +1,44 @@
+# E2E view coverage baseline (JOOXF-238)
+# One view slug per line: catalogue views with no E2E scenario file yet.
+# The checker fails only on missing views NOT listed here. When you add
+# the scenario for a view, delete its line; the baseline can only shrink.
+user-shell
+user-notifications
+user-home
+user-library
+user-search
+user-contacts
+user-contact-photos
+user-contact-favorites
+user-contact-albums-galleries
+user-contact-groups-about
+user-albums
+user-album
+user-lightbox
+user-sync
+user-sharing
+user-wizard
+admin-shell
+admin-overview
+admin-nodes
+admin-node
+admin-quota
+admin-metrics
+admin-events
+admin-issues
+admin-pipeline
+admin-downloads
+admin-sync
+admin-ai
+admin-users
+admin-defaults
+admin-sharing
+admin-call-log
+user-verify-email
+user-password-reset
+user-two-factor
+public-setup
+public-not-found
+public-forbidden
+user-accounts
+user-sessions

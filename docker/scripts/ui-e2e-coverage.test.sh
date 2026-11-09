@@ -27,6 +27,9 @@ EOF
 | `demo` | `web/e2e/demo.spec.ts` | `e2e/user/demo.spec.ts` | `demo-page` |
 | `demo-two` | `web/e2e/demo-two.spec.ts` | `e2e/admin/demo-two.spec.ts` | `demo-two-page` |
 EOF
+	cat >"$WORK/root/baseline.txt" <<'EOF'
+# Baseline
+EOF
 	touch "$WORK/root/web/e2e/demo.spec.ts" "$WORK/root/web/e2e/demo-two.spec.ts"
 }
 
@@ -34,6 +37,7 @@ run_checker() {
 	CATALOGUE="$WORK/root/catalogue.md" \
 	COVERAGE_DOC="$WORK/root/coverage.md" \
 	E2E_COVERAGE_ROOT="$WORK/root" \
+	E2E_COVERAGE_BASELINE="$WORK/root/baseline.txt" \
 	UI_E2E_COVERAGE="${1:-fail}" \
 	"$CHECK" 2>&1
 }
@@ -53,7 +57,7 @@ expect() {
 }
 
 fresh
-expect 'all mapped passes' 0 '2 covered, 0 missing, 0 deferred'
+expect 'all mapped passes' 0 '2 covered, 0 missing \(0 known gaps, 0 new\), 0 deferred'
 
 fresh
 printf '%s\n' "| \`demo-missing\` | public |" >>"$WORK/root/catalogue.md"
@@ -86,6 +90,42 @@ expect 'deferred row passes' 0 '1 deferred'
 fresh
 printf '%s\n' "| \`demo-missing\` | public |" >>"$WORK/root/catalogue.md"
 expect 'warn mode exits 0 with a warning' 0 'WARNING.*demo-missing' warn
+
+fresh
+cat >"$WORK/root/coverage.md" <<'EOF'
+# Coverage
+| view slug | scenario file | scenario id | test ids |
+| --- | --- | --- | --- |
+| `demo` | `web/e2e/demo.spec.ts` | `e2e/user/demo.spec.ts` | `demo-page` |
+| `demo-two` | `MISSING` | `e2e/admin/demo-two.spec.ts` | `demo-two-page` |
+EOF
+printf '%s\n' "demo-two" >>"$WORK/root/baseline.txt"
+expect 'known gap passes' 0 'known gap: demo-two'
+
+fresh
+cat >"$WORK/root/coverage.md" <<'EOF'
+# Coverage
+| view slug | scenario file | scenario id | test ids |
+| --- | --- | --- | --- |
+| `demo` | `web/e2e/demo.spec.ts` | `e2e/user/demo.spec.ts` | `demo-page` |
+| `demo-two` | `MISSING` | `e2e/admin/demo-two.spec.ts` | `demo-two-page` |
+| `demo-three` | `MISSING` | `e2e/admin/demo-three.spec.ts` | `demo-three-page` |
+EOF
+printf '%s\n' "| \`demo-three\` | admin |" >>"$WORK/root/catalogue.md"
+printf '%s\n' "demo-two" >>"$WORK/root/baseline.txt"
+expect 'new missing view fails' 1 'uncovered: demo-three'
+
+fresh
+printf '%s\n' "demo" >>"$WORK/root/baseline.txt"
+expect 'baseline entry now covered fails' 1 'Baseline view now covered: demo \(delete its baseline line\)'
+
+fresh
+printf '%s\n' "ghost-view" >>"$WORK/root/baseline.txt"
+expect 'stale baseline entry fails' 1 'stale baseline entry: ghost-view'
+
+fresh
+printf '%s\n' "demo" >>"$WORK/root/baseline.txt"
+expect 'warn mode with a covered baseline entry still exits 0' 0 'Baseline view now covered: demo' warn
 
 fresh
 rm "$WORK/root/catalogue.md"

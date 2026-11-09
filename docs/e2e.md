@@ -78,11 +78,21 @@ anything the monitor collects. The `/login` and `/register` screens are visited 
 
 `make e2e` first runs `docker/scripts/ui-e2e-coverage.sh`, which maps
 every catalogue view ([ui/README.md](ui/README.md)) to its real-stack
-scenario in [ui/e2e-coverage.md](ui/e2e-coverage.md) and fails when a
-view has no mapped scenario file. Until every scenario is written,
-run `UI_E2E_COVERAGE=warn make e2e` to print the uncovered list
-without failing. A new catalogue view adds its row first; a new
-scenario swaps `MISSING` for its real file.
+scenario in [ui/e2e-coverage.md](ui/e2e-coverage.md). The checker is
+a ratchet over the baseline
+([ui/e2e-coverage-baseline.txt](ui/e2e-coverage-baseline.txt), one
+view slug per line): missing views listed there are reported as
+`known gap` and do not fail, while a missing view not in the baseline
+(a new catalogue view, or a view that lost its scenario) fails. When
+you add the scenario for a baseline view, swap `MISSING` for its real
+file in the coverage map and delete its baseline line; the checker
+fails with `Baseline view now covered: <slug> (delete its baseline
+line)` until you do, so the baseline can only shrink. A baseline
+slug that is not in the catalogue also fails as a stale line. Today
+the baseline lists 40 known gaps. Run `UI_E2E_COVERAGE=warn make e2e`
+to print the uncovered list without failing. A new catalogue view
+adds its row first; a new scenario swaps `MISSING` for its real
+file.
 
 ## Deploy smoke
 
