@@ -18,8 +18,9 @@ type CheckpointRepairReport = crawlpostgres.CheckpointRepairReport
 // exercised without a live PostgreSQL.
 var repairZeroCheckpoints = crawlpostgres.RepairZeroCheckpointsPool
 
-// RepairZeroCheckpoints fills null/zero interest checkpoints from stored
-// catalog data. It makes no Flickr calls and never starts application roles.
+// RepairZeroCheckpoints fills zero checkpoints from same-observer completion
+// markers and bootstraps legacy done work with a conservative catch-up floor.
+// It makes no Flickr calls and never starts application roles.
 func RepairZeroCheckpoints(ctx context.Context, options CheckpointRepairOptions) (CheckpointRepairReport, error) {
 	cfg, err := config.LoadDatabase()
 	if err != nil {
