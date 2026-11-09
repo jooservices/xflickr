@@ -109,6 +109,13 @@ response. `crawl_interests` stores per-person photo, favorite, and check
 checkpoints. The settings interval is enforced by the scheduler, not a cron
 job.
 
+## Scoring
+
+Work-item priority uses the static sort key described in
+[Schedule backlog](schedule.md) and [Database performance notes](database.md).
+Star and select controls rescore the person's pending backlog immediately;
+there is no periodic aging rewrite.
+
 See [Deleted entities and restricted facets](entity-state.md) for global gone
 markers, caller-specific restrictions and request suppression.
 

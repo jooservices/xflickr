@@ -39,7 +39,8 @@ Sizes are approximate per partition × 16 partitions unless noted.
 | `crawl_interests_paused_idx` | crawl_interests | partial | used | pause checks / enqueue filters | keep |
 | `crawl_interests_selected_idx` / `_starred_idx` / `_depth_idx` | crawl_interests | | used | `photolane.sql` ranking streams | keep |
 
-`work_items` and River indexes are owned by JOOXF-370 and are out of scope here.
+`work_items` and River indexes are owned by JOOXF-370 and are out of scope for
+the index-drop audit above.
 
 Foreign-key note: after dropping `photos_owner_nsid_idx`, deletes of `people`
 still have a supporting index because `photos_owner_last_seen_idx` leads with
@@ -248,3 +249,40 @@ Behaviour:
 
 See also [observability](observability.md) for call-log telemetry and
 [ops monitoring](ops-monitoring.md) for health counters that read the log.
+
+## work_items (JOOXF-370)
+
+Pending dispatch order uses the `score` column as a **time-invariant sort
+key**. Because the historical priority formula was linear in age, ordering by
+`base - wAge * epoch(created_at) / 60` matches ordering by the minutes-aware
+score at any shared "now". The absolute value is not a minutes-aware score.
+
+Scores are written once at insert (and on reopen), and recomputed only when an
+input changes: star/select (`RescorePerson`), plan weight, depth/direct flags,
+or admin score weights. A stored weights fingerprint (including a digest of
+plan weights) triggers one set-based `UPDATE ... FROM (SELECT ... LIMIT n)`
+pass in bounded batches. There is no per-tick aging rewrite and
+`score_updated_at` is unused.
+
+`fillfactor=70` and tightened per-table autovacuum settings favour HOT updates
+on state/lease transitions. The pending score index still includes `score` and
+`not_before`, so state transitions that also touch indexed columns remain
+non-HOT; measure with the synthetic steady-state test.
+
+Existing heap and index bloat is cleared with the lead-only runbook
+[rebuild-work-items.md](runbooks/rebuild-work-items.md). Never rewrite
+`work_items` inside a migration.
+
+## river_job (JOOXF-370)
+
+A partial expression index on `(args->>'kind')` for active states supports
+health and metrics lookups. Completed and discarded retention default to 24h
+and 168h (`queue.completed_retention`, `queue.discarded_retention`) and feed
+River's cleaner. Autovacuum for `river_job` uses the same tight scale factor
+as `work_items`.
+
+## people upserts (JOOXF-370)
+
+`UpsertPeople` sorts each batch by `nsid` so concurrent transactions lock rows
+in one order. The conflict update skips no-op column changes and refreshes
+`last_seen_at` at most once per hour per person.

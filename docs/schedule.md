@@ -25,13 +25,16 @@ the configured retry delay. Exhausted rows become failed and publish
 `job.dead` through the transactional outbox. If Redis cannot report capacity,
 the pump does not enqueue work for that tick.
 
-Pending work stores a score used by the scheduler index. The score combines
-plan weight, direct action, starred status, remaining depth, and age in minutes
-using the five `score_weight_*` application settings. The scheduler refreshes a
-bounded batch of due pending rows on every pump tick; the configured plan weight
-comes from the item's owner's plan. Plan resource shares reserve each plan's
-fraction of available dispatch capacity, then unused allocation is lent to
-plans with backlog.
+Pending work stores a time-invariant `score` sort key used only for ordering
+(its absolute value is not a minutes-aware score). The key equals the
+historical minutes-aware formula with the shared "now" term cancelled, so
+dispatch order stays identical without rewriting rows as they age. Scores are
+set at insert and recomputed only when star/select, plan weight, depth/direct
+flags, or admin score weights change. A weights fingerprint triggers one
+set-based pending rescore in bounded batches. The pump lists active API keys
+from `api_keys`/`flickr_accounts` and lets the per-key claim hit the pending
+score index. Plan resource shares reserve each plan's fraction of available
+dispatch capacity, then unused allocation is lent to plans with backlog.
 
 ## Self-heal and requeue of failed work
 
