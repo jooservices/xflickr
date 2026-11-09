@@ -2054,6 +2054,40 @@ export const ListPeopleResponse = zod.object({
 });
 
 /**
+ * @summary List contacts of the user's connected Flickr accounts
+ */
+export const listContactsQueryCursorMax = 1024;
+
+export const listContactsQueryLimitDefault = 50;
+export const listContactsQueryLimitMax = 100;
+
+export const ListContactsQueryParams = zod.object({
+  cursor: zod.string().max(listContactsQueryCursorMax).optional(),
+  limit: zod.int().min(1).max(listContactsQueryLimitMax).default(listContactsQueryLimitDefault),
+});
+
+export const listContactsResponseItemsItemPhotosCountMin = 0;
+
+export const ListContactsResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      nsid: zod.string(),
+      username: zod.string(),
+      realname: zod.string(),
+      icon: zod.string(),
+      photos_count: zod
+        .int()
+        .min(listContactsResponseItemsItemPhotosCountMin)
+        .describe('Count of photos visible to this user'),
+      account_nsid: zod
+        .string()
+        .describe('Connected account through which this contact was discovered'),
+    }),
+  ),
+  next_cursor: zod.string().optional(),
+});
+
+/**
  * @summary Get a person visible to the signed-in user
  */
 export const getPersonPathNsidMax = 255;

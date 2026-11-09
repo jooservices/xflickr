@@ -13,6 +13,21 @@ people:
       '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
       '500': { description: Catalog could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
 
+contacts:
+  get:
+    operationId: listContacts
+    tags: [catalog]
+    summary: List contacts of the user's connected Flickr accounts
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
+      - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+    responses:
+      '200': { description: Contact page, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/CatalogContactPage } } } }
+      '400': { description: Invalid page request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '500': { description: Catalog could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+
 person:
   get:
     operationId: getPerson

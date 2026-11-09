@@ -21,6 +21,18 @@ CatalogPerson:
     photos_count: { type: integer, format: int64, minimum: 0, description: Count of photos visible to this user }
   required: [nsid, username, realname, icon, photos_count]
 
+CatalogContact:
+  type: object
+  additionalProperties: false
+  properties:
+    nsid: { type: string }
+    username: { type: string }
+    realname: { type: string }
+    icon: { type: string }
+    photos_count: { type: integer, format: int64, minimum: 0, description: Count of photos visible to this user }
+    account_nsid: { type: string, description: Connected account through which this contact was discovered }
+  required: [nsid, username, realname, icon, photos_count, account_nsid]
+
 CatalogPhoto:
   type: object
   additionalProperties: false
@@ -70,6 +82,14 @@ CatalogPersonPage:
   additionalProperties: false
   properties:
     items: { type: array, items: { $ref: '#/CatalogPerson' } }
+    next_cursor: { type: string }
+  required: [items]
+
+CatalogContactPage:
+  type: object
+  additionalProperties: false
+  properties:
+    items: { type: array, items: { $ref: '#/CatalogContact' } }
     next_cursor: { type: string }
   required: [items]
 

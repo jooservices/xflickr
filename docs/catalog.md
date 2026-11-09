@@ -24,13 +24,18 @@ JSONB envelope with an explicit encoding and base64 data.
 
 Contact relationships live in `contacts (person_nsid, contact_nsid)` with
 idempotent upserts (`seen_at` refresh). The crawl `contacts` facet writes those
-rows for each connected account's `flickr.contacts.getList` page. Before the
-relationship write, `EnsurePeople` inserts any missing account subject with
-`username = nsid` and `ON CONFLICT DO NOTHING`, so a connected account that
-never had a `people` row still commits without overwriting a real identity.
-Catalog `ListContacts` reads distinct contacts of the caller's connected
-accounts for the contacts screen (REST routes arrive with the catalog REST
-slice).
+rows for each connected account's `flickr.contacts.getList` page. Every page
+uses the refresh start time as its `seen_at`; stale relationships are removed
+only when the complete paginated response succeeds. A failed or malformed
+page leaves the previous list intact. Before the relationship write,
+`EnsurePeople` inserts any missing account subject with `username = nsid` and
+`ON CONFLICT DO NOTHING`, so a connected account that never had a `people` row
+still commits without overwriting a real identity.
+
+The authenticated `GET /contacts` endpoint returns distinct contacts of the
+user's connected Flickr accounts with a keyset cursor. The query uses the
+`contacts (contact_nsid, person_nsid)` index to select a bounded page before
+loading person details.
 
 Size updates carry `none`, `provisional`, or `confirmed` status. A provisional
 response cannot replace confirmed sizes. Tombstone updates preserve the first
@@ -39,9 +44,10 @@ recorded timestamp when repeated.
 ## Catalog read API
 
 The authenticated read API exposes `GET /people`, `/people/{nsid}`,
-`/people/{nsid}/photos`, `/favorites`, `/albums`, `/albums/{id}/photos`, and
-`/photos/{id}`. The OpenAPI contract in `contracts/openapi/paths/catalog.yaml`
-is the source for the generated server and web clients.
+`/people/{nsid}/photos`, `/contacts`, `/favorites`, `/albums`,
+`/albums/{id}/photos`, and `/photos/{id}`. The OpenAPI contract in
+`contracts/openapi/paths/catalog.yaml` is the source for the generated server
+and web clients.
 
 Every collection uses an opaque keyset cursor and a page size from 1 to 100
 (default 50). People are listed when the user observed them or has at least one

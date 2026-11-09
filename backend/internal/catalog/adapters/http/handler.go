@@ -39,6 +39,25 @@ func (h Handler) ListPeople(ctx context.Context, request gen.ListPeopleRequestOb
 	return gen.ListPeople200JSONResponse(gen.CatalogPersonPage{Items: items, NextCursor: optionalString(next)}), nil
 }
 
+func (h Handler) ListContacts(ctx context.Context, request gen.ListContactsRequestObject) (gen.ListContactsResponseObject, error) {
+	userID, ok := h.actor(ctx)
+	if !ok {
+		return gen.ListContacts401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
+	}
+	page, next, err := h.Reads.ListContacts(ctx, userID, stringParam(request.Params.Cursor), pageLimit(request.Params.Limit))
+	if err != nil {
+		return pageFailure[gen.ListContactsResponseObject](err, func(e gen.Error) gen.ListContactsResponseObject { return gen.ListContacts400JSONResponse(e) })
+	}
+	items := make([]gen.CatalogContact, 0, len(page.Items))
+	for _, contact := range page.Items {
+		items = append(items, gen.CatalogContact{
+			Nsid: contact.NSID, Username: contact.Username, Realname: contact.Realname, Icon: contact.Icon,
+			PhotosCount: contact.PhotosCount, AccountNsid: contact.AccountNSID,
+		})
+	}
+	return gen.ListContacts200JSONResponse(gen.CatalogContactPage{Items: items, NextCursor: optionalString(next)}), nil
+}
+
 func (h Handler) GetPerson(ctx context.Context, request gen.GetPersonRequestObject) (gen.GetPersonResponseObject, error) {
 	userID, ok := h.actor(ctx)
 	if !ok {
