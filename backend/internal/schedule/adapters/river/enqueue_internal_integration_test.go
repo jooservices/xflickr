@@ -220,7 +220,7 @@ func TestPumpReturnsBacklogAndInflightReadErrors(t *testing.T) {
 	pool := internalIntegrationPool(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
-	settings := app.PumpSettings{PerKeyReadyCap: 1, NodeReadyCap: 1, MediaReadyCap: 1, AIReadyCap: 1, SyncReadyCap: 1, RetryMax: 1, LeaseTimeout: time.Second}
+	settings := app.PumpSettings{PerKeyReadyCap: 1, NodeReadyCap: 1, MediaReadyCap: 1, AIReadyCap: 1, SyncReadyCap: 1, RetryMax: 1, LeaseTimeout: time.Second, ReclaimBatchSize: 100}
 	store := Store{Pool: pool, listKeys: func(context.Context, pgx.Tx) ([]int64, error) { return nil, errors.New("backlog read") }}
 	if _, err := store.Pump(ctx, settings, internalCapacity(1), internalQueue{}); err == nil {
 		t.Fatal("Pump ignored pending key query error")
@@ -250,7 +250,7 @@ func TestPumpWarnsAboutKeylessPendingWorkOncePerMinute(t *testing.T) {
 	keylessWarnMu.Lock()
 	keylessWarnLast = time.Time{}
 	keylessWarnMu.Unlock()
-	settings := app.PumpSettings{PerKeyReadyCap: 1, NodeReadyCap: 1, MediaReadyCap: 1, AIReadyCap: 1, SyncReadyCap: 1, RetryMax: 1, LeaseTimeout: time.Second}
+	settings := app.PumpSettings{PerKeyReadyCap: 1, NodeReadyCap: 1, MediaReadyCap: 1, AIReadyCap: 1, SyncReadyCap: 1, RetryMax: 1, LeaseTimeout: time.Second, ReclaimBatchSize: 100}
 	store := Store{Pool: pool, listKeys: func(context.Context, pgx.Tx) ([]int64, error) { return nil, nil }}
 	for range 2 {
 		if _, err := store.Pump(ctx, settings, internalCapacity(1), internalQueue{}); err != nil {
@@ -289,7 +289,7 @@ func TestKeylessQueriesReturnDatabaseErrors(t *testing.T) {
 	if err := warnKeylessPending(ctx, tx); err == nil {
 		t.Fatal("warnKeylessPending ignored the count query error")
 	}
-	if err := assignOwnerKeys(ctx, tx); err == nil {
+	if err := assignOwnerKeys(ctx, tx, 100); err == nil {
 		t.Fatal("assignOwnerKeys ignored the update error")
 	}
 }

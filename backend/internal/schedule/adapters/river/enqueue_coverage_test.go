@@ -290,6 +290,134 @@ func TestLoadSettingsReadsValidSettingsAndRejectsMalformedValues(t *testing.T) {
 	}
 }
 
+func TestLoadPumpSettingsReadsCurrentBatchSize(t *testing.T) {
+	settings := map[string]string{
+		"per_key_ready_cap": "10", "node_ready_cap": "20", "media_ready_cap": "7",
+		"ai_ready_cap": "8", "sync_ready_cap": "9", "retry_max": "4",
+		"retry_backoff": "3", "lease_timeout": "30", "max_depth": "5",
+		"score_aging_batch_size": "11", "queue.reclaim_batch_size": "17",
+		"score_weight_plan": "1.5", "score_weight_direct_action": "2",
+		"score_weight_starred": "3", "score_weight_depth": "4",
+		"score_weight_age_minutes": "0.5",
+	}
+	rows := make([][]any, 0, len(settings))
+	for key, value := range settings {
+		rows = append(rows, []any{key, value})
+	}
+	db := &coverageDatabase{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
+		return coverageRowsOf(rows...), nil
+	}}
+	got, err := (Store{database: db}).LoadPumpSettings(t.Context())
+	if err != nil || got.ReclaimBatchSize != 17 {
+		t.Fatalf("LoadPumpSettings() batch size = %d, error = %v; want 17", got.ReclaimBatchSize, err)
+	}
+	if _, err := (Store{}).LoadPumpSettings(t.Context()); err == nil {
+		t.Fatal("LoadPumpSettings accepted a missing database")
+	}
+}
+
+func TestKeylessOwnerCursorHandlesBoundedWrapAndErrors(t *testing.T) {
+	ctx := context.Background()
+	var assignedIDs []int64
+	tx := &coverageTx{
+		rowFn: func(context.Context, string, ...any) pgx.Row {
+			return coverageRow{values: []any{"10"}}
+		},
+		queryFn: func(_ context.Context, query string, _ ...any) (pgx.Rows, error) {
+			switch {
+			case strings.Contains(query, "id > $1"):
+				return coverageRowsOf([]any{int64(11)}), nil
+			case strings.Contains(query, "id <= $1"):
+				return coverageRowsOf([]any{int64(10)}), nil
+			default:
+				return nil, fmt.Errorf("unexpected candidate query: %s", query)
+			}
+		},
+		execFn: func(_ context.Context, query string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(query, "UPDATE work_items") {
+				assignedIDs = append([]int64(nil), args[0].([]int64)...)
+			}
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		},
+	}
+	if err := assignOwnerKeys(ctx, tx, 2); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(assignedIDs, []int64{11, 10}) {
+		t.Fatalf("assigned candidate IDs = %v, want [11 10] across cursor wrap", assignedIDs)
+	}
+	for _, value := range []string{"not-an-integer", "-1"} {
+		t.Run(value, func(t *testing.T) {
+			invalid := &coverageTx{rowFn: func(context.Context, string, ...any) pgx.Row {
+				return coverageRow{values: []any{value}}
+			}}
+			if err := assignOwnerKeys(ctx, invalid, 1); err == nil {
+				t.Fatalf("assignOwnerKeys accepted cursor %q", value)
+			}
+		})
+	}
+	if err := assignOwnerKeys(ctx, &coverageTx{}, 0); err == nil {
+		t.Fatal("assignOwnerKeys accepted a zero batch size")
+	}
+}
+
+func TestScheduleCursorHelpersAndExpiredCursorValidation(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name   string
+		value  string
+		valid  bool
+		wantID int64
+	}{
+		{name: "empty", valid: true},
+		{name: "valid", value: `{"expires_at":"2026-11-10T00:00:00Z","id":42}`, valid: true, wantID: 42},
+		{name: "malformed", value: "{", valid: false},
+		{name: "missing id", value: `{"expires_at":"2026-11-10T00:00:00Z"}`, valid: false},
+		{name: "missing time", value: `{"id":42}`, valid: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseExpiredLeaseCursor(tc.value)
+			if tc.valid && err != nil {
+				t.Fatalf("parseExpiredLeaseCursor() error = %v", err)
+			}
+			if !tc.valid && err == nil {
+				t.Fatal("parseExpiredLeaseCursor() accepted an invalid cursor")
+			}
+			if got.ID != tc.wantID {
+				t.Fatalf("cursor ID = %d, want %d", got.ID, tc.wantID)
+			}
+		})
+	}
+	if _, err := selectKeylessOwnerCandidates(ctx, &coverageTx{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
+		return nil, errors.New("query")
+	}}, 0, 1, false); err == nil {
+		t.Fatal("candidate selection ignored a query error")
+	}
+	for _, rows := range []*coverageRows{
+		{index: -1, values: [][]any{{"bad"}}},
+		{index: -1, err: errors.New("iteration")},
+	} {
+		if _, err := selectKeylessOwnerCandidates(ctx, &coverageTx{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) { return rows, nil }}, 0, 1, false); err == nil {
+			t.Fatal("candidate selection ignored a row error")
+		}
+	}
+	if _, err := lockScheduleMetaCursor(ctx, &coverageTx{execFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
+		return pgconn.CommandTag{}, errors.New("insert")
+	}}, "cursor", "0"); err == nil {
+		t.Fatal("cursor lock ignored initialization error")
+	}
+	if _, err := lockScheduleMetaCursor(ctx, &coverageTx{rowFn: func(context.Context, string, ...any) pgx.Row {
+		return coverageRow{err: errors.New("lock")}
+	}}, "cursor", "0"); err == nil {
+		t.Fatal("cursor lock ignored row lock error")
+	}
+	if err := storeScheduleMetaCursor(ctx, &coverageTx{execFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
+		return pgconn.CommandTag{}, errors.New("update")
+	}}, "cursor", "1"); err == nil {
+		t.Fatal("cursor store ignored update error")
+	}
+}
+
 func TestPumpLeaderTransactionsAndKeyHandling(t *testing.T) {
 	ctx := context.Background()
 	settings := coverageSettings()
@@ -329,6 +457,9 @@ func TestPumpLeaderTransactionsAndKeyHandling(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tx := &coverageTx{rowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+				if strings.Contains(sql, "schedule_meta") {
+					return coverageRow{values: []any{"0"}}
+				}
 				if strings.Contains(sql, "EXISTS") {
 					if tc.keylessErr != nil {
 						return coverageRow{err: tc.keylessErr}
@@ -341,6 +472,11 @@ func TestPumpLeaderTransactionsAndKeyHandling(t *testing.T) {
 					return pgconn.CommandTag{}, tc.assignErr
 				}
 				return pgconn.NewCommandTag("UPDATE 1"), nil
+			}, queryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
+				if tc.assignErr != nil {
+					return coverageRowsOf([]any{int64(5)}), nil
+				}
+				return coverageRowsOf(), nil
 			}, commitErr: tc.commitErr}
 			conn := &coverageConnection{rowFn: func(context.Context, string, ...any) pgx.Row {
 				if tc.lockRow != nil {
@@ -516,12 +652,22 @@ func TestPumpHelpersAndQueueDispatch(t *testing.T) {
 
 func TestScheduleSQLHelpersAndRescore(t *testing.T) {
 	ctx := context.Background()
-	if err := assignOwnerKeys(ctx, &coverageTx{}); err != nil {
+	assignTx := &coverageTx{
+		rowFn: func(context.Context, string, ...any) pgx.Row {
+			return coverageRow{values: []any{"0"}}
+		},
+	}
+	if err := assignOwnerKeys(ctx, assignTx, 100); err != nil {
 		t.Fatal(err)
 	}
-	if err := assignOwnerKeys(ctx, &coverageTx{execFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
-		return pgconn.CommandTag{}, errors.New("assign")
-	}}); err == nil {
+	if err := assignOwnerKeys(ctx, &coverageTx{
+		rowFn: func(context.Context, string, ...any) pgx.Row {
+			return coverageRow{values: []any{"0"}}
+		},
+		execFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
+			return pgconn.CommandTag{}, errors.New("assign")
+		},
+	}, 100); err == nil {
 		t.Fatal("ignored assignment error")
 	}
 	if err := warnKeylessPending(ctx, &coverageTx{rowFn: func(context.Context, string, ...any) pgx.Row { return coverageRow{err: errors.New("count")} }}); err == nil {
@@ -690,21 +836,23 @@ func TestRequeueAndReclaimLeasePaths(t *testing.T) {
 	}{
 		{name: "no expired rows", retryMax: 3},
 		{name: "begin error", beginErr: errors.New("begin"), wantErr: "begin reclaim"},
-		{name: "select error", queryErr: errors.New("query"), retryMax: 3, wantErr: "select expired leases"},
-		{name: "scan error", scanErr: errors.New("scan"), leases: [][]any{{int64(1), 2, "photo.sizes"}}, retryMax: 3, wantErr: "scan expired lease"},
-		{name: "read error", rowsErr: errors.New("read"), retryMax: 3, wantErr: "read expired leases"},
-		{name: "retry lease", leases: [][]any{{int64(1), 0, "photo.sizes"}}, retryMax: 3, want: 1},
-		{name: "retry update error", leases: [][]any{{int64(1), 0, "photo.sizes"}}, retryMax: 3, leaseExecErr: errors.New("lease update"), wantErr: "return expired lease"},
-		{name: "exhausted publishes dead letter", leases: [][]any{{int64(2), 2, "photo.sizes"}}, retryMax: 3, want: 1},
-		{name: "dead letter error", leases: [][]any{{int64(2), 2, "photo.sizes"}}, retryMax: 3, outboxErr: errors.New("outbox"), wantErr: "outbox: insert event"},
-		{name: "failed lease update error", leases: [][]any{{int64(2), 2, "photo.sizes"}}, retryMax: 3, leaseExecErr: errors.New("failed update"), wantErr: "fail exhausted lease"},
+		{name: "select error", queryErr: errors.New("query"), retryMax: 3, wantErr: "select expired lease candidates"},
+		{name: "scan error", scanErr: errors.New("scan"), leases: [][]any{{int64(1), 2, "photo.sizes", now.Add(-time.Minute), true}}, retryMax: 3, wantErr: "scan expired lease candidate"},
+		{name: "read error", rowsErr: errors.New("read"), retryMax: 3, wantErr: "read expired lease candidates"},
+		{name: "retry lease", leases: [][]any{{int64(1), 0, "photo.sizes", now.Add(-time.Minute), true}}, retryMax: 3, want: 1},
+		{name: "retry update error", leases: [][]any{{int64(1), 0, "photo.sizes", now.Add(-time.Minute), true}}, retryMax: 3, leaseExecErr: errors.New("lease update"), wantErr: "return expired lease"},
+		{name: "exhausted publishes dead letter", leases: [][]any{{int64(2), 2, "photo.sizes", now.Add(-time.Minute), true}}, retryMax: 3, want: 1},
+		{name: "dead letter error", leases: [][]any{{int64(2), 2, "photo.sizes", now.Add(-time.Minute), true}}, retryMax: 3, outboxErr: errors.New("outbox"), wantErr: "outbox: insert event"},
+		{name: "failed lease update error", leases: [][]any{{int64(2), 2, "photo.sizes", now.Add(-time.Minute), true}}, retryMax: 3, leaseExecErr: errors.New("failed update"), wantErr: "fail exhausted lease"},
 		{name: "self heal error", retryMax: 3, selfHealErr: errors.New("selfheal"), wantErr: "self-heal lease-expired work"},
 		{name: "commit error", retryMax: 3, commitErr: errors.New("commit"), wantErr: "commit reclaim"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			rows := &coverageRows{index: -1, values: tc.leases, scanErr: tc.scanErr, err: tc.rowsErr}
-			tx := &coverageTx{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
+			tx := &coverageTx{rowFn: func(context.Context, string, ...any) pgx.Row {
+				return coverageRow{values: []any{""}}
+			}, queryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
 				if tc.queryErr != nil {
 					return nil, tc.queryErr
 				}

@@ -79,6 +79,20 @@ func TestRegisterPhotoSizesAndMediaRolePreconditions(t *testing.T) {
 
 type blobStoreStub struct{}
 
+type pumpSettingsStoreStub struct{}
+
+func (pumpSettingsStoreStub) Pump(context.Context, scheduleapp.PumpSettings, scheduleapp.CreditProvider, queue.JobQueue) (int, error) {
+	return 0, nil
+}
+
+func (pumpSettingsStoreStub) Reclaim(context.Context, int, time.Duration, int, time.Time) (int, error) {
+	return 0, nil
+}
+
+func (pumpSettingsStoreStub) LoadPumpSettings(context.Context) (scheduleapp.PumpSettings, error) {
+	return scheduleapp.PumpSettings{}, nil
+}
+
 func (blobStoreStub) Put(context.Context, string, io.Reader) error { return nil }
 func (blobStoreStub) Get(context.Context, string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
@@ -92,4 +106,8 @@ func (blobStoreStub) Stat(context.Context, string) (app.BlobInfo, error) { retur
 func (blobStoreStub) Usage(context.Context) (int64, error)               { return 0, nil }
 func (blobStoreStub) Full(context.Context) (bool, error)                 { return false, nil }
 
-var _ app.BlobStore = blobStoreStub{}
+var (
+	_ app.BlobStore                  = blobStoreStub{}
+	_ scheduleapp.PumpStore          = pumpSettingsStoreStub{}
+	_ scheduleapp.PumpSettingsSource = pumpSettingsStoreStub{}
+)

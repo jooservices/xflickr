@@ -58,7 +58,7 @@ func TestRescorePendingBatchValidatesDependencies(t *testing.T) {
 }
 
 func TestPumpValidatesDependenciesContextAndDatabase(t *testing.T) {
-	settings := app.PumpSettings{PerKeyReadyCap: 1, NodeReadyCap: 1, MediaReadyCap: 1, AIReadyCap: 1, SyncReadyCap: 1, RetryMax: 1, LeaseTimeout: time.Second}
+	settings := app.PumpSettings{PerKeyReadyCap: 1, NodeReadyCap: 1, MediaReadyCap: 1, AIReadyCap: 1, SyncReadyCap: 1, RetryMax: 1, LeaseTimeout: time.Second, ReclaimBatchSize: 100}
 	if _, err := (Store{}).Pump(context.Background(), settings, nil, nil); err == nil {
 		t.Fatal("Pump accepted missing dependencies")
 	}

@@ -437,7 +437,7 @@ func TestRequeuedFailedItemRunsThroughPumpAndWorkerToDone(t *testing.T) {
 	if err := registerCrawlJobs(adapter, engine); err != nil {
 		t.Fatal(err)
 	}
-	settings := scheduleapp.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 1000, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	settings := scheduleapp.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 1000, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute, ReclaimBatchSize: 100}
 	pump := func() {
 		t.Helper()
 		// Pump is synchronous: the item leaves pending before the worker can finish it.

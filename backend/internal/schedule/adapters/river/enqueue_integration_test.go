@@ -41,7 +41,7 @@ func TestPumpDispatchesExactlyOneHundredOfTenThousandRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := app.PumpSettings{PerKeyReadyCap: 100, NodeReadyCap: 1000, MediaReadyCap: 1000, AIReadyCap: 1000, SyncReadyCap: 1000, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	settings := app.PumpSettings{PerKeyReadyCap: 100, NodeReadyCap: 1000, MediaReadyCap: 1000, AIReadyCap: 1000, SyncReadyCap: 1000, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute, ReclaimBatchSize: 100}
 	dispatched, err := (scheduleriver.Store{Pool: pool}).Pump(ctx, settings, fixedCapacity(100), adapter)
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +92,7 @@ func TestPumpSkipsUnavailableKeyAndDispatchesValidKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute, ReclaimBatchSize: 100}
 	dispatched, err := (scheduleriver.Store{Pool: pool}).Pump(ctx, settings, unavailableKeyCapacity{unavailableID: unavailableID}, adapter)
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func TestPumpDoesNotDispatchPausedContact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute, ReclaimBatchSize: 100}
 	dispatched, err := (scheduleriver.Store{Pool: pool}).Pump(ctx, settings, fixedCapacity(10), adapter)
 	if err != nil {
 		t.Fatal(err)
@@ -659,7 +659,7 @@ func TestPumpStopsWhenQuotaGovernorIsOffline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute, ReclaimBatchSize: 100}
 	if _, err := (scheduleriver.Store{Pool: pool}).Pump(ctx, settings, failingCapacity{}, adapter); err == nil {
 		t.Fatal("Pump continued while quota governor was offline")
 	}
@@ -696,7 +696,7 @@ func TestPumpReturnsWhenAnotherInstanceLeads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := app.PumpSettings{PerKeyReadyCap: 1, NodeReadyCap: 1, MediaReadyCap: 1, AIReadyCap: 1, SyncReadyCap: 1, RetryMax: 1, LeaseTimeout: time.Second}
+	settings := app.PumpSettings{PerKeyReadyCap: 1, NodeReadyCap: 1, MediaReadyCap: 1, AIReadyCap: 1, SyncReadyCap: 1, RetryMax: 1, LeaseTimeout: time.Second, ReclaimBatchSize: 100}
 	dispatched, err := (scheduleriver.Store{Pool: pool}).Pump(ctx, settings, fixedCapacity(1), adapter)
 	if err != nil || dispatched != 0 {
 		t.Fatalf("non-leader Pump() = %d, %v", dispatched, err)
@@ -716,7 +716,7 @@ func TestPumpRollsBackWhenRiverInsertFails(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state) VALUES('sync_person',$1,(SELECT user_id FROM api_keys WHERE id=$2),$2,'pending')`, suffix+"-only", keyID); err != nil {
 		t.Fatal(err)
 	}
-	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute, ReclaimBatchSize: 100}
 	if _, err := (scheduleriver.Store{Pool: pool}).Pump(ctx, settings, fixedCapacity(1), failingQueue{}); err == nil {
 		t.Fatal("Pump ignored failed River insert")
 	}
@@ -755,7 +755,7 @@ func TestPumpRollsBackWhenBacklogUpdateFails(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON work_items`, trigger))
 		_, _ = pool.Exec(context.Background(), fmt.Sprintf(`DROP FUNCTION IF EXISTS %s()`, function))
 	})
-	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 10, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute, ReclaimBatchSize: 100}
 	adapter, err := queue.NewRiver(pool, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -857,7 +857,7 @@ func TestPumpAssignsOwnerKeyToKeylessPendingWork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 1000, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 1000, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute, ReclaimBatchSize: 100}
 	store := scheduleriver.Store{Pool: pool}
 	if n, err := store.Pump(ctx, settings, fixedCapacity(0), adapter); err != nil || n != 0 {
 		t.Fatalf("Pump() without quota = %d, %v", n, err)
@@ -949,7 +949,7 @@ func TestConnectedAccountCrawlRunsCycleThenPumpThenWorkerWithinQuota(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 1000, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 1000, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute, ReclaimBatchSize: 100}
 	store := scheduleriver.Store{Pool: pool}
 	capacity := logCapacity{pool: pool, hourly: hourly}
 	dispatched, err := store.Pump(ctx, settings, capacity, adapter)
@@ -1049,7 +1049,7 @@ func TestRequeuedFailedWorkIsDispatchedOnlyThroughPumpAndQuotaGate(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 1000, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	settings := app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 1000, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute, ReclaimBatchSize: 100}
 	capacity := logCapacity{pool: pool, hourly: hourly}
 	if n, err := store.Pump(ctx, settings, capacity, adapter); err != nil || n != 1 {
 		t.Fatalf("Pump() = %d, %v; want exactly the one call of remaining quota", n, err)

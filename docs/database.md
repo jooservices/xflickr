@@ -306,22 +306,33 @@ Existing heap and index bloat is cleared with the lead-only runbook
 [rebuild-work-items.md](runbooks/rebuild-work-items.md). Never rewrite
 `work_items` inside a migration.
 
-JOOXF-386 adds `work_items_failed_updated_idx` on `updated_at` for failed
-rows. Reclaim uses it to find lease-expired failures old enough for self-heal;
-pending and active rows do not occupy this partial index. Reclaim selects at
-most `queue.reclaim_batch_size` expired leases and self-heals at most the same
-number of failed rows per tick (default 100, admin editable). The pump bounds
-inflight counts at the configured ready caps, reads global node/queue counts
-once per tick, and reads one count per active key. The supporting partial
-indexes cover active counts and due keyless work.
+JOOXF-386 uses `work_items_failed_lease_expired_idx` on `(updated_at, id)` for
+rows with both `state='failed'` and `last_error='lease expired'`. Other failed
+errors are absent from this index. Reclaim first selects at most
+`queue.reclaim_batch_size` expired lease candidates through
+the existing `work_items_ready_lease_idx`, then checks those candidates for a
+live River job. A persistent `(lease_expires_at, id)` cursor advances past live
+jobs, so they cannot hold up later candidates. The same admin setting bounds
+self-heal failures per tick (default 100) and is reloaded on every pump tick.
 
-`river_job_active_work_item_idx` supports the anti-join that leaves a work item
-alone while a live River job owns it. The integration EXPLAIN fixture contains
-400,000 work items and 100,000 active River jobs; it asserts the self-heal and
-lease selectors use their indexes, verifies the Bitmap Index Scan child when
-the planner chooses a bitmap path, and fails on a `work_items` sequential scan
-for every recorded pump and maintenance plan. The backlog integration test
-checks that a 250-row ready and failed backlog drains in batches of 100.
+Keyless owner assignment is also bounded by this setting. It walks
+`work_items_pending_keyless_idx` in ID order and persists a cursor, including
+when an owner has no active Flickr account, so those rows do not starve later
+eligible work. The pump bounds inflight counts at configured ready caps, reads
+global node/queue counts once per tick, and reads one count per active key. The
+active worker partial index also serves the node count; the active key partial
+index serves per-key counts.
+
+`river_job_active_work_item_idx` supports the bounded candidate check that
+leaves a work item alone while a live River job owns it. The integration
+`EXPLAIN ANALYZE` fixture contains 400,000 work items, 100,000 failed rows with
+ineligible errors, 10,000 expired leases with live River jobs, and about
+110,000 active River jobs total. It asserts the self-heal, lease, node-count,
+and keyless selectors use their partial indexes; candidate rows, River lookups,
+and shared-buffer touches stay within the tested batch bounds. The recorded
+pump and maintenance plans also fail on a `work_items` sequential scan. The
+backlog integration test checks that a 250-row ready and failed backlog drains
+in batches of 100.
 
 The new indexes use `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY`
 in migrations marked `NO TRANSACTION`, so index builds do not block table

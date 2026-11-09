@@ -7,9 +7,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func TestReclaimSelfHealUsesFailedUpdatedIndex(t *testing.T) {
+func TestReclaimSelfHealUsesEligibleFailureIndex(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("run with XFLICKR_INTEGRATION_TEST=1 to use the worktree database")
 	}
@@ -36,12 +38,12 @@ func TestReclaimSelfHealUsesFailedUpdatedIndex(t *testing.T) {
 	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,last_error,updated_at,lease_expires_at)
 		SELECT 'sync_person',$1||'-'||g,$2,$3,
 			CASE WHEN g <= 4 OR g BETWEEN 1000 AND 100999 THEN 'failed'
-				WHEN g BETWEEN 5 AND 8 OR g BETWEEN 20000 AND 30010 THEN 'ready'
+				WHEN g BETWEEN 5 AND 8 OR g BETWEEN 200000 AND 210010 THEN 'ready'
 				ELSE 'pending' END,
 			CASE WHEN g <= 2 THEN 'lease expired' WHEN g <= 4 THEN 'other error'
 				WHEN g BETWEEN 1000 AND 100999 THEN 'historical failure' END,
 			CASE WHEN g <= 2 OR g BETWEEN 1000 AND 100999 THEN now()-interval '30 minutes' ELSE now() END,
-			CASE WHEN g BETWEEN 5 AND 8 OR g BETWEEN 20000 AND 30010 THEN now()-interval '30 minutes' END
+			CASE WHEN g BETWEEN 5 AND 8 OR g BETWEEN 200000 AND 210010 THEN now()-interval '30 minutes' END
 		FROM generate_series(1,400000) AS g`, suffix, userID, keyID); err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +64,11 @@ func TestReclaimSelfHealUsesFailedUpdatedIndex(t *testing.T) {
 		SELECT 'available',jsonb_build_object('args',jsonb_build_object('work_item_id',w.id::text)),
 			'sync_person','sync'
 		FROM work_items w
-		WHERE w.subject_key BETWEEN $1 AND $2`, suffix+"-20000", suffix+"-30000"); err != nil {
+		WHERE w.subject_key BETWEEN $1 AND $2`, suffix+"-200000", suffix+"-210000"); err != nil {
+		t.Fatal(err)
+	}
+	var keylessCursor int64
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(max(id),0) FROM work_items`).Scan(&keylessCursor); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,not_before)
@@ -100,23 +106,27 @@ WHERE w.id = batch.id`
 		args          []any
 		indexRelation string
 		indexName     string
+		indexNames    []string
 		maxRows       int
 		maxBuffers    int
 	}{
 		{
 			name:          "Reclaim expired lease selection",
 			sql:           reclaimExpiredLeasesSQL,
-			args:          []any{now, 100},
+			args:          []any{now, nil, nil, 100},
 			indexRelation: "work_items",
-			indexName:     "work_items_expired_lease_cursor_idx",
+			indexNames:    []string{"work_items_ready_lease_idx", "work_items_expired_lease_cursor_idx"},
+			maxRows:       100,
+			maxBuffers:    2000,
 		},
 		{
 			name:          "pump node inflight count",
 			sql:           inflightNodeCountSQL,
 			args:          []any{500},
 			indexRelation: "work_items",
-			indexName:     "work_items_active_node_count_idx",
+			indexNames:    []string{"work_items_active_worker_count_idx", "work_items_active_node_count_idx"},
 			maxRows:       500,
+			maxBuffers:    500,
 		},
 		{
 			name: "pump key inflight count",
@@ -135,6 +145,15 @@ WHERE w.id = batch.id`
 			indexName:     "work_items_pending_keyless_due_idx",
 		},
 		{
+			name:          "pump key assignment candidates",
+			sql:           keylessOwnerCandidatesSQL,
+			args:          []any{keylessCursor, 100},
+			indexRelation: "work_items",
+			indexName:     "work_items_pending_keyless_idx",
+			maxRows:       100,
+			maxBuffers:    500,
+		},
+		{
 			name: "pump plan backlog count",
 			sql:  planBacklogSQL,
 			args: []any{keyID, "sync", 100},
@@ -147,12 +166,6 @@ WHERE w.id = batch.id`
 				AND NOT EXISTS (SELECT 1 FROM crawl_interests ci WHERE ci.user_id=w.user_id AND ci.person_nsid=w.subject_key AND ci.paused_at IS NOT NULL)
 				ORDER BY w.score DESC,w.not_before,w.id LIMIT $4 FOR UPDATE OF w SKIP LOCKED`,
 			args: []any{keyID, "sync", freePlanID, 100},
-		},
-		{
-			name: "pump key assignment",
-			sql: `UPDATE work_items w SET key_id=owner.key_id, updated_at=now()
-				FROM (SELECT DISTINCT ON (user_id) user_id, key_id FROM flickr_accounts WHERE status='ok' ORDER BY user_id, id) owner
-				WHERE w.state='pending' AND w.key_id IS NULL AND w.user_id=owner.user_id`,
 		},
 		{
 			name: "maintenance pending rescore",
@@ -188,12 +201,26 @@ WHERE w.id = batch.id`
 			if seqScan {
 				t.Error("query performs a Seq Scan on work_items")
 			}
-			if query.indexName != "" && !containsIndexOnRelation(plan.Plan, query.indexRelation, query.indexName) {
-				t.Errorf("query does not use %s", query.indexName)
+			indexNames := query.indexNames
+			if len(indexNames) == 0 && query.indexName != "" {
+				indexNames = []string{query.indexName}
+			}
+			var actualRows float64
+			indexFound := len(indexNames) == 0
+			for _, indexName := range indexNames {
+				if containsIndexOnRelation(plan.Plan, query.indexRelation, indexName) {
+					indexFound = true
+				}
+				if rows := maxActualRowsOnIndex(plan.Plan, query.indexRelation, indexName); rows > actualRows {
+					actualRows = rows
+				}
+			}
+			if !indexFound {
+				t.Errorf("query does not use any of %v; plan=%+v", indexNames, plan.Plan)
 			}
 			if query.maxRows > 0 {
-				if actual := maxActualRowsOnIndex(plan.Plan, query.indexRelation, query.indexName); actual > float64(query.maxRows) {
-					t.Errorf("%s read %.0f rows through %s, want at most %d", query.name, actual, query.indexName, query.maxRows)
+				if actualRows > float64(query.maxRows) {
+					t.Errorf("%s read %.0f indexed rows, want at most %d", query.name, actualRows, query.maxRows)
 				}
 			}
 			if query.maxBuffers > 0 {
@@ -272,7 +299,7 @@ func TestAssignOwnerKeysProcessesOrderedBatches(t *testing.T) {
 	suffix := fmt.Sprintf("keyless-batch-%d", time.Now().UnixNano())
 	const batchSize = 100
 	const rowsPerOwner = 150
-	keyID := seedKey(t, ctx, pool, suffix)
+	keyID := seedReclaimKey(t, ctx, pool, suffix)
 	var ownerID, orphanID int64
 	if err := pool.QueryRow(ctx, `SELECT user_id FROM api_keys WHERE id=$1`, keyID).Scan(&ownerID); err != nil {
 		t.Fatal(err)
@@ -289,8 +316,12 @@ func TestAssignOwnerKeysProcessesOrderedBatches(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
-	if _, err := tx.Exec(ctx, `INSERT INTO schedule_meta(key,value) VALUES ('keyless_owner_cursor','0')
-		ON CONFLICT (key) DO UPDATE SET value='0'`); err != nil {
+	var lastWorkItemID int64
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(max(id),0) FROM work_items`).Scan(&lastWorkItemID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO schedule_meta(key,value) VALUES ('keyless_owner_cursor',$1)
+		ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`, fmt.Sprint(lastWorkItemID)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state)
@@ -309,21 +340,21 @@ func TestAssignOwnerKeysProcessesOrderedBatches(t *testing.T) {
 		}
 		return count
 	}
-	if err := assignOwnerKeys(ctx, tx); err != nil {
+	if err := assignOwnerKeys(ctx, tx, batchSize); err != nil {
 		t.Fatal(err)
 	}
 	firstBatch := assigned()
 	if firstBatch > batchSize {
 		t.Fatalf("first pump assigned %d owned keyless rows, want at most %d", firstBatch, batchSize)
 	}
-	if err := assignOwnerKeys(ctx, tx); err != nil {
+	if err := assignOwnerKeys(ctx, tx, batchSize); err != nil {
 		t.Fatal(err)
 	}
 	if secondBatch := assigned(); secondBatch <= firstBatch {
 		t.Fatalf("second pump assigned %d owned keyless rows, want progress beyond %d after skipping ownerless rows", secondBatch, firstBatch)
 	}
 	for assigned() < rowsPerOwner {
-		if err := assignOwnerKeys(ctx, tx); err != nil {
+		if err := assignOwnerKeys(ctx, tx, batchSize); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -396,7 +427,7 @@ func TestReclaimCursorAdvancesPastLiveRiverJobs(t *testing.T) {
 	const batchSize = 100
 	const liveBacklog = 150
 	const reclaimableBacklog = 10
-	keyID := seedKey(t, ctx, pool, suffix)
+	keyID := seedReclaimKey(t, ctx, pool, suffix)
 	var userID int64
 	if err := pool.QueryRow(ctx, `SELECT user_id FROM api_keys WHERE id=$1`, keyID).Scan(&userID); err != nil {
 		t.Fatal(err)
@@ -429,4 +460,21 @@ func TestReclaimCursorAdvancesPastLiveRiverJobs(t *testing.T) {
 	if got, err := store.Reclaim(ctx, 5, time.Second, batchSize, time.Now()); err != nil || got != reclaimableBacklog {
 		t.Fatalf("second Reclaim() = %d, %v; want %d after the cursor advances", got, err, reclaimableBacklog)
 	}
+}
+
+func seedReclaimKey(t *testing.T, ctx context.Context, pool *pgxpool.Pool, suffix string) int64 {
+	t.Helper()
+	var userID, keyID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'unused','user') RETURNING id`, suffix+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst)
+		VALUES($1,'reclaim integration test',$2,'{}',3600,4,5) RETURNING id`, userID, suffix).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status)
+		VALUES($1,$2,$3,'owner','{}','{}','ok')`, userID, keyID, suffix+"@N00"); err != nil {
+		t.Fatal(err)
+	}
+	return keyID
 }
