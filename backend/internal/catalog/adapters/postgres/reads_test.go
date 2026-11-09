@@ -139,6 +139,56 @@ func readTestPhotoRow(id int64, extra ...any) []any {
 	return append(values, extra...)
 }
 
+func TestListContactsPaginatesAndValidates(t *testing.T) {
+	ctx := context.Background()
+	const userID int64 = 88
+	db := &readsDB{}
+	repository, err := New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.rows = &readsRows{rows: [][]any{
+		{"c-a", "A", "Alpha", "icon", int64(2), "acct"},
+		{"c-b", "B", "Beta", "icon", int64(1), "acct"},
+	}}
+	page, err := repository.ListContacts(ctx, userID, nil, 1)
+	if err != nil || len(page.Items) != 1 || page.NextCursor == nil || page.NextCursor.NSID != "c-a" {
+		t.Fatalf("page=%+v err=%v", page, err)
+	}
+	if item := page.Items[0]; item.NSID != "c-a" || item.Username != "A" || item.Realname != "Alpha" || item.PhotosCount != 2 || item.AccountNSID != "acct" {
+		t.Fatalf("item=%+v", item)
+	}
+	if !strings.Contains(db.query, "flickr_accounts") || db.args[0] != userID || db.args[1] != 2 {
+		t.Fatalf("query=%q args=%v", db.query, db.args)
+	}
+	db.rows = &readsRows{rows: [][]any{{"c-z", "Z", "", "", int64(0), "acct"}}}
+	if _, err := repository.ListContacts(ctx, userID, &app.ContactCursor{NSID: "c-a"}, 1); err != nil {
+		t.Fatalf("cursor list: %v", err)
+	}
+	if _, err := repository.ListContacts(ctx, userID, &app.ContactCursor{}, 1); !errors.Is(err, app.ErrInvalidCursor) {
+		t.Fatalf("invalid cursor=%v", err)
+	}
+	if _, err := repository.ListContacts(ctx, 0, nil, 1); err == nil {
+		t.Fatal("invalid user accepted")
+	}
+	if _, err := repository.ListContacts(ctx, userID, nil, 0); err == nil {
+		t.Fatal("zero limit accepted")
+	}
+	db.queryErr = errors.New("query failed")
+	if _, err := repository.ListContacts(ctx, userID, nil, 1); !errors.Is(err, db.queryErr) {
+		t.Fatalf("query error=%v", err)
+	}
+	db.queryErr = nil
+	db.rows = &readsRows{rows: [][]any{{"c", "C", "", "", int64(1), "acct"}}, scanErr: errors.New("scan failed")}
+	if _, err := repository.ListContacts(ctx, userID, nil, 1); err == nil {
+		t.Fatal("scan failure ignored")
+	}
+	db.rows = &readsRows{err: errors.New("rows failed")}
+	if _, err := repository.ListContacts(ctx, userID, nil, 1); err == nil {
+		t.Fatal("rows failure ignored")
+	}
+}
+
 func TestVisibleReadsValidatePolicyAndPaginatePeopleAndPhotos(t *testing.T) {
 	ctx := context.Background()
 	const userID int64 = 72
