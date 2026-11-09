@@ -223,15 +223,19 @@ func (tx *snapshotTx) CopyFrom(context.Context, pgx.Identifier, []string, pgx.Co
 }
 func (tx *snapshotTx) SendBatch(context.Context, *pgx.Batch) pgx.BatchResults { return nil }
 func (tx *snapshotTx) LargeObjects() pgx.LargeObjects                         { return pgx.LargeObjects{} }
+
 func (tx *snapshotTx) Prepare(context.Context, string, string) (*pgconn.StatementDescription, error) {
 	return nil, nil
 }
+
 func (tx *snapshotTx) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	return tx.db.Exec(ctx, sql, args...)
 }
+
 func (tx *snapshotTx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	return tx.db.Query(ctx, sql, args...)
 }
+
 func (tx *snapshotTx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	return tx.db.QueryRow(ctx, sql, args...)
 }
@@ -244,7 +248,7 @@ func (db *snapshotDB) Exec(_ context.Context, sql string, _ ...any) (pgconn.Comm
 	return pgconn.CommandTag{}, nil
 }
 
-func (db *snapshotDB) Query(_ context.Context, query string, args ...any) (pgx.Rows, error) {
+func (db *snapshotDB) Query(_ context.Context, query string, _ ...any) (pgx.Rows, error) {
 	db.calls++
 	if db.calls == db.failAt {
 		return nil, errors.New("injected query failure")
