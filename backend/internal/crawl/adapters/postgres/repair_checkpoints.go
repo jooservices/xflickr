@@ -188,4 +188,3 @@ func RepairZeroCheckpointsPool(ctx context.Context, pool *pgxpool.Pool, options 
 	}
 	return RepairZeroCheckpoints(ctx, poolRepairDB{pool: pool}, options)
 }
-

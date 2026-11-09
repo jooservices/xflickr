@@ -3,8 +3,6 @@ package roles
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	crawlpostgres "github.com/jooservices/xflickr/internal/crawl/adapters/postgres"
 	"github.com/jooservices/xflickr/internal/platform/config"
 )
@@ -18,9 +16,7 @@ type CheckpointRepairReport = crawlpostgres.CheckpointRepairReport
 // repairZeroCheckpoints is the pool-backed repair used after opening the
 // configured database. Unit tests replace it so the CLI/job entry can be
 // exercised without a live PostgreSQL.
-var repairZeroCheckpoints = func(ctx context.Context, pool *pgxpool.Pool, options CheckpointRepairOptions) (CheckpointRepairReport, error) {
-	return crawlpostgres.RepairZeroCheckpointsPool(ctx, pool, options)
-}
+var repairZeroCheckpoints = crawlpostgres.RepairZeroCheckpointsPool
 
 // RepairZeroCheckpoints fills null/zero interest checkpoints from stored
 // catalog data. It makes no Flickr calls and never starts application roles.
