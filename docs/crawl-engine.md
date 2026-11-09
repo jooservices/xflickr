@@ -14,7 +14,8 @@ The scheduler pump dispatches a ready work item as a job whose arguments carry
 2. marks it `running` (a rerun after a crash finds it still running);
 3. asks the key pool for the key that pays, then takes a governor permit for
    the facet's lane;
-4. calls Flickr with the item's cursor (`page`, `method`, `params`) and
+4. calls Flickr with the item's cursor (`page`, `continuation`, `method`,
+   `params`) and
    releases the permit with the call outcome;
 5. passes the payload to `Facet.Handle`;
 6. in one unit of work: locks the item, upserts catalog records, records
@@ -22,6 +23,9 @@ The scheduler pump dispatches a ready work item as a job whose arguments carry
    the user's maximum depth) for each discovery, creates the planned and
    returned work items, applies a complete reconciliation diff when marked by
    the final page, then advances the cursor (`HasMore`) or finishes the item.
+   A nonempty `Result.NextCursor` stores an opaque remote continuation in the
+   same cursor JSON as the page number; an empty value keeps the page-counter
+   behavior.
 
 The commit only applies while the item is still `running` on the page that was
 fetched. A page that was already committed, or an item that finished, changes
@@ -42,6 +46,21 @@ page.
 
 New work items are created without a key; assigning one is left to the
 scheduler.
+
+## Gallery continuation
+
+`flickr.galleries.getList` requires the first request to send
+`continuation=0`. Each response supplies the next `continuation`; the handler
+stores that opaque value with the page rows before the next request. The
+documented terminal value is `-1`. Gallery continuation requests omit the
+legacy `page` parameter. If an older response has no continuation field, the
+facet uses `pages` and the current page number as before.
+
+A response that repeats the current continuation, or an empty page with a
+nonterminal continuation, finishes the scan and logs a warning. It does not
+queue another Flickr call. A failure before the page transaction commits leaves
+both its rows and the cursor unchanged, so a retry repeats only that
+uncommitted page.
 
 ## Photos and favorites facets
 

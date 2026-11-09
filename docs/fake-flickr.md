@@ -6,6 +6,12 @@ embedded in the binary; `FAKEFLICKR_SEED` can point to another YAML dataset.
 The seed includes people, photos, favorites, albums, contacts, groups, and
 galleries, with a three-level contact and favorite discovery graph.
 
+`galleries.getList` follows Flickr's continuation contract. It requires the
+initial `continuation=0`, returns an opaque numeric offset when more seeded
+galleries remain, and returns `-1` on the last page. Send the returned value as
+the next request's `continuation`; the gallery list response includes that
+cursor alongside its page metadata.
+
 The default listener is `:8088` and can be changed with `FAKEFLICKR_ADDR`.
 REST calls use `/services/rest`; OAuth uses
 `/services/oauth/{request_token,authorize,access_token}`; image URLs use
