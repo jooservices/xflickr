@@ -52,18 +52,30 @@ Run at least seven days after any statistics reset (or after a major release
 that changes query shapes):
 
 ```sql
-SELECT
-    schemaname,
-    relname AS table_name,
-    indexrelname AS index_name,
-    idx_scan AS scans,
-    pg_size_pretty(pg_relation_size(indexrelid)) AS size,
-    idx_tup_read,
-    idx_tup_fetch
-FROM pg_stat_user_indexes
-WHERE schemaname = 'public'
-ORDER BY pg_relation_size(indexrelid) DESC, idx_scan ASC;
+WITH idx AS (
+    SELECT s.indexrelid,
+           coalesce(p.inhparent, s.indexrelid) AS root,
+           s.idx_scan,
+           pg_relation_size(s.indexrelid) AS bytes
+    FROM pg_stat_user_indexes s
+    LEFT JOIN pg_inherits p ON p.inhrelid = s.indexrelid
+    WHERE s.schemaname = 'public'
+)
+SELECT root::regclass AS index_name,
+       count(*) AS partitions,
+       sum(idx_scan) AS scans,
+       pg_size_pretty(sum(bytes)) AS size
+FROM idx
+GROUP BY root
+ORDER BY sum(bytes) DESC, sum(idx_scan) ASC;
 ```
+
+Scan counts are summed over the partitions of each parent index: a partition
+with zero scans does not make the parent unused while other partitions use it.
+Only a parent whose total is zero is a drop candidate. Before dropping, run the
+migration when no long transaction is open: `DROP INDEX` on a partitioned index
+needs an exclusive lock and the migration sets `lock_timeout` so it fails fast
+and can be repeated.
 
 For each large index with zero or near-zero `idx_scan`, grep
 `backend/internal` (including sqlc `*.sql`) for predicates that match the

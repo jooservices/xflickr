@@ -12,6 +12,11 @@
 -- of a partitioned index is short-lived per partition.
 
 -- +goose Up
+-- DROP INDEX on a partitioned index takes ACCESS EXCLUSIVE on the parent and on
+-- every partition. A long-running transaction would make it wait and every
+-- other access to photos would queue behind it. Fail fast instead: the migration
+-- can simply be run again when no long transaction is open.
+SET LOCAL lock_timeout = '10s';
 DROP INDEX photos_last_update_idx;
 DROP INDEX photos_owner_nsid_idx;
 
