@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -41,14 +42,16 @@ func (r *sizesAuthRows) TypeMap() *pgtype.Map   { return nil }
 type sizesAuthDBFake struct {
 	rows     *sizesAuthRows
 	queryErr error
+	query    string
 	owner    string
 	userID   int64
 }
 
-func (d *sizesAuthDBFake) Query(_ context.Context, _ string, args ...any) (pgx.Rows, error) {
+func (d *sizesAuthDBFake) Query(_ context.Context, query string, args ...any) (pgx.Rows, error) {
 	if d.queryErr != nil {
 		return nil, d.queryErr
 	}
+	d.query = query
 	d.owner, _ = args[0].(string)
 	d.userID, _ = args[1].(int64)
 	return d.rows, nil
@@ -65,6 +68,9 @@ func TestSizesAuthCandidatesOrdersOwnerFirst(t *testing.T) {
 	}
 	if db.owner != "owner@N00" || db.userID != 7 {
 		t.Fatalf("query args = %q %d", db.owner, db.userID)
+	}
+	if !strings.Contains(db.query, "a.user_id = $2") || !strings.Contains(db.query, "k.status = 'valid'") {
+		t.Fatalf("candidate query is not scoped to the requester and valid keys: %s", db.query)
 	}
 }
 

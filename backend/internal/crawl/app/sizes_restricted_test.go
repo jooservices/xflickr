@@ -127,8 +127,31 @@ func TestRestrictedPhotoRetriesOnceWithOwnerToken(t *testing.T) {
 	if len(client.calls) != 2 || client.calls[0].Signed || !client.calls[1].Signed || client.calls[1].AccountID != 11 {
 		t.Fatalf("calls = %+v", client.calls)
 	}
-	if store.status != catalog.SizesConfirmed {
-		t.Fatalf("status = %s", store.status)
+	if store.status == catalog.SizesConfirmed {
+		t.Fatal("account-authorized sizes were stored globally")
+	}
+}
+
+func TestFailedOwnerAccountDoesNotSuppressRequestingAccountOnNextRequest(t *testing.T) {
+	handler, store, client, _, _ := restrictedRig()
+	store.photo.Server = catalog.RestrictedPlaceholderServer
+	handler.Auth.(*sizesAuthFake).candidates[1].KeyID = handler.Auth.(*sizesAuthFake).candidates[0].KeyID
+	client.accountErr = map[int64]error{11: &flickr.CallError{Kind: flickr.ErrPermission, Code: 2}}
+	delete(client.accountSizes, 11)
+	client.accountSizes[22] = []flickr.PhotoSize{{Label: "Large", Width: 50, Height: 40}}
+	job := SizesJob{PhotoID: 40, KeyID: 12, Class: string(quotadomain.Interactive)}
+	if err := handler.Handle(t.Context(), job); err != nil {
+		t.Fatal(err)
+	}
+	store.photo.SizesStatus = store.status
+	if store.checked.IsZero() {
+		store.checked = handler.Now()
+	}
+	if err := handler.Handle(t.Context(), job); err != nil {
+		t.Fatal(err)
+	}
+	if got := client.calls[len(client.calls)-1]; !got.Signed || got.AccountID != 22 {
+		t.Fatalf("next request call = %+v, want requesting user's other account", got)
 	}
 }
 
@@ -139,7 +162,7 @@ func TestFailureRecordsRestrictionForThatAccountOnly(t *testing.T) {
 	if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
 		t.Fatal(err)
 	}
-	if store.status != catalog.SizesUnavailable || len(states.recorded) != 1 {
+	if store.status == catalog.SizesUnavailable || len(states.recorded) != 1 {
 		t.Fatalf("status=%s recorded=%+v", store.status, states.recorded)
 	}
 	got := states.recorded[0]
