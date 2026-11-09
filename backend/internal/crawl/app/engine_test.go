@@ -409,7 +409,7 @@ func TestHandleSuccessCommitsPageAndAdvances(t *testing.T) {
 		t.Fatal(err)
 	}
 	req := r.flickr.requests[0]
-	if req.KeyID != 9 || req.UserID != 3 || req.Method != "flickr.people.getPhotos" || req.Params["page"] != "2" || req.Params["user_id"] != "100@N01" {
+	if req.KeyID != 9 || req.UserID != 3 || req.SubjectNSID != "100@N01" || req.Method != "flickr.people.getPhotos" || req.Params["page"] != "2" || req.Params["user_id"] != "100@N01" {
 		t.Fatalf("request = %+v", req)
 	}
 	if len(r.permit.done) != 1 || r.permit.done[0] != nil {
