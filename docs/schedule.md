@@ -39,6 +39,13 @@ per-key claim hit the pending score index. Plan resource shares reserve each
 plan's fraction of available dispatch capacity, then unused allocation is lent
 to plans with backlog.
 
+The pump counts at most the current queue limit for each plan. It probes
+pending work through that plan's users and stops after the limit, using the
+partial pending backlog index ordered by due time. An empty plan therefore
+does not scan another plan's pending rows. The capped availability preserves
+`SplitShare` behavior because the scheduler can dispatch no more than that
+same limit in one pump.
+
 ## Self-heal and requeue of failed work
 
 A row that failed only because its lease expired (`last_error = 'lease

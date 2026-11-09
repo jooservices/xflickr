@@ -42,6 +42,32 @@ Sizes are approximate per partition × 16 partitions unless noted.
 `work_items` and River indexes are owned by JOOXF-370 and are out of scope for
 the index-drop audit above.
 
+## Scheduler plan backlog count
+
+JOOXF-385 adds the partial index
+`work_items_pending_plan_backlog_idx` on `(key_id, worker_type, user_id,
+not_before)` for pending rows. The scheduler probes each plan's users and
+counts at most the queue limit, so an empty plan does not walk another plan's
+backlog. The index does not rewrite the table.
+
+On the Dev Workspaces VM worktree database, the integration test generated
+400,000 pending sync rows for the pro plan and left the free plan empty while
+measuring `EXPLAIN (ANALYZE, BUFFERS)`:
+
+| Query | Execution | Shared buffers | `work_items` Seq Scan |
+| --- | ---: | ---: | --- |
+| Previous unbounded group count | 221.90 ms | 13,374 | Yes |
+| Bounded per-plan count | 0.23 ms | 16 | No |
+
+The new partial index occupied 15,843,328 bytes with that 400,000-row fixture.
+The test then added a low-score free-plan row after the pro backlog and
+verified that `SplitShare` allocated it, with the remaining 99 slots assigned
+to pro. The fixture runs inside a transaction and is rolled back.
+
+After deployment, remeasure on production with `db-report` and a 40-second
+`pg_stat_activity` sample; these worktree figures do not establish production
+runtime behavior.
+
 Foreign-key note: after dropping `photos_owner_nsid_idx`, deletes of `people`
 still have a supporting index because `photos_owner_last_seen_idx` leads with
 `owner_nsid`. Never drop a unique constraint, primary key, or the only index
