@@ -6,6 +6,12 @@ set -euo pipefail
 db_url="${1:?database url required}"
 pending="${2:-350000}"
 total="${3:-500000}"
+if [[ ! "$pending" =~ ^[0-9]+$ || ! "$total" =~ ^[0-9]+$ ]]; then
+  echo "row counts must be non-negative integers" >&2
+  exit 1
+fi
+pending=$((10#$pending))
+total=$((10#$total))
 if (( pending > total )); then
   echo "pending_rows cannot exceed total_rows" >&2
   exit 1

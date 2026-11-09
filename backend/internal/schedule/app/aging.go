@@ -11,14 +11,15 @@ import (
 // weights fingerprint that last completed a full pass.
 type WeightsRescoreStore interface {
 	RescorePendingBatch(context.Context, int, domain.ScoreWeights, int) (int, error)
+	RescoreExpiredSelectionsBatch(context.Context, int, domain.ScoreWeights, int) (int, error)
 	ComputeWeightsFingerprint(context.Context, domain.ScoreWeights, int) (string, error)
 	LoadWeightsFingerprint(context.Context) (string, error)
 	StoreWeightsFingerprint(context.Context, string) error
 }
 
-// WeightsRescore refreshes pending scores when admin score weights, max depth,
-// or plan weights change. It replaces the former per-tick aging rewrite: scores
-// are otherwise written once at insert and on input changes (star/select).
+// WeightsRescore refreshes pending scores when score inputs change and removes
+// expired selection bonuses in bounded batches. It replaces the former per-tick
+// aging rewrite.
 type WeightsRescore struct {
 	Store     WeightsRescoreStore
 	BatchSize int
@@ -42,7 +43,7 @@ func (a WeightsRescore) RunBatch(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	if have == want {
-		return 0, nil
+		return a.Store.RescoreExpiredSelectionsBatch(ctx, a.BatchSize, a.Weights, a.MaxDepth)
 	}
 	count, err := a.Store.RescorePendingBatch(ctx, a.BatchSize, a.Weights, a.MaxDepth)
 	if err != nil {

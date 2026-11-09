@@ -214,7 +214,7 @@ func (s Store) Pump(ctx context.Context, settings app.PumpSettings, credits app.
 }
 
 const staticScoreExpr = `COALESCE(p.weight,1)*$1
-	+ CASE WHEN w2.direct_action AND COALESCE(ci.selected_until IS NULL OR ci.selected_until > now(), TRUE) THEN $2 ELSE 0 END
+	+ CASE WHEN work_items_active_direct_action(w2.direct_action,w2.user_id,w2.subject_key) THEN $2 ELSE 0 END
 	+ CASE WHEN w2.starred THEN $3 ELSE 0 END
 	+ ($4::int - w2.depth)*$5
 	- $6*EXTRACT(EPOCH FROM w2.created_at)/60.0`
@@ -228,7 +228,26 @@ func (s Store) RescorePendingBatch(ctx context.Context, batchSize int, weights d
 	if _, err := domain.Score(domain.ScoreInput{MaxDepth: maxDepth}, weights); err != nil {
 		return 0, err
 	}
-	return s.rescoreSet(ctx, `WHERE w2.state='pending' ORDER BY w2.id LIMIT $7`, []any{
+	return s.rescoreSet(ctx, `WHERE w2.state='pending' AND w2.score IS DISTINCT FROM (`+staticScoreExpr+`) ORDER BY w2.id LIMIT $7`, []any{
+		weights.PlanWeight, weights.DirectAction, weights.Starred, maxDepth, weights.Depth, weights.AgeMinutes, batchSize,
+	})
+}
+
+// RescoreExpiredSelectionsBatch removes direct-action bonuses after the
+// associated user's selection expires, without scanning unrelated pending work.
+func (s Store) RescoreExpiredSelectionsBatch(ctx context.Context, batchSize int, weights domain.ScoreWeights, maxDepth int) (int, error) {
+	if s.backend() == nil || ctx == nil || batchSize <= 0 || maxDepth < 0 {
+		return 0, errors.New("schedule: invalid expired selection rescore dependencies")
+	}
+	if _, err := domain.Score(domain.ScoreInput{MaxDepth: maxDepth}, weights); err != nil {
+		return 0, err
+	}
+	return s.rescoreSet(ctx, `WHERE w2.state='pending'
+		AND w2.direct_action
+		AND ci.selected_until IS NOT NULL
+		AND ci.selected_until <= now()
+		AND w2.score IS DISTINCT FROM (`+staticScoreExpr+`)
+		ORDER BY ci.selected_until, w2.id LIMIT $7`, []any{
 		weights.PlanWeight, weights.DirectAction, weights.Starred, maxDepth, weights.Depth, weights.AgeMinutes, batchSize,
 	})
 }

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
@@ -377,6 +378,84 @@ func TestRefreshChangedPeopleLocksOnlyChangedRowsInOrder(t *testing.T) {
 				t.Fatalf("opposite-order iteration %d: %v", iteration, err)
 			}
 		}
+	}
+}
+
+func TestRefreshChangedPeopleAvoidsForeignKeyLockDeadlock(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run with XFLICKR_INTEGRATION_TEST=1 to use the worktree database")
+	}
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	prefix := fmt.Sprintf("refresh-fk-lock-%d", time.Now().UnixNano())
+	people := []domain.Person{
+		{NSID: prefix + "-a", Username: prefix + "-a", Realname: "before-a"},
+		{NSID: prefix + "-b", Username: prefix + "-b", Realname: "before-b"},
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `DELETE FROM people WHERE nsid LIKE $1`, prefix+"%"); err != nil {
+			t.Errorf("delete test people: %v", err)
+		}
+	})
+	photoIDs := []int64{time.Now().UnixNano(), time.Now().UnixNano() + 1}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `DELETE FROM photos WHERE id=ANY($1::bigint[])`, photoIDs); err != nil {
+			t.Errorf("delete test photos: %v", err)
+		}
+	})
+	repository, err := postgres.New(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.UpsertPeople(ctx, people); err != nil {
+		t.Fatalf("seed people: %v", err)
+	}
+	txA, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = txA.Rollback(context.Background()) })
+	txB, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = txB.Rollback(context.Background()) })
+	for i, tx := range []pgx.Tx{txA, txB} {
+		if _, err := tx.Exec(ctx, `INSERT INTO photos(id,owner_nsid,last_update,visibility,raw,content_hash)
+			VALUES($1,$2,now(),'public',$3,$4)`, photoIDs[i], people[i].NSID, []byte("{}"), make([]byte, 32)); err != nil {
+			t.Fatalf("insert photo foreign key %d: %v", i, err)
+		}
+	}
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	go func() {
+		<-start
+		txRepository, repoErr := postgres.New(txA)
+		if repoErr == nil {
+			repoErr = txRepository.RefreshChangedPeople(ctx, []domain.Person{{NSID: people[1].NSID, Username: people[1].Username, Realname: "after-a"}})
+		}
+		results <- repoErr
+	}()
+	go func() {
+		<-start
+		txRepository, repoErr := postgres.New(txB)
+		if repoErr == nil {
+			repoErr = txRepository.RefreshChangedPeople(ctx, []domain.Person{{NSID: people[0].NSID, Username: people[0].Username, Realname: "after-b"}})
+		}
+		results <- repoErr
+	}()
+	close(start)
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Fatalf("refresh overlapping page after foreign-key write: %v", err)
+		}
+	}
+	if err := txA.Commit(ctx); err != nil {
+		t.Fatalf("commit transaction A: %v", err)
+	}
+	if err := txB.Commit(ctx); err != nil {
+		t.Fatalf("commit transaction B: %v", err)
 	}
 }
 

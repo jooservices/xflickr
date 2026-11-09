@@ -23,7 +23,7 @@ SELECT
     COALESCE($6, '{}'::jsonb), $7, $8, $9, $10, $11, COALESCE($12, now()), $13,
     work_items_static_score(
         COALESCE((SELECT p.weight FROM users u LEFT JOIN plans p ON p.id=u.plan_id WHERE u.id=$3), 1),
-        $8, $9, $10, COALESCE($12, now()))
+        work_items_active_direct_action($8,$3,$2), $9, $10, COALESCE($12, now()))
 ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO UPDATE
 SET state = CASE WHEN work_items.state = 'done' AND $14 THEN 'pending' ELSE work_items.state END,
     cursor = CASE WHEN work_items.state = 'done' AND $14 THEN '{}'::jsonb ELSE work_items.cursor END,
@@ -36,7 +36,7 @@ SET state = CASE WHEN work_items.state = 'done' AND $14 THEN 'pending' ELSE work
     created_at = CASE WHEN work_items.state = 'done' AND $14 THEN now() ELSE work_items.created_at END,
     score = work_items_static_score(
         COALESCE((SELECT p.weight FROM users u LEFT JOIN plans p ON p.id=u.plan_id WHERE u.id=work_items.user_id), 1),
-        work_items.direct_action OR EXCLUDED.direct_action,
+        work_items_active_direct_action(work_items.direct_action OR EXCLUDED.direct_action,work_items.user_id,work_items.subject_key),
         work_items.starred OR EXCLUDED.starred,
         CASE WHEN work_items.state = 'done' AND $14 THEN EXCLUDED.depth ELSE work_items.depth END,
         CASE WHEN work_items.state = 'done' AND $14 THEN now() ELSE work_items.created_at END),

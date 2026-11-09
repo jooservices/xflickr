@@ -9,17 +9,15 @@ rows in NSID order. Empty values preserve stored data, and an NSID placeholder
 username cannot replace a real username. The public `UpsertPeople` operation
 keeps both steps together for non-crawl callers.
 
-The PostgreSQL adapter accepts upsert batches of up to 500 records. Group and
+People writes chunk at 500 rows inside the caller's transaction. Group and
 person-group writers that may receive an unpaged Flickr list larger than 500
-rows chunk through a shared helper so every chunk shares the caller's
+rows also chunk through a shared helper so every chunk shares the caller's
 transaction; other writers still reject oversized batches. Photo IDs route
 across 16 hash partitions, with indexes for owner, last update, and size
 retrieval status.
 
-The PostgreSQL adapter accepts upsert batches of up to 500 records and skips
-unchanged records. Group and person-group writers that may receive an unpaged
-Flickr list larger than 500 rows chunk through a shared helper so every chunk
-shares the caller's transaction; other writers still reject oversized batches.
+Other PostgreSQL upsert batches accept up to 500 records and skip unchanged
+records.
 Photo equality uses Flickr's `last_update` value and a SHA-256 hash of the
 source JSON. The adapter stores the zstd compressed source in a `photos.raw`
 JSONB envelope with an explicit encoding and base64 data.

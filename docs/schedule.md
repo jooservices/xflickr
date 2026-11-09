@@ -31,10 +31,13 @@ historical minutes-aware formula with the shared "now" term cancelled, so
 dispatch order stays identical without rewriting rows as they age. Scores are
 set at insert and recomputed only when star/select, plan weight, depth/direct
 flags, or admin score weights change. A weights fingerprint triggers one
-set-based pending rescore in bounded batches. The pump lists active API keys
-from `api_keys`/`flickr_accounts` and lets the per-key claim hit the pending
-score index. Plan resource shares reserve each plan's fraction of available
-dispatch capacity, then unused allocation is lent to plans with backlog.
+set-based pending rescore in bounded batches, writing only rows with outdated
+scores. The direct-action bonus ends when the associated selection expires; a
+separate bounded pass updates affected rows using the selection expiry index.
+The pump lists active API keys from `api_keys`/`flickr_accounts` and lets the
+per-key claim hit the pending score index. Plan resource shares reserve each
+plan's fraction of available dispatch capacity, then unused allocation is lent
+to plans with backlog.
 
 ## Self-heal and requeue of failed work
 

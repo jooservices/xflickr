@@ -61,7 +61,7 @@ WITH incoming AS (
             CASE WHEN i.facet_state <> '{}'::jsonb THEN i.facet_state ELSE p.facet_state END
         )
     ORDER BY p.nsid
-    FOR UPDATE OF p
+    FOR NO KEY UPDATE OF p
 )
 UPDATE people AS p
 SET username = todo.username,

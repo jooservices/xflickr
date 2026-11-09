@@ -769,3 +769,30 @@ func TestPumpQueueEmptyRowsAndCreditsBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRescoreBatchesSelectOnlyOutdatedScores(t *testing.T) {
+	var statements []string
+	database := &coverageDatabase{execFn: func(_ context.Context, query string, _ ...any) (pgconn.CommandTag, error) {
+		statements = append(statements, query)
+		return pgconn.NewCommandTag("UPDATE 1"), nil
+	}}
+	store := Store{database: database}
+	weights := domain.ScoreWeights{PlanWeight: 10, DirectAction: 100, Starred: 20, Depth: 5, AgeMinutes: .1}
+	if _, err := store.RescorePendingBatch(context.Background(), 10, weights, 4); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RescoreExpiredSelectionsBatch(context.Background(), 10, weights, 4); err != nil {
+		t.Fatal(err)
+	}
+	if len(statements) != 2 {
+		t.Fatalf("rescore statements = %d, want 2", len(statements))
+	}
+	for i, statement := range statements {
+		if !strings.Contains(statement, "w2.score IS DISTINCT FROM") || !strings.Contains(statement, "work_items_active_direct_action") {
+			t.Fatalf("rescore statement %d does not filter stale computed scores: %s", i+1, statement)
+		}
+	}
+	if !strings.Contains(statements[1], "ci.selected_until <= now()") || !strings.Contains(statements[1], "ORDER BY ci.selected_until") {
+		t.Fatalf("expired selection query is not ordered by selection expiry: %s", statements[1])
+	}
+}

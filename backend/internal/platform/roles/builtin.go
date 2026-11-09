@@ -195,6 +195,7 @@ func (crawlRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	settingsService := settingsapp.New(settingsRepository)
 	interestsRepository, err := crawlpostgres.New(pool)
 	if err != nil {
 		return err
@@ -203,7 +204,7 @@ func (crawlRole) Run(ctx context.Context) error {
 	defer redisClient.Close()
 	stopMetrics := startMetricsCollection(ctx, pool, redisClient, cfg, "crawl", "", false, slog.Default())
 	defer stopMetrics()
-	queueAdapter, err := queue.NewRiver(pool, map[string]int{scheduleriver.PhotoQueue: crawlWorkers, scheduleriver.PhotoExtrasQueue: 1, accountsapp.VerifyQueue: 1})
+	queueAdapter, err := newRiverWithSettings(ctx, pool, map[string]int{scheduleriver.PhotoQueue: crawlWorkers, scheduleriver.PhotoExtrasQueue: 1, accountsapp.VerifyQueue: 1})
 	if err != nil {
 		return err
 	}
@@ -226,7 +227,7 @@ func (crawlRole) Run(ctx context.Context) error {
 	if err := startAccountVerification(ctx, queueAdapter, verifier, seeder); err != nil {
 		return err
 	}
-	service := crawlapp.Interests{Repository: interestsRepository, Settings: settingsapp.New(settingsRepository)}
+	service := crawlapp.Interests{Repository: interestsRepository, Settings: settingsService}
 	configureRoleReadiness(ctx, "crawl", postgresDependency(pool), redisDependency(redisClient))
 	// The River worker and the interest consumer run side by side; if either
 	// fails the role fails, so a dead worker cannot leave the process idling.
@@ -270,7 +271,7 @@ func (syncRole) Run(ctx context.Context) error {
 	defer redisClient.Close()
 	stopMetrics := startMetricsCollection(ctx, pool, redisClient, cfg, "sync", "", false, slog.Default())
 	defer stopMetrics()
-	queueAdapter, err := queue.NewRiver(pool, map[string]int{scheduleriver.PhotoQueue: 1, scheduleriver.PhotoExtrasQueue: 1})
+	queueAdapter, err := newRiverWithSettings(ctx, pool, map[string]int{scheduleriver.PhotoQueue: 1, scheduleriver.PhotoExtrasQueue: 1})
 	if err != nil {
 		return err
 	}
@@ -447,7 +448,7 @@ func (mediaRole) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	queueAdapter, err := queue.NewRiver(pool, map[string]int{"media": 1})
+	queueAdapter, err := newRiverWithSettings(ctx, pool, map[string]int{"media": 1})
 	if err != nil {
 		return err
 	}

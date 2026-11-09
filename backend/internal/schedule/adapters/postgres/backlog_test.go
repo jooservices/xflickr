@@ -39,6 +39,9 @@ func TestEnqueue(t *testing.T) {
 				if !strings.Contains(fake.query, "ON CONFLICT ON CONSTRAINT work_items_dedupe_key") || len(fake.args) != 14 {
 					t.Fatalf("enqueue SQL/args not as expected: %q %#v", fake.query, fake.args)
 				}
+				if strings.Count(fake.query, "work_items_active_direct_action") != 2 {
+					t.Fatalf("enqueue score does not apply selection expiry to insert and upsert: %q", fake.query)
+				}
 			}
 		})
 	}

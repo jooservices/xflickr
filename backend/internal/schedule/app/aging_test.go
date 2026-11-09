@@ -30,8 +30,8 @@ func TestWeightsFingerprintTriggersOneSetBasedRescore(t *testing.T) {
 	}
 
 	got, err = job.RunBatch(context.Background())
-	if err != nil || got != 0 || store.calls != 2 {
-		t.Fatalf("matching fingerprint still rescored: %d, %v calls=%d", got, err, store.calls)
+	if err != nil || got != store.expiredBatch || store.calls != 2 || store.expiredCalls != 1 {
+		t.Fatalf("matching fingerprint expiry rescore: %d, %v store=%+v", got, err, store)
 	}
 }
 
@@ -70,18 +70,27 @@ func TestWeightsRescorePropagatesStoreErrors(t *testing.T) {
 	if err == nil || got != 1 {
 		t.Fatalf("store fingerprint failure = %d, %v", got, err)
 	}
+
+	store.fingerprint = store.computed
+	store.expiredErr = errors.New("expired selection rescore failed")
+	if _, err := job.RunBatch(context.Background()); err == nil {
+		t.Fatal("ignored expired selection rescore failure")
+	}
 }
 
 type rescoreFake struct {
-	fingerprint string
-	computed    string
-	batch       int
-	batchResult int
-	calls       int
-	computeErr  error
-	loadErr     error
-	storeErr    error
-	rescoreErr  error
+	fingerprint  string
+	computed     string
+	batch        int
+	batchResult  int
+	calls        int
+	expiredBatch int
+	expiredCalls int
+	computeErr   error
+	loadErr      error
+	storeErr     error
+	rescoreErr   error
+	expiredErr   error
 }
 
 func (s *rescoreFake) RescorePendingBatch(_ context.Context, batch int, _ domain.ScoreWeights, _ int) (int, error) {
@@ -94,6 +103,12 @@ func (s *rescoreFake) RescorePendingBatch(_ context.Context, batch int, _ domain
 		return s.batchResult, nil
 	}
 	return batch, nil
+}
+
+func (s *rescoreFake) RescoreExpiredSelectionsBatch(_ context.Context, batch int, _ domain.ScoreWeights, _ int) (int, error) {
+	s.expiredCalls++
+	s.batch = batch
+	return s.expiredBatch, s.expiredErr
 }
 
 func (s *rescoreFake) ComputeWeightsFingerprint(context.Context, domain.ScoreWeights, int) (string, error) {

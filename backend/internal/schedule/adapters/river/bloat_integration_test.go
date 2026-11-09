@@ -1,11 +1,15 @@
 package river_test
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	scheduleriver "github.com/jooservices/xflickr/internal/schedule/adapters/river"
 	"github.com/jooservices/xflickr/internal/schedule/domain"
@@ -121,6 +125,25 @@ func TestWeightsFingerprintRescoreIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var previous string
+	readErr := pool.QueryRow(ctx, `SELECT value FROM schedule_meta WHERE key='score_weights_fingerprint'`).Scan(&previous)
+	hadPrevious := readErr == nil
+	if readErr != nil && !errors.Is(readErr, pgx.ErrNoRows) {
+		t.Fatal(readErr)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cleanupCancel()
+		if hadPrevious {
+			if err := store.StoreWeightsFingerprint(cleanupCtx, previous); err != nil {
+				t.Errorf("restore score weights fingerprint: %v", err)
+			}
+			return
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM schedule_meta WHERE key='score_weights_fingerprint'`); err != nil {
+			t.Errorf("remove test score weights fingerprint: %v", err)
+		}
+	})
 	if err := store.StoreWeightsFingerprint(ctx, "stale-for-test"); err != nil {
 		t.Fatal(err)
 	}
@@ -131,5 +154,7 @@ func TestWeightsFingerprintRescoreIntegration(t *testing.T) {
 	if fp == got {
 		t.Fatal("computed fingerprint unexpectedly matched stale marker")
 	}
-	_ = store.StoreWeightsFingerprint(ctx, fp)
+	if err := store.StoreWeightsFingerprint(ctx, fp); err != nil {
+		t.Fatalf("restore current score weights fingerprint: %v", err)
+	}
 }

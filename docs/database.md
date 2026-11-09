@@ -257,12 +257,14 @@ key**. Because the historical priority formula was linear in age, ordering by
 `base - wAge * epoch(created_at) / 60` matches ordering by the minutes-aware
 score at any shared "now". The absolute value is not a minutes-aware score.
 
-Scores are written once at insert (and on reopen), and recomputed only when an
-input changes: star/select (`RescorePerson`), plan weight, depth/direct flags,
-or admin score weights. A stored weights fingerprint (including a digest of
-plan weights) triggers one set-based `UPDATE ... FROM (SELECT ... LIMIT n)`
-pass in bounded batches. There is no per-tick aging rewrite and
-`score_updated_at` is unused.
+Scores are written once at insert (and on reopen), and recomputed when an input
+changes: star/select (`RescorePerson`), plan weight, depth/direct flags, or
+admin score weights. A stored weights fingerprint (including a digest of plan
+weights) triggers one set-based `UPDATE ... FROM (SELECT ... LIMIT n)` pass in
+bounded batches, selecting only rows whose computed score differs. A bounded,
+expiry-indexed pass removes direct-action bonuses after `selected_until` passes;
+enqueue and rescore use the same expiry rule. There is no per-tick aging rewrite
+and `score_updated_at` is unused.
 
 `fillfactor=70` and tightened per-table autovacuum settings favour HOT updates
 on state/lease transitions. The pending score index still includes `score` and
@@ -283,6 +285,7 @@ as `work_items`.
 
 ## people upserts (JOOXF-370)
 
-`UpsertPeople` sorts each batch by `nsid` so concurrent transactions lock rows
-in one order. The conflict update skips no-op column changes and refreshes
-`last_seen_at` at most once per hour per person.
+People writes sort each batch by `nsid`. `EnsurePeople` inserts missing rows
+with `ON CONFLICT DO NOTHING`; `RefreshChangedPeople` locks and updates only
+changed rows with `FOR NO KEY UPDATE` in NSID order, compatible with foreign-key
+key-share locks. It advances `last_seen_at` at most once per hour per person.
