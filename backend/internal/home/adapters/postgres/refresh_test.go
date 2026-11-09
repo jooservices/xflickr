@@ -182,3 +182,20 @@ func TestRefreshBatchRequiresRefreshDatabase(t *testing.T) {
 		t.Fatalf("RefreshBatch() error = %v, want missing database support", err)
 	}
 }
+
+func TestRefreshPagePaginatesIndexedPhotoSources(t *testing.T) {
+	for _, fragment := range []string{
+		"FROM user_home_photo_candidates candidate",
+		"source_user.user_id",
+		"candidate.photo_id > $2",
+		"ORDER BY candidate.photo_id",
+		"LIMIT $3",
+	} {
+		if !strings.Contains(refreshPhotoPageSQL, fragment) {
+			t.Errorf("refresh page SQL is missing %q: %s", fragment, refreshPhotoPageSQL)
+		}
+	}
+	if strings.Contains(refreshPhotoPageSQL, "FROM observations") {
+		t.Fatal("refresh page must not search observations for shared photo IDs")
+	}
+}

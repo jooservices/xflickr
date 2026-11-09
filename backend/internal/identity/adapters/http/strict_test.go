@@ -198,3 +198,54 @@ func TestStrictHandlerLeavesHomeToHomeModule(t *testing.T) {
 		t.Fatalf("home error = %v", err)
 	}
 }
+
+func TestStrictHandlerLeavesCatalogDownloadsAndSharingToTheirModules(t *testing.T) {
+	handler := StrictHandler{}
+	tests := []struct {
+		name string
+		call func() error
+		want error
+	}{
+		{"list people", func() error { _, err := handler.ListPeople(t.Context(), gen.ListPeopleRequestObject{}); return err }, errCatalogServedByCatalog},
+		{"get person", func() error { _, err := handler.GetPerson(t.Context(), gen.GetPersonRequestObject{}); return err }, errCatalogServedByCatalog},
+		{"list person photos", func() error {
+			_, err := handler.ListPersonPhotos(t.Context(), gen.ListPersonPhotosRequestObject{})
+			return err
+		}, errCatalogServedByCatalog},
+		{"list favorites", func() error {
+			_, err := handler.ListFavorites(t.Context(), gen.ListFavoritesRequestObject{})
+			return err
+		}, errCatalogServedByCatalog},
+		{"list albums", func() error { _, err := handler.ListAlbums(t.Context(), gen.ListAlbumsRequestObject{}); return err }, errCatalogServedByCatalog},
+		{"list album photos", func() error {
+			_, err := handler.ListAlbumPhotos(t.Context(), gen.ListAlbumPhotosRequestObject{})
+			return err
+		}, errCatalogServedByCatalog},
+		{"get photo", func() error { _, err := handler.GetPhoto(t.Context(), gen.GetPhotoRequestObject{}); return err }, errCatalogServedByCatalog},
+		{"create download", func() error {
+			_, err := handler.CreateDownload(t.Context(), gen.CreateDownloadRequestObject{})
+			return err
+		}, errDownloadsServedByMedia},
+		{"get download parts", func() error {
+			_, err := handler.GetDownloadParts(t.Context(), gen.GetDownloadPartsRequestObject{})
+			return err
+		}, errDownloadsServedByMedia},
+		{"mark download part fetched", func() error {
+			_, err := handler.MarkDownloadPartFetched(t.Context(), gen.MarkDownloadPartFetchedRequestObject{})
+			return err
+		}, errDownloadsServedByMedia},
+		{"retry failed download", func() error {
+			_, err := handler.RetryFailedDownload(t.Context(), gen.RetryFailedDownloadRequestObject{})
+			return err
+		}, errDownloadsServedByMedia},
+		{"stream events", func() error { _, err := handler.StreamEvents(t.Context(), gen.StreamEventsRequestObject{}); return err }, errEventsServedByPlatform},
+		{"update sharing", func() error { _, err := handler.PutMeSharing(t.Context(), gen.PutMeSharingRequestObject{}); return err }, errSharingServedBySharing},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.call(); !errors.Is(err, test.want) {
+				t.Fatalf("handler error = %v, want %v", err, test.want)
+			}
+		})
+	}
+}

@@ -11,18 +11,27 @@ import (
 func TestFilterBuildsEquivalentSQLAndSearchRules(t *testing.T) {
 	filter := Filter(domain.User{ID: 42})
 	for _, fragment := range []string{
-		"photos.id IN (", "o.user_id = $1", "o.user_id = ss.user_id", "o.record_kind = 'photo'", "shared_photo.visibility = 'public'", "LIMIT 1", "OFFSET 0",
-		"sharing_settings", "ss.enabled",
+		"EXISTS (SELECT 1 FROM observations own_observation",
+		"own_observation.user_id = $1",
+		"own_observation.record_kind = 'photo'",
+		"own_observation.record_id = photos.id::text",
+		"EXISTS (SELECT 1 FROM observations shared_observation",
+		"shared_observation.record_kind = 'photo'",
+		"shared_observation.record_id = photos.id::text",
+		"setting.user_id = shared_observation.user_id",
+		"setting.enabled",
 	} {
 		if !strings.Contains(filter.SQL.Expression, fragment) {
 			t.Errorf("SQL predicate does not contain %q: %s", fragment, filter.SQL.Expression)
 		}
 	}
+	for _, fragment := range []string{"UNION", "OFFSET 0", "CROSS JOIN LATERAL"} {
+		if strings.Contains(filter.SQL.Expression, fragment) {
+			t.Errorf("SQL predicate contains unbounded observation enumeration %q: %s", fragment, filter.SQL.Expression)
+		}
+	}
 	if len(filter.SQL.Args) != 1 || filter.SQL.Args[0] != int64(42) {
 		t.Fatalf("SQL args = %#v, want user id 42", filter.SQL.Args)
-	}
-	if filter.PhotoIDs.Expression == "" || len(filter.PhotoIDs.Args) != 1 || filter.PhotoIDs.Args[0] != int64(42) {
-		t.Fatalf("photo ID query = %+v, want the same user-scoped visibility rule", filter.PhotoIDs)
 	}
 	encoded, err := json.Marshal(filter.Search)
 	if err != nil {

@@ -182,6 +182,24 @@ func TestHomeStatsRefreshIntervalIsAdminConfigurable(t *testing.T) {
 	}
 }
 
+func TestHomeStatsRefreshBatchSizeIsAdminConfigurable(t *testing.T) {
+	setting := definition(t, HomeStatsRefreshBatchSize)
+	if string(setting.Value) != "500000" || setting.UserOverridable ||
+		!floatEqual(setting.Min, 250) || !floatEqual(setting.Max, 1000000) {
+		t.Fatalf("home.stats_refresh_batch_size default = %+v", setting)
+	}
+	schema, ok := SchemaFor(HomeStatsRefreshBatchSize)
+	if !ok || schema.Type != "integer" ||
+		!floatEqual(schema.Minimum, 250) || !floatEqual(schema.Maximum, 1000000) {
+		t.Fatalf("home.stats_refresh_batch_size schema = %+v", schema)
+	}
+	for _, raw := range []string{"249", "1000001"} {
+		if err := ValidateValue(HomeStatsRefreshBatchSize, json.RawMessage(raw), nil, nil); err == nil {
+			t.Errorf("home.stats_refresh_batch_size accepted %s", raw)
+		}
+	}
+}
+
 func TestJSONSchemaPerKey(t *testing.T) {
 	documents := map[Key]string{
 		MaxDepth:              `{"type":"integer","minimum":1}`,

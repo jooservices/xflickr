@@ -104,7 +104,7 @@ func TestLoadReturnsUserScopedSnapshot(t *testing.T) {
 		&computedAt, false,
 		[]byte(`[{"id":1,"title":"A","thumbnail_url":null,"owner_nsid":"owner","owner_name":"Owner","taken_at":null,"captioned":false}]`),
 		[]byte(`[{"nsid":"owner","name":"Owner","icon_url":"","photos_count":12,"sizes_ready":9,"sizes_total":12,"crawl_state":"waiting"}]`),
-		[]byte(`[]`),
+		[]byte(`[{"id":"crawl:1","kind":"crawl","message_key":"unknown","count":0,"contact_name":"Owner","occurred_at":"2026-11-09T09:59:00Z","severity":"info"}]`),
 	}}}
 	repository, err := New(reader)
 	if err != nil {
@@ -123,16 +123,37 @@ func TestLoadReturnsUserScopedSnapshot(t *testing.T) {
 	if len(snapshot.NewPhotos) != 1 || snapshot.NewPhotos[0].ID != 1 || snapshot.NewPhotos[0].ThumbnailURL != nil || snapshot.NewPhotos[0].TakenAt != nil {
 		t.Fatalf("new photos = %+v", snapshot.NewPhotos)
 	}
-	if len(snapshot.StarredContacts) != 1 || snapshot.StarredContacts[0].CrawlState != "waiting" || snapshot.Activity == nil {
+	if len(snapshot.StarredContacts) != 1 || snapshot.StarredContacts[0].CrawlState != "waiting" ||
+		len(snapshot.Activity) != 1 || snapshot.Activity[0].ID != "crawl:1" ||
+		snapshot.Activity[0].Kind != "crawl" || snapshot.Activity[0].ContactName != "Owner" {
 		t.Fatalf("starred contacts/activity = %+v / %+v", snapshot.StarredContacts, snapshot.Activity)
 	}
 	if len(reader.args) != 1 || reader.args[0] != int64(31) {
 		t.Fatalf("query args = %#v, want user id 31", reader.args)
 	}
-	for _, fragment := range []string{"own_observation.user_id = $1", "setting.enabled", "photo.visibility = 'public'", "photo.tombstoned_at IS NULL", "LIMIT 12", "LIMIT 5", "user_home_stats", "work_items item"} {
+	for _, fragment := range []string{
+		"user_home_photo_candidates candidate",
+		"candidate.user_id = setting.user_id",
+		"setting.enabled",
+		"photo.visibility = 'public'",
+		"photo.tombstoned_at IS NULL",
+		"LIMIT 12",
+		"LIMIT 5",
+		"user_home_stats",
+		"source_revision",
+		"shared_revision",
+		"work_items item",
+		"FROM downloads",
+		"FROM api_call_log",
+	} {
 		if !strings.Contains(reader.query, fragment) {
 			t.Errorf("snapshot query is missing %q", fragment)
 		}
+	}
+	candidateLimit := strings.Index(reader.query, "LIMIT 12")
+	photoJoin := strings.Index(reader.query, "JOIN photos photo")
+	if candidateLimit < 0 || photoJoin < candidateLimit {
+		t.Fatal("Home must cap the indexed candidate sources before joining photos")
 	}
 	if strings.Contains(reader.query, "visible_photo_counts") || strings.Contains(reader.query, "CROSS JOIN LATERAL (\n        SELECT stored") {
 		t.Fatal("request query still builds a photo-wide count or per-photo lateral lookup")
