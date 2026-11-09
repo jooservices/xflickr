@@ -92,6 +92,8 @@ type fakeTx struct {
 	finished     bool
 }
 
+type legacyCatalogWriter struct{ CatalogWriter }
+
 func (t *fakeTx) fail(op string) error {
 	if t.failOn == op {
 		return errors.New("boom " + op)
@@ -116,10 +118,14 @@ func (t *fakeTx) Finish(context.Context, int64) error {
 	return t.fail("finish")
 }
 
-func (t *fakeTx) UpsertPeople(context.Context, []catalog.Person) error { return t.fail("people") }
+func (t *fakeTx) UpsertPeople(context.Context, []catalog.Person) error {
+	return t.fail("people")
+}
+
 func (t *fakeTx) EnsurePeople(context.Context, []catalog.Person) error {
 	return t.fail("ensure_people")
 }
+
 func (t *fakeTx) RefreshPeople(context.Context, []catalog.Person) error {
 	return t.fail("refresh_people")
 }
@@ -318,6 +324,14 @@ func TestCrawlPageCommitCallsRefreshLast(t *testing.T) {
 	}
 	if got := r.tx.log[len(r.tx.log)-2]; got != "refresh_people" {
 		t.Fatalf("last page write before cursor advance = %q, want refresh_people; order=%v", got, r.tx.log)
+	}
+}
+
+func TestPageCatalogRequiresSplitPeopleWriter(t *testing.T) {
+	var writer CatalogWriter = legacyCatalogWriter{}
+	people := []catalog.Person{{NSID: "person@flickr", Username: "person"}}
+	if _, err := peoplePageWriterFor(writer, people); err == nil {
+		t.Fatal("page accepted a writer without split people operations")
 	}
 }
 
@@ -655,7 +669,7 @@ func TestHandleWaitsWithoutKeyOrPermit(t *testing.T) {
 }
 
 func TestHandleCommitFailuresSurface(t *testing.T) {
-	for _, op := range []string{"people", "photos", "observe", "interest", "enqueue", "advance", "finish"} {
+	for _, op := range []string{"ensure_people", "photos", "observe", "interest", "enqueue", "refresh_people", "advance", "finish"} {
 		t.Run(op, func(t *testing.T) {
 			r := newRig(t)
 			r.tx.failOn = op

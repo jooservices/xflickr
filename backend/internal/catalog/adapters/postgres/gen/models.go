@@ -1359,6 +1359,11 @@ type RiverQueue struct {
 	UpdatedAt pgtype.Timestamptz
 }
 
+type ScheduleMetum struct {
+	Key   string
+	Value string
+}
+
 type Session struct {
 	ID         int64
 	UserID     int64

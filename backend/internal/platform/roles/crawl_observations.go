@@ -29,6 +29,14 @@ func (s scopedCatalog) UpsertPeople(ctx context.Context, values []catalogdomain.
 	return s.Writer.UpsertPeople(ctx, values)
 }
 
+func (s scopedCatalog) EnsurePeople(ctx context.Context, values []catalogdomain.Person) error {
+	return s.Writer.EnsurePeople(ctx, values)
+}
+
+func (s scopedCatalog) RefreshPeople(ctx context.Context, values []catalogdomain.Person) error {
+	return s.Writer.RefreshPeople(ctx, values)
+}
+
 func (s scopedCatalog) UpsertPhotos(ctx context.Context, values []catalogdomain.Photo) error {
 	return s.Writer.UpsertPhotos(ctx, values)
 }

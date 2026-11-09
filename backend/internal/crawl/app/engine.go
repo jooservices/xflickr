@@ -126,7 +126,7 @@ type WorkWriter interface {
 	Finish(ctx context.Context, id int64) error
 }
 
-// CatalogWriter upserts catalog records inside the commit transaction.
+// CatalogWriter writes catalog records inside the commit transaction.
 type CatalogWriter interface {
 	UpsertPeople(ctx context.Context, people []catalog.Person) error
 	UpsertPhotos(ctx context.Context, photos []catalog.Photo) error
@@ -135,6 +135,11 @@ type CatalogWriter interface {
 	UpsertGalleries(ctx context.Context, galleries []catalog.Gallery) error
 	UpsertGroups(ctx context.Context, groups []catalog.Group) error
 	UpsertPersonGroups(ctx context.Context, groups []catalog.PersonGroup) error
+}
+
+type peoplePageWriter interface {
+	EnsurePeople(ctx context.Context, people []catalog.Person) error
+	RefreshPeople(ctx context.Context, people []catalog.Person) error
 }
 
 // InterestWriter records interests inside the commit transaction.
@@ -422,17 +427,15 @@ func (e *Engine) write(ctx context.Context, w Writers, item domain.Item, result 
 		}
 		w.Catalog = writer
 	}
-	if err := writeCatalog(ctx, w.Catalog, result); err != nil {
+	pageWriter, err := peoplePageWriterFor(w.Catalog, result.People)
+	if err != nil {
 		return err
 	}
-	if result.CompleteReconcile {
-		if w.Reconcile == nil || item.UserID <= 0 || item.Subject == "" || item.Cursor.CheckpointAt <= 0 {
-			return errors.New("crawl: reconcile completion requires a valid work item and writer")
-		}
-		scannedAt := time.Unix(item.Cursor.CheckpointAt, 0).UTC()
-		if err := w.Reconcile.Complete(ctx, item.UserID, item.Subject, scannedAt, e.now()); err != nil {
-			return err
-		}
+	if err := writeCatalog(ctx, w.Catalog, pageWriter, result); err != nil {
+		return err
+	}
+	if err := e.completeReconciliation(ctx, w, item, result); err != nil {
+		return err
 	}
 	if len(result.Observations) > 0 {
 		if err := w.Observations.Record(ctx, item.ID, item.Cursor.Page, result.Observations); err != nil {
@@ -442,17 +445,49 @@ func (e *Engine) write(ctx context.Context, w Writers, item domain.Item, result 
 	if err := e.discover(ctx, w, item, result.Discoveries, maxDepth); err != nil {
 		return err
 	}
-	for _, spec := range result.Work {
-		if err := e.enqueue(ctx, w, item, spec, item.Depth); err != nil {
+	if err := e.enqueuePageWork(ctx, w, item, result.Work); err != nil {
+		return err
+	}
+	if len(result.People) > 0 {
+		return pageWriter.RefreshPeople(ctx, result.People)
+	}
+	return nil
+}
+
+func (e *Engine) completeReconciliation(ctx context.Context, writers Writers, item domain.Item, result domain.Result) error {
+	if !result.CompleteReconcile {
+		return nil
+	}
+	if writers.Reconcile == nil || item.UserID <= 0 || item.Subject == "" || item.Cursor.CheckpointAt <= 0 {
+		return errors.New("crawl: reconcile completion requires a valid work item and writer")
+	}
+	scannedAt := time.Unix(item.Cursor.CheckpointAt, 0).UTC()
+	return writers.Reconcile.Complete(ctx, item.UserID, item.Subject, scannedAt, e.now())
+}
+
+func (e *Engine) enqueuePageWork(ctx context.Context, writers Writers, item domain.Item, work []domain.WorkSpec) error {
+	for _, spec := range work {
+		if err := e.enqueue(ctx, writers, item, spec, item.Depth); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func writeCatalog(ctx context.Context, writer CatalogWriter, result domain.Result) error {
+func peoplePageWriterFor(writer CatalogWriter, people []catalog.Person) (peoplePageWriter, error) {
+	if len(people) == 0 {
+		return nil, nil
+	}
+	pageWriter, ok := writer.(peoplePageWriter)
+	if !ok {
+		return nil, errors.New("crawl: catalog writer does not support ordered people writes")
+	}
+	return pageWriter, nil
+}
+
+func writeCatalog(ctx context.Context, writer CatalogWriter, pageWriter peoplePageWriter, result domain.Result) error {
 	if len(result.People) > 0 {
-		if err := writer.UpsertPeople(ctx, result.People); err != nil {
+		if err := pageWriter.EnsurePeople(ctx, result.People); err != nil {
 			return err
 		}
 	}

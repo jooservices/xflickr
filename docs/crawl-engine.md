@@ -18,11 +18,12 @@ The scheduler pump dispatches a ready work item as a job whose arguments carry
    `params`) and
    releases the permit with the call outcome;
 5. passes the payload to `Facet.Handle`;
-6. in one unit of work: locks the item, upserts catalog records, records
-   observations, adds an interest one level deeper (`depth + 1`, ignored beyond
-   the user's maximum depth) for each discovery, creates the planned and
-   returned work items, applies a complete reconciliation diff when marked by
-   the final page, then advances the cursor (`HasMore`) or finishes the item.
+6. in one unit of work: locks the item, ensures people exist, writes catalog
+   records that reference them, records observations, adds an interest one
+   level deeper (`depth + 1`, ignored beyond the user's maximum depth) for each
+   discovery, creates the planned and returned work items, applies a complete
+   reconciliation diff when marked by the final page, refreshes only changed
+   people last, then advances the cursor (`HasMore`) or finishes the item.
    A nonempty `Result.NextCursor` stores an opaque remote continuation in the
    same cursor JSON as the page number; an empty value keeps the page-counter
    behavior.
@@ -32,6 +33,11 @@ fetched. A page that was already committed, or an item that finished, changes
 nothing. Observations are unique per item, page, kind and subject. A crash
 between the call and the commit rolls everything back and the rerun repeats the
 page.
+
+The late people refresh keeps its row locks until the page transaction commits,
+so it runs after the other writes and locks changed rows in NSID order. The
+earlier ensure step is ordered by NSID and does not update or row-lock existing
+people.
 
 ## Error outcomes
 

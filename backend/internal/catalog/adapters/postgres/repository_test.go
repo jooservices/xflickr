@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -31,8 +32,12 @@ func TestRepositoryRejectsInvalidCallsBeforeDatabaseAccess(t *testing.T) {
 	}
 	tooManyPeople := make([]domain.Person, postgres.UpsertPeopleBatchMax+1)
 	tooManyPhotos := make([]domain.Photo, postgres.UpsertPeopleBatchMax+1)
-	if err := repository.UpsertPeople(ctx, tooManyPeople); err == nil {
-		t.Fatal("oversized people batch succeeded")
+	for i := range tooManyPeople {
+		nsid := fmt.Sprintf("person-%03d", i)
+		tooManyPeople[i] = domain.Person{NSID: nsid, Username: nsid}
+	}
+	if err := repository.UpsertPeople(ctx, tooManyPeople); err != nil {
+		t.Fatalf("chunked people batch failed: %v", err)
 	}
 	if err := repository.UpsertPhotos(ctx, tooManyPhotos); err == nil {
 		t.Fatal("oversized photo batch succeeded")

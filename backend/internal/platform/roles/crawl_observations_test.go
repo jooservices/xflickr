@@ -47,6 +47,11 @@ func TestResolveObservationAccount(t *testing.T) {
 
 type observationConn struct{ crawlpostgres.Conn }
 
+type splitPeopleWriter interface {
+	EnsurePeople(context.Context, []catalogdomain.Person) error
+	RefreshPeople(context.Context, []catalogdomain.Person) error
+}
+
 func (observationConn) SendBatch(context.Context, *pgx.Batch) pgx.BatchResults { return nil }
 func (observationConn) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
 	return pgconn.NewCommandTag("INSERT 0 1"), nil
@@ -62,13 +67,20 @@ func TestObservedCatalogBindsTransactionalWriter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = scoped.UpsertPeople(t.Context(), nil); err != nil {
+	peopleWriter, ok := scoped.(splitPeopleWriter)
+	if !ok {
+		t.Fatal("scoped catalog does not support split people writes")
+	}
+	if err = peopleWriter.EnsurePeople(t.Context(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err = peopleWriter.RefreshPeople(t.Context(), nil); err != nil {
 		t.Fatal(err)
 	}
 	if err = scoped.UpsertPhotos(t.Context(), nil); err != nil {
 		t.Fatal(err)
 	}
-	if err = scoped.UpsertPeople(t.Context(), []catalogdomain.Person{{NSID: "invalid"}}); err == nil {
+	if err = peopleWriter.EnsurePeople(t.Context(), []catalogdomain.Person{{NSID: "invalid"}}); err == nil {
 		t.Fatal("invalid person accepted")
 	}
 	if err = scoped.UpsertPhotos(t.Context(), []catalogdomain.Photo{{ID: 0}}); err == nil {

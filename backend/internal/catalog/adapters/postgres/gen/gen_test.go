@@ -12,9 +12,11 @@ import (
 type fakeDB struct {
 	batch *fakeBatch
 	err   error
+	calls int
 }
 
 func (d *fakeDB) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+	d.calls++
 	return pgconn.CommandTag{}, d.err
 }
 func (*fakeDB) Query(context.Context, string, ...any) (pgx.Rows, error) { return nil, nil }
@@ -51,11 +53,12 @@ func TestCatalogQueriesAndGeneratedBatchResults(t *testing.T) {
 	if err := queries.MarkTombstone(ctx, MarkTombstoneParams{ID: 1}); err != nil {
 		t.Fatal(err)
 	}
-	results := queries.UpsertPerson(ctx, []UpsertPersonParams{{Nsid: "person"}})
-	var personErr error
-	results.Exec(func(_ int, err error) { personErr = err })
-	if personErr != nil || !db.batch.closed {
-		t.Fatalf("person batch error = %v closed=%v", personErr, db.batch.closed)
+	person := EnsurePeopleParams{Nsids: []string{"person"}, Usernames: []string{"person"}}
+	if err := queries.EnsurePeople(ctx, person); err != nil {
+		t.Fatalf("EnsurePeople error = %v", err)
+	}
+	if err := queries.RefreshChangedPeople(ctx, RefreshChangedPeopleParams{Nsids: person.Nsids, Usernames: person.Usernames}); err != nil {
+		t.Fatalf("RefreshChangedPeople error = %v", err)
 	}
 	db.batch = &fakeBatch{errs: []error{errors.New("write failed")}}
 	photoFailureResults := queries.UpsertPhoto(ctx, []UpsertPhotoParams{{ID: 1}})
@@ -65,16 +68,6 @@ func TestCatalogQueriesAndGeneratedBatchResults(t *testing.T) {
 		t.Fatal("photo batch error was not reported")
 	}
 	db.batch = &fakeBatch{}
-	results = queries.UpsertPerson(ctx, []UpsertPersonParams{{Nsid: "person"}})
-	if err := results.Close(); err != nil {
-		t.Fatal(err)
-	}
-	var closedErr error
-	results.Exec(func(_ int, err error) { closedErr = err })
-	if !errors.Is(closedErr, ErrBatchAlreadyClosed) {
-		t.Fatalf("closed batch error = %v", closedErr)
-	}
-	db.batch = &fakeBatch{}
 	photoResults := queries.UpsertPhoto(ctx, []UpsertPhotoParams{{ID: 2}})
 	photoResults.Exec(nil)
 	if err := New(&fakeDB{err: errors.New("exec failed")}).SetSizes(ctx, SetSizesParams{}); err == nil {
@@ -82,6 +75,12 @@ func TestCatalogQueriesAndGeneratedBatchResults(t *testing.T) {
 	}
 	if err := New(&fakeDB{err: errors.New("exec failed")}).MarkTombstone(ctx, MarkTombstoneParams{}); err == nil {
 		t.Fatal("MarkTombstone error was lost")
+	}
+	if err := New(&fakeDB{err: errors.New("exec failed")}).EnsurePeople(ctx, person); err == nil {
+		t.Fatal("EnsurePeople error was lost")
+	}
+	if err := New(&fakeDB{err: errors.New("exec failed")}).RefreshChangedPeople(ctx, RefreshChangedPeopleParams{Nsids: person.Nsids}); err == nil {
+		t.Fatal("RefreshChangedPeople error was lost")
 	}
 	if New(db).WithTx(nil).db != nil {
 		t.Fatal("WithTx did not retain supplied transaction")

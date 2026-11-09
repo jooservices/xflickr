@@ -133,8 +133,12 @@ func TestEnsurePeopleNeverLocksExistingRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := repositoryA.UpsertPeople(ctx, people); err != nil {
+	if err := repositoryA.EnsurePeople(ctx, people); err != nil {
 		t.Fatalf("transaction A ensure people: %v", err)
+	}
+	var backendPID int32
+	if err := txA.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&backendPID); err != nil {
+		t.Fatal(err)
 	}
 	txB, err := pool.Begin(ctx)
 	if err != nil {
@@ -145,18 +149,23 @@ func TestEnsurePeopleNeverLocksExistingRows(t *testing.T) {
 	go func() {
 		repositoryB, repoErr := postgres.New(txB)
 		if repoErr == nil {
-			repoErr = repositoryB.UpsertPeople(ctxB, people)
+			repoErr = repositoryB.EnsurePeople(ctxB, people)
 		}
 		if repoErr == nil {
 			repoErr = txB.Commit(ctxB)
 		} else {
-			_ = txB.Rollback(context.Background())
+			rollbackCtx, rollbackCancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer rollbackCancel()
+			_ = txB.Rollback(rollbackCtx)
 		}
 		done <- repoErr
 	}()
+	completed := false
 	t.Cleanup(func() {
 		cancelB()
-		_ = txB.Rollback(context.Background())
+		if completed {
+			return
+		}
 		select {
 		case <-done:
 		case <-time.After(3 * time.Second):
@@ -166,6 +175,7 @@ func TestEnsurePeopleNeverLocksExistingRows(t *testing.T) {
 	started := time.Now()
 	select {
 	case err := <-done:
+		completed = true
 		cancelB()
 		if err != nil {
 			t.Fatalf("transaction B ensure people: %v", err)
@@ -184,7 +194,7 @@ func TestEnsurePeopleNeverLocksExistingRows(t *testing.T) {
 		t.Fatalf("existing rows have nonzero xmax on %d people, want no row locks", locked)
 	}
 	var tupleLocks int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM pg_locks WHERE locktype='tuple' AND relation='people'::regclass`).Scan(&tupleLocks); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM pg_locks WHERE locktype='tuple' AND relation='people'::regclass AND pid=$1`, backendPID).Scan(&tupleLocks); err != nil {
 		t.Fatal(err)
 	}
 	if tupleLocks != 0 {
@@ -227,7 +237,7 @@ func TestRefreshChangedPeopleLocksOnlyChangedRowsInOrder(t *testing.T) {
 		{NSID: people[1].NSID, Username: people[1].Username, Realname: "new-b"},
 		people[0],
 	}
-	if err := repositoryTx.UpsertPeople(ctx, incoming); err != nil {
+	if err := repositoryTx.RefreshChangedPeople(ctx, incoming); err != nil {
 		t.Fatalf("refresh people: %v", err)
 	}
 	var unchangedXmax int64
@@ -246,6 +256,127 @@ func TestRefreshChangedPeopleLocksOnlyChangedRowsInOrder(t *testing.T) {
 	}
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
+	}
+
+	ordered := []domain.Person{
+		{NSID: prefix + "-order-a", Username: prefix + "-order-a", Realname: "before-a"},
+		{NSID: prefix + "-order-b", Username: prefix + "-order-b", Realname: "before-b"},
+	}
+	if err := repository.UpsertPeople(ctx, ordered); err != nil {
+		t.Fatalf("seed lock-order people: %v", err)
+	}
+	blocker, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := blocker.QueryRow(ctx, `SELECT nsid FROM people WHERE nsid=$1 FOR UPDATE`, ordered[0].NSID).Scan(new(string)); err != nil {
+		t.Fatal(err)
+	}
+	worker, err := pool.Begin(ctx)
+	if err != nil {
+		_ = blocker.Rollback(context.Background())
+		t.Fatal(err)
+	}
+	applicationName := fmt.Sprintf("xflickr_refresh_order_%d", time.Now().UnixNano())
+	if _, err := worker.Exec(ctx, `SELECT set_config('application_name',$1,true)`, applicationName); err != nil {
+		_ = blocker.Rollback(context.Background())
+		_ = worker.Rollback(context.Background())
+		t.Fatal(err)
+	}
+	workerRepository, err := postgres.New(worker)
+	if err != nil {
+		_ = blocker.Rollback(context.Background())
+		_ = worker.Rollback(context.Background())
+		t.Fatal(err)
+	}
+	orderInput := []domain.Person{
+		{NSID: ordered[1].NSID, Username: ordered[1].Username, Realname: "after-b"},
+		{NSID: ordered[0].NSID, Username: ordered[0].Username, Realname: "after-a"},
+	}
+	orderCtx, stopOrder := context.WithCancel(ctx)
+	defer stopOrder()
+	orderDone := make(chan error, 1)
+	go func() { orderDone <- workerRepository.RefreshChangedPeople(orderCtx, orderInput) }()
+	waitDeadline := time.NewTimer(2 * time.Second)
+	waitTicker := time.NewTicker(10 * time.Millisecond)
+	waiting := false
+	for !waiting {
+		select {
+		case <-waitDeadline.C:
+			_ = blocker.Rollback(context.Background())
+			<-orderDone
+			t.Fatal("refresh did not wait for the lowest NSID row lock")
+		case <-waitTicker.C:
+			if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND application_name=$1 AND wait_event_type='Lock' AND wait_event='transactionid')`, applicationName).Scan(&waiting); err != nil {
+				_ = blocker.Rollback(context.Background())
+				<-orderDone
+				t.Fatal(err)
+			}
+		}
+	}
+	waitDeadline.Stop()
+	waitTicker.Stop()
+	var highXmax int64
+	if err := pool.QueryRow(ctx, `SELECT xmax::text::bigint FROM people WHERE nsid=$1`, ordered[1].NSID).Scan(&highXmax); err != nil {
+		_ = blocker.Rollback(context.Background())
+		<-orderDone
+		t.Fatal(err)
+	}
+	if highXmax != 0 {
+		_ = blocker.Rollback(context.Background())
+		<-orderDone
+		t.Fatalf("higher NSID row was locked before the blocked lower row: xmax=%d", highXmax)
+	}
+	if err := blocker.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-orderDone; err != nil {
+		_ = worker.Rollback(context.Background())
+		t.Fatalf("ordered refresh: %v", err)
+	}
+	if err := worker.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	repositoryA, err := postgres.New(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repositoryB, err := postgres.New(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for iteration := 0; iteration < 200; iteration++ {
+		left := []domain.Person{
+			{NSID: people[2].NSID, Username: people[2].Username, Realname: fmt.Sprintf("left-%03d-c", iteration)},
+			{NSID: people[1].NSID, Username: people[1].Username, Realname: fmt.Sprintf("left-%03d-b", iteration)},
+		}
+		right := []domain.Person{
+			{NSID: people[1].NSID, Username: people[1].Username, Realname: fmt.Sprintf("right-%03d-b", iteration)},
+			{NSID: people[2].NSID, Username: people[2].Username, Realname: fmt.Sprintf("right-%03d-c", iteration)},
+		}
+		start := make(chan struct{})
+		results := make(chan error, 2)
+		var wait sync.WaitGroup
+		wait.Add(2)
+		go func() {
+			defer wait.Done()
+			<-start
+			results <- repositoryA.RefreshChangedPeople(ctx, left)
+		}()
+		go func() {
+			defer wait.Done()
+			<-start
+			results <- repositoryB.RefreshChangedPeople(ctx, right)
+		}()
+		close(start)
+		wait.Wait()
+		close(results)
+		for err := range results {
+			if err != nil {
+				t.Fatalf("opposite-order iteration %d: %v", iteration, err)
+			}
+		}
 	}
 }
 
@@ -285,11 +416,13 @@ func TestEmptyValuesDoNotEraseData(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got domain.Person
-	if err := pool.QueryRow(ctx, `SELECT username, realname, profile, icon, photos_count, facet_state FROM people WHERE nsid=$1`, nsid).
-		Scan(&got.Username, &got.Realname, &got.Profile, &got.Icon, &got.PhotosCount, &got.FacetState); err != nil {
+	var profileMatches, facetStateMatches bool
+	if err := pool.QueryRow(ctx, `SELECT username, realname, profile = $2::jsonb, icon, photos_count, facet_state = $3::jsonb FROM people WHERE nsid=$1`,
+		nsid, original.Profile, original.FacetState).
+		Scan(&got.Username, &got.Realname, &profileMatches, &got.Icon, &got.PhotosCount, &facetStateMatches); err != nil {
 		t.Fatal(err)
 	}
-	if got.Username != original.Username || got.Realname != original.Realname || string(got.Profile) != string(original.Profile) || got.Icon != original.Icon || got.PhotosCount != original.PhotosCount || string(got.FacetState) != string(original.FacetState) {
+	if got.Username != original.Username || got.Realname != original.Realname || !profileMatches || got.Icon != original.Icon || got.PhotosCount != original.PhotosCount || !facetStateMatches {
 		t.Fatalf("empty values erased saved data: %+v", got)
 	}
 }

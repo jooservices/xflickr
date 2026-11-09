@@ -13,13 +13,20 @@ import (
 )
 
 type repositoryTestDB struct {
-	batch    *repositoryTestBatch
-	execErr  error
-	queryErr error
-	rows     pgx.Rows
+	batch      *repositoryTestBatch
+	execErr    error
+	execErrors []error
+	execCalls  int
+	queryErr   error
+	rows       pgx.Rows
 }
 
 func (d *repositoryTestDB) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+	index := d.execCalls
+	d.execCalls++
+	if index < len(d.execErrors) {
+		return pgconn.CommandTag{}, d.execErrors[index]
+	}
 	return pgconn.CommandTag{}, d.execErr
 }
 
@@ -67,11 +74,13 @@ func TestRepositoryBatchWritesAndFailures(t *testing.T) {
 		t.Fatalf("upsert photo: %v", err)
 	}
 
-	batchErr := errors.New("batch write failed")
-	db.batch = &repositoryTestBatch{errs: []error{batchErr}}
-	if err := repository.UpsertPeople(ctx, []catalog.Person{{NSID: "owner", Username: "Owner"}}); !errors.Is(err, batchErr) {
+	statementErr := errors.New("statement failed")
+	db.execErr = statementErr
+	if err := repository.UpsertPeople(ctx, []catalog.Person{{NSID: "owner", Username: "Owner"}}); !errors.Is(err, statementErr) {
 		t.Fatalf("person batch error = %v", err)
 	}
+	db.execErr = nil
+	batchErr := errors.New("batch write failed")
 	db.batch = &repositoryTestBatch{errs: []error{batchErr}}
 	if err := repository.UpsertPhotos(ctx, []catalog.Photo{{
 		ID: 2, OwnerNSID: "owner", LastUpdate: time.Unix(1700000000, 0),
