@@ -106,11 +106,26 @@ value is the start time, not the finish time. Checkpoints are per
 
 Existing null or zero checkpoints are repaired offline by
 `xflickr repair-checkpoints --batch-size 500` (no Flickr calls). Repair uses
-only a completed `photos` or `favorites` work item's scan-start cursor for the
-same `(user_id, person_nsid)` interest. Shared catalog observation times do
-not prove that a particular observer completed a scan. When no completed scan
-is recorded, the checkpoint stays zero and the report counts it as
-unrepairable. Non-zero checkpoints are never overwritten.
+only a successful final-page marker and scan-start cursor from the matching
+`photos` or `favorites` work item for the same `(user_id, person_nsid)`
+interest. The marker is written in the final page transaction; a work item
+finished because it was suppressed, restricted, or not found does not receive
+it. Shared catalog observation times do not prove scan completion.
+
+For legacy work without a trustworthy completion marker and scan-start
+checkpoint, repair sets the checkpoint to Unix second 1 only when a matching
+observer-scoped work item is `done`. The old row does not reveal whether it
+finished a scan or was skipped, so this conservative catch-up floor can only
+cause the next positive change check to read the full list once; it cannot
+skip records. A successfully completed catch-up scan replaces the floor with
+its real scan-start checkpoint. If the observer has no matching done work
+item, the checkpoint stays zero and the report counts it as unrepairable.
+Non-zero checkpoints are never overwritten.
+
+Repair locks each bounded interest batch and waits up to 500 ms for row locks.
+A lock timeout fails that batch and the command exits without advancing past
+the locked row; rerunning the repeatable command retries it. It does not use
+`SKIP LOCKED`, which could move the keyset cursor past an interest permanently.
 
 The job advances a keyset cursor across every selected interest, including
 rows without completion evidence, and reports those rows separately. Its

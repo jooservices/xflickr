@@ -123,11 +123,15 @@ guide feature implementation; operational environment rules live in
   incremental photo or favorite pages with the same minimum date. The scheduler
   advances a per-user cycle cursor only after visiting each person, then wraps
   to the first person.
-- Repair missing photos/favorites checkpoints only from a completed scan
-  cursor recorded for that same `(user_id, person_nsid)` observer. Shared
-  catalog observation timestamps do not prove scan completion; without a
-  completed scan record, leave the checkpoint at zero and report it as
-  unrepairable.
+- Repair missing photos/favorites checkpoints from a successful final-page
+  marker and scan-start cursor recorded for that same `(user_id, person_nsid)`
+  observer. Shared catalog observation timestamps do not prove scan
+  completion. For legacy done work without trustworthy markers, use the
+  conservative Unix-second-1 catch-up floor so the next positive check reads
+  the full list once before storing a real checkpoint. Without any matching
+  observer-scoped work item, leave the checkpoint at zero and report it as
+  unrepairable. Never overwrite non-zero checkpoints or call Flickr during
+  repair.
 - Independently reconcile each person's complete photo and favorite lists on
   the user's `reconcile_interval` (default 30 days). Apply tombstones only after
   every page succeeds, retain tombstoned rows, exclude removed favorites from

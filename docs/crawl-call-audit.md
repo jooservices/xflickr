@@ -68,9 +68,11 @@ probe does not advance that checkpoint. Flickr documents the photo lower bound
 as inclusive: retaining the same boundary is safe for late arrivals but can
 reread boundary records. Do not blindly add one second and lose records.
 
-Initial `Registry.Plan` work from `Engine.discover` has no checkpoint, so its
-completion cannot establish an incremental baseline. The first cycle can queue
-both `check` and `reconcile` because null timestamps are due. Reconciliation
+Initial `Registry.Plan` photo and favorite work receives a checkpoint when it
+is enqueued; a missing value is filled before its first page request. The
+successful final page records a separate completion marker and updates the
+interest checkpoint in the same transaction. The first cycle can queue both
+`check` and `reconcile` because null timestamps are due. Reconciliation
 completion updates only `last_reconciled_at`, not the incremental checkpoints.
 Consequently initial pages, a positive check from zero, and reconciliation may
 read unchanged data under different work kinds. This is not proof that all
@@ -186,10 +188,11 @@ open; the fixture numbers must not be reported as satisfying it.
    without secrets; compare complete quota windows and rows/relationships
    persisted. First establish whether the 198/h group baseline is affected.
 2. **Establish incremental checkpoints after initial scans.** **Delivered in
-   JOOXF-345.** Carry a stable scan-start checkpoint from discovery and update
-   only after all pages commit; address existing zero checkpoints with the
-   offline `repair-checkpoints` CLI (no live Flickr cleanup in that PR).
-   Cover inclusive timestamps, late arrivals, failed pages and caller scope.
+   JOOXF-345.** Carry a stable scan-start checkpoint through page commits and
+   update only after a successful final page. The offline `repair-checkpoints`
+   command uses observer-scoped completion evidence; legacy work without
+   markers gets a conservative full-list catch-up floor. Cover inclusive
+   timestamps, late arrivals, failed pages and caller scope.
 3. **Coordinate initial, check and reconcile work.** Avoid simultaneous full
    lists for the same observer while retaining discovery from favorites and
    complete owner-aware deletion diffs. Reconciliation intentionally suppresses

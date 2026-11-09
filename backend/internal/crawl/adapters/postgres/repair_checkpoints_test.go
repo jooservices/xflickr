@@ -10,10 +10,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type repairDB struct {
 	beginErr    error
+	execErr     error
 	queryErr    string
 	commitErrAt int
 	results     []repairBatch
@@ -29,7 +31,7 @@ func (d *repairDB) Begin(context.Context) (CheckpointRepairTx, error) {
 	if index < len(d.results) {
 		result = d.results[index]
 	}
-	tx := &repairTx{result: result, queryErr: d.queryErr}
+	tx := &repairTx{result: result, queryErr: d.queryErr, execErr: d.execErr}
 	if d.commitErrAt == index+1 {
 		tx.commitErr = errors.New("commit failed")
 	}
@@ -43,8 +45,18 @@ type repairTx struct {
 	commitErr  error
 	querySQL   string
 	queryArgs  []any
+	execSQL    string
+	execErr    error
 	rollbacked bool
 	committed  bool
+}
+
+func (t *repairTx) Exec(_ context.Context, query string, _ ...any) (pgconn.CommandTag, error) {
+	t.execSQL = query
+	if t.execErr != nil {
+		return pgconn.CommandTag{}, t.execErr
+	}
+	return pgconn.NewCommandTag("SET"), nil
 }
 
 func (t *repairTx) QueryRow(_ context.Context, query string, args ...any) pgx.Row {
@@ -75,14 +87,15 @@ func (r repairRow) Scan(dest ...any) error {
 	if r.err != nil {
 		return r.err
 	}
-	if len(dest) != 5 {
+	if len(dest) != 6 {
 		return errors.New("unexpected repair scan arity")
 	}
 	*dest[0].(*int64) = r.batch.Selected
 	*dest[1].(*int64) = r.batch.Updated
-	*dest[2].(*int64) = r.batch.Unrepairable
-	*dest[3].(*int64) = r.batch.Last.UserID
-	*dest[4].(*string) = r.batch.Last.PersonNSID
+	*dest[2].(*int64) = r.batch.LegacyCatchup
+	*dest[3].(*int64) = r.batch.Unrepairable
+	*dest[4].(*int64) = r.batch.Last.UserID
+	*dest[5].(*string) = r.batch.Last.PersonNSID
 	return nil
 }
 
@@ -180,6 +193,9 @@ func TestRepairQueryUsesExplicitCompletionAndSafeLegacyFloor(t *testing.T) {
 	if strings.Contains(query, "SKIP LOCKED") || !strings.Contains(query, "FOR UPDATE") {
 		t.Fatalf("repair query can silently pass locked interests: %s", query)
 	}
+	if !strings.Contains(db.txs[0].execSQL, "SET LOCAL lock_timeout") {
+		t.Fatalf("repair batch must bound its row-lock wait: %q", db.txs[0].execSQL)
+	}
 }
 
 func TestRepairZeroCheckpointsRejectsInvalidBatchProgress(t *testing.T) {
@@ -217,6 +233,12 @@ func TestRepairBatchErrorsSurface(t *testing.T) {
 	}
 	if _, err := RepairZeroCheckpoints(t.Context(), &repairDB{commitErrAt: 2}, options); err == nil {
 		t.Fatal("favorite commit error ignored")
+	}
+}
+
+func TestRepairBatchLockTimeoutSetupErrorSurfaces(t *testing.T) {
+	if _, err := RepairZeroCheckpoints(t.Context(), &repairDB{execErr: errors.New("lock timeout setup")}, CheckpointRepairOptions{BatchSize: 1}); err == nil {
+		t.Fatal("lock timeout setup error ignored")
 	}
 }
 

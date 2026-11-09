@@ -168,7 +168,18 @@ func (e *Engine) Fail(ctx context.Context, id int64, reason string) error {
 	return nil
 }
 
-const finishSQL = `UPDATE work_items SET state = 'done', last_error = NULL, lease_expires_at = NULL, updated_at = now() WHERE id = $1 AND state = 'running'`
+const finishSQL = `UPDATE work_items SET state = 'done', cursor = cursor - 'scan_completed_at', last_error = NULL, lease_expires_at = NULL, updated_at = now() WHERE id = $1 AND state = 'running'`
+
+const finishScanSQL = `UPDATE work_items
+SET state = 'done',
+    cursor = CASE
+        WHEN kind IN ('photos', 'favorites') AND COALESCE((cursor->>'checkpoint_at')::bigint, 0) > 0
+            THEN jsonb_set(cursor, '{scan_completed_at}', to_jsonb(floor(extract(epoch FROM clock_timestamp()))::bigint), true)
+        ELSE cursor - 'scan_completed_at'
+    END,
+    last_error = NULL, lease_expires_at = NULL, updated_at = now()
+WHERE id = $1 AND state = 'running'
+RETURNING kind, subject_key, COALESCE(user_id,0), COALESCE((cursor->>'checkpoint_at')::bigint,0)`
 
 // Stop fails every active item of the user (revoked token) or key (invalid
 // key) and publishes crawl.stopped in the same transaction.
@@ -340,11 +351,7 @@ func (w workTx) Advance(ctx context.Context, id int64, cursor domain.Cursor) err
 func (w workTx) Finish(ctx context.Context, id int64) error {
 	var kind, subject string
 	var userID, scanStart int64
-	err := w.tx.QueryRow(ctx, `
-		UPDATE work_items SET state = 'done', last_error=NULL, lease_expires_at=NULL, updated_at=now()
-		WHERE id=$1 AND state='running'
-		RETURNING kind, subject_key, COALESCE(user_id,0), COALESCE((cursor->>'checkpoint_at')::bigint,0)`, id,
-	).Scan(&kind, &subject, &userID, &scanStart)
+	err := w.tx.QueryRow(ctx, finishScanSQL, id).Scan(&kind, &subject, &userID, &scanStart)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}

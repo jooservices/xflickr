@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -20,16 +21,19 @@ type CheckpointRepairOptions struct {
 
 // CheckpointRepairReport is safe to print; it never includes secrets.
 type CheckpointRepairReport struct {
-	PhotosUpdated         int64     `json:"photos_updated"`
-	PhotosUnrepairable    int64     `json:"photos_unrepairable"`
-	FavoritesUpdated      int64     `json:"favorites_updated"`
-	FavoritesUnrepairable int64     `json:"favorites_unrepairable"`
-	Batches               int       `json:"batches"`
-	RunAt                 time.Time `json:"run_at"`
+	PhotosUpdated          int64     `json:"photos_updated"`
+	PhotosLegacyCatchup    int64     `json:"photos_legacy_catchup"`
+	PhotosUnrepairable     int64     `json:"photos_unrepairable"`
+	FavoritesUpdated       int64     `json:"favorites_updated"`
+	FavoritesLegacyCatchup int64     `json:"favorites_legacy_catchup"`
+	FavoritesUnrepairable  int64     `json:"favorites_unrepairable"`
+	Batches                int       `json:"batches"`
+	RunAt                  time.Time `json:"run_at"`
 }
 
 // CheckpointRepairTx is the transaction surface used by one repair batch.
 type CheckpointRepairTx interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 	QueryRow(context.Context, string, ...any) pgx.Row
 	Commit(context.Context) error
 	Rollback(context.Context) error
@@ -56,15 +60,16 @@ type repairCursor struct {
 }
 
 type repairBatch struct {
-	Selected     int64
-	Updated      int64
-	Unrepairable int64
-	Last         repairCursor
+	Selected      int64
+	Updated       int64
+	LegacyCatchup int64
+	Unrepairable  int64
+	Last          repairCursor
 }
 
-// RepairZeroCheckpoints fills zero photos and favorites checkpoints only from
-// a completed scan belonging to the same user and person. It makes no Flickr
-// calls and leaves rows without completion evidence at zero.
+// RepairZeroCheckpoints fills zero checkpoints from same-observer completion
+// markers, with a conservative catch-up floor for legacy done work. It makes
+// no Flickr calls and leaves rows without matching work at zero.
 func RepairZeroCheckpoints(ctx context.Context, database CheckpointRepairDB, options CheckpointRepairOptions) (CheckpointRepairReport, error) {
 	now := time.Now().UTC()
 	if options.Now != nil {
@@ -85,6 +90,7 @@ func RepairZeroCheckpoints(ctx context.Context, database CheckpointRepairDB, opt
 			return report, err
 		}
 		report.PhotosUpdated += batch.Updated
+		report.PhotosLegacyCatchup += batch.LegacyCatchup
 		report.PhotosUnrepairable += batch.Unrepairable
 		report.Batches++
 		if batch.Selected == 0 {
@@ -94,7 +100,7 @@ func RepairZeroCheckpoints(ctx context.Context, database CheckpointRepairDB, opt
 			return report, err
 		}
 		after = batch.Last
-		logger.InfoContext(ctx, "crawl repaired photo checkpoints", "updated", batch.Updated, "unrepairable", batch.Unrepairable, "batch_size", options.BatchSize)
+		logger.InfoContext(ctx, "crawl repaired photo checkpoints", "updated", batch.Updated, "legacy_catchup", batch.LegacyCatchup, "unrepairable", batch.Unrepairable, "batch_size", options.BatchSize)
 	}
 	after = repairCursor{}
 	for {
@@ -103,6 +109,7 @@ func RepairZeroCheckpoints(ctx context.Context, database CheckpointRepairDB, opt
 			return report, err
 		}
 		report.FavoritesUpdated += batch.Updated
+		report.FavoritesLegacyCatchup += batch.LegacyCatchup
 		report.FavoritesUnrepairable += batch.Unrepairable
 		report.Batches++
 		if batch.Selected == 0 {
@@ -112,13 +119,13 @@ func RepairZeroCheckpoints(ctx context.Context, database CheckpointRepairDB, opt
 			return report, err
 		}
 		after = batch.Last
-		logger.InfoContext(ctx, "crawl repaired favorite checkpoints", "updated", batch.Updated, "unrepairable", batch.Unrepairable, "batch_size", options.BatchSize)
+		logger.InfoContext(ctx, "crawl repaired favorite checkpoints", "updated", batch.Updated, "legacy_catchup", batch.LegacyCatchup, "unrepairable", batch.Unrepairable, "batch_size", options.BatchSize)
 	}
 	return report, nil
 }
 
 func validateRepairProgress(after repairCursor, batch repairBatch) error {
-	if batch.Selected < 0 || batch.Updated < 0 || batch.Unrepairable < 0 || batch.Updated+batch.Unrepairable != batch.Selected {
+	if batch.Selected < 0 || batch.Updated < 0 || batch.LegacyCatchup < 0 || batch.LegacyCatchup > batch.Updated || batch.Unrepairable < 0 || batch.Updated+batch.Unrepairable != batch.Selected {
 		return errors.New("crawl: checkpoint repair returned invalid batch counts")
 	}
 	if batch.Last.UserID <= 0 || batch.Last.PersonNSID == "" {
@@ -147,20 +154,34 @@ WITH batch AS MATERIALIZED (
 	  AND ($2::bigint = 0 OR (user_id, person_nsid) > ($2::bigint, $3::text))
 	ORDER BY user_id, person_nsid
 	LIMIT $1
-	FOR UPDATE SKIP LOCKED
+	FOR UPDATE
 ), computed AS MATERIALIZED (
 	SELECT b.user_id, b.person_nsid,
-		COALESCE((
-			SELECT (w.cursor->>'checkpoint_at')::bigint
+		COALESCE(completed.checkpoint, CASE WHEN legacy.found THEN 1 ELSE 0 END) AS checkpoint,
+		completed.checkpoint IS NULL AND legacy.found AS legacy_catchup
+	FROM batch b
+	LEFT JOIN LATERAL (
+		SELECT (w.cursor->>'checkpoint_at')::bigint AS checkpoint
+		FROM work_items w
+		WHERE w.kind = $4
+		  AND w.subject_key = b.person_nsid
+		  AND w.user_id = b.user_id
+		  AND w.state = 'done'
+		  AND COALESCE((w.cursor->>'scan_completed_at')::bigint, 0) > 0
+		  AND COALESCE((w.cursor->>'checkpoint_at')::bigint, 0) > 0
+		LIMIT 1
+	) completed ON true
+	LEFT JOIN LATERAL (
+		SELECT EXISTS (
+			SELECT 1
 			FROM work_items w
 			WHERE w.kind = $4
 			  AND w.subject_key = b.person_nsid
 			  AND w.user_id = b.user_id
 			  AND w.state = 'done'
-			  AND COALESCE((w.cursor->>'checkpoint_at')::bigint, 0) > 0
-			LIMIT 1
-		), 0) AS checkpoint
-	FROM batch b
+			  AND COALESCE((w.cursor->>'scan_completed_at')::bigint, 0) <= 0
+		) AS found
+	) legacy ON true
 ), updated AS (
 	UPDATE crawl_interests AS interest
 	SET %[1]s = to_timestamp(computed.checkpoint)
@@ -174,6 +195,7 @@ WITH batch AS MATERIALIZED (
 SELECT
 	(SELECT count(*) FROM batch),
 	(SELECT count(*) FROM updated),
+	(SELECT count(*) FROM computed c JOIN updated u USING (user_id, person_nsid) WHERE c.legacy_catchup),
 	(SELECT count(*) FROM computed WHERE checkpoint <= 0),
 	COALESCE((SELECT user_id FROM batch ORDER BY user_id DESC, person_nsid DESC LIMIT 1), 0),
 	COALESCE((SELECT person_nsid FROM batch ORDER BY user_id DESC, person_nsid DESC LIMIT 1), '')`
@@ -193,9 +215,12 @@ func repairZeroCheckpointsBatch(ctx context.Context, database CheckpointRepairDB
 		return repairBatch{}, fmt.Errorf("crawl: begin %s checkpoint repair: %w", kind, err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }() // safe after commit
+	if _, err := tx.Exec(ctx, `SET LOCAL lock_timeout = '500ms'`); err != nil {
+		return repairBatch{}, fmt.Errorf("crawl: set %s checkpoint repair lock timeout: %w", kind, err)
+	}
 	var batch repairBatch
 	err = tx.QueryRow(ctx, fmt.Sprintf(repairCheckpointBatchSQL, column), batchSize, after.UserID, after.PersonNSID, kind).Scan(
-		&batch.Selected, &batch.Updated, &batch.Unrepairable, &batch.Last.UserID, &batch.Last.PersonNSID,
+		&batch.Selected, &batch.Updated, &batch.LegacyCatchup, &batch.Unrepairable, &batch.Last.UserID, &batch.Last.PersonNSID,
 	)
 	if err != nil {
 		return repairBatch{}, fmt.Errorf("crawl: repair %s checkpoints: %w", kind, err)
