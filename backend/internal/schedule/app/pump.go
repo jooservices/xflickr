@@ -106,11 +106,11 @@ func (p Pump) RunOnce(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	if p.Settings.AgingBatchSize > 0 {
-		agingStore, ok := p.Store.(AgingStore)
+		rescoreStore, ok := p.Store.(WeightsRescoreStore)
 		if !ok {
-			return 0, errors.New("schedule: pump store does not support score aging")
+			return 0, errors.New("schedule: pump store does not support weights rescore")
 		}
-		if _, err := (Aging{Store: agingStore, BatchSize: p.Settings.AgingBatchSize, MaxDepth: p.Settings.MaxDepth, Weights: p.Settings.ScoreWeights}).RunBatch(ctx); err != nil {
+		if _, err := (WeightsRescore{Store: rescoreStore, BatchSize: p.Settings.AgingBatchSize, MaxDepth: p.Settings.MaxDepth, Weights: p.Settings.ScoreWeights}).RunBatch(ctx); err != nil {
 			return 0, err
 		}
 	}

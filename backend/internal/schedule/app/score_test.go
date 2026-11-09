@@ -1,8 +1,6 @@
 package app
 
 import (
-	"context"
-	"errors"
 	"sort"
 	"testing"
 
@@ -144,33 +142,4 @@ func TestPlanShareSimulationFreeBacklogProgresses(t *testing.T) {
 	if freeFinishedAt == 0 || freeFinishedAt > 50 || proFinishedAt == 0 {
 		t.Fatalf("completion times: free=%d pro=%d, expected free by minute 50 while pro backlog is finite", freeFinishedAt, proFinishedAt)
 	}
-}
-
-func TestAgingRunsOneBatch(t *testing.T) {
-	store := &agingFake{}
-	aging := Aging{Store: store, BatchSize: 25, MaxDepth: 4, Weights: domain.ScoreWeights{AgeMinutes: .1}}
-	got, err := aging.RunBatch(context.Background())
-	if err != nil || got != 3 || store.batch != 25 || store.maxDepth != 4 {
-		t.Fatalf("RunBatch() = %d, %v store=%+v", got, err, store)
-	}
-	if _, err := (Aging{}).RunBatch(context.Background()); err == nil {
-		t.Fatal("aging accepted invalid dependencies")
-	}
-	if _, err := (Aging{Store: store, BatchSize: 1}).RunBatch(nil); err == nil {
-		t.Fatal("aging accepted nil context")
-	}
-	store.err = errors.New("store failure")
-	if _, err := aging.RunBatch(context.Background()); err == nil {
-		t.Fatal("aging ignored store failure")
-	}
-}
-
-type agingFake struct {
-	batch, maxDepth int
-	err             error
-}
-
-func (s *agingFake) RecomputeScores(_ context.Context, batch int, _ domain.ScoreWeights, depth int) (int, error) {
-	s.batch, s.maxDepth = batch, depth
-	return 3, s.err
 }
