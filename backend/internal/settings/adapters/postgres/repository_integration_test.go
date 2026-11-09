@@ -525,13 +525,14 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		"ops.health_statement_timeout":            {value: "5", min: &healthTimeoutMin, max: &healthTimeoutMax},
 		"maintenance.api_call_log_retention_days": {value: "30", min: &retentionMin, max: &retentionMax},
 		"maintenance.api_call_log_dry_run":        {value: "false"},
+		"metrics.retention_days":                  {value: "30", min: &minimum, max: &retentionMax},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("seeded settings = %d, want %d", len(got), len(want))
 	}
 	for key, expected := range want {
 		item, ok := got[key]
-		wantOverridable := key != "photo_lane_floor_share" && key != "restricted_recheck_interval" && key != "registration_open" && key != "photo_info_enabled" && key != "photo_exif_enabled" && key != "photo_contexts_enabled" && key != "photo_comments_enabled" && key != "photo_favorites_enabled" && key != "per_key_ready_cap" && key != "node_ready_cap" && key != "media_ready_cap" && key != "ai_ready_cap" && key != "sync_ready_cap" && key != "lease_timeout" && !strings.HasPrefix(key, "ops.") && !strings.HasPrefix(key, "score_") && !strings.HasPrefix(key, "maintenance.")
+		wantOverridable := key != "photo_lane_floor_share" && key != "restricted_recheck_interval" && key != "registration_open" && key != "photo_info_enabled" && key != "photo_exif_enabled" && key != "photo_contexts_enabled" && key != "photo_comments_enabled" && key != "photo_favorites_enabled" && key != "per_key_ready_cap" && key != "node_ready_cap" && key != "media_ready_cap" && key != "ai_ready_cap" && key != "sync_ready_cap" && key != "lease_timeout" && key != "metrics.retention_days" && !strings.HasPrefix(key, "ops.") && !strings.HasPrefix(key, "score_") && !strings.HasPrefix(key, "maintenance.")
 		if !ok || item.overridable != wantOverridable || !jsonEqual(item.value, expected.value) || !floatPtrEqual(item.minimum, expected.min) || !floatPtrEqual(item.maximum, expected.max) {
 			t.Fatalf("seed %s = value %s overridable %v min %v max %v", key, item.value, item.overridable, item.minimum, item.maximum)
 		}

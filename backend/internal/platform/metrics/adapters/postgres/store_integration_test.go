@@ -50,11 +50,12 @@ func TestBatchOf1200SamplesChunks(t *testing.T) {
 	cleanupMetrics(t, pool)
 	store := postgres.Store{Pool: pool}
 	at := time.Date(2026, 11, 9, 6, 1, 0, 0, time.UTC)
+	const suite = "batch-1200"
 	samples := make([]domain.Sample, 0, 1200)
 	for i := 0; i < 1200; i++ {
 		samples = append(samples, domain.Sample{
 			Name:   domain.MetricCollectorErrors,
-			Labels: map[string]string{"role": "api", "node": "n1", "i": strconv.Itoa(i)},
+			Labels: map[string]string{"role": "api", "node": "n1", "suite": suite, "i": strconv.Itoa(i)},
 			At:     at,
 			Value:  float64(i),
 		})
@@ -63,7 +64,7 @@ func TestBatchOf1200SamplesChunks(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM metric_samples WHERE name = $1`, domain.MetricCollectorErrors).Scan(&count); err != nil {
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM metric_samples WHERE name = $1 AND labels->>'suite' = $2`, domain.MetricCollectorErrors, suite).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 1200 {
@@ -76,12 +77,13 @@ func TestRollupThenPurge(t *testing.T) {
 	cleanupMetrics(t, pool)
 	store := postgres.Store{Pool: pool}
 	hour := time.Date(2026, 11, 9, 5, 0, 0, 0, time.UTC)
+	const suite = "rollup-purge"
 	values := []float64{10, 20, 30, 40}
 	samples := make([]domain.Sample, 0, len(values))
 	for i, value := range values {
 		samples = append(samples, domain.Sample{
 			Name:   domain.MetricProcessCPUPercent,
-			Labels: map[string]string{"role": "api", "node": "n1"},
+			Labels: map[string]string{"role": "api", "node": "n1", "suite": suite},
 			At:     hour.Add(time.Duration(i) * time.Minute),
 			Value:  value,
 		})
@@ -94,12 +96,12 @@ func TestRollupThenPurge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rolled != 1 {
-		t.Fatalf("rolled=%d want 1", rolled)
+	if rolled < 1 {
+		t.Fatalf("rolled=%d want >= 1", rolled)
 	}
 	var avg, min, max, p95 float64
 	var n int
-	if err := pool.QueryRow(t.Context(), `SELECT avg, min, max, p95, samples FROM metric_rollups WHERE name = $1`, domain.MetricProcessCPUPercent).Scan(&avg, &min, &max, &p95, &n); err != nil {
+	if err := pool.QueryRow(t.Context(), `SELECT avg, min, max, p95, samples FROM metric_rollups WHERE name = $1 AND labels->>'suite' = $2`, domain.MetricProcessCPUPercent, suite).Scan(&avg, &min, &max, &p95, &n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 4 || avg != 25 || min != 10 || max != 40 {
@@ -113,18 +115,18 @@ func TestRollupThenPurge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if purged != 4 {
-		t.Fatalf("purged=%d want 4", purged)
+	if purged < 4 {
+		t.Fatalf("purged=%d want >= 4", purged)
 	}
 	var remaining int
-	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM metric_samples`).Scan(&remaining); err != nil {
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM metric_samples WHERE labels->>'suite' = $1`, suite).Scan(&remaining); err != nil {
 		t.Fatal(err)
 	}
 	if remaining != 0 {
 		t.Fatalf("remaining=%d", remaining)
 	}
 	var rollups int
-	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM metric_rollups`).Scan(&rollups); err != nil {
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM metric_rollups WHERE labels->>'suite' = $1`, suite).Scan(&rollups); err != nil {
 		t.Fatal(err)
 	}
 	if rollups != 1 {
@@ -137,11 +139,12 @@ func TestPurgeIsBounded(t *testing.T) {
 	cleanupMetrics(t, pool)
 	store := postgres.Store{Pool: pool}
 	at := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	const suite = "purge-bounded"
 	samples := make([]domain.Sample, 0, 10)
 	for i := 0; i < 10; i++ {
 		samples = append(samples, domain.Sample{
 			Name:   domain.MetricOutboxBacklog,
-			Labels: map[string]string{"role": "scheduler", "node": "n1", "i": strconv.Itoa(i)},
+			Labels: map[string]string{"role": "scheduler", "node": "n1", "suite": suite, "i": strconv.Itoa(i)},
 			At:     at.Add(time.Duration(i) * time.Minute),
 			Value:  float64(i),
 		})
@@ -149,7 +152,15 @@ func TestPurgeIsBounded(t *testing.T) {
 	if err := store.WriteBatch(t.Context(), samples); err != nil {
 		t.Fatal(err)
 	}
-	purged, err := store.Purge(t.Context(), time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC), 3)
+	before := time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC)
+	var beforeCount int
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM metric_samples WHERE labels->>'suite' = $1 AND bucket < $2`, suite, before).Scan(&beforeCount); err != nil {
+		t.Fatal(err)
+	}
+	if beforeCount != 10 {
+		t.Fatalf("suite rows=%d want 10", beforeCount)
+	}
+	purged, err := store.Purge(t.Context(), before, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +168,7 @@ func TestPurgeIsBounded(t *testing.T) {
 		t.Fatalf("purged=%d want 3", purged)
 	}
 	var remaining int
-	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM metric_samples`).Scan(&remaining); err != nil {
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM metric_samples WHERE labels->>'suite' = $1`, suite).Scan(&remaining); err != nil {
 		t.Fatal(err)
 	}
 	if remaining != 7 {
@@ -188,6 +199,10 @@ func integrationPool(t *testing.T) *pgxpool.Pool {
 func cleanupMetrics(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := context.Background()
+	// Serialize writers that share the worktree database.
+	if _, err := pool.Exec(ctx, `SELECT pg_advisory_lock(736800368)`); err != nil {
+		t.Fatalf("advisory lock: %v", err)
+	}
 	if _, err := pool.Exec(ctx, `DELETE FROM metric_samples`); err != nil {
 		t.Fatalf("cleanup samples: %v", err)
 	}
@@ -197,5 +212,6 @@ func cleanupMetrics(t *testing.T, pool *pgxpool.Pool) {
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM metric_samples`)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM metric_rollups`)
+		_, _ = pool.Exec(context.Background(), `SELECT pg_advisory_unlock(736800368)`)
 	})
 }
