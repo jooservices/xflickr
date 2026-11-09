@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+// ErrSnapshotBusy means another process already holds the crawl-health advisory
+// lock for this tick. Monitors skip silently; callers that need a reading use
+// a store without the exclusive wrapper.
+var ErrSnapshotBusy = errors.New("ops: health snapshot lock held")
+
 // Idle reasons explain why pending work is not becoming ready.
 const (
 	ReasonNoKey          = "no_key"
@@ -68,6 +73,9 @@ type Pending struct {
 // Snapshot is the raw data read from storage in one pass.
 type Snapshot struct {
 	Counts                       Counts
+	CountsEstimated              bool
+	Degraded                     bool
+	DegradedQueries              []string
 	WorkItems                    map[string]int64
 	RiverJobs                    map[string]int64
 	PhotoSizesJobs               LaneJobs
@@ -98,6 +106,9 @@ type Store interface {
 type Status struct {
 	GeneratedAt                  time.Time
 	Counts                       Counts
+	CountsEstimated              bool
+	Degraded                     bool
+	DegradedQueries              []string
 	WorkItems                    map[string]int64
 	ReadyJobs                    int64
 	RiverJobs                    map[string]int64
@@ -143,6 +154,9 @@ func (s Service) Status(ctx context.Context) (Status, error) {
 	status := Status{
 		GeneratedAt:                  now.UTC(),
 		Counts:                       snapshot.Counts,
+		CountsEstimated:              snapshot.CountsEstimated,
+		Degraded:                     snapshot.Degraded,
+		DegradedQueries:              append([]string(nil), snapshot.DegradedQueries...),
 		WorkItems:                    copyMap(snapshot.WorkItems),
 		ReadyJobs:                    snapshot.WorkItems["ready"],
 		RiverJobs:                    copyMap(snapshot.RiverJobs),

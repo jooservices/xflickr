@@ -42,7 +42,7 @@ func TestNewHealthSinkNeedsCredentials(t *testing.T) {
 
 func TestStartCrawlHealthLogsAtStartAndStops(t *testing.T) {
 	buffer := &lockedBuffer{ch: make(chan struct{}, 1)}
-	stop := startCrawlHealth(t.Context(), healthStore{}, config.Config{}, slog.New(slog.NewTextHandler(buffer, nil)))
+	stop := startCrawlHealth(t.Context(), healthStore{}, config.Config{}, slog.New(slog.NewTextHandler(buffer, nil)), time.Minute)
 	select {
 	case <-buffer.ch:
 	case <-time.After(5 * time.Second):

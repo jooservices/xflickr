@@ -21,14 +21,19 @@ func newHealthSink(cfg config.Config) ops.Sink {
 	return opsopenobserve.Sink{URL: cfg.Obs.URL, Org: cfg.Obs.Org, Stream: cfg.Obs.Stream, Username: cfg.Obs.Username, Password: cfg.Obs.Password, Client: &http.Client{Timeout: 10 * time.Second}}
 }
 
-// startCrawlHealth logs the "crawl health" line every minute until the
-// returned stop function is called, which waits for the loop to end.
-func startCrawlHealth(ctx context.Context, store ops.Store, cfg config.Config, logger *slog.Logger) (stop func()) {
+// startCrawlHealth logs the "crawl health" line on interval until the returned
+// stop function is called, which waits for the loop to end. store should wrap
+// the postgres reader with the cluster advisory lock when running in a role.
+func startCrawlHealth(ctx context.Context, store ops.Store, cfg config.Config, logger *slog.Logger, interval time.Duration) (stop func()) {
+	if interval <= 0 {
+		interval = ops.DefaultInterval
+	}
 	monitor := &ops.Monitor{
-		Service: ops.Service{Store: store},
-		Sink:    newHealthSink(cfg),
-		Logger:  logger,
-		Node:    nodeID(cfg),
+		Service:  ops.Service{Store: store},
+		Sink:     newHealthSink(cfg),
+		Logger:   logger,
+		Node:     nodeID(cfg),
+		Interval: interval,
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
