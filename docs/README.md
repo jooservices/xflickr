@@ -14,6 +14,8 @@
   snapshot estimates / lock / timeout.
 - [Database report](db-report.md) — read-only before/after report of table,
   index, queue, worker and crawl-throughput figures.
+- [Production runtime](production-migration.md) — the main clone on the ESXi
+  services: accounts, data move, switch, rollback.
 
 - [Database layout and partitioning](database.md) — partition keys, measured
   owner-vs-id query cost, migration cost, and api_call_log retention.
