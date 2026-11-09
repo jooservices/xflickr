@@ -3,12 +3,12 @@ package roles
 import (
 	"context"
 	"errors"
-	mediaapp "github.com/jooservices/xflickr/internal/media/app"
-	flickrclient "github.com/jooservices/xflickr/pkg/flickr"
 	"net/http"
 	"testing"
 
+	mediaapp "github.com/jooservices/xflickr/internal/media/app"
 	"github.com/jooservices/xflickr/internal/platform/config"
+	flickrclient "github.com/jooservices/xflickr/pkg/flickr"
 )
 
 func TestDependencyChecksReportMissingClients(t *testing.T) {

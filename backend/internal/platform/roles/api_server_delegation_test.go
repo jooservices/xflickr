@@ -1,10 +1,10 @@
 package roles
 
 import (
-	"github.com/jooservices/xflickr/internal/platform/httpx"
 	"testing"
 
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
+	"github.com/jooservices/xflickr/internal/platform/httpx"
 )
 
 // Unauthenticated, empty requests must be answered by the delegated handlers

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jooservices/xflickr/internal/platform/queue"
@@ -44,7 +45,10 @@ func newRiverWithSettings(ctx context.Context, pool *pgxpool.Pool, queues map[st
 	}
 	retention, err := riverRetention(ctx, settingsapp.New(repository))
 	if err != nil {
-		return nil, err
+		// Cleaner windows are tuning, not correctness: start with the River
+		// defaults instead of keeping the role down while settings recover.
+		slog.WarnContext(ctx, "roles: queue retention settings unavailable; using defaults", "error", err)
+		retention = queue.Retention{}
 	}
 	return queue.NewRiverWithRetention(pool, queues, retention)
 }
