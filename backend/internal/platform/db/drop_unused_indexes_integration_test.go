@@ -116,7 +116,7 @@ func assertDroppedIndexAbsent(t *testing.T, ctx context.Context, pool *pgxpool.P
 	if err := pool.QueryRow(ctx, `SELECT EXISTS (
 		SELECT 1 FROM pg_class i
 		JOIN pg_namespace n ON n.oid = i.relnamespace AND n.nspname = 'public'
-		WHERE i.relkind = 'i' AND i.relname = $1
+		WHERE i.relkind IN ('i', 'I') AND i.relname = $1
 	)`, name).Scan(&exists); err != nil {
 		t.Fatalf("lookup index %s: %v", name, err)
 	}
@@ -130,10 +130,11 @@ func indexDefinitions(t *testing.T, ctx context.Context, pool *pgxpool.Pool, nam
 	out := make(map[string]string, len(names))
 	for _, name := range names {
 		var def string
+		// Partitioned parent indexes use relkind 'I'; leaf indexes use 'i'.
 		err := pool.QueryRow(ctx, `SELECT pg_get_indexdef(i.oid)
 			FROM pg_class i
 			JOIN pg_namespace n ON n.oid = i.relnamespace AND n.nspname = 'public'
-			WHERE i.relkind = 'i' AND i.relname = $1`, name).Scan(&def)
+			WHERE i.relkind IN ('i', 'I') AND i.relname = $1`, name).Scan(&def)
 		if err != nil {
 			t.Fatalf("pg_get_indexdef(%s): %v", name, err)
 		}
