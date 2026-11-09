@@ -15,6 +15,8 @@
 - [Database report](db-report.md) — read-only before/after report of table,
   index, queue, worker and crawl-throughput figures.
 
+- [Database layout and partitioning](database.md) — partition keys, measured
+  owner-vs-id query cost, migration cost, and api_call_log retention.
 - [Environment and shared services](ENVIRONMENT.md) — workstation, runtime, and
   database rules.
 - [Database index inventory](database.md) — keep/drop decisions, sizes, scan

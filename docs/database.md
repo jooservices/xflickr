@@ -81,3 +81,170 @@ For each large index with zero or near-zero `idx_scan`, grep
 `backend/internal` (including sqlc `*.sql`) for predicates that match the
 index columns, check in-flight PRs that may need it, and only then open a
 ticket to drop it with a reversible migration.
+
+## Database layout and partitioning
+
+Live size snapshot (owner audit, 2026-11-09, database `xflickr`):
+
+| Table | Approx size | Rows | Partitioning today |
+|---|---:|---:|---|
+| photos | 62 GB (56 GB heap + 5.9 GB indexes) | 27.7M | `HASH (id)` × 16 |
+| favorites | 7.7 GB (5.6 GB indexes) | 30M | `HASH (person_nsid)` × 16 |
+| observations | 4.3 GB | — | `HASH (record_id)` × 16 |
+| album_photos | — | — | `HASH (photo_id)` × 16 |
+| api_call_log | ~500 MB | — | `RANGE (called_at)` daily |
+
+Synthetic measurement dataset (worktree only):
+`docker/scripts/synthetic-catalog.sh` builds 100,000 owners, 3,000,000 photos
+and 3,000,000 favorites, plus comparison tables `photos_by_owner`
+(`HASH (owner_nsid)` × 16) and `favorites_by_person`. Keep it out of CI.
+Recreate the worktree database afterwards with
+`python3 docker/scripts/worktree_env.py jooxf372`.
+
+## Partitioning
+
+### Hottest queries (from code)
+
+| Query | File | Filter | Partitions touched today |
+|---|---|---|---:|
+| Photo lane candidate join | `catalog/adapters/postgres/photolane.sql` | `photos.owner_nsid = ranked.person_nsid` | 16 (`HASH (id)`) |
+| List person photos | `catalog/adapters/postgres/reads.go` (~148) | `photos.owner_nsid = $2` | 16 |
+| Person photo counts | `reads.go` (~77, ~124) | `photos.owner_nsid = people.nsid` | 16 |
+| Get photo by id | `reads.go` (~347), `photos.go` (~28), `photo_facets.go` | `photos.id = $1` | 1 |
+| List favorites | `favorites.go` (~57–62) | `favorites.person_nsid = $1` | 1 (already `HASH (person_nsid)`) |
+| Album primary / album photos | `reads.go` (~246, ~316, ~325) | `photos.id = …` | 1 per id lookup |
+
+Favorites are already partitioned by the hot filter column. The open question
+is therefore almost entirely about `photos` (and secondarily `observations` /
+`album_photos`, which are not owner-filtered the same way).
+
+### Measured comparison (synthetic 3M)
+
+Script: `docker/scripts/synthetic-catalog.sh` then
+`docker/scripts/measure-partitions.sql`. `ANALYZE` ran before EXPLAIN
+(ANALYZE, BUFFERS). Three timed runs on worktree `xflickr_wtjooxf372`
+(2026-11-09). p50 is the median execution time; p95 is the max of the three
+samples (cold run 1 still dominated by shared reads).
+
+| Query | Layout | Partitions | p50 / p95 exec (ms) | Warm buffers (hit/read) | Notes |
+|---|---|---:|---:|---|---|
+| owner list LIMIT 50 | `HASH (id)` | 16 | 1.98 / 208.2 | 84 / 0 | Append over 16 children |
+| owner list LIMIT 50 | `HASH (owner_nsid)` | 1 | 0.62 / 11.0 | 33 / 0 | Prunes to one child |
+| id lookup | `HASH (id)` | 1 | 0.10 / 16.3 | 7 / 0 | Current PK `(id)` |
+| id lookup | `HASH (owner_nsid)` id alone | 16 | 294 / 82504 | 19081 / 0 | No prune; scans all children |
+| id+owner lookup | `HASH (owner_nsid)` | 1 | 0.06 / 0.11 | 4 / 0 | Needs both columns |
+| favorites by person | `HASH (person_nsid)` | 1 | 0.67 / 11.2 | 33 / 0 | Already optimal (current) |
+| favorites by person | comparison copy | 1 | 0.32 / 6.8 | 33 / 0 | Same key as production |
+
+Warm owner-list latency improves about 3× with `HASH (owner_nsid)` (1.98 ms →
+0.62 ms) and cold I/O improves more (~208 ms → ~11 ms). The id-alone lookup
+on the owner-hashed table is the regressor: warm ~294 ms and cold ~82 s versus
+~0.1 ms on today's `HASH (id)`.
+
+Comparison copy wall time (CREATE partitions + PK/indexes +
+`INSERT SELECT` for 3M photos and 3M favorites): **145 seconds** on this
+worktree host.
+
+### Primary keys and foreign keys under `HASH (owner_nsid)`
+
+PostgreSQL requires every unique index on a partitioned table to include the
+partition key. Moving photos to `HASH (owner_nsid)` forces
+`PRIMARY KEY (owner_nsid, id)`. There is then no table-level `UNIQUE (id)`, so
+every foreign key that today references `photos (id)` stops compiling:
+
+- `album_photos.photo_id`
+- `albums.primary_photo_id`
+- `assets.photo_id`
+- `download_items.photo_id`
+- `favorites.photo_id`
+- `galleries.primary_photo_id`
+- `gallery_photos.photo_id`
+- `group_pool_photos.photo_id`
+- `photo_comments.photo_id`
+- `photo_contexts.photo_id`
+- `photo_enrichments.photo_id`
+- `photo_exif.photo_id`
+- `photo_facet_status.photo_id`
+- `photo_favorites.photo_id`
+- `photo_info.photo_id`
+
+Serving those relationships after a repartition would need one of:
+
+1. denormalise `owner_nsid` into every child table and change each FK to
+   `(owner_nsid, photo_id)`, or
+2. keep a global non-partitioned id map (`photo_id → owner_nsid`) and join it
+   on every id lookup, or
+3. abandon declarative FKs and enforce in application code.
+
+Id-only readers today (`photos.go`, `photo_facets.go`, catalog
+`GET /photos/{id}`, download writers, enrichment writers) would all need the
+owner alongside the id, or an extra map lookup.
+
+### Migration cost for the live ~79 GB database
+
+Online strategy (if ever approved):
+
+1. Create `photos_new` partitioned by `HASH (owner_nsid)` with
+   `PRIMARY KEY (owner_nsid, id)` and the same secondary indexes.
+2. Batched copy by owner ranges (or by hash remainder) with dual-write or a
+   trigger / logical replication stream so new upserts land in both tables.
+3. Cut over with a short lock: rename, recreate FKs (or switch to the chosen
+   FK strategy), refresh sequences.
+4. Rollback: keep the old table until the first full vacuum after cutover
+   proves stable.
+
+Disk: roughly another 62 GB for photos plus indexes during dual residency
+(about 70+ GB headroom), then drop the old table. Duration from the synthetic
+145 s comparison copy: row-count scale alone (27.7M / 3M ≈ 9.2×) suggests
+about 10–20 minutes for a photos-sized heap+index copy if density matched the
+synthetic rows; live photos are ~2 KB/row and 62 GB on disk, so a realistic
+online backfill is **hours**, not minutes, once dual-write catch-up and FK
+rebuild are included. Risks: FK redesign mistakes, dual-write drift,
+long-running autovacuum debt after cutover, and every id-only code path
+silently probing 16 partitions if owner is omitted.
+
+### Recommendation
+
+**LATER for photos/favorites repartition.** Favorites already use
+`HASH (person_nsid)`. Photos owner queries would benefit from
+`HASH (owner_nsid)`, but the FK and id-lookup redesign is a multi-ticket
+migration with large dual-disk cost; do not start it in the same release as
+cheaper wins (retention, unused indexes, work_items bloat).
+
+**GO for api_call_log retention** (implemented in this ticket). Daily
+`RANGE` partitions already exist; dropping expired children with
+`DETACH PARTITION … CONCURRENTLY` then `DROP TABLE` frees space without
+locking writers, and rollups keep hourly aggregates.
+
+Ticket plan if photos repartition is reopened:
+
+1. Design FK strategy (denormalise owner vs global map) and list every id-only
+   reader.
+2. Prototype dual-write on a worktree copy of production-shaped data.
+3. Online backfill + cutover runbook with measured disk and duration.
+4. Application changes for id+owner reads, then cutover.
+
+## api_call_log retention
+
+Settings (admin registry, not user-overridable):
+
+| Key | Default | Bounds |
+|---|---:|---|
+| `maintenance.api_call_log_retention_days` | 30 | 7–365 |
+| `maintenance.api_call_log_dry_run` | false | boolean |
+
+Behaviour:
+
+- Quota partition maintenance still creates the retention window and the
+  7-day future horizon idempotently (`quota/adapters/postgres` create-only).
+- A separate `platform/maintenance` job runs hourly (same interval as the
+  existing maintainer), takes a cluster-wide `pg_try_advisory_lock`, selects
+  at most one daily partition whose upper bound is at or before the cutoff
+  (`today - retention_days`), rolls that day into `api_call_rollup`, then
+  `ALTER TABLE api_call_log DETACH PARTITION … CONCURRENTLY` and
+  `DROP TABLE`. Dry-run only logs.
+- Failures are logged and never stop the next tick. Contending roles skip the
+  tick when the lock is held.
+
+See also [observability](observability.md) for call-log telemetry and
+[ops monitoring](ops-monitoring.md) for health counters that read the log.
