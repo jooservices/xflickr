@@ -339,9 +339,12 @@ If `indisvalid` is false, remove the remnant with
 `DROP INDEX CONCURRENTLY IF EXISTS public.<index_name>`, then rerun the
 migration. Do not drop a valid index as part of this recovery.
 
-Confirm the production `pg_stat_user_tables` rate over two minutes after the
-lead deploys the migration. Worktree plans do not establish production
-behavior; no production measurement or deployment was performed for this PR.
+During an authorized deployment, record the `work_items.seq_scan` delta in
+`pg_stat_user_tables` over a two-minute window immediately before the migration,
+then repeat the same measurement after the migration is deployed and the
+scheduler is running. Compare the two deltas and record both values on
+JOOXF-386. Worktree plans do not establish production behavior; no production
+measurement or deployment was performed for this PR.
 
 ## river_job (JOOXF-370)
 
