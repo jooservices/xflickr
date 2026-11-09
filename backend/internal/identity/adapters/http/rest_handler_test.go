@@ -159,26 +159,30 @@ func TestRegistrationFieldValidation(t *testing.T) {
 func TestGetUserAndMeRESTHandlers(t *testing.T) {
 	user := domain.User{ID: 5, Email: "u@example.test", Role: domain.RoleUser, Locale: "en", CreatedAt: time.Now().UTC()}
 	handler := Handler{Users: repo{user: user}}
-	response, err := handler.GetUser(context.Background(), gen.GetUserRequestObject{ID: 5})
+	ctx := WithPrincipal(context.Background(), Principal{User: user})
+	response, err := handler.GetUser(ctx, gen.GetUserRequestObject{ID: 5})
 	if err != nil || response.(*apiResponse).status != http.StatusOK {
 		t.Fatalf("GetUser() = %T, %v", response, err)
 	}
 	for _, tc := range []struct {
-		name string
-		id   int64
-		repo repo
+		name  string
+		id    int64
+		owner int64
+		repo  repo
 	}{
-		{name: "invalid id"},
-		{name: "missing", id: 8, repo: repo{err: app.ErrUserNotFound}},
-		{name: "infrastructure", id: 9, repo: repo{err: errors.New("database")}},
+		{name: "invalid id", owner: 5},
+		{name: "missing", id: 8, owner: 8, repo: repo{err: app.ErrUserNotFound}},
+		{name: "infrastructure", id: 9, owner: 9, repo: repo{err: errors.New("database")}},
 	} {
 		if tc.name == "infrastructure" {
-			if _, err := (Handler{Users: tc.repo}).GetUser(context.Background(), gen.GetUserRequestObject{ID: tc.id}); err == nil {
+			userContext := WithPrincipal(context.Background(), Principal{User: domain.User{ID: tc.owner, Role: domain.RoleUser}})
+			if _, err := (Handler{Users: tc.repo}).GetUser(userContext, gen.GetUserRequestObject{ID: tc.id}); err == nil {
 				t.Fatal("GetUser() swallowed repository error")
 			}
 			continue
 		}
-		got, err := (Handler{Users: tc.repo}).GetUser(context.Background(), gen.GetUserRequestObject{ID: tc.id})
+		userContext := WithPrincipal(context.Background(), Principal{User: domain.User{ID: tc.owner, Role: domain.RoleUser}})
+		got, err := (Handler{Users: tc.repo}).GetUser(userContext, gen.GetUserRequestObject{ID: tc.id})
 		if err != nil || got.(*apiResponse).problem.Status != http.StatusNotFound {
 			t.Fatalf("%s response=%#v err=%v", tc.name, got, err)
 		}
@@ -208,6 +212,55 @@ func TestGetUserAndMeRESTHandlers(t *testing.T) {
 	}
 	if _, ok := userIDFromContext(WithPrincipal(context.Background(), Principal{User: user})); !ok {
 		t.Fatal("principal user id was not found")
+	}
+}
+
+type getUserLookup struct {
+	user  domain.User
+	err   error
+	reads []int64
+}
+
+func (lookup *getUserLookup) FindByID(_ context.Context, id int64) (domain.User, error) {
+	lookup.reads = append(lookup.reads, id)
+	return lookup.user, lookup.err
+}
+
+func TestGetUserRequiresOwnerOrAdmin(t *testing.T) {
+	target := domain.User{ID: 5, Email: "u@example.test", Role: domain.RoleUser}
+	for _, tc := range []struct {
+		name       string
+		principal  domain.User
+		wantStatus int
+		wantReads  int
+	}{
+		{name: "anonymous", wantStatus: http.StatusUnauthorized},
+		{name: "different user", principal: domain.User{ID: 8, Role: domain.RoleUser}, wantStatus: http.StatusNotFound},
+		{name: "owner", principal: domain.User{ID: 5, Role: domain.RoleUser}, wantStatus: http.StatusOK, wantReads: 1},
+		{name: "administrator", principal: domain.User{ID: 8, Role: domain.RoleAdmin}, wantStatus: http.StatusOK, wantReads: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lookup := &getUserLookup{user: target}
+			ctx := context.Background()
+			if tc.principal.ID > 0 {
+				ctx = WithPrincipal(ctx, Principal{User: tc.principal})
+			}
+			response, err := (Handler{Users: lookup}).GetUser(ctx, gen.GetUserRequestObject{ID: target.ID})
+			if err != nil {
+				t.Fatalf("GetUser() error = %v", err)
+			}
+			result := response.(*apiResponse)
+			status := result.status
+			if result.problem != nil {
+				status = result.problem.Status
+			}
+			if status != tc.wantStatus {
+				t.Fatalf("GetUser() status = %d, want %d", status, tc.wantStatus)
+			}
+			if len(lookup.reads) != tc.wantReads {
+				t.Fatalf("FindByID calls = %v, want %d", lookup.reads, tc.wantReads)
+			}
+		})
 	}
 }
 

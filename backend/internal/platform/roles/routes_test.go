@@ -123,6 +123,12 @@ func TestIdentityRoutesMatchMapping(t *testing.T) {
 	}
 }
 
+func TestUserReadRequiresAuthenticatedRouteAccess(t *testing.T) {
+	if got := routeAccess["GET /api/v1/users/{id}"]; got != identityhttp.AccessUser {
+		t.Fatalf("user read access = %v, want authenticated user access", got)
+	}
+}
+
 func TestOldIdentityRoutesAreGone(t *testing.T) {
 	router := routerWith(stubSessions{})
 	for _, target := range []struct{ method, path string }{

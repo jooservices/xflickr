@@ -124,7 +124,8 @@ export function LoginPage() {
           Math.ceil(Number.isFinite(headerSeconds) && headerSeconds > 0 ? headerSeconds : 60),
         );
         const locked = response.data.type === '/problems/account-locked';
-        setCooldown({ seconds, locked });
+        const unlock = locked ? Date.now() + seconds * 1000 : undefined;
+        setCooldown({ seconds, locked, unlock });
         setError(
           locked
             ? t('auth.error.locked', { time: '' })
@@ -233,7 +234,14 @@ export function LoginPage() {
                       : 'auth-error-banner'
               }
             >
-              {error}
+              {cooldown?.locked && cooldown.unlock !== undefined
+                ? t('auth.error.locked', {
+                    time: new Date(cooldown.unlock).toLocaleTimeString(locale, {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    }),
+                  })
+                : error}
               {cooldown && (
                 <span
                   className={styles.muted}

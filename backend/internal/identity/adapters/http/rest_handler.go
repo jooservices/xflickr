@@ -405,7 +405,17 @@ func userIDFromContext(ctx context.Context) (int64, bool) {
 
 func (h Handler) GetUser(ctx context.Context, request gen.GetUserRequestObject) (gen.GetUserResponseObject, error) {
 	path := "/api/v1/users/" + strconv.FormatInt(request.ID, 10)
-	if request.ID <= 0 || h.Users == nil {
+	if request.ID <= 0 {
+		return identityProblem(ctx, path, "not-found", "User not found", nil), nil
+	}
+	principal, ok := PrincipalFrom(ctx)
+	if !ok || principal.User.ID <= 0 {
+		return identityProblem(ctx, path, "unauthenticated", "Authentication required", nil), nil
+	}
+	if principal.User.ID != request.ID && principal.User.Role != domain.RoleAdmin {
+		return identityProblem(ctx, path, "not-found", "User not found", nil), nil
+	}
+	if h.Users == nil {
 		return identityProblem(ctx, path, "not-found", "User not found", nil), nil
 	}
 	user, err := h.Users.FindByID(ctx, request.ID)

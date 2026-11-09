@@ -442,18 +442,23 @@ func TestIdentityLinkRelationsResolve(t *testing.T) {
 	optionsLinks := links(options.Data)
 	follow(optionsLinks["self"], "", false, http.StatusOK)
 	registration := `{"email":"journey@example.test","password":"secret-pass-1","accept_terms":true,"locale":"en"}`
-	created := follow(rootLinks["users"], registration, false, http.StatusCreated)
+	createdResponse := send(rootLinks["users"].Method, rootLinks["users"].Href, registration, false)
+	created := decode(createdResponse, http.StatusCreated)
 	createdLinks := links(created.Data)
 	userURL := createdLinks["self"].Href
 	if userURL == "" {
-		t.Fatal("registration omitted its Location resource link")
+		t.Fatal("registration omitted its user resource link")
 	}
-	follow(createdLinks["self"], "", false, http.StatusOK)
+	if got := createdResponse.Header().Get("Location"); got != userURL {
+		t.Fatalf("registration Location = %q, want %q", got, userURL)
+	}
+	if got := send(http.MethodGet, userURL, "", false); got.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous registration Location read = %d %s, want 401", got.Code, got.Body.String())
+	}
 	duplicate := send(optionsLinks["users"].Method, optionsLinks["users"].Href, registration, false)
 	if duplicate.Code != http.StatusConflict || duplicate.Header().Get("Content-Type") != "application/problem+json" {
 		t.Fatalf("duplicate registration = %d %q %s", duplicate.Code, duplicate.Header().Get("Content-Type"), duplicate.Body.String())
 	}
-	follow(createdLinks["self"], "", false, http.StatusOK)
 	login := `{"email":"journey@example.test","password":"secret-pass-1"}`
 	session := follow(rootLinks["sessions"], login, false, http.StatusCreated)
 	if sessionCookie == "" {
@@ -461,6 +466,9 @@ func TestIdentityLinkRelationsResolve(t *testing.T) {
 	}
 	sessionLinks := links(session.Data)
 	follow(sessionLinks["self"], "", true, http.StatusOK)
+	if got := send(http.MethodGet, userURL, "", true); got.Code != http.StatusOK {
+		t.Fatalf("authenticated registration Location read = %d %s, want 200", got.Code, got.Body.String())
+	}
 	follow(sessionLinks["session"], "", true, http.StatusOK)
 	follow(sessionLinks["user"], "", true, http.StatusOK)
 	secondSession := follow(optionsLinks["sessions"], login, false, http.StatusCreated)
@@ -487,6 +495,16 @@ func TestIdentityLinkRelationsResolve(t *testing.T) {
 	me := follow(authenticatedLinks["me"], "", true, http.StatusOK)
 	meLinks := links(me.Data)
 	follow(meLinks["self"], "", true, http.StatusOK)
+	nullSharing := send(http.MethodPut, "/api/v1/me/sharing", `{"enabled":null}`, true)
+	if nullSharing.Code != http.StatusUnprocessableEntity || nullSharing.Header().Get("Content-Type") != "application/problem+json" {
+		t.Fatalf("null sharing choice = %d %q %s, want problem 422", nullSharing.Code, nullSharing.Header().Get("Content-Type"), nullSharing.Body.String())
+	}
+	sharing.mu.Lock()
+	sharingWasChanged := sharing.setting.UserID != 0
+	sharing.mu.Unlock()
+	if sharingWasChanged {
+		t.Fatal("null sharing choice reached the sharing service")
+	}
 	patchedMe := follow(meLinks["update"], `{"locale":"vi"}`, true, http.StatusOK)
 	links(patchedMe.Data)
 	list := follow(meLinks["sessions"], "", true, http.StatusOK)
@@ -551,7 +569,7 @@ func TestIdentityConformance(t *testing.T) {
 		{http.MethodGet, "/api/v1/sessions/current", "", "", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v1/sessions/1", "", "", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v1/me/sessions/1", "", "", http.StatusUnauthorized},
-		{http.MethodGet, "/api/v1/users/1", "", "", http.StatusNotFound},
+		{http.MethodGet, "/api/v1/users/1", "", "", http.StatusUnauthorized},
 		{http.MethodPatch, "/api/v1/me", `{"locale":"en"}`, "application/merge-patch+json", http.StatusUnauthorized},
 		{http.MethodPut, "/api/v1/me/password", `{"current_password":"current-pass","new_password":"next-pass-1"}`, "application/json", http.StatusUnauthorized},
 		{http.MethodPut, "/api/v1/me/sharing", `{"enabled":true}`, "application/json", http.StatusUnauthorized},

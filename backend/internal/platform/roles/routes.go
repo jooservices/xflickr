@@ -20,7 +20,7 @@ var routeAccess = map[string]identityhttp.Access{
 	"GET /readyz":                        identityhttp.AccessPublic,
 	"GET /api/v1/authentication-options": identityhttp.AccessPublic,
 	"POST /api/v1/users":                 identityhttp.AccessPublic,
-	"GET /api/v1/users/{id}":             identityhttp.AccessPublic,
+	"GET /api/v1/users/{id}":             identityhttp.AccessUser,
 	"POST /api/v1/sessions":              identityhttp.AccessPublic,
 	"DELETE /api/v1/sessions/current":    identityhttp.AccessPublic,
 	"GET /api/v1/sessions/current":       identityhttp.AccessUser,

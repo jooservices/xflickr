@@ -26,6 +26,11 @@ Session lists use opaque cursors, a default limit of 50, and a maximum limit of
 100. Ordering is deterministic by last-seen time and session ID. The response
 includes pagination metadata and usable `self` and `next` links.
 
+User resource reads require an authenticated session. Users can read their own
+projection; administrators can read any user's projection. Other users are
+hidden with 404. A registration `Location` remains usable after the new user
+signs in.
+
 Identity and sharing responses that contain user or session data are private
 and use `Cache-Control: no-store`. Authentication options are public. Cookie
 authenticated unsafe requests include the readable `xf_csrf` cookie value in

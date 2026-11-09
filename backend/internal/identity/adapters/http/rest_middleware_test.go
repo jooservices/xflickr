@@ -24,6 +24,8 @@ func TestLegacyIdentityRoutes(t *testing.T) {
 		{path: "/me/crawl", want: http.StatusNoContent},
 		{path: "/me/crawl/pause", want: http.StatusNoContent},
 		{path: "/me/contacts/12", want: http.StatusNoContent},
+		{path: "/media", want: http.StatusNoContent},
+		{path: "/messages", want: http.StatusNoContent},
 		{path: "/api/v1/me", want: http.StatusNoContent},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
@@ -129,6 +131,7 @@ func TestIdentityContractRejectsInvalidRequests(t *testing.T) {
 		{name: "delete body", method: http.MethodDelete, path: "/api/v1/sessions/current", body: "{}", want: http.StatusBadRequest},
 		{name: "delete transfer body", method: http.MethodDelete, path: "/api/v1/sessions/current", setup: func(request *http.Request) { request.TransferEncoding = []string{"chunked"} }, want: http.StatusBadRequest},
 		{name: "missing content type", method: http.MethodPut, path: "/api/v1/me/sharing", body: `{"enabled":true}`, want: http.StatusUnsupportedMediaType},
+		{name: "null sharing choice", method: http.MethodPut, path: "/api/v1/me/sharing", contentType: "application/json", body: `{"enabled":null}`, want: http.StatusUnprocessableEntity},
 		{name: "wrong media type", method: http.MethodPatch, path: "/api/v1/me", contentType: "application/json", body: `{"locale":"en"}`, want: http.StatusUnsupportedMediaType},
 		{name: "malformed json", method: http.MethodPost, path: "/api/v1/sessions", contentType: "application/json", body: "{", want: http.StatusBadRequest},
 		{name: "non object json", method: http.MethodPut, path: "/api/v1/me/sharing", contentType: "application/json", body: "null", want: http.StatusUnprocessableEntity},

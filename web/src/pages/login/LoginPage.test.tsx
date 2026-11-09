@@ -161,7 +161,12 @@ describe('LoginPage', () => {
     expect(screen.getByTestId('auth-cooldown-ended')).toHaveTextContent('try signing in again');
   });
 
-  it('uses the account-locked problem and Retry-After for the cooldown', async () => {
+  it.each([
+    ['en', 'This account is locked after repeated failed sign-ins. It unlocks at '],
+    ['vi', 'Tài khoản bị khóa sau nhiều lần đăng nhập sai. Sẽ mở khóa lúc '],
+  ] as const)('shows the unlock time for a locked account in %s', async (locale, message) => {
+    const now = Date.UTC(2026, 10, 10, 12, 0, 0);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
     server.use(
       http.post('*/api/v1/sessions', () =>
         HttpResponse.json(
@@ -174,11 +179,11 @@ describe('LoginPage', () => {
             trace_id: 'test-trace',
             errors: null,
           },
-          { status: 429, headers: { 'Retry-After': '2' } },
+          { status: 429, headers: { 'Retry-After': '120' } },
         ),
       ),
     );
-    renderApp({ session: signedOut, path: '/login' });
+    renderApp({ session: signedOut, path: '/login', locale });
     fireEvent.change(await screen.findByTestId('auth-login-email'), {
       target: { value: 'a@example.test' },
     });
@@ -186,11 +191,14 @@ describe('LoginPage', () => {
       target: { value: 'password123' },
     });
     fireEvent.click(screen.getByTestId('auth-login-submit'));
-    expect(await screen.findByTestId('auth-locked-banner')).toHaveTextContent('account is locked');
-    expect(screen.getByTestId('auth-login-submit')).toBeDisabled();
-    await waitFor(() => expect(screen.getByTestId('auth-login-submit')).toBeEnabled(), {
-      timeout: 3000,
+    const banner = await screen.findByTestId('auth-locked-banner');
+    const unlockTime = new Date(now + 120_000).toLocaleTimeString(locale, {
+      hour: 'numeric',
+      minute: '2-digit',
     });
+    expect(banner).toHaveTextContent(`${message}${unlockTime}.`);
+    expect(screen.getByTestId('auth-login-submit')).toBeDisabled();
+    clock.mockRestore();
   });
 
   it('validates email and password, allows password reveal and opens registration', async () => {
