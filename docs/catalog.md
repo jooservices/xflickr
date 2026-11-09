@@ -22,6 +22,12 @@ Photo equality uses Flickr's `last_update` value and a SHA-256 hash of the
 source JSON. The adapter stores the zstd compressed source in a `photos.raw`
 JSONB envelope with an explicit encoding and base64 data.
 
+Contact relationships live in `contacts (person_nsid, contact_nsid)` with
+idempotent upserts (`seen_at` refresh). The crawl `contacts` facet writes those
+rows for each connected account's `flickr.contacts.getList` page. Catalog
+`ListContacts` reads distinct contacts of the caller's connected accounts for
+the contacts screen (REST routes arrive with the catalog REST slice).
+
 Size updates carry `none`, `provisional`, or `confirmed` status. A provisional
 response cannot replace confirmed sizes. Tombstone updates preserve the first
 recorded timestamp when repeated.

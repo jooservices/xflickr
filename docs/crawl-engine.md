@@ -169,7 +169,10 @@ The cursor advances over people who are not yet due without marking them
 checked, and wraps only after visiting the end of the list. At a wrap, one
 `flickr.photos.getContactsPhotos` probe is scheduled per connected account.
 The `contacts_photos` facet queues a check for each distinct owner in the
-response. `crawl_interests` stores per-person photo, favorite, and check
+response. Independently, `ScheduleContacts` enqueues the `contacts` facet
+(`flickr.contacts.getList`) for each connected account when
+`contacts_refresh_interval` has elapsed since the previous completed or failed
+item. `crawl_interests` stores per-person photo, favorite, and check
 checkpoints. The settings interval is enforced by the scheduler, not a cron
 job.
 
