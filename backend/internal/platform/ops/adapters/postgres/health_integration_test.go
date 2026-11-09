@@ -152,7 +152,16 @@ func TestPhotoSizesPendingUsesPartialIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE owner_nsid=$1`, suffix)
+		// Batch deletes avoid a multi-hour single DELETE when XFLICKR_LARGE_PLAN_TEST=1.
+		cleanCtx, cleanCancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cleanCancel()
+		for {
+			tag, err := pool.Exec(cleanCtx, `DELETE FROM photos WHERE id IN (
+				SELECT id FROM photos WHERE owner_nsid=$1 LIMIT 50000)`, suffix)
+			if err != nil || tag.RowsAffected() == 0 {
+				break
+			}
+		}
 		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, suffix)
 	})
 
