@@ -1406,6 +1406,62 @@ type User struct {
 	PlanID       int64
 }
 
+type UserHomeContactStat struct {
+	UserID      int64
+	PersonNsid  string
+	PhotosTotal int64
+	SizesReady  int64
+}
+
+type UserHomeContactStatsRefresh struct {
+	UserID      int64
+	PersonNsid  string
+	PhotosTotal int64
+	SizesReady  int64
+}
+
+type UserHomePhotoCandidate struct {
+	UserID     int64
+	PhotoID    int64
+	UploadedAt pgtype.Timestamptz
+}
+
+type UserHomeSharedPhotoCandidate struct {
+	PhotoID    int64
+	UploadedAt pgtype.Timestamptz
+}
+
+type UserHomeSharedVersion struct {
+	ID       bool
+	Revision int64
+}
+
+type UserHomeStat struct {
+	UserID         int64
+	PhotosTotal    int64
+	SizesReady     int64
+	Captioned      int64
+	ComputedAt     pgtype.Timestamptz
+	SourceRevision int64
+	SharedRevision int64
+}
+
+type UserHomeStatsRefresh struct {
+	UserID         int64
+	CursorRecordID string
+	PhotosTotal    int64
+	SizesReady     int64
+	Captioned      int64
+	RequestedAt    pgtype.Timestamptz
+	SourceRevision int64
+	SharedRevision int64
+}
+
+type UserHomeStatsVersion struct {
+	UserID   int64
+	Revision int64
+}
+
 type UserSetting struct {
 	UserID int64
 	Key    string

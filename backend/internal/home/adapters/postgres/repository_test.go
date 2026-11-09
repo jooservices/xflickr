@@ -133,8 +133,8 @@ func TestLoadReturnsUserScopedSnapshot(t *testing.T) {
 	}
 	for _, fragment := range []string{
 		"user_home_photo_candidates candidate",
-		"candidate.user_id = setting.user_id",
-		"setting.enabled",
+		"user_home_shared_photo_candidates shared_candidate",
+		"shared_candidate.uploaded_at DESC NULLS LAST",
 		"photo.visibility = 'public'",
 		"photo.tombstoned_at IS NULL",
 		"LIMIT 12",
@@ -157,6 +157,9 @@ func TestLoadReturnsUserScopedSnapshot(t *testing.T) {
 	}
 	if strings.Contains(reader.query, "visible_photo_counts") || strings.Contains(reader.query, "CROSS JOIN LATERAL (\n        SELECT stored") {
 		t.Fatal("request query still builds a photo-wide count or per-photo lateral lookup")
+	}
+	if strings.Contains(reader.query, "FROM sharing_settings") {
+		t.Fatal("request query must read the indexed shared candidate set directly")
 	}
 }
 

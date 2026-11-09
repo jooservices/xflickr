@@ -8,6 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/jooservices/xflickr/internal/home/app"
 )
 
 type refreshDBStub struct {
@@ -46,7 +48,7 @@ func (tx *refreshTxStub) Exec(_ context.Context, query string, _ ...any) (pgconn
 	if tx.execErr != nil && strings.Contains(query, tx.execQuery) {
 		return pgconn.CommandTag{}, tx.execErr
 	}
-	return pgconn.CommandTag{}, nil
+	return pgconn.NewCommandTag("INSERT 0 1"), nil
 }
 
 func (tx *refreshTxStub) Commit(context.Context) error   { return tx.commitErr }
@@ -156,7 +158,7 @@ func TestRefreshBatchReportsDatabaseFailures(t *testing.T) {
 				tx = &refreshTxStub{}
 			}
 			if tx.lockRow == nil {
-				tx.lockRow = refreshRowStub{values: []any{"", int64(0), int64(0), int64(0)}}
+				tx.lockRow = refreshRowStub{values: []any{"", int64(0), int64(0), int64(0), int64(0), int64(0)}}
 			}
 			if tx.rows == nil {
 				tx.rows = &refreshRowsStub{}
@@ -183,12 +185,43 @@ func TestRefreshBatchRequiresRefreshDatabase(t *testing.T) {
 	}
 }
 
+func TestConfiguredRefreshBatchSizeReadsAdminSetting(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		value   int64
+		rowErr  error
+		want    int
+		wantErr bool
+	}{
+		{name: "configured value", value: 750, want: 750},
+		{name: "below minimum", value: 249, wantErr: true},
+		{name: "above maximum", value: 1001, wantErr: true},
+		{name: "database error", rowErr: errors.New("database unavailable"), wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			database := &queryerStub{row: stubRow{values: []any{test.value}, err: test.rowErr}}
+			got, err := configuredRefreshBatchSize(t.Context(), database, app.RefreshBatchSize)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("configuredRefreshBatchSize() error = %v, wantErr %t", err, test.wantErr)
+			}
+			if err == nil && got != test.want {
+				t.Fatalf("configuredRefreshBatchSize() = %d, want %d", got, test.want)
+			}
+			if !strings.Contains(database.query, "home.stats_refresh_batch_size") {
+				t.Fatalf("batch setting query = %q", database.query)
+			}
+		})
+	}
+}
+
 func TestRefreshPagePaginatesIndexedPhotoSources(t *testing.T) {
 	for _, fragment := range []string{
 		"FROM user_home_photo_candidates candidate",
-		"source_user.user_id",
-		"candidate.photo_id > $2",
+		"FROM user_home_shared_photo_candidates shared_candidate",
+		"candidate.photo_id > COALESCE(NULLIF($2, '')::bigint, 0)",
+		"shared_candidate.photo_id > COALESCE(NULLIF($2, '')::bigint, 0)",
 		"ORDER BY candidate.photo_id",
+		"ORDER BY shared_candidate.photo_id",
 		"LIMIT $3",
 	} {
 		if !strings.Contains(refreshPhotoPageSQL, fragment) {
@@ -197,5 +230,8 @@ func TestRefreshPagePaginatesIndexedPhotoSources(t *testing.T) {
 	}
 	if strings.Contains(refreshPhotoPageSQL, "FROM observations") {
 		t.Fatal("refresh page must not search observations for shared photo IDs")
+	}
+	if strings.Contains(refreshPhotoPageSQL, "FROM sharing_settings") {
+		t.Fatal("refresh page must paginate the shared candidate set directly")
 	}
 }

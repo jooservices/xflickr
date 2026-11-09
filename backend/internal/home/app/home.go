@@ -20,7 +20,7 @@ const (
 	// RefreshJobKind identifies a durable Home statistics refresh job.
 	RefreshJobKind = "home.stats.refresh"
 	// RefreshBatchSize caps photo rows processed by one refresh transaction.
-	RefreshBatchSize = 250
+	RefreshBatchSize = 1000
 )
 
 // Snapshot is the user-scoped data returned by GET /me/home.

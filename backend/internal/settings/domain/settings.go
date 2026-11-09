@@ -60,6 +60,7 @@ const (
 	QueueCompletedRetention   Key = "queue.completed_retention"
 	QueueDiscardedRetention   Key = "queue.discarded_retention"
 	HomeStatsRefreshInterval  Key = "home.stats_refresh_interval"
+	HomeStatsRefreshBatchSize Key = "home.stats_refresh_batch_size"
 )
 
 // Effective contains the merged, validated settings for one user. Durations
@@ -230,6 +231,7 @@ var schemas = map[Key]JSONSchema{
 	QueueCompletedRetention:   {Type: "integer", Minimum: floatPointer(60), Maximum: floatPointer(604800)},
 	QueueDiscardedRetention:   {Type: "integer", Minimum: floatPointer(3600), Maximum: floatPointer(2592000)},
 	HomeStatsRefreshInterval:  {Type: "integer", Minimum: floatPointer(60), Maximum: floatPointer(86400)},
+	HomeStatsRefreshBatchSize: {Type: "integer", Minimum: floatPointer(250), Maximum: floatPointer(1000)},
 }
 
 // SchemaFor returns the JSON schema associated with a typed key.
@@ -278,6 +280,7 @@ func Keys() []Key {
 		QueueCompletedRetention,
 		QueueDiscardedRetention,
 		HomeStatsRefreshInterval,
+		HomeStatsRefreshBatchSize,
 	}
 }
 
@@ -327,6 +330,7 @@ func Defaults() []Definition {
 		{Key: QueueCompletedRetention, Value: json.RawMessage("86400"), UserOverridable: false, Min: floatPointer(60), Max: floatPointer(604800)},
 		{Key: QueueDiscardedRetention, Value: json.RawMessage("604800"), UserOverridable: false, Min: floatPointer(3600), Max: floatPointer(2592000)},
 		{Key: HomeStatsRefreshInterval, Value: json.RawMessage("900"), UserOverridable: false, Min: floatPointer(60), Max: floatPointer(86400)},
+		{Key: HomeStatsRefreshBatchSize, Value: json.RawMessage("250"), UserOverridable: false, Min: floatPointer(250), Max: floatPointer(1000)},
 	}
 }
 
