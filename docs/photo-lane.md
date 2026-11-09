@@ -33,30 +33,32 @@ has no eligible key. A transaction-scoped advisory lock on the dedupe key keeps
 concurrent producers from inserting the same job twice. `Next` pages past
 skipped photos (bounded) so already-queued photos do not starve the lane.
 
-Before making any Flickr call, the `photo.sizes` handler checks the stored
-listing server. Server `65535` is Flickr's restricted placeholder: anonymous
-`getSizes` is never spent on it. The handler instead retries once with the
-OAuth token of a connected account that may view the photo (the owner's
-connected account first). Background photo-lane jobs only use that owner
-account. Interactive on-demand jobs may also try the requesting user's other
-accounts. A successful signed call stores `confirmed` sizes through the usual
-writer. A failure records an `entity_facet_restrictions` row for that account
-only and stores `unavailable`, so the same account is not asked again until the
-photo version or visibility reopens the restriction. When no eligible account
-remains, the handler stores empty sizes as `unavailable` without further calls.
-Repeated jobs skip the terminal status without calls, including interactive
-download jobs. An unchanged confirmed result is reused without
-reclassification. Cleanup of already queued work is tracked separately in
-JOOXF-311.
+For each job, the handler resolves the XFlickr user who owns its API key and
+checks that user's restriction for the current photo version. Server `65535`
+is Flickr's restricted placeholder, so anonymous `getSizes` is never spent on
+it. Other pending photos try anonymous `getSizes` first. A successful anonymous
+result is safe to store globally. A not-found or permission response records a
+restriction for that XFlickr user and API key; another user or key can still
+make its own anonymous attempt.
 
-For other pending photos, the `photo.sizes` handler calls
-`flickr.photos.getSizes` without a token first. A confirmed result is stored
-and `sizes_checked_at` is recorded. A confirmed photo is skipped while its last
-update is no newer than that check. When the anonymous call fails as not-found
-or permission denied (including Flickr code 1 on restricted media), the same
-authenticated retry rule applies: one signed attempt through the quota governor
-and call log, then a per-account restriction on failure. Other terminal Flickr
-errors still store empty sizes as `unavailable` without an authenticated retry.
+Restricted photos use at most one signed attempt per job. Candidate accounts
+must belong to the requesting XFlickr user, be active, and use a valid API key.
+The matching photo-owner account is preferred; interactive requests may also
+use the requester's other connected accounts. A successful OAuth result is
+stored in `photo_account_sizes` with the exact photo version and visibility.
+Catalog and download reads return those URLs only to that account's XFlickr
+user while the account remains active and the photo version and visibility
+match. Sharing a photo observation does not share its OAuth-authorized sizes.
+
+A failed signed attempt records its restriction by account ID and stores an
+account-scoped `unavailable` result. A later request can select another
+eligible account owned by the requester. If none can produce sizes, only that
+user's waiting downloads are resolved as unavailable; the catalog photo is
+not marked globally unavailable. Legacy global unavailable results and
+unattributed global confirmed URLs are reset by the migration so each caller
+can be evaluated safely. An unchanged anonymous confirmed result is reused
+without reclassification. Cleanup of already queued work is tracked separately
+in JOOXF-311.
 
 Quota exhaustion returns a River snooze, so it does not consume an attempt and
 the same job resumes through the quota governor when its wait expires. Other
@@ -66,13 +68,12 @@ discarded and reported through the dead-job outbox; the photo itself remains
 unconfirmed in the catalog. The next ordinary photo-lane pump can select it
 again, and the new job still goes through key selection and the quota governor.
 This makes a discarded job visible and recoverable without a manual requeue or
-a quota bypass. Flickr error code 1 (`Photo not found`) is treated as an
-unavailable photo by this lane; code 2 (`Permission denied`) is classified
-separately and also stored as unavailable. Flickr documents that `getSizes`
-does not require OAuth, but the caller must be allowed to view the photo; code
-1 can also occur for existing restricted photos, as verified in JOOXF-275,
-while code 2 means the caller cannot view it. A sizes failure alone does not
-prove that the photo was deleted.
+a quota bypass. Flickr error code 1 (`Photo not found`) and code 2
+(`Permission denied`) restrict only the requesting key or signed account for
+this photo version; neither makes the catalog photo globally unavailable.
+Flickr documents that `getSizes` does not require OAuth, but the caller must be
+allowed to view the photo. Code 1 can also occur for existing restricted photos,
+as verified in JOOXF-275, so a sizes failure alone does not prove deletion.
 The API client tests both classifications and the FakeFlickr integration test
 verifies the requested method, photo ID, retry, and confirmed result. See the
 [Flickr `getSizes` API reference](https://www.flickr.com/services/api/flickr.photos.getSizes.html).

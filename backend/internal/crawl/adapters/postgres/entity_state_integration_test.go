@@ -134,6 +134,41 @@ func TestPhotoRestrictionReopensOnVisibilityAndSkipsTombstones(t *testing.T) {
 	}
 }
 
+func TestPhotoSizeRestrictionDistinguishesAccountsSharingAKey(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx := t.Context()
+	userID := insertInterestTestUser(t, ctx, pool)
+	var keyID, firstAccount, secondAccount int64
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst,status)
+		VALUES($1,'shared','key-shared','{}',100,2,4,'valid') RETURNING id`, userID).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	for _, account := range []struct {
+		nsid string
+		id   *int64
+	}{{"account-one", &firstAccount}, {"account-two", &secondAccount}} {
+		if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status)
+			VALUES($1,$2,$3,$3,'{}','{}','ok') RETURNING id`, userID, keyID, account.nsid).Scan(account.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	access := app.EntityAccess{EntityRef: app.EntityRef{Kind: "photo", ID: "account-shared-key-photo"}, Facet: "sizes", UserID: userID, KeyID: keyID, AccountID: firstAccount, Version: now}
+	states := EntityStates{DB: pool}
+	if err := states.RecordFailure(ctx, access, "restricted", "permission_denied", now, now); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := states.Suppressed(ctx, access, now)
+	if err != nil || !blocked {
+		t.Fatalf("failed account restriction = %v, %v", blocked, err)
+	}
+	access.AccountID = secondAccount
+	blocked, err = states.Suppressed(ctx, access, now)
+	if err != nil || blocked {
+		t.Fatalf("same-key second account restriction = %v, %v", blocked, err)
+	}
+}
+
 func TestCycleSkipsGonePersonForChecksAndReconciliation(t *testing.T) {
 	pool := openEngineTestPool(t)
 	ctx := t.Context()

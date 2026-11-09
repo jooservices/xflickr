@@ -126,12 +126,15 @@ func TestEveryPhotoFacetRecordsRestrictionWithoutCompletingGlobalData(t *testing
 		h, store, client := sizesRig()
 		states := &stateFake{}
 		h.States = states
+		h.Users = staticKeyUser{userID: 7}
+		h.Auth = &sizesAuthFake{}
+		h.Accounts = &accountSizesFake{}
 		client.err = cause
 		if err := h.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
 			t.Fatal(err)
 		}
-		if states.state != "restricted" || store.status != catalog.SizesUnavailable {
-			t.Fatal("sizes restriction did not resolve waiting downloads")
+		if states.state != "restricted" || store.status == catalog.SizesUnavailable {
+			t.Fatal("sizes restriction completed global sizes instead of recording scoped access")
 		}
 		states.blocked = true
 		if err := h.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
@@ -150,8 +153,9 @@ func TestEntityStateErrorsAreRetried(t *testing.T) {
 	if !errors.Is(r.engine.Handle(t.Context(), 7), failure) {
 		t.Fatal("lost read error")
 	}
-	h, _, _ := sizesRig()
+	h, _, sizesClient := sizesRig()
 	h.States = &stateFake{err: failure}
+	sizesClient.err = flickr.ErrPermission
 	if !errors.Is(h.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}), failure) {
 		t.Fatal("lost sizes error")
 	}

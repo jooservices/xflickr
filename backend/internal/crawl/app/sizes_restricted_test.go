@@ -73,17 +73,65 @@ type restrictionStates struct {
 	recorded []EntityAccess
 }
 
-func restrictionKey(userID, keyID int64) string {
-	return fmt.Sprintf("%d:%d", userID, keyID)
+type sizesUserMap map[int64]int64
+
+func (m sizesUserMap) UserIDForKey(_ context.Context, keyID int64) (int64, error) {
+	return m[keyID], nil
+}
+
+type accountSizesFake struct {
+	statuses map[int64]catalog.SizesStatus
+	written  []struct {
+		PhotoID, AccountID, UserID int64
+		Status                     catalog.SizesStatus
+		Sizes                      []byte
+	}
+	resolved []struct {
+		PhotoID, UserID int64
+		Status          catalog.SizesStatus
+	}
+}
+
+func (s *accountSizesFake) AccountSizes(_ context.Context, _, accountID int64, _ time.Time, _ string) (catalog.SizesStatus, bool, error) {
+	status, ok := s.statuses[accountID]
+	return status, ok, nil
+}
+
+func (s *accountSizesFake) SetAccountSizes(_ context.Context, photoID, accountID, userID int64, sizes []byte, status catalog.SizesStatus, _ time.Time, _ string, _ time.Time) error {
+	if s.statuses == nil {
+		s.statuses = make(map[int64]catalog.SizesStatus)
+	}
+	s.statuses[accountID] = status
+	s.written = append(s.written, struct {
+		PhotoID, AccountID, UserID int64
+		Status                     catalog.SizesStatus
+		Sizes                      []byte
+	}{photoID, accountID, userID, status, append([]byte(nil), sizes...)})
+	return nil
+}
+
+func (s *accountSizesFake) ResolveUserSizes(_ context.Context, photoID, userID int64, status catalog.SizesStatus) error {
+	s.resolved = append(s.resolved, struct {
+		PhotoID, UserID int64
+		Status          catalog.SizesStatus
+	}{photoID, userID, status})
+	return nil
+}
+
+func restrictionKey(access EntityAccess) string {
+	if access.AccountID > 0 {
+		return fmt.Sprintf("account:%d", access.AccountID)
+	}
+	return fmt.Sprintf("%d:%d", access.UserID, access.KeyID)
 }
 
 func (s *restrictionStates) Suppressed(_ context.Context, a EntityAccess, _ time.Time) (bool, error) {
-	return s.blocked[restrictionKey(a.UserID, a.KeyID)], nil
+	return s.blocked[restrictionKey(a)], nil
 }
 
 func (s *restrictionStates) RecordFailure(_ context.Context, a EntityAccess, _, _ string, _, _ time.Time) error {
 	s.recorded = append(s.recorded, a)
-	s.blocked[restrictionKey(a.UserID, a.KeyID)] = true
+	s.blocked[restrictionKey(a)] = true
 	return nil
 }
 
@@ -104,7 +152,7 @@ func restrictedRig() (Sizes, *sizesStoreFake, *restrictedSizesClient, *sizesAuth
 	}}
 	states := &restrictionStates{blocked: map[string]bool{}}
 	handler := Sizes{
-		States: states, Store: store, Flickr: client, Auth: auth, Users: staticKeyUser{userID: 7},
+		States: states, Store: store, Accounts: &accountSizesFake{}, Flickr: client, Auth: auth, Users: staticKeyUser{userID: 7},
 		Now: func() time.Time { return checked },
 	}
 	return handler, store, client, auth, states
@@ -129,6 +177,9 @@ func TestRestrictedPhotoRetriesOnceWithOwnerToken(t *testing.T) {
 	}
 	if store.status == catalog.SizesConfirmed {
 		t.Fatal("account-authorized sizes were stored globally")
+	}
+	if len(handler.Accounts.(*accountSizesFake).written) != 1 || handler.Accounts.(*accountSizesFake).written[0].AccountID != 11 || handler.Accounts.(*accountSizesFake).written[0].Status != catalog.SizesConfirmed {
+		t.Fatalf("account sizes = %+v", handler.Accounts)
 	}
 }
 
@@ -162,11 +213,11 @@ func TestFailureRecordsRestrictionForThatAccountOnly(t *testing.T) {
 	if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
 		t.Fatal(err)
 	}
-	if store.status == catalog.SizesUnavailable || len(states.recorded) != 1 {
+	if store.status == catalog.SizesUnavailable || len(states.recorded) != 2 {
 		t.Fatalf("status=%s recorded=%+v", store.status, states.recorded)
 	}
-	got := states.recorded[0]
-	if got.UserID != 7 || got.KeyID != 12 || got.Facet != "sizes" || got.ID != "40" {
+	got := states.recorded[1]
+	if got.UserID != 7 || got.KeyID != 12 || got.AccountID != 11 || got.Facet != "sizes" || got.ID != "40" {
 		t.Fatalf("restriction = %+v", got)
 	}
 	if len(client.calls) != 2 {
@@ -174,14 +225,36 @@ func TestFailureRecordsRestrictionForThatAccountOnly(t *testing.T) {
 	}
 }
 
+func TestAnonymousSizeRestrictionIsScopedToTheRequestingUserAndKey(t *testing.T) {
+	handler, store, client := sizesRig()
+	client.err = &flickr.CallError{Kind: flickr.ErrPermission, Code: 2}
+	states := &restrictionStates{blocked: map[string]bool{}}
+	handler.States = states
+	handler.Users = sizesUserMap{12: 7, 13: 8}
+	handler.Auth = &sizesAuthFake{}
+	handler.Accounts = &accountSizesFake{}
+
+	for _, keyID := range []int64{12, 12, 13} {
+		if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: keyID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if client.calls != 2 || !states.blocked["7:12"] || !states.blocked["8:13"] {
+		t.Fatalf("calls=%d restrictions=%v", client.calls, states.blocked)
+	}
+	if store.status == catalog.SizesUnavailable || len(handler.Accounts.(*accountSizesFake).resolved) != 3 {
+		t.Fatalf("global status=%s user resolutions=%+v", store.status, handler.Accounts.(*accountSizesFake).resolved)
+	}
+}
+
 func TestNoCallForAlreadyRestrictedAccount(t *testing.T) {
 	handler, store, client, _, states := restrictedRig()
 	store.photo.Server = catalog.RestrictedPlaceholderServer
-	states.blocked[restrictionKey(7, 12)] = true
+	states.blocked[restrictionKey(EntityAccess{AccountID: 11})] = true
 	if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
 		t.Fatal(err)
 	}
-	if len(client.calls) != 0 || store.status != catalog.SizesUnavailable {
+	if len(client.calls) != 0 || store.status == catalog.SizesUnavailable {
 		t.Fatalf("calls=%d status=%s", len(client.calls), store.status)
 	}
 }
@@ -189,7 +262,7 @@ func TestNoCallForAlreadyRestrictedAccount(t *testing.T) {
 func TestOwnerAccountPreferredThenRequestingUserAccounts(t *testing.T) {
 	handler, store, client, auth, states := restrictedRig()
 	store.photo.Server = catalog.RestrictedPlaceholderServer
-	states.blocked[restrictionKey(7, 12)] = true
+	states.blocked[restrictionKey(EntityAccess{AccountID: 11})] = true
 	client.accountSizes[22] = []flickr.PhotoSize{{Label: "Large", Width: 50, Height: 40}}
 	if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12, Class: string(quotadomain.Interactive)}); err != nil {
 		t.Fatal(err)
@@ -197,8 +270,8 @@ func TestOwnerAccountPreferredThenRequestingUserAccounts(t *testing.T) {
 	if auth.calls != 1 || len(client.calls) != 1 || !client.calls[0].Signed || client.calls[0].AccountID != 22 {
 		t.Fatalf("preferred account calls=%+v auth=%+v", client.calls, auth)
 	}
-	if store.status != catalog.SizesConfirmed {
-		t.Fatalf("status = %s", store.status)
+	if accountStatus := handler.Accounts.(*accountSizesFake).statuses[22]; accountStatus != catalog.SizesConfirmed {
+		t.Fatalf("account status = %s", accountStatus)
 	}
 }
 

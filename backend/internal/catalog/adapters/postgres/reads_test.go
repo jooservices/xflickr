@@ -492,3 +492,18 @@ func TestContactAlbumReadsUseOwnerVisibilityAndStableKeysets(t *testing.T) {
 		t.Fatalf("null timestamp cursor query=%q args=%v err=%v", db.query, db.args, err)
 	}
 }
+
+func TestVisiblePhotoReadsUseOnlyTheCallersAccountSizes(t *testing.T) {
+	const userID int64 = 19
+	db := &readsDB{row: &readsRow{values: readTestPhotoRow(42)}}
+	repository, err := New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := repository.GetPhoto(context.Background(), userID, 42, sharingapp.Filter(sharingdomain.User{ID: userID}).SQL); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(db.query, "photo_account_sizes") || !strings.Contains(db.query, "fa.user_id=$1") || !strings.Contains(db.query, "photos.visibility<>'public'") {
+		t.Fatalf("photo read does not scope confirmed sizes to the caller: %s", db.query)
+	}
+}

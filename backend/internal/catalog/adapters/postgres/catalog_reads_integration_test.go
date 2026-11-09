@@ -293,3 +293,66 @@ func TestContactAlbumListRequiresVisiblePhotoAndIsolatesUsers(t *testing.T) {
 		t.Fatalf("other user's contact albums=%+v, want no albums without a contact relationship", otherUserPage.Items)
 	}
 }
+
+func TestRestrictedSizesAreVisibleOnlyToTheOwningUser(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	repository, err := postgres.New(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reads := app.ReadService{Repository: repository}
+	suffix := fmt.Sprintf("account-sizes-%d", time.Now().UnixNano())
+	owner := suffix + "-owner"
+	var ownerUser, otherUser, keyID, accountID int64
+	photoID := time.Now().UnixNano()
+	defer func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=$1`, photoID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, owner)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=ANY($1)`, []int64{ownerUser, otherUser})
+	}()
+	for _, item := range []struct {
+		address string
+		userID  *int64
+	}{{suffix + "-owner@example.invalid", &ownerUser}, {suffix + "-other@example.invalid", &otherUser}} {
+		if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration','user') RETURNING id`, item.address).Scan(item.userID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'sizes',$2,'{}',1000,10,20) RETURNING id`, ownerUser, suffix).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'owner','{}','{}','ok') RETURNING id`, ownerUser, keyID, owner).Scan(&accountID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	checked := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,server,last_update,visibility,sizes,sizes_status,raw,content_hash)
+		VALUES($1,$2,'65535',$3,'public','[]'::jsonb,'provisional','{}',decode(repeat('ab',32),'hex'))`, photoID, owner, checked); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) VALUES($1,$2,'photo',$3)`, ownerUser, accountID, fmt.Sprint(photoID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE sharing_settings SET enabled=true WHERE user_id=$1`, ownerUser); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO photo_account_sizes(photo_id,account_id,photo_updated_at,photo_visibility,sizes,sizes_status,sizes_checked_at)
+		VALUES($1,$2,$3,'public',$4::jsonb,'confirmed',$3)`, photoID, accountID, checked, `[{"label":"Original","width":1200,"height":800,"source":"https://example.invalid/private-size"}]`); err != nil {
+		t.Fatal(err)
+	}
+	ownerPhoto, err := reads.GetPhoto(ctx, ownerUser, photoID)
+	if err != nil || ownerPhoto.SizesStatus != "confirmed" || len(ownerPhoto.Sizes) != 1 || ownerPhoto.Sizes[0].Source != "https://example.invalid/private-size" {
+		t.Fatalf("owner photo sizes=%+v err=%v", ownerPhoto, err)
+	}
+	sharedPhoto, err := reads.GetPhoto(ctx, otherUser, photoID)
+	if err != nil || sharedPhoto.SizesStatus == "confirmed" || len(sharedPhoto.Sizes) != 0 {
+		t.Fatalf("shared photo leaked account sizes: %+v err=%v", sharedPhoto, err)
+	}
+}

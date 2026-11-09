@@ -10,10 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	accountspostgres "github.com/jooservices/xflickr/internal/accounts/adapters/postgres"
 	catalogpostgres "github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
+	catalogapp "github.com/jooservices/xflickr/internal/catalog/app"
 	catalog "github.com/jooservices/xflickr/internal/catalog/domain"
 	"github.com/jooservices/xflickr/internal/crawl/app"
 	crawldomain "github.com/jooservices/xflickr/internal/crawl/domain"
@@ -93,17 +95,32 @@ func TestOwnRestrictedPhotoGetsConfirmedSizes(t *testing.T) {
 	owner := fmt.Sprintf("restricted-owner-%d@N00", base)
 	email := fmt.Sprintf("restricted-%d@integration.invalid", base)
 	photoID := base
-	var userID, keyID, accountID int64
+	var userID, keyID, accountID, invalidKeyID, invalidAccountID, foreignUserID, foreignKeyID, foreignAccountID int64
 	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'test','user') RETURNING id`, email).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'test','user') RETURNING id`, email+"-foreign").Scan(&foreignUserID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid, username) VALUES($1,$1)`, owner); err != nil {
 		t.Fatal(err)
 	}
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst,status) VALUES($1,'foreign','foreign-public','{}',3600,4,5,'valid') RETURNING id`, foreignUserID).Scan(&foreignKeyID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'foreign-owner','{}','{}','ok') RETURNING id`, foreignUserID, foreignKeyID, owner).Scan(&foreignAccountID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst,status) VALUES($1,'invalid','invalid-public','{}',3600,4,5,'invalid') RETURNING id`, userID).Scan(&invalidKeyID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,'invalid@N00','invalid-owner','{}','{}','ok') RETURNING id`, userID, invalidKeyID).Scan(&invalidAccountID); err != nil {
+		t.Fatal(err)
+	}
 	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst,status) VALUES($1,'restricted','public','{}',3600,4,5,'valid') RETURNING id`, userID).Scan(&keyID); err != nil {
 		t.Fatal(err)
 	}
-	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'owner','{}','{}','ok') RETURNING id`, userID, keyID, owner).Scan(&accountID); err != nil {
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,'viewer@N00','viewer','{}','{}','ok') RETURNING id`, userID, keyID).Scan(&accountID); err != nil {
 		t.Fatal(err)
 	}
 	checked := time.Now().UTC().Truncate(time.Microsecond)
@@ -118,31 +135,46 @@ func TestOwnRestrictedPhotoGetsConfirmedSizes(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=$1`, photoID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM flickr_accounts WHERE id=$1`, accountID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM api_keys WHERE id=$1`, keyID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM flickr_accounts WHERE id=$1`, invalidAccountID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM api_keys WHERE id=$1`, invalidKeyID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM flickr_accounts WHERE id=$1`, foreignAccountID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM api_keys WHERE id=$1`, foreignKeyID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, foreignUserID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, owner)
 	})
 
 	client := &restrictedSizesClient{accountSizes: map[int64][]flickr.PhotoSize{
 		accountID: {{Label: "Original", Width: 1200, Height: 800, Source: "https://example.test/restricted"}},
 	}}
+	resolved := catalogpostgres.ResolvedSizes{Repository: repository, Pool: pool, Publish: func(context.Context, pgx.Tx, catalogapp.SizesResolved) error { return nil }}
 	handler := app.Sizes{
-		States: EntityStates{DB: pool},
-		Store:  repository,
-		Flickr: client,
-		Auth:   sizesAuthBridge{accounts: accountspostgres.SizesAuthCandidates{DB: pool}},
-		Users:  sizesKeyUser{pool: pool},
-		Now:    func() time.Time { return checked },
+		States:   EntityStates{DB: pool},
+		Store:    resolved,
+		Accounts: resolved,
+		Flickr:   client,
+		Auth:     sizesAuthBridge{accounts: accountspostgres.SizesAuthCandidates{DB: pool}},
+		Users:    sizesKeyUser{pool: pool},
+		Now:      func() time.Time { return checked },
 	}
-	if err := handler.Handle(ctx, app.SizesJob{PhotoID: photoID, KeyID: keyID, Class: string(quotadomain.Photo)}); err != nil {
+	if err := handler.Handle(ctx, app.SizesJob{PhotoID: photoID, KeyID: keyID, Class: string(quotadomain.Interactive)}); err != nil {
 		t.Fatal(err)
+	}
+	var globalStatus string
+	var globalSizes []byte
+	if err := pool.QueryRow(ctx, `SELECT sizes_status, sizes FROM photos WHERE id=$1`, photoID).Scan(&globalStatus, &globalSizes); err != nil {
+		t.Fatal(err)
+	}
+	if globalStatus != string(catalog.SizesProvisional) || string(globalSizes) != `[]` {
+		t.Fatalf("global photo sizes leaked account result: status=%s sizes=%s", globalStatus, globalSizes)
 	}
 	var status string
 	var sizes []byte
-	if err := pool.QueryRow(ctx, `SELECT sizes_status, sizes FROM photos WHERE id=$1`, photoID).Scan(&status, &sizes); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT sizes_status, sizes FROM photo_account_sizes WHERE photo_id=$1 AND account_id=$2`, photoID, accountID).Scan(&status, &sizes); err != nil {
 		t.Fatal(err)
 	}
 	if status != string(catalog.SizesConfirmed) {
-		t.Fatalf("sizes_status = %s", status)
+		t.Fatalf("account sizes status = %s", status)
 	}
 	var parsed []flickr.PhotoSize
 	if err := json.Unmarshal(sizes, &parsed); err != nil || len(parsed) != 1 || parsed[0].Label != "Original" {

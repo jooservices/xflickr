@@ -14,16 +14,19 @@ import (
 
 // ResolveSizes transitions only waiting items. Download locks serialize this
 // handoff with fetch settlement, so the final terminal item always queues packing.
-func (r Downloads) ResolveSizes(ctx context.Context, photoID int64, status string) error {
+func (r Downloads) ResolveSizes(ctx context.Context, photoID, userID int64, status string) error {
 	if ctx == nil || r.Pool == nil || r.Jobs == nil {
 		return errors.New("media: sizes continuation database, queue and context are required")
+	}
+	if photoID <= 0 || userID < 0 || (status != "confirmed" && status != "unavailable") {
+		return errors.New("media: invalid sizes continuation")
 	}
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("media: begin sizes continuation: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	ids, err := lockWaitingDownloads(ctx, tx, photoID)
+	ids, err := lockWaitingDownloads(ctx, tx, photoID, userID)
 	if err != nil {
 		return err
 	}
@@ -41,8 +44,10 @@ func (r Downloads) ResolveSizes(ctx context.Context, photoID int64, status strin
 	return nil
 }
 
-func lockWaitingDownloads(ctx context.Context, tx pgx.Tx, photoID int64) ([]int64, error) {
-	rows, err := tx.Query(ctx, `SELECT d.id FROM downloads d WHERE EXISTS (SELECT 1 FROM download_items di WHERE di.download_id=d.id AND di.photo_id=$1 AND di.state='waiting_sizes') ORDER BY d.id FOR UPDATE`, photoID)
+func lockWaitingDownloads(ctx context.Context, tx pgx.Tx, photoID, userID int64) ([]int64, error) {
+	rows, err := tx.Query(ctx, `SELECT d.id FROM downloads d WHERE ($2::bigint=0 OR d.user_id=$2)
+AND EXISTS (SELECT 1 FROM download_items di WHERE di.download_id=d.id AND di.photo_id=$1 AND di.state='waiting_sizes')
+ORDER BY d.id FOR UPDATE`, photoID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("media: lock waiting downloads: %w", err)
 	}

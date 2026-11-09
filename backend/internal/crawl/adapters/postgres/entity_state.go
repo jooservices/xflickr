@@ -31,8 +31,9 @@ func (s EntityStates) Suppressed(ctx context.Context, a app.EntityAccess, now ti
      (p.tombstoned_at IS NOT NULL OR EXISTS (SELECT 1 FROM entity_states e WHERE e.entity_type='person' AND e.entity_id=p.owner_nsid))))
  OR EXISTS (SELECT 1 FROM entity_facet_restrictions WHERE entity_type=$1 AND entity_id=$2
  AND facet=$3 AND user_id=$4 AND key_id=$5
+ AND (($9=0 AND account_id IS NULL) OR account_id=$9)
  AND CASE WHEN entity_type='photo' THEN photo_updated_at>=$6 ELSE recheck_at>$7 END)`,
-		a.Kind, a.ID, a.Facet, a.UserID, a.KeyID, a.Version, now, photoID).Scan(&blocked)
+		a.Kind, a.ID, a.Facet, a.UserID, a.KeyID, a.Version, now, photoID, a.AccountID).Scan(&blocked)
 	return blocked, err
 }
 
@@ -44,14 +45,26 @@ func (s EntityStates) RecordFailure(ctx context.Context, a app.EntityAccess, sta
    VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`, a.Kind, a.ID, now, reason)
 		return err
 	}
-	_, err := s.DB.Exec(ctx, `INSERT INTO entity_facet_restrictions
+	var err error
+	if a.AccountID > 0 {
+		_, err = s.DB.Exec(ctx, `INSERT INTO entity_facet_restrictions
+ (entity_type,entity_id,facet,user_id,key_id,account_id,first_seen_at,reason,recheck_at,photo_updated_at)
+ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+ ON CONFLICT (entity_type,entity_id,facet,account_id) WHERE account_id IS NOT NULL DO UPDATE
+ SET recheck_at=EXCLUDED.recheck_at,photo_updated_at=EXCLUDED.photo_updated_at
+ WHERE (entity_facet_restrictions.entity_type<>'photo' AND entity_facet_restrictions.recheck_at<=$7)
+ OR (entity_facet_restrictions.entity_type='photo' AND entity_facet_restrictions.photo_updated_at<$10)`,
+			a.Kind, a.ID, a.Facet, a.UserID, a.KeyID, a.AccountID, now, reason, recheck, a.Version)
+	} else {
+		_, err = s.DB.Exec(ctx, `INSERT INTO entity_facet_restrictions
  (entity_type,entity_id,facet,user_id,key_id,first_seen_at,reason,recheck_at,photo_updated_at)
  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
- ON CONFLICT (entity_type,entity_id,facet,user_id,key_id) DO UPDATE
+ ON CONFLICT (entity_type,entity_id,facet,user_id,key_id) WHERE account_id IS NULL DO UPDATE
  SET recheck_at=EXCLUDED.recheck_at,photo_updated_at=EXCLUDED.photo_updated_at
  WHERE (entity_facet_restrictions.entity_type<>'photo' AND entity_facet_restrictions.recheck_at<=$6)
  OR (entity_facet_restrictions.entity_type='photo' AND entity_facet_restrictions.photo_updated_at<$9)`,
-		a.Kind, a.ID, a.Facet, a.UserID, a.KeyID, now, reason, recheck, a.Version)
+			a.Kind, a.ID, a.Facet, a.UserID, a.KeyID, now, reason, recheck, a.Version)
+	}
 	return err
 }
 

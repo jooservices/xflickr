@@ -200,8 +200,8 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT sizes, sizes_status, sizes_checked_at FROM photos WHERE id=$1`, photoIDs[2]).Scan(&storedSizes, &storedStatus, &storedChecked); err != nil {
 		t.Fatal(err)
 	}
-	if string(storedSizes) != `[]` || storedStatus != string(catalog.SizesUnavailable) || !storedChecked.Equal(checkedAt) {
-		t.Fatalf("stale confirmed not-found outcome = %s, %s at %s", storedSizes, storedStatus, storedChecked)
+	if string(storedSizes) != `[]` || storedStatus != string(catalog.SizesConfirmed) || !storedChecked.Equal(staleChecked) {
+		t.Fatalf("anonymous not-found changed global sizes = %s, %s at %s", storedSizes, storedStatus, storedChecked)
 	}
 	if err := pool.QueryRow(ctx, `SELECT sizes_status FROM photos WHERE id=$1`, photoIDs[3]).Scan(&storedStatus); err != nil {
 		t.Fatal(err)
@@ -210,8 +210,8 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 		t.Fatalf("transient size result = %s, want confirmed after retry", storedStatus)
 	}
 
-	// A restricted listing is classified locally, including direct interactive
-	// jobs, and repeated delivery does not rewrite the terminal check time.
+	// A restricted listing is classified locally and skips anonymous Flickr
+	// calls without changing globally shared sizes.
 	insertPhoto(photoIDs[4], catalog.SizesProvisional, nil)
 	if _, err := pool.Exec(ctx, `UPDATE photos SET server=$2 WHERE id=$1`, photoIDs[4], catalog.RestrictedPlaceholderServer); err != nil {
 		t.Fatal(err)
@@ -220,20 +220,18 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 	waitJob(false)
 	enqueue(photoIDs[4])
 	waitJob(false)
-	if err := pool.QueryRow(ctx, `SELECT sizes, sizes_status, sizes_checked_at FROM photos WHERE id=$1`, photoIDs[4]).Scan(&storedSizes, &storedStatus, &storedChecked); err != nil {
+	var placeholderChecked *time.Time
+	if err := pool.QueryRow(ctx, `SELECT sizes, sizes_status, sizes_checked_at FROM photos WHERE id=$1`, photoIDs[4]).Scan(&storedSizes, &storedStatus, &placeholderChecked); err != nil {
 		t.Fatal(err)
 	}
-	if string(storedSizes) != "[]" || storedStatus != "unavailable" || !storedChecked.Equal(checkedAt) {
-		t.Fatalf("placeholder outcome = %s, %s at %s", storedSizes, storedStatus, storedChecked)
+	if string(storedSizes) != `[]` || storedStatus != string(catalog.SizesProvisional) || placeholderChecked != nil {
+		t.Fatalf("placeholder changed global sizes = %s, %s at %v", storedSizes, storedStatus, placeholderChecked)
 	}
 	mu.Lock()
 	placeholderCalls := calls[fmt.Sprint(photoIDs[4])]
 	mu.Unlock()
 	if placeholderCalls != 0 {
 		t.Fatalf("placeholder made %d HTTP requests", placeholderCalls)
-	}
-	if ids, err := lane.Next(ctx, 10); err != nil || len(ids) != 0 {
-		t.Fatalf("terminal photos selected again: %v, %v", ids, err)
 	}
 }
 

@@ -28,11 +28,13 @@ type sizesAuthDB interface {
 type SizesAuthCandidates struct{ DB sizesAuthDB }
 
 const sizesAuthCandidatesSQL = `
-SELECT id, user_id, key_id, nsid
-FROM flickr_accounts
-WHERE status = '` + string(domain.AccountOK) + `'
-  AND (nsid = $1 OR user_id = $2)
-ORDER BY (nsid = $1) DESC, id ASC`
+SELECT a.id, a.user_id, a.key_id, a.nsid
+FROM flickr_accounts a
+JOIN api_keys k ON k.id = a.key_id AND k.user_id = a.user_id
+WHERE a.status = '` + string(domain.AccountOK) + `'
+  AND k.status = '` + string(domain.StatusValid) + `'
+  AND a.user_id = $2
+ORDER BY (a.nsid = $1) DESC, a.id ASC`
 
 // List returns ordered candidates for ownerNSID and requestingUserID.
 func (a SizesAuthCandidates) List(ctx context.Context, ownerNSID string, requestingUserID int64) ([]SizesAuthCandidate, error) {

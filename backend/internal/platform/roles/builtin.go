@@ -304,12 +304,14 @@ func registerPhotoSizes(queueAdapter *queue.River, pool *pgxpool.Pool, redisClie
 	if err != nil {
 		return err
 	}
+	resolvedSizes := catalogpostgres.ResolvedSizes{Repository: catalogRepository, Pool: pool, Publish: publishSizesResolved}
 	handler := crawlapp.Sizes{
-		States: crawlpostgres.EntityStates{DB: pool},
-		Store:  catalogpostgres.ResolvedSizes{Repository: catalogRepository, Pool: pool, Publish: publishSizesResolved},
-		Flickr: photoSizesClient{Pool: pool, Client: client, Quota: quota, Ring: ring, NodeID: nodeID(cfg)},
-		Auth:   sizesAuthenticator{accounts: accountspostgres.SizesAuthCandidates{DB: pool}},
-		Users:  sizesKeyUser{pool: pool},
+		States:   crawlpostgres.EntityStates{DB: pool},
+		Store:    resolvedSizes,
+		Accounts: resolvedSizes,
+		Flickr:   photoSizesClient{Pool: pool, Client: client, Quota: quota, Ring: ring, NodeID: nodeID(cfg)},
+		Auth:     sizesAuthenticator{accounts: accountspostgres.SizesAuthCandidates{DB: pool}},
+		Users:    sizesKeyUser{pool: pool},
 	}
 	if err := queueAdapter.RegisterWithOptions(scheduleriver.PhotoJobKind, func(ctx context.Context, job queue.Job) error {
 		ctx = flickrclient.WithCallContext(ctx, flickrclient.CallContext{Attempt: job.Attempt})

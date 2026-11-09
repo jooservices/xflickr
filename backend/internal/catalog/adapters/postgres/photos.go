@@ -23,9 +23,9 @@ func (r *Repository) LoadSizes(ctx context.Context, id int64) (domain.Photo, boo
 		return domain.Photo{}, false, errors.New("catalog: photo sizes database, context and id are required")
 	}
 	var photo domain.Photo
-	var status string
+	var status, visibility string
 	var checked pgtype.Timestamptz
-	err := r.db.QueryRow(ctx, `SELECT id, owner_nsid, last_update, sizes_status, sizes_checked_at, server, sizes FROM photos WHERE id=$1`, id).Scan(&photo.ID, &photo.OwnerNSID, &photo.LastUpdate, &status, &checked, &photo.Server, &photo.Sizes)
+	err := r.db.QueryRow(ctx, `SELECT id, owner_nsid, last_update, sizes_status, sizes_checked_at, server, visibility, sizes FROM photos WHERE id=$1`, id).Scan(&photo.ID, &photo.OwnerNSID, &photo.LastUpdate, &status, &checked, &photo.Server, &visibility, &photo.Sizes)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Photo{}, false, nil
 	}
@@ -33,10 +33,29 @@ func (r *Repository) LoadSizes(ctx context.Context, id int64) (domain.Photo, boo
 		return domain.Photo{}, false, fmt.Errorf("catalog: load photo sizes state: %w", err)
 	}
 	photo.SizesStatus = domain.SizesStatus(status)
+	photo.Visibility = domain.Visibility(visibility)
 	if checked.Valid {
 		photo.SizesCheckedAt = &checked.Time
 	}
 	return photo, true, nil
+}
+
+// AccountSizes returns an account-scoped result only for its exact photo
+// version and visibility.
+func (r *Repository) AccountSizes(ctx context.Context, photoID, accountID int64, version time.Time, visibility string) (domain.SizesStatus, bool, error) {
+	if r == nil || r.db == nil || ctx == nil || photoID <= 0 || accountID <= 0 || version.IsZero() || visibility == "" {
+		return "", false, errors.New("catalog: account sizes lookup needs a database, context, photo, account, version and visibility")
+	}
+	var status string
+	err := r.db.QueryRow(ctx, `SELECT sizes_status FROM photo_account_sizes
+WHERE photo_id=$1 AND account_id=$2 AND photo_updated_at=$3 AND photo_visibility=$4`, photoID, accountID, toPgTime(version), visibility).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("catalog: load account photo sizes: %w", err)
+	}
+	return domain.SizesStatus(status), true, nil
 }
 
 // UpsertPhotos inserts or refreshes at most 500 photos in one pgx batch.

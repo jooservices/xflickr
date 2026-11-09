@@ -1,6 +1,7 @@
 package app
 
 import (
+	catalog "github.com/jooservices/xflickr/internal/catalog/domain"
 	crawldomain "github.com/jooservices/xflickr/internal/crawl/domain"
 )
 
@@ -18,8 +19,10 @@ const (
 
 // SizesAuthDecision is the result of ChooseSizesAuth.
 type SizesAuthDecision struct {
-	Kind      SizesAuthKind
-	Candidate crawldomain.SizesAuthCandidate
+	Kind           SizesAuthKind
+	Candidate      crawldomain.SizesAuthCandidate
+	UserID         int64
+	ExistingStatus catalog.SizesStatus
 }
 
 // SizesAuthInput feeds ChooseSizesAuth. Restricted means an unauthenticated

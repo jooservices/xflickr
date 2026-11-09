@@ -22,7 +22,22 @@ const (
 	contactAlbumPhotoProbeLimit = 128
 	photoReadColumns            = `photos.id, photos.owner_nsid, photos.title, photos.description,
 photos.tags, photos.taken_at, photos.uploaded_at, photos.last_update, photos.visibility,
-photos.sizes_status, photos.sizes,
+CASE WHEN EXISTS (
+    SELECT 1 FROM photo_account_sizes pas JOIN flickr_accounts fa ON fa.id=pas.account_id
+    WHERE pas.photo_id=photos.id AND pas.photo_updated_at=photos.last_update
+      AND pas.photo_visibility=photos.visibility AND pas.sizes_status='confirmed'
+      AND fa.user_id=$1 AND fa.status='ok'
+) THEN 'confirmed'
+WHEN photos.server='65535' AND photos.sizes_status='confirmed' THEN 'provisional'
+WHEN photos.visibility<>'public' AND photos.sizes_status='confirmed' THEN 'provisional'
+ELSE photos.sizes_status END,
+COALESCE((
+    SELECT pas.sizes FROM photo_account_sizes pas JOIN flickr_accounts fa ON fa.id=pas.account_id
+    WHERE pas.photo_id=photos.id AND pas.photo_updated_at=photos.last_update
+      AND pas.photo_visibility=photos.visibility AND pas.sizes_status='confirmed'
+      AND fa.user_id=$1 AND fa.status='ok'
+    ORDER BY pas.sizes_checked_at DESC, pas.account_id LIMIT 1
+), CASE WHEN photos.server='65535' OR photos.visibility<>'public' THEN '[]'::jsonb ELSE photos.sizes END),
 CASE WHEN EXISTS (SELECT 1 FROM photo_enrichments e WHERE e.photo_id=photos.id AND e.kind='caption') THEN 'ready' ELSE 'none' END`
 )
 
