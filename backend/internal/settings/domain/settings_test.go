@@ -65,6 +65,8 @@ func TestMergeSeededDefaults(t *testing.T) {
 		OpsHealthStatementTimeout: 5 * time.Second,
 		APICallLogRetentionDays:   30,
 		APICallLogDryRun:          false,
+		QueueCompletedRetention:   24 * time.Hour,
+		QueueDiscardedRetention:   168 * time.Hour,
 	}
 	if got != want {
 		t.Fatalf("effective defaults = %+v, want %+v", got, want)
