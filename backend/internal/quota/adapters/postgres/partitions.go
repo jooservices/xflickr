@@ -20,8 +20,9 @@ type Partitions struct {
 	Pool partitionDB
 }
 
-// MaintainCallLogPartitions creates every daily partition in [oldest, through]
-// and drops older daily partitions belonging to api_call_log.
+// MaintainCallLogPartitions creates every daily partition in [oldest, through].
+// Expired partition removal is owned by platform/maintenance (DETACH
+// CONCURRENTLY then DROP) so this path never locks writers with DROP TABLE.
 func (p Partitions) MaintainCallLogPartitions(ctx context.Context, oldest, through time.Time) error {
 	if p.Pool == nil || ctx == nil {
 		return fmt.Errorf("quota: partition database and context are required")
@@ -46,36 +47,6 @@ func (p Partitions) MaintainCallLogPartitions(ctx context.Context, oldest, throu
 		)
 		if _, err := tx.Exec(ctx, query); err != nil {
 			return fmt.Errorf("quota: create call log partition %s: %w", name, err)
-		}
-	}
-	rows, err := tx.Query(ctx, `SELECT child.relname
-FROM pg_inherits inheritance
-JOIN pg_class parent ON parent.oid = inheritance.inhparent
-JOIN pg_class child ON child.oid = inheritance.inhrelid
-WHERE parent.oid = 'api_call_log'::regclass
-  AND child.relname ~ '^api_call_log_[0-9]{8}$'
-  AND to_date(substr(child.relname, 14, 8), 'YYYYMMDD') < $1
-ORDER BY child.relname`, first)
-	if err != nil {
-		return fmt.Errorf("quota: list expired call log partitions: %w", err)
-	}
-	var expired []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			rows.Close()
-			return fmt.Errorf("quota: scan expired call log partition: %w", err)
-		}
-		expired = append(expired, name)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return fmt.Errorf("quota: read expired call log partitions: %w", err)
-	}
-	rows.Close()
-	for _, name := range expired {
-		if _, err := tx.Exec(ctx, "DROP TABLE "+(pgx.Identifier{name}).Sanitize()); err != nil {
-			return fmt.Errorf("quota: drop expired call log partition %s: %w", name, err)
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {

@@ -12,6 +12,8 @@ import (
 	"go.opentelemetry.io/otel"
 
 	"github.com/jooservices/xflickr/internal/platform/config"
+	maintenancepg "github.com/jooservices/xflickr/internal/platform/maintenance/adapters/postgres"
+	maintenanceapp "github.com/jooservices/xflickr/internal/platform/maintenance/app"
 	quotaOpenObserve "github.com/jooservices/xflickr/internal/quota/adapters/openobserve"
 	quotaPostgres "github.com/jooservices/xflickr/internal/quota/adapters/postgres"
 	quotaRedis "github.com/jooservices/xflickr/internal/quota/adapters/redis"
@@ -26,6 +28,7 @@ type quotaRuntime struct {
 	Flusher      quotaapp.Flusher
 	CallRecorder *quotaapp.CallRecorder
 	Partitions   quotaapp.Partitions
+	Retention    maintenanceapp.Retention
 	// Emitter, when set, sends a quota.state event per active key every minute.
 	Emitter *quotaapp.Emitter
 }
@@ -74,6 +77,11 @@ func newQuotaRuntime(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cf
 		Flusher:      quotaapp.Flusher{Store: usage, Counters: counters, Pruner: calls},
 		CallRecorder: quotaapp.NewCallRecorder(calls, 10_000, 500, time.Second, onDrop),
 		Partitions:   quotaapp.Partitions{Store: quotaPostgres.Partitions{Pool: pool}, RetentionDays: cfg.CallLog.RetentionDays},
+		Retention: maintenanceapp.Retention{
+			Store:    maintenancepg.NewStore(pool),
+			Settings: maintenancepg.RetentionSettings{Querier: pool},
+			Interval: quotaapp.CallLogMaintenanceInterval,
+		},
 	}, nil
 }
 
@@ -107,6 +115,16 @@ func (q quotaRuntime) start(ctx context.Context, logger *slog.Logger) (stop func
 		go func() {
 			defer wg.Done()
 			q.Partitions.Run(runCtx, func(err error) { logger.ErrorContext(runCtx, "quota: call log maintenance failed", "error", err) })
+		}()
+	}
+	if q.Retention.Store != nil && q.Retention.Settings != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			q.Retention.Logger = logger
+			q.Retention.Run(runCtx, func(err error) {
+				logger.ErrorContext(runCtx, "maintenance: api_call_log retention failed", "error", err)
+			})
 		}()
 	}
 	if q.Emitter != nil {
