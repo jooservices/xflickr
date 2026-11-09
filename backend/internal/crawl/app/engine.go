@@ -537,47 +537,37 @@ func peoplePageWriterFor(writer CatalogWriter, people []catalog.Person, contacts
 func writeCatalog(ctx context.Context, writer CatalogWriter, pageWriter peoplePageWriter, result domain.Result) error {
 	people := append([]catalog.Person(nil), result.People...)
 	people = append(people, contactSubjectPeople(result.Contacts)...)
-	if len(people) > 0 {
-		if err := pageWriter.EnsurePeople(ctx, people); err != nil {
-			return err
-		}
+	if err := writeIfNonEmpty(ctx, people, func(ctx context.Context, people []catalog.Person) error {
+		return pageWriter.EnsurePeople(ctx, people)
+	}); err != nil {
+		return err
 	}
-	if len(result.Photos) > 0 {
-		if err := writer.UpsertPhotos(ctx, result.Photos); err != nil {
-			return err
-		}
+	if err := writeIfNonEmpty(ctx, result.Photos, writer.UpsertPhotos); err != nil {
+		return err
 	}
-	if len(result.Favorites) > 0 {
-		if err := writer.UpsertFavorites(ctx, result.Favorites); err != nil {
-			return err
-		}
+	if err := writeIfNonEmpty(ctx, result.Favorites, writer.UpsertFavorites); err != nil {
+		return err
 	}
-	if len(result.Albums) > 0 {
-		if err := writer.UpsertAlbums(ctx, result.Albums); err != nil {
-			return err
-		}
+	if err := writeIfNonEmpty(ctx, result.Albums, writer.UpsertAlbums); err != nil {
+		return err
 	}
-	if len(result.Galleries) > 0 {
-		if err := writer.UpsertGalleries(ctx, result.Galleries); err != nil {
-			return err
-		}
+	if err := writeIfNonEmpty(ctx, result.Galleries, writer.UpsertGalleries); err != nil {
+		return err
 	}
-	if len(result.Groups) > 0 {
-		if err := writer.UpsertGroups(ctx, result.Groups); err != nil {
-			return err
-		}
+	if err := writeIfNonEmpty(ctx, result.Groups, writer.UpsertGroups); err != nil {
+		return err
 	}
-	if len(result.PersonGroups) > 0 {
-		if err := writer.UpsertPersonGroups(ctx, result.PersonGroups); err != nil {
-			return err
-		}
+	if err := writeIfNonEmpty(ctx, result.PersonGroups, writer.UpsertPersonGroups); err != nil {
+		return err
 	}
-	if len(result.Contacts) > 0 {
-		if err := writer.UpsertContacts(ctx, result.Contacts); err != nil {
-			return err
-		}
+	return writeIfNonEmpty(ctx, result.Contacts, writer.UpsertContacts)
+}
+
+func writeIfNonEmpty[T any](ctx context.Context, values []T, write func(context.Context, []T) error) error {
+	if len(values) == 0 {
+		return nil
 	}
-	return nil
+	return write(ctx, values)
 }
 
 func contactSubjectPeople(contacts []catalog.Contact) []catalog.Person {
