@@ -32,12 +32,26 @@ func TestReclaimSelfHealUsesFailedUpdatedIndex(t *testing.T) {
 	if err := tx.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'reclaim index test',$2,'{}',3600,4,5) RETURNING id`, userID, suffix).Scan(&keyID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,last_error,updated_at)
+	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,last_error,updated_at,lease_expires_at)
 		SELECT 'sync_person',$1||'-'||g,$2,$3,
-			CASE WHEN g <= 4 THEN 'failed' ELSE 'pending' END,
+			CASE WHEN g <= 4 THEN 'failed' WHEN g <= 8 THEN 'ready' ELSE 'pending' END,
 			CASE WHEN g <= 2 THEN 'lease expired' WHEN g <= 4 THEN 'other error' END,
-			CASE WHEN g <= 2 THEN now()-interval '30 minutes' ELSE now() END
+			CASE WHEN g <= 2 THEN now()-interval '30 minutes' ELSE now() END,
+			CASE WHEN g BETWEEN 5 AND 8 THEN now()-interval '30 minutes' END
 		FROM generate_series(1,400000) AS g`, suffix, userID, keyID); err != nil {
+		t.Fatal(err)
+	}
+	var matchedWorkItemID int64
+	if err := tx.QueryRow(ctx, `SELECT id FROM work_items WHERE subject_key=$1`, suffix+"-5").Scan(&matchedWorkItemID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO river_job(state,args,kind,queue)
+		SELECT 'available',jsonb_build_object('args',jsonb_build_object('work_item_id','unrelated-'||g)),
+			'sync_person','sync' FROM generate_series(1,100000) AS g`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO river_job(state,args,kind,queue)
+		VALUES ('available',jsonb_build_object('args',jsonb_build_object('work_item_id',$1::text)),'sync_person','sync')`, fmt.Sprint(matchedWorkItemID)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(ctx, `ANALYZE work_items`); err != nil {
@@ -67,8 +81,8 @@ WHERE w.id = batch.id`
 			name: "Reclaim expired lease selection",
 			sql: `SELECT id, attempts, kind FROM work_items WHERE state IN ('ready','running') AND lease_expires_at <= $1
 				AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.state IN ` + liveRiverStates + ` AND j.args->'args'->>'work_item_id' = work_items.id::text)
-				ORDER BY lease_expires_at, id FOR UPDATE SKIP LOCKED`,
-			args: []any{now},
+				ORDER BY lease_expires_at, id LIMIT $2 FOR UPDATE SKIP LOCKED`,
+			args: []any{now, 100},
 		},
 		{
 			name: "pump inflight count",
@@ -126,26 +140,109 @@ WHERE w.id = batch.id`
 			}
 			seqScan := containsWorkItemsSeqScan(plan.Plan)
 			t.Logf("work_items_seq_scan=%t", seqScan)
-			if query.name == "Reclaim self-heal update" {
-				if seqScan {
-					t.Error("Reclaim self-heal performs a Seq Scan on work_items")
+			if seqScan {
+				t.Error("query performs a Seq Scan on work_items")
+			}
+			if query.name == "Reclaim self-heal update" && !containsIndexOnRelation(plan.Plan, "work_items", "work_items_failed_updated_idx") {
+				t.Error("Reclaim self-heal does not use work_items_failed_updated_idx")
+			}
+			if query.name == "Reclaim expired lease selection" {
+				if !containsIndexOnRelation(plan.Plan, "work_items", "work_items_ready_lease_idx") {
+					t.Error("Reclaim lease selector does not use work_items_ready_lease_idx")
 				}
-				if !containsWorkItemsIndex(plan.Plan, "work_items_failed_updated_idx") {
-					t.Error("Reclaim self-heal does not use work_items_failed_updated_idx")
+				if !containsIndexOnRelation(plan.Plan, "river_job", "river_job_active_work_item_idx") {
+					t.Error("Reclaim lease selector does not use river_job_active_work_item_idx")
 				}
 			}
 		})
 	}
 }
 
-func containsWorkItemsIndex(node explainNode, index string) bool {
-	if node.RelationName == "work_items" && node.IndexName == index {
+func containsIndexOnRelation(node explainNode, relation, index string) bool {
+	return containsIndexOnRelationBelow(node, relation, index, "")
+}
+
+func containsIndexOnRelationBelow(node explainNode, relation, index, inheritedRelation string) bool {
+	if node.RelationName != "" {
+		inheritedRelation = node.RelationName
+	}
+	if inheritedRelation == relation && node.IndexName == index {
 		return true
 	}
 	for _, child := range node.Plans {
-		if containsWorkItemsIndex(child, index) {
+		if containsIndexOnRelationBelow(child, relation, index, inheritedRelation) {
 			return true
 		}
 	}
 	return false
+}
+
+func TestContainsIndexOnBitmapChild(t *testing.T) {
+	plan := explainNode{
+		NodeType:     "Bitmap Heap Scan",
+		RelationName: "work_items",
+		Plans: []explainNode{{
+			NodeType: "Bitmap Index Scan",
+			IndexName: "work_items_failed_updated_idx",
+		}},
+	}
+	if !containsIndexOnRelation(plan, "work_items", "work_items_failed_updated_idx") {
+		t.Fatal("did not recognize index on a Bitmap Index Scan child")
+	}
+}
+
+func TestReclaimProcessesLargeBacklogsInBatches(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run with XFLICKR_INTEGRATION_TEST=1 to use the worktree database")
+	}
+	pool := internalIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	suffix := fmt.Sprintf("reclaim-batch-%d", time.Now().UnixNano())
+	const batchSize = 100
+	const backlog = 250
+	var userID, keyID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'unused','user') RETURNING id`, suffix+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE subject_key LIKE $1`, suffix+"-%")
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
+	})
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst)
+		VALUES($1,'reclaim batch test',$2,'{}',3600,4,5) RETURNING id`, userID, suffix).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().Truncate(time.Microsecond)
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,lease_expires_at)
+		SELECT 'sync_person',$1||'-active-'||g,$2,$3,'ready',$4::timestamptz-interval '1 minute'
+		FROM generate_series(1,$5) AS g`, suffix, userID, keyID, now, backlog); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,last_error,updated_at)
+		SELECT 'sync_person',$1||'-failed-'||g,$2,$3,'failed','lease expired',$4::timestamptz-interval '30 minutes'
+		FROM generate_series(1,$5) AS g`, suffix, userID, keyID, now, backlog); err != nil {
+		t.Fatal(err)
+	}
+	store := Store{Pool: pool}
+	for remaining, wantBatch := backlog, batchSize; remaining > 0; remaining -= wantBatch {
+		want := min(batchSize, remaining)
+		reclaimed, err := store.Reclaim(ctx, 5, time.Second, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reclaimed != want {
+			t.Fatalf("Reclaim() = %d, want bounded batch %d", reclaimed, want)
+		}
+		var ready, failed int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE state='ready'), count(*) FILTER (WHERE state='failed')
+			FROM work_items WHERE subject_key LIKE $1`, suffix+"-%").Scan(&ready, &failed); err != nil {
+			t.Fatal(err)
+		}
+		wantRemaining := remaining - want
+		if ready != wantRemaining || failed != wantRemaining {
+			t.Fatalf("remaining ready=%d failed=%d, want %d each", ready, failed, wantRemaining)
+		}
+		wantBatch = batchSize
+	}
 }
