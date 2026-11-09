@@ -152,7 +152,7 @@ func seedLargePhotosTable(t *testing.T, ctx context.Context, pool *pgxpool.Pool,
 	}
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO photos (id, owner_nsid, last_update, visibility, raw, content_hash)
-		SELECT 371000000000000000 + g, $1, now(), 'public', '{}'::bytea, decode(repeat('ab', 32), 'hex')
+		SELECT 371000000000000000 + g, $1, now(), 'public', '{}'::jsonb, decode(repeat('ab', 32), 'hex')
 		FROM generate_series(1, $2) AS g
 		ON CONFLICT (id) DO NOTHING`, owner, n); err != nil {
 		t.Fatalf("seed %d photos for FK check: %v", n, err)
