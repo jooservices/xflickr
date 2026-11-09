@@ -33,6 +33,8 @@ refreshes their static scores, and only changes `starred` from false to true;
 explicit starred values from other enqueue paths are preserved.
 
 ```sql
+Prerequisite: migration `20261109110000_selection_expiry_rescore.sql` must be applied first (`xflickr migrate status`); the batch calls `work_items_active_direct_action`, which that migration creates. Items that are ready or running can return to pending later, so the batch covers every non-terminal state.
+
 BEGIN;
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '15s';
@@ -51,7 +53,7 @@ WITH batch AS (
       ON ci.user_id = w.user_id AND ci.person_nsid = w.subject_key
     LEFT JOIN users AS u ON u.id = w.user_id
     LEFT JOIN plans AS p ON p.id = u.plan_id
-    WHERE w.state = 'pending' AND w.starred = FALSE AND ci.starred = TRUE
+    WHERE w.state IN ('pending', 'ready', 'running', 'waiting') AND w.starred = FALSE AND ci.starred = TRUE
     ORDER BY w.id
     LIMIT 500
     FOR UPDATE OF w SKIP LOCKED
@@ -98,3 +100,12 @@ then `pg_repack -t river_job` or `VACUUM FULL river_job` in the window.
 Re-run the size query, confirm dead tuples near zero, and watch
 `n_tup_hot_upd / n_tup_upd` during steady crawl (target ≥ 70 percent for the
 state-transition workload after JOOXF-370).
+
+After the batches report 0 updated rows, confirm nothing is left. `SKIP LOCKED` can skip rows that another transaction holds, so run this check without it and repeat the batch once the locks clear until it returns 0:
+
+```sql
+SELECT count(*)
+FROM work_items AS w
+JOIN crawl_interests AS ci ON ci.user_id = w.user_id AND ci.person_nsid = w.subject_key
+WHERE w.state IN ('pending', 'ready', 'running', 'waiting') AND w.starred = FALSE AND ci.starred = TRUE;
+```
