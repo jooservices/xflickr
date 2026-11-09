@@ -45,15 +45,15 @@ func TestRescorePersonValidatesDependencies(t *testing.T) {
 	}
 }
 
-func TestRecomputeScoresValidatesDependencies(t *testing.T) {
-	if _, err := (Store{}).RecomputeScores(context.Background(), 1, domain.ScoreWeights{}, 1); err == nil {
-		t.Fatal("RecomputeScores accepted nil pool")
+func TestRescorePendingBatchValidatesDependencies(t *testing.T) {
+	if _, err := (Store{}).RescorePendingBatch(context.Background(), 1, domain.ScoreWeights{}, 1); err == nil {
+		t.Fatal("RescorePendingBatch accepted nil pool")
 	}
-	if _, err := (Store{Pool: closedPool(t)}).RecomputeScores(nil, 1, domain.ScoreWeights{}, 1); err == nil {
-		t.Fatal("RecomputeScores accepted nil context")
+	if _, err := (Store{Pool: closedPool(t)}).RescorePendingBatch(nil, 1, domain.ScoreWeights{}, 1); err == nil {
+		t.Fatal("RescorePendingBatch accepted nil context")
 	}
-	if _, err := (Store{Pool: closedPool(t)}).RecomputeScores(context.Background(), 0, domain.ScoreWeights{}, 1); err == nil {
-		t.Fatal("RecomputeScores accepted empty batch")
+	if _, err := (Store{Pool: closedPool(t)}).RescorePendingBatch(context.Background(), 0, domain.ScoreWeights{}, 1); err == nil {
+		t.Fatal("RescorePendingBatch accepted empty batch")
 	}
 }
 

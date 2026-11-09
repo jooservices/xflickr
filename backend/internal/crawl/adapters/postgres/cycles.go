@@ -227,11 +227,12 @@ func enqueueCycleCheck(ctx context.Context, tx cycleTx, userID int64, now time.T
 		return false, fmt.Errorf("crawl: encode check cursor: %w", err)
 	}
 	tag, err := tx.Exec(ctx, `
-		INSERT INTO work_items (kind, subject_key, user_id, key_id, depth, cursor)
-		VALUES ('check', $1, $2, (SELECT fa.key_id FROM flickr_accounts fa WHERE fa.user_id=$2 AND fa.status='ok' ORDER BY fa.id LIMIT 1), $3, $4)
+		INSERT INTO work_items (kind, subject_key, user_id, key_id, depth, cursor, score)
+		SELECT 'check', $1, $2, (SELECT fa.key_id FROM flickr_accounts fa WHERE fa.user_id=$2 AND fa.status='ok' ORDER BY fa.id LIMIT 1), $3, $4,
+			work_items_static_score(COALESCE((SELECT p.weight FROM users u LEFT JOIN plans p ON p.id=u.plan_id WHERE u.id=$2), 1), FALSE, FALSE, $3, $5)
 		ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO UPDATE SET
 			key_id=COALESCE(EXCLUDED.key_id, work_items.key_id), state='pending', cursor=EXCLUDED.cursor, attempts=0, last_error=NULL,
-			not_before=$5, updated_at=$5
+			not_before=$5, score=EXCLUDED.score, created_at=$5, updated_at=$5
 		WHERE work_items.state IN ('done','failed')`, candidate.person, userID, candidate.depth, cursorJSON, now)
 	if err != nil {
 		return false, fmt.Errorf("crawl: enqueue change check: %w", err)
@@ -250,11 +251,12 @@ func enqueueCycleReconcile(ctx context.Context, tx cycleTx, userID int64, now ti
 		return false, fmt.Errorf("crawl: encode reconcile cursor: %w", err)
 	}
 	tag, err := tx.Exec(ctx, `
-		INSERT INTO work_items (kind, subject_key, user_id, key_id, depth, cursor)
-		VALUES ('reconcile', $1, $2, (SELECT fa.key_id FROM flickr_accounts fa WHERE fa.user_id=$2 AND fa.status='ok' ORDER BY fa.id LIMIT 1), $3, $4)
+		INSERT INTO work_items (kind, subject_key, user_id, key_id, depth, cursor, score)
+		SELECT 'reconcile', $1, $2, (SELECT fa.key_id FROM flickr_accounts fa WHERE fa.user_id=$2 AND fa.status='ok' ORDER BY fa.id LIMIT 1), $3, $4,
+			work_items_static_score(COALESCE((SELECT p.weight FROM users u LEFT JOIN plans p ON p.id=u.plan_id WHERE u.id=$2), 1), FALSE, FALSE, $3, $5)
 		ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO UPDATE SET
 			key_id=COALESCE(EXCLUDED.key_id, work_items.key_id), state='pending', cursor=EXCLUDED.cursor, attempts=0, last_error=NULL,
-			not_before=$5, lease_expires_at=NULL, updated_at=$5
+			not_before=$5, lease_expires_at=NULL, score=EXCLUDED.score, created_at=$5, updated_at=$5
 		WHERE work_items.state IN ('done','failed')`, candidate.person, userID, candidate.depth, cursorJSON, now)
 	if err != nil {
 		return false, fmt.Errorf("crawl: enqueue reconciliation: %w", err)
@@ -279,12 +281,13 @@ func advanceCycle(ctx context.Context, tx cycleTx, userID int64, now time.Time, 
 		if err != nil {
 			return fmt.Errorf("crawl: encode contacts photos cursor: %w", err)
 		}
-		tag, err := tx.Exec(ctx, `INSERT INTO work_items (kind, subject_key, user_id, key_id, depth, cursor)
-			SELECT 'contacts_photos', nsid, user_id, key_id, 0, jsonb_set($2::jsonb, '{params,user_id}', to_jsonb(nsid))
+		tag, err := tx.Exec(ctx, `INSERT INTO work_items (kind, subject_key, user_id, key_id, depth, cursor, score)
+			SELECT 'contacts_photos', nsid, user_id, key_id, 0, jsonb_set($2::jsonb, '{params,user_id}', to_jsonb(nsid)),
+				work_items_static_score(COALESCE((SELECT p.weight FROM users u LEFT JOIN plans p ON p.id=u.plan_id WHERE u.id=flickr_accounts.user_id), 1), FALSE, FALSE, 0, $3)
 			FROM flickr_accounts WHERE user_id=$1 AND status='ok'
 			ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO UPDATE SET
 				key_id=COALESCE(EXCLUDED.key_id, work_items.key_id), state='pending', cursor=EXCLUDED.cursor, attempts=0, last_error=NULL,
-				not_before=$3, lease_expires_at=NULL, updated_at=$3
+				not_before=$3, lease_expires_at=NULL, score=EXCLUDED.score, created_at=$3, updated_at=$3
 			WHERE work_items.state IN ('done','failed')`, userID, cursorJSON, now)
 		if err != nil {
 			return fmt.Errorf("crawl: enqueue contacts photos probes: %w", err)
