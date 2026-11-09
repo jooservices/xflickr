@@ -618,6 +618,38 @@ func TestScheduleSQLHelpersAndRescore(t *testing.T) {
 	}
 }
 
+func TestPumpReadsGlobalInflightCountsOncePerTick(t *testing.T) {
+	ctx := context.Background()
+	settings := coverageSettings()
+	countCalls := 0
+	store := Store{inflight: func(context.Context, pgx.Tx, int64, string) (int, error) {
+		countCalls++
+		return 0, nil
+	}}
+	_, err := store.pumpKeys(ctx, &coverageTx{}, []int64{1, 2}, settings, &coverageCredits{capacity: 5}, &coverageJobs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countCalls != 6 {
+		t.Fatalf("inflight queries per tick = %d, want 4 global and one per key", countCalls)
+	}
+}
+
+func TestCountInflightQueryIsBounded(t *testing.T) {
+	ctx := context.Background()
+	var query string
+	tx := &coverageTx{rowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+		query = sql
+		return coverageRow{values: []any{int(4)}}
+	}}
+	if _, err := countInflight(ctx, tx, 1, "media"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.ToUpper(query), "LIMIT") {
+		t.Fatal("inflight count query has no row limit")
+	}
+}
+
 func TestRequeueAndReclaimLeasePaths(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC)
