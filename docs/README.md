@@ -11,6 +11,8 @@
   closure, and critical incident notification events.
 - [Structured logging and telemetry](observability.md) — context fields, OTLP
   export, event helper, and offline log spill behavior.
+- [Database report](db-report.md) — read-only before/after report of table,
+  index, queue, worker and crawl-throughput figures.
 
 - [Environment and shared services](ENVIRONMENT.md) — workstation, runtime, and
   database rules.
