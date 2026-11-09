@@ -214,6 +214,56 @@ func TestScheduleNextWrapsAfterCursorAndHandlesNoDuePerson(t *testing.T) {
 	}
 }
 
+func TestScheduleContactsEnqueuesAndRejectsInvalidCalls(t *testing.T) {
+	now := time.Date(2026, 11, 9, 8, 0, 0, 0, time.UTC)
+	tx := &cycleTxFake{}
+	repository := &CycleRepository{begin: func(context.Context) (cycleTx, error) { return tx, nil }}
+	queued, err := repository.ScheduleContacts(context.Background(), 9, now, time.Hour)
+	if err != nil || !queued || tx.execs != 1 || !strings.Contains(tx.lastExec, "contacts") {
+		t.Fatalf("ScheduleContacts() = %v, %v; execs=%d last=%q", queued, err, tx.execs, tx.lastExec)
+	}
+	if len(tx.execArgs) < 4 || tx.execArgs[0] != int64(9) {
+		t.Fatalf("exec args = %#v", tx.execArgs)
+	}
+	tx.zeroEnqueueRows = true
+	queued, err = repository.ScheduleContacts(context.Background(), 9, now, time.Hour)
+	if err != nil || queued {
+		t.Fatalf("empty enqueue = %v, %v", queued, err)
+	}
+	if _, err := (*CycleRepository)(nil).ScheduleContacts(context.Background(), 1, now, time.Hour); err == nil {
+		t.Fatal("nil repository accepted")
+	}
+	if _, err := repository.ScheduleContacts(nil, 1, now, time.Hour); err == nil {
+		t.Fatal("nil context accepted")
+	}
+	if _, err := repository.ScheduleContacts(context.Background(), 0, now, time.Hour); err == nil {
+		t.Fatal("invalid user accepted")
+	}
+	if _, err := repository.ScheduleContacts(context.Background(), 1, now, 0); err == nil {
+		t.Fatal("invalid interval accepted")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := repository.ScheduleContacts(ctx, 1, now, time.Hour); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled context error = %v", err)
+	}
+	beginErr := errors.New("begin failed")
+	repository.begin = func(context.Context) (cycleTx, error) { return nil, beginErr }
+	if _, err := repository.ScheduleContacts(context.Background(), 1, now, time.Hour); !errors.Is(err, beginErr) {
+		t.Fatalf("begin error = %v", err)
+	}
+	failing := &cycleTxFake{execErrAt: 1}
+	repository.begin = func(context.Context) (cycleTx, error) { return failing, nil }
+	if _, err := repository.ScheduleContacts(context.Background(), 1, now, time.Hour); err == nil {
+		t.Fatal("exec failure not returned")
+	}
+	commitFail := &cycleTxFake{commitErr: errors.New("commit failed")}
+	repository.begin = func(context.Context) (cycleTx, error) { return commitFail, nil }
+	if _, err := repository.ScheduleContacts(context.Background(), 1, now, time.Hour); err == nil {
+		t.Fatal("commit failure not returned")
+	}
+}
+
 func TestScheduleNextRejectsInvalidAndCanceledCalls(t *testing.T) {
 	if _, err := NewCycleRepository(nil); err == nil {
 		t.Fatal("nil pool accepted")

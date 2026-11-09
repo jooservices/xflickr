@@ -1,0 +1,176 @@
+package postgres
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	catalogpg "github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
+	catalogapp "github.com/jooservices/xflickr/internal/catalog/app"
+	catalogdomain "github.com/jooservices/xflickr/internal/catalog/domain"
+	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
+	"github.com/jooservices/xflickr/internal/crawl/facets"
+)
+
+type countingContactsFlickr struct {
+	calls atomic.Int64
+	body  json.RawMessage
+}
+
+func (f *countingContactsFlickr) Call(_ context.Context, request crawlapp.Request) (json.RawMessage, error) {
+	if request.Method != "flickr.contacts.getList" {
+		return nil, fmt.Errorf("unexpected method %s", request.Method)
+	}
+	f.calls.Add(1)
+	return f.body, nil
+}
+
+func TestContactsStoredIdempotent(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	account := "contacts-acct-" + suffix
+	contactA := "contacts-a-" + suffix
+	contactB := "contacts-b-" + suffix
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=$1 OR contact_nsid=ANY($2)`, account, []string{contactA, contactB})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{account, contactA, contactB})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM crawl_interests WHERE user_id=$1`, userID)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,'acct')`, account); err != nil {
+		t.Fatal(err)
+	}
+	payload := json.RawMessage(fmt.Sprintf(`{"contacts":{"pages":1,"contact":[{"nsid":%q,"username":"a","friend":"1"},{"nsid":%q,"username":"b","friend":0}]}}`, contactA, contactB))
+	flickr := &countingContactsFlickr{body: payload}
+	store, err := NewEngine(pool, func(conn Conn) crawlapp.CatalogWriter {
+		repo, repoErr := catalogpg.New(conn)
+		if repoErr != nil {
+			t.Fatal(repoErr)
+		}
+		return repo
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := crawlapp.NewRegistry()
+	if err := registry.Register(facets.Contacts{}); err != nil {
+		t.Fatal(err)
+	}
+	engine := &crawlapp.Engine{
+		Registry: registry, Store: store, Units: store, Keys: intKeys{}, Governor: intGovernor{},
+		Flickr: flickr, Settings: photosFavoritesSettings{maxDepth: 2},
+	}
+	itemID := insertPhotosFavoritesWork(t, ctx, pool, userID, "contacts", account, 0, facets.Contacts{})
+	if err := engine.Handle(ctx, itemID); err != nil {
+		t.Fatal(err)
+	}
+	var rows int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM contacts WHERE person_nsid=$1`, account).Scan(&rows); err != nil || rows != 2 {
+		t.Fatalf("first store rows=%d err=%v", rows, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready', attempts=0 WHERE id=$1`, itemID); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Handle(ctx, itemID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM contacts WHERE person_nsid=$1`, account).Scan(&rows); err != nil || rows != 2 {
+		t.Fatalf("second store rows=%d err=%v", rows, err)
+	}
+	if flickr.calls.Load() != 2 {
+		t.Fatalf("flickr calls = %d, want 2", flickr.calls.Load())
+	}
+}
+
+func TestListContactsFromStoredRelationships(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	account := "list-acct-" + suffix
+	contact := "list-contact-" + suffix
+	keyID := seedOwnerKey(t, ctx, pool, userID, "")
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=$1 OR contact_nsid=$2`, account, contact)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{account, contact})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM flickr_accounts WHERE user_id=$1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM api_keys WHERE id=$1`, keyID)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username,realname,photos_count) VALUES($1,'acct','Account',0),($2,'friend','Friend',3)`, account, contact); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'acct','{}','{}','ok')`, userID, keyID, account); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := catalogpg.New(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpsertContacts(ctx, []catalogdomain.Contact{{PersonNSID: account, ContactNSID: contact}}); err != nil {
+		t.Fatal(err)
+	}
+	reads := catalogapp.ReadService{Repository: repo}
+	page, next, err := reads.ListContacts(ctx, userID, "", 50)
+	if err != nil || next != "" || len(page.Items) != 1 {
+		t.Fatalf("page=%+v next=%q err=%v", page, next, err)
+	}
+	if item := page.Items[0]; item.NSID != contact || item.Username != "friend" || item.Realname != "Friend" || item.PhotosCount != 3 || item.AccountNSID != account {
+		t.Fatalf("contact = %+v", item)
+	}
+}
+
+func TestContactsCalledOncePerIntervalPerAccount(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	account := "interval-acct-" + suffix
+	keyID := seedOwnerKey(t, ctx, pool, userID, "")
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM flickr_accounts WHERE user_id=$1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM api_keys WHERE id=$1`, keyID)
+	})
+	if _, err := pool.Exec(ctx, `UPDATE api_keys SET key_public=$2 WHERE id=$1`, keyID, "interval-"+suffix); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'acct','{}','{}','ok')`, userID, keyID, account); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := NewCycleRepository(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	queued, err := repo.ScheduleContacts(ctx, userID, now, time.Hour)
+	if err != nil || !queued {
+		t.Fatalf("first schedule = %v, %v", queued, err)
+	}
+	var state string
+	var updated time.Time
+	if err := pool.QueryRow(ctx, `SELECT state, updated_at FROM work_items WHERE user_id=$1 AND kind='contacts' AND subject_key=$2`, userID, account).Scan(&state, &updated); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='done', updated_at=$2 WHERE user_id=$1 AND kind='contacts'`, userID, now); err != nil {
+		t.Fatal(err)
+	}
+	queued, err = repo.ScheduleContacts(ctx, userID, now.Add(30*time.Minute), time.Hour)
+	if err != nil || queued {
+		t.Fatalf("within interval schedule = %v, %v; want no reopen", queued, err)
+	}
+	queued, err = repo.ScheduleContacts(ctx, userID, now.Add(2*time.Hour), time.Hour)
+	if err != nil || !queued {
+		t.Fatalf("after interval schedule = %v, %v; want reopen", queued, err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE user_id=$1 AND kind='contacts' AND subject_key=$2`, userID, account).Scan(&state); err != nil || state != "pending" {
+		t.Fatalf("reopened state = %q err=%v", state, err)
+	}
+}

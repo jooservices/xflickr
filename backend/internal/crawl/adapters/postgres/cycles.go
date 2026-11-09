@@ -147,6 +147,51 @@ func validateCycleSchedule(ctx context.Context, repository *CycleRepository, use
 	return nil
 }
 
+// ScheduleContacts enqueues flickr.contacts.getList work for each connected
+// account at most once per refresh interval. Existing active items are left
+// alone; completed or failed items reopen only after the interval elapses.
+func (repository *CycleRepository) ScheduleContacts(ctx context.Context, userID int64, now time.Time, interval time.Duration) (bool, error) {
+	if repository == nil || repository.begin == nil {
+		return false, errDatabaseRequired
+	}
+	if ctx == nil {
+		return false, errContextRequired
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if userID <= 0 || interval <= 0 {
+		return false, errors.New("crawl: valid user and contacts refresh interval are required")
+	}
+	tx, err := repository.begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("crawl: begin contacts scheduling: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	cursorJSON, err := json.Marshal(map[string]any{
+		"page": 1, "method": "flickr.contacts.getList", "checkpoint_at": now.Unix(),
+		"params": map[string]string{"user_id": "", "per_page": "500"},
+	})
+	if err != nil {
+		return false, fmt.Errorf("crawl: encode contacts cursor: %w", err)
+	}
+	cutoff := now.Add(-interval)
+	tag, err := tx.Exec(ctx, `INSERT INTO work_items (kind, subject_key, user_id, key_id, depth, cursor)
+		SELECT 'contacts', nsid, user_id, key_id, 0, jsonb_set($2::jsonb, '{params,user_id}', to_jsonb(nsid))
+		FROM flickr_accounts WHERE user_id=$1 AND status='ok'
+		ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO UPDATE SET
+			key_id=COALESCE(EXCLUDED.key_id, work_items.key_id), state='pending', cursor=EXCLUDED.cursor, attempts=0, last_error=NULL,
+			not_before=$3, lease_expires_at=NULL, updated_at=$3
+		WHERE work_items.state IN ('done','failed') AND work_items.updated_at <= $4`, userID, cursorJSON, now, cutoff)
+	if err != nil {
+		return false, fmt.Errorf("crawl: enqueue contacts refresh: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("crawl: commit contacts scheduling: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 func commitCycleVisit(ctx context.Context, tx cycleTx, userID int64, now time.Time, candidate cycleCandidate) error {
 	if err := advanceCycle(ctx, tx, userID, now, candidate); err != nil {
 		return err
