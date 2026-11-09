@@ -299,7 +299,12 @@ func pageParams(cursor domain.Cursor) map[string]string {
 	for key, value := range cursor.Params {
 		params[key] = value
 	}
-	params["page"] = strconv.Itoa(cursor.Page)
+	if cursor.Continuation != "" {
+		delete(params, "page")
+		params["continuation"] = cursor.Continuation
+	} else {
+		params["page"] = strconv.Itoa(cursor.Page)
+	}
 	return params
 }
 
@@ -359,7 +364,8 @@ func (e *Engine) commit(ctx context.Context, item domain.Item, result domain.Res
 		}
 		maxDepth = effective.MaxDepth
 	}
-	return e.Units.Do(ctx, func(w Writers) error {
+	committed := false
+	err := e.Units.Do(ctx, func(w Writers) error {
 		current, err := w.Work.Lock(ctx, item.ID)
 		if err != nil {
 			return err
@@ -370,18 +376,34 @@ func (e *Engine) commit(ctx context.Context, item domain.Item, result domain.Res
 		if err := e.write(ctx, w, item, result, maxDepth); err != nil {
 			return err
 		}
-		if result.NextCursor != nil {
-			return w.Work.Advance(ctx, item.ID, *result.NextCursor)
+		if err := commitProgress(ctx, w.Work, item, result); err != nil {
+			return err
 		}
-		if result.HasMore {
-			return w.Work.Advance(ctx, item.ID, item.Cursor.Next())
-		}
-		return w.Work.Finish(ctx, item.ID)
+		committed = true
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if committed && result.CursorWarning != "" {
+		e.logger().WarnContext(ctx, "crawl continuation stopped", "work_item_id", item.ID, "facet", item.Kind, "reason", result.CursorWarning)
+	}
+	return nil
+}
+
+func commitProgress(ctx context.Context, work WorkWriter, item domain.Item, result domain.Result) error {
+	if result.NextWorkCursor != nil {
+		return work.Advance(ctx, item.ID, *result.NextWorkCursor)
+	}
+	if result.HasMore {
+		cursor := item.Cursor.Next().WithContinuation(result.NextCursor)
+		return work.Advance(ctx, item.ID, cursor)
+	}
+	return work.Finish(ctx, item.ID)
 }
 
 func sameCursor(left, right domain.Cursor) bool {
-	if left.Page != right.Page || left.Method != right.Method || left.CheckpointAt != right.CheckpointAt || len(left.Params) != len(right.Params) {
+	if left.Page != right.Page || left.Continuation != right.Continuation || left.Method != right.Method || left.CheckpointAt != right.CheckpointAt || len(left.Params) != len(right.Params) {
 		return false
 	}
 	for key, value := range left.Params {

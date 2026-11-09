@@ -20,6 +20,9 @@ func TestCatalogFacetPlansUseDocumentedMethods(t *testing.T) {
 		if facet.Lane() != domain.LanePerson {
 			t.Fatalf("%s lane = %v", facet.Name(), facet.Lane())
 		}
+		if facet.Name() == "galleries" && specs[0].Params["continuation"] != "0" {
+			t.Fatalf("gallery first continuation = %q, want 0", specs[0].Params["continuation"])
+		}
 	}
 }
 

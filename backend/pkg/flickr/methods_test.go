@@ -237,8 +237,14 @@ func TestTypedMethodsDecodeFixtures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != len(tests) {
-		t.Fatalf("%d fixtures but %d method tests", len(entries), len(tests))
+	methodFixtures := 0
+	for _, entry := range entries {
+		if entry.Name() != "galleries.getList.continuation.json" && entry.Name() != "galleries.getList.legacy.json" {
+			methodFixtures++
+		}
+	}
+	if methodFixtures != len(tests) {
+		t.Fatalf("%d method fixtures but %d method tests", methodFixtures, len(tests))
 	}
 	for name, run := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -47,7 +47,7 @@ estimates, not additive with the follow-up proposals.
 | `photos` / `people.getPhotos` | Initial `P(photos)`; incremental `P(new photos)` after positive probe | Up to 500 photos plus distinct owners and observer records | Initial discovery plans have no checkpoint; independent reconcile/check can reread the same list | 0 attributed from supplied 216/h | Follow-ups 2 and 3; retain URL extras and privacy |
 | `favorites` / `favorites.getList` | Initial `P(favorites)`; incremental `P(new favorites)` | Up to 500 photos, timestamped favorite relationships, distinct owners and observations | Relationship omitted if neither `date_faved` nor `date_favorite` is positive; photo still stored. Depth limit blocks owner discovery, not this list | 0 attributed from supplied 540/h | Follow-ups 2 and 3; no invented favorite timestamps |
 | `albums` / `photosets.getList` | `P(albums)` initially and per catalog refresh | Up to 500 album metadata rows; no album-photo relationship fetch | String `photos` causes page parsing failure and retries | 0–12/h of supplied 15/h under five-attempt model | Accept existing Flickr numeric-string type |
-| `galleries` / `galleries.getList` | Legacy page flow `P(galleries)` initially and per refresh | Up to 500 gallery metadata rows; no gallery-photo relationship fetch | String `count_photos` causes retries; current code ignores documented continuation cursor | 0–7.2/h of supplied 9/h under five-attempt model | Fix numeric count; continuation is follow-up 6 |
+| `galleries` / `galleries.getList` | Continuation cursor initially and per refresh; first request uses `continuation=0`, subsequent requests relay the response cursor until `-1` | Up to 500 gallery metadata rows; no gallery-photo relationship fetch | String `count_photos` is accepted; cursor progress commits with gallery rows. Missing continuation falls back to the legacy page counter; repeated cursors and empty nonterminal pages stop with a warning | No measured quota change; prevents repeated or skipped continuation pages | Delivered in JOOXF-349 |
 | `groups` / `people.getGroups` | Normally 1 unpaged response initially and per refresh; current handler follows `pages` if supplied | One group and one membership per returned group | String counts previously failed the whole page (fixed). Large unpaged lists are committed in ≤500-row chunks in one transaction (JOOXF-352). Official method documents no paging arguments | 0–158.4/h of supplied 198/h under five-attempt model | Delivered: numeric counts; proposal 9 |
 | `check` / photo then favorite list | 2 probes/person; each uses `per_page=1`; positive probes add incremental work | 0 catalog rows from probes; durable work/check state only | Probe sample deliberately discarded. Always refreshes albums, galleries, groups after second probe, including zero/skipped favorite probe | No measured saving | Follow-ups 2–4; do not replace probes with a full scan |
 | `reconcile` / photo then favorite list | `P(photos) + P(favorites)` per person | Same photo/favorite rows; final transaction applies visibility-safe diff | Separate kind from initial/incremental work, so overlapping full scans are possible; no cheap probe can detect deletions | No measured saving | Follow-up 3; keep complete-scan and owner-only diff protections |
@@ -202,10 +202,12 @@ open; the fixture numbers must not be reported as satisfying it.
    contacts facet or writer call despite the catalog contacts repository.
    Agree a separately authorized scope because the parent excludes new Flickr
    methods; preserve the depth-1 contact / later favorite-owner rules.
-6. **Implement and test gallery continuation.** Official docs require an initial
-   continuation value and forwarding the response cursor until termination;
-   current handler uses only page/pages. Verify legacy behavior with safe
-   fixtures, preserve cursor atomically, and prevent repeated first pages.
+6. **Implement and test gallery continuation.** Delivered in JOOXF-349.
+   Flickr documents request parameter `continuation`, response field
+   `continuation`, initial value `0`, and terminal value `-1`. The handler
+   forwards each opaque response cursor and commits it with the gallery rows.
+   Legacy responses still use page/pages; repeated cursors and empty pages with
+   nonterminal cursors stop with a warning before another Flickr call.
 7. **Harden optional-photo facet execution.** Skip already-completed versions
    at execution, persist pagination progress across quota waits/retries, and
    replace operational page bounds with admin-UI settings if required. Verify

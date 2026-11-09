@@ -1,0 +1,41 @@
+[
+  {
+    "galleries": {
+      "page": 1,
+      "pages": 1,
+      "per_page": 1,
+      "total": "3",
+      "continuation": "opaque:page/2?token=a",
+      "gallery": [
+        {"id": "gallery-1", "owner": "owner@N01", "count_photos": "1", "title": {"_content": "First"}}
+      ]
+    },
+    "stat": "ok"
+  },
+  {
+    "galleries": {
+      "page": 2,
+      "pages": 1,
+      "per_page": 1,
+      "total": "3",
+      "continuation": "opaque:page/3?token=b",
+      "gallery": [
+        {"id": "gallery-2", "owner": "owner@N01", "count_photos": "2", "title": {"_content": "Second"}}
+      ]
+    },
+    "stat": "ok"
+  },
+  {
+    "galleries": {
+      "page": 3,
+      "pages": 1,
+      "per_page": 1,
+      "total": "3",
+      "continuation": "-1",
+      "gallery": [
+        {"id": "gallery-3", "owner": "owner@N01", "count_photos": "3", "title": {"_content": "Third"}}
+      ]
+    },
+    "stat": "ok"
+  }
+]

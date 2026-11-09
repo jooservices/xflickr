@@ -23,6 +23,12 @@ type Gallery struct {
 // GalleriesGetList calls flickr.galleries.getList.
 func (c *Client) GalleriesGetList(ctx context.Context, creds Credentials, nsid string, opts ListOptions) (Page[Gallery], error) {
 	params := opts.params(false)
+	continuation := opts.Continuation
+	if continuation == "" {
+		continuation = "0"
+	}
+	params["continuation"] = continuation
+	delete(params, "page")
 	params["user_id"] = nsid
 	return listPage[Gallery](ctx, c, creds, "flickr.galleries.getList", "galleries", "gallery", params)
 }

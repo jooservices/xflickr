@@ -13,21 +13,21 @@ func TestReconcileReadsBothCompleteListsBeforeApplyingDiff(t *testing.T) {
 	photoItem := domain.Item{Kind: "reconcile", Subject: "owner", Cursor: photoCursor}
 
 	firstPhotos, err := (Reconcile{}).Handle(t.Context(), domain.Page{Item: photoItem, Number: 1, Payload: []byte(reconcilePayload(2, 1, `{"id":"100","owner":"owner","dateupload":"1700000000","lastupdate":"1700000100","ispublic":1}`))})
-	if err != nil || !firstPhotos.HasMore || firstPhotos.NextCursor != nil || firstPhotos.CompleteReconcile {
+	if err != nil || !firstPhotos.HasMore || firstPhotos.NextWorkCursor != nil || firstPhotos.CompleteReconcile {
 		t.Fatalf("first photo page = %#v, err=%v", firstPhotos, err)
 	}
 
 	photoItem.Cursor.Page = 2
 	lastPhotos, err := (Reconcile{}).Handle(t.Context(), domain.Page{Item: photoItem, Number: 2, Payload: []byte(reconcilePayload(2, 2, `{"id":"101","owner":"owner","dateupload":"1700000000","lastupdate":"1700000100","ispublic":1}`))})
-	if err != nil || lastPhotos.HasMore || lastPhotos.CompleteReconcile || lastPhotos.NextCursor == nil {
+	if err != nil || lastPhotos.HasMore || lastPhotos.CompleteReconcile || lastPhotos.NextWorkCursor == nil {
 		t.Fatalf("last photo page = %#v, err=%v", lastPhotos, err)
 	}
-	if lastPhotos.NextCursor.Method != "flickr.favorites.getList" || lastPhotos.NextCursor.Page != 1 || lastPhotos.NextCursor.CheckpointAt != checkpoint || lastPhotos.NextCursor.Params["user_id"] != "owner" || lastPhotos.NextCursor.Params["per_page"] != "500" {
-		t.Fatalf("favorites cursor = %#v", lastPhotos.NextCursor)
+	if lastPhotos.NextWorkCursor.Method != "flickr.favorites.getList" || lastPhotos.NextWorkCursor.Page != 1 || lastPhotos.NextWorkCursor.CheckpointAt != checkpoint || lastPhotos.NextWorkCursor.Params["user_id"] != "owner" || lastPhotos.NextWorkCursor.Params["per_page"] != "500" {
+		t.Fatalf("favorites cursor = %#v", lastPhotos.NextWorkCursor)
 	}
 
 	favoriteItem := photoItem
-	favoriteItem.Cursor = *lastPhotos.NextCursor
+	favoriteItem.Cursor = *lastPhotos.NextWorkCursor
 	firstFavorites, err := (Reconcile{}).Handle(t.Context(), domain.Page{Item: favoriteItem, Number: 1, Payload: []byte(reconcilePayload(2, 1, `{"id":"200","owner":"other","dateupload":"1700000000","lastupdate":"1700000100","date_faved":"1700000200","ispublic":1}`))})
 	if err != nil || !firstFavorites.HasMore || firstFavorites.CompleteReconcile || len(firstFavorites.Discoveries) != 0 {
 		t.Fatalf("first favorites page = %#v, err=%v", firstFavorites, err)
@@ -35,7 +35,7 @@ func TestReconcileReadsBothCompleteListsBeforeApplyingDiff(t *testing.T) {
 
 	favoriteItem.Cursor.Page = 2
 	lastFavorites, err := (Reconcile{}).Handle(t.Context(), domain.Page{Item: favoriteItem, Number: 2, Payload: []byte(reconcilePayload(2, 2, `{"id":"201","owner":"other","dateupload":"1700000000","lastupdate":"1700000100","date_faved":"1700000300","ispublic":1}`))})
-	if err != nil || lastFavorites.HasMore || !lastFavorites.CompleteReconcile || lastFavorites.NextCursor != nil || len(lastFavorites.Discoveries) != 0 || len(lastFavorites.Favorites) != 1 {
+	if err != nil || lastFavorites.HasMore || !lastFavorites.CompleteReconcile || lastFavorites.NextWorkCursor != nil || len(lastFavorites.Discoveries) != 0 || len(lastFavorites.Favorites) != 1 {
 		t.Fatalf("last favorites page = %#v, err=%v", lastFavorites, err)
 	}
 }
@@ -43,7 +43,7 @@ func TestReconcileReadsBothCompleteListsBeforeApplyingDiff(t *testing.T) {
 func TestReconcileAcceptsACompleteEmptyListAndRejectsUnsafePages(t *testing.T) {
 	item := domain.Item{Kind: "reconcile", Subject: "owner", Cursor: domain.Cursor{Page: 1, Method: "flickr.people.getPhotos", CheckpointAt: 1793000000}}
 	result, err := (Reconcile{}).Handle(t.Context(), domain.Page{Item: item, Number: 1, Payload: []byte(`{"photos":{"pages":0,"photo":[]}}`)})
-	if err != nil || result.HasMore || result.NextCursor == nil || result.NextCursor.Method != "flickr.favorites.getList" {
+	if err != nil || result.HasMore || result.NextWorkCursor == nil || result.NextWorkCursor.Method != "flickr.favorites.getList" {
 		t.Fatalf("empty complete list = %#v, err=%v", result, err)
 	}
 

@@ -68,6 +68,20 @@ func (f *intFlickr) Call(context.Context, app.Request) (json.RawMessage, error) 
 	return json.RawMessage(`{}`), f.err
 }
 
+type galleryCursorFlickr struct {
+	responses map[string]json.RawMessage
+	requests  []app.Request
+}
+
+func (f *galleryCursorFlickr) Call(_ context.Context, request app.Request) (json.RawMessage, error) {
+	f.requests = append(f.requests, request)
+	response, ok := f.responses[request.Params["continuation"]]
+	if !ok {
+		return nil, fmt.Errorf("unexpected gallery continuation %q", request.Params["continuation"])
+	}
+	return response, nil
+}
+
 type reconcileIntFlickr struct{ responses map[string]json.RawMessage }
 
 func (f reconcileIntFlickr) Call(_ context.Context, request app.Request) (json.RawMessage, error) {
@@ -223,6 +237,166 @@ func TestEngineCrashBetweenCallAndCommitRerunsSafely(t *testing.T) {
 	}
 	if after := count(t, ctx, pool, `SELECT count(*) FROM work_items WHERE user_id = $1`, userID); after != before || flickrCalls.calls != callsBefore {
 		t.Fatalf("a finished item changed state: items %d -> %d, calls %d -> %d", before, after, callsBefore, flickrCalls.calls)
+	}
+}
+
+func TestGalleryCursorStoredAtomicallyWithPage(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	subject, galleryID := "gallery-atomic-"+suffix, "gallery-atomic-"+suffix
+	owner := subject + "-owner"
+	spec := facets.Galleries{}.Plan(ctx, domain.Person{NSID: subject})[0]
+	cursor, err := json.Marshal(domain.NewCursor(spec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var itemID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO work_items (kind, subject_key, user_id, state, depth, cursor) VALUES ('galleries', $1, $2, 'ready', 0, $3) RETURNING id`, subject, userID, cursor).Scan(&itemID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE id=$1`, itemID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM galleries WHERE id=$1`, galleryID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, owner)
+	})
+	store, err := NewEngine(pool, func(c Conn) app.CatalogWriter {
+		repo, repoErr := catalogpg.New(c)
+		if repoErr != nil {
+			t.Fatal(repoErr)
+		}
+		return repo
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := app.NewRegistry()
+	if err := registry.Register(facets.Galleries{}); err != nil {
+		t.Fatal(err)
+	}
+	flickr := &galleryCursorFlickr{responses: map[string]json.RawMessage{
+		"0": json.RawMessage(fmt.Sprintf(`{"galleries":{"continuation":"opaque-next","gallery":[{"id":%q,"owner":%q,"count_photos":"2"}]}}`, galleryID, owner)),
+	}}
+	crash := &crashOnce{inner: store, crashes: 1}
+	engine := &app.Engine{Registry: registry, Store: store, Units: crash, Keys: intKeys{}, Governor: intGovernor{}, Flickr: flickr, Settings: intSettings{}}
+
+	if err := engine.Handle(ctx, itemID); !errors.Is(err, errSimulatedCrash) {
+		t.Fatalf("first run error = %v, want simulated crash", err)
+	}
+	var state string
+	var rawCursor []byte
+	if err := pool.QueryRow(ctx, `SELECT state, cursor FROM work_items WHERE id=$1`, itemID).Scan(&state, &rawCursor); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := domain.ParseCursor(rawCursor)
+	if err != nil || stored.Continuation != "0" || stored.Page != 1 || state != "running" {
+		t.Fatalf("after rollback state=%s cursor=%+v err=%v", state, stored, err)
+	}
+	if n := count(t, ctx, pool, `SELECT count(*) FROM galleries WHERE id=$1`, galleryID); n != 0 {
+		t.Fatalf("rolled back page left %d gallery rows", n)
+	}
+	if len(flickr.requests) != 1 || flickr.requests[0].Params["continuation"] != "0" {
+		t.Fatalf("calls after crash = %+v", flickr.requests)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready' WHERE id=$1`, itemID); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Handle(ctx, itemID); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if len(flickr.requests) != 2 || flickr.requests[1].Params["continuation"] != "0" {
+		t.Fatalf("retry did not repeat the uncommitted page: %+v", flickr.requests)
+	}
+	if err := pool.QueryRow(ctx, `SELECT cursor FROM work_items WHERE id=$1`, itemID).Scan(&rawCursor); err != nil {
+		t.Fatal(err)
+	}
+	stored, err = domain.ParseCursor(rawCursor)
+	if err != nil || stored.Continuation != "opaque-next" || stored.Page != 2 {
+		t.Fatalf("committed cursor = %+v, %v", stored, err)
+	}
+	if n := count(t, ctx, pool, `SELECT count(*) FROM galleries WHERE id=$1`, galleryID); n != 1 {
+		t.Fatalf("committed page has %d gallery rows, want 1", n)
+	}
+}
+
+func TestGalleryScanResumesFromStoredCursor(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	subject := "gallery-scan-" + suffix
+	owner := subject + "-owner"
+	galleryIDs := []string{"gallery-scan-1-" + suffix, "gallery-scan-2-" + suffix, "gallery-scan-3-" + suffix}
+	responses := map[string]json.RawMessage{}
+	for index, id := range galleryIDs {
+		continuation := "-1"
+		if index < len(galleryIDs)-1 {
+			continuation = fmt.Sprintf("opaque-page-%d", index+2)
+		}
+		requestCursor := "0"
+		if index > 0 {
+			requestCursor = fmt.Sprintf("opaque-page-%d", index+1)
+		}
+		responses[requestCursor] = json.RawMessage(fmt.Sprintf(`{"galleries":{"pages":1,"continuation":%q,"gallery":[{"id":%q,"owner":%q,"count_photos":"1"}]}}`, continuation, id, owner))
+	}
+	spec := facets.Galleries{}.Plan(ctx, domain.Person{NSID: subject})[0]
+	cursor, err := json.Marshal(domain.NewCursor(spec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var itemID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO work_items (kind, subject_key, user_id, state, depth, cursor) VALUES ('galleries', $1, $2, 'ready', 0, $3) RETURNING id`, subject, userID, cursor).Scan(&itemID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE id=$1`, itemID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM galleries WHERE id LIKE $1`, "gallery-scan-%-"+suffix)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, owner)
+	})
+	store, err := NewEngine(pool, func(c Conn) app.CatalogWriter {
+		repo, repoErr := catalogpg.New(c)
+		if repoErr != nil {
+			t.Fatal(repoErr)
+		}
+		return repo
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := app.NewRegistry()
+	if err := registry.Register(facets.Galleries{}); err != nil {
+		t.Fatal(err)
+	}
+	flickr := &galleryCursorFlickr{responses: responses}
+	engine := &app.Engine{Registry: registry, Store: store, Units: store, Keys: intKeys{}, Governor: intGovernor{}, Flickr: flickr, Settings: intSettings{}}
+	for index := range galleryIDs {
+		if index > 0 {
+			if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready' WHERE id=$1`, itemID); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := engine.Handle(ctx, itemID); err != nil {
+			t.Fatalf("page %d: %v", index+1, err)
+		}
+	}
+	if len(flickr.requests) != len(galleryIDs) {
+		t.Fatalf("Flickr calls = %d, want %d", len(flickr.requests), len(galleryIDs))
+	}
+	wantCursors := []string{"0", "opaque-page-2", "opaque-page-3"}
+	for index, request := range flickr.requests {
+		if request.Params["continuation"] != wantCursors[index] || request.Params["page"] != "" {
+			t.Fatalf("request %d params = %#v", index+1, request.Params)
+		}
+	}
+	if n := count(t, ctx, pool, `SELECT count(*) FROM galleries WHERE id LIKE $1`, "gallery-scan-%-"+suffix); n != len(galleryIDs) {
+		t.Fatalf("stored gallery count = %d, want %d", n, len(galleryIDs))
+	}
+	var state string
+	if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE id=$1`, itemID).Scan(&state); err != nil || state != domain.StateDone {
+		t.Fatalf("work item state = %q, %v", state, err)
 	}
 }
 

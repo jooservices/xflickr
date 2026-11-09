@@ -1,0 +1,26 @@
+[
+  {
+    "galleries": {
+      "page": 1,
+      "pages": 2,
+      "per_page": 1,
+      "total": "2",
+      "gallery": [
+        {"id": "legacy-gallery-1", "owner": "owner@N01", "count_photos": "1", "title": {"_content": "Legacy first"}}
+      ]
+    },
+    "stat": "ok"
+  },
+  {
+    "galleries": {
+      "page": 2,
+      "pages": 2,
+      "per_page": 1,
+      "total": "2",
+      "gallery": [
+        {"id": "legacy-gallery-2", "owner": "owner@N01", "count_photos": "2", "title": {"_content": "Legacy second"}}
+      ]
+    },
+    "stat": "ok"
+  }
+]

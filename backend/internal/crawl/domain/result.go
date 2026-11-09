@@ -34,8 +34,13 @@ type Result struct {
 	Observations []Observation
 	Discoveries  []Discovery
 	Work         []WorkSpec
-	// NextCursor changes the next request without finishing the same work item.
-	NextCursor *Cursor
+	// NextWorkCursor changes the Flickr method without finishing the work item.
+	NextWorkCursor *Cursor
+	// NextCursor is the opaque continuation returned for the next request.
+	// Empty keeps the page-counter behavior for legacy responses.
+	NextCursor string
+	// CursorWarning explains why a nonterminal continuation was not followed.
+	CursorWarning string
 	// HasMore asks for the next page of the same item; false finishes it.
 	HasMore bool
 	// CompleteReconcile applies the missing-item diff only after both full lists

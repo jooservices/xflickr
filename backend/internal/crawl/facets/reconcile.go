@@ -35,7 +35,7 @@ func (Reconcile) Handle(ctx context.Context, page domain.Page) (domain.Result, e
 			return domain.Result{}, err
 		}
 		if !result.HasMore {
-			result.NextCursor = &domain.Cursor{
+			result.NextWorkCursor = &domain.Cursor{
 				Page: 1, Method: "flickr.favorites.getList", CheckpointAt: page.Item.Cursor.CheckpointAt,
 				Params: map[string]string{"user_id": page.Item.Subject, "per_page": strconv.Itoa(photosPerPage), "extras": photoExtras},
 			}

@@ -47,7 +47,7 @@ func changeCheckResult(page domain.Page, total int64) (domain.Result, error) {
 	checkpoint := page.Item.Cursor.CheckpointAt
 	switch page.Item.Cursor.Method {
 	case "flickr.people.getPhotos":
-		result := domain.Result{NextCursor: &domain.Cursor{Page: 1, Method: "flickr.favorites.getList", CheckpointAt: checkpoint, Params: map[string]string{
+		result := domain.Result{NextWorkCursor: &domain.Cursor{Page: 1, Method: "flickr.favorites.getList", CheckpointAt: checkpoint, Params: map[string]string{
 			"user_id": page.Item.Subject, "min_fave_date": params["min_fave_date"], "per_page": "1",
 		}}}
 		if total > 0 {
@@ -77,7 +77,7 @@ func changeCheckResult(page domain.Page, total int64) (domain.Result, error) {
 func catalogRefreshWork(person string) []domain.WorkSpec {
 	return []domain.WorkSpec{
 		{Kind: "albums", Subject: person, Method: "flickr.photosets.getList", Reopen: true, Params: map[string]string{"user_id": person, "per_page": strconv.Itoa(incrementalPerPage)}},
-		{Kind: "galleries", Subject: person, Method: "flickr.galleries.getList", Reopen: true, Params: map[string]string{"user_id": person, "per_page": strconv.Itoa(incrementalPerPage)}},
+		{Kind: "galleries", Subject: person, Method: "flickr.galleries.getList", Reopen: true, Params: map[string]string{"user_id": person, "per_page": strconv.Itoa(incrementalPerPage), "continuation": "0"}},
 		{Kind: "groups", Subject: person, Method: "flickr.people.getGroups", Reopen: true, Params: map[string]string{"user_id": person, "per_page": strconv.Itoa(incrementalPerPage)}},
 	}
 }

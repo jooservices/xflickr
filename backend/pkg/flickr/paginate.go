@@ -22,6 +22,7 @@ type ListOptions struct {
 	Extras        string
 	PerPage       int
 	Page          int
+	Continuation  string
 	MinUploadDate time.Time
 	MinFaveDate   time.Time
 }
@@ -53,11 +54,12 @@ func (o ListOptions) params(withExtras bool) map[string]string {
 
 // Page is one page of a Flickr list.
 type Page[T any] struct {
-	Items   []T
-	Page    int
-	Pages   int
-	Total   int
-	PerPage int
+	Items        []T
+	Page         int
+	Pages        int
+	Total        int
+	PerPage      int
+	Continuation string
 }
 
 // Paginator walks a Flickr list one page at a time. It fetches a page only
@@ -207,16 +209,17 @@ func decodePage[T any](raw json.RawMessage, root, itemsKey string) (Page[T], err
 		return Page[T]{}, &CallError{Kind: ErrMalformedResponse, Cause: err}
 	}
 	var meta struct {
-		Page     Int `json:"page"`
-		Pages    Int `json:"pages"`
-		Total    Int `json:"total"`
-		PerPage  Int `json:"perpage"`
-		PerPage2 Int `json:"per_page"`
+		Page         Int    `json:"page"`
+		Pages        Int    `json:"pages"`
+		Total        Int    `json:"total"`
+		PerPage      Int    `json:"perpage"`
+		PerPage2     Int    `json:"per_page"`
+		Continuation string `json:"continuation"`
 	}
 	if err := json.Unmarshal(body, &meta); err != nil {
 		return Page[T]{}, &CallError{Kind: ErrMalformedResponse, Cause: err}
 	}
-	page := Page[T]{Page: meta.Page.Int(), Pages: meta.Pages.Int(), Total: meta.Total.Int(), PerPage: meta.PerPage.Int()}
+	page := Page[T]{Page: meta.Page.Int(), Pages: meta.Pages.Int(), Total: meta.Total.Int(), PerPage: meta.PerPage.Int(), Continuation: meta.Continuation}
 	if page.PerPage == 0 {
 		page.PerPage = meta.PerPage2.Int()
 	}
