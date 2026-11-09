@@ -181,6 +181,30 @@ func (service *Service) RegistrationOpen(ctx context.Context) (bool, error) {
 	return open, nil
 }
 
+// MetricsRetentionDays reads how many days of minute-resolution metric samples
+// to retain before hourly rollup and purge.
+func (service *Service) MetricsRetentionDays(ctx context.Context) (int, error) {
+	if service == nil || service.repository == nil {
+		return 0, ErrRepositoryRequired
+	}
+	if ctx == nil {
+		return 0, ErrContextRequired
+	}
+	snapshot, err := service.repository.Load(ctx, 0)
+	if err != nil {
+		return 0, fmt.Errorf("settings: load metrics retention: %w", err)
+	}
+	setting, found := snapshot.Settings[domain.MetricsRetentionDays]
+	if !found {
+		return 0, fmt.Errorf("settings: %s is not configured", domain.MetricsRetentionDays)
+	}
+	var days int
+	if err := json.Unmarshal(setting.Value, &days); err != nil {
+		return 0, fmt.Errorf("settings: decode %s: %w", domain.MetricsRetentionDays, err)
+	}
+	return days, nil
+}
+
 // SetUser persists one user override. The repository checks the application
 // cap and writes the row in one serializable transaction, so a concurrent
 // cap change cannot land between the check and the upsert. Successful writes

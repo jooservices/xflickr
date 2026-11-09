@@ -7,6 +7,8 @@
 - [Sharing settings and observations](sharing.md)
 - [Ops monitoring](ops-monitoring.md) — crawl health log line, admin status
   endpoint, granted-call and quota-wait counters, OpenObserve stream and alerts.
+- [Operations metrics collection](metrics.md) — minute samples, catalogue,
+  retention and rollups for the admin operations dashboard (JOOXF-368 phase 1).
 - [Incident management](incident-management.md) — deduplication, acknowledgement,
   closure, and critical incident notification events.
 - [Structured logging and telemetry](observability.md) — context fields, OTLP

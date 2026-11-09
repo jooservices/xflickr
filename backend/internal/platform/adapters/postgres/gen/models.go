@@ -637,6 +637,33 @@ type Incident struct {
 	ClosedAt  pgtype.Timestamptz
 }
 
+type MetricRollup struct {
+	ID         int64
+	Name       string
+	Labels     []byte
+	LabelsHash string
+	Node       string
+	Role       string
+	Bucket     pgtype.Timestamptz
+	Resolution string
+	Avg        float64
+	Min        float64
+	Max        float64
+	P95        pgtype.Float8
+	Samples    int32
+}
+
+type MetricSample struct {
+	ID         int64
+	Name       string
+	Labels     []byte
+	LabelsHash string
+	Node       string
+	Role       string
+	Bucket     pgtype.Timestamptz
+	Value      float64
+}
+
 type Node struct {
 	Name            string
 	Roles           []string
