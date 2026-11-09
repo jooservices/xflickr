@@ -64,10 +64,7 @@ if [[ "${E2E_SKIP_BUILD:-}" != 1 ]]; then
 	(cd "$ROOT/web" && "$SCRIPT_DIR/run.sh" node npm run build >/dev/null 2>&1)
 fi
 
-printf 'Resetting worktree database %s...\n' "$db_name"
-# Prefer the host psql client against the worktree .env endpoints (Dev Workspaces
-# runs PostgreSQL natively). Fall back to the shared Docker container only when
-# the host client cannot reach the database.
+# Reset through the same loopback endpoint that the application will use.
 db_host="$(env_value DB_HOST)"
 db_port="$(env_value DB_PORT)"
 if [[ -z "$db_host" ]]; then
@@ -76,24 +73,24 @@ fi
 if [[ -z "$db_port" ]]; then
 	db_port=15435
 fi
-reset_sql() {
-	PGPASSWORD="$(env_value DB_PASSWORD)" PGOPTIONS="-c client_min_messages=warning" \
-		psql -h "$db_host" -p "$db_port" -v ON_ERROR_STOP=1 -q -U "$db_user" -d "$db_name" \
-		-c 'DROP SCHEMA public CASCADE' -c 'CREATE SCHEMA public' >/dev/null
-}
-if ! reset_sql 2>/dev/null; then
-	postgres_container="${E2E_POSTGRES_CONTAINER:-workspaces-shared-postgres-1}"
-	docker exec -i -e PGPASSWORD="$(env_value DB_PASSWORD)" -e PGOPTIONS="-c client_min_messages=warning" "$postgres_container" \
-		psql -v ON_ERROR_STOP=1 -q -U "$db_user" -d "$db_name" \
-		-c 'DROP SCHEMA public CASCADE' -c 'CREATE SCHEMA public' >/dev/null
-fi
+case "$db_host" in
+	127.0.0.1|localhost|::1) ;;
+	*)
+		printf 'E2E reset requires the local PostgreSQL endpoint configured in the worktree .env.\n' >&2
+		exit 1
+		;;
+esac
+export DB_HOST="$db_host" DB_PORT="$db_port"
+printf 'Resetting worktree database %s...\n' "$db_name"
+PGPASSWORD="$(env_value DB_PASSWORD)" python3 "$SCRIPT_DIR/e2e_reset.py" "$db_host" "$db_port" "$db_user" "$db_name"
+"$SCRIPT_DIR/dev.sh" verify-db >/dev/null
 
-# Host-side overrides of the generated .env, which names the container-network hosts. The Redis prefix is unique per run.
+# Redis uses its shared loopback endpoint and gets a unique prefix per run.
 redis_port="$(env_value REDIS_PORT)"
 if [[ -z "$redis_port" ]]; then
 	redis_port=16382
 fi
-export DB_HOST=127.0.0.1 DB_PORT="$db_port" REDIS_HOST=127.0.0.1 REDIS_PORT="$redis_port"
+export REDIS_HOST=127.0.0.1 REDIS_PORT="$redis_port"
 REDIS_PREFIX="$(env_value REDIS_PREFIX)${run_id}:"
 export REDIS_PREFIX
 export NODE_ID=e2e OPENSEARCH_INDEX_PREFIX="xflickr_${run_id}_"
