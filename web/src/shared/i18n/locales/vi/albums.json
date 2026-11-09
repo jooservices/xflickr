@@ -1,0 +1,18 @@
+{
+  "title": "Album",
+  "description": "Album có ảnh hiển thị trong danh mục của bạn.",
+  "filter.label": "Lọc theo liên hệ",
+  "filter.all": "Tất cả liên hệ",
+  "filter.unavailable": "Không thể truy cập liên hệ này. Đang hiển thị tất cả liên hệ.",
+  "card.open": "Mở album {{title}} của {{owner}}",
+  "card.visible-one": "{{count}} ảnh hiển thị",
+  "card.visible-many": "{{count}} ảnh hiển thị",
+  "empty.title": "Chưa có album",
+  "empty.body": "Album có ảnh hiển thị sẽ xuất hiện ở đây sau khi được khám phá.",
+  "empty.action": "Xem liên hệ",
+  "error.title": "Không thể tải album",
+  "error.body": "Kiểm tra kết nối rồi thử lại.",
+  "partial.message": "Album có thể chưa được cập nhật",
+  "loading.label": "Đang tải album",
+  "action.more": "Tải thêm album"
+}

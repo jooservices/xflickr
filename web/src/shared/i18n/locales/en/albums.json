@@ -1,0 +1,18 @@
+{
+  "title": "Albums",
+  "description": "Albums with visible photos in your catalog.",
+  "filter.label": "Filter by contact",
+  "filter.all": "All contacts",
+  "filter.unavailable": "This contact is unavailable. Showing all contacts.",
+  "card.open": "Open album {{title}} by {{owner}}",
+  "card.visible-one": "{{count}} visible photo",
+  "card.visible-many": "{{count}} visible photos",
+  "empty.title": "No albums yet",
+  "empty.body": "Albums with visible photos will appear here after they are discovered.",
+  "empty.action": "Browse contacts",
+  "error.title": "Could not load albums",
+  "error.body": "Check your connection, then try again.",
+  "partial.message": "Albums may be out of date",
+  "loading.label": "Loading albums",
+  "action.more": "Load more albums"
+}
