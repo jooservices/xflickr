@@ -1,0 +1,268 @@
+.page {
+  display: flex;
+  width: 100%;
+  max-width: 1200px;
+  flex-direction: column;
+  gap: 20px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.breadcrumb {
+  align-self: flex-start;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.header {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.avatarWrap {
+  display: grid;
+  width: 88px;
+  height: 88px;
+  flex: 0 0 88px;
+  position: relative;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--sunken);
+  color: var(--muted);
+}
+
+.avatar {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatarFallback {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.identity {
+  min-width: 0;
+  flex: 1 1 240px;
+}
+
+.identity h1 {
+  overflow-wrap: anywhere;
+  margin: 0;
+  font: var(--heading-weight) var(--h1-size) / 1.15 var(--f-disp);
+  letter-spacing: var(--heading-tracking);
+}
+
+.identity p {
+  margin: 5px 0 0;
+  color: var(--muted);
+}
+
+.nsid {
+  font: 0.86em var(--f-mono);
+}
+
+.count {
+  display: flex;
+  min-width: 120px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  background: var(--sunken);
+  text-align: center;
+}
+
+.count strong {
+  font-size: 1.4em;
+  font-variant-numeric: tabular-nums;
+}
+
+.count span,
+.muted {
+  color: var(--muted);
+}
+
+.crawl,
+.stub {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.sectionHeading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.sectionHeading h2,
+.sectionHeading p,
+.stub h2,
+.stub p {
+  margin: 0;
+}
+
+.sectionHeading h2,
+.stub h2 {
+  font: 700 17px/1.3 var(--f-disp);
+}
+
+.sectionHeading p {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.facets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.facet {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.facetLabel {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  font-size: 0.9em;
+}
+
+.facetLabel span:last-child {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--sunken);
+}
+
+.track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.partial {
+  margin: 0;
+  color: var(--warn);
+}
+
+.tabs {
+  display: flex;
+  overflow-x: auto;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab,
+.activeTab {
+  min-height: 44px;
+  flex: 0 0 auto;
+  padding: 12px 14px;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.activeTab {
+  border-bottom: 2px solid var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.tab:focus-visible,
+.activeTab:focus-visible,
+.breadcrumb:focus-visible,
+.button:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-offset);
+}
+
+.stub {
+  min-height: 170px;
+}
+
+.stub p {
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+.button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border: 1px solid var(--line2);
+  border-radius: var(--btn-r);
+  background: var(--surface);
+  color: var(--ink);
+  font: 600 14px var(--f-body);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.skeleton {
+  height: 300px;
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, var(--sunken), var(--surface), var(--sunken));
+  background-size: 200% 100%;
+  animation: shimmer 1.2s ease infinite;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (max-width: 699px) {
+  .page {
+    padding: 16px;
+  }
+  .header {
+    padding: 16px;
+  }
+  .facets {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}

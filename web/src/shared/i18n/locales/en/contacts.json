@@ -1,0 +1,22 @@
+{
+  "title": "Contacts",
+  "description": "Your contacts and the people discovered through their favorites.",
+  "depth": "Depth {{depth}}",
+  "depth-unavailable": "Crawl depth unavailable",
+  "loading": "Loading contacts…",
+  "list.label": "Contacts",
+  "card.open": "View {{name}}",
+  "card.photos": "{{count}} photos",
+  "load-more": "Load more",
+  "loading.more": "Loading more contacts…",
+  "more-error": "Could not load more contacts.",
+  "empty.title": "No contacts yet",
+  "empty.text": "Contacts of your Flickr accounts appear after the first crawl pass.",
+  "empty.setup": "Set up Flickr",
+  "error.title": "Could not load contacts",
+  "error.text": "Check your connection, then try again.",
+  "error.retry": "Retry",
+  "forbidden.title": "You cannot view these contacts",
+  "forbidden.text": "This page is not available for your account.",
+  "forbidden.back": "Back to home"
+}

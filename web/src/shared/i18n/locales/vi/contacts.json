@@ -1,0 +1,22 @@
+{
+  "title": "Liên hệ",
+  "description": "Liên hệ của bạn và những người được khám phá qua mục yêu thích của họ.",
+  "depth": "Cấp độ {{depth}}",
+  "depth-unavailable": "Không có thông tin về độ sâu thu thập",
+  "loading": "Đang tải liên hệ…",
+  "list.label": "Liên hệ",
+  "card.open": "Xem {{name}}",
+  "card.photos": "{{count}} ảnh",
+  "load-more": "Tải thêm",
+  "loading.more": "Đang tải thêm liên hệ…",
+  "more-error": "Không thể tải thêm liên hệ.",
+  "empty.title": "Chưa có liên hệ",
+  "empty.text": "Liên hệ từ tài khoản Flickr sẽ xuất hiện sau lượt thu thập đầu tiên.",
+  "empty.setup": "Thiết lập Flickr",
+  "error.title": "Không thể tải liên hệ",
+  "error.text": "Kiểm tra kết nối rồi thử lại.",
+  "error.retry": "Thử lại",
+  "forbidden.title": "Bạn không thể xem các liên hệ này",
+  "forbidden.text": "Tài khoản của bạn không thể truy cập trang này.",
+  "forbidden.back": "Về trang chủ"
+}

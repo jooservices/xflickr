@@ -3,6 +3,8 @@ import { initReactI18next } from 'react-i18next';
 import adminEn from './locales/en/admin.json';
 import authEn from './locales/en/auth.json';
 import commonEn from './locales/en/common.json';
+import contactEn from './locales/en/contact.json';
+import contactsEn from './locales/en/contacts.json';
 import crawlEn from './locales/en/crawl.json';
 import errorsEn from './locales/en/errors.json';
 import keysEn from './locales/en/keys.json';
@@ -14,6 +16,8 @@ import shellEn from './locales/en/shell.json';
 import adminVi from './locales/vi/admin.json';
 import authVi from './locales/vi/auth.json';
 import commonVi from './locales/vi/common.json';
+import contactVi from './locales/vi/contact.json';
+import contactsVi from './locales/vi/contacts.json';
 import crawlVi from './locales/vi/crawl.json';
 import errorsVi from './locales/vi/errors.json';
 import keysVi from './locales/vi/keys.json';
@@ -33,6 +37,8 @@ export const NAMESPACES = [
   'admin',
   'auth',
   'common',
+  'contact',
+  'contacts',
   'crawl',
   'errors',
   'keys',
@@ -48,6 +54,8 @@ const enResources = {
   admin: adminEn,
   auth: authEn,
   common: commonEn,
+  contact: contactEn,
+  contacts: contactsEn,
   crawl: crawlEn,
   errors: errorsEn,
   keys: keysEn,
@@ -62,6 +70,8 @@ const viResources = {
   admin: adminVi,
   auth: authVi,
   common: commonVi,
+  contact: contactVi,
+  contacts: contactsVi,
   crawl: crawlVi,
   errors: errorsVi,
   keys: keysVi,

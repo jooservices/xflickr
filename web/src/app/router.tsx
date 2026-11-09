@@ -14,12 +14,15 @@ import { KeysPage } from '../pages/keys';
 import { SetupPage } from '../pages/setup/SetupPage';
 import { CrawlPage } from '../pages/crawl';
 import { QuotaPage } from '../pages/admin/quota';
+import { ContactsPage } from '../pages/contacts';
+import { ContactPage } from '../pages/contact/ContactPage';
 import { RouteErrorPage } from './ErrorBoundary';
 
 function userPageElement(path: string, labelKey: MessageKey) {
   if (path === '/profile') return <ProfilePage />;
   if (path === '/crawl') return <CrawlPage />;
   if (path === '/keys') return <KeysPage />;
+  if (path === '/contacts') return <ContactsPage />;
   return <PlaceholderPage scope="shell" titleKey={labelKey} unavailable />;
 }
 
@@ -42,7 +45,7 @@ const userPages: RouteObject[] = [
   })),
   {
     path: 'contacts/:id',
-    element: <PlaceholderPage scope="shell" titleKey="shell.page.contact" unavailable />,
+    element: <ContactPage />,
   },
   {
     path: 'albums/:id',
