@@ -24,9 +24,13 @@ JSONB envelope with an explicit encoding and base64 data.
 
 Contact relationships live in `contacts (person_nsid, contact_nsid)` with
 idempotent upserts (`seen_at` refresh). The crawl `contacts` facet writes those
-rows for each connected account's `flickr.contacts.getList` page. Catalog
-`ListContacts` reads distinct contacts of the caller's connected accounts for
-the contacts screen (REST routes arrive with the catalog REST slice).
+rows for each connected account's `flickr.contacts.getList` page. Before the
+relationship write, `EnsurePeople` inserts any missing account subject with
+`username = nsid` and `ON CONFLICT DO NOTHING`, so a connected account that
+never had a `people` row still commits without overwriting a real identity.
+Catalog `ListContacts` reads distinct contacts of the caller's connected
+accounts for the contacts screen (REST routes arrive with the catalog REST
+slice).
 
 Size updates carry `none`, `provisional`, or `confirmed` status. A provisional
 response cannot replace confirmed sizes. Tombstone updates preserve the first
