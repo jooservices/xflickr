@@ -33,7 +33,7 @@ export function SectionError({ name, onRetry }: { name: string; onRetry: () => v
       data-testid={`user-crawl-section-error-${name}`}
     >
       <Icon name="alert" size={16} />
-      <span>{t('user.crawl.error.section')}</span>
+      <span>{t('crawl.error.section')}</span>
       <button
         type="button"
         className={`${styles.btn} ${styles.sm}`}

@@ -211,7 +211,7 @@ export function RegisterPage() {
               onClick={toggleTheme}
               data-testid="auth-theme-toggle"
             >
-              ◐
+              {'◐'}
             </button>
           </div>
         </header>
@@ -344,7 +344,7 @@ export function RegisterPage() {
                   onClick={() => setShowPassword(!showPassword)}
                   data-testid="auth-register-password-toggle"
                 >
-                  ◉
+                  {'◉'}
                 </button>
               </div>
               <ul className={styles.rules} data-testid="auth-register-rules">

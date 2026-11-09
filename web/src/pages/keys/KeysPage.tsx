@@ -391,10 +391,10 @@ export function KeysPage() {
               ? t('keys.connect.success', { name: connectedName })
               : t(
                   connectionNotice === 'denied'
-                    ? 'user.wizard.connect.denied'
+                    ? 'setup.connect.denied'
                     : connectionNotice === 'expired'
-                      ? 'user.wizard.connect.expired'
-                      : 'user.wizard.connect.error.start',
+                      ? 'setup.connect.expired'
+                      : 'setup.connect.error.start',
                 )}
           </p>
           {connectionNotice !== 'connected' ? (
@@ -416,7 +416,7 @@ export function KeysPage() {
             aria-label={t('common.close')}
             data-testid="keys-connect-dismiss"
           >
-            ×
+            {'×'}
           </button>
         </div>
       ) : null}

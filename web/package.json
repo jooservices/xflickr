@@ -10,7 +10,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "lint": "eslint . && prettier --check .",
+    "lint": "node scripts/check-i18n.mjs && eslint . && prettier --check .",
+    "test:i18n-script": "node --test scripts/check-i18n.test.mjs",
     "format": "prettier --write .",
     "gen:api": "redocly bundle ../contracts/openapi/openapi.yaml --output ../.tmp/openapi.bundle.yaml && orval --config orval.config.ts && prettier --write src/shared/api/gen src/shared/api/zod",
     "test": "vitest run --coverage",
@@ -19,8 +20,10 @@
   },
   "dependencies": {
     "@tanstack/react-query": "5.104.5",
+    "i18next": "26.5.11",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "react-i18next": "17.1.9",
     "react-router": "8.5.0",
     "zod": "4.6.7"
   },
@@ -40,6 +43,7 @@
     "eslint": "10.13.0",
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-boundaries": "7.3.0",
+    "eslint-plugin-i18next": "6.1.5",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.13.0",
     "jsdom": "30.1.3",

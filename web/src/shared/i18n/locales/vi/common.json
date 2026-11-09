@@ -1,0 +1,21 @@
+{
+  "cancel": "Hủy",
+  "close": "Đóng",
+  "language.en": "English",
+  "language.vi": "Tiếng Việt",
+  "not-available.text": "Tính năng này hiện chưa có sẵn.",
+  "not-available.title": "Chưa có sẵn",
+  "placeholder.text": "Trang này chưa được xây dựng.",
+  "preview.empty": "Trống",
+  "preview.error": "Lỗi",
+  "preview.label": "Xem trước",
+  "preview.loading": "Đang tải",
+  "preview.normal": "Bình thường",
+  "reload": "Tải lại",
+  "retry": "Thử lại",
+  "state.empty.text": "Nội dung sẽ hiện ở đây ngay khi có.",
+  "state.empty.title": "Chưa có gì ở đây",
+  "state.error.text": "Yêu cầu thất bại. Hãy kiểm tra kết nối và thử lại.",
+  "state.error.title": "Đã xảy ra lỗi",
+  "state.loading": "Đang tải…"
+}

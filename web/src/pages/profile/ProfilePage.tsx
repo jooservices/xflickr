@@ -5,7 +5,7 @@ import { useBlocker, useNavigate } from 'react-router';
 import { useSession } from '../../entities';
 import { SESSION_QUERY_KEY } from '../../entities/session/SessionProvider';
 import { useI18n } from '../../shared';
-import type { Locale } from '../../shared/i18n/catalog';
+import type { Locale } from '../../shared/i18n';
 import { asResult, csrfFetchOptions, signalSessionExpired } from '../../features/auth/api';
 import {
   changeMyPassword,
@@ -467,7 +467,8 @@ export function ProfilePage() {
                           {item.user_agent_label || t('profile.sessions.unknown-device')}
                         </strong>
                         <p>
-                          {item.ip_masked} ·{' '}
+                          {item.ip_masked}
+                          {' · '}
                           {t('profile.sessions.active', {
                             time: new Date(item.last_seen_at).toLocaleString(locale),
                           })}

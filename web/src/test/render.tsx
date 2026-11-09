@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
+import { I18nextProvider } from 'react-i18next';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { routes } from '../app/router';
 import { SessionContext } from '../entities';
 import type { Session } from '../entities';
-import { I18nProvider } from '../shared';
+import { I18nBridge, i18nInstance } from '../shared';
 import type { Locale } from '../shared';
 
 export const adminSession: Session = {
@@ -35,11 +36,13 @@ export function renderApp({
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const result = render(
     <QueryClientProvider client={client}>
-      <I18nProvider initialLocale={locale}>
-        <SessionContext.Provider value={{ session, retry }}>
-          <RouterProvider router={router} />
-        </SessionContext.Provider>
-      </I18nProvider>
+      <I18nextProvider i18n={i18nInstance}>
+        <I18nBridge initialLocale={locale}>
+          <SessionContext.Provider value={{ session, retry }}>
+            <RouterProvider router={router} />
+          </SessionContext.Provider>
+        </I18nBridge>
+      </I18nextProvider>
     </QueryClientProvider>,
   );
   return { ...result, router };

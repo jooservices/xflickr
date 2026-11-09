@@ -1,0 +1,21 @@
+{
+  "cancel": "Cancel",
+  "close": "Close",
+  "language.en": "English",
+  "language.vi": "Tiếng Việt",
+  "not-available.text": "This feature is not available yet.",
+  "not-available.title": "Not available yet",
+  "placeholder.text": "This page is not built yet.",
+  "preview.empty": "Empty",
+  "preview.error": "Error",
+  "preview.label": "Preview",
+  "preview.loading": "Loading",
+  "preview.normal": "Normal",
+  "reload": "Reload",
+  "retry": "Try again",
+  "state.empty.text": "Content appears here as soon as it exists.",
+  "state.empty.title": "Nothing here yet",
+  "state.error.text": "The request failed. Check your connection and try again.",
+  "state.error.title": "Something went wrong",
+  "state.loading": "Loading…"
+}

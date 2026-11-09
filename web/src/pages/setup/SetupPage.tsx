@@ -57,21 +57,21 @@ function randomHex(length: number): string {
 const statusOf = (error: unknown) => (error as { status?: number } | null)?.status;
 
 const accountStatusCopy: Record<FlickrAccount['status'], MessageKey> = {
-  ok: 'user.wizard.done.account.ok',
+  ok: 'setup.done.account.ok',
   reconnect_required: 'shell.banner.reconnect',
-  revoked: 'user.wizard.done.account.revoked',
+  revoked: 'setup.done.account.revoked',
 };
 
 const connectErrorCopy: Record<ConnectError, MessageKey> = {
-  denied: 'user.wizard.connect.denied',
-  expired: 'user.wizard.connect.expired',
-  start: 'user.wizard.connect.error.start',
+  denied: 'setup.connect.denied',
+  expired: 'setup.connect.expired',
+  start: 'setup.connect.error.start',
 };
 
 const bannerCopy: Record<KeyBanner, MessageKey> = {
-  invalid: 'user.wizard.key.error.invalid',
-  network: 'user.wizard.key.error.network',
-  node: 'user.wizard.key.error.no-node',
+  invalid: 'setup.key.error.invalid',
+  network: 'setup.key.error.network',
+  node: 'setup.key.error.no-node',
 };
 
 export function SetupPage() {
@@ -190,7 +190,7 @@ export function SetupPage() {
   }, [params, navigate]);
 
   useEffect(() => {
-    document.title = `${t('user.wizard.title')} · XFlickr`;
+    document.title = `${t('setup.title')} · XFlickr`;
   }, [t]);
 
   // One effect so the banner always wins over the heading, whatever order the data arrives in.
@@ -271,7 +271,7 @@ export function SetupPage() {
     }
     setSending(true);
     const result = await saveKey({
-      label: t('user.wizard.key.default-label'),
+      label: t('setup.key.default-label'),
       key: clean(key),
       secret: clean(secret),
     });
@@ -284,7 +284,7 @@ export function SetupPage() {
       setShowSecret(false);
       setTouched({ key: false, secret: false });
       setSubmitted(false);
-      setLiveText(t('user.wizard.key.ok'));
+      setLiveText(t('setup.key.ok'));
       goTo(2);
       void queryClient.invalidateQueries({ queryKey: ['/keys'] });
       return;
@@ -309,7 +309,7 @@ export function SetupPage() {
     void queryClient.invalidateQueries({ queryKey: ['/keys'] });
     setSelectedKeyId(added.id);
     setAddKeyOpen(false);
-    setLiveText(t('user.wizard.addkey.toast'));
+    setLiveText(t('setup.addkey.toast'));
     goTo(2);
   };
 
@@ -321,7 +321,7 @@ export function SetupPage() {
     try {
       const result = await startCrawl(depth);
       if (result.status === 200) {
-        void navigate('/', { state: { toast: 'user.wizard.done.toast' } });
+        void navigate('/', { state: { toast: 'setup.done.toast' } });
         return;
       }
       if (result.status === 422 && result.code === 'depth_above_cap') {
@@ -371,12 +371,8 @@ export function SetupPage() {
   };
 
   const stepName =
-    step === 1
-      ? t('user.wizard.step.key')
-      : step === 2
-        ? t('user.wizard.step.connect')
-        : t('user.wizard.step.done');
-  const stepText = t('user.wizard.step', { n: step, total: 3, name: stepName });
+    step === 1 ? t('setup.step.key') : step === 2 ? t('setup.step.connect') : t('setup.step.done');
+  const stepText = t('setup.step', { n: step, total: 3, name: stepName });
   const staleAccounts = accountsQuery.isError && accountsQuery.data !== undefined;
   const canFinish = accountList.some((item) => item.status === 'ok');
 
@@ -392,7 +388,7 @@ export function SetupPage() {
           {view === 'loading' ? (
             showSkeleton ? (
               <div className={styles.loading} role="status" data-testid="wizard-skeleton">
-                <span>{t('user.wizard.loading')}</span>
+                <span>{t('setup.loading')}</span>
                 <i className={styles.skBar} />
                 <i className={styles.skHead} />
                 <i className={styles.skLine} />
@@ -404,20 +400,20 @@ export function SetupPage() {
             <div className={styles.state} data-testid="wizard-forbidden">
               <Icon name="lock" size={28} />
               <h1 ref={heading} tabIndex={-1} data-testid="wizard-title">
-                {t('user.wizard.forbidden.title')}
+                {t('setup.forbidden.title')}
               </h1>
-              <p>{t('user.wizard.forbidden.text')}</p>
+              <p>{t('setup.forbidden.text')}</p>
               <Link className={styles.primary} to="/" data-testid="wizard-forbidden-cta">
-                {t('user.wizard.forbidden.cta')}
+                {t('setup.forbidden.cta')}
               </Link>
             </div>
           ) : view === 'error' ? (
             <div className={styles.state} data-testid="wizard-error">
               <Icon name="alert" size={28} />
               <h1 ref={heading} tabIndex={-1} data-testid="wizard-title">
-                {t('user.wizard.error.title')}
+                {t('setup.error.title')}
               </h1>
-              <p>{t('user.wizard.error.text')}</p>
+              <p>{t('setup.error.text')}</p>
               <button
                 className={styles.primary}
                 onClick={retryLoad}
@@ -435,7 +431,7 @@ export function SetupPage() {
                 aria-valuemin={1}
                 aria-valuemax={3}
                 aria-valuetext={stepText}
-                aria-label={t('user.wizard.steps.aria')}
+                aria-label={t('setup.steps.aria')}
                 data-testid="wizard-steps"
               >
                 {[1, 2, 3].map((n) => (
@@ -447,9 +443,7 @@ export function SetupPage() {
               </p>
               {staleAccounts || (step === 3 && settingsFailed) ? (
                 <div role="status" className={styles.warn} data-testid="wizard-stale-banner">
-                  <span>
-                    {t(staleAccounts ? 'user.wizard.stale.accounts' : 'user.wizard.stale.settings')}
-                  </span>
+                  <span>{t(staleAccounts ? 'setup.stale.accounts' : 'setup.stale.settings')}</span>
                   <button
                     type="button"
                     className={styles.ghost}
@@ -467,12 +461,12 @@ export function SetupPage() {
               {step === 1 ? (
                 <div className={styles.step} data-testid="wizard-step-key">
                   <h1 ref={heading} tabIndex={-1} data-testid="wizard-title">
-                    {t('user.wizard.key.title')}
+                    {t('setup.key.title')}
                   </h1>
-                  <p className={styles.lead}>{t('user.wizard.key.lead')}</p>
+                  <p className={styles.lead}>{t('setup.key.lead')}</p>
                   <aside className={styles.callout} data-testid="wizard-key-why">
-                    <b>{t('user.wizard.key.why.title')}</b>
-                    <p>{t('user.wizard.key.why.text')}</p>
+                    <b>{t('setup.key.why.title')}</b>
+                    <p>{t('setup.key.why.text')}</p>
                   </aside>
                   {banner ? (
                     <div
@@ -500,7 +494,7 @@ export function SetupPage() {
                     data-testid="wizard-key-form"
                   >
                     <label>
-                      {t('user.wizard.key.field.key')}
+                      {t('setup.key.field.key')}
                       <input
                         ref={keyField}
                         className={styles.mono}
@@ -516,7 +510,7 @@ export function SetupPage() {
                         data-testid="wizard-key-input"
                       />
                     </label>
-                    <small id="wizard-key-help">{t('user.wizard.key.help.key')}</small>
+                    <small id="wizard-key-help">{t('setup.key.help.key')}</small>
                     {keyError ? (
                       <small
                         id="wizard-key-err"
@@ -526,13 +520,13 @@ export function SetupPage() {
                         <Icon name="alert" size={14} />{' '}
                         {t(
                           keyError === 'duplicate'
-                            ? 'user.wizard.key.error.duplicate'
-                            : 'user.wizard.key.error.key-format',
+                            ? 'setup.key.error.duplicate'
+                            : 'setup.key.error.key-format',
                         )}
                       </small>
                     ) : null}
                     <label>
-                      {t('user.wizard.key.field.secret')}
+                      {t('setup.key.field.secret')}
                       <span className={styles.secret}>
                         <input
                           ref={secretField}
@@ -551,9 +545,7 @@ export function SetupPage() {
                         />
                         <button
                           type="button"
-                          aria-label={t(
-                            showSecret ? 'user.wizard.key.hide' : 'user.wizard.key.show',
-                          )}
+                          aria-label={t(showSecret ? 'setup.key.hide' : 'setup.key.show')}
                           aria-pressed={showSecret}
                           onClick={() => setShowSecret(!showSecret)}
                           data-testid="wizard-key-secret-toggle"
@@ -562,14 +554,14 @@ export function SetupPage() {
                         </button>
                       </span>
                     </label>
-                    <small id="wizard-secret-help">{t('user.wizard.key.help.secret')}</small>
+                    <small id="wizard-secret-help">{t('setup.key.help.secret')}</small>
                     {secretError ? (
                       <small
                         id="wizard-secret-err"
                         className={styles.fieldError}
                         data-testid="wizard-key-error-secret"
                       >
-                        <Icon name="alert" size={14} /> {t('user.wizard.key.error.secret-format')}
+                        <Icon name="alert" size={14} /> {t('setup.key.error.secret-format')}
                       </small>
                     ) : null}
                     <a
@@ -578,11 +570,11 @@ export function SetupPage() {
                       rel="noreferrer"
                       data-testid="wizard-key-create-link"
                     >
-                      {t('user.wizard.key.create-link')}
+                      {t('setup.key.create-link')}
                     </a>
                     {sending ? (
                       <p role="status" className={styles.note} data-testid="wizard-key-checking">
-                        {t('user.wizard.key.checking')}
+                        {t('setup.key.checking')}
                       </p>
                     ) : null}
                     <div className={styles.actions}>
@@ -592,7 +584,7 @@ export function SetupPage() {
                         type="submit"
                         data-testid="wizard-key-submit"
                       >
-                        {sending ? t('user.wizard.key.checking') : t('user.wizard.key.submit')}
+                        {sending ? t('setup.key.checking') : t('setup.key.submit')}
                       </button>
                       {DEMO ? (
                         <button
@@ -601,7 +593,7 @@ export function SetupPage() {
                           onClick={fillExample}
                           data-testid="wizard-key-fill"
                         >
-                          {t('user.wizard.key.fill')}
+                          {t('setup.key.fill')}
                         </button>
                       ) : null}
                       {hasAccount ? (
@@ -611,7 +603,7 @@ export function SetupPage() {
                           onClick={() => goTo(3)}
                           data-testid="wizard-key-back"
                         >
-                          {t('user.wizard.connect.back')}
+                          {t('setup.connect.back')}
                         </button>
                       ) : null}
                     </div>
@@ -622,9 +614,9 @@ export function SetupPage() {
               {step === 2 ? (
                 <div className={styles.step} data-testid="wizard-step-connect">
                   <h1 ref={heading} tabIndex={-1} data-testid="wizard-title">
-                    {t('user.wizard.connect.title')}
+                    {t('setup.connect.title')}
                   </h1>
-                  <p className={styles.lead}>{t('user.wizard.connect.lead')}</p>
+                  <p className={styles.lead}>{t('setup.connect.lead')}</p>
                   {connectError ? (
                     <div
                       role="alert"
@@ -649,18 +641,18 @@ export function SetupPage() {
                   ) : null}
                   <div className={styles.consent} data-testid="wizard-connect-perms">
                     <b>
-                      <Icon name="lock" /> flickr.com
+                      <Icon name="lock" /> {'flickr.com'}
                     </b>
-                    <h2>{t('user.wizard.connect.perm.title')}</h2>
+                    <h2>{t('setup.connect.perm.title')}</h2>
                     <ul>
-                      <li>{t('user.wizard.connect.perm.read')}</li>
-                      <li>{t('user.wizard.connect.perm.private')}</li>
+                      <li>{t('setup.connect.perm.read')}</li>
+                      <li>{t('setup.connect.perm.private')}</li>
                     </ul>
-                    <p>{t('user.wizard.connect.perm.none')}</p>
+                    <p>{t('setup.connect.perm.none')}</p>
                   </div>
                   {validKeys.length > 1 ? (
                     <label>
-                      {t('user.wizard.connect.key-select')}
+                      {t('setup.connect.key-select')}
                       <select
                         value={activeKey?.id ?? ''}
                         onChange={(event) => setSelectedKeyId(Number(event.target.value))}
@@ -675,11 +667,11 @@ export function SetupPage() {
                     </label>
                   ) : null}
                   <p id="wizard-leave" className={styles.note}>
-                    {t('user.wizard.connect.leave')}
+                    {t('setup.connect.leave')}
                   </p>
                   {waiting ? (
                     <p role="status" className={styles.note} data-testid="wizard-connect-waiting">
-                      {t('user.wizard.connect.waiting')}
+                      {t('setup.connect.waiting')}
                     </p>
                   ) : null}
                   <div className={styles.actions}>
@@ -690,7 +682,7 @@ export function SetupPage() {
                       onClick={() => void authorize()}
                       data-testid="wizard-connect-allow"
                     >
-                      {t('user.wizard.connect.allow')}
+                      {t('setup.connect.allow')}
                     </button>
                     {waiting ? (
                       <button
@@ -698,7 +690,7 @@ export function SetupPage() {
                         onClick={cancelConnect}
                         data-testid="wizard-connect-cancel"
                       >
-                        {t('user.wizard.connect.cancel')}
+                        {t('setup.connect.cancel')}
                       </button>
                     ) : (
                       <button
@@ -706,7 +698,7 @@ export function SetupPage() {
                         onClick={() => goTo(1)}
                         data-testid="wizard-connect-back"
                       >
-                        {t('user.wizard.connect.back')}
+                        {t('setup.connect.back')}
                       </button>
                     )}
                   </div>
@@ -717,15 +709,15 @@ export function SetupPage() {
                 <div className={styles.state} data-testid="wizard-empty">
                   <Icon name="user" size={28} />
                   <h1 ref={heading} tabIndex={-1} data-testid="wizard-title">
-                    {t('user.wizard.empty.title')}
+                    {t('setup.empty.title')}
                   </h1>
-                  <p>{t('user.wizard.empty.text')}</p>
+                  <p>{t('setup.empty.text')}</p>
                   <button
                     className={styles.primary}
                     onClick={() => goTo(activeKey ? 2 : 1)}
                     data-testid="wizard-empty-cta"
                   >
-                    {t('user.wizard.empty.cta')}
+                    {t('setup.empty.cta')}
                   </button>
                 </div>
               ) : null}
@@ -733,12 +725,12 @@ export function SetupPage() {
               {step === 3 && hasAccount ? (
                 <div className={styles.step} data-testid="wizard-step-done">
                   <h1 ref={heading} tabIndex={-1} data-testid="wizard-title">
-                    {t('user.wizard.done.title')}
+                    {t('setup.done.title')}
                   </h1>
-                  <p className={styles.lead}>{t('user.wizard.done.lead')}</p>
+                  <p className={styles.lead}>{t('setup.done.lead')}</p>
                   <ul
                     className={styles.accounts}
-                    aria-label={t('user.wizard.done.accounts')}
+                    aria-label={t('setup.done.accounts')}
                     data-testid="wizard-accounts"
                   >
                     {accountList.map((account) => (
@@ -753,7 +745,7 @@ export function SetupPage() {
                       >
                         <b>{account.username}</b> <code>{account.nsid}</code>
                         <small>
-                          {t('user.wizard.done.account.meta', {
+                          {t('setup.done.account.meta', {
                             label: keys.find((item) => item.id === account.key_id)?.label ?? '',
                           })}
                         </small>
@@ -774,7 +766,7 @@ export function SetupPage() {
                       onClick={() => goTo(2)}
                       data-testid="wizard-add-account"
                     >
-                      {t('user.wizard.done.add')}
+                      {t('setup.done.add')}
                     </button>
                     <button
                       type="button"
@@ -782,12 +774,12 @@ export function SetupPage() {
                       onClick={() => setAddKeyOpen(true)}
                       data-testid="wizard-add-key"
                     >
-                      {t('user.wizard.done.add-key')}
+                      {t('setup.done.add-key')}
                     </button>
                   </div>
                   <div className={styles.depth}>
                     <label htmlFor="wizard-depth" data-testid="wizard-depth-value">
-                      {t('user.wizard.done.depth.label', { depth })}
+                      {t('setup.done.depth.label', { depth })}
                     </label>
                     <input
                       id="wizard-depth"
@@ -802,15 +794,15 @@ export function SetupPage() {
                       data-testid="wizard-depth"
                     />
                     <small id="wizard-depth-help">
-                      {t('user.wizard.done.depth.help', { max: depthMax })}
+                      {t('setup.done.depth.help', { max: depthMax })}
                     </small>
                   </div>
                   {finishError ? (
                     <div role="alert" className={styles.error} data-testid="wizard-done-error">
                       {t(
                         finishError === 'depth'
-                          ? 'user.wizard.done.error.depth'
-                          : 'user.wizard.done.error.finish',
+                          ? 'setup.done.error.depth'
+                          : 'setup.done.error.finish',
                       )}
                     </div>
                   ) : null}
@@ -823,7 +815,7 @@ export function SetupPage() {
                         onClick={() => void finish()}
                         data-testid="wizard-finish"
                       >
-                        {starting ? t('user.wizard.done.finishing') : t('user.wizard.done.finish')}
+                        {starting ? t('setup.done.finishing') : t('setup.done.finish')}
                       </button>
                     ) : null}
                     <button
@@ -832,7 +824,7 @@ export function SetupPage() {
                       onClick={() => goTo(2)}
                       data-testid="wizard-done-back"
                     >
-                      {t('user.wizard.connect.back')}
+                      {t('setup.connect.back')}
                     </button>
                   </div>
                 </div>
@@ -844,7 +836,7 @@ export function SetupPage() {
                 data-testid="wizard-live-region"
               >
                 {connectedAccount
-                  ? `${connectedAccount.username} · ${t('user.wizard.done.account.ok')}`
+                  ? `${connectedAccount.username} · ${t('setup.done.account.ok')}`
                   : liveText}
               </div>
               <Link className={styles.keysLink} to="/keys">

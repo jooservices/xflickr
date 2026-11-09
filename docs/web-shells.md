@@ -5,16 +5,16 @@ The web app has two shells that wrap every page. Their design is specified in
 
 ## Code map
 
-| Path | Role |
-| --- | --- |
-| `web/src/app/router.tsx` | Route table: `/` (user shell), `/admin` (guarded admin shell), `/login` stand-in. Every nav item routes to `PlaceholderPage`. |
-| `web/src/app/guards.tsx` | `AdminGuard` reads the session role; only `admin` renders children. Others get the 403 page, a signed-out visitor goes to `/login?next=`. |
-| `web/src/app/shells/` | `UserShell`, `AdminShell`, controls, overlays (avatar menu, tray, notifications, dialogs), banners, maintenance probe, cluster footer. |
-| `web/src/entities/session/` | `GET /me` once; `useSession()` returns `loading`, `unauthenticated` (401), `error` or `authenticated` with the role. |
+| Path                           | Role                                                                                                                                                                                           |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `web/src/app/router.tsx`       | Route table: `/` (user shell), `/admin` (guarded admin shell), `/login` stand-in. Every nav item routes to `PlaceholderPage`.                                                                  |
+| `web/src/app/guards.tsx`       | `AdminGuard` reads the session role; only `admin` renders children. Others get the 403 page, a signed-out visitor goes to `/login?next=`.                                                      |
+| `web/src/app/shells/`          | `UserShell`, `AdminShell`, controls, overlays (avatar menu, tray, notifications, dialogs), banners, maintenance probe, cluster footer.                                                         |
+| `web/src/entities/session/`    | `GET /me` once; `useSession()` returns `loading`, `unauthenticated` (401), `error` or `authenticated` with the role.                                                                           |
 | `web/src/shared/ui/tokens.css` | Colors, spacing, type, elevation and motion as CSS custom properties for `data-role` (`user`, `admin`) and `data-theme` (`light`, `dark`). Values follow [design-system](ui/design-system.md). |
-| `web/src/shared/ui/states/` | Shared loading, empty, error, 403 and 404 components, `PageState`, and the development-only `StatePreview` control. |
-| `web/src/shared/i18n/` | `en.json` and `vi.json` (flat, dotted keys), ICU plural formatter, `I18nProvider` and `useI18n`. |
-| `web/src/shared/theme/` | Theme per role: stored choice, else system (user) or dark (admin). |
+| `web/src/shared/ui/states/`    | Shared loading, empty, error, 403 and 404 components, `PageState`, and the development-only `StatePreview` control.                                                                            |
+| `web/src/shared/i18n/`         | `i18next` catalogs under `locales/{en,vi}/`, `I18nextProvider`, `useI18n`, `LanguageSwitcher`. See [i18n.md](i18n.md).                                                                         |
+| `web/src/shared/theme/`        | Theme per role: stored choice, else system (user) or dark (admin).                                                                                                                             |
 
 ## Behaviour to know
 
