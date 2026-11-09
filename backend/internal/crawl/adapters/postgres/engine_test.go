@@ -47,6 +47,7 @@ func (r engRow) Scan(dest ...any) error {
 
 type engConn struct {
 	execs    []engExec
+	queries  []engExec
 	failExec string
 	affected int64
 	row      engRow
@@ -65,7 +66,8 @@ func (c *engConn) Query(context.Context, string, ...any) (pgx.Rows, error) {
 	return nil, errors.New("unused")
 }
 
-func (c *engConn) QueryRow(_ context.Context, sql string, _ ...any) pgx.Row {
+func (c *engConn) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
+	c.queries = append(c.queries, engExec{sql, args})
 	if c.failExec != "" && strings.Contains(sql, c.failExec) {
 		return engRow{err: errors.New("query failed")}
 	}
@@ -148,6 +150,9 @@ func TestWorkFinishStoresNextCheckpoint(t *testing.T) {
 	err := (workTx{tx: conn}).Finish(t.Context(), 1)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(conn.queries) == 0 || !strings.Contains(conn.queries[0].sql, "scan_completed_at") {
+		t.Fatalf("successful page finish lacks a distinct scan completion marker: %#v", conn.queries)
 	}
 	if len(conn.execs) != 1 || !strings.Contains(conn.execs[0].sql, "last_seen_at") {
 		t.Fatalf("photos finish execs = %#v", conn.execs)

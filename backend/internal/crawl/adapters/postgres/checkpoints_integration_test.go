@@ -14,6 +14,7 @@ import (
 	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
 	"github.com/jooservices/xflickr/internal/crawl/domain"
 	"github.com/jooservices/xflickr/internal/crawl/facets"
+	"github.com/jooservices/xflickr/pkg/flickr"
 )
 
 type recordingFlickr struct {
@@ -38,6 +39,16 @@ type forbiddenFlickr struct{ calls int }
 func (f *forbiddenFlickr) Call(context.Context, crawlapp.Request) (json.RawMessage, error) {
 	f.calls++
 	return nil, fmt.Errorf("Flickr must not be called during checkpoint repair")
+}
+
+type failingCheckpointFlickr struct {
+	err   error
+	calls int
+}
+
+func (f *failingCheckpointFlickr) Call(context.Context, crawlapp.Request) (json.RawMessage, error) {
+	f.calls++
+	return nil, f.err
 }
 
 type observerCheckFlickr struct {
@@ -122,6 +133,84 @@ func TestInitialScanStoresCheckpointOnlyAfterAllPages(t *testing.T) {
 	}
 	if lastSeen == nil || !lastSeen.Equal(scanStart) {
 		t.Fatalf("completed scan checkpoint = %v, want %v", lastSeen, scanStart)
+	}
+	var completion int64
+	if err := pool.QueryRow(ctx, `SELECT (cursor->>'scan_completed_at')::bigint FROM work_items WHERE id=$1`, itemID).Scan(&completion); err != nil {
+		t.Fatal(err)
+	}
+	if completion <= 0 {
+		t.Fatalf("completed scan marker = %d, want positive timestamp", completion)
+	}
+}
+
+func TestSkippedPhotoScansDoNotRecordCompletionMarker(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	suffix := fmt.Sprintf("ckpt-skip-%d", time.Now().UnixNano())
+	tests := []struct {
+		name       string
+		failure    error
+		suppressed bool
+	}{
+		{name: "not found", failure: flickr.ErrNotFound},
+		{name: "restricted", failure: flickr.ErrPermission},
+		{name: "globally suppressed", suppressed: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			userID := insertInterestTestUser(t, ctx, pool)
+			person := suffix + "-" + strings.ReplaceAll(tc.name, " ", "-") + "@N01"
+			t.Cleanup(func() {
+				_, _ = pool.Exec(context.Background(), `DELETE FROM entity_states WHERE entity_type='person' AND entity_id=$1`, person)
+				_, _ = pool.Exec(context.Background(), `DELETE FROM entity_facet_restrictions WHERE entity_type='person' AND entity_id=$1`, person)
+				_, _ = pool.Exec(context.Background(), `DELETE FROM crawl_interests WHERE user_id=$1`, userID)
+				_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1`, userID)
+				_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, person)
+			})
+			if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES ($1,'skip')`, person); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via) VALUES ($1,$2,0,'test')`, userID, person); err != nil {
+				t.Fatal(err)
+			}
+			cursor, err := json.Marshal(domain.Cursor{Page: 1, Method: "flickr.people.getPhotos", CheckpointAt: time.Now().UTC().Unix(), Params: map[string]string{"user_id": person}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var itemID int64
+			if err := pool.QueryRow(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,depth,cursor) VALUES ('photos',$1,$2,'ready',0,$3) RETURNING id`, person, userID, cursor).Scan(&itemID); err != nil {
+				t.Fatal(err)
+			}
+			if tc.suppressed {
+				if _, err := pool.Exec(ctx, `INSERT INTO entity_states(entity_type,entity_id,first_seen_at,reason) VALUES ('person',$1,now(),'not_found')`, person); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var source crawlapp.Flickr = &failingCheckpointFlickr{err: tc.failure}
+			if tc.suppressed {
+				source = &forbiddenFlickr{}
+			}
+			engine := newCheckpointTestEngine(t, pool, source, time.Now().UTC())
+			engine.States = EntityStates{DB: pool}
+			if err := engine.Handle(ctx, itemID); err != nil {
+				t.Fatal(err)
+			}
+			var state string
+			var hasMarker bool
+			if err := pool.QueryRow(ctx, `SELECT state,cursor ? 'scan_completed_at' FROM work_items WHERE id=$1`, itemID).Scan(&state, &hasMarker); err != nil {
+				t.Fatal(err)
+			}
+			if state != domain.StateDone || hasMarker {
+				t.Fatalf("skipped scan state=%q has completion marker=%v", state, hasMarker)
+			}
+			if calls, ok := source.(*failingCheckpointFlickr); ok && calls.calls != 1 {
+				t.Fatalf("failure branch Flickr calls=%d, want 1", calls.calls)
+			}
+			if calls, ok := source.(*forbiddenFlickr); ok && calls.calls != 0 {
+				t.Fatalf("globally suppressed scan made %d Flickr calls", calls.calls)
+			}
+		})
 	}
 }
 
@@ -347,7 +436,10 @@ func TestRepairZeroCheckpointsIsRepeatableAndOfflineNoFlickrCall(t *testing.T) {
 		{kind: "photos", method: "flickr.people.getPhotos", checkpoint: photoCheckpoint},
 		{kind: "favorites", method: "flickr.favorites.getList", checkpoint: faveCheckpoint},
 	} {
-		cursor, marshalErr := json.Marshal(domain.Cursor{Page: 1, Method: scan.method, CheckpointAt: scan.checkpoint.Unix()})
+		cursor, marshalErr := json.Marshal(map[string]any{
+			"page": 1, "method": scan.method, "checkpoint_at": scan.checkpoint.Unix(),
+			"scan_completed_at": scan.checkpoint.Unix() + 60,
+		})
 		if marshalErr != nil {
 			t.Fatal(marshalErr)
 		}
@@ -398,6 +490,103 @@ func TestRepairZeroCheckpointsIsRepeatableAndOfflineNoFlickrCall(t *testing.T) {
 	}
 }
 
+func TestRepairLegacyCheckpointsUsesObserverScopedCatchupFloor(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	otherUserID := insertInterestTestUser(t, ctx, pool)
+	person := fmt.Sprintf("ckpt-legacy-repair-%d@N01", time.Now().UnixNano())
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE kind='photos' AND subject_key=$1`, person)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM crawl_interests WHERE person_nsid=$1`, person)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, person)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES ($1,'legacy')`, person); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via) VALUES ($1,$3,0,'test'),($2,$3,0,'test')`, userID, otherUserID, person); err != nil {
+		t.Fatal(err)
+	}
+	legacyCursor, err := json.Marshal(map[string]any{"page": 4, "method": "flickr.people.getPhotos"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,depth,cursor) VALUES ('photos',$1,$2,'done',0,$3)`, person, userID, legacyCursor); err != nil {
+		t.Fatal(err)
+	}
+	report, err := RepairZeroCheckpointsPool(ctx, pool, CheckpointRepairOptions{BatchSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.PhotosUpdated != 1 || report.PhotosUnrepairable != 1 {
+		t.Fatalf("legacy repair report = %+v", report)
+	}
+	var seen, otherSeen *time.Time
+	if err := pool.QueryRow(ctx, `SELECT last_seen_at FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, userID, person).Scan(&seen); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT last_seen_at FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, otherUserID, person).Scan(&otherSeen); err != nil {
+		t.Fatal(err)
+	}
+	if seen == nil || !seen.Equal(time.Unix(1, 0).UTC()) {
+		t.Fatalf("legacy checkpoint=%v, want conservative catch-up floor at Unix second 1", seen)
+	}
+	if otherSeen != nil {
+		t.Fatalf("legacy checkpoint leaked to another observer: %v", otherSeen)
+	}
+}
+
+func TestRepairWaitsForLockedInterestsAndRetriesAfterBoundedTimeout(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	person := fmt.Sprintf("ckpt-lock-%d@N01", time.Now().UnixNano())
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1 AND subject_key=$2`, userID, person)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, userID, person)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, person)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES ($1,'locked')`, person); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via) VALUES ($1,$2,0,'test')`, userID, person); err != nil {
+		t.Fatal(err)
+	}
+	legacyCursor, err := json.Marshal(map[string]any{"page": 1, "method": "flickr.people.getPhotos"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,depth,cursor) VALUES ('photos',$1,$2,'done',0,$3)`, person, userID, legacyCursor); err != nil {
+		t.Fatal(err)
+	}
+	locker, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var locked int
+	if err := locker.QueryRow(ctx, `SELECT 1 FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2 FOR UPDATE`, userID, person).Scan(&locked); err != nil {
+		_ = locker.Rollback(ctx)
+		t.Fatal(err)
+	}
+	_, repairErr := RepairZeroCheckpointsPool(ctx, pool, CheckpointRepairOptions{BatchSize: 1})
+	if repairErr == nil {
+		_ = locker.Rollback(ctx)
+		t.Fatal("repair completed while its selected interest remained locked")
+	}
+	if err := locker.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	report, err := RepairZeroCheckpointsPool(ctx, pool, CheckpointRepairOptions{BatchSize: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.PhotosUpdated != 1 {
+		t.Fatalf("retry did not repair the formerly locked interest: %+v", report)
+	}
+}
+
 func TestRepairCheckpointKeysetPassesBatchesWithoutEvidence(t *testing.T) {
 	pool := openEngineTestPool(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
@@ -426,7 +615,10 @@ func TestRepairCheckpointKeysetPassesBatchesWithoutEvidence(t *testing.T) {
 			{kind: "favorites", method: "flickr.favorites.getList"},
 		} {
 			checkpoint := time.Date(2026, 11, 1+index, 10, 0, 0, 0, time.UTC)
-			cursor, marshalErr := json.Marshal(domain.Cursor{Page: 1, Method: scan.method, CheckpointAt: checkpoint.Unix()})
+			cursor, marshalErr := json.Marshal(map[string]any{
+				"page": 1, "method": scan.method, "checkpoint_at": checkpoint.Unix(),
+				"scan_completed_at": checkpoint.Unix() + 60,
+			})
 			if marshalErr != nil {
 				t.Fatal(marshalErr)
 			}
@@ -442,12 +634,11 @@ func TestRepairCheckpointKeysetPassesBatchesWithoutEvidence(t *testing.T) {
 	if _, err := pool.Exec(ctx, `ANALYZE work_items`); err != nil {
 		t.Fatal(err)
 	}
-	planRows, err := pool.Query(ctx, `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
-		SELECT (w.cursor->>'checkpoint_at')::bigint
-		FROM work_items w
-		WHERE w.kind='photos' AND w.subject_key=$1 AND w.user_id=$2 AND w.state='done'
-		  AND COALESCE((w.cursor->>'checkpoint_at')::bigint,0)>0
-		LIMIT 1`, people[2], userID)
+	planTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planRows, err := planTx.Query(ctx, `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) `+fmt.Sprintf(repairCheckpointBatchSQL, "last_seen_at"), 2, int64(0), "", "photos")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,10 +655,13 @@ func TestRepairCheckpointKeysetPassesBatchesWithoutEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	planRows.Close()
-	if !strings.Contains(plan.String(), "work_items_dedupe_key") {
-		t.Fatalf("completed scan lookup did not use the bounded unique index:\n%s", plan.String())
+	if err := planTx.Rollback(ctx); err != nil {
+		t.Fatal(err)
 	}
-	t.Logf("completed scan lookup plan:\n%s", plan.String())
+	if !strings.Contains(plan.String(), "work_items_dedupe_key") {
+		t.Fatalf("full repair batch did not use the bounded unique index:\n%s", plan.String())
+	}
+	t.Logf("full repair batch plan:\n%s", plan.String())
 
 	report, err := RepairZeroCheckpointsPool(ctx, pool, CheckpointRepairOptions{BatchSize: 2})
 	if err != nil {

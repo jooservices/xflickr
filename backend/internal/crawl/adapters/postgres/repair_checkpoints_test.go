@@ -157,13 +157,28 @@ func TestRepairZeroCheckpointsContinuesPastUnrepairableBatch(t *testing.T) {
 		t.Fatalf("second batch did not resume after first batch's last key: %+v", db.txs)
 	}
 	for _, tx := range db.txs[:3] {
-		if !strings.Contains(tx.querySQL, "FROM work_items") || !strings.Contains(tx.querySQL, "w.state = 'done'") ||
+		if !strings.Contains(tx.querySQL, "FROM work_items") || !strings.Contains(tx.querySQL, "scan_completed_at") ||
 			!strings.Contains(tx.querySQL, "w.user_id = b.user_id") || !strings.Contains(tx.querySQL, "w.subject_key = b.person_nsid") {
 			t.Fatalf("repair query lacks completed observer-scoped scan lookup: %s", tx.querySQL)
 		}
 		if strings.Contains(tx.querySQL, "FROM favorites") || strings.Contains(tx.querySQL, "FROM photos") {
 			t.Fatalf("repair query scans shared catalog data: %s", tx.querySQL)
 		}
+	}
+}
+
+func TestRepairQueryUsesExplicitCompletionAndSafeLegacyFloor(t *testing.T) {
+	db := &repairDB{results: []repairBatch{{Selected: 1, Unrepairable: 1, Last: repairCursor{UserID: 1, PersonNSID: "person"}}}}
+	_, err := RepairZeroCheckpoints(t.Context(), db, CheckpointRepairOptions{BatchSize: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := db.txs[0].querySQL
+	if !strings.Contains(query, "scan_completed_at") || !strings.Contains(query, "THEN 1") {
+		t.Fatalf("repair query must use a final-page marker and an epoch catch-up floor: %s", query)
+	}
+	if strings.Contains(query, "SKIP LOCKED") || !strings.Contains(query, "FOR UPDATE") {
+		t.Fatalf("repair query can silently pass locked interests: %s", query)
 	}
 }
 
