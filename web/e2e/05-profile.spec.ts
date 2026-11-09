@@ -1,6 +1,13 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN_STATE, adminCredentials, apiWrite, signIn } from './support/auth';
+import {
+  ADMIN_STATE,
+  LAST_SESSION_STATE,
+  OTHER_SESSION_STATE,
+  adminCredentials,
+  apiRead,
+  apiWrite,
+} from './support/auth';
 import { expectNoErrorPage, monitor } from './support/monitor';
 
 test.use({ storageState: ADMIN_STATE });
@@ -19,17 +26,20 @@ test.describe.serial('profile identity actions on the real stack', () => {
 
   test('revokes one session and signs out every other session', async ({ browser, page }) => {
     const watch = monitor(page);
-    const { email, password } = adminCredentials();
     await page.goto('/profile');
     await expect(page.getByTestId(/^profile-session-row-/).first()).toBeVisible();
 
     const origin = new URL(page.url()).origin;
     const secondaryContexts = [];
+    const secondaryPages: Page[] = [];
     try {
-      for (let index = 0; index < 2; index += 1) {
-        const context = await browser.newContext({ baseURL: origin });
+      for (const storageState of [OTHER_SESSION_STATE, LAST_SESSION_STATE]) {
+        const context = await browser.newContext({ baseURL: origin, storageState });
         secondaryContexts.push(context);
-        await signIn(await context.newPage(), email, password);
+        const secondaryPage = await context.newPage();
+        secondaryPages.push(secondaryPage);
+        await secondaryPage.goto('/profile');
+        await expect(secondaryPage.getByTestId('profile-page')).toBeVisible();
       }
 
       const rows = page.locator('li[data-testid^="profile-session-row-"]');
@@ -57,9 +67,9 @@ test.describe.serial('profile identity actions on the real stack', () => {
       await expect(rows).toHaveCount(1);
       await expect(rows.first().getByTestId('profile-session-current')).toBeVisible();
 
-      for (const context of secondaryContexts) {
-        const response = await context.request.get(`${origin}/api/v1/me`);
-        expect(response.status()).toBe(401);
+      for (const secondaryPage of secondaryPages) {
+        const response = await apiRead(secondaryPage, '/api/v1/me');
+        expect(response.status).toBe(401);
       }
 
       await expectNoErrorPage(page, '/profile after revoking sessions');
@@ -79,8 +89,7 @@ test.describe.serial('profile identity actions on the real stack', () => {
     await changePassword(page, password, temporaryPassword);
     await changePassword(page, temporaryPassword, password);
 
-    const profile = await page.request.get('/api/v1/me');
-    expect(profile.status()).toBe(200);
+    expect((await apiRead(page, '/api/v1/me')).status).toBe(200);
     await expectNoErrorPage(page, '/profile after changing password');
     watch.expectClean('/profile password update');
   });
@@ -89,9 +98,9 @@ test.describe.serial('profile identity actions on the real stack', () => {
     const watch = monitor(page);
     await page.goto('/profile');
     const origin = new URL(page.url()).origin;
-    const currentResponse = await page.request.get(`${origin}/api/v1/me/sharing`);
-    expect(currentResponse.status()).toBe(200);
-    const currentBody = (await currentResponse.json()) as {
+    const currentResponse = await apiRead(page, `${origin}/api/v1/me/sharing`);
+    expect(currentResponse.status).toBe(200);
+    const currentBody = currentResponse.body as {
       data?: { enabled?: unknown };
     };
     const originalEnabled = currentBody.data?.enabled;
@@ -132,6 +141,11 @@ async function changePassword(page: Page, current: string, next: string) {
   );
   await page.getByTestId('profile-password-submit').click();
   expect((await response).status()).toBe(204);
+  const profileStatus = await page.evaluate(async () => {
+    const profile = await fetch('/api/v1/me', { credentials: 'same-origin' });
+    return profile.status;
+  });
+  expect(profileStatus).toBe(200);
   await expect(page.getByTestId('profile-password-current')).toHaveValue('');
   await expect(page.getByTestId('profile-password-new')).toHaveValue('');
   await expect(page.getByTestId('profile-password-confirm')).toHaveValue('');

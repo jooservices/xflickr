@@ -1,5 +1,14 @@
 import { expect, test } from '@playwright/test';
-import { ADMIN_STATE, adminCredentials, expectShell, saveAdminState, signIn } from './support/auth';
+import {
+  ADMIN_STATE,
+  LAST_SESSION_STATE,
+  OTHER_SESSION_STATE,
+  adminCredentials,
+  expectShell,
+  saveAdminState,
+  saveSessionState,
+  signIn,
+} from './support/auth';
 import { expectNoErrorPage, monitor } from './support/monitor';
 
 // The first registered user becomes the admin. These journeys run first and leave that admin in the database.
@@ -34,6 +43,7 @@ test.describe.serial('authentication on the real stack', () => {
     await signIn(page, email, password);
     await expectNoErrorPage(page, 'after signing in again');
     watch.expectClean('sign-out and sign-in');
+    await saveSessionState(page, OTHER_SESSION_STATE);
   });
 
   test('rejects a wrong password with a clear error and keeps the email', async ({ page }) => {
@@ -75,6 +85,7 @@ test.describe.serial('authentication on the real stack', () => {
       await page.getByTestId('auth-login-submit').click();
       // The sign-in screen sends an administrator to the admin overview whatever return_to says.
       await expectShell(page);
+      await saveSessionState(page, LAST_SESSION_STATE);
     });
   });
 });
