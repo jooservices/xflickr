@@ -16,6 +16,7 @@ import (
 
 	catalogpg "github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
 	catalogapp "github.com/jooservices/xflickr/internal/catalog/app"
+	catalogdomain "github.com/jooservices/xflickr/internal/catalog/domain"
 	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
 	crawldomain "github.com/jooservices/xflickr/internal/crawl/domain"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
@@ -249,6 +250,18 @@ func TestResolveContactsAccountMatchesUserAndSubject(t *testing.T) {
 	accountB := insertAccount(userID, sharedKey, suffix+"-b")
 	accountC := insertAccount(userID, separateKey, suffix+"-c")
 	otherAccountA := insertAccount(otherUserID, otherKey, suffix+"-a")
+	contactA, contactB := suffix+"-contact-a", suffix+"-contact-b"
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1),($2,$2),($3,$3),($4,$4)`, suffix+"-a", suffix+"-b", contactA, contactB); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=ANY($1)`, []string{suffix + "-a", suffix + "-b"})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{suffix + "-a", suffix + "-b", contactA, contactB})
+	})
+	catalog, err := catalogpg.New(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, test := range []struct {
 		name        string
@@ -257,9 +270,10 @@ func TestResolveContactsAccountMatchesUserAndSubject(t *testing.T) {
 		subject     string
 		wantKey     int64
 		wantAccount int64
+		contact     string
 	}{
-		{name: "shared key first account", owner: userID, keyID: sharedKey, subject: suffix + "-a", wantKey: sharedKey, wantAccount: accountA},
-		{name: "shared key second account", owner: userID, keyID: sharedKey, subject: suffix + "-b", wantKey: sharedKey, wantAccount: accountB},
+		{name: "shared key first account", owner: userID, keyID: sharedKey, subject: suffix + "-a", wantKey: sharedKey, wantAccount: accountA, contact: contactA},
+		{name: "shared key second account", owner: userID, keyID: sharedKey, subject: suffix + "-b", wantKey: sharedKey, wantAccount: accountB, contact: contactB},
 		{name: "different key account", owner: userID, keyID: sharedKey, subject: suffix + "-c", wantKey: separateKey, wantAccount: accountC},
 		{name: "same NSID under another user", owner: otherUserID, keyID: sharedKey, subject: suffix + "-a", wantKey: otherKey, wantAccount: otherAccountA},
 	} {
@@ -273,6 +287,18 @@ func TestResolveContactsAccountMatchesUserAndSubject(t *testing.T) {
 			}
 			if request.KeyID != test.wantKey || request.AccountID != test.wantAccount {
 				t.Fatalf("resolved key/account = %d/%d, want %d/%d", request.KeyID, request.AccountID, test.wantKey, test.wantAccount)
+			}
+			if test.contact != "" {
+				if err := catalog.UpsertContacts(ctx, []catalogdomain.Contact{{PersonNSID: request.SubjectNSID, ContactNSID: test.contact}}); err != nil {
+					t.Fatal(err)
+				}
+				var stored bool
+				if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM contacts WHERE person_nsid=$1 AND contact_nsid=$2)`, test.subject, test.contact).Scan(&stored); err != nil {
+					t.Fatal(err)
+				}
+				if !stored {
+					t.Fatalf("contact %q was not stored under account %q", test.contact, test.subject)
+				}
 			}
 		})
 	}
