@@ -3,6 +3,7 @@ package river
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -23,6 +24,165 @@ import (
 	"github.com/jooservices/xflickr/internal/schedule/app"
 	"github.com/jooservices/xflickr/internal/schedule/domain"
 )
+
+func TestPlanBacklogCountIsBoundedAndPlanAware(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run with XFLICKR_INTEGRATION_TEST=1 to use the worktree database")
+	}
+	pool := internalIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+	suffix := fmt.Sprintf("plan-backlog-%d", time.Now().UnixNano())
+	var freePlanID, proPlanID int64
+	for name, target := range map[string]*int64{"free": &freePlanID, "pro": &proPlanID} {
+		if err := tx.QueryRow(ctx, `SELECT id FROM plans WHERE name=$1`, name).Scan(target); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var freeUserID, proUserID, keyID int64
+	if err := tx.QueryRow(ctx, `INSERT INTO users(email,password_hash,role,plan_id) VALUES($1,'unused','user',$2) RETURNING id`, suffix+"-free@example.test", freePlanID).Scan(&freeUserID); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.QueryRow(ctx, `INSERT INTO users(email,password_hash,role,plan_id) VALUES($1,'unused','user',$2) RETURNING id`, suffix+"-pro@example.test", proPlanID).Scan(&proUserID); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'backlog test',$2,'{}',3600,4,5) RETURNING id`, freeUserID, suffix).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	var indexBytesBefore int64
+	if err := tx.QueryRow(ctx, `SELECT pg_relation_size('work_items_pending_plan_backlog_idx')`).Scan(&indexBytesBefore); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,score)
+		SELECT 'sync_person',$1||'-'||g,$2,$3,'pending',400000-g
+		FROM generate_series(1,400000) AS g`, suffix, proUserID, keyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `ANALYZE work_items`); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := explainStatement(ctx, tx, planBacklogSQL, keyID, "sync", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sharedBuffers := plan.Plan.SharedHitBlocks + plan.Plan.SharedReadBlocks
+	var indexBytesAfter int64
+	if err := tx.QueryRow(ctx, `SELECT pg_relation_size('work_items_pending_plan_backlog_idx')`).Scan(&indexBytesAfter); err != nil {
+		t.Fatal(err)
+	}
+	indexGrowth := indexBytesAfter - indexBytesBefore
+	t.Logf("after: execution_ms=%.2f shared_buffers=%d work_items_seq_scan=%t backlog_index_growth_bytes=%d", plan.ExecutionTime, sharedBuffers, containsWorkItemsSeqScan(plan.Plan), indexGrowth)
+	if containsWorkItemsSeqScan(plan.Plan) {
+		t.Errorf("plan backlog count performs a Seq Scan on work_items")
+	}
+	if !containsWorkItemsBacklogIndex(plan.Plan) {
+		t.Errorf("plan backlog count does not use work_items_pending_plan_backlog_idx")
+	}
+	if sharedBuffers >= 500 {
+		t.Errorf("plan backlog count touched %d buffers, want fewer than 500", sharedBuffers)
+	}
+	if indexGrowth >= 64<<20 {
+		t.Errorf("400,000 pending rows grew the plan backlog index by %d bytes, want less than 64 MiB", indexGrowth)
+	}
+	groups, err := readPlanBacklog(ctx, tx, planBacklogSQL, keyID, "sync", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 || groups[0].ID != proPlanID || groups[0].Available != 100 {
+		t.Errorf("empty free plan or capped pro backlog groups = %+v, want only pro capped at 100", groups)
+	}
+
+	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,score) VALUES('sync_person',$1,$2,$3,'pending',-1)`, suffix+"-late-free", freeUserID, keyID); err != nil {
+		t.Fatal(err)
+	}
+	groups, err = readPlanBacklog(ctx, tx, planBacklogSQL, keyID, "sync", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allocations, err := app.SplitShare(100, groups)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if allocations[freePlanID] != 1 || allocations[proPlanID] != 99 {
+		t.Errorf("allocations for late free work = %v, want free=1 and pro=99", allocations)
+	}
+}
+
+type explainDocument struct {
+	Plan          explainNode `json:"Plan"`
+	ExecutionTime float64     `json:"Execution Time"`
+}
+
+type explainNode struct {
+	NodeType         string        `json:"Node Type"`
+	RelationName     string        `json:"Relation Name"`
+	IndexName        string        `json:"Index Name"`
+	SharedHitBlocks  int           `json:"Shared Hit Blocks"`
+	SharedReadBlocks int           `json:"Shared Read Blocks"`
+	Plans            []explainNode `json:"Plans"`
+}
+
+func explainStatement(ctx context.Context, tx pgx.Tx, query string, args ...any) (explainDocument, error) {
+	var raw []byte
+	if err := tx.QueryRow(ctx, `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) `+query, args...).Scan(&raw); err != nil {
+		return explainDocument{}, err
+	}
+	var documents []explainDocument
+	if err := json.Unmarshal(raw, &documents); err != nil {
+		return explainDocument{}, err
+	}
+	if len(documents) != 1 {
+		return explainDocument{}, fmt.Errorf("EXPLAIN returned %d documents, want one", len(documents))
+	}
+	return documents[0], nil
+}
+
+func containsWorkItemsSeqScan(node explainNode) bool {
+	if strings.Contains(node.NodeType, "Seq Scan") && node.RelationName == "work_items" {
+		return true
+	}
+	for _, child := range node.Plans {
+		if containsWorkItemsSeqScan(child) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsWorkItemsBacklogIndex(node explainNode) bool {
+	if node.RelationName == "work_items" && node.IndexName == "work_items_pending_plan_backlog_idx" {
+		return true
+	}
+	for _, child := range node.Plans {
+		if containsWorkItemsBacklogIndex(child) {
+			return true
+		}
+	}
+	return false
+}
+
+func readPlanBacklog(ctx context.Context, tx pgx.Tx, query string, args ...any) ([]app.ShareGroup, error) {
+	rows, err := tx.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	groups := make([]app.ShareGroup, 0)
+	for rows.Next() {
+		var group app.ShareGroup
+		if err := rows.Scan(&group.ID, &group.Share, &group.Available); err != nil {
+			return nil, err
+		}
+		groups = append(groups, group)
+	}
+	return groups, rows.Err()
+}
 
 func TestPumpReturnsBacklogAndInflightReadErrors(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {

@@ -415,8 +415,32 @@ func (s Store) pumpKey(ctx context.Context, tx pgx.Tx, keyID int64, settings app
 	return dispatched, nil
 }
 
+const planBacklogSQL = `SELECT p.id, p.resource_share, count(backlog.work_item_id)::int
+	FROM plans p
+	CROSS JOIN LATERAL (
+		SELECT w.id AS work_item_id
+		FROM users u
+		CROSS JOIN LATERAL (
+			SELECT w.id
+			FROM work_items w
+			WHERE w.user_id=u.id AND w.state='pending' AND w.key_id=$1
+				AND w.worker_type=$2 AND w.not_before<=now()
+				AND NOT EXISTS (
+					SELECT 1 FROM crawl_interests ci
+					WHERE ci.user_id=w.user_id AND ci.person_nsid=w.subject_key
+						AND ci.paused_at IS NOT NULL
+				)
+			ORDER BY w.not_before
+			LIMIT $3
+		) w
+		WHERE u.plan_id=p.id
+		LIMIT $3
+	) backlog
+	GROUP BY p.id, p.resource_share
+	ORDER BY p.id`
+
 func (s Store) pumpQueue(ctx context.Context, tx pgx.Tx, keyID int64, cap queueCap, limit int, settings app.PumpSettings, jobs queue.JobQueue) (int, error) {
-	rows, err := tx.Query(ctx, `SELECT COALESCE(p.id,(SELECT id FROM plans WHERE name='free')), COALESCE(p.resource_share,(SELECT resource_share FROM plans WHERE name='free')), count(*) FROM work_items w LEFT JOIN users u ON u.id=w.user_id LEFT JOIN plans p ON p.id=u.plan_id WHERE w.state='pending' AND w.key_id=$1 AND w.worker_type=$2 AND w.not_before<=now() AND NOT EXISTS (SELECT 1 FROM crawl_interests ci WHERE ci.user_id=w.user_id AND ci.person_nsid=w.subject_key AND ci.paused_at IS NOT NULL) GROUP BY 1,2 ORDER BY 1`, keyID, cap.name)
+	rows, err := tx.Query(ctx, planBacklogSQL, keyID, cap.name, limit)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: count plan backlog: %w", err)
 	}
