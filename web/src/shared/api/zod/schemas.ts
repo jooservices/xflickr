@@ -1058,6 +1058,12 @@ export const GetAdminOpsStatusResponse = zod.object({
     galleries: zod.int().min(getAdminOpsStatusResponseCountsGalleriesMin),
     groups: zod.int().min(getAdminOpsStatusResponseCountsGroupsMin),
   }),
+  counts_estimated: zod
+    .boolean()
+    .optional()
+    .describe(
+      'True when catalog counts (including photo_sizes) come from planner estimates rather than exact scans.',
+    ),
   work_items: zod
     .record(zod.string(), zod.int().min(getAdminOpsStatusResponseWorkItemsMinOne))
     .describe('Work items by state.'),
@@ -1071,7 +1077,9 @@ export const GetAdminOpsStatusResponse = zod.object({
   photo_sizes_pending: zod
     .int()
     .min(getAdminOpsStatusResponsePhotoSizesPendingMin)
-    .describe('Provisional photos not yet queued plus queued jobs waiting for execution.'),
+    .describe(
+      'Photos matching photos_sizes_pending_idx plus photo.sizes river jobs still waiting (pending/scheduled/retryable). Queued photos may be counted twice; this is a backlog signal',
+    ),
   photo_sizes_ready: zod
     .int()
     .min(getAdminOpsStatusResponsePhotoSizesReadyMin)
