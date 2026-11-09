@@ -132,6 +132,9 @@ func TestCrawlCatalogWritersMapDomainRecordsToBatchUpserts(t *testing.T) {
 	if err := repository.UpsertPersonGroups(ctx, []catalog.PersonGroup{{PersonNSID: "person", GroupNSID: "group"}}); err != nil {
 		t.Fatalf("upsert crawl person groups: %v", err)
 	}
+	if err := repository.UpsertContacts(ctx, []catalog.Contact{{PersonNSID: "person", ContactNSID: "contact"}}); err != nil {
+		t.Fatalf("upsert crawl contacts: %v", err)
+	}
 	if err := repository.UpsertAlbumsBatch(ctx, []Album{{ID: "batch-album", OwnerNSID: "person", PrimaryPhotoID: &photoID, PhotosCount: 1}}); err != nil {
 		t.Fatalf("upsert album batch: %v", err)
 	}

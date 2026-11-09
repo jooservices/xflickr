@@ -73,6 +73,12 @@ func (s *readRepoStub) GetPhoto(context.Context, int64, int64, sharingapp.SQLPre
 	return s.photo, s.photoOK, s.listErr
 }
 
+func (s *readRepoStub) ListContacts(_ context.Context, _ int64, _ *app.ContactCursor, limit int) (app.ContactsPage, error) {
+	s.lastLimit = limit
+	s.listCalls++
+	return app.ContactsPage{}, s.listErr
+}
+
 func TestListHandlersDistinguishOmittedAndZeroLimits(t *testing.T) {
 	repo := &readRepoStub{}
 	handler := Handler{Reads: app.ReadService{Repository: repo}, ActorID: func(context.Context) (int64, bool) { return 71, true }}

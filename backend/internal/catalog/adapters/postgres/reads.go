@@ -664,6 +664,54 @@ func collectAlbumPhotoPage(ctx context.Context, r *Repository, query string, arg
 	return page, nil
 }
 
+// ListContacts returns distinct contacts of the caller's connected Flickr
+// accounts, ordered by contact NSID.
+func (r *Repository) ListContacts(ctx context.Context, userID int64, cursor *app.ContactCursor, limit int) (app.ContactsPage, error) {
+	if ctx == nil || r == nil || r.db == nil || userID <= 0 || limit < 1 || limit > app.MaxPageSize {
+		return app.ContactsPage{}, errors.New("catalog: invalid read request")
+	}
+	query := `SELECT p.nsid, p.username, p.realname, p.icon, p.photos_count, MIN(c.person_nsid)
+FROM contacts c
+JOIN people p ON p.nsid = c.contact_nsid
+WHERE EXISTS (
+	SELECT 1 FROM flickr_accounts fa
+	WHERE fa.user_id = $1 AND fa.status = 'ok' AND fa.nsid = c.person_nsid
+)`
+	args := []any{userID}
+	if cursor != nil {
+		if cursor.NSID == "" {
+			return app.ContactsPage{}, app.ErrInvalidCursor
+		}
+		query += ` AND p.nsid > $2 GROUP BY p.nsid, p.username, p.realname, p.icon, p.photos_count ORDER BY p.nsid ASC LIMIT $3`
+		args = append(args, cursor.NSID, limit+1)
+	} else {
+		query += ` GROUP BY p.nsid, p.username, p.realname, p.icon, p.photos_count ORDER BY p.nsid ASC LIMIT $2`
+		args = append(args, limit+1)
+	}
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return app.ContactsPage{}, fmt.Errorf("catalog: list contacts: %w", err)
+	}
+	defer rows.Close()
+	page := app.ContactsPage{Items: make([]app.Contact, 0, limit)}
+	for rows.Next() {
+		var item app.Contact
+		if err := rows.Scan(&item.NSID, &item.Username, &item.Realname, &item.Icon, &item.PhotosCount, &item.AccountNSID); err != nil {
+			return app.ContactsPage{}, fmt.Errorf("catalog: scan contact: %w", err)
+		}
+		page.Items = append(page.Items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return app.ContactsPage{}, fmt.Errorf("catalog: list contacts: %w", err)
+	}
+	if len(page.Items) > limit {
+		last := page.Items[limit-1]
+		page.Items = page.Items[:limit]
+		page.NextCursor = &app.ContactCursor{NSID: last.NSID}
+	}
+	return page, nil
+}
+
 func scanPhotoWithPosition(row rowScanner) (app.Photo, int, error) {
 	var photo app.Photo
 	var takenAt, uploadedAt pgtype.Timestamptz

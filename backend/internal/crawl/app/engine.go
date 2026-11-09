@@ -138,6 +138,7 @@ type CatalogWriter interface {
 	UpsertGalleries(ctx context.Context, galleries []catalog.Gallery) error
 	UpsertGroups(ctx context.Context, groups []catalog.Group) error
 	UpsertPersonGroups(ctx context.Context, groups []catalog.PersonGroup) error
+	UpsertContacts(ctx context.Context, contacts []catalog.Contact) error
 }
 
 type peoplePageWriter interface {
@@ -544,6 +545,11 @@ func writeCatalog(ctx context.Context, writer CatalogWriter, pageWriter peoplePa
 	}
 	if len(result.PersonGroups) > 0 {
 		if err := writer.UpsertPersonGroups(ctx, result.PersonGroups); err != nil {
+			return err
+		}
+	}
+	if len(result.Contacts) > 0 {
+		if err := writer.UpsertContacts(ctx, result.Contacts); err != nil {
 			return err
 		}
 	}

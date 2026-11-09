@@ -20,6 +20,7 @@ type readRepositoryStub struct {
 	albums        AlbumsPage
 	contactAlbums ContactAlbumsPage
 	albumPhotos   AlbumPhotosPage
+	contacts      ContactsPage
 	photo         Photo
 	photoOK       bool
 	err           error
@@ -27,6 +28,7 @@ type readRepositoryStub struct {
 	seenLimit     int
 	seenOwner     string
 	seenPredicate sharingapp.SQLPredicate
+	seenCursor    any
 }
 
 func (s *readRepositoryStub) record(userID int64, predicate sharingapp.SQLPredicate, limit int) error {
@@ -65,6 +67,11 @@ func (s *readRepositoryStub) ListVisibleAlbumPhotos(_ context.Context, userID in
 
 func (s *readRepositoryStub) GetPhoto(_ context.Context, userID, _ int64, predicate sharingapp.SQLPredicate) (Photo, bool, error) {
 	return s.photo, s.photoOK, s.record(userID, predicate, DefaultPageSize)
+}
+
+func (s *readRepositoryStub) ListContacts(_ context.Context, userID int64, cursor *ContactCursor, limit int) (ContactsPage, error) {
+	s.seenCursor = cursor
+	return s.contacts, s.record(userID, sharingapp.SQLPredicate{}, limit)
 }
 
 func TestReadServiceAppliesPolicyAndEncodesKeysets(t *testing.T) {
@@ -140,11 +147,33 @@ func TestReadServiceAppliesPolicyAndEncodesKeysets(t *testing.T) {
 	if got, err := service.GetPhoto(context.Background(), 42, 9); err != nil || got.ID != 9 {
 		t.Fatalf("get photo=%+v err=%v", got, err)
 	}
+	repo.contacts = ContactsPage{Items: []Contact{{NSID: "c@N00", Username: "c"}}, NextCursor: &ContactCursor{NSID: "c@N00"}}
+	contactsPage, contactsCursor, err := service.ListContacts(context.Background(), 42, "", 10)
+	if err != nil || len(contactsPage.Items) != 1 || contactsCursor == "" || repo.seenLimit != 10 {
+		t.Fatalf("contacts page=%+v cursor=%q err=%v", contactsPage, contactsCursor, err)
+	}
+	decodedContact, err := decodeCursor[ContactCursor](contactsCursor, "contacts")
+	if err != nil || decodedContact.NSID != "c@N00" {
+		t.Fatalf("contacts cursor decode=%+v err=%v", decodedContact, err)
+	}
+	if _, _, err := service.ListContacts(context.Background(), 42, contactsCursor, 10); err != nil {
+		t.Fatalf("contacts with cursor error=%v", err)
+	}
+	parsedContact, ok := repo.seenCursor.(*ContactCursor)
+	if !ok || parsedContact == nil || parsedContact.NSID != "c@N00" {
+		t.Fatalf("repository cursor = %#v", repo.seenCursor)
+	}
 }
 
 func TestReadServiceRejectsInvalidPageAndCursorWithoutReading(t *testing.T) {
 	repo := &readRepositoryStub{}
 	service := ReadService{Repository: repo}
+	if _, _, err := service.ListContacts(context.Background(), 1, "not-base64", 10); !errors.Is(err, ErrInvalidCursor) {
+		t.Fatalf("invalid contacts cursor error=%v", err)
+	}
+	if _, _, err := service.ListContacts(context.Background(), 1, "", MaxPageSize+1); !errors.Is(err, ErrInvalidPage) {
+		t.Fatalf("invalid contacts limit error=%v", err)
+	}
 	if _, _, err := service.ListPeople(context.Background(), 1, "not-base64", 10); !errors.Is(err, ErrInvalidCursor) {
 		t.Fatalf("invalid cursor error=%v", err)
 	}

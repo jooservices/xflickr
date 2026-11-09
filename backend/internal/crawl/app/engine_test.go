@@ -166,6 +166,10 @@ func (t *fakeTx) UpsertPersonGroups(_ context.Context, groups []catalog.PersonGr
 	return t.fail("person_groups")
 }
 
+func (t *fakeTx) UpsertContacts(context.Context, []catalog.Contact) error {
+	return t.fail("contacts")
+}
+
 func (t *fakeTx) Add(_ context.Context, i domain.Interest) error {
 	t.interests = append(t.interests, i)
 	return t.fail("interest")
