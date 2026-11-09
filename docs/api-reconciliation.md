@@ -20,6 +20,7 @@ that serve it, or `MISSING`.
 | `/albums` | `/albums` | `/albums` |
 | `/albums/{}/photos` | `/albums/{id}/photos` | `/albums/{id}/photos` |
 | `/api/v1` | `/api/v1` | `/api/v1` |
+| `/contacts` | `/contacts` | `/contacts` |
 | `/api/v1/authentication-options` | `/api/v1/authentication-options` | `/api/v1/authentication-options` |
 | `/api/v1/me` | `/api/v1/me` | `/api/v1/me` |
 | `/api/v1/me/password` | `/api/v1/me/password` | `/api/v1/me/password` |
