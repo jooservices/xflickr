@@ -384,3 +384,49 @@ func TestReclaimProcessesLargeBacklogsInBatches(t *testing.T) {
 		wantBatch = batchSize
 	}
 }
+
+func TestReclaimCursorAdvancesPastLiveRiverJobs(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run with XFLICKR_INTEGRATION_TEST=1 to use the worktree database")
+	}
+	pool := internalIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	suffix := fmt.Sprintf("reclaim-cursor-%d", time.Now().UnixNano())
+	const batchSize = 100
+	const liveBacklog = 150
+	const reclaimableBacklog = 10
+	keyID := seedKey(t, ctx, pool, suffix)
+	var userID int64
+	if err := pool.QueryRow(ctx, `SELECT user_id FROM api_keys WHERE id=$1`, keyID).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM river_job WHERE args->'args'->>'work_item_id' IN
+			(SELECT id::text FROM work_items WHERE subject_key LIKE $1)`, suffix+"-%")
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE subject_key LIKE $1`, suffix+"-%")
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE email=$1`, suffix+"@example.test")
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,lease_expires_at)
+		SELECT 'sync_person',$1||'-live-'||g,$2,$3,'ready','2000-01-01'::timestamptz
+		FROM generate_series(1,$4) AS g`, suffix, userID, keyID, liveBacklog); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,lease_expires_at)
+		SELECT 'sync_person',$1||'-free-'||g,$2,$3,'ready','2000-01-01'::timestamptz
+		FROM generate_series(1,$4) AS g`, suffix, userID, keyID, reclaimableBacklog); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO river_job(state,args,kind,queue)
+		SELECT 'available',jsonb_build_object('args',jsonb_build_object('work_item_id',w.id::text)),
+			'sync_person','sync' FROM work_items w WHERE w.subject_key LIKE $1`, suffix+"-live-%"); err != nil {
+		t.Fatal(err)
+	}
+	store := Store{Pool: pool}
+	if got, err := store.Reclaim(ctx, 5, time.Second, batchSize, time.Now()); err != nil || got != 0 {
+		t.Fatalf("first Reclaim() = %d, %v; want 0 while the first 100 candidates have live River jobs", got, err)
+	}
+	if got, err := store.Reclaim(ctx, 5, time.Second, batchSize, time.Now()); err != nil || got != reclaimableBacklog {
+		t.Fatalf("second Reclaim() = %d, %v; want %d after the cursor advances", got, err, reclaimableBacklog)
+	}
+}
