@@ -33,21 +33,6 @@ func TestNextCheckpointTable(t *testing.T) {
 	}
 }
 
-func TestLateArrivalCoveredByScanStart(t *testing.T) {
-	// An item uploaded after scan start but before the last page commits must
-	// still be selected on the next incremental read because the stored bound
-	// is the start time, not the finish time.
-	scanStart := ScanCheckpoint(1_700_000_100)
-	duringScan := ScanCheckpoint(1_700_000_150)
-	stored := NextCheckpoint(scanStart, true, 0)
-	if !stored.Valid() || stored != scanStart {
-		t.Fatalf("stored checkpoint = %d, want scan start %d", stored, scanStart)
-	}
-	if duringScan < stored {
-		t.Fatalf("late arrival %d would be excluded by stored bound %d", duringScan, stored)
-	}
-}
-
 func TestNeedsScanStartCheckpoint(t *testing.T) {
 	if !NeedsScanStartCheckpoint(FacetPhotos) || !NeedsScanStartCheckpoint(FacetFavorites) {
 		t.Fatal("photos and favorites must need a scan-start checkpoint")

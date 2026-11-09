@@ -3,42 +3,57 @@ package postgres
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5"
 )
 
 type repairDB struct {
-	beginErr error
-	txs      []*repairTx
+	beginErr    error
+	queryErr    string
+	commitErrAt int
+	results     []repairBatch
+	txs         []*repairTx
 }
 
 func (d *repairDB) Begin(context.Context) (CheckpointRepairTx, error) {
 	if d.beginErr != nil {
 		return nil, d.beginErr
 	}
-	tx := &repairTx{}
+	index := len(d.txs)
+	var result repairBatch
+	if index < len(d.results) {
+		result = d.results[index]
+	}
+	tx := &repairTx{result: result, queryErr: d.queryErr}
+	if d.commitErrAt == index+1 {
+		tx.commitErr = errors.New("commit failed")
+	}
 	d.txs = append(d.txs, tx)
 	return tx, nil
 }
 
 type repairTx struct {
-	execs      int
-	affected   int64
-	failExec   string
+	result     repairBatch
+	queryErr   string
 	commitErr  error
+	querySQL   string
+	queryArgs  []any
 	rollbacked bool
 	committed  bool
 }
 
-func (t *repairTx) Exec(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
-	t.execs++
-	if t.failExec != "" && strings.Contains(sql, t.failExec) {
-		return pgconn.CommandTag{}, errors.New("exec failed")
+func (t *repairTx) QueryRow(_ context.Context, query string, args ...any) pgx.Row {
+	t.querySQL = query
+	t.queryArgs = append([]any(nil), args...)
+	if t.queryErr != "" && strings.Contains(query, t.queryErr) {
+		return repairRow{err: errors.New("query failed")}
 	}
-	return pgconn.NewCommandTag("UPDATE " + string(rune('0'+t.affected))), nil
+	return repairRow{batch: t.result}
 }
 
 func (t *repairTx) Commit(context.Context) error {
@@ -51,25 +66,44 @@ func (t *repairTx) Rollback(context.Context) error {
 	return nil
 }
 
+type repairRow struct {
+	batch repairBatch
+	err   error
+}
+
+func (r repairRow) Scan(dest ...any) error {
+	if r.err != nil {
+		return r.err
+	}
+	if len(dest) != 5 {
+		return errors.New("unexpected repair scan arity")
+	}
+	*dest[0].(*int64) = r.batch.Selected
+	*dest[1].(*int64) = r.batch.Updated
+	*dest[2].(*int64) = r.batch.Unrepairable
+	*dest[3].(*int64) = r.batch.Last.UserID
+	*dest[4].(*string) = r.batch.Last.PersonNSID
+	return nil
+}
+
 func TestRepairZeroCheckpointsRejectsBadOptions(t *testing.T) {
-	_, err := RepairZeroCheckpoints(t.Context(), &repairDB{}, CheckpointRepairOptions{})
-	if err == nil {
+	now := time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC)
+	options := CheckpointRepairOptions{BatchSize: 10, Now: func() time.Time { return now }}
+	if _, err := RepairZeroCheckpoints(t.Context(), &repairDB{}, CheckpointRepairOptions{}); err == nil {
 		t.Fatal("empty options accepted")
 	}
-	_, err = RepairZeroCheckpoints(nil, &repairDB{}, CheckpointRepairOptions{BatchSize: 10})
-	if err == nil {
+	if _, err := RepairZeroCheckpoints(nil, &repairDB{}, options); err == nil {
 		t.Fatal("nil context accepted")
 	}
-	_, err = RepairZeroCheckpoints(t.Context(), nil, CheckpointRepairOptions{BatchSize: 10})
-	if err == nil {
+	if _, err := RepairZeroCheckpoints(t.Context(), nil, options); err == nil {
 		t.Fatal("nil database accepted")
 	}
-	_, err = RepairZeroCheckpoints(t.Context(), &repairDB{}, CheckpointRepairOptions{BatchSize: 501})
-	if err == nil {
+	if _, err := RepairZeroCheckpoints(t.Context(), &repairDB{}, CheckpointRepairOptions{BatchSize: 501}); err == nil {
 		t.Fatal("batch size above 500 accepted")
 	}
-	if CheckpointRepairMargin != time.Hour {
-		t.Fatalf("safety margin = %s, want 1h", CheckpointRepairMargin)
+	report, err := RepairZeroCheckpoints(t.Context(), &repairDB{}, options)
+	if err != nil || !report.RunAt.Equal(now) {
+		t.Fatalf("report=%+v err=%v", report, err)
 	}
 }
 
@@ -77,7 +111,7 @@ func TestRepairZeroCheckpointsRunsEmptyBatches(t *testing.T) {
 	db := &repairDB{}
 	report, err := RepairZeroCheckpoints(t.Context(), db, CheckpointRepairOptions{
 		BatchSize: 10,
-		Now:       func() time.Time { return time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC) },
+		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -91,8 +125,12 @@ func TestRepairZeroCheckpointsRunsEmptyBatches(t *testing.T) {
 }
 
 func TestRepairZeroCheckpointsUpdatesUntilEmpty(t *testing.T) {
-	seq := &sequentialRepairDB{affected: []int64{3, 0, 0}}
-	report, err := RepairZeroCheckpoints(t.Context(), seq, CheckpointRepairOptions{BatchSize: 500})
+	db := &repairDB{results: []repairBatch{
+		{Selected: 3, Updated: 3, Last: repairCursor{UserID: 1, PersonNSID: "c"}},
+		{},
+		{},
+	}}
+	report, err := RepairZeroCheckpoints(t.Context(), db, CheckpointRepairOptions{BatchSize: 500})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,18 +139,69 @@ func TestRepairZeroCheckpointsUpdatesUntilEmpty(t *testing.T) {
 	}
 }
 
-type sequentialRepairDB struct {
-	affected []int64
-	i        int
+func TestRepairZeroCheckpointsContinuesPastUnrepairableBatch(t *testing.T) {
+	db := &repairDB{results: []repairBatch{
+		{Selected: 2, Unrepairable: 2, Last: repairCursor{UserID: 7, PersonNSID: "b"}},
+		{Selected: 2, Updated: 1, Unrepairable: 1, Last: repairCursor{UserID: 7, PersonNSID: "d"}},
+		{},
+		{},
+	}}
+	report, err := RepairZeroCheckpoints(t.Context(), db, CheckpointRepairOptions{BatchSize: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.PhotosUpdated != 1 || report.PhotosUnrepairable != 3 || report.Batches != 4 {
+		t.Fatalf("report=%+v", report)
+	}
+	if len(db.txs) != 4 || db.txs[1].queryArgs[1] != int64(7) || db.txs[1].queryArgs[2] != "b" {
+		t.Fatalf("second batch did not resume after first batch's last key: %+v", db.txs)
+	}
+	for _, tx := range db.txs[:3] {
+		if !strings.Contains(tx.querySQL, "FROM work_items") || !strings.Contains(tx.querySQL, "w.state = 'done'") ||
+			!strings.Contains(tx.querySQL, "w.user_id = b.user_id") || !strings.Contains(tx.querySQL, "w.subject_key = b.person_nsid") {
+			t.Fatalf("repair query lacks completed observer-scoped scan lookup: %s", tx.querySQL)
+		}
+		if strings.Contains(tx.querySQL, "FROM favorites") || strings.Contains(tx.querySQL, "FROM photos") {
+			t.Fatalf("repair query scans shared catalog data: %s", tx.querySQL)
+		}
+	}
 }
 
-func (d *sequentialRepairDB) Begin(context.Context) (CheckpointRepairTx, error) {
-	n := int64(0)
-	if d.i < len(d.affected) {
-		n = d.affected[d.i]
-		d.i++
+func TestRepairZeroCheckpointsRejectsInvalidBatchProgress(t *testing.T) {
+	tests := []struct {
+		name   string
+		result repairBatch
+	}{
+		{name: "missing keyset key", result: repairBatch{Selected: 1, Unrepairable: 1}},
+		{name: "inconsistent counts", result: repairBatch{Selected: 1, Updated: 1, Unrepairable: 1, Last: repairCursor{UserID: 1, PersonNSID: "a"}}},
 	}
-	return &repairTx{affected: n}, nil
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			db := &repairDB{results: []repairBatch{tc.result}}
+			if _, err := RepairZeroCheckpoints(t.Context(), db, CheckpointRepairOptions{BatchSize: 1}); err == nil {
+				t.Fatal("invalid progress accepted")
+			}
+		})
+	}
+}
+
+func TestRepairBatchErrorsSurface(t *testing.T) {
+	options := CheckpointRepairOptions{BatchSize: 1}
+	if _, err := RepairZeroCheckpoints(t.Context(), &repairDB{beginErr: errors.New("begin")}, options); err == nil {
+		t.Fatal("begin error ignored")
+	}
+	if _, err := RepairZeroCheckpoints(t.Context(), &repairDB{queryErr: "last_seen_at"}, options); err == nil {
+		t.Fatal("photo query error ignored")
+	}
+	if _, err := RepairZeroCheckpoints(t.Context(), &repairDB{queryErr: "last_fave_at"}, options); err == nil {
+		t.Fatal("favorite query error ignored")
+	}
+	if _, err := RepairZeroCheckpoints(t.Context(), &repairDB{commitErrAt: 1}, options); err == nil {
+		t.Fatal("photo commit error ignored")
+	}
+	if _, err := RepairZeroCheckpoints(t.Context(), &repairDB{commitErrAt: 2}, options); err == nil {
+		t.Fatal("favorite commit error ignored")
+	}
 }
 
 func TestRepairZeroCheckpointsPoolRequiresPool(t *testing.T) {
@@ -121,39 +210,8 @@ func TestRepairZeroCheckpointsPoolRequiresPool(t *testing.T) {
 	}
 }
 
-func TestRepairBatchErrorsSurface(t *testing.T) {
-	if _, err := RepairZeroCheckpoints(t.Context(), &repairDB{beginErr: errors.New("begin")}, CheckpointRepairOptions{BatchSize: 1}); err == nil {
-		t.Fatal("begin error ignored")
+func TestRepairUnsupportedKindRejected(t *testing.T) {
+	if _, err := repairZeroCheckpointsBatch(t.Context(), &repairDB{}, 1, repairCursor{}, "albums"); err == nil {
+		t.Fatal("unsupported repair kind accepted")
 	}
-	if _, err := RepairZeroCheckpoints(t.Context(), &failingExecRepairDB{fail: "last_seen_at"}, CheckpointRepairOptions{BatchSize: 1}); err == nil {
-		t.Fatal("photo exec error ignored")
-	}
-	if _, err := RepairZeroCheckpoints(t.Context(), &failingExecRepairDB{fail: "last_fave_at", skipPhotos: true}, CheckpointRepairOptions{BatchSize: 1}); err == nil {
-		t.Fatal("favorite exec error ignored")
-	}
-	if _, err := RepairZeroCheckpoints(t.Context(), &failingExecRepairDB{commitFail: true}, CheckpointRepairOptions{BatchSize: 1}); err == nil {
-		t.Fatal("commit error ignored")
-	}
-	if _, err := RepairZeroCheckpoints(t.Context(), &failingExecRepairDB{commitFail: true, skipPhotos: true}, CheckpointRepairOptions{BatchSize: 1}); err == nil {
-		t.Fatal("favorite commit error ignored")
-	}
-}
-
-type failingExecRepairDB struct {
-	fail       string
-	skipPhotos bool
-	commitFail bool
-	photosDone bool
-}
-
-func (d *failingExecRepairDB) Begin(context.Context) (CheckpointRepairTx, error) {
-	if d.skipPhotos && !d.photosDone {
-		d.photosDone = true
-		return &repairTx{affected: 0}, nil
-	}
-	tx := &repairTx{failExec: d.fail}
-	if d.commitFail {
-		tx.commitErr = errors.New("commit failed")
-	}
-	return tx, nil
 }

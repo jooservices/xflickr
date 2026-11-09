@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -38,14 +39,15 @@ func (f *fakeFacet) Handle(_ context.Context, page domain.Page) (domain.Result, 
 }
 
 type fakeStore struct {
-	item     domain.Item
-	loadErr  error
-	started  bool
-	startErr error
-	calls    []string
-	deferral Deferral
-	stop     StopRequest
-	reason   string
+	item      domain.Item
+	loadErr   error
+	started   bool
+	startErr  error
+	calls     []string
+	deferral  Deferral
+	stop      StopRequest
+	reason    string
+	stampHook func(domain.Cursor, domain.Cursor)
 }
 
 func (s *fakeStore) Load(context.Context, int64) (domain.Item, error) { return s.item, s.loadErr }
@@ -54,10 +56,18 @@ func (s *fakeStore) Start(context.Context, int64) (bool, error) {
 	return s.started, s.startErr
 }
 
-func (s *fakeStore) StampScanStart(_ context.Context, _ int64, at int64) error {
+func (s *fakeStore) StampScanStart(_ context.Context, _ int64, at int64, expected domain.Cursor) error {
 	s.calls = append(s.calls, "stamp")
-	if s.item.Cursor.CheckpointAt <= 0 {
+	if s.item.Cursor.CheckpointAt <= 0 && sameCursor(s.item.Cursor, expected) {
+		previous := s.item.Cursor
 		s.item.Cursor.CheckpointAt = at
+		if s.item.Cursor.Page > 1 {
+			s.item.Cursor.Page = 1
+			s.item.Cursor.Continuation = ""
+		}
+		if s.stampHook != nil {
+			s.stampHook(previous, s.item.Cursor)
+		}
 	}
 	return nil
 }
@@ -196,6 +206,7 @@ func (g fakeGovernor) Acquire(context.Context, int64, domain.Lane) (Permit, time
 
 type fakeFlickr struct {
 	payload  json.RawMessage
+	payloads []json.RawMessage
 	err      error
 	requests []Request
 }
@@ -208,6 +219,9 @@ func (markedCredentialFailure) CredentialDecryptionFailure() {}
 
 func (f *fakeFlickr) Call(_ context.Context, r Request) (json.RawMessage, error) {
 	f.requests = append(f.requests, r)
+	if index := len(f.requests) - 1; index < len(f.payloads) {
+		return f.payloads[index], f.err
+	}
 	return f.payload, f.err
 }
 
@@ -245,7 +259,7 @@ func newRig(t *testing.T) *rig {
 	t.Helper()
 	item := domain.Item{
 		ID: 7, Kind: "photos", Subject: "100@N01", UserID: 3, Depth: 1, State: domain.StateReady, Attempts: 1,
-		Cursor: domain.Cursor{Page: 2, Method: "flickr.people.getPhotos", Params: map[string]string{"user_id": "100@N01"}},
+		Cursor: domain.Cursor{Page: 2, Method: "flickr.people.getPhotos", CheckpointAt: epoch.Unix(), Params: map[string]string{"user_id": "100@N01"}},
 	}
 	facet := &fakeFacet{name: "photos", lane: domain.LanePerson}
 	other := &fakeFacet{name: "contacts", lane: domain.LanePerson, plan: []domain.WorkSpec{{Subject: "200@N01", Method: "flickr.contacts.getList"}, {Subject: "", Method: "x"}}}
@@ -260,6 +274,11 @@ func newRig(t *testing.T) *rig {
 	health := &fakeHealth{}
 	flk := &fakeFlickr{payload: json.RawMessage(`{"ok":true}`)}
 	store := &fakeStore{item: item, started: true}
+	store.stampHook = func(expected, next domain.Cursor) {
+		if sameCursor(tx.current.Cursor, expected) {
+			tx.current.Cursor = next
+		}
+	}
 	engine := &Engine{
 		Registry: registry, Store: store, Units: tx, Keys: fakeKeys{id: 9}, Governor: fakeGovernor{permit: permit},
 		Flickr: flk, Health: health, Settings: fakeSettings{max: 3}, Now: func() time.Time { return epoch },
@@ -280,6 +299,83 @@ func TestEnsureScanStartStampsPhotosBeforeFirstPage(t *testing.T) {
 	}
 	if len(r.store.calls) < 2 || r.store.calls[1] != "stamp" {
 		t.Fatalf("store calls = %#v, want stamp after start", r.store.calls)
+	}
+}
+
+func TestLegacyPageWithoutCheckpointRestartsFromFirstPage(t *testing.T) {
+	r := newRig(t)
+	r.store.item.Cursor.Page = 4
+	r.store.item.Cursor.CheckpointAt = 0
+	r.store.item.Cursor.Continuation = "legacy-continuation"
+	r.tx.current.Cursor = r.store.item.Cursor
+
+	if err := r.engine.Handle(t.Context(), 7); err != nil {
+		t.Fatal(err)
+	}
+	request := r.flickr.requests[0]
+	if request.Params["page"] != "1" || request.Params["continuation"] != "" {
+		t.Fatalf("legacy cursor request = %#v, want the first page", request.Params)
+	}
+	if r.facet.pages[0].Number != 1 {
+		t.Fatalf("facet received page %d, want page 1", r.facet.pages[0].Number)
+	}
+	if r.store.item.Cursor.CheckpointAt != epoch.Unix() || r.store.item.Cursor.Page != 1 || r.store.item.Cursor.Continuation != "" {
+		t.Fatalf("stamped legacy cursor = %+v", r.store.item.Cursor)
+	}
+}
+
+func TestEngineKeepsScanStartWhenLatePhotoArrivesOnLaterPage(t *testing.T) {
+	r := newRig(t)
+	r.store.item.Cursor.Page = 1
+	r.store.item.Cursor.CheckpointAt = 0
+	r.tx.current.Cursor = r.store.item.Cursor
+	r.flickr.payloads = []json.RawMessage{
+		json.RawMessage(`{"photos":{"page":1,"pages":2,"photo":[{"id":"before"}]}}`),
+		json.RawMessage(`{"photos":{"page":2,"pages":2,"photo":[{"id":"late","dateupload":"1792930001"}]}}`),
+		json.RawMessage(`{"photos":{"total":"1"}}`),
+	}
+	r.facet.result = domain.Result{HasMore: true}
+	if err := r.engine.Handle(t.Context(), 7); err != nil {
+		t.Fatalf("first page: %v", err)
+	}
+	checkpoint := epoch.Unix()
+	if r.tx.advanced == nil || r.tx.advanced.Page != 2 || r.tx.advanced.CheckpointAt != checkpoint {
+		t.Fatalf("first page cursor = %+v", r.tx.advanced)
+	}
+
+	r.store.item.Cursor = *r.tx.advanced
+	r.tx.current.Cursor = *r.tx.advanced
+	r.facet.result = domain.Result{}
+	if err := r.engine.Handle(t.Context(), 7); err != nil {
+		t.Fatalf("second page: %v", err)
+	}
+	if len(r.facet.pages) != 2 || !strings.Contains(string(r.facet.pages[1].Payload), `"id":"late"`) {
+		t.Fatalf("later page did not deliver the late photo: %+v", r.facet.pages)
+	}
+	if r.tx.current.Cursor.CheckpointAt != checkpoint || !r.tx.finished {
+		t.Fatalf("completed scan lost its start checkpoint: cursor=%+v finished=%v", r.tx.current.Cursor, r.tx.finished)
+	}
+	if err := r.engine.Registry.Register(ChangeCheck{}); err != nil {
+		t.Fatal(err)
+	}
+	check := domain.Item{
+		ID: 7, Kind: "check", Subject: "100@N01", UserID: 3, State: domain.StateReady,
+		Cursor: domain.Cursor{Page: 1, Method: "flickr.people.getPhotos", Params: map[string]string{
+			"user_id": "100@N01", domain.ParamMinUploadDate: strconv.FormatInt(checkpoint, 10),
+			domain.ParamMinFaveDate: strconv.FormatInt(checkpoint, 10), "per_page": "1",
+		}},
+	}
+	r.store.item = check
+	r.tx.current = domain.Item{State: domain.StateRunning, Cursor: check.Cursor}
+	r.tx.advanced = nil
+	if err := r.engine.Handle(t.Context(), check.ID); err != nil {
+		t.Fatalf("inclusive change check: %v", err)
+	}
+	if len(r.flickr.requests) != 3 || r.flickr.requests[2].Params[domain.ParamMinUploadDate] != strconv.FormatInt(checkpoint, 10) {
+		t.Fatalf("change check omitted inclusive scan-start bound: %+v", r.flickr.requests)
+	}
+	if len(r.tx.enqueued) != 1 || r.tx.enqueued[0].Cursor.Params[domain.ParamMinUploadDate] != strconv.FormatInt(checkpoint, 10) {
+		t.Fatalf("incremental page omitted scan-start boundary: %+v", r.tx.enqueued)
 	}
 }
 

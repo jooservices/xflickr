@@ -121,18 +121,57 @@ func TestFlaggedPeopleFromContactsPhotosDeduplicatesOwners(t *testing.T) {
 }
 
 func TestCheckpointScopedPerObserver(t *testing.T) {
-	// Checkpoints are per observer: the same person with different stored
-	// bounds must produce different Flickr filters and must never share values.
-	userA := CheckRequests("shared-person", 100, 200)
-	userB := CheckRequests("shared-person", 300, 400)
-	if userA[0].Params[domain.ParamMinUploadDate] == userB[0].Params[domain.ParamMinUploadDate] {
-		t.Fatalf("photo checkpoints collided: A=%#v B=%#v", userA[0].Params, userB[0].Params)
+	registries := NewRegistry()
+	if err := registries.Register(ChangeCheck{}); err != nil {
+		t.Fatal(err)
 	}
-	if userA[1].Params[domain.ParamMinFaveDate] == userB[1].Params[domain.ParamMinFaveDate] {
-		t.Fatalf("favorite checkpoints collided: A=%#v B=%#v", userA[1].Params, userB[1].Params)
+	for _, name := range []string{"albums", "galleries", "groups"} {
+		if err := registries.Register(&fakeFacet{name: name, lane: domain.LanePerson}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if userA[0].Params[domain.ParamMinUploadDate] != "100" || userB[0].Params[domain.ParamMinUploadDate] != "300" {
-		t.Fatalf("observer-specific photo bounds lost: A=%#v B=%#v", userA[0].Params, userB[0].Params)
+	cases := []struct {
+		name            string
+		userID          int64
+		photoCheckpoint string
+		faveCheckpoint  string
+	}{
+		{name: "first observer at inclusive boundary", userID: 3, photoCheckpoint: "1700000000", faveCheckpoint: "1700000100"},
+		{name: "second observer with a different view", userID: 4, photoCheckpoint: "1700000200", faveCheckpoint: "1700000300"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			r.engine.Registry = registries
+			item := domain.Item{
+				ID: 7, Kind: "check", Subject: "shared-person", UserID: tc.userID, State: domain.StateReady,
+				Cursor: domain.Cursor{Page: 1, Method: "flickr.people.getPhotos", Params: map[string]string{
+					"user_id": "shared-person", domain.ParamMinUploadDate: tc.photoCheckpoint,
+					domain.ParamMinFaveDate: tc.faveCheckpoint, "per_page": "1",
+				}},
+			}
+			r.store.item = item
+			r.tx.current = domain.Item{State: domain.StateRunning, Cursor: item.Cursor}
+			r.flickr.payload = json.RawMessage(`{"photos":{"total":"0"}}`)
+			if err := r.engine.Handle(t.Context(), item.ID); err != nil {
+				t.Fatalf("photo probe: %v", err)
+			}
+			if len(r.flickr.requests) != 1 || r.flickr.requests[0].UserID != tc.userID ||
+				r.flickr.requests[0].Params[domain.ParamMinUploadDate] != tc.photoCheckpoint {
+				t.Fatalf("photo request = %+v", r.flickr.requests)
+			}
+
+			item.Cursor = *r.tx.advanced
+			r.store.item = item
+			r.tx.current.Cursor = item.Cursor
+			if err := r.engine.Handle(t.Context(), item.ID); err != nil {
+				t.Fatalf("favorite probe: %v", err)
+			}
+			if len(r.flickr.requests) != 2 || r.flickr.requests[1].UserID != tc.userID ||
+				r.flickr.requests[1].Params[domain.ParamMinFaveDate] != tc.faveCheckpoint {
+				t.Fatalf("favorite request = %+v", r.flickr.requests)
+			}
+		})
 	}
 }
 

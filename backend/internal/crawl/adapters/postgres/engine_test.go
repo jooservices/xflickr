@@ -119,20 +119,23 @@ func TestLoadParsesCursorAndMapsMissingRows(t *testing.T) {
 func TestStampScanStart(t *testing.T) {
 	conn := &engConn{}
 	e := newTestEngine(conn)
-	if err := e.StampScanStart(t.Context(), 9, 0); err != nil {
+	expected := domain.Cursor{Page: 3, Continuation: "legacy", Method: "flickr.people.getPhotos", Params: map[string]string{"user_id": "person"}}
+	if err := e.StampScanStart(t.Context(), 9, 0, expected); err != nil {
 		t.Fatal(err)
 	}
 	if len(conn.execs) != 0 {
 		t.Fatal("zero checkpoint must not write")
 	}
-	if err := e.StampScanStart(t.Context(), 9, 1700000000); err != nil {
+	if err := e.StampScanStart(t.Context(), 9, 1700000000, expected); err != nil {
 		t.Fatal(err)
 	}
-	if len(conn.execs) != 1 || !strings.Contains(conn.execs[0].sql, "checkpoint_at") || conn.execs[0].args[1] != int64(1700000000) {
+	if len(conn.execs) != 1 || !strings.Contains(conn.execs[0].sql, "checkpoint_at") ||
+		!strings.Contains(conn.execs[0].sql, "continuation") || conn.execs[0].args[1] != int64(1700000000) ||
+		conn.execs[0].args[2] != expected.Method || conn.execs[0].args[3] != expected.Page {
 		t.Fatalf("stamp exec = %#v", conn.execs)
 	}
 	conn.failExec = "checkpoint_at"
-	if err := e.StampScanStart(t.Context(), 9, 1); err == nil {
+	if err := e.StampScanStart(t.Context(), 9, 1, expected); err == nil {
 		t.Fatal("stamp error must surface")
 	}
 }
