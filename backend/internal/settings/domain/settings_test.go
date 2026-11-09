@@ -485,7 +485,16 @@ func TestMergeRejectsInvalidOverridesAndSnapshots(t *testing.T) {
 
 	t.Run("missing settings", func(t *testing.T) {
 		_, _, err := Merge(Snapshot{})
-		if err == nil || !strings.Contains(err.Error(), "got 0 application settings") {
+		if err == nil || !strings.Contains(err.Error(), "missing application setting") {
+			t.Fatalf("Merge() error = %v", err)
+		}
+	})
+
+	t.Run("one missing registered setting is named", func(t *testing.T) {
+		snapshot := DefaultSnapshot()
+		delete(snapshot.Settings, MaxDepth)
+		_, _, err := Merge(snapshot)
+		if err == nil || !strings.Contains(err.Error(), "missing application setting") || !strings.Contains(err.Error(), "max_depth") {
 			t.Fatalf("Merge() error = %v", err)
 		}
 	})
@@ -511,6 +520,25 @@ func TestMergeRejectsInvalidOverridesAndSnapshots(t *testing.T) {
 			t.Fatalf("Merge() error = %v", err)
 		}
 	})
+}
+
+// A database that is newer than the binary (or a rollback to the previous
+// binary) carries settings this build does not know. They must not stop the
+// crawl: 72 River jobs were discarded in production by the old length check.
+func TestMergeIgnoresSettingsThisBuildDoesNotKnow(t *testing.T) {
+	base, _, err := Merge(DefaultSnapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := DefaultSnapshot()
+	snapshot.Settings["future.setting"] = Definition{Key: "future.setting", Value: json.RawMessage("1")}
+	got, _, err := Merge(snapshot)
+	if err != nil {
+		t.Fatalf("Merge() with an extra setting = %v", err)
+	}
+	if got != base {
+		t.Fatalf("an unknown setting changed the effective values: %+v != %+v", got, base)
+	}
 }
 
 func TestValidationErrorFormats(t *testing.T) {

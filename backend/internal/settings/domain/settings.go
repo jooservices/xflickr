@@ -452,10 +452,13 @@ func integralToken(number json.Number) bool {
 //
 //nolint:cyclop // per-setting merge rules; tracked for a table-driven refactor
 func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
-	if len(snapshot.Settings) != len(schemas) {
-		return Effective{}, nil, fmt.Errorf("settings: got %d application settings, want %d", len(snapshot.Settings), len(schemas))
-	}
+	// Extra rows are ignored on purpose: a database that is newer than this
+	// binary (a migration added a setting) or a rollback to the previous binary
+	// must not stop the crawl. Only a missing registered key is an error.
 	for key, setting := range snapshot.Settings {
+		if _, known := schemas[key]; !known {
+			continue
+		}
 		if setting.Key != key {
 			return Effective{}, nil, fmt.Errorf("settings: application setting map key %q does not match row key %q", key, setting.Key)
 		}
@@ -469,9 +472,11 @@ func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
 		}
 	}
 
-	values := make(map[Key]json.RawMessage, len(snapshot.Settings))
+	values := make(map[Key]json.RawMessage, len(schemas))
 	for key, setting := range snapshot.Settings {
-		values[key] = setting.Value
+		if _, known := schemas[key]; known {
+			values[key] = setting.Value
+		}
 	}
 	overrideKeys := make([]Key, 0, len(snapshot.Overrides))
 	for key := range snapshot.Overrides {
