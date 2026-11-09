@@ -670,24 +670,34 @@ func (r *Repository) ListContacts(ctx context.Context, userID int64, cursor *app
 	if ctx == nil || r == nil || r.db == nil || userID <= 0 || limit < 1 || limit > app.MaxPageSize {
 		return app.ContactsPage{}, errors.New("catalog: invalid read request")
 	}
-	query := `SELECT p.nsid, p.username, p.realname, p.icon, p.photos_count, MIN(c.person_nsid)
-FROM contacts c
-JOIN people p ON p.nsid = c.contact_nsid
-WHERE EXISTS (
-	SELECT 1 FROM flickr_accounts fa
-	WHERE fa.user_id = $1 AND fa.status = 'ok' AND fa.nsid = c.person_nsid
-)`
-	args := []any{userID}
+	cursorNSID := ""
 	if cursor != nil {
 		if cursor.NSID == "" {
 			return app.ContactsPage{}, app.ErrInvalidCursor
 		}
-		query += ` AND p.nsid > $2 GROUP BY p.nsid, p.username, p.realname, p.icon, p.photos_count ORDER BY p.nsid ASC LIMIT $3`
-		args = append(args, cursor.NSID, limit+1)
-	} else {
-		query += ` GROUP BY p.nsid, p.username, p.realname, p.icon, p.photos_count ORDER BY p.nsid ASC LIMIT $2`
-		args = append(args, limit+1)
+		cursorNSID = cursor.NSID
 	}
+	query := `WITH contact_page AS MATERIALIZED (
+	SELECT DISTINCT c.contact_nsid
+	FROM contacts c
+	WHERE c.contact_nsid > $2 AND EXISTS (
+		SELECT 1 FROM flickr_accounts fa
+		WHERE fa.user_id=$1 AND fa.status='ok' AND fa.nsid=c.person_nsid
+	)
+	ORDER BY c.contact_nsid ASC
+	LIMIT $3
+)
+SELECT p.nsid, p.username, p.realname, p.icon, p.photos_count,
+	(SELECT c.person_nsid FROM contacts c
+	 WHERE c.contact_nsid=contact_page.contact_nsid AND EXISTS (
+		SELECT 1 FROM flickr_accounts fa
+		WHERE fa.user_id=$1 AND fa.status='ok' AND fa.nsid=c.person_nsid
+	 )
+	 ORDER BY c.person_nsid ASC LIMIT 1)
+FROM contact_page
+JOIN people p ON p.nsid=contact_page.contact_nsid
+ORDER BY contact_page.contact_nsid ASC`
+	args := []any{userID, cursorNSID, limit + 1}
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return app.ContactsPage{}, fmt.Errorf("catalog: list contacts: %w", err)

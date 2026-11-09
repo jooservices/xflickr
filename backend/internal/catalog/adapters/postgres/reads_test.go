@@ -158,12 +158,16 @@ func TestListContactsPaginatesAndValidates(t *testing.T) {
 	if item := page.Items[0]; item.NSID != "c-a" || item.Username != "A" || item.Realname != "Alpha" || item.PhotosCount != 2 || item.AccountNSID != "acct" {
 		t.Fatalf("item=%+v", item)
 	}
-	if !strings.Contains(db.query, "flickr_accounts") || db.args[0] != userID || db.args[1] != 2 {
+	limitAt, detailsAt := strings.Index(db.query, "LIMIT $3"), strings.Index(db.query, "JOIN people")
+	if !strings.Contains(db.query, "flickr_accounts") || !strings.Contains(db.query, "WITH contact_page AS MATERIALIZED") || !strings.Contains(db.query, "SELECT DISTINCT c.contact_nsid") || !strings.Contains(db.query, "c.contact_nsid > $2") || limitAt < 0 || detailsAt < 0 || limitAt > detailsAt || strings.Contains(strings.ToUpper(db.query), "GROUP BY") || strings.Contains(strings.ToUpper(db.query), "MIN(") || db.args[0] != userID || db.args[1] != "" || db.args[2] != 2 {
 		t.Fatalf("query=%q args=%v", db.query, db.args)
 	}
 	db.rows = &readsRows{rows: [][]any{{"c-z", "Z", "", "", int64(0), "acct"}}}
 	if _, err := repository.ListContacts(ctx, userID, &app.ContactCursor{NSID: "c-a"}, 1); err != nil {
 		t.Fatalf("cursor list: %v", err)
+	}
+	if db.args[1] != "c-a" || db.args[2] != 2 {
+		t.Fatalf("cursor query args=%v", db.args)
 	}
 	if _, err := repository.ListContacts(ctx, userID, &app.ContactCursor{}, 1); !errors.Is(err, app.ErrInvalidCursor) {
 		t.Fatalf("invalid cursor=%v", err)

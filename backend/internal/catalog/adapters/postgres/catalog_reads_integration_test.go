@@ -11,13 +11,26 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
+	cataloggen "github.com/jooservices/xflickr/internal/catalog/adapters/postgres/gen"
 	"github.com/jooservices/xflickr/internal/catalog/app"
 	"github.com/jooservices/xflickr/internal/catalog/domain"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 	sharingapp "github.com/jooservices/xflickr/internal/sharing/app"
 	sharingdomain "github.com/jooservices/xflickr/internal/sharing/domain"
 )
+
+type contactsQueryCapture struct {
+	cataloggen.DBTX
+	query string
+	args  []any
+}
+
+func (db *contactsQueryCapture) Query(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
+	db.query, db.args = query, append([]any(nil), args...)
+	return db.DBTX.Query(ctx, query, args...)
+}
 
 func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
@@ -521,4 +534,98 @@ func inspectCatalogReadPlan(node catalogReadPlanNode) (seqScan, observationIndex
 		observationIndex = observationIndex || childObservationIndex
 	}
 	return seqScan, observationIndex
+}
+
+func TestContactsKeysetPageUsesReverseIndexAndBoundedPlan(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	suffix := fmt.Sprintf("contacts-plan-%d", time.Now().UnixNano())
+	account := suffix + "-account"
+	contacts := make([]string, 5000)
+	for i := range contacts {
+		contacts[i] = fmt.Sprintf("%s-%05d", suffix, i)
+	}
+	people := append([]string{account}, contacts...)
+	var userID, keyID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration','user') RETURNING id`, suffix+"@example.invalid").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=$1 OR contact_nsid=ANY($2)`, account, contacts)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, people)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
+	}()
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'test',$2,'{}',1000,10,20) RETURNING id`, userID, suffix+"-key").Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'account','{}','{}','ok')`, userID, keyID, account); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) SELECT nsid,nsid FROM unnest($1::text[]) AS people(nsid)`, people); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid) SELECT $1, contact_nsid FROM unnest($2::text[]) AS contacts(contact_nsid)`, account, contacts); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `ANALYZE contacts`); err != nil {
+		t.Fatal(err)
+	}
+	captured := &contactsQueryCapture{DBTX: pool}
+	repository, err := postgres.New(captured)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := repository.ListContacts(ctx, userID, nil, 25)
+	if err != nil || len(page.Items) != 25 || page.NextCursor == nil {
+		t.Fatalf("contacts page items=%d next=%v err=%v", len(page.Items), page.NextCursor, err)
+	}
+	var plan []any
+	var raw []byte
+	if err := pool.QueryRow(ctx, "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+captured.query, captured.args...).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatalf("decode explain plan: %v", err)
+	}
+	if !contactsPagePlanBounded(plan) {
+		t.Fatal("contacts page plan did not stop after 26 indexed, distinct contact rows")
+	}
+}
+
+func contactsPagePlanBounded(value any) bool {
+	switch node := value.(type) {
+	case []any:
+		for _, child := range node {
+			if contactsPagePlanBounded(child) {
+				return true
+			}
+		}
+	case map[string]any:
+		if node["Node Type"] == "Limit" && node["Parent Relationship"] == "InitPlan" {
+			rows, rowsOK := node["Actual Rows"].(float64)
+			children, childrenOK := node["Plans"].([]any)
+			if rowsOK && rows == 26 && childrenOK && len(children) == 1 {
+				unique, uniqueOK := children[0].(map[string]any)
+				if uniqueOK && unique["Node Type"] == "Unique" {
+					uniqueRows, uniqueRowsOK := unique["Actual Rows"].(float64)
+					encoded, err := json.Marshal(unique)
+					uniquePlan := string(encoded)
+					return uniqueRowsOK && uniqueRows == 26 && err == nil &&
+						strings.Contains(uniquePlan, "contacts_contact_nsid_person_nsid_idx") &&
+						!strings.Contains(uniquePlan, `"Node Type":"Sort"`) &&
+						!strings.Contains(uniquePlan, "Aggregate")
+				}
+			}
+		}
+		for _, child := range node {
+			if contactsPagePlanBounded(child) {
+				return true
+			}
+		}
+	}
+	return false
 }
