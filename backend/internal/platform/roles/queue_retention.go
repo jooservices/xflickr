@@ -35,6 +35,9 @@ var _ effectiveSettingsReader = (*settingsapp.Service)(nil)
 // newRiverWithSettings builds a River adapter whose cleaner windows come from
 // the live settings, so every role applies the same retention.
 func newRiverWithSettings(ctx context.Context, pool *pgxpool.Pool, queues map[string]int) (*queue.River, error) {
+	if pool == nil {
+		return nil, errors.New("roles: PostgreSQL pool is required")
+	}
 	repository, err := settingspostgres.New(pool)
 	if err != nil {
 		return nil, err

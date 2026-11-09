@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	catalogpostgres "github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
+	"github.com/jooservices/xflickr/internal/catalog/adapters/postgres/observations"
 	catalogdomain "github.com/jooservices/xflickr/internal/catalog/domain"
 	crawlpostgres "github.com/jooservices/xflickr/internal/crawl/adapters/postgres"
 	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
@@ -85,5 +86,44 @@ func TestObservedCatalogBindsTransactionalWriter(t *testing.T) {
 	}
 	if err = scoped.UpsertPhotos(t.Context(), []catalogdomain.Photo{{ID: 0}}); err == nil {
 		t.Fatal("invalid photo accepted")
+	}
+}
+
+type failingCatalogDB struct{ err error }
+
+func (db failingCatalogDB) Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, db.err
+}
+
+func (db failingCatalogDB) Query(context.Context, string, ...interface{}) (pgx.Rows, error) {
+	return nil, db.err
+}
+
+func (db failingCatalogDB) QueryRow(context.Context, string, ...interface{}) pgx.Row {
+	return credentialRow{err: db.err}
+}
+
+func (db failingCatalogDB) SendBatch(context.Context, *pgx.Batch) pgx.BatchResults { return nil }
+
+func TestScopedCatalogPeopleWritesPropagateDatabaseErrors(t *testing.T) {
+	boom := errors.New("database down")
+	repository, err := catalogpostgres.New(failingCatalogDB{err: boom})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer, err := observations.New(failingCatalogDB{err: boom}, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scoped := scopedCatalog{Repository: repository, Writer: writer}
+	people := []catalogdomain.Person{{NSID: "1@N01", Username: "one"}}
+	for name, call := range map[string]func() error{
+		"upsert":  func() error { return scoped.UpsertPeople(t.Context(), people) },
+		"ensure":  func() error { return scoped.EnsurePeople(t.Context(), people) },
+		"refresh": func() error { return scoped.RefreshPeople(t.Context(), people) },
+	} {
+		if err := call(); !errors.Is(err, boom) {
+			t.Fatalf("%s error = %v, want %v", name, err, boom)
+		}
 	}
 }
