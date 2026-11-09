@@ -454,7 +454,7 @@ func (e *Engine) write(ctx context.Context, w Writers, item domain.Item, result 
 		}
 		w.Catalog = writer
 	}
-	pageWriter, err := peoplePageWriterFor(w.Catalog, result.People)
+	pageWriter, err := peoplePageWriterFor(w.Catalog, result.People, result.Contacts)
 	if err != nil {
 		return err
 	}
@@ -501,8 +501,8 @@ func (e *Engine) enqueuePageWork(ctx context.Context, writers Writers, item doma
 	return nil
 }
 
-func peoplePageWriterFor(writer CatalogWriter, people []catalog.Person) (peoplePageWriter, error) {
-	if len(people) == 0 {
+func peoplePageWriterFor(writer CatalogWriter, people []catalog.Person, contacts []catalog.Contact) (peoplePageWriter, error) {
+	if len(people) == 0 && len(contacts) == 0 {
 		return nil, nil
 	}
 	pageWriter, ok := writer.(peoplePageWriter)
@@ -513,8 +513,10 @@ func peoplePageWriterFor(writer CatalogWriter, people []catalog.Person) (peopleP
 }
 
 func writeCatalog(ctx context.Context, writer CatalogWriter, pageWriter peoplePageWriter, result domain.Result) error {
-	if len(result.People) > 0 {
-		if err := pageWriter.EnsurePeople(ctx, result.People); err != nil {
+	people := append([]catalog.Person(nil), result.People...)
+	people = append(people, contactSubjectPeople(result.Contacts)...)
+	if len(people) > 0 {
+		if err := pageWriter.EnsurePeople(ctx, people); err != nil {
 			return err
 		}
 	}
@@ -554,6 +556,22 @@ func writeCatalog(ctx context.Context, writer CatalogWriter, pageWriter peoplePa
 		}
 	}
 	return nil
+}
+
+func contactSubjectPeople(contacts []catalog.Contact) []catalog.Person {
+	seen := make(map[string]struct{}, len(contacts))
+	people := make([]catalog.Person, 0, len(contacts))
+	for _, contact := range contacts {
+		if contact.PersonNSID == "" {
+			continue
+		}
+		if _, ok := seen[contact.PersonNSID]; ok {
+			continue
+		}
+		seen[contact.PersonNSID] = struct{}{}
+		people = append(people, catalog.Person{NSID: contact.PersonNSID, Username: contact.PersonNSID})
+	}
+	return people
 }
 
 // discover records an interest one level deeper for each found person, unless

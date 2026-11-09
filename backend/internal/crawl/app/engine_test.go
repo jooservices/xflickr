@@ -106,6 +106,7 @@ type fakeTx struct {
 	observations []domain.Observation
 	groups       []catalog.Group
 	personGroups []catalog.PersonGroup
+	ensured      []string
 	advanced     *domain.Cursor
 	finished     bool
 }
@@ -140,7 +141,10 @@ func (t *fakeTx) UpsertPeople(context.Context, []catalog.Person) error {
 	return t.fail("people")
 }
 
-func (t *fakeTx) EnsurePeople(context.Context, []catalog.Person) error {
+func (t *fakeTx) EnsurePeople(_ context.Context, people []catalog.Person) error {
+	for _, person := range people {
+		t.ensured = append(t.ensured, person.NSID)
+	}
 	return t.fail("ensure_people")
 }
 
@@ -454,7 +458,7 @@ func TestCrawlPageCommitCallsRefreshLast(t *testing.T) {
 func TestPageCatalogRequiresSplitPeopleWriter(t *testing.T) {
 	var writer CatalogWriter = legacyCatalogWriter{}
 	people := []catalog.Person{{NSID: "person@flickr", Username: "person"}}
-	if _, err := peoplePageWriterFor(writer, people); err == nil {
+	if _, err := peoplePageWriterFor(writer, people, nil); err == nil {
 		t.Fatal("page accepted a writer without split people operations")
 	}
 }
@@ -789,6 +793,29 @@ func TestHandleWaitsWithoutKeyOrPermit(t *testing.T) {
 	r.engine.Keys = fakeKeys{err: errors.New("db down")}
 	if err := r.engine.Handle(t.Context(), 7); err == nil {
 		t.Fatal("key lookup failure must surface")
+	}
+}
+
+func TestWriteCatalogEnsuresContactSubjectsBeforeRelationships(t *testing.T) {
+	tx := &fakeTx{}
+	err := writeCatalog(t.Context(), tx, tx, domain.Result{
+		People:   []catalog.Person{{NSID: "friend@N00", Username: "friend"}},
+		Contacts: []catalog.Contact{{PersonNSID: "acct@N00", ContactNSID: "friend@N00"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"ensure_people", "contacts"}
+	if len(tx.log) != len(want) {
+		t.Fatalf("log = %v, want %v", tx.log, want)
+	}
+	for i, step := range want {
+		if tx.log[i] != step {
+			t.Fatalf("log = %v, want %v", tx.log, want)
+		}
+	}
+	if len(tx.ensured) != 2 || tx.ensured[0] != "friend@N00" || tx.ensured[1] != "acct@N00" {
+		t.Fatalf("ensured = %v, want contact and account subjects before relationship write", tx.ensured)
 	}
 }
 

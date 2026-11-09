@@ -28,6 +28,82 @@ func (f *countingContactsFlickr) Call(_ context.Context, request crawlapp.Reques
 	return f.body, nil
 }
 
+func TestContactsCrawlWithoutPreInsertedAccountPerson(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	account := "ensure-acct-" + suffix
+	contact := "ensure-contact-" + suffix
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=$1 OR contact_nsid=$2`, account, contact)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{account, contact})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM crawl_interests WHERE user_id=$1`, userID)
+	})
+	var exists bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM people WHERE nsid=$1)`, account).Scan(&exists); err != nil || exists {
+		t.Fatalf("account people row must be absent before crawl: exists=%v err=%v", exists, err)
+	}
+	payload := json.RawMessage(fmt.Sprintf(
+		`{"contacts":{"pages":1,"contact":[{"nsid":%q,"username":"friend","realname":"Friend","friend":"1"}]}}`,
+		contact,
+	))
+	flickr := &countingContactsFlickr{body: payload}
+	store, err := NewEngine(pool, func(conn Conn) crawlapp.CatalogWriter {
+		repo, repoErr := catalogpg.New(conn)
+		if repoErr != nil {
+			t.Fatal(repoErr)
+		}
+		return repo
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := crawlapp.NewRegistry()
+	if err := registry.Register(facets.Contacts{}); err != nil {
+		t.Fatal(err)
+	}
+	engine := &crawlapp.Engine{
+		Registry: registry, Store: store, Units: store, Keys: intKeys{}, Governor: intGovernor{},
+		Flickr: flickr, Settings: photosFavoritesSettings{maxDepth: 2},
+	}
+	itemID := insertPhotosFavoritesWork(t, ctx, pool, userID, "contacts", account, 0, facets.Contacts{})
+	if err := engine.Handle(ctx, itemID); err != nil {
+		t.Fatalf("crawl without account people row: %v", err)
+	}
+	var username, realname string
+	if err := pool.QueryRow(ctx, `SELECT username, realname FROM people WHERE nsid=$1`, account).Scan(&username, &realname); err != nil {
+		t.Fatalf("subject people row missing: %v", err)
+	}
+	if username != account || realname != "" {
+		t.Fatalf("placeholder subject = (%q,%q), want username=nsid and empty realname", username, realname)
+	}
+	var rows int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM contacts WHERE person_nsid=$1 AND contact_nsid=$2`, account, contact).Scan(&rows); err != nil || rows != 1 {
+		t.Fatalf("contact rows=%d err=%v", rows, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE people SET username='real-acct', realname='Real Account' WHERE nsid=$1`, account); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready', attempts=0 WHERE id=$1`, itemID); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Handle(ctx, itemID); err != nil {
+		t.Fatalf("recrawl with existing subject: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT username, realname FROM people WHERE nsid=$1`, account).Scan(&username, &realname); err != nil {
+		t.Fatal(err)
+	}
+	if username != "real-acct" || realname != "Real Account" {
+		t.Fatalf("ensure overwrote real identity: (%q,%q)", username, realname)
+	}
+	if flickr.calls.Load() != 2 {
+		t.Fatalf("flickr calls = %d, want 2", flickr.calls.Load())
+	}
+}
+
 func TestContactsStoredIdempotent(t *testing.T) {
 	pool := openEngineTestPool(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
