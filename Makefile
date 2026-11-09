@@ -18,6 +18,7 @@ test-integration:
 	@./docker/scripts/test-integration.sh
 
 e2e:
+	@./docker/scripts/ui-e2e-coverage.sh
 	@./docker/scripts/e2e.sh
 
 gen:
