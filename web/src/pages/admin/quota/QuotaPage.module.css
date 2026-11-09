@@ -1,0 +1,379 @@
+.page {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.heading,
+.panelHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.heading h1,
+.panelHeading h2,
+.history h3 {
+  margin: 0;
+}
+
+.heading p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.heading .updated {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 14px;
+  border: 1px solid var(--line2);
+  border-radius: var(--btn-r);
+  background: var(--sunken);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.refresh:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.refresh:focus-visible,
+.link:focus-visible,
+.stale button:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-offset);
+}
+
+.refresh:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.panel {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.panelHeading {
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.panelHeading h2 {
+  font-size: 1.15rem;
+}
+
+.count {
+  color: var(--muted);
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.tableWrap {
+  width: 100%;
+  min-width: 0;
+}
+
+.tableWrap table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.tableWrap caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.tableWrap th {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line2);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.tableWrap td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.tableWrap tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.keyCell {
+  display: grid;
+  gap: 3px;
+  font-weight: 600;
+}
+
+.keyCell code,
+.tableWrap td code {
+  color: var(--muted);
+  font-family: var(--f-mono);
+  font-size: 0.85em;
+}
+
+.progress {
+  width: min(180px, 100%);
+  height: 8px;
+  margin-bottom: 5px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--sunken);
+}
+
+.progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width var(--motion-progress);
+}
+
+.numeric {
+  color: var(--muted);
+  font-family: var(--f-mono);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.state > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ok {
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  color: var(--ok);
+}
+
+.cooling {
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn);
+}
+
+.exhausted {
+  background: color-mix(in srgb, var(--bad) 14%, transparent);
+  color: var(--bad);
+}
+
+.note,
+.history p {
+  margin: 10px 0 0;
+  color: var(--muted);
+}
+
+.history {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.history > div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--sunken);
+}
+
+.history h3 {
+  font-size: 0.95rem;
+}
+
+.history p {
+  margin-bottom: 0;
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 6px 14px;
+  border-radius: var(--btn-r);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.error,
+.stale {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--bad);
+  border-radius: var(--radius);
+  background: var(--sunken);
+}
+
+.error strong {
+  color: var(--bad);
+}
+
+.error p {
+  margin: 3px 0 0;
+}
+
+.skeleton {
+  min-height: 240px;
+  margin-top: 14px;
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, var(--sunken), var(--raise), var(--sunken));
+  background-size: 200% 100%;
+  animation: shimmer var(--motion-loading);
+}
+
+.loading p,
+.refreshing {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+.loading .skeleton {
+  margin-top: 0;
+}
+
+.stale {
+  align-items: center;
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.stale button {
+  min-height: 40px;
+  padding: 4px 12px;
+  border: 1px solid var(--line2);
+  border-radius: var(--btn-r);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .refresh {
+    align-self: flex-start;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
+  .tableWrap table,
+  .tableWrap tbody {
+    display: block;
+  }
+
+  .tableWrap thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .tableWrap tr {
+    display: grid;
+    gap: 0;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .tableWrap tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .tableWrap td {
+    display: grid;
+    grid-template-columns: minmax(100px, 0.75fr) minmax(0, 1.25fr);
+    gap: 10px;
+    padding: 7px 4px;
+    border: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .tableWrap td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 0.84rem;
+  }
+
+  .keyCell {
+    display: grid;
+    grid-template-columns: minmax(100px, 0.75fr) minmax(0, 1.25fr);
+  }
+
+  .keyCell code {
+    grid-column: 2;
+  }
+
+  .progress {
+    width: 100%;
+  }
+
+  .history {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .error {
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress span,
+  .skeleton {
+    animation: none;
+    transition: none;
+  }
+}
