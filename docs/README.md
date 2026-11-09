@@ -14,6 +14,8 @@
 
 - [Environment and shared services](ENVIRONMENT.md) — workstation, runtime, and
   database rules.
+- [Database index inventory](database.md) — keep/drop decisions, sizes, scan
+  evidence, and the periodic `pg_stat_user_indexes` review runbook.
 - [Develop environment](develop-environment.md) — the WSL application container,
   startup, logs, updates, and safe reset options.
 - [Business specification](SPEC.md) — product rules and definition of done.
