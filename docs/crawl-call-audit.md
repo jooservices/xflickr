@@ -48,7 +48,7 @@ estimates, not additive with the follow-up proposals.
 | `favorites` / `favorites.getList` | Initial `P(favorites)`; incremental `P(new favorites)` | Up to 500 photos, timestamped favorite relationships, distinct owners and observations | Relationship omitted if neither `date_faved` nor `date_favorite` is positive; photo still stored. Depth limit blocks owner discovery, not this list | 0 attributed from supplied 540/h | Follow-ups 2 and 3; no invented favorite timestamps |
 | `albums` / `photosets.getList` | `P(albums)` initially and per catalog refresh | Up to 500 album metadata rows; no album-photo relationship fetch | String `photos` causes page parsing failure and retries | 0–12/h of supplied 15/h under five-attempt model | Accept existing Flickr numeric-string type |
 | `galleries` / `galleries.getList` | Legacy page flow `P(galleries)` initially and per refresh | Up to 500 gallery metadata rows; no gallery-photo relationship fetch | String `count_photos` causes retries; current code ignores documented continuation cursor | 0–7.2/h of supplied 9/h under five-attempt model | Fix numeric count; continuation is follow-up 6 |
-| `groups` / `people.getGroups` | Normally 1 unpaged response initially and per refresh; current handler follows `pages` if supplied | One group and one membership per returned group | String counts fail the whole page; the writer also rejects unpaged lists over 500. Official method documents no paging arguments | 0–158.4/h of supplied 198/h under five-attempt model | Fix numeric counts; follow-up 9 for large lists |
+| `groups` / `people.getGroups` | Normally 1 unpaged response initially and per refresh; current handler follows `pages` if supplied | One group and one membership per returned group | String counts previously failed the whole page (fixed). Large unpaged lists are committed in ≤500-row chunks in one transaction (JOOXF-352). Official method documents no paging arguments | 0–158.4/h of supplied 198/h under five-attempt model | Delivered: numeric counts; proposal 9 |
 | `check` / photo then favorite list | 2 probes/person; each uses `per_page=1`; positive probes add incremental work | 0 catalog rows from probes; durable work/check state only | Probe sample deliberately discarded. Always refreshes albums, galleries, groups after second probe, including zero/skipped favorite probe | No measured saving | Follow-ups 2–4; do not replace probes with a full scan |
 | `reconcile` / photo then favorite list | `P(photos) + P(favorites)` per person | Same photo/favorite rows; final transaction applies visibility-safe diff | Separate kind from initial/incremental work, so overlapping full scans are possible; no cheap probe can detect deletions | No measured saving | Follow-up 3; keep complete-scan and owner-only diff protections |
 | `contacts_photos` / `photos.getContactsPhotos` | 1/account at due cycle wrap; `count=50` is maximal | 0 photos or contact relationships; distinct known owners become check work | Response photos intentionally used only as hints. Reopening a completed check does not consult `last_checked_at` | No measured saving | Follow-up 4; unknown interests already rejected by PostgreSQL enqueue |
@@ -217,12 +217,14 @@ open; the fixture numbers must not be reported as satisfying it.
    125k rows and reopened-row age. Any value priority or probe dependency must
    retain aging, plan lending and quota reserves; do not tune live weights here.
 
-9. **Commit large unpaged group lists in bounded batches.** The unpaged method
-   can produce more than the catalog writer's 500-row maximum.
-   `crawl_facets.go` forwards the full result to `UpsertGroupsBatch` and
-   `UpsertPersonGroupsBatch`, which reject oversized batches. Preserve one
-   transaction while chunking persistence; prove 501+ memberships commit without
-   fetching the same unpaged response again. Live prevalence is unknown.
+9. **Commit large unpaged group lists in bounded batches.** Delivered in
+   JOOXF-352. `people.getGroups` is unpaged and can return more than 500
+   memberships. Group and person-group upserts now share a reusable
+   `forEachChunk` helper that writes at most 500 rows per repository call
+   inside the existing crawl commit transaction, so a Result with 501–5,000
+   memberships commits completely without a second Flickr fetch for a
+   batch-size failure. The single-chunk 500-row guard remains for writers
+   that do not go through the helper.
 
 ## References
 

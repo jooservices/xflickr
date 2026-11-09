@@ -29,7 +29,15 @@ type GroupPoolPhoto struct {
 }
 
 // UpsertGroupsBatch inserts or refreshes group metadata.
+// Inputs larger than UpsertPeopleBatchMax are written in successive chunks that
+// share the caller's connection or transaction.
 func (r *Repository) UpsertGroupsBatch(ctx context.Context, groups []Group) error {
+	return forEachChunk(groups, UpsertPeopleBatchMax, func(chunk []Group) error {
+		return r.upsertGroupsChunk(ctx, chunk)
+	})
+}
+
+func (r *Repository) upsertGroupsChunk(ctx context.Context, groups []Group) error {
 	if err := validateBatchSize(len(groups)); err != nil {
 		return err
 	}
@@ -44,7 +52,15 @@ func (r *Repository) UpsertGroupsBatch(ctx context.Context, groups []Group) erro
 }
 
 // UpsertPersonGroupsBatch inserts or refreshes group membership rows.
+// Inputs larger than UpsertPeopleBatchMax are written in successive chunks that
+// share the caller's connection or transaction.
 func (r *Repository) UpsertPersonGroupsBatch(ctx context.Context, memberships []PersonGroup) error {
+	return forEachChunk(memberships, UpsertPeopleBatchMax, func(chunk []PersonGroup) error {
+		return r.upsertPersonGroupsChunk(ctx, chunk)
+	})
+}
+
+func (r *Repository) upsertPersonGroupsChunk(ctx context.Context, memberships []PersonGroup) error {
 	if err := validateBatchSize(len(memberships)); err != nil {
 		return err
 	}
