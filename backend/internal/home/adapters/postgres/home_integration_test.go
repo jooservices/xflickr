@@ -112,7 +112,10 @@ func TestHomeSnapshotIsUserScopedVisibleAndBounded(t *testing.T) {
 			}
 		}
 	}
-	addPhoto(baseID, personIDs[1], "private", baseTime, "confirmed", userID, accountID, true)
+	privatePhotoID := baseID
+	addPhoto(privatePhotoID, personIDs[1], "private", baseTime.Add(60*time.Minute), "confirmed", userID, accountID, true)
+	hiddenPhotoID := baseID + 19
+	addPhoto(hiddenPhotoID, personIDs[3], "friends", baseTime.Add(45*time.Minute), "confirmed", userID, accountID, false)
 	for i := 0; i < 13; i++ {
 		status := "confirmed"
 		if i == 12 {
@@ -135,16 +138,21 @@ func TestHomeSnapshotIsUserScopedVisibleAndBounded(t *testing.T) {
 	if snapshot.Contacts.Total != 7 || snapshot.Contacts.Direct != 1 || snapshot.Contacts.Discovered != 6 {
 		t.Fatalf("contacts = %+v", snapshot.Contacts)
 	}
-	if snapshot.Photos.Total != 15 || snapshot.Photos.SizesReady != 14 || snapshot.Photos.Captioned != 2 {
+	if snapshot.Photos.Total != 14 || snapshot.Photos.SizesReady != 13 || snapshot.Photos.Captioned != 1 {
 		t.Fatalf("photos = %+v", snapshot.Photos)
 	}
 	if len(snapshot.NewPhotos) != 12 || snapshot.NewPhotos[0].ID != sharedPublicID || snapshot.NewPhotos[0].ThumbnailURL == nil || *snapshot.NewPhotos[0].ThumbnailURL == "" {
 		t.Fatalf("new photos count or newest thumbnail is wrong: %+v", snapshot.NewPhotos)
 	}
+	for _, photo := range snapshot.NewPhotos {
+		if photo.ID == privatePhotoID || photo.ID == hiddenPhotoID || photo.ID == sharedPrivateID {
+			t.Fatalf("private or hidden photo %d is present in the Home snapshot", photo.ID)
+		}
+	}
 	if len(snapshot.StarredContacts) != 5 {
 		t.Fatalf("starred contacts count = %d, want 5", len(snapshot.StarredContacts))
 	}
-	if got := snapshot.StarredContacts[0]; got.NSID != personIDs[1] || got.PhotosCount != 14 || got.SizesReady != 13 || got.SizesTotal != 14 || got.CrawlState != "crawling" {
+	if got := snapshot.StarredContacts[0]; got.NSID != personIDs[1] || got.PhotosCount != 13 || got.SizesReady != 12 || got.SizesTotal != 13 || got.CrawlState != "crawling" {
 		t.Fatalf("first starred contact = %+v", got)
 	}
 	if got := snapshot.StarredContacts[1]; got.NSID != personIDs[2] || got.PhotosCount != 1 || got.CrawlState != "waiting" {

@@ -107,7 +107,7 @@ func TestLoadReturnsUserScopedSnapshot(t *testing.T) {
 	if len(reader.args) != 1 || reader.args[0] != int64(31) {
 		t.Fatalf("query args = %#v, want user id 31", reader.args)
 	}
-	for _, fragment := range []string{"o.user_id = $1", "shared_photo.visibility = 'public'", "LIMIT 12", "LIMIT 5", "stored.id = visible.photo_id", "work_items item"} {
+	for _, fragment := range []string{"o.user_id = $1", "shared_photo.visibility = 'public'", "photo.visibility = 'public'", "stored.visibility = 'public'", "LIMIT 12", "LIMIT 5", "stored.id = visible.photo_id", "work_items item"} {
 		if !strings.Contains(reader.query, fragment) {
 			t.Errorf("snapshot query is missing %q", fragment)
 		}
