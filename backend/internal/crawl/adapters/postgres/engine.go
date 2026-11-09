@@ -232,9 +232,29 @@ func (e *Engine) Do(ctx context.Context, fn func(app.Writers) error) error {
 	return e.run(ctx, func(tx Conn) error {
 		return fn(app.Writers{
 			Work: workTx{tx}, Catalog: e.catalog(tx), Interests: interestTx{tx},
-			Observations: observationTx{tx}, Reconcile: reconcileTx{tx},
+			Observations: observationTx{tx}, Reconcile: reconcileTx{tx}, Contacts: contactsReconcileTx{tx},
 		})
 	})
+}
+
+type contactsReconcileTx struct{ tx Conn }
+
+func (r contactsReconcileTx) CompleteContacts(ctx context.Context, userID int64, accountNSID string, scannedAt time.Time) error {
+	if userID <= 0 || accountNSID == "" || scannedAt.IsZero() {
+		return errors.New("crawl: invalid contacts reconciliation")
+	}
+	var exists int
+	err := r.tx.QueryRow(ctx, `SELECT 1 FROM flickr_accounts WHERE user_id=$1 AND nsid=$2 AND status='ok' FOR UPDATE`, userID, accountNSID).Scan(&exists)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("crawl: lock contacts account: %w", err)
+	}
+	if _, err := r.tx.Exec(ctx, `DELETE FROM contacts WHERE person_nsid=$1 AND seen_at<$2`, accountNSID, scannedAt); err != nil {
+		return fmt.Errorf("crawl: delete contacts missing from full list: %w", err)
+	}
+	return nil
 }
 
 type reconcileTx struct{ tx Conn }

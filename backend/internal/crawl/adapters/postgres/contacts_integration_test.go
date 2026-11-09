@@ -3,10 +3,13 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	catalogpg "github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
 	catalogapp "github.com/jooservices/xflickr/internal/catalog/app"
@@ -18,6 +21,165 @@ import (
 type countingContactsFlickr struct {
 	calls atomic.Int64
 	body  json.RawMessage
+}
+
+type contactsResponse struct {
+	body json.RawMessage
+	err  error
+}
+
+type scriptedContactsFlickr struct {
+	responses []contactsResponse
+	calls     int
+}
+
+func (f *scriptedContactsFlickr) Call(_ context.Context, request crawlapp.Request) (json.RawMessage, error) {
+	if request.Method != "flickr.contacts.getList" {
+		return nil, fmt.Errorf("unexpected method %s", request.Method)
+	}
+	if f.calls >= len(f.responses) {
+		return nil, errors.New("unexpected contacts request")
+	}
+	response := f.responses[f.calls]
+	f.calls++
+	return response.body, response.err
+}
+
+func contactsRefreshEngine(t *testing.T, pool *pgxpool.Pool, flickr crawlapp.Flickr) *crawlapp.Engine {
+	t.Helper()
+	store, err := NewEngine(pool, func(conn Conn) crawlapp.CatalogWriter {
+		repo, repoErr := catalogpg.New(conn)
+		if repoErr != nil {
+			t.Fatal(repoErr)
+		}
+		return repo
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := crawlapp.NewRegistry()
+	if err := registry.Register(facets.Contacts{}); err != nil {
+		t.Fatal(err)
+	}
+	return &crawlapp.Engine{
+		Registry: registry, Store: store, Units: store, Keys: intKeys{}, Governor: intGovernor{},
+		Flickr: flickr, Settings: photosFavoritesSettings{maxDepth: 2},
+	}
+}
+
+func setContactsCheckpoint(t *testing.T, ctx context.Context, pool *pgxpool.Pool, itemID int64, checkpoint time.Time) {
+	t.Helper()
+	cursor, err := json.Marshal(map[string]any{
+		"page": 1, "method": "flickr.contacts.getList", "checkpoint_at": checkpoint.Unix(),
+		"params": map[string]string{"user_id": "", "per_page": "500"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET cursor=jsonb_set($2::jsonb,'{params,user_id}',to_jsonb(subject_key)) WHERE id=$1`, itemID, cursor); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestContactsRefreshRemovesMissingRowsOnlyAfterFinalPage(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	keyID := seedOwnerKey(t, ctx, pool, userID, "")
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	account := "refresh-acct-" + suffix
+	oldContact := "refresh-old-" + suffix
+	firstContact := "refresh-first-" + suffix
+	lastContact := "refresh-last-" + suffix
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=$1 OR contact_nsid=ANY($2)`, account, []string{oldContact, firstContact, lastContact})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{account, oldContact, firstContact, lastContact})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM flickr_accounts WHERE user_id=$1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM api_keys WHERE id=$1`, keyID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1`, userID)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'account','{}','{}','ok')`, userID, keyID, account); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,'account'),($2,'old'),($3,'first'),($4,'last')`, account, oldContact, firstContact, lastContact); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := time.Now().UTC().Truncate(time.Second)
+	if _, err := pool.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid,seen_at) VALUES($1,$2,$3)`, account, oldContact, checkpoint.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	flickr := &scriptedContactsFlickr{responses: []contactsResponse{
+		{body: json.RawMessage(fmt.Sprintf(`{"contacts":{"pages":2,"contact":[{"nsid":%q,"username":"first"}]}}`, firstContact))},
+		{body: json.RawMessage(fmt.Sprintf(`{"contacts":{"pages":2,"contact":[{"nsid":%q,"username":"last"}]}}`, lastContact))},
+	}}
+	engine := contactsRefreshEngine(t, pool, flickr)
+	itemID := insertPhotosFavoritesWork(t, ctx, pool, userID, "contacts", account, 0, facets.Contacts{})
+	setContactsCheckpoint(t, ctx, pool, itemID, checkpoint)
+	if err := engine.Handle(ctx, itemID); err != nil {
+		t.Fatalf("first contacts page: %v", err)
+	}
+	if got := count(t, ctx, pool, `SELECT count(*) FROM contacts WHERE person_nsid=$1 AND contact_nsid=$2`, account, oldContact); got != 1 {
+		t.Fatalf("old relationship removed before final page: count=%d", got)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready' WHERE id=$1`, itemID); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Handle(ctx, itemID); err != nil {
+		t.Fatalf("final contacts page: %v", err)
+	}
+	if got := count(t, ctx, pool, `SELECT count(*) FROM contacts WHERE person_nsid=$1 AND contact_nsid=$2`, account, oldContact); got != 0 {
+		t.Fatalf("old relationship remains after successful refresh: count=%d", got)
+	}
+	if got := count(t, ctx, pool, `SELECT count(*) FROM contacts WHERE person_nsid=$1 AND contact_nsid=ANY($2) AND seen_at=$3`, account, []string{firstContact, lastContact}, checkpoint); got != 2 {
+		t.Fatalf("refreshed relationships count=%d, want 2", got)
+	}
+}
+
+func TestContactsRefreshFailureRetainsExistingRows(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	keyID := seedOwnerKey(t, ctx, pool, userID, "")
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	account := "failed-refresh-acct-" + suffix
+	oldContact := "failed-refresh-old-" + suffix
+	newContact := "failed-refresh-new-" + suffix
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=$1 OR contact_nsid=ANY($2)`, account, []string{oldContact, newContact})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{account, oldContact, newContact})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM flickr_accounts WHERE user_id=$1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM api_keys WHERE id=$1`, keyID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1`, userID)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'account','{}','{}','ok')`, userID, keyID, account); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,'account'),($2,'old'),($3,'new')`, account, oldContact, newContact); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := time.Now().UTC().Truncate(time.Second)
+	if _, err := pool.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid,seen_at) VALUES($1,$2,$3)`, account, oldContact, checkpoint.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	flickr := &scriptedContactsFlickr{responses: []contactsResponse{
+		{body: json.RawMessage(fmt.Sprintf(`{"contacts":{"pages":2,"contact":[{"nsid":%q,"username":"new"}]}}`, newContact))},
+		{err: errors.New("network unavailable")},
+	}}
+	engine := contactsRefreshEngine(t, pool, flickr)
+	itemID := insertPhotosFavoritesWork(t, ctx, pool, userID, "contacts", account, 0, facets.Contacts{})
+	setContactsCheckpoint(t, ctx, pool, itemID, checkpoint)
+	if err := engine.Handle(ctx, itemID); err != nil {
+		t.Fatalf("first contacts page: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready' WHERE id=$1`, itemID); err != nil {
+		t.Fatal(err)
+	}
+	_ = engine.Handle(ctx, itemID)
+	if got := count(t, ctx, pool, `SELECT count(*) FROM contacts WHERE person_nsid=$1 AND contact_nsid=$2`, account, oldContact); got != 1 {
+		t.Fatalf("existing relationship removed after incomplete refresh: count=%d", got)
+	}
 }
 
 func (f *countingContactsFlickr) Call(_ context.Context, request crawlapp.Request) (json.RawMessage, error) {
@@ -70,6 +232,7 @@ func TestContactsCrawlWithoutPreInsertedAccountPerson(t *testing.T) {
 		Flickr: flickr, Settings: photosFavoritesSettings{maxDepth: 2},
 	}
 	itemID := insertPhotosFavoritesWork(t, ctx, pool, userID, "contacts", account, 0, facets.Contacts{})
+	setContactsCheckpoint(t, ctx, pool, itemID, time.Now().UTC().Truncate(time.Second))
 	if err := engine.Handle(ctx, itemID); err != nil {
 		t.Fatalf("crawl without account people row: %v", err)
 	}
@@ -143,6 +306,7 @@ func TestContactsStoredIdempotent(t *testing.T) {
 		Flickr: flickr, Settings: photosFavoritesSettings{maxDepth: 2},
 	}
 	itemID := insertPhotosFavoritesWork(t, ctx, pool, userID, "contacts", account, 0, facets.Contacts{})
+	setContactsCheckpoint(t, ctx, pool, itemID, time.Now().UTC().Truncate(time.Second))
 	if err := engine.Handle(ctx, itemID); err != nil {
 		t.Fatal(err)
 	}

@@ -164,6 +164,12 @@ type ReconcileWriter interface {
 	Complete(ctx context.Context, userID int64, person string, scannedAt, completedAt time.Time) error
 }
 
+// ContactsReconcileWriter removes contact relationships absent from a complete
+// contacts.getList refresh.
+type ContactsReconcileWriter interface {
+	CompleteContacts(ctx context.Context, userID int64, accountNSID string, scannedAt time.Time) error
+}
+
 // Writers is everything the commit transaction writes through.
 type Writers struct {
 	Work         WorkWriter
@@ -171,6 +177,7 @@ type Writers struct {
 	Interests    InterestWriter
 	Observations ObservationWriter
 	Reconcile    ReconcileWriter
+	Contacts     ContactsReconcileWriter
 }
 
 // UnitOfWork runs fn in one atomic transaction.
@@ -462,6 +469,9 @@ func (e *Engine) write(ctx context.Context, w Writers, item domain.Item, result 
 	if err := writeCatalog(ctx, w.Catalog, pageWriter, result); err != nil {
 		return err
 	}
+	if err := e.completeContactsReconciliation(ctx, w, item, result); err != nil {
+		return err
+	}
 	if err := e.completeReconciliation(ctx, w, item, result); err != nil {
 		return err
 	}
@@ -491,6 +501,17 @@ func (e *Engine) completeReconciliation(ctx context.Context, writers Writers, it
 	}
 	scannedAt := time.Unix(item.Cursor.CheckpointAt, 0).UTC()
 	return writers.Reconcile.Complete(ctx, item.UserID, item.Subject, scannedAt, e.now())
+}
+
+func (e *Engine) completeContactsReconciliation(ctx context.Context, writers Writers, item domain.Item, result domain.Result) error {
+	if item.Kind != "contacts" || result.HasMore {
+		return nil
+	}
+	if writers.Contacts == nil || item.UserID <= 0 || item.Subject == "" || item.Cursor.CheckpointAt <= 0 {
+		return errors.New("crawl: contacts reconciliation requires a valid work item and writer")
+	}
+	scannedAt := time.Unix(item.Cursor.CheckpointAt, 0).UTC()
+	return writers.Contacts.CompleteContacts(ctx, item.UserID, item.Subject, scannedAt)
 }
 
 func (e *Engine) enqueuePageWork(ctx context.Context, writers Writers, item domain.Item, work []domain.WorkSpec) error {

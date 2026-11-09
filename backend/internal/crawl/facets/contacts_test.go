@@ -56,9 +56,27 @@ func TestContactsFacetPlanAndHandle(t *testing.T) {
 		t.Fatalf("empty = %#v, %v", empty, err)
 	}
 
-	malformedPages, err := facet.Handle(t.Context(), catalogPage("acct@N00", `{"contacts":{"pages":0,"contact":[{"nsid":"c@N00","username":"x"}]}}`, 1))
-	if err != nil || malformedPages.HasMore || len(malformedPages.Contacts) != 1 {
-		t.Fatalf("malformed pages = %#v, %v", malformedPages, err)
+	for _, malformed := range []struct {
+		name    string
+		payload string
+		number  int
+	}{
+		{name: "missing contacts", payload: `{}`},
+		{name: "missing contacts list", payload: `{"contacts":{"pages":1}}`},
+		{name: "missing pages", payload: `{"contacts":{"contact":[]}}`},
+		{name: "zero pages", payload: `{"contacts":{"pages":0,"contact":[]}}`},
+		{name: "empty nonfinal page", payload: `{"contacts":{"pages":2,"contact":[]}}`},
+		{name: "page beyond total", payload: `{"contacts":{"pages":1,"contact":[]}}`, number: 2},
+	} {
+		t.Run(malformed.name, func(t *testing.T) {
+			number := malformed.number
+			if number == 0 {
+				number = 1
+			}
+			if _, err := facet.Handle(t.Context(), catalogPage("acct@N00", malformed.payload, number)); err == nil {
+				t.Fatal("invalid contacts page was accepted")
+			}
+		})
 	}
 	if _, err := facet.Handle(t.Context(), catalogPage("acct@N00", `{`, 1)); err == nil {
 		t.Fatal("expected decode error")

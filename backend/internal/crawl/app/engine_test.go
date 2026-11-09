@@ -104,6 +104,9 @@ type fakeTx struct {
 	enqueued     []NewWork
 	interests    []domain.Interest
 	observations []domain.Observation
+	contactsUser int64
+	contactsNSID string
+	contactsAt   time.Time
 	groups       []catalog.Group
 	personGroups []catalog.PersonGroup
 	ensured      []string
@@ -184,8 +187,13 @@ func (t *fakeTx) Record(_ context.Context, _ int64, _ int, o []domain.Observatio
 	return t.fail("observe")
 }
 
+func (t *fakeTx) CompleteContacts(_ context.Context, userID int64, accountNSID string, scannedAt time.Time) error {
+	t.contactsUser, t.contactsNSID, t.contactsAt = userID, accountNSID, scannedAt
+	return t.fail("contacts_complete")
+}
+
 func (t *fakeTx) Do(_ context.Context, fn func(Writers) error) error {
-	return fn(Writers{Work: t, Catalog: t, Interests: t, Observations: t})
+	return fn(Writers{Work: t, Catalog: t, Interests: t, Observations: t, Contacts: t})
 }
 
 type fakeKeys struct {
@@ -418,7 +426,7 @@ func TestHandleSuccessCommitsPageAndAdvances(t *testing.T) {
 		t.Fatalf("enqueued = %+v", r.tx.enqueued)
 	}
 	planned, explicit := r.tx.enqueued[0], r.tx.enqueued[1]
-	if planned.Kind != "contacts" || planned.Depth != 2 || planned.Cursor.Page != 1 || planned.Subject != "200@N01" {
+	if planned.Kind != "contacts" || planned.Depth != 2 || planned.Cursor.Page != 1 || planned.Cursor.CheckpointAt != epoch.Unix() || planned.Subject != "200@N01" {
 		t.Fatalf("planned = %+v", planned)
 	}
 	if explicit.Kind != "photos" || explicit.Depth != 1 {
@@ -426,6 +434,37 @@ func TestHandleSuccessCommitsPageAndAdvances(t *testing.T) {
 	}
 	if len(r.tx.observations) != 1 || r.tx.advanced == nil || r.tx.advanced.Page != 3 || r.tx.finished {
 		t.Fatalf("tx = %+v", r.tx)
+	}
+}
+
+func TestContactsReconciliationRunsOnlyOnFinalPage(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		hasMore bool
+	}{
+		{name: "intermediate page", hasMore: true},
+		{name: "final page"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			r.store.item.Kind = "contacts"
+			r.store.item.Subject = "account@N00"
+			r.store.item.Cursor = domain.Cursor{Page: 2, Method: "flickr.contacts.getList", CheckpointAt: epoch.Unix()}
+			r.tx.current.Cursor = r.store.item.Cursor
+			r.favFace.result = domain.Result{HasMore: tc.hasMore}
+			if err := r.engine.Handle(t.Context(), 7); err != nil {
+				t.Fatal(err)
+			}
+			if tc.hasMore {
+				if r.tx.contactsNSID != "" {
+					t.Fatalf("intermediate page reconciled contacts for %q", r.tx.contactsNSID)
+				}
+				return
+			}
+			if r.tx.contactsUser != 3 || r.tx.contactsNSID != "account@N00" || !r.tx.contactsAt.Equal(epoch.Truncate(time.Second)) {
+				t.Fatalf("contacts reconciliation = user:%d account:%q at:%s", r.tx.contactsUser, r.tx.contactsNSID, r.tx.contactsAt)
+			}
+		})
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	catalog "github.com/jooservices/xflickr/internal/catalog/domain"
 	"github.com/jooservices/xflickr/internal/crawl/domain"
@@ -32,9 +33,9 @@ func (Contacts) Plan(_ context.Context, p domain.Person) []domain.WorkSpec {
 
 func (Contacts) Handle(_ context.Context, p domain.Page) (domain.Result, error) {
 	var e struct {
-		Contacts struct {
-			Pages int `json:"pages"`
-			Items []struct {
+		Contacts *struct {
+			Pages *int `json:"pages"`
+			Items *[]struct {
 				NSID     string     `json:"nsid"`
 				Username string     `json:"username"`
 				Realname string     `json:"realname"`
@@ -47,13 +48,24 @@ func (Contacts) Handle(_ context.Context, p domain.Page) (domain.Result, error) 
 	if err := json.Unmarshal(p.Payload, &e); err != nil {
 		return domain.Result{}, fmt.Errorf("crawl facets: decode contacts: %w", err)
 	}
-	out := domain.Result{
-		People:      make([]catalog.Person, 0, len(e.Contacts.Items)),
-		Contacts:    make([]catalog.Contact, 0, len(e.Contacts.Items)),
-		Discoveries: make([]domain.Discovery, 0, len(e.Contacts.Items)),
+	if e.Contacts == nil || e.Contacts.Pages == nil || e.Contacts.Items == nil || *e.Contacts.Pages < 1 || p.Number < 1 || p.Number > *e.Contacts.Pages {
+		return domain.Result{}, fmt.Errorf("crawl facets: invalid contacts pagination metadata")
 	}
-	seen := make(map[string]struct{}, len(e.Contacts.Items))
-	for _, item := range e.Contacts.Items {
+	if p.Number < *e.Contacts.Pages && len(*e.Contacts.Items) == 0 {
+		return domain.Result{}, fmt.Errorf("crawl facets: empty nonfinal contacts page")
+	}
+	items := *e.Contacts.Items
+	out := domain.Result{
+		People:      make([]catalog.Person, 0, len(items)),
+		Contacts:    make([]catalog.Contact, 0, len(items)),
+		Discoveries: make([]domain.Discovery, 0, len(items)),
+	}
+	seen := make(map[string]struct{}, len(items))
+	seenAt := time.Time{}
+	if p.Item.Cursor.CheckpointAt > 0 {
+		seenAt = time.Unix(p.Item.Cursor.CheckpointAt, 0).UTC()
+	}
+	for _, item := range items {
 		if item.NSID == "" || item.NSID == p.Item.Subject {
 			continue
 		}
@@ -66,10 +78,10 @@ func (Contacts) Handle(_ context.Context, p domain.Page) (domain.Result, error) 
 			username = item.NSID
 		}
 		out.People = append(out.People, catalog.Person{NSID: item.NSID, Username: username, Realname: item.Realname})
-		out.Contacts = append(out.Contacts, catalog.Contact{PersonNSID: p.Item.Subject, ContactNSID: item.NSID})
+		out.Contacts = append(out.Contacts, catalog.Contact{PersonNSID: p.Item.Subject, ContactNSID: item.NSID, SeenAt: seenAt})
 		out.Discoveries = append(out.Discoveries, domain.Discovery{NSID: item.NSID, Via: "contact"})
 	}
-	out.HasMore = p.Number < e.Contacts.Pages && len(e.Contacts.Items) > 0
+	out.HasMore = p.Number < *e.Contacts.Pages
 	return out, nil
 }
 

@@ -16,6 +16,7 @@ func (c ScanCheckpoint) Unix() int64 { return int64(c) }
 const (
 	FacetPhotos    = "photos"
 	FacetFavorites = "favorites"
+	FacetContacts  = "contacts"
 )
 
 // Flickr date filter parameter names. Official docs:
@@ -29,10 +30,10 @@ const (
 	ParamMinFaveDate   = "min_fave_date"
 )
 
-// NeedsScanStartCheckpoint reports whether kind stores a photos/favorites
-// scan-start marker on its work cursor.
+// NeedsScanStartCheckpoint reports whether kind stores a scan-start marker on
+// its work cursor.
 func NeedsScanStartCheckpoint(kind string) bool {
-	return kind == FacetPhotos || kind == FacetFavorites
+	return kind == FacetPhotos || kind == FacetFavorites || kind == FacetContacts
 }
 
 // NextCheckpoint is the single rule for what to persist after a photos or
