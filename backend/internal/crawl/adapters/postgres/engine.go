@@ -98,17 +98,38 @@ func (e *Engine) Start(ctx context.Context, id int64) (bool, error) {
 	return tag.RowsAffected() > 0, nil
 }
 
-// StampScanStart writes checkpoint_at onto a photos/favorites cursor when it is
-// still missing. Concurrent stamps keep the first value.
-func (e *Engine) StampScanStart(ctx context.Context, id int64, at int64) error {
+// StampScanStart writes checkpoint_at onto the unchanged photos/favorites
+// cursor when it is still missing. A legacy later-page cursor restarts at page
+// one and drops its opaque continuation before the first request.
+func (e *Engine) StampScanStart(ctx context.Context, id int64, at int64, expected domain.Cursor) error {
 	if at <= 0 {
 		return nil
 	}
-	_, err := e.conn.Exec(ctx, `
-		UPDATE work_items SET cursor = jsonb_set(cursor, '{checkpoint_at}', to_jsonb($2::bigint), true), updated_at = now()
+	params := expected.Params
+	if params == nil {
+		params = map[string]string{}
+	}
+	encodedParams, err := json.Marshal(params)
+	if err != nil {
+		return fmt.Errorf("crawl: encode scan-start cursor: %w", err)
+	}
+	_, err = e.conn.Exec(ctx, `
+		UPDATE work_items SET cursor = jsonb_set(
+			CASE WHEN COALESCE((cursor->>'page')::integer, 1) > 1
+				THEN jsonb_set(cursor - 'continuation', '{page}', '1'::jsonb, true)
+				ELSE cursor
+			END,
+			'{checkpoint_at}', to_jsonb($2::bigint), true
+		), updated_at = now()
 		WHERE id = $1
 		  AND kind IN ('photos', 'favorites')
-		  AND COALESCE((cursor->>'checkpoint_at')::bigint, 0) <= 0`, id, at)
+		  AND state = 'running'
+		  AND COALESCE((cursor->>'checkpoint_at')::bigint, 0) <= 0
+		  AND cursor->>'method' = $3
+		  AND COALESCE((cursor->>'page')::integer, 1) = $4
+		  AND COALESCE(cursor->>'continuation', '') = $5
+		  AND COALESCE(cursor->'params', '{}'::jsonb) = $6::jsonb`,
+		id, at, expected.Method, expected.Page, expected.Continuation, encodedParams)
 	if err != nil {
 		return fmt.Errorf("crawl: stamp scan-start checkpoint: %w", err)
 	}

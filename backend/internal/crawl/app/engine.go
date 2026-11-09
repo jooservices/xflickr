@@ -103,7 +103,7 @@ type Store interface {
 	Start(ctx context.Context, id int64) (bool, error)
 	// StampScanStart persists a photos/favorites scan-start checkpoint on the
 	// stored cursor when it is still missing, before the first Flickr page.
-	StampScanStart(ctx context.Context, id int64, at int64) error
+	StampScanStart(ctx context.Context, id int64, at int64, expected domain.Cursor) error
 	Defer(ctx context.Context, id int64, deferral Deferral) error
 	Finish(ctx context.Context, id int64) error
 	Fail(ctx context.Context, id int64, reason string) error
@@ -250,12 +250,17 @@ func (e *Engine) Handle(ctx context.Context, id int64) error {
 // an initial photos/favorites scan. The value is kept on the in-memory cursor
 // and persisted so Finish and later page advances share the same bound.
 func (e *Engine) ensureScanStart(ctx context.Context, item *domain.Item) error {
-	if item == nil || !domain.NeedsScanStartCheckpoint(item.Kind) || item.Cursor.CheckpointAt > 0 || item.Cursor.Page != 1 {
+	if item == nil || !domain.NeedsScanStartCheckpoint(item.Kind) || item.Cursor.CheckpointAt > 0 {
 		return nil
+	}
+	expected := item.Cursor
+	if item.Cursor.Page > 1 {
+		item.Cursor.Page = 1
+		item.Cursor.Continuation = ""
 	}
 	at := e.now().Unix()
 	item.Cursor.CheckpointAt = at
-	if err := e.Store.StampScanStart(ctx, item.ID, at); err != nil {
+	if err := e.Store.StampScanStart(ctx, item.ID, at, expected); err != nil {
 		return fmt.Errorf("crawl: stamp scan-start checkpoint: %w", err)
 	}
 	return nil

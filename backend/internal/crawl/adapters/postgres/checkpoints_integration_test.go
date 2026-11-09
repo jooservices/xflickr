@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -409,6 +410,7 @@ func TestRepairCheckpointKeysetPassesBatchesWithoutEvidence(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1 AND subject_key=ANY($2)`, userID, people)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1 AND kind=$2`, userID, suffix+"-plan")
 		_, _ = pool.Exec(context.Background(), `DELETE FROM crawl_interests WHERE user_id=$1 AND person_nsid=ANY($2)`, userID, people)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, people)
 	})
@@ -433,6 +435,39 @@ func TestRepairCheckpointKeysetPassesBatchesWithoutEvidence(t *testing.T) {
 			}
 		}
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,depth)
+		SELECT $1,$2 || '-' || number::text,$3,'done',0 FROM generate_series(1,1500) AS number`, suffix+"-plan", suffix, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `ANALYZE work_items`); err != nil {
+		t.Fatal(err)
+	}
+	planRows, err := pool.Query(ctx, `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+		SELECT (w.cursor->>'checkpoint_at')::bigint
+		FROM work_items w
+		WHERE w.kind='photos' AND w.subject_key=$1 AND w.user_id=$2 AND w.state='done'
+		  AND COALESCE((w.cursor->>'checkpoint_at')::bigint,0)>0
+		LIMIT 1`, people[2], userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan strings.Builder
+	for planRows.Next() {
+		var line string
+		if err := planRows.Scan(&line); err != nil {
+			t.Fatal(err)
+		}
+		plan.WriteString(line)
+		plan.WriteByte('\n')
+	}
+	if err := planRows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	planRows.Close()
+	if !strings.Contains(plan.String(), "work_items_dedupe_key") {
+		t.Fatalf("completed scan lookup did not use the bounded unique index:\n%s", plan.String())
+	}
+	t.Logf("completed scan lookup plan:\n%s", plan.String())
 
 	report, err := RepairZeroCheckpointsPool(ctx, pool, CheckpointRepairOptions{BatchSize: 2})
 	if err != nil {

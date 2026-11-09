@@ -7,15 +7,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// CheckpointRepairMargin subtracts from the latest stored upload or favorite
-// date when deriving a checkpoint from catalog rows that lack a prior scan
-// observation time. One hour covers Flickr second precision and ordinary
-// clock skew without skipping a large window of new activity.
-const CheckpointRepairMargin = time.Hour
 
 // CheckpointRepairOptions bounds one offline repair run.
 type CheckpointRepairOptions struct {
@@ -26,15 +20,17 @@ type CheckpointRepairOptions struct {
 
 // CheckpointRepairReport is safe to print; it never includes secrets.
 type CheckpointRepairReport struct {
-	PhotosUpdated    int64     `json:"photos_updated"`
-	FavoritesUpdated int64     `json:"favorites_updated"`
-	Batches          int       `json:"batches"`
-	RunAt            time.Time `json:"run_at"`
+	PhotosUpdated         int64     `json:"photos_updated"`
+	PhotosUnrepairable    int64     `json:"photos_unrepairable"`
+	FavoritesUpdated      int64     `json:"favorites_updated"`
+	FavoritesUnrepairable int64     `json:"favorites_unrepairable"`
+	Batches               int       `json:"batches"`
+	RunAt                 time.Time `json:"run_at"`
 }
 
 // CheckpointRepairTx is the transaction surface used by one repair batch.
 type CheckpointRepairTx interface {
-	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
 	Commit(context.Context) error
 	Rollback(context.Context) error
 }
@@ -54,9 +50,21 @@ func (p poolRepairDB) Begin(ctx context.Context) (CheckpointRepairTx, error) {
 	return tx, nil
 }
 
-// RepairZeroCheckpoints fills null/zero photos and favorites checkpoints from
-// already stored catalog data. It never calls Flickr, never changes a non-zero
-// checkpoint, and is safe to run while the crawl role is active (SKIP LOCKED).
+type repairCursor struct {
+	UserID     int64
+	PersonNSID string
+}
+
+type repairBatch struct {
+	Selected     int64
+	Updated      int64
+	Unrepairable int64
+	Last         repairCursor
+}
+
+// RepairZeroCheckpoints fills zero photos and favorites checkpoints only from
+// a completed scan belonging to the same user and person. It makes no Flickr
+// calls and leaves rows without completion evidence at zero.
 func RepairZeroCheckpoints(ctx context.Context, database CheckpointRepairDB, options CheckpointRepairOptions) (CheckpointRepairReport, error) {
 	now := time.Now().UTC()
 	if options.Now != nil {
@@ -70,115 +78,132 @@ func RepairZeroCheckpoints(ctx context.Context, database CheckpointRepairDB, opt
 	if logger == nil {
 		logger = slog.Default()
 	}
+	var after repairCursor
 	for {
-		n, err := repairPhotosBatch(ctx, database, options.BatchSize)
+		batch, err := repairPhotosBatch(ctx, database, options.BatchSize, after)
 		if err != nil {
 			return report, err
 		}
-		report.PhotosUpdated += n
+		report.PhotosUpdated += batch.Updated
+		report.PhotosUnrepairable += batch.Unrepairable
 		report.Batches++
-		if n == 0 {
+		if batch.Selected == 0 {
 			break
 		}
-		logger.InfoContext(ctx, "crawl repaired photo checkpoints", "updated", n, "batch_size", options.BatchSize)
+		if err := validateRepairProgress(after, batch); err != nil {
+			return report, err
+		}
+		after = batch.Last
+		logger.InfoContext(ctx, "crawl repaired photo checkpoints", "updated", batch.Updated, "unrepairable", batch.Unrepairable, "batch_size", options.BatchSize)
 	}
+	after = repairCursor{}
 	for {
-		n, err := repairFavoritesBatch(ctx, database, options.BatchSize)
+		batch, err := repairFavoritesBatch(ctx, database, options.BatchSize, after)
 		if err != nil {
 			return report, err
 		}
-		report.FavoritesUpdated += n
+		report.FavoritesUpdated += batch.Updated
+		report.FavoritesUnrepairable += batch.Unrepairable
 		report.Batches++
-		if n == 0 {
+		if batch.Selected == 0 {
 			break
 		}
-		logger.InfoContext(ctx, "crawl repaired favorite checkpoints", "updated", n, "batch_size", options.BatchSize)
+		if err := validateRepairProgress(after, batch); err != nil {
+			return report, err
+		}
+		after = batch.Last
+		logger.InfoContext(ctx, "crawl repaired favorite checkpoints", "updated", batch.Updated, "unrepairable", batch.Unrepairable, "batch_size", options.BatchSize)
 	}
 	return report, nil
 }
 
-func repairPhotosBatch(ctx context.Context, database CheckpointRepairDB, batchSize int) (int64, error) {
-	tx, err := database.Begin(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("crawl: begin photo checkpoint repair: %w", err)
+func validateRepairProgress(after repairCursor, batch repairBatch) error {
+	if batch.Selected < 0 || batch.Updated < 0 || batch.Unrepairable < 0 || batch.Updated+batch.Unrepairable != batch.Selected {
+		return errors.New("crawl: checkpoint repair returned invalid batch counts")
 	}
-	defer func() { _ = tx.Rollback(ctx) }() // safe after commit
-	tag, err := tx.Exec(ctx, `
-WITH batch AS (
-	SELECT user_id, person_nsid
-	FROM crawl_interests
-	WHERE last_seen_at IS NULL OR last_seen_at <= 'epoch'::timestamptz
-	ORDER BY user_id, person_nsid
-	LIMIT $1
-	FOR UPDATE SKIP LOCKED
-), computed AS (
-	SELECT b.user_id, b.person_nsid,
-		COALESCE(
-			(SELECT MAX(p.last_seen_at) FROM photos p
-			 WHERE p.owner_nsid = b.person_nsid
-			   AND p.last_seen_at IS NOT NULL
-			   AND p.last_seen_at > 'epoch'::timestamptz),
-			(SELECT MAX(p.uploaded_at) - $2::interval FROM photos p
-			 WHERE p.owner_nsid = b.person_nsid AND p.uploaded_at IS NOT NULL)
-		) AS checkpoint
-	FROM batch b
-)
-UPDATE crawl_interests AS interest SET last_seen_at = computed.checkpoint
-FROM computed
-WHERE interest.user_id = computed.user_id
-  AND interest.person_nsid = computed.person_nsid
-  AND computed.checkpoint IS NOT NULL
-  AND computed.checkpoint > 'epoch'::timestamptz
-  AND (interest.last_seen_at IS NULL OR interest.last_seen_at <= 'epoch'::timestamptz)`, batchSize, CheckpointRepairMargin)
-	if err != nil {
-		return 0, fmt.Errorf("crawl: repair photo checkpoints: %w", err)
+	if batch.Last.UserID <= 0 || batch.Last.PersonNSID == "" {
+		return errors.New("crawl: checkpoint repair batch did not advance its keyset cursor")
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("crawl: commit photo checkpoint repair: %w", err)
+	if after.UserID > 0 && (batch.Last.UserID < after.UserID ||
+		(batch.Last.UserID == after.UserID && batch.Last.PersonNSID <= after.PersonNSID)) {
+		return errors.New("crawl: checkpoint repair keyset cursor did not advance")
 	}
-	return tag.RowsAffected(), nil
+	return nil
 }
 
-func repairFavoritesBatch(ctx context.Context, database CheckpointRepairDB, batchSize int) (int64, error) {
-	tx, err := database.Begin(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("crawl: begin favorite checkpoint repair: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }() // safe after commit
-	tag, err := tx.Exec(ctx, `
-WITH batch AS (
+func repairPhotosBatch(ctx context.Context, database CheckpointRepairDB, batchSize int, after repairCursor) (repairBatch, error) {
+	return repairZeroCheckpointsBatch(ctx, database, batchSize, after, "photos")
+}
+
+func repairFavoritesBatch(ctx context.Context, database CheckpointRepairDB, batchSize int, after repairCursor) (repairBatch, error) {
+	return repairZeroCheckpointsBatch(ctx, database, batchSize, after, "favorites")
+}
+
+const repairCheckpointBatchSQL = `
+WITH batch AS MATERIALIZED (
 	SELECT user_id, person_nsid
 	FROM crawl_interests
-	WHERE last_fave_at IS NULL OR last_fave_at <= 'epoch'::timestamptz
+	WHERE (%[1]s IS NULL OR %[1]s <= 'epoch'::timestamptz)
+	  AND ($2::bigint = 0 OR (user_id, person_nsid) > ($2::bigint, $3::text))
 	ORDER BY user_id, person_nsid
 	LIMIT $1
 	FOR UPDATE SKIP LOCKED
-), computed AS (
+), computed AS MATERIALIZED (
 	SELECT b.user_id, b.person_nsid,
-		COALESCE(
-			(SELECT MAX(f.seen_at) FROM favorites f
-			 WHERE f.person_nsid = b.person_nsid
-			   AND f.seen_at IS NOT NULL
-			   AND f.seen_at > 'epoch'::timestamptz),
-			(SELECT MAX(f.fave_date) - $2::interval FROM favorites f
-			 WHERE f.person_nsid = b.person_nsid)
-		) AS checkpoint
+		COALESCE((
+			SELECT (w.cursor->>'checkpoint_at')::bigint
+			FROM work_items w
+			WHERE w.kind = $4
+			  AND w.subject_key = b.person_nsid
+			  AND w.user_id = b.user_id
+			  AND w.state = 'done'
+			  AND COALESCE((w.cursor->>'checkpoint_at')::bigint, 0) > 0
+			LIMIT 1
+		), 0) AS checkpoint
 	FROM batch b
+), updated AS (
+	UPDATE crawl_interests AS interest
+	SET %[1]s = to_timestamp(computed.checkpoint)
+	FROM computed
+	WHERE interest.user_id = computed.user_id
+	  AND interest.person_nsid = computed.person_nsid
+	  AND computed.checkpoint > 0
+	  AND (interest.%[1]s IS NULL OR interest.%[1]s <= 'epoch'::timestamptz)
+	RETURNING interest.user_id, interest.person_nsid
 )
-UPDATE crawl_interests AS interest SET last_fave_at = computed.checkpoint
-FROM computed
-WHERE interest.user_id = computed.user_id
-  AND interest.person_nsid = computed.person_nsid
-  AND computed.checkpoint IS NOT NULL
-  AND computed.checkpoint > 'epoch'::timestamptz
-  AND (interest.last_fave_at IS NULL OR interest.last_fave_at <= 'epoch'::timestamptz)`, batchSize, CheckpointRepairMargin)
+SELECT
+	(SELECT count(*) FROM batch),
+	(SELECT count(*) FROM updated),
+	(SELECT count(*) FROM computed WHERE checkpoint <= 0),
+	COALESCE((SELECT user_id FROM batch ORDER BY user_id DESC, person_nsid DESC LIMIT 1), 0),
+	COALESCE((SELECT person_nsid FROM batch ORDER BY user_id DESC, person_nsid DESC LIMIT 1), '')`
+
+func repairZeroCheckpointsBatch(ctx context.Context, database CheckpointRepairDB, batchSize int, after repairCursor, kind string) (repairBatch, error) {
+	var column string
+	switch kind {
+	case "photos":
+		column = "last_seen_at"
+	case "favorites":
+		column = "last_fave_at"
+	default:
+		return repairBatch{}, errors.New("crawl: unsupported checkpoint repair kind")
+	}
+	tx, err := database.Begin(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("crawl: repair favorite checkpoints: %w", err)
+		return repairBatch{}, fmt.Errorf("crawl: begin %s checkpoint repair: %w", kind, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }() // safe after commit
+	var batch repairBatch
+	err = tx.QueryRow(ctx, fmt.Sprintf(repairCheckpointBatchSQL, column), batchSize, after.UserID, after.PersonNSID, kind).Scan(
+		&batch.Selected, &batch.Updated, &batch.Unrepairable, &batch.Last.UserID, &batch.Last.PersonNSID,
+	)
+	if err != nil {
+		return repairBatch{}, fmt.Errorf("crawl: repair %s checkpoints: %w", kind, err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("crawl: commit favorite checkpoint repair: %w", err)
+		return repairBatch{}, fmt.Errorf("crawl: commit %s checkpoint repair: %w", kind, err)
 	}
-	return tag.RowsAffected(), nil
+	return batch, nil
 }
 
 // RepairZeroCheckpointsPool runs the repair against a pool.

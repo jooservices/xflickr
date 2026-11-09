@@ -105,10 +105,18 @@ value is the start time, not the finish time. Checkpoints are per
 `(user_id, person_nsid)` observer scope.
 
 Existing null or zero checkpoints are repaired offline by
-`xflickr repair-checkpoints --batch-size 500` (no Flickr calls). Prefer the
-latest stored photo `last_seen_at` / favorite `seen_at`; otherwise use the
-latest `uploaded_at` / `fave_date` minus a one-hour safety margin. Non-zero
-checkpoints are never overwritten; a second run changes nothing.
+`xflickr repair-checkpoints --batch-size 500` (no Flickr calls). Repair uses
+only a completed `photos` or `favorites` work item's scan-start cursor for the
+same `(user_id, person_nsid)` interest. Shared catalog observation times do
+not prove that a particular observer completed a scan. When no completed scan
+is recorded, the checkpoint stays zero and the report counts it as
+unrepairable. Non-zero checkpoints are never overwritten.
+
+The job advances a keyset cursor across every selected interest, including
+rows without completion evidence, and reports those rows separately. Its
+completed-work lookup uses the existing unique `work_items` key on
+`(kind, subject_key, user_id)`; it does not aggregate or scan the photos or
+favorites catalog tables.
 
 ## Change checks and incremental work
 

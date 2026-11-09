@@ -174,6 +174,7 @@ func TestRepairZeroCheckpointsRejectsInvalidBatchProgress(t *testing.T) {
 	}{
 		{name: "missing keyset key", result: repairBatch{Selected: 1, Unrepairable: 1}},
 		{name: "inconsistent counts", result: repairBatch{Selected: 1, Updated: 1, Unrepairable: 1, Last: repairCursor{UserID: 1, PersonNSID: "a"}}},
+		{name: "unclassified row", result: repairBatch{Selected: 1, Last: repairCursor{UserID: 1, PersonNSID: "a"}}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
