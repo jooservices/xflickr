@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/jooservices/xflickr/internal/home/app"
+	"github.com/jooservices/xflickr/internal/platform/queue"
 )
 
 type queryerStub struct {
@@ -38,8 +41,12 @@ func (r stubRow) Scan(dest ...any) error {
 		switch target := dest[i].(type) {
 		case *time.Time:
 			*target = value.(time.Time)
+		case **time.Time:
+			*target = value.(*time.Time)
 		case *int64:
 			*target = value.(int64)
+		case *bool:
+			*target = value.(bool)
 		case *[]byte:
 			*target = append((*target)[:0], value.([]byte)...)
 		default:
@@ -47,6 +54,19 @@ func (r stubRow) Scan(dest ...any) error {
 		}
 	}
 	return nil
+}
+
+type refreshQueueStub struct {
+	job   queue.Job
+	opts  queue.Options
+	err   error
+	calls int
+}
+
+func (q *refreshQueueStub) EnqueueStandalone(_ context.Context, job queue.Job, opts queue.Options) error {
+	q.job, q.opts = job, opts
+	q.calls++
+	return q.err
 }
 
 func TestNewRequiresDatabase(t *testing.T) {
@@ -76,10 +96,12 @@ func TestLoadRejectsInvalidRepositoryContextAndUser(t *testing.T) {
 
 func TestLoadReturnsUserScopedSnapshot(t *testing.T) {
 	generatedAt := time.Date(2026, time.November, 9, 10, 0, 0, 0, time.UTC)
+	computedAt := generatedAt.Add(-time.Minute)
 	reader := &queryerStub{row: stubRow{values: []any{
 		generatedAt,
 		int64(4), int64(1), int64(3),
 		int64(12), int64(9), int64(7),
+		&computedAt, false,
 		[]byte(`[{"id":1,"title":"A","thumbnail_url":null,"owner_nsid":"owner","owner_name":"Owner","taken_at":null,"captioned":false}]`),
 		[]byte(`[{"nsid":"owner","name":"Owner","icon_url":"","photos_count":12,"sizes_ready":9,"sizes_total":12,"crawl_state":"waiting"}]`),
 		[]byte(`[]`),
@@ -92,7 +114,7 @@ func TestLoadReturnsUserScopedSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.GeneratedAt != generatedAt || snapshot.Contacts.Total != 4 || snapshot.Contacts.Direct != 1 || snapshot.Contacts.Discovered != 3 {
+	if snapshot.GeneratedAt != generatedAt || snapshot.CountsComputedAt == nil || *snapshot.CountsComputedAt != computedAt || snapshot.Estimated || snapshot.Contacts.Total != 4 || snapshot.Contacts.Direct != 1 || snapshot.Contacts.Discovered != 3 {
 		t.Fatalf("counts or generated_at = %+v", snapshot)
 	}
 	if snapshot.Photos.Total != 12 || snapshot.Photos.SizesReady != 9 || snapshot.Photos.Captioned != 7 {
@@ -107,10 +129,53 @@ func TestLoadReturnsUserScopedSnapshot(t *testing.T) {
 	if len(reader.args) != 1 || reader.args[0] != int64(31) {
 		t.Fatalf("query args = %#v, want user id 31", reader.args)
 	}
-	for _, fragment := range []string{"o.user_id = $1", "shared_photo.visibility = 'public'", "photo.visibility = 'public'", "stored.visibility = 'public'", "LIMIT 12", "LIMIT 5", "stored.id = visible.photo_id", "work_items item"} {
+	for _, fragment := range []string{"own_observation.user_id = $1", "setting.enabled", "photo.visibility = 'public'", "photo.tombstoned_at IS NULL", "LIMIT 12", "LIMIT 5", "user_home_stats", "work_items item"} {
 		if !strings.Contains(reader.query, fragment) {
 			t.Errorf("snapshot query is missing %q", fragment)
 		}
+	}
+	if strings.Contains(reader.query, "visible_photo_counts") || strings.Contains(reader.query, "CROSS JOIN LATERAL (\n        SELECT stored") {
+		t.Fatal("request query still builds a photo-wide count or per-photo lateral lookup")
+	}
+}
+
+func TestLoadQueuesMissingSnapshotRefresh(t *testing.T) {
+	generatedAt := time.Date(2026, time.November, 9, 10, 0, 0, 0, time.UTC)
+	reader := &queryerStub{row: stubRow{values: []any{
+		generatedAt, int64(0), int64(0), int64(0), int64(0), int64(0), int64(0),
+		(*time.Time)(nil), true, []byte(`[]`), []byte(`[]`), []byte(`[]`),
+	}}}
+	refreshQueue := &refreshQueueStub{}
+	repository, err := New(reader, refreshQueue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := repository.Load(t.Context(), 31)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := app.ParseRefreshJob(refreshQueue.job.Args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.CountsComputedAt != nil || !snapshot.Estimated || refreshQueue.calls != 1 || refreshQueue.job.Kind != app.RefreshJobKind || job.UserID != 31 || !refreshQueue.opts.UniqueByArgs || !refreshQueue.opts.UniqueByQueue {
+		t.Fatalf("missing snapshot refresh = snapshot %+v, queue %+v", snapshot, refreshQueue)
+	}
+}
+
+func TestLoadWrapsRefreshEnqueueErrors(t *testing.T) {
+	want := errors.New("queue unavailable")
+	reader := &queryerStub{row: stubRow{values: []any{
+		time.Now(), int64(0), int64(0), int64(0), int64(1), int64(0), int64(0),
+		(*time.Time)(nil), true, []byte(`[]`), []byte(`[]`), []byte(`[]`),
+	}}}
+	refreshQueue := &refreshQueueStub{err: want}
+	repository, err := New(reader, refreshQueue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.Load(t.Context(), 31); !errors.Is(err, want) {
+		t.Fatalf("Load() error = %v, want wrapped enqueue error", err)
 	}
 }
 
@@ -139,7 +204,7 @@ func TestLoadReportsInvalidSnapshotJSON(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			values := []any{
-				time.Date(2026, time.November, 9, 10, 0, 0, 0, time.UTC), int64(0), int64(0), int64(0), int64(0), int64(0), int64(0),
+				time.Date(2026, time.November, 9, 10, 0, 0, 0, time.UTC), int64(0), int64(0), int64(0), int64(0), int64(0), int64(0), (*time.Time)(nil), false,
 				test.new, test.star, test.act,
 			}
 			repository, err := New(&queryerStub{row: stubRow{values: values}})

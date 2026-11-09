@@ -39,13 +39,16 @@ func TestGetMeHomeMapsSnapshot(t *testing.T) {
 	thumbnail := "https://example.invalid/thumb.jpg"
 	takenAt := time.Date(2026, time.November, 8, 11, 0, 0, 0, time.UTC)
 	generatedAt := takenAt.Add(time.Hour)
+	countsComputedAt := generatedAt.Add(-time.Minute)
 	service := &serviceStub{snapshot: app.Snapshot{
-		GeneratedAt:     generatedAt,
-		Contacts:        app.ContactCounts{Total: 3, Direct: 1, Discovered: 2},
-		Photos:          app.PhotoCounts{Total: 9, SizesReady: 7, Captioned: 5},
-		NewPhotos:       []app.Photo{{ID: 44, Title: "Home photo", ThumbnailURL: &thumbnail, OwnerNSID: "owner", OwnerName: "Owner", TakenAt: &takenAt, Captioned: true}},
-		StarredContacts: []app.Contact{{NSID: "owner", Name: "Owner", IconURL: "icon", PhotosCount: 9, SizesReady: 7, SizesTotal: 9, CrawlState: "crawling"}},
-		Activity:        []app.Activity{{ID: "event-1", Kind: "crawl", MessageKey: "new_photos", Count: 2, ContactName: "Owner", OccurredAt: takenAt, Severity: "info"}},
+		GeneratedAt:      generatedAt,
+		CountsComputedAt: &countsComputedAt,
+		Estimated:        true,
+		Contacts:         app.ContactCounts{Total: 3, Direct: 1, Discovered: 2},
+		Photos:           app.PhotoCounts{Total: 9, SizesReady: 7, Captioned: 5},
+		NewPhotos:        []app.Photo{{ID: 44, Title: "Home photo", ThumbnailURL: &thumbnail, OwnerNSID: "owner", OwnerName: "Owner", TakenAt: &takenAt, Captioned: true}},
+		StarredContacts:  []app.Contact{{NSID: "owner", Name: "Owner", IconURL: "icon", PhotosCount: 9, SizesReady: 7, SizesTotal: 9, CrawlState: "crawling"}},
+		Activity:         []app.Activity{{ID: "event-1", Kind: "crawl", MessageKey: "new_photos", Count: 2, ContactName: "Owner", OccurredAt: takenAt, Severity: "info"}},
 	}}
 	handler := Handler{ActorID: func(context.Context) (int64, bool) { return 17, true }, Snapshot: service}
 	response, err := handler.GetMeHome(t.Context(), gen.GetMeHomeRequestObject{})
@@ -56,7 +59,7 @@ func TestGetMeHomeMapsSnapshot(t *testing.T) {
 	if !ok {
 		t.Fatalf("response = %T, want 200", response)
 	}
-	if got.GeneratedAt != generatedAt || got.Contacts.Total != 3 || got.Photos.Captioned != 5 || len(got.NewPhotos) != 1 || got.NewPhotos[0].ThumbnailURL == nil || *got.NewPhotos[0].ThumbnailURL != thumbnail || got.NewPhotos[0].TakenAt == nil {
+	if got.GeneratedAt != generatedAt || got.CountsComputedAt == nil || *got.CountsComputedAt != countsComputedAt || !got.Estimated || got.Contacts.Total != 3 || got.Photos.Captioned != 5 || len(got.NewPhotos) != 1 || got.NewPhotos[0].ThumbnailURL == nil || *got.NewPhotos[0].ThumbnailURL != thumbnail || got.NewPhotos[0].TakenAt == nil {
 		t.Fatalf("snapshot response = %+v", got)
 	}
 	if len(got.StarredContacts) != 1 || got.StarredContacts[0].CrawlState != gen.HomeCrawlStateCrawling || len(got.Activity) != 1 || got.Activity[0].MessageKey != gen.HomeActivityMessageKeyNewPhotos {

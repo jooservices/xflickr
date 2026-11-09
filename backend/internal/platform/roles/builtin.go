@@ -275,15 +275,37 @@ func (syncRole) Run(ctx context.Context) error {
 	defer redisClient.Close()
 	stopMetrics := startMetricsCollection(ctx, pool, redisClient, cfg, "sync", "", false, slog.Default())
 	defer stopMetrics()
-	queueAdapter, err := newRiverWithSettings(ctx, pool, map[string]int{scheduleriver.PhotoQueue: 1, scheduleriver.PhotoExtrasQueue: 1})
+	queueAdapter, err := newRiverWithSettings(ctx, pool, map[string]int{scheduleriver.PhotoQueue: 1, scheduleriver.PhotoExtrasQueue: 1, "home": 1})
 	if err != nil {
 		return err
 	}
 	if err := registerPhotoSizes(queueAdapter, pool, redisClient, cfg, newFlickrClient(cfg, callObserver)); err != nil {
 		return err
 	}
+	if err := registerHomeStatsRefresh(queueAdapter, pool); err != nil {
+		return err
+	}
 	configureRoleReadiness(ctx, "sync", postgresDependency(pool), redisDependency(redisClient))
 	return queue.Worker{Queue: queueAdapter}.Run(ctx)
+}
+
+func registerHomeStatsRefresh(queueAdapter *queue.River, pool *pgxpool.Pool) error {
+	repository, err := homepostgres.New(pool)
+	if err != nil {
+		return err
+	}
+	refresher := homeapp.Refresher{Processor: repository, BatchSize: homeapp.RefreshBatchSize}
+	return queueAdapter.RegisterWithOptions(homeapp.RefreshJobKind, func(ctx context.Context, job queue.Job) error {
+		args, err := homeapp.ParseRefreshJob(job.Args)
+		if err != nil {
+			return err
+		}
+		done, err := refresher.Refresh(ctx, args.UserID)
+		if err != nil || done {
+			return err
+		}
+		return queue.Snooze(time.Second)
+	}, queue.Options{Queue: "home", LeaseTimeout: 30 * time.Minute})
 }
 
 // registerPhotoSizes registers the photo-size job on the sync queue.
@@ -751,7 +773,11 @@ func buildConfiguredAPIHandlerSetWithObserver(pool *pgxpool.Pool, redisClient re
 		return apiHandlerSet{}, err
 	}
 	catalogReads := cataloghttp.Handler{Reads: catalogapp.ReadService{Repository: catalogRepository}, ActorID: userIDFromPrincipal}
-	homeRepository, err := homepostgres.New(pool)
+	refreshQueue, err := queue.NewRiver(pool, nil)
+	if err != nil {
+		return apiHandlerSet{}, err
+	}
+	homeRepository, err := homepostgres.New(pool, refreshQueue)
 	if err != nil {
 		return apiHandlerSet{}, err
 	}

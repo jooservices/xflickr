@@ -6,45 +6,56 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/jooservices/xflickr/internal/home/app"
-	sharingapp "github.com/jooservices/xflickr/internal/sharing/app"
+	"github.com/jooservices/xflickr/internal/platform/queue"
 )
 
 type queryer interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
-// Repository reads a user-scoped Home snapshot from PostgreSQL.
-type Repository struct{ db queryer }
+type refreshEnqueuer interface {
+	EnqueueStandalone(context.Context, queue.Job, queue.Options) error
+}
 
-var _ app.Reader = (*Repository)(nil)
+// Repository reads and refreshes user-scoped Home statistics in PostgreSQL.
+type Repository struct {
+	db           queryer
+	refreshQueue refreshEnqueuer
+}
+
+var (
+	_ app.Reader         = (*Repository)(nil)
+	_ app.BatchProcessor = (*Repository)(nil)
+)
 
 // New creates a Home repository backed by a pgx database.
-func New(database queryer) (*Repository, error) {
+func New(database queryer, refreshQueues ...refreshEnqueuer) (*Repository, error) {
 	if database == nil {
 		return nil, errors.New("home: postgres database is required")
 	}
-	return &Repository{db: database}, nil
+	if len(refreshQueues) > 1 || len(refreshQueues) == 1 && refreshQueues[0] == nil {
+		return nil, errors.New("home: at most one non-nil refresh queue is allowed")
+	}
+	repository := &Repository{db: database}
+	if len(refreshQueues) == 1 {
+		repository.refreshQueue = refreshQueues[0]
+	}
+	return repository, nil
 }
 
-// Load returns counts and bounded lists using the shared photo visibility rule.
+// Load returns bounded lists and cached counts for one user.
 func (r *Repository) Load(ctx context.Context, userID int64) (app.Snapshot, error) {
 	if r == nil || r.db == nil || ctx == nil || userID <= 0 {
 		return app.Snapshot{}, errors.New("home: repository, context, and user id are required")
 	}
-	filter := sharingapp.FilterByUserID(userID)
-	query := fmt.Sprintf(
-		homeSnapshotSQL,
-		filter.PhotoIDs.Expression,
-		"photo."+homePhotoVisibilityPredicate,
-		"stored."+homePhotoVisibilityPredicate,
-	)
 	var snapshot app.Snapshot
 	var newPhotos, starredContacts, activity []byte
-	err := r.db.QueryRow(ctx, query, userID).Scan(
+	err := r.db.QueryRow(ctx, homeSnapshotSQL, userID).Scan(
 		&snapshot.GeneratedAt,
 		&snapshot.Contacts.Total,
 		&snapshot.Contacts.Direct,
@@ -52,6 +63,8 @@ func (r *Repository) Load(ctx context.Context, userID int64) (app.Snapshot, erro
 		&snapshot.Photos.Total,
 		&snapshot.Photos.SizesReady,
 		&snapshot.Photos.Captioned,
+		&snapshot.CountsComputedAt,
+		&snapshot.Estimated,
 		&newPhotos,
 		&starredContacts,
 		&activity,
@@ -68,12 +81,28 @@ func (r *Repository) Load(ctx context.Context, userID int64) (app.Snapshot, erro
 	if err := json.Unmarshal(activity, &snapshot.Activity); err != nil {
 		return app.Snapshot{}, fmt.Errorf("home: decode activity: %w", err)
 	}
+	if snapshot.Estimated && r.refreshQueue != nil {
+		args, err := json.Marshal(app.RefreshJob{UserID: userID})
+		if err != nil {
+			return app.Snapshot{}, fmt.Errorf("home: encode stats refresh job: %w", err)
+		}
+		if err := r.refreshQueue.EnqueueStandalone(ctx, queue.Job{Kind: app.RefreshJobKind, Args: args}, queue.Options{
+			Queue: "home", MaxAttempts: 5, LeaseTimeout: time.Minute, UniqueByArgs: true, UniqueByQueue: true,
+		}); err != nil {
+			return app.Snapshot{}, fmt.Errorf("home: enqueue stats refresh: %w", err)
+		}
+	}
 	return snapshot, nil
 }
 
 const homeSnapshotSQL = `
-WITH visible_photo_ids AS MATERIALIZED (
-    %s
+WITH refresh_interval AS (
+    SELECT COALESCE(
+        (SELECT (value #>> '{}')::bigint
+         FROM app_settings
+         WHERE key = 'home.stats_refresh_interval'),
+        900
+    ) AS seconds
 ),
 contact_counts AS MATERIALIZED (
     SELECT count(*) FILTER (WHERE depth > 0)::bigint AS total,
@@ -81,38 +110,6 @@ contact_counts AS MATERIALIZED (
            count(*) FILTER (WHERE depth > 1)::bigint AS discovered
     FROM crawl_interests
     WHERE user_id = $1
-),
-visible_photo_counts AS MATERIALIZED (
-    SELECT p.owner_nsid,
-           count(*)::bigint AS photos_count,
-           count(*) FILTER (
-               WHERE p.sizes_status = 'confirmed'
-                 AND p.sizes_checked_at >= p.last_update
-           )::bigint AS sizes_ready,
-           count(*) FILTER (
-               WHERE EXISTS (
-                   SELECT 1
-                   FROM photo_enrichments enrichment
-                   WHERE enrichment.photo_id = p.id
-                     AND enrichment.kind = 'caption'
-               )
-           )::bigint AS captioned
-    FROM visible_photo_ids visible
-    CROSS JOIN LATERAL (
-        SELECT photo.id, photo.owner_nsid, photo.sizes_status,
-               photo.sizes_checked_at, photo.last_update
-        FROM photos photo
-        WHERE photo.id = visible.photo_id
-          AND %s
-        LIMIT 1
-    ) p
-    GROUP BY p.owner_nsid
-),
-photo_counts AS MATERIALIZED (
-    SELECT COALESCE(sum(photos_count), 0)::bigint AS total,
-           COALESCE(sum(sizes_ready), 0)::bigint AS sizes_ready,
-           COALESCE(sum(captioned), 0)::bigint AS captioned
-    FROM visible_photo_counts
 ),
 starred_contacts AS MATERIALIZED (
     SELECT interest.person_nsid,
@@ -128,9 +125,9 @@ starred_data AS (
     SELECT contact.person_nsid,
            contact.name,
            contact.icon,
-           COALESCE(counts.photos_count, 0)::bigint AS photos_count,
+           COALESCE(counts.photos_total, 0)::bigint AS photos_count,
            COALESCE(counts.sizes_ready, 0)::bigint AS sizes_ready,
-           COALESCE(counts.photos_count, 0)::bigint AS sizes_total,
+           COALESCE(counts.photos_total, 0)::bigint AS sizes_total,
            CASE
              WHEN COALESCE(state.failed, FALSE) THEN 'attention'
              WHEN COALESCE(state.running, FALSE) THEN 'crawling'
@@ -138,7 +135,8 @@ starred_data AS (
              ELSE 'idle'
            END AS crawl_state
     FROM starred_contacts contact
-    LEFT JOIN visible_photo_counts counts ON counts.owner_nsid = contact.person_nsid
+    LEFT JOIN user_home_contact_stats counts
+      ON counts.user_id = $1 AND counts.person_nsid = contact.person_nsid
     LEFT JOIN LATERAL (
         SELECT bool_or(item.state = 'failed') AS failed,
                bool_or(item.state = 'running') AS running,
@@ -163,16 +161,27 @@ newest_photos AS (
            ) AS captioned,
            photo.uploaded_at,
            photo.sizes
-    FROM visible_photo_ids visible
-    CROSS JOIN LATERAL (
-        SELECT stored.id, stored.title, stored.owner_nsid, stored.taken_at,
-               stored.uploaded_at, stored.sizes
-        FROM photos stored
-        WHERE stored.id = visible.photo_id
-          AND %s
-        LIMIT 1
-    ) photo
+    FROM photos photo
     LEFT JOIN people owner ON owner.nsid = photo.owner_nsid
+    WHERE photo.visibility = 'public'
+      AND photo.tombstoned_at IS NULL
+      AND (
+          EXISTS (
+              SELECT 1
+              FROM observations own_observation
+              WHERE own_observation.user_id = $1
+                AND own_observation.record_kind = 'photo'
+                AND own_observation.record_id = photo.id::text
+          )
+          OR EXISTS (
+              SELECT 1
+              FROM observations shared_observation
+              JOIN sharing_settings setting
+                ON setting.user_id = shared_observation.user_id AND setting.enabled
+              WHERE shared_observation.record_kind = 'photo'
+                AND shared_observation.record_id = photo.id::text
+          )
+      )
     ORDER BY photo.uploaded_at DESC NULLS LAST, photo.id DESC
     LIMIT 12
 ),
@@ -224,15 +233,19 @@ SELECT statement_timestamp(),
        contact_counts.total,
        contact_counts.direct,
        contact_counts.discovered,
-       photo_counts.total,
-       photo_counts.sizes_ready,
-       photo_counts.captioned,
+       COALESCE(stats.photos_total, 0)::bigint,
+       COALESCE(stats.sizes_ready, 0)::bigint,
+       COALESCE(stats.captioned, 0)::bigint,
+       stats.computed_at,
+       COALESCE(
+           stats.computed_at < statement_timestamp() - make_interval(secs => refresh_interval.seconds::double precision),
+           TRUE
+       ),
        newest_json.items,
        starred_json.items,
        '[]'::jsonb
 FROM contact_counts
-CROSS JOIN photo_counts
+CROSS JOIN refresh_interval
+LEFT JOIN user_home_stats stats ON stats.user_id = $1
 CROSS JOIN newest_json
 CROSS JOIN starred_json`
-
-const homePhotoVisibilityPredicate = "visibility = 'public' AND tombstoned_at IS NULL"

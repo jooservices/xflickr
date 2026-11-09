@@ -73,14 +73,14 @@ endpoint is called before it exists in the OpenAPI contract and backend.
 | Key list | `GET /keys` (exists) | array items `id`, `label`, `key_public`, `per_hour_limit`, `status` | Open `/keys` for quota details |
 | Per-key quota | `GET /keys/{id}/quota` (exists) | `key_id`, `used`, `limit`, `reserve`, optional `reset_at`, `state`, `lanes` (`interactive`, `person`, `photo`) | Open `/keys`; update the local reset countdown |
 | Live activity | authenticated `GET /events` (exists) | `crawl.progress`, `download.progress`, `download.ready`; resume with `Last-Event-ID` | Apply relevant events to the view and announce new activity |
-| Home snapshot contract request | `GET /me/home` (**contract request**) | `generated_at`; `contacts.total`, `contacts.direct`, `contacts.discovered`; `photos.total`, `photos.sizes_ready`, `photos.captioned`; `new_photos[]` (`id`, `title`, `thumbnail_url`, `owner_nsid`, `owner_name`, `taken_at`, `captioned`); `starred_contacts[]` (`nsid`, `name`, `icon_url`, `photos_count`, `sizes_ready`, `sizes_total`, `crawl_state`: `idle`, `crawling`, `waiting`, or `attention`); `activity[]` (`id`, `kind`: `crawl`, `download`, or `quota`, `message_key`: `new_photos`, `sizes_confirmed`, `quota_updated`, or `unknown`, `count`, `contact_name`, `occurred_at`, `severity`) | Render the four stats, decorative mosaic, photo/contact navigation, and activity rows; no action on stats or mosaic |
+| Home snapshot contract request | `GET /me/home` (**contract request**) | `generated_at`; `counts_computed_at`, `estimated`; `contacts.total`, `contacts.direct`, `contacts.discovered`; `photos.total`, `photos.sizes_ready`, `photos.captioned`; `new_photos[]` (`id`, `title`, `thumbnail_url`, `owner_nsid`, `owner_name`, `taken_at`, `captioned`); `starred_contacts[]` (`nsid`, `name`, `icon_url`, `photos_count`, `sizes_ready`, `sizes_total`, `crawl_state`: `idle`, `crawling`, `waiting`, or `attention`); `activity[]` (`id`, `kind`: `crawl`, `download`, or `quota`, `message_key`: `new_photos`, `sizes_confirmed`, `quota_updated`, or `unknown`, `count`, `contact_name`, `occurred_at`, `severity`) | Render the four stats, decorative mosaic, photo/contact navigation, and activity rows; no action on stats or mosaic |
 | Search submission | `/search?q={encoded query}` (view route; no API call from Home) | Search view owns its API contract | Trim the query and navigate to `/search?q={URL-encoded query}` |
 
 `GET /me/home` returns one user-scoped snapshot, omits private Flickr content,
 limits `new_photos` to 12, `starred_contacts` to 5, and `activity` to 5, and
 returns counts as non-negative integers. `thumbnail_url` must be an authorized
-thumbnail URL. The response has `generated_at` for staleness detection. The
-Home build depends on this requested contract; until it exists, render only
+thumbnail URL. `counts_computed_at` and `estimated` identify cached photo count
+freshness. The first count refresh is enqueued in the background. The Home build depends on this requested contract; until it exists, render only
 sections backed by existing endpoints and do not fabricate counts or records.
 If the list API is temporarily unavailable but a previous snapshot exists,
 retain it as stale content. No endpoint or OpenAPI change is made in this

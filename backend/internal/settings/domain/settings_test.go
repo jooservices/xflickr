@@ -166,6 +166,22 @@ func TestHealthSettingsBounds(t *testing.T) {
 	}
 }
 
+func TestHomeStatsRefreshIntervalIsAdminConfigurable(t *testing.T) {
+	setting := definition(t, HomeStatsRefreshInterval)
+	if string(setting.Value) != "900" || setting.UserOverridable || !floatEqual(setting.Min, 60) || !floatEqual(setting.Max, 86400) {
+		t.Fatalf("home.stats_refresh_interval default = %+v", setting)
+	}
+	schema, ok := SchemaFor(HomeStatsRefreshInterval)
+	if !ok || schema.Type != "integer" || !floatEqual(schema.Minimum, 60) || !floatEqual(schema.Maximum, 86400) {
+		t.Fatalf("home.stats_refresh_interval schema = %+v", schema)
+	}
+	for _, raw := range []string{"59", "86401"} {
+		if err := ValidateValue(HomeStatsRefreshInterval, json.RawMessage(raw), nil, nil); err == nil {
+			t.Errorf("home.stats_refresh_interval accepted %s", raw)
+		}
+	}
+}
+
 func TestJSONSchemaPerKey(t *testing.T) {
 	documents := map[Key]string{
 		MaxDepth:              `{"type":"integer","minimum":1}`,

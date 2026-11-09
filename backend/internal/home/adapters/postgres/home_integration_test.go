@@ -2,16 +2,23 @@ package postgres_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/jooservices/xflickr/internal/home/adapters/postgres"
+	"github.com/jooservices/xflickr/internal/home/app"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
+	"github.com/jooservices/xflickr/internal/platform/queue"
 )
 
 func TestHomeSnapshotIsUserScopedVisibleAndBounded(t *testing.T) {
@@ -21,7 +28,9 @@ func TestHomeSnapshotIsUserScopedVisibleAndBounded(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	pool := dbtest.Open(t, homeDatabase(t))
-	repository, err := postgres.New(pool)
+	queueStub := &homeRefreshQueueStub{}
+	requestDB := &requestRecorder{Pool: pool}
+	repository, err := postgres.New(requestDB, queueStub)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,8 +147,52 @@ func TestHomeSnapshotIsUserScopedVisibleAndBounded(t *testing.T) {
 	if snapshot.Contacts.Total != 7 || snapshot.Contacts.Direct != 1 || snapshot.Contacts.Discovered != 6 {
 		t.Fatalf("contacts = %+v", snapshot.Contacts)
 	}
-	if snapshot.Photos.Total != 14 || snapshot.Photos.SizesReady != 13 || snapshot.Photos.Captioned != 1 {
-		t.Fatalf("photos = %+v", snapshot.Photos)
+	if snapshot.Photos.Total != 0 || snapshot.CountsComputedAt != nil || !snapshot.Estimated {
+		t.Fatalf("missing cached photo counts = %+v, computed_at=%v, estimated=%t", snapshot.Photos, snapshot.CountsComputedAt, snapshot.Estimated)
+	}
+	if queueStub.calls != 1 || queueStub.job.Kind != app.RefreshJobKind {
+		t.Fatalf("missing stats row was not queued once: %+v", queueStub)
+	}
+	assertRequestPlan(t, ctx, pool, requestDB.statement, userID)
+	refresher := app.Refresher{Processor: repository, BatchSize: 3}
+	for {
+		done, err := refresher.Refresh(ctx, userID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if done {
+			break
+		}
+	}
+	snapshot, err = repository.Load(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Photos.Total != 14 || snapshot.Photos.SizesReady != 13 || snapshot.Photos.Captioned != 1 || snapshot.CountsComputedAt == nil || snapshot.Estimated {
+		t.Fatalf("refreshed photos = %+v, computed_at=%v, estimated=%t", snapshot.Photos, snapshot.CountsComputedAt, snapshot.Estimated)
+	}
+	if queueStub.calls != 1 {
+		t.Fatalf("fresh stats were enqueued again, calls=%d", queueStub.calls)
+	}
+	var priorInterval string
+	if err := pool.QueryRow(ctx, `SELECT value FROM app_settings WHERE key='home.stats_refresh_interval'`).Scan(&priorInterval); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `UPDATE app_settings SET value=$1::jsonb WHERE key='home.stats_refresh_interval'`, priorInterval)
+	})
+	if _, err := pool.Exec(ctx, `UPDATE app_settings SET value='60'::jsonb WHERE key='home.stats_refresh_interval'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE user_home_stats SET computed_at=statement_timestamp()-interval '61 seconds' WHERE user_id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err = repository.Load(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !snapshot.Estimated || snapshot.Photos.Total != 14 || snapshot.CountsComputedAt == nil || queueStub.calls != 2 {
+		t.Fatalf("stale counts snapshot = %+v, computed_at=%v, estimated=%t, enqueue calls=%d", snapshot.Photos, snapshot.CountsComputedAt, snapshot.Estimated, queueStub.calls)
 	}
 	if len(snapshot.NewPhotos) != 12 || snapshot.NewPhotos[0].ID != sharedPublicID || snapshot.NewPhotos[0].ThumbnailURL == nil || *snapshot.NewPhotos[0].ThumbnailURL == "" {
 		t.Fatalf("new photos count or newest thumbnail is wrong: %+v", snapshot.NewPhotos)
@@ -167,6 +220,77 @@ func TestHomeSnapshotIsUserScopedVisibleAndBounded(t *testing.T) {
 	if len(snapshot.Activity) > 5 {
 		t.Fatalf("activity count = %d, want at most 5", len(snapshot.Activity))
 	}
+}
+
+type homeRefreshQueueStub struct {
+	job   queue.Job
+	opts  queue.Options
+	calls int
+}
+
+func (q *homeRefreshQueueStub) EnqueueStandalone(_ context.Context, job queue.Job, options queue.Options) error {
+	q.job, q.opts = job, options
+	q.calls++
+	return nil
+}
+
+type requestRecorder struct {
+	*pgxpool.Pool
+	statement string
+}
+
+func (r *requestRecorder) QueryRow(ctx context.Context, statement string, args ...any) pgx.Row {
+	r.statement = statement
+	return r.Pool.QueryRow(ctx, statement, args...)
+}
+
+type explainDocument []struct {
+	Plan explainNode `json:"Plan"`
+}
+
+type explainNode struct {
+	NodeType     string        `json:"Node Type"`
+	RelationName string        `json:"Relation Name"`
+	PlanRows     float64       `json:"Plan Rows"`
+	Plans        []explainNode `json:"Plans"`
+}
+
+func assertRequestPlan(t *testing.T, ctx context.Context, pool *pgxpool.Pool, statement string, userID int64) {
+	t.Helper()
+	var raw []byte
+	if err := pool.QueryRow(ctx, "EXPLAIN (FORMAT JSON) "+statement, userID).Scan(&raw); err != nil {
+		t.Fatalf("explain Home request: %v", err)
+	}
+	var document explainDocument
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatalf("decode Home request plan: %v", err)
+	}
+	if len(document) != 1 {
+		t.Fatalf("Home request plan has %d roots", len(document))
+	}
+	scanCount := 0
+	var maxScanRows float64
+	var visit func(explainNode)
+	visit = func(node explainNode) {
+		t.Helper()
+		if node.NodeType == "Seq Scan" {
+			t.Errorf("Home request plan contains Seq Scan on %q", node.RelationName)
+		}
+		if strings.Contains(node.NodeType, "Scan") && node.PlanRows > 500 {
+			t.Errorf("Home request %s on %q estimates %.0f rows, over the 500-row bound", node.NodeType, node.RelationName, node.PlanRows)
+		}
+		if strings.Contains(node.NodeType, "Scan") {
+			scanCount++
+			if node.PlanRows > maxScanRows {
+				maxScanRows = node.PlanRows
+			}
+		}
+		for _, child := range node.Plans {
+			visit(child)
+		}
+	}
+	visit(document[0].Plan)
+	t.Logf("request EXPLAIN: %d scan nodes; largest estimate %.0f rows", scanCount, maxScanRows)
 }
 
 func homeDatabase(t *testing.T) config.DBConfig {

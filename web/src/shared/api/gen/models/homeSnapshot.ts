@@ -13,6 +13,13 @@ import type { HomeStarredContact } from './homeStarredContact';
 
 export interface HomeSnapshot {
   generated_at: string;
+  /**
+   * Time the cached photo counts were completed
+   * @nullable
+   */
+  counts_computed_at: string | null;
+  /** True when cached photo counts are missing or older than the administrator-configured refresh interval. */
+  estimated: boolean;
   contacts: HomeContactCounts;
   photos: HomePhotoCounts;
   /** @maxItems 12 */

@@ -40,7 +40,7 @@ func (h Handler) GetMeHome(ctx context.Context, _ gen.GetMeHomeRequestObject) (g
 
 func homeSnapshot(snapshot app.Snapshot) gen.HomeSnapshot {
 	out := gen.HomeSnapshot{
-		GeneratedAt: snapshot.GeneratedAt,
+		GeneratedAt: snapshot.GeneratedAt, CountsComputedAt: snapshot.CountsComputedAt, Estimated: snapshot.Estimated,
 		Contacts: gen.HomeContactCounts{
 			Total: snapshot.Contacts.Total, Direct: snapshot.Contacts.Direct, Discovered: snapshot.Contacts.Discovered,
 		},

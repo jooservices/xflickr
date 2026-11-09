@@ -60,8 +60,8 @@
 - [ADR 0007: Ledger ready before any grant](adr/0007-ledger-ready-before-grant.md) — grants never set ready; every role rebuilds first.
 - [Flickr accounts](flickr-accounts.md) — OAuth connect flow, sealed tokens,
   account status, and events.
-- [Home snapshot API](me-home.md) — user-scoped contact and photo totals,
-  visible photos, starred contacts, and activity history limits.
+- [Home snapshot API](me-home.md) — bounded Home reads, cached photo counts,
+  visibility rules, and background refresh cost.
 - [Catalog people and photos](catalog.md) — partitioned photo metadata,
   idempotent upserts, compressed source payloads, and size status.
 - [Search index bootstrap](search-index.md) — the versioned Elasticsearch
