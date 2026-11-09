@@ -6,7 +6,7 @@ ON CONFLICT (key) DO NOTHING;
 
 -- Cheap lookup for photo.sizes river jobs by kind while active. river_job is
 -- small (~tens of thousands of rows), so a plain expression index is enough.
-CREATE INDEX river_job_args_kind_active_idx
+CREATE INDEX IF NOT EXISTS river_job_args_kind_active_idx
     ON river_job ((args->>'kind'))
     WHERE state IN ('available', 'pending', 'scheduled', 'retryable', 'running');
 
