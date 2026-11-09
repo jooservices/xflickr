@@ -97,6 +97,21 @@ func (b blockingStore) Snapshot(ctx context.Context) (ops.Snapshot, error) {
 	}
 }
 
+func TestSnapshotContinuesAfterStatementTimeout(t *testing.T) {
+	pool := openOpsIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	// 1ms cancels the first non-trivial statement; SAVEPOINTs must keep the
+	// transaction usable so later metrics still load instead of 25P02.
+	snap, err := (opspostgres.Store{Pool: pool, DB: pool, StatementTimeout: time.Millisecond}).Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("snapshot after timeout must not abort the transaction: %v", err)
+	}
+	if !snap.Degraded || len(snap.DegradedQueries) == 0 {
+		t.Fatalf("expected degraded queries, got %+v", snap)
+	}
+}
+
 func TestCountsNeverScansPhotos(t *testing.T) {
 	pool := openOpsIntegrationPool(t)
 	ctx := t.Context()
@@ -176,7 +191,9 @@ SELECT $1::bigint + g::bigint, $2, now(), 'public', 'provisional', '[]'::jsonb, 
 FROM generate_series(1, $3::int) AS g`, startID, suffix, rowsWanted); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `ANALYZE photos`); err != nil {
+	// VACUUM clears dead index entries left by prior large plan runs so the
+	// planner can take an index-only scan and the count stays under timeout.
+	if _, err := pool.Exec(ctx, `VACUUM (ANALYZE) photos`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -219,7 +236,7 @@ WHERE tombstoned_at IS NULL
 		t.Fatalf("pending count must not seq-scan photos partitions:\n%s", joined)
 	}
 
-	snap, err := (opspostgres.Store{Pool: pool, DB: pool}).Snapshot(ctx)
+	snap, err := (opspostgres.Store{Pool: pool, DB: pool, StatementTimeout: time.Minute}).Snapshot(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

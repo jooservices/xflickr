@@ -25,6 +25,28 @@ func TestSnapshotUsesTransactionTimeout(t *testing.T) {
 	if !txDB.began || !txDB.committed || !pool.sawTimeout || snapshot.Counts.Photos != 3 {
 		t.Fatalf("began=%v committed=%v timeout=%v counts=%+v", txDB.began, txDB.committed, pool.sawTimeout, snapshot.Counts)
 	}
+	if pool.savepoints < 1 || pool.releases < 1 {
+		t.Fatalf("expected SAVEPOINT isolation, savepoints=%d releases=%d", pool.savepoints, pool.releases)
+	}
+}
+
+func TestRecoveringQuerierRollsBackSavepointOnTimeout(t *testing.T) {
+	pool := &snapshotDB{
+		estimate:      1,
+		timeoutQuery:  "pg_class c",
+		timeoutOnCall: 1,
+	}
+	txDB := &beginDB{pool: pool}
+	snapshot, err := (Store{Pool: pool, DB: txDB, StatementTimeout: time.Second}).Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !snapshot.Degraded || pool.rollbacks < 1 {
+		t.Fatalf("degraded=%v rollbacks=%d queries=%v", snapshot.Degraded, pool.rollbacks, snapshot.DegradedQueries)
+	}
+	if !txDB.committed {
+		t.Fatal("timeout must not prevent committing the remaining snapshot")
+	}
 }
 
 func TestSnapshotBuildsHealthSummary(t *testing.T) {
@@ -197,6 +219,9 @@ type snapshotDB struct {
 	timeoutCalls   int
 	settings       map[string]string
 	sawTimeout     bool
+	savepoints     int
+	releases       int
+	rollbacks      int
 }
 
 type beginDB struct {
@@ -242,8 +267,15 @@ func (tx *snapshotTx) QueryRow(ctx context.Context, sql string, args ...any) pgx
 func (tx *snapshotTx) Conn() *pgx.Conn { return nil }
 
 func (db *snapshotDB) Exec(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
-	if strings.Contains(sql, "statement_timeout") {
+	switch {
+	case strings.Contains(sql, "statement_timeout"):
 		db.sawTimeout = true
+	case strings.HasPrefix(sql, "SAVEPOINT "):
+		db.savepoints++
+	case strings.HasPrefix(sql, "RELEASE SAVEPOINT "):
+		db.releases++
+	case strings.HasPrefix(sql, "ROLLBACK TO SAVEPOINT "):
+		db.rollbacks++
 	}
 	return pgconn.CommandTag{}, nil
 }

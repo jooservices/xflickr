@@ -55,7 +55,9 @@ func (s Store) Snapshot(ctx context.Context) (ops.Snapshot, error) {
 		if _, err := tx.Exec(ctx, fmt.Sprintf("SET LOCAL statement_timeout = %d", timeout.Milliseconds())); err != nil {
 			return ops.Snapshot{}, fmt.Errorf("ops: set health statement timeout: %w", err)
 		}
-		snap, err := s.snapshotWith(ctx, tx)
+		// SAVEPOINT per statement so a statement_timeout does not abort the
+		// rest of the snapshot transaction (PostgreSQL cancels the tx on 57014).
+		snap, err := s.snapshotWith(ctx, &recoveringQuerier{tx: tx})
 		if err != nil {
 			return ops.Snapshot{}, err
 		}
@@ -65,6 +67,113 @@ func (s Store) Snapshot(ctx context.Context) (ops.Snapshot, error) {
 		return snap, nil
 	}
 	return s.snapshotWith(ctx, s.Pool)
+}
+
+// recoveringQuerier isolates each statement behind a SAVEPOINT so a cancelled
+// query can degrade one metric without aborting the health transaction.
+type recoveringQuerier struct {
+	tx pgx.Tx
+	n  int
+}
+
+func (q *recoveringQuerier) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	return q.tx.Exec(ctx, sql, args...)
+}
+
+func (q *recoveringQuerier) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	sp, err := q.savepoint(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.tx.Query(ctx, sql, args...)
+	if err != nil {
+		q.rollbackSP(ctx, sp)
+		return nil, err
+	}
+	return &recoveringRows{Rows: rows, tx: q.tx, ctx: ctx, sp: sp}, nil
+}
+
+func (q *recoveringQuerier) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	sp, err := q.savepoint(ctx)
+	if err != nil {
+		return errRow{err: err}
+	}
+	return &recoveringRow{tx: q.tx, ctx: ctx, sp: sp, row: q.tx.QueryRow(ctx, sql, args...)}
+}
+
+func (q *recoveringQuerier) savepoint(ctx context.Context) (string, error) {
+	q.n++
+	name := fmt.Sprintf("ops_health_%d", q.n)
+	if _, err := q.tx.Exec(ctx, "SAVEPOINT "+name); err != nil {
+		return "", fmt.Errorf("ops: savepoint %s: %w", name, err)
+	}
+	return name, nil
+}
+
+func (q *recoveringQuerier) rollbackSP(ctx context.Context, name string) {
+	_, _ = q.tx.Exec(ctx, "ROLLBACK TO SAVEPOINT "+name)
+}
+
+type recoveringRow struct {
+	tx  pgx.Tx
+	ctx context.Context
+	sp  string
+	row pgx.Row
+}
+
+func (r *recoveringRow) Scan(dest ...any) error {
+	err := r.row.Scan(dest...)
+	if err != nil {
+		_, _ = r.tx.Exec(r.ctx, "ROLLBACK TO SAVEPOINT "+r.sp)
+		return err
+	}
+	_, _ = r.tx.Exec(r.ctx, "RELEASE SAVEPOINT "+r.sp)
+	return nil
+}
+
+type errRow struct{ err error }
+
+func (r errRow) Scan(...any) error { return r.err }
+
+type recoveringRows struct {
+	pgx.Rows
+	tx   pgx.Tx
+	ctx  context.Context
+	sp   string
+	done bool
+}
+
+func (r *recoveringRows) Next() bool {
+	ok := r.Rows.Next()
+	if !ok {
+		r.finish(r.Rows.Err())
+	}
+	return ok
+}
+
+func (r *recoveringRows) Scan(dest ...any) error {
+	err := r.Rows.Scan(dest...)
+	if err != nil {
+		r.finish(err)
+	}
+	return err
+}
+
+func (r *recoveringRows) Close() {
+	r.Rows.Close()
+	r.finish(r.Rows.Err())
+}
+
+func (r *recoveringRows) finish(err error) {
+	if r.done {
+		return
+	}
+	r.done = true
+	if err != nil {
+		_, _ = r.tx.Exec(r.ctx, "ROLLBACK TO SAVEPOINT "+r.sp)
+		return
+	}
+	_, _ = r.tx.Exec(r.ctx, "RELEASE SAVEPOINT "+r.sp)
 }
 
 func (s Store) snapshotWith(ctx context.Context, q Querier) (ops.Snapshot, error) {
