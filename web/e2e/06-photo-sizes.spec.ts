@@ -72,11 +72,10 @@ test('confirms the owner restricted photo sizes with the connected account token
   await expect(page.getByTestId('user-crawl-page')).toBeVisible();
   const photoID = 52000000004;
   await expect.poll(() => observeCrawledPhoto(photoID), { timeout: 30_000 }).toBe(true);
-  expect(
-    worktreeSQL(
-      `UPDATE photos SET server='65535', sizes_status='provisional', sizes_checked_at=NULL WHERE id=${photoID} RETURNING server`,
-    ),
-  ).toBe('65535');
+  worktreeSQL(
+    `UPDATE photos SET server='65535', sizes_status='provisional', sizes_checked_at=NULL WHERE id=${photoID}`,
+  );
+  expect(worktreeSQL(`SELECT server FROM photos WHERE id=${photoID}`)).toBe('65535');
   const created = await apiWrite(page, 'POST', '/downloads', {
     kind: 'tray',
     photo_ids: [photoID],

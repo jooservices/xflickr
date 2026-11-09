@@ -15,11 +15,9 @@ export function worktreeSQL(sql: string): string {
   const database = values.get('DB_DATABASE') ?? '';
   if (!/^xflickr_wt[a-z0-9]+$/.test(database)) throw new Error('E2E requires a worktree database');
   return execFileSync(
-    'psql',
+    '/usr/bin/psql',
     [
-      '-X',
-      '-A',
-      '-t',
+      '-XAtq',
       '-v',
       'ON_ERROR_STOP=1',
       '-h',
