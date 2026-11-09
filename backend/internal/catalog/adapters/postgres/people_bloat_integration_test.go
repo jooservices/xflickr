@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -325,6 +326,133 @@ func TestLastSeenAdvancesAtMostOncePerHour(t *testing.T) {
 	assertLastSeen(base.Add(time.Hour))
 	refresh(base.Add(2 * time.Hour))
 	assertLastSeen(base.Add(2 * time.Hour))
+}
+
+func TestSyntheticPeopleContention(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" || os.Getenv("XFLICKR_PEOPLE_CONTENTION") != "1" {
+		t.Skip("run synthetic-people-upserts.sh to measure 8 overlapping writers for 30s")
+	}
+	const workers = 8
+	const peopleCount = 500
+	const duration = 30 * time.Second
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	prefix := fmt.Sprintf("people-contention-%d", time.Now().UnixNano())
+	cleanupPeople(t, pool, prefix)
+	people := make([]domain.Person, peopleCount)
+	for i := range people {
+		nsid := fmt.Sprintf("%s-%03d", prefix, i)
+		people[i] = domain.Person{NSID: nsid, Username: nsid}
+	}
+	seed, err := postgres.New(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.UpsertPeople(ctx, people); err != nil {
+		t.Fatalf("seed overlapping people: %v", err)
+	}
+	applicationName := fmt.Sprintf("xflickr_people_contention_%d", time.Now().UnixNano())
+	repositories := make([]*postgres.Repository, workers)
+	connections := make([]*pgxpool.Conn, workers)
+	for i := range repositories {
+		connection, acquireErr := pool.Acquire(ctx)
+		if acquireErr != nil {
+			t.Fatal(acquireErr)
+		}
+		connections[i] = connection
+		t.Cleanup(func() { connection.Release() })
+		if _, err := connection.Exec(ctx, `SELECT set_config('application_name',$1,false)`, applicationName); err != nil {
+			t.Fatal(err)
+		}
+		repositories[i], err = postgres.New(connection)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	var batches atomic.Int64
+	var batchNanos atomic.Int64
+	var maxBatchNanos atomic.Int64
+	var waitSamples atomic.Int64
+	var waitingSessions atomic.Int64
+	startGate := make(chan struct{})
+	stopSampling := make(chan struct{})
+	samplingDone := make(chan struct{})
+	var workersDone sync.WaitGroup
+	workerErrors := make(chan error, workers)
+	workersDone.Add(workers)
+	for _, repository := range repositories {
+		go func(repository *postgres.Repository) {
+			defer workersDone.Done()
+			<-startGate
+			for ctx.Err() == nil {
+				started := time.Now()
+				if err := repository.UpsertPeople(ctx, people); err != nil {
+					if ctx.Err() == nil {
+						workerErrors <- err
+					}
+					return
+				}
+				elapsed := time.Since(started).Nanoseconds()
+				batches.Add(1)
+				batchNanos.Add(elapsed)
+				for previous := maxBatchNanos.Load(); elapsed > previous && !maxBatchNanos.CompareAndSwap(previous, elapsed); previous = maxBatchNanos.Load() {
+				}
+			}
+		}(repository)
+	}
+	go func() {
+		defer close(samplingDone)
+		ticker := time.NewTicker(50 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopSampling:
+				return
+			case <-ticker.C:
+				var waiting int64
+				if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND application_name=$1 AND wait_event_type='Lock' AND wait_event='transactionid'`, applicationName).Scan(&waiting); err != nil {
+					t.Errorf("sample transactionid waits: %v", err)
+					return
+				}
+				if waiting > 0 {
+					waitSamples.Add(1)
+					waitingSessions.Add(waiting)
+				}
+			}
+		}
+	}()
+	deadlocksBefore := databaseDeadlocks(t, pool)
+	started := time.Now()
+	close(startGate)
+	timeout := time.NewTimer(duration)
+	<-timeout.C
+	cancel()
+	workersDone.Wait()
+	close(stopSampling)
+	<-samplingDone
+	elapsed := time.Since(started)
+	deadlocksAfter := databaseDeadlocks(t, pool)
+	close(workerErrors)
+	for err := range workerErrors {
+		t.Errorf("synthetic upsert: %v", err)
+	}
+	count := batches.Load()
+	if count == 0 {
+		t.Fatal("synthetic writers completed no batches")
+	}
+	averageBatch := time.Duration(batchNanos.Load() / count)
+	fmt.Printf("people_contention workers=%d people_per_batch=%d elapsed=%s batches=%d batches_per_second=%.2f avg_batch=%s max_batch=%s transactionid_wait_samples=%d waiting_sessions_sampled=%d deadlocks_before=%d deadlocks_after=%d deadlocks_delta=%d\n",
+		workers, peopleCount, elapsed.Round(time.Millisecond), count, float64(count)/elapsed.Seconds(), averageBatch.Round(time.Microsecond), time.Duration(maxBatchNanos.Load()).Round(time.Microsecond), waitSamples.Load(), waitingSessions.Load(), deadlocksBefore, deadlocksAfter, deadlocksAfter-deadlocksBefore)
+}
+
+func databaseDeadlocks(t *testing.T, pool *pgxpool.Pool) int64 {
+	t.Helper()
+	var deadlocks int64
+	if err := pool.QueryRow(t.Context(), `SELECT deadlocks FROM pg_stat_database WHERE datname=current_database()`).Scan(&deadlocks); err != nil {
+		t.Fatal(err)
+	}
+	return deadlocks
 }
 
 func newPeopleIntegration(t *testing.T, kind string) (*pgxpool.Pool, context.Context, context.CancelFunc, *postgres.Repository, string) {
