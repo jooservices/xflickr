@@ -598,6 +598,9 @@ const liveRiverStates = `('available','pending','retryable','scheduled','running
 // fresh start with attempts reset.
 const SelfHealAfter = 15 * time.Minute
 
+const reclaimSelfHealSQL = `UPDATE work_items SET state='pending', attempts=0, not_before=$1, lease_expires_at=NULL, last_error=NULL, updated_at=$1
+	WHERE state='failed' AND last_error='lease expired' AND updated_at <= $2`
+
 // Requeue returns failed work items (all when ids is empty) to pending with
 // attempts reset. Rows keep their payload; the normal pump and quota gate
 // dispatch them. It reports how many rows were requeued.
@@ -649,8 +652,7 @@ func (s Store) Reclaim(ctx context.Context, retryMax int, base time.Duration, no
 	if err := applyExpiredLeases(ctx, tx, expiredRows, retryMax, base, now); err != nil {
 		return 0, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE work_items SET state='pending', attempts=0, not_before=$1, lease_expires_at=NULL, last_error=NULL, updated_at=$1
-		WHERE state='failed' AND last_error='lease expired' AND updated_at <= $2`, now, now.Add(-SelfHealAfter)); err != nil {
+	if _, err := tx.Exec(ctx, reclaimSelfHealSQL, now, now.Add(-SelfHealAfter)); err != nil {
 		return 0, fmt.Errorf("schedule: self-heal lease-expired work: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {

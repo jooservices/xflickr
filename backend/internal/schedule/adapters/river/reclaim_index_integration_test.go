@@ -113,8 +113,7 @@ WHERE w.id = batch.id`
 		},
 		{
 			name: "Reclaim self-heal update",
-			sql: `UPDATE work_items SET state='pending', attempts=0, not_before=$1, lease_expires_at=NULL, last_error=NULL, updated_at=$1
-				WHERE state='failed' AND last_error='lease expired' AND updated_at <= $2`,
+			sql:  reclaimSelfHealSQL,
 			args: []any{now, now.Add(-SelfHealAfter)},
 		},
 	}

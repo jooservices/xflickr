@@ -38,9 +38,10 @@ Sizes are approximate per partition × 16 partitions unless noted.
 | `crawl_interests_person_nsid_idx` | crawl_interests | | used | `interests.go` by `person_nsid` | keep |
 | `crawl_interests_paused_idx` | crawl_interests | partial | used | pause checks / enqueue filters | keep |
 | `crawl_interests_selected_idx` / `_starred_idx` / `_depth_idx` | crawl_interests | | used | `photolane.sql` ranking streams | keep |
+| `work_items_failed_updated_idx` | work_items | partial | not in audit window | Reclaim self-heal by failed state and `updated_at` | keep (JOOXF-386) |
 
-`work_items` and River indexes are owned by JOOXF-370 and are out of scope for
-the index-drop audit above.
+Existing `work_items` and River indexes are owned by JOOXF-370 and are out of
+scope for the index-drop audit above.
 
 ## Scheduler plan backlog count
 
@@ -300,6 +301,16 @@ non-HOT; measure with the synthetic steady-state test.
 Existing heap and index bloat is cleared with the lead-only runbook
 [rebuild-work-items.md](runbooks/rebuild-work-items.md). Never rewrite
 `work_items` inside a migration.
+
+JOOXF-386 adds `work_items_failed_updated_idx` on `updated_at` for failed
+rows. Reclaim uses it to find lease-expired failures old enough for self-heal;
+pending and active rows do not occupy this partial index. The integration
+EXPLAIN test uses 400,000 work items with four failed rows and verifies that
+self-heal uses this index without a `work_items` Seq Scan. On the same fixture,
+the Reclaim lease selector, pump counts, claim and key-assignment queries, and
+pending and expired-selection rescore queries also had no `work_items` Seq
+Scan. Confirm the production `pg_stat_user_tables` rate after deployment;
+worktree plans do not establish production behavior.
 
 ## river_job (JOOXF-370)
 
