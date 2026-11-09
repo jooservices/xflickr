@@ -160,11 +160,11 @@ func TestPhotoSizesPendingUsesPartialIndex(t *testing.T) {
 	if os.Getenv("XFLICKR_LARGE_PLAN_TEST") == "1" {
 		rowsWanted = 3_000_000
 	}
-	startID := time.Now().UnixNano()
+	startID := time.Now().Unix()*1_000_000 + int64(time.Now().Nanosecond()%1_000_000)
 	if _, err := pool.Exec(ctx, `
 INSERT INTO photos(id, owner_nsid, last_update, visibility, sizes_status, sizes, raw, content_hash)
-SELECT $1 + g, $2, now(), 'public', 'provisional', '[]'::jsonb, '{}'::jsonb, decode(repeat('aa', 32), 'hex')
-FROM generate_series(1, $3) AS g`, startID, suffix, rowsWanted); err != nil {
+SELECT $1::bigint + g::bigint, $2, now(), 'public', 'provisional', '[]'::jsonb, '{}'::jsonb, decode(repeat('aa', 32), 'hex')
+FROM generate_series(1, $3::int) AS g`, startID, suffix, rowsWanted); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `ANALYZE photos`); err != nil {
