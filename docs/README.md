@@ -67,10 +67,14 @@
   safe tombstones, and visibility change events.
 - [Web app shells](web-shells.md) — user and admin shells, route guard, tokens,
   state components, and EN/VI i18n.
-- [Schedule backlog](schedule.md) — deduplicated work items, cursors, and state
-  transitions.
+- [Schedule backlog](schedule.md) — deduplicated work items, cursors, static
+  score ordering, and state transitions.
+- [Database performance notes](database.md) — work_items/river_job bloat,
+  static scores, HOT/autovacuum, and people upsert ordering.
+- [Rebuild work_items runbook](runbooks/rebuild-work-items.md) — lead-only
+  REINDEX / pg_repack / VACUUM FULL for live bloat.
 - [Durable job queue](job-queue.md) — transactional River jobs, worker queues,
-  retries, and dead letter events.
+  retries, retention, and dead letter events.
 - [Queue state and ETA](queue-state.md) — backlog snapshots, lane capacity,
   ETA estimates, and the `queue.state` event.
 - [Architecture decision records](adr/README.md) — durable architecture choices.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jooservices/xflickr/internal/crawl/app"
 	"github.com/jooservices/xflickr/internal/crawl/domain"
@@ -247,6 +248,57 @@ func TestEnqueueDefaultsToDoNothingButSupportsExplicitReopen(t *testing.T) {
 	}
 }
 
+func TestEnqueueCheckCarriesCheckpointsAndMarksQueued(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		params map[string]string
+	}{
+		{name: "creates params"},
+		{name: "updates existing params", params: map[string]string{"keep": "value"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			conn := &engConn{row: engRow{values: []any{int64(123), int64(456)}}}
+			work := app.NewWork{
+				Kind: "check", Subject: "person", UserID: 7, Depth: 2,
+				Cursor: domain.Cursor{Page: 1, Method: "flickr.people.getPhotos", Params: test.params},
+			}
+			if err := (workTx{tx: conn}).Enqueue(t.Context(), work); err != nil {
+				t.Fatalf("Enqueue() = %v", err)
+			}
+			if len(conn.execs) != 2 || !strings.Contains(conn.execs[0].sql, "work_items_static_score") || !strings.Contains(conn.execs[0].sql, "ci.starred") || !strings.Contains(conn.execs[1].sql, "SET last_checked_at=now()") {
+				t.Fatalf("check enqueue statements = %+v", conn.execs)
+			}
+			var cursor domain.Cursor
+			if err := json.Unmarshal(conn.execs[0].args[4].([]byte), &cursor); err != nil {
+				t.Fatal(err)
+			}
+			if cursor.Params["user_id"] != "person" || cursor.Params["min_upload_date"] != "123" || cursor.Params["min_fave_date"] != "456" || cursor.Params["per_page"] != "1" {
+				t.Fatalf("check cursor params = %v", cursor.Params)
+			}
+			if test.params != nil && cursor.Params["keep"] != "value" {
+				t.Fatalf("existing cursor params were discarded: %v", cursor.Params)
+			}
+		})
+	}
+}
+
+func TestEnqueueCheckReturnsCheckpointAndMarkErrors(t *testing.T) {
+	t.Run("checkpoint read", func(t *testing.T) {
+		conn := &engConn{row: engRow{err: errors.New("query failed")}}
+		err := (workTx{tx: conn}).Enqueue(t.Context(), app.NewWork{Kind: "check", Subject: "person", UserID: 7})
+		if err == nil || len(conn.execs) != 0 {
+			t.Fatalf("Enqueue() error=%v statements=%d; want read failure before insert", err, len(conn.execs))
+		}
+	})
+	t.Run("mark queued", func(t *testing.T) {
+		conn := &engConn{row: engRow{values: []any{int64(123), int64(456)}}, failExec: "SET last_checked_at"}
+		err := (workTx{tx: conn}).Enqueue(t.Context(), app.NewWork{Kind: "check", Subject: "person", UserID: 7})
+		if err == nil || len(conn.execs) != 2 {
+			t.Fatalf("Enqueue() error=%v statements=%d; want error after enqueue and checkpoint write", err, len(conn.execs))
+		}
+	})
+}
+
 func TestEnqueueDropsCheckForUnknownOwner(t *testing.T) {
 	conn := &engConn{row: engRow{err: pgx.ErrNoRows}}
 	err := (workTx{tx: conn}).Enqueue(t.Context(), app.NewWork{
@@ -398,5 +450,11 @@ func TestLockReadsItemForUpdate(t *testing.T) {
 func TestNewEngineValidatesArguments(t *testing.T) {
 	if _, err := NewEngine(nil, func(Conn) app.CatalogWriter { return nil }); err == nil {
 		t.Fatal("pool required")
+	}
+	if _, err := NewEngine(&pgxpool.Pool{}, nil); err == nil {
+		t.Fatal("catalog factory required")
+	}
+	if engine, err := NewEngine(&pgxpool.Pool{}, func(Conn) app.CatalogWriter { return engCatalog{} }); err != nil || engine == nil {
+		t.Fatalf("NewEngine() = %v, %v; want initialized engine", engine, err)
 	}
 }

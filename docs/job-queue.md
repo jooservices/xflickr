@@ -21,6 +21,14 @@ event to the transactional outbox with the job ID, kind, arguments, queue,
 attempt count, and last error. Outbox consumers can process dead letters without
 coupling workers to a specific delivery destination.
 
+## Retention
+
+River's cleaner keeps completed jobs for
+`queue.completed_retention` (default 24 hours) and discarded jobs for
+`queue.discarded_retention` (default 168 hours). Both are admin settings with
+bounds. Health and metrics queries that filter `args->>'kind'` on active states
+use the partial expression index `river_job_kind_active_idx`.
+
 ## Scope
 
 The queue provides durable enqueueing, worker registration, per-queue

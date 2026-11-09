@@ -16,7 +16,8 @@ import (
 )
 
 type upserter interface {
-	UpsertPeople(context.Context, []domain.Person) error
+	EnsurePeople(context.Context, []domain.Person) error
+	RefreshChangedPeople(context.Context, []domain.Person) error
 	UpsertPhotos(context.Context, []domain.Photo) error
 }
 
@@ -62,10 +63,17 @@ func newWriter(userID, accountID int64, repository upserter, observer app.Observ
 }
 
 func (w *Writer) UpsertPeople(ctx context.Context, people []domain.Person) error {
+	if err := w.EnsurePeople(ctx, people); err != nil {
+		return err
+	}
+	return w.RefreshPeople(ctx, people)
+}
+
+func (w *Writer) EnsurePeople(ctx context.Context, people []domain.Person) error {
 	if err := w.ready(ctx); err != nil {
 		return err
 	}
-	if err := w.catalog.UpsertPeople(ctx, people); err != nil {
+	if err := w.catalog.EnsurePeople(ctx, people); err != nil {
 		return err
 	}
 	seen := make(map[string]bool, len(people))
@@ -77,6 +85,16 @@ func (w *Writer) UpsertPeople(ctx context.Context, people []domain.Person) error
 		if err := w.observer.Observe(ctx, app.Observation{UserID: w.userID, FlickrAccountID: w.accountID, RecordKind: "person", RecordID: person.NSID}); err != nil {
 			return fmt.Errorf("catalog: observe person: %w", err)
 		}
+	}
+	return nil
+}
+
+func (w *Writer) RefreshPeople(ctx context.Context, people []domain.Person) error {
+	if err := w.ready(ctx); err != nil {
+		return err
+	}
+	if err := w.catalog.RefreshChangedPeople(ctx, people); err != nil {
+		return fmt.Errorf("catalog: refresh people: %w", err)
 	}
 	return nil
 }

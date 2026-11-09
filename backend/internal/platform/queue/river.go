@@ -55,9 +55,27 @@ type registeredHandler struct {
 	defaults Options
 }
 
+// Retention holds River cleaner windows. Zero values use the JOOXF defaults
+// (24h completed, 168h discarded) from admin settings queue.completed_retention
+// and queue.discarded_retention.
+type Retention struct {
+	Completed time.Duration
+	Discarded time.Duration
+}
+
+const (
+	defaultCompletedRetention = 24 * time.Hour
+	defaultDiscardedRetention = 168 * time.Hour
+)
+
 // NewRiver creates an adapter that can enqueue jobs and work the configured
 // queues. An empty queue map creates an insert-only client.
 func NewRiver(pool *pgxpool.Pool, queues map[string]int) (*River, error) {
+	return NewRiverWithRetention(pool, queues, Retention{})
+}
+
+// NewRiverWithRetention creates a River adapter with explicit cleaner windows.
+func NewRiverWithRetention(pool *pgxpool.Pool, queues map[string]int, retention Retention) (*River, error) {
 	if pool == nil {
 		return nil, errors.New("queue: PostgreSQL pool is required")
 	}
@@ -68,12 +86,25 @@ func NewRiver(pool *pgxpool.Pool, queues map[string]int) (*River, error) {
 		}
 		queueConfigs[riverQueueName(name)] = river.QueueConfig{MaxWorkers: concurrency}
 	}
+	completed := retention.Completed
+	if completed == 0 {
+		completed = defaultCompletedRetention
+	}
+	discarded := retention.Discarded
+	if discarded == 0 {
+		discarded = defaultDiscardedRetention
+	}
+	if completed < 0 || discarded < 0 {
+		return nil, errors.New("queue: retention windows cannot be negative")
+	}
 	adapter := &River{pool: pool, beginTx: pool.Begin, queues: queueConfigs, handlers: make(map[string]registeredHandler)}
 	worker := &dispatchWorker{adapter: adapter}
 	workers := river.NewWorkers()
 	river.AddWorker(workers, worker)
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues: queueConfigs, Workers: workers, SkipUnknownJobCheck: true,
+		CompletedJobRetentionPeriod: completed,
+		DiscardedJobRetentionPeriod: discarded,
 		Hooks: []rivertype.Hook{&deadLetterHook{publish: func(ctx context.Context, topic, key string, payload any) error {
 			return publishDeadLetter(ctx, pool, topic, key, payload)
 		}}},

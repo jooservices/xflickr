@@ -55,6 +55,8 @@ const (
 	APICallLogRetentionDays   Key = "maintenance.api_call_log_retention_days"
 	APICallLogDryRun          Key = "maintenance.api_call_log_dry_run"
 	MetricsRetentionDays      Key = "metrics.retention_days"
+	QueueCompletedRetention   Key = "queue.completed_retention"
+	QueueDiscardedRetention   Key = "queue.discarded_retention"
 )
 
 // Effective contains the merged, validated settings for one user. Durations
@@ -96,6 +98,8 @@ type Effective struct {
 	OpsHealthStatementTimeout time.Duration
 	APICallLogRetentionDays   int
 	APICallLogDryRun          bool
+	QueueCompletedRetention   time.Duration
+	QueueDiscardedRetention   time.Duration
 }
 
 // Definition is the application-level value and policy for a setting.
@@ -216,6 +220,8 @@ var schemas = map[Key]JSONSchema{
 	APICallLogRetentionDays:   {Type: "integer", Minimum: floatPointer(7), Maximum: floatPointer(365)},
 	APICallLogDryRun:          {Type: "boolean"},
 	MetricsRetentionDays:      {Type: "integer", Minimum: minOne, Maximum: floatPointer(365)},
+	QueueCompletedRetention:   {Type: "integer", Minimum: floatPointer(60), Maximum: floatPointer(604800)},
+	QueueDiscardedRetention:   {Type: "integer", Minimum: floatPointer(3600), Maximum: floatPointer(2592000)},
 }
 
 // SchemaFor returns the JSON schema associated with a typed key.
@@ -260,6 +266,8 @@ func Keys() []Key {
 		APICallLogRetentionDays,
 		APICallLogDryRun,
 		MetricsRetentionDays,
+		QueueCompletedRetention,
+		QueueDiscardedRetention,
 	}
 }
 
@@ -304,6 +312,8 @@ func Defaults() []Definition {
 		{Key: APICallLogRetentionDays, Value: json.RawMessage("30"), UserOverridable: false, Min: floatPointer(7), Max: floatPointer(365)},
 		{Key: APICallLogDryRun, Value: json.RawMessage("false"), UserOverridable: false},
 		{Key: MetricsRetentionDays, Value: json.RawMessage("30"), UserOverridable: false, Min: floatPointer(1), Max: floatPointer(365)},
+		{Key: QueueCompletedRetention, Value: json.RawMessage("86400"), UserOverridable: false, Min: floatPointer(60), Max: floatPointer(604800)},
+		{Key: QueueDiscardedRetention, Value: json.RawMessage("604800"), UserOverridable: false, Min: floatPointer(3600), Max: floatPointer(2592000)},
 	}
 }
 
@@ -603,6 +613,12 @@ func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
 		return Effective{}, nil, invalidStored(APICallLogRetentionDays, err)
 	}
 	result.APICallLogDryRun = validatedBoolean(values[APICallLogDryRun])
+	if result.QueueCompletedRetention, err = duration(values[QueueCompletedRetention]); err != nil {
+		return Effective{}, nil, invalidStored(QueueCompletedRetention, err)
+	}
+	if result.QueueDiscardedRetention, err = duration(values[QueueDiscardedRetention]); err != nil {
+		return Effective{}, nil, invalidStored(QueueDiscardedRetention, err)
+	}
 	return result, dropped, nil
 }
 

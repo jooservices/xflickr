@@ -141,6 +141,57 @@ func TestBacklogConcurrentDedupeAndLifecycle(t *testing.T) {
 	}
 }
 
+func TestEnqueueDoesNotRestoreExpiredSelectionBonus(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use the shared worktree database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	pool := openBacklogPool(t)
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+	suffix := fmt.Sprintf("expired-selection-%d", time.Now().UnixNano())
+	var userID int64
+	if err := tx.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'unused','user') RETURNING id`, suffix+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	newSubject := suffix + "-new"
+	upsertSubject := suffix + "-upsert"
+	for _, subject := range []string{newSubject, upsertSubject} {
+		if _, err := tx.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,selected_until)
+			VALUES($1,$2,1,'integration-test',now()-interval '1 minute')`, userID, subject); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := postgres.Enqueue(ctx, tx, domain.WorkItem{Kind: "person", SubjectKey: newSubject, UserID: &userID, DirectAction: true, Depth: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := postgres.Enqueue(ctx, tx, domain.WorkItem{Kind: "person", SubjectKey: upsertSubject, UserID: &userID, Depth: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := postgres.Enqueue(ctx, tx, domain.WorkItem{Kind: "person", SubjectKey: upsertSubject, UserID: &userID, DirectAction: true, Depth: 1}); err != nil {
+		t.Fatal(err)
+	}
+	for _, subject := range []string{newSubject, upsertSubject} {
+		var directAction bool
+		var score, expected float64
+		if err := tx.QueryRow(ctx, `SELECT direct_action,score,
+			work_items_static_score(COALESCE((SELECT p.weight FROM users u LEFT JOIN plans p ON p.id=u.plan_id WHERE u.id=$2),1),FALSE,FALSE,depth,created_at)
+			FROM work_items WHERE kind='person' AND subject_key=$1 AND user_id=$2`, subject, userID).Scan(&directAction, &score, &expected); err != nil {
+			t.Fatal(err)
+		}
+		if score != expected {
+			t.Fatalf("%s score = %v, want expired-selection score %v", subject, score, expected)
+		}
+		if subject == upsertSubject && !directAction {
+			t.Fatal("upsert did not preserve direct_action metadata")
+		}
+	}
+}
+
 func openBacklogPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	_, sourceFile, _, ok := runtime.Caller(0)

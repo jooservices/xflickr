@@ -11,6 +11,48 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const ensurePeople = `-- name: EnsurePeople :exec
+INSERT INTO people (nsid, username, realname, profile, icon, photos_count, last_seen_at, facet_state)
+SELECT nsid, username, realname, profile, icon, photos_count, last_seen_at, facet_state
+FROM ROWS FROM (
+    unnest($1::text[]),
+    unnest($2::text[]),
+    unnest($3::text[]),
+    unnest($4::jsonb[]),
+    unnest($5::text[]),
+    unnest($6::bigint[]),
+    unnest($7::timestamptz[]),
+    unnest($8::jsonb[])
+) AS incoming(nsid, username, realname, profile, icon, photos_count, last_seen_at, facet_state)
+ORDER BY incoming.nsid
+ON CONFLICT (nsid) DO NOTHING
+`
+
+type EnsurePeopleParams struct {
+	Nsids        []string
+	Usernames    []string
+	Realnames    []string
+	Profiles     [][]byte
+	Icons        []string
+	PhotosCounts []int64
+	LastSeenAts  []pgtype.Timestamptz
+	FacetStates  [][]byte
+}
+
+func (q *Queries) EnsurePeople(ctx context.Context, arg EnsurePeopleParams) error {
+	_, err := q.db.Exec(ctx, ensurePeople,
+		arg.Nsids,
+		arg.Usernames,
+		arg.Realnames,
+		arg.Profiles,
+		arg.Icons,
+		arg.PhotosCounts,
+		arg.LastSeenAts,
+		arg.FacetStates,
+	)
+	return err
+}
+
 const markTombstone = `-- name: MarkTombstone :exec
 UPDATE photos SET tombstoned_at = $2
 WHERE id = $1 AND tombstoned_at IS NULL
@@ -23,6 +65,92 @@ type MarkTombstoneParams struct {
 
 func (q *Queries) MarkTombstone(ctx context.Context, arg MarkTombstoneParams) error {
 	_, err := q.db.Exec(ctx, markTombstone, arg.ID, arg.TombstonedAt)
+	return err
+}
+
+const refreshChangedPeople = `-- name: RefreshChangedPeople :exec
+WITH incoming AS (
+    SELECT nsid, username, realname, profile, icon, photos_count, last_seen_at, facet_state
+    FROM ROWS FROM (
+        unnest($1::text[]),
+        unnest($2::text[]),
+        unnest($3::text[]),
+        unnest($4::jsonb[]),
+        unnest($5::text[]),
+        unnest($6::bigint[]),
+        unnest($7::timestamptz[]),
+        unnest($8::jsonb[])
+    ) AS people_input(nsid, username, realname, profile, icon, photos_count, last_seen_at, facet_state)
+), todo AS MATERIALIZED (
+    SELECT
+        p.nsid,
+        CASE WHEN i.username = i.nsid AND p.username <> '' THEN p.username ELSE i.username END AS username,
+        COALESCE(NULLIF(i.realname, ''), p.realname) AS realname,
+        CASE WHEN i.profile <> '{}'::jsonb THEN i.profile ELSE p.profile END AS profile,
+        COALESCE(NULLIF(i.icon, ''), p.icon) AS icon,
+        CASE WHEN i.photos_count > 0 THEN i.photos_count ELSE p.photos_count END AS photos_count,
+        CASE
+            WHEN i.last_seen_at IS NULL THEN p.last_seen_at
+            WHEN p.last_seen_at IS NULL THEN i.last_seen_at
+            WHEN i.last_seen_at >= p.last_seen_at + interval '1 hour' THEN i.last_seen_at
+            ELSE p.last_seen_at
+        END AS last_seen_at,
+        CASE WHEN i.facet_state <> '{}'::jsonb THEN i.facet_state ELSE p.facet_state END AS facet_state
+    FROM people AS p
+    JOIN incoming AS i USING (nsid)
+    WHERE (p.username, p.realname, p.profile, p.icon, p.photos_count, p.last_seen_at, p.facet_state)
+        IS DISTINCT FROM
+        (
+            CASE WHEN i.username = i.nsid AND p.username <> '' THEN p.username ELSE i.username END,
+            COALESCE(NULLIF(i.realname, ''), p.realname),
+            CASE WHEN i.profile <> '{}'::jsonb THEN i.profile ELSE p.profile END,
+            COALESCE(NULLIF(i.icon, ''), p.icon),
+            CASE WHEN i.photos_count > 0 THEN i.photos_count ELSE p.photos_count END,
+            CASE
+                WHEN i.last_seen_at IS NULL THEN p.last_seen_at
+                WHEN p.last_seen_at IS NULL THEN i.last_seen_at
+                WHEN i.last_seen_at >= p.last_seen_at + interval '1 hour' THEN i.last_seen_at
+                ELSE p.last_seen_at
+            END,
+            CASE WHEN i.facet_state <> '{}'::jsonb THEN i.facet_state ELSE p.facet_state END
+        )
+    ORDER BY p.nsid
+    FOR NO KEY UPDATE OF p
+)
+UPDATE people AS p
+SET username = todo.username,
+    realname = todo.realname,
+    profile = todo.profile,
+    icon = todo.icon,
+    photos_count = todo.photos_count,
+    last_seen_at = todo.last_seen_at,
+    facet_state = todo.facet_state
+FROM todo
+WHERE p.nsid = todo.nsid
+`
+
+type RefreshChangedPeopleParams struct {
+	Nsids        []string
+	Usernames    []string
+	Realnames    []string
+	Profiles     [][]byte
+	Icons        []string
+	PhotosCounts []int64
+	LastSeenAts  []pgtype.Timestamptz
+	FacetStates  [][]byte
+}
+
+func (q *Queries) RefreshChangedPeople(ctx context.Context, arg RefreshChangedPeopleParams) error {
+	_, err := q.db.Exec(ctx, refreshChangedPeople,
+		arg.Nsids,
+		arg.Usernames,
+		arg.Realnames,
+		arg.Profiles,
+		arg.Icons,
+		arg.PhotosCounts,
+		arg.LastSeenAts,
+		arg.FacetStates,
+	)
 	return err
 }
 

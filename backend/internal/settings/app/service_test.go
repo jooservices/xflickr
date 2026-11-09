@@ -120,6 +120,7 @@ func TestEffectiveReturnsTypedDefaultsAndReusesThemUntilExpiry(t *testing.T) {
 		OpsHealthInterval:         time.Minute,
 		OpsHealthStatementTimeout: 5 * time.Second,
 		APICallLogRetentionDays:   30, APICallLogDryRun: false,
+		QueueCompletedRetention: 24 * time.Hour, QueueDiscardedRetention: 168 * time.Hour,
 	}
 	if got != want {
 		t.Fatalf("Effective() = %+v, want %+v", got, want)
@@ -423,6 +424,7 @@ func TestSetUserAppliesOverridesInsideCapsAndRejectsTheRest(t *testing.T) {
 		OpsHealthInterval:         time.Minute,
 		OpsHealthStatementTimeout: 5 * time.Second,
 		APICallLogRetentionDays:   30, APICallLogDryRun: false,
+		QueueCompletedRetention: 24 * time.Hour, QueueDiscardedRetention: 168 * time.Hour,
 	}
 	if got != want {
 		t.Fatalf("Effective() = %+v, want %+v", got, want)

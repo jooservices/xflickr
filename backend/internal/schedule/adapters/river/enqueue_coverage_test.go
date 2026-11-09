@@ -538,9 +538,9 @@ func TestScheduleSQLHelpersAndRescore(t *testing.T) {
 		wantErr  string
 		want     int
 	}{
-		{name: "query error", queryErr: errors.New("query"), wantErr: "list pending keys"},
-		{name: "scan error", rows: &coverageRows{index: -1, values: [][]any{{"bad"}}}, wantErr: "scan pending key"},
-		{name: "rows error", rows: &coverageRows{index: -1, err: errors.New("iterate")}, wantErr: "read pending keys"},
+		{name: "query error", queryErr: errors.New("query"), wantErr: "list active keys"},
+		{name: "scan error", rows: &coverageRows{index: -1, values: [][]any{{"bad"}}}, wantErr: "scan active key"},
+		{name: "rows error", rows: &coverageRows{index: -1, err: errors.New("iterate")}, wantErr: "read active keys"},
 		{name: "success", rows: coverageRowsOf([]any{int64(3)}, []any{int64(7)}), want: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -567,21 +567,16 @@ func TestScheduleSQLHelpersAndRescore(t *testing.T) {
 
 	settings := coverageSettings()
 	tests := []struct {
-		name                                                     string
-		beginErr, queryErr, scanErr, rowsErr, execErr, commitErr error
-		weights                                                  domain.ScoreWeights
-		maxDepth                                                 int
-		want                                                     int
-		wantErr                                                  string
+		name     string
+		execErr  error
+		weights  domain.ScoreWeights
+		maxDepth int
+		want     int
+		wantErr  string
 	}{
 		{name: "success", maxDepth: 5, want: 1},
-		{name: "begin error", beginErr: errors.New("begin"), wantErr: "begin score aging"},
-		{name: "select error", queryErr: errors.New("query"), wantErr: "select score aging batch"},
-		{name: "scan error", scanErr: errors.New("scan"), wantErr: "scan score aging row"},
 		{name: "score error", weights: domain.ScoreWeights{PlanWeight: -1}, maxDepth: 5, wantErr: "score values"},
-		{name: "rows error", rowsErr: errors.New("iterate"), maxDepth: 5, wantErr: "read score aging rows"},
-		{name: "update error", execErr: errors.New("update"), maxDepth: 5, wantErr: "store work score"},
-		{name: "commit error", commitErr: errors.New("commit"), maxDepth: 5, wantErr: "commit score aging"},
+		{name: "update error", execErr: errors.New("update"), maxDepth: 5, wantErr: "set-based score update"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -589,24 +584,13 @@ func TestScheduleSQLHelpersAndRescore(t *testing.T) {
 			if weights == (domain.ScoreWeights{}) {
 				weights = settings.ScoreWeights
 			}
-			tx := &coverageTx{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
-				if tc.queryErr != nil {
-					return nil, tc.queryErr
-				}
-				return &coverageRows{index: -1, values: [][]any{{int64(1), 2, true, true, 1, 10.0}}, scanErr: tc.scanErr, err: tc.rowsErr}, nil
-			}, execFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
+			db := &coverageDatabase{execFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
 				if tc.execErr != nil {
 					return pgconn.CommandTag{}, tc.execErr
 				}
 				return pgconn.NewCommandTag("UPDATE 1"), nil
-			}, commitErr: tc.commitErr}
-			db := &coverageDatabase{beginFn: func(context.Context) (pgx.Tx, error) {
-				if tc.beginErr != nil {
-					return nil, tc.beginErr
-				}
-				return tx, nil
 			}}
-			got, err := (Store{database: db}).RecomputeScores(ctx, 3, weights, tc.maxDepth)
+			got, err := (Store{database: db}).RescorePendingBatch(ctx, 3, weights, tc.maxDepth)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("error=%v want %q", err, tc.wantErr)
@@ -619,10 +603,8 @@ func TestScheduleSQLHelpersAndRescore(t *testing.T) {
 			}
 		})
 	}
-	store := Store{database: &coverageDatabase{beginFn: func(context.Context) (pgx.Tx, error) {
-		return &coverageTx{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) { return coverageRowsOf(), nil }}, nil
-	}}}
-	if _, err := store.RecomputeScores(ctx, 1, settings.ScoreWeights, -1); err == nil {
+	store := Store{database: &coverageDatabase{}}
+	if _, err := store.RescorePendingBatch(ctx, 1, settings.ScoreWeights, -1); err == nil {
 		t.Fatal("accepted negative max depth")
 	}
 	if _, err := store.RescorePerson(ctx, 0, "person", settings.ScoreWeights, 1); err == nil {
@@ -631,7 +613,7 @@ func TestScheduleSQLHelpersAndRescore(t *testing.T) {
 	if _, err := store.RescorePerson(ctx, 1, "", settings.ScoreWeights, 1); err == nil {
 		t.Fatal("accepted empty person")
 	}
-	if _, err := store.RecomputeScores(nil, 1, settings.ScoreWeights, 1); err == nil {
+	if _, err := store.RescorePendingBatch(nil, 1, settings.ScoreWeights, 1); err == nil {
 		t.Fatal("accepted nil context")
 	}
 }
@@ -785,5 +767,32 @@ func TestPumpQueueEmptyRowsAndCreditsBoundaries(t *testing.T) {
 	}
 	if _, err := (Store{}).pumpQueuePlan(ctx, &coverageTx{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) { return coverageRowsOf(), nil }}, 1, queueCap{name: "media"}, 1, 2, settings, &coverageJobs{}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRescoreBatchesSelectOnlyOutdatedScores(t *testing.T) {
+	var statements []string
+	database := &coverageDatabase{execFn: func(_ context.Context, query string, _ ...any) (pgconn.CommandTag, error) {
+		statements = append(statements, query)
+		return pgconn.NewCommandTag("UPDATE 1"), nil
+	}}
+	store := Store{database: database}
+	weights := domain.ScoreWeights{PlanWeight: 10, DirectAction: 100, Starred: 20, Depth: 5, AgeMinutes: .1}
+	if _, err := store.RescorePendingBatch(context.Background(), 10, weights, 4); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RescoreExpiredSelectionsBatch(context.Background(), 10, weights, 4); err != nil {
+		t.Fatal(err)
+	}
+	if len(statements) != 2 {
+		t.Fatalf("rescore statements = %d, want 2", len(statements))
+	}
+	for i, statement := range statements {
+		if !strings.Contains(statement, "w2.score IS DISTINCT FROM") || !strings.Contains(statement, "work_items_active_direct_action") {
+			t.Fatalf("rescore statement %d does not filter stale computed scores: %s", i+1, statement)
+		}
+	}
+	if !strings.Contains(statements[1], "ci.selected_until <= now()") || !strings.Contains(statements[1], "ORDER BY ci.selected_until") {
+		t.Fatalf("expired selection query is not ordered by selection expiry: %s", statements[1])
 	}
 }

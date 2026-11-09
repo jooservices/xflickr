@@ -441,54 +441,39 @@ func TestLoadPumpSettings(t *testing.T) {
 	}
 }
 
-func TestRecomputeScoresStoresFormulaResultInBatches(t *testing.T) {
+func TestRescorePendingBatchStoresStaticScore(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("run make test-integration to use the configured worktree database")
 	}
 	pool := integrationPool(t)
 	ctx := t.Context()
 	suffix := fmt.Sprintf("score-%d", time.Now().UnixNano())
-	if _, err := pool.Exec(ctx, `WITH u AS (INSERT INTO users(email,password_hash,role) VALUES('workitem-test@example.test','unused','user') ON CONFLICT (email) DO NOTHING RETURNING id) INSERT INTO work_items(kind,subject_key,user_id,state,direct_action,starred,depth,created_at) SELECT 'sync_person',$1,COALESCE((SELECT id FROM u),(SELECT id FROM users WHERE email='workitem-test@example.test')),'pending',TRUE,TRUE,1,now()-interval '10 minutes'`, suffix); err != nil {
+	created := time.Now().UTC().Add(-10 * time.Minute).Truncate(time.Second)
+	if _, err := pool.Exec(ctx, `WITH u AS (INSERT INTO users(email,password_hash,role) VALUES('workitem-test@example.test','unused','user') ON CONFLICT (email) DO NOTHING RETURNING id) INSERT INTO work_items(kind,subject_key,user_id,state,direct_action,starred,depth,created_at) SELECT 'sync_person',$1,COALESCE((SELECT id FROM u),(SELECT id FROM users WHERE email='workitem-test@example.test')),'pending',TRUE,TRUE,1,$2`, suffix, created); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
 	store := scheduleriver.Store{Pool: pool}
 	weights := domain.ScoreWeights{PlanWeight: 10, DirectAction: 100, Starred: 20, Depth: 5, AgeMinutes: .1}
-	// Other tests or application work may leave older pending rows in the shared
-	// worktree database. Keep the batch size small and let the rotating aging
-	// query reach this fixture instead of assuming it is the only eligible row.
-	for attempts := 0; attempts < 1000; attempts++ {
-		count, err := store.RecomputeScores(ctx, 1, weights, 4)
-		if err != nil {
-			t.Fatalf("RecomputeScores() error: %v", err)
-		}
-		var updated bool
-		if err := pool.QueryRow(ctx, `SELECT score_updated_at IS NOT NULL FROM work_items WHERE subject_key=$1`, suffix).Scan(&updated); err != nil {
-			t.Fatal(err)
-		}
-		if updated {
-			if count != 1 {
-				t.Fatalf("RecomputeScores() count = %d after updating fixture", count)
-			}
-			break
-		}
-		if count == 0 {
-			t.Fatal("RecomputeScores() found no rows before reaching fixture")
-		}
-		if attempts == 999 {
-			t.Fatal("RecomputeScores() did not reach fixture within 1000 batches")
-		}
+	if _, err := store.RescorePendingBatch(ctx, 5000, weights, 4); err != nil {
+		t.Fatalf("RescorePendingBatch() error: %v", err)
+	}
+	want, err := domain.StaticScore(domain.StaticScoreInput{
+		PlanWeight: 1, DirectAction: true, Starred: true, Depth: 1, MaxDepth: 4, CreatedAt: created,
+	}, weights)
+	if err != nil {
+		t.Fatal(err)
 	}
 	var score float64
 	if err := pool.QueryRow(ctx, `SELECT score FROM work_items WHERE subject_key=$1`, suffix).Scan(&score); err != nil {
 		t.Fatal(err)
 	}
-	if score < 145.9 || score > 146.1 {
-		t.Fatalf("stored score = %v, want about 146", score)
+	if math.Abs(score-want) > 1e-6 {
+		t.Fatalf("stored score = %v, want %v", score, want)
 	}
 }
 
-func TestRecomputeScoresStopsSelectionBonusAfterSevenDays(t *testing.T) {
+func TestRescorePendingBatchStopsSelectionBonusAfterSevenDays(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("run make test-integration to use the configured worktree database")
 	}
@@ -515,7 +500,7 @@ func TestRecomputeScoresStopsSelectionBonusAfterSevenDays(t *testing.T) {
 		}
 	}
 	store := scheduleriver.Store{Pool: pool}
-	if _, err := store.RecomputeScores(ctx, 100, domain.ScoreWeights{DirectAction: 100}, 0); err != nil {
+	if _, err := store.RescorePendingBatch(ctx, 5000, domain.ScoreWeights{DirectAction: 100}, 0); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []struct {
@@ -579,7 +564,7 @@ func TestRescorePersonReordersBacklog(t *testing.T) {
 	}
 }
 
-func TestRecomputeScoresReturnsInvalidScoreError(t *testing.T) {
+func TestRescorePendingBatchReturnsInvalidScoreError(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("run make test-integration to use the configured worktree database")
 	}
@@ -591,12 +576,12 @@ func TestRecomputeScoresReturnsInvalidScoreError(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE subject_key=$1`, suffix) })
-	if _, err := (scheduleriver.Store{Pool: pool}).RecomputeScores(ctx, 100, domain.ScoreWeights{PlanWeight: math.NaN()}, 2); err == nil {
-		t.Fatal("RecomputeScores accepted an invalid score weight")
+	if _, err := (scheduleriver.Store{Pool: pool}).RescorePendingBatch(ctx, 100, domain.ScoreWeights{PlanWeight: math.NaN()}, 2); err == nil {
+		t.Fatal("RescorePendingBatch accepted an invalid score weight")
 	}
 }
 
-func TestRecomputeScoresReturnsBacklogWriteFailure(t *testing.T) {
+func TestRescorePendingBatchReturnsBacklogWriteFailure(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("run make test-integration to use the configured worktree database")
 	}
@@ -610,7 +595,7 @@ func TestRecomputeScoresReturnsBacklogWriteFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE subject_key=$1`, suffix) })
-	statement := fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.subject_key = '%s' AND NEW.score_updated_at IS NOT NULL THEN RAISE EXCEPTION 'forced score write failure'; END IF; RETURN NEW; END $$`, function, suffix)
+	statement := fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.subject_key = '%s' AND NEW.score IS DISTINCT FROM OLD.score THEN RAISE EXCEPTION 'forced score write failure'; END IF; RETURN NEW; END $$`, function, suffix)
 	if _, err := pool.Exec(ctx, statement); err != nil {
 		t.Fatal(err)
 	}
@@ -621,8 +606,8 @@ func TestRecomputeScoresReturnsBacklogWriteFailure(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON work_items`, trigger))
 		_, _ = pool.Exec(context.Background(), fmt.Sprintf(`DROP FUNCTION IF EXISTS %s()`, function))
 	})
-	if _, err := (scheduleriver.Store{Pool: pool}).RecomputeScores(ctx, 100, domain.ScoreWeights{}, 2); err == nil {
-		t.Fatal("RecomputeScores ignored a backlog score write failure")
+	if _, err := (scheduleriver.Store{Pool: pool}).RescorePendingBatch(ctx, 5000, domain.ScoreWeights{PlanWeight: 10}, 2); err == nil {
+		t.Fatal("RescorePendingBatch ignored a backlog score write failure")
 	}
 }
 
@@ -824,6 +809,9 @@ func seedKey(t *testing.T, ctx context.Context, pool *pgxpool.Pool, suffix strin
 	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'pump test',$2,'{}',3600,4,5) RETURNING id`, userID, suffix).Scan(&keyID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'owner','{}','{}','ok')`, userID, keyID, suffix+"@N00"); err != nil {
+		t.Fatal(err)
+	}
 	return keyID
 }
 
@@ -859,9 +847,6 @@ func TestPumpAssignsOwnerKeyToKeylessPendingWork(t *testing.T) {
 	suffix := fmt.Sprintf("keyless-%d", time.Now().UnixNano())
 	keyID := seedKey(t, ctx, pool, suffix)
 	t.Cleanup(func() { cleanupPumpFixture(t, pool, suffix) })
-	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed) SELECT user_id,id,$1,'owner','{}','{}' FROM api_keys WHERE id=$2`, suffix+"@N00", keyID); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := pool.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state) SELECT 'check',$1 || '-owned',user_id,'pending' FROM api_keys WHERE id=$2`, suffix, keyID); err != nil {
 		t.Fatal(err)
 	}
@@ -928,9 +913,7 @@ func TestConnectedAccountCrawlRunsCycleThenPumpThenWorkerWithinQuota(t *testing.
 	})
 	// Connect the account: an ok Flickr account on the key, and the owner as the depth-0 interest.
 	person := suffix + "-owner"
-	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed) SELECT user_id,id,$1,'owner','{}','{}' FROM api_keys WHERE id=$2`, suffix+"@N00", keyID); err != nil {
-		t.Fatal(err)
-	}
+	// seedKey already attaches an active flickr account for the key.
 	var userID int64
 	if err := pool.QueryRow(ctx, `SELECT user_id FROM api_keys WHERE id=$1`, keyID).Scan(&userID); err != nil {
 		t.Fatal(err)

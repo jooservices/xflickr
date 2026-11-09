@@ -65,6 +65,8 @@ func TestMergeSeededDefaults(t *testing.T) {
 		OpsHealthStatementTimeout: 5 * time.Second,
 		APICallLogRetentionDays:   30,
 		APICallLogDryRun:          false,
+		QueueCompletedRetention:   24 * time.Hour,
+		QueueDiscardedRetention:   168 * time.Hour,
 	}
 	if got != want {
 		t.Fatalf("effective defaults = %+v, want %+v", got, want)
@@ -206,6 +208,8 @@ func TestValidateValueAcceptsValuesInsideCaps(t *testing.T) {
 		{name: "group pools disabled", key: GroupPoolsEnabled, raw: "false"},
 		{name: "interval at tighter admin cap", key: ChangeCheckInterval, raw: "3600", min: &minimum},
 		{name: "zero retry backoff", key: RetryBackoff, raw: "0"},
+		{name: "completed retention default", key: QueueCompletedRetention, raw: "86400", min: floatPointer(60), max: floatPointer(604800)},
+		{name: "discarded retention default", key: QueueDiscardedRetention, raw: "604800", min: floatPointer(3600), max: floatPointer(2592000)},
 		{name: "call log retention minimum", key: APICallLogRetentionDays, raw: "7", min: floatPointer(7), max: floatPointer(365)},
 		{name: "call log retention maximum", key: APICallLogRetentionDays, raw: "365", min: floatPointer(7), max: floatPointer(365)},
 		{name: "call log dry run false", key: APICallLogDryRun, raw: "false"},
@@ -258,6 +262,8 @@ func TestValidateValueRejectsValuesOutsideCaps(t *testing.T) {
 		{name: "two values", key: MaxDepth, raw: "2 2", want: "one valid JSON value"},
 		{name: "unknown key", key: "nope", raw: "1", want: "not a registered setting key"},
 		{name: "non-finite number", key: PersonLaneShare, raw: "1e309", want: "finite number"},
+		{name: "completed retention below cap", key: QueueCompletedRetention, raw: "30", min: floatPointer(60), max: floatPointer(604800), wantCap: "60", want: "is below cap 60"},
+		{name: "discarded retention above cap", key: QueueDiscardedRetention, raw: "2592001", min: floatPointer(3600), max: floatPointer(2592000), wantCap: "2592000", want: "exceeds cap 2592000"},
 		{name: "call log retention below schema", key: APICallLogRetentionDays, raw: "6", wantCap: "7", want: "schema cap 7"},
 		{name: "call log retention above schema", key: APICallLogRetentionDays, raw: "366", wantCap: "365", want: "schema cap 365"},
 		{name: "call log dry run number", key: APICallLogDryRun, raw: "1", want: "must be a boolean"},
@@ -563,6 +569,9 @@ func TestStoredValueParsers(t *testing.T) {
 	if _, err := duration([]byte("-9223372037")); err == nil {
 		t.Fatal("duration() accepted a value below time.Duration")
 	}
+	if _, err := duration([]byte("true")); err == nil {
+		t.Fatal("duration() accepted a boolean")
+	}
 	if _, err := integer([]byte("1 {")); err == nil {
 		t.Fatal("integer() accepted trailing junk")
 	}
@@ -593,6 +602,9 @@ func TestStoredValueParsers(t *testing.T) {
 	}
 	if !integralToken(json.Number("-12")) {
 		t.Fatal("integralToken rejected a signed integer")
+	}
+	if _, err := decimal([]byte("{")); err == nil {
+		t.Fatal("decimal() accepted invalid JSON")
 	}
 	if _, err := decimal([]byte("true")); err == nil {
 		t.Fatal("decimal() accepted a boolean")

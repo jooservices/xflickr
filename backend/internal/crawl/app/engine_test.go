@@ -92,6 +92,8 @@ type fakeTx struct {
 	finished     bool
 }
 
+type legacyCatalogWriter struct{ CatalogWriter }
+
 func (t *fakeTx) fail(op string) error {
 	if t.failOn == op {
 		return errors.New("boom " + op)
@@ -116,8 +118,18 @@ func (t *fakeTx) Finish(context.Context, int64) error {
 	return t.fail("finish")
 }
 
-func (t *fakeTx) UpsertPeople(context.Context, []catalog.Person) error { return t.fail("people") }
-func (t *fakeTx) UpsertPhotos(context.Context, []catalog.Photo) error  { return t.fail("photos") }
+func (t *fakeTx) UpsertPeople(context.Context, []catalog.Person) error {
+	return t.fail("people")
+}
+
+func (t *fakeTx) EnsurePeople(context.Context, []catalog.Person) error {
+	return t.fail("ensure_people")
+}
+
+func (t *fakeTx) RefreshPeople(context.Context, []catalog.Person) error {
+	return t.fail("refresh_people")
+}
+func (t *fakeTx) UpsertPhotos(context.Context, []catalog.Photo) error { return t.fail("photos") }
 func (t *fakeTx) UpsertFavorites(context.Context, []catalog.Favorite) error {
 	return t.fail("favorites")
 }
@@ -286,6 +298,40 @@ func TestHandleSuccessCommitsPageAndAdvances(t *testing.T) {
 	}
 	if len(r.tx.observations) != 1 || r.tx.advanced == nil || r.tx.advanced.Page != 3 || r.tx.finished {
 		t.Fatalf("tx = %+v", r.tx)
+	}
+}
+
+func TestCrawlPageCommitCallsRefreshLast(t *testing.T) {
+	r := newRig(t)
+	r.facet.result = domain.Result{
+		People:       []catalog.Person{{NSID: "person@flickr", Username: "person"}},
+		Photos:       []catalog.Photo{{ID: 1}},
+		Favorites:    []catalog.Favorite{{PersonNSID: "person@flickr", PhotoID: 1}},
+		Albums:       []catalog.Album{{ID: "album", OwnerNSID: "person@flickr"}},
+		Galleries:    []catalog.Gallery{{ID: "gallery", OwnerNSID: "person@flickr"}},
+		Groups:       []catalog.Group{{NSID: "group", Name: "group"}},
+		PersonGroups: []catalog.PersonGroup{{PersonNSID: "person@flickr", GroupNSID: "group"}},
+		Observations: []domain.Observation{{Kind: "photo.changed", Subject: "1"}},
+		Discoveries:  []domain.Discovery{{NSID: "other@flickr", Via: "contact"}},
+		Work:         []domain.WorkSpec{{Subject: "person@flickr", Method: "flickr.photos.getSizes"}},
+		HasMore:      true,
+	}
+	if err := r.engine.Handle(t.Context(), 7); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.tx.log) < 2 || r.tx.log[0] != "ensure_people" {
+		t.Fatalf("people existence was not ensured before dependent rows: %v", r.tx.log)
+	}
+	if got := r.tx.log[len(r.tx.log)-2]; got != "refresh_people" {
+		t.Fatalf("last page write before cursor advance = %q, want refresh_people; order=%v", got, r.tx.log)
+	}
+}
+
+func TestPageCatalogRequiresSplitPeopleWriter(t *testing.T) {
+	var writer CatalogWriter = legacyCatalogWriter{}
+	people := []catalog.Person{{NSID: "person@flickr", Username: "person"}}
+	if _, err := peoplePageWriterFor(writer, people); err == nil {
+		t.Fatal("page accepted a writer without split people operations")
 	}
 }
 
@@ -623,7 +669,7 @@ func TestHandleWaitsWithoutKeyOrPermit(t *testing.T) {
 }
 
 func TestHandleCommitFailuresSurface(t *testing.T) {
-	for _, op := range []string{"people", "photos", "observe", "interest", "enqueue", "advance", "finish"} {
+	for _, op := range []string{"ensure_people", "photos", "observe", "interest", "enqueue", "refresh_people", "advance", "finish"} {
 		t.Run(op, func(t *testing.T) {
 			r := newRig(t)
 			r.tx.failOn = op

@@ -14,12 +14,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 	"github.com/jooservices/xflickr/internal/platform/queue"
 	"github.com/jooservices/xflickr/internal/schedule/app"
+	"github.com/jooservices/xflickr/internal/schedule/domain"
 )
 
 func TestPumpReturnsBacklogAndInflightReadErrors(t *testing.T) {
@@ -101,6 +103,119 @@ func TestKeylessQueriesReturnDatabaseErrors(t *testing.T) {
 	if err := assignOwnerKeys(ctx, tx); err == nil {
 		t.Fatal("assignOwnerKeys ignored the update error")
 	}
+}
+
+func TestWeightsRescoreAdvancesAcrossBatches(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run with XFLICKR_INTEGRATION_TEST=1 to use the worktree database")
+	}
+	pool := internalIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+	prefix := fmt.Sprintf("rescore-batches-%d", time.Now().UnixNano())
+	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state,score,depth,created_at)
+		SELECT 'rescore-test',$1||'-'||g,'pending',0,g,now() FROM generate_series(1,5) AS g`, prefix); err != nil {
+		t.Fatal(err)
+	}
+	store := Store{database: transactionScheduleDatabase{tx: tx}}
+	if err := store.StoreWeightsFingerprint(ctx, "stale-for-test"); err != nil {
+		t.Fatal(err)
+	}
+	job := app.WeightsRescore{
+		Store: store, BatchSize: 2, MaxDepth: 4,
+		Weights: domain.ScoreWeights{PlanWeight: 10, DirectAction: 100, Starred: 20, Depth: 5, AgeMinutes: .1},
+	}
+	for i, want := range []int{2, 2, 1, 0} {
+		got, err := job.RunBatch(ctx)
+		if err != nil || got != want {
+			t.Fatalf("RunBatch %d = %d, %v; want %d", i+1, got, err, want)
+		}
+	}
+	computed, err := store.ComputeWeightsFingerprint(ctx, job.Weights, job.MaxDepth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := store.LoadWeightsFingerprint(ctx)
+	if err != nil || stored != computed {
+		t.Fatalf("stored fingerprint = %q, %v; want %q", stored, err, computed)
+	}
+	var unchanged int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM work_items WHERE subject_key LIKE $1 AND score=0`, prefix+"-%").Scan(&unchanged); err != nil {
+		t.Fatal(err)
+	}
+	if unchanged != 0 {
+		t.Fatalf("%d pending scores remain stale", unchanged)
+	}
+}
+
+func TestWeightsRescoreHandlesExpiredSelectionWithMatchingFingerprint(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("run with XFLICKR_INTEGRATION_TEST=1 to use the worktree database")
+	}
+	pool := internalIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+	prefix := fmt.Sprintf("expired-selection-%d", time.Now().UnixNano())
+	var userID int64
+	if err := tx.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'unused','user') RETURNING id`, prefix+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,selected_until)
+		VALUES($1,$2,1,'integration-test',now()-interval '1 minute')`, userID, prefix); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,direct_action,score,depth,created_at)
+		VALUES('person',$1,$2,'pending',TRUE,work_items_static_score(1,TRUE,FALSE,1,now()),1,now())`, prefix, userID); err != nil {
+		t.Fatal(err)
+	}
+	store := Store{database: transactionScheduleDatabase{tx: tx}}
+	weights := domain.ScoreWeights{PlanWeight: 10, DirectAction: 100, Starred: 20, Depth: 5, AgeMinutes: .1}
+	wantFingerprint, err := store.ComputeWeightsFingerprint(ctx, weights, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.StoreWeightsFingerprint(ctx, wantFingerprint); err != nil {
+		t.Fatal(err)
+	}
+	job := app.WeightsRescore{Store: store, BatchSize: 10, MaxDepth: 4, Weights: weights}
+	if got, err := job.RunBatch(ctx); err != nil || got != 1 {
+		t.Fatalf("RunBatch for expired selection = %d, %v; want 1", got, err)
+	}
+	var score, expected float64
+	if err := tx.QueryRow(ctx, `SELECT score,work_items_static_score(1,FALSE,FALSE,1,created_at)
+		FROM work_items WHERE subject_key=$1`, prefix).Scan(&score, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if score != expected {
+		t.Fatalf("expired selection score = %v, want no direct-action bonus %v", score, expected)
+	}
+}
+
+type transactionScheduleDatabase struct {
+	scheduleDatabase
+	tx pgx.Tx
+}
+
+func (database transactionScheduleDatabase) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
+	return database.tx.Exec(ctx, query, args...)
+}
+
+func (database transactionScheduleDatabase) Query(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
+	return database.tx.Query(ctx, query, args...)
+}
+
+func (database transactionScheduleDatabase) QueryRow(ctx context.Context, query string, args ...any) pgx.Row {
+	return database.tx.QueryRow(ctx, query, args...)
 }
 
 type internalCapacity int

@@ -116,7 +116,7 @@ func TestScheduleNextQueuesIndependentFullReconciliation(t *testing.T) {
 	var got domain.Cursor
 	found := false
 	for _, call := range tx.execRecords {
-		if !strings.Contains(call.query, "VALUES ('reconcile'") {
+		if !strings.Contains(call.query, "SELECT 'reconcile'") {
 			continue
 		}
 		found = true

@@ -36,14 +36,19 @@ func (s *execStub) Exec(context.Context, string, ...any) (pgconn.CommandTag, err
 }
 
 type catalogStub struct {
-	people []domain.Person
-	photos []domain.Photo
-	err    error
+	people     []domain.Person
+	photos     []domain.Photo
+	err        error
+	refreshErr error
 }
 
-func (s *catalogStub) UpsertPeople(_ context.Context, values []domain.Person) error {
+func (s *catalogStub) EnsurePeople(_ context.Context, values []domain.Person) error {
 	s.people = values
 	return s.err
+}
+
+func (s *catalogStub) RefreshChangedPeople(context.Context, []domain.Person) error {
+	return s.refreshErr
 }
 
 func (s *catalogStub) UpsertPhotos(_ context.Context, values []domain.Photo) error {
@@ -94,6 +99,10 @@ func TestWriterErrors(t *testing.T) {
 	wantErr := errors.New("catalog failed")
 	if err := newWriter(1, 2, &catalogStub{err: wantErr}, &observerStub{}).UpsertPeople(ctx, []domain.Person{{NSID: "p"}}); !errors.Is(err, wantErr) {
 		t.Fatalf("catalog error = %v", err)
+	}
+	wantErr = errors.New("refresh failed")
+	if err := newWriter(1, 2, &catalogStub{refreshErr: wantErr}, &observerStub{}).RefreshPeople(ctx, []domain.Person{{NSID: "p"}}); !errors.Is(err, wantErr) {
+		t.Fatalf("refresh error = %v", err)
 	}
 	wantErr = errors.New("observer failed")
 	if err := newWriter(1, 2, &catalogStub{}, &observerStub{err: wantErr}).UpsertPhotos(ctx, []domain.Photo{{ID: 4}}); !errors.Is(err, wantErr) {

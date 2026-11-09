@@ -483,6 +483,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 	healthIntervalMin, healthIntervalMax := 10.0, 3600.0
 	healthTimeoutMin, healthTimeoutMax := 1.0, 60.0
 	retentionMin, retentionMax := 7.0, 365.0
+	completedMin, completedMax, discardedMin, discardedMax := 60.0, 604800.0, 3600.0, 2592000.0
 	want := map[string]struct {
 		value string
 		min   *float64
@@ -526,13 +527,15 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		"maintenance.api_call_log_retention_days": {value: "30", min: &retentionMin, max: &retentionMax},
 		"maintenance.api_call_log_dry_run":        {value: "false"},
 		"metrics.retention_days":                  {value: "30", min: &minimum, max: &retentionMax},
+		"queue.completed_retention":               {value: "86400", min: &completedMin, max: &completedMax},
+		"queue.discarded_retention":               {value: "604800", min: &discardedMin, max: &discardedMax},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("seeded settings = %d, want %d", len(got), len(want))
 	}
 	for key, expected := range want {
 		item, ok := got[key]
-		wantOverridable := key != "photo_lane_floor_share" && key != "restricted_recheck_interval" && key != "registration_open" && key != "photo_info_enabled" && key != "photo_exif_enabled" && key != "photo_contexts_enabled" && key != "photo_comments_enabled" && key != "photo_favorites_enabled" && key != "per_key_ready_cap" && key != "node_ready_cap" && key != "media_ready_cap" && key != "ai_ready_cap" && key != "sync_ready_cap" && key != "lease_timeout" && key != "metrics.retention_days" && !strings.HasPrefix(key, "ops.") && !strings.HasPrefix(key, "score_") && !strings.HasPrefix(key, "maintenance.")
+		wantOverridable := key != "photo_lane_floor_share" && key != "restricted_recheck_interval" && key != "registration_open" && key != "photo_info_enabled" && key != "photo_exif_enabled" && key != "photo_contexts_enabled" && key != "photo_comments_enabled" && key != "photo_favorites_enabled" && key != "per_key_ready_cap" && key != "node_ready_cap" && key != "media_ready_cap" && key != "ai_ready_cap" && key != "sync_ready_cap" && key != "lease_timeout" && key != "metrics.retention_days" && key != "queue.completed_retention" && key != "queue.discarded_retention" && !strings.HasPrefix(key, "ops.") && !strings.HasPrefix(key, "score_") && !strings.HasPrefix(key, "maintenance.")
 		if !ok || item.overridable != wantOverridable || !jsonEqual(item.value, expected.value) || !floatPtrEqual(item.minimum, expected.min) || !floatPtrEqual(item.maximum, expected.max) {
 			t.Fatalf("seed %s = value %s overridable %v min %v max %v", key, item.value, item.overridable, item.minimum, item.maximum)
 		}
@@ -573,6 +576,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		OpsHealthInterval:         time.Minute,
 		OpsHealthStatementTimeout: 5 * time.Second,
 		APICallLogRetentionDays:   30, APICallLogDryRun: false,
+		QueueCompletedRetention: 24 * time.Hour, QueueDiscardedRetention: 168 * time.Hour,
 	}
 	if effective != wantEffective {
 		t.Fatalf("effective seed = %+v, want %+v", effective, wantEffective)

@@ -213,13 +213,43 @@ func (s Store) Pump(ctx context.Context, settings app.PumpSettings, credits app.
 	return dispatched, nil
 }
 
-// RecomputeScores refreshes stored scores for a bounded, rotating batch of
-// pending rows. Score math stays in the schedule domain.
-func (s Store) RecomputeScores(ctx context.Context, batchSize int, weights domain.ScoreWeights, maxDepth int) (int, error) {
+const staticScoreExpr = `COALESCE(p.weight,1)*$1
+	+ CASE WHEN work_items_active_direct_action(w2.direct_action,w2.user_id,w2.subject_key) THEN $2 ELSE 0 END
+	+ CASE WHEN w2.starred THEN $3 ELSE 0 END
+	+ ($4::int - w2.depth)*$5
+	- $6*EXTRACT(EPOCH FROM w2.created_at)/60.0`
+
+// RescorePendingBatch rewrites a bounded batch of pending scores with one
+// set-based UPDATE. The stored value is the time-invariant static sort key.
+func (s Store) RescorePendingBatch(ctx context.Context, batchSize int, weights domain.ScoreWeights, maxDepth int) (int, error) {
 	if s.backend() == nil || ctx == nil || batchSize <= 0 || maxDepth < 0 {
-		return 0, errors.New("schedule: invalid score aging dependencies")
+		return 0, errors.New("schedule: invalid score rescore dependencies")
 	}
-	return s.rescore(ctx, `WHERE w.state='pending' AND w.not_before <= now() ORDER BY w.score_updated_at NULLS FIRST, w.created_at, w.id LIMIT $1`, []any{batchSize}, weights, maxDepth)
+	if _, err := domain.Score(domain.ScoreInput{MaxDepth: maxDepth}, weights); err != nil {
+		return 0, err
+	}
+	return s.rescoreSet(ctx, `WHERE w2.state='pending' AND w2.score IS DISTINCT FROM (`+staticScoreExpr+`) ORDER BY w2.id LIMIT $7`, []any{
+		weights.PlanWeight, weights.DirectAction, weights.Starred, maxDepth, weights.Depth, weights.AgeMinutes, batchSize,
+	})
+}
+
+// RescoreExpiredSelectionsBatch removes direct-action bonuses after the
+// associated user's selection expires, without scanning unrelated pending work.
+func (s Store) RescoreExpiredSelectionsBatch(ctx context.Context, batchSize int, weights domain.ScoreWeights, maxDepth int) (int, error) {
+	if s.backend() == nil || ctx == nil || batchSize <= 0 || maxDepth < 0 {
+		return 0, errors.New("schedule: invalid expired selection rescore dependencies")
+	}
+	if _, err := domain.Score(domain.ScoreInput{MaxDepth: maxDepth}, weights); err != nil {
+		return 0, err
+	}
+	return s.rescoreSet(ctx, `WHERE w2.state='pending'
+		AND w2.direct_action
+		AND ci.selected_until IS NOT NULL
+		AND ci.selected_until <= now()
+		AND w2.score IS DISTINCT FROM (`+staticScoreExpr+`)
+		ORDER BY ci.selected_until, w2.id LIMIT $7`, []any{
+		weights.PlanWeight, weights.DirectAction, weights.Starred, maxDepth, weights.Depth, weights.AgeMinutes, batchSize,
+	})
 }
 
 // RescorePerson immediately refreshes the stored scores of one user's pending
@@ -228,54 +258,75 @@ func (s Store) RescorePerson(ctx context.Context, userID int64, person string, w
 	if s.backend() == nil || ctx == nil || userID <= 0 || person == "" || maxDepth < 0 {
 		return 0, errors.New("schedule: invalid person rescore dependencies")
 	}
-	return s.rescore(ctx, `WHERE w.state='pending' AND w.user_id=$1 AND w.subject_key=$2 ORDER BY w.id`, []any{userID, person}, weights, maxDepth)
+	if _, err := domain.Score(domain.ScoreInput{MaxDepth: maxDepth}, weights); err != nil {
+		return 0, err
+	}
+	return s.rescoreSet(ctx, `WHERE w2.state='pending' AND w2.user_id=$7 AND w2.subject_key=$8`, []any{
+		weights.PlanWeight, weights.DirectAction, weights.Starred, maxDepth, weights.Depth, weights.AgeMinutes, userID, person,
+	})
 }
 
-func (s Store) rescore(ctx context.Context, selection string, args []any, weights domain.ScoreWeights, maxDepth int) (int, error) {
-	tx, err := s.backend().Begin(ctx)
+func (s Store) rescoreSet(ctx context.Context, selection string, args []any) (int, error) {
+	tag, err := s.backend().Exec(ctx, `
+UPDATE work_items AS w SET score = batch.score
+FROM (
+	SELECT w2.id, `+staticScoreExpr+` AS score
+	FROM work_items w2
+	LEFT JOIN users u ON u.id=w2.user_id
+	LEFT JOIN plans p ON p.id=u.plan_id
+	LEFT JOIN crawl_interests ci ON ci.user_id=w2.user_id AND ci.person_nsid=w2.subject_key
+	`+selection+`
+) AS batch
+WHERE w.id = batch.id`, args...)
 	if err != nil {
-		return 0, fmt.Errorf("schedule: begin score aging: %w", err)
+		return 0, fmt.Errorf("schedule: set-based score update: %w", err)
 	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	rows, err := tx.Query(ctx, `SELECT w.id, COALESCE(p.weight,1), w.direct_action AND COALESCE(ci.selected_until IS NULL OR ci.selected_until > now(), TRUE), w.starred, w.depth, EXTRACT(EPOCH FROM (now()-w.created_at))/60.0 FROM work_items w LEFT JOIN users u ON u.id=w.user_id LEFT JOIN plans p ON p.id=u.plan_id LEFT JOIN crawl_interests ci ON ci.user_id=w.user_id AND ci.person_nsid=w.subject_key `+selection+` FOR UPDATE OF w SKIP LOCKED`, args...)
+	return int(tag.RowsAffected()), nil
+}
+
+const weightsFingerprintKey = "score_weights_fingerprint"
+
+// ComputeWeightsFingerprint returns the live fingerprint of score weights, max
+// depth, and plan weights used to detect a needed full pending rescore.
+func (s Store) ComputeWeightsFingerprint(ctx context.Context, weights domain.ScoreWeights, maxDepth int) (string, error) {
+	if s.backend() == nil || ctx == nil {
+		return "", errors.New("schedule: fingerprint dependencies are required")
+	}
+	var planDigest string
+	if err := s.backend().QueryRow(ctx, `SELECT coalesce(md5(string_agg(id::text || ':' || weight::text, ',' ORDER BY id)), '') FROM plans`).Scan(&planDigest); err != nil {
+		return "", fmt.Errorf("schedule: hash plan weights: %w", err)
+	}
+	return domain.WeightsFingerprint(weights, maxDepth) + "|plans:" + planDigest, nil
+}
+
+// LoadWeightsFingerprint reads the last completed rescore fingerprint.
+func (s Store) LoadWeightsFingerprint(ctx context.Context) (string, error) {
+	if s.backend() == nil || ctx == nil {
+		return "", errors.New("schedule: fingerprint dependencies are required")
+	}
+	var value string
+	err := s.backend().QueryRow(ctx, `SELECT value FROM schedule_meta WHERE key=$1`, weightsFingerprintKey).Scan(&value)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
 	if err != nil {
-		return 0, fmt.Errorf("schedule: select score aging batch: %w", err)
+		return "", fmt.Errorf("schedule: load weights fingerprint: %w", err)
 	}
-	type scored struct {
-		id    int64
-		score float64
+	return value, nil
+}
+
+// StoreWeightsFingerprint records that a full pending rescore finished for fp.
+func (s Store) StoreWeightsFingerprint(ctx context.Context, fp string) error {
+	if s.backend() == nil || ctx == nil {
+		return errors.New("schedule: fingerprint dependencies are required")
 	}
-	var batch []scored
-	for rows.Next() {
-		var id int64
-		var planWeight, depth int
-		var direct, starred bool
-		var age float64
-		if err := rows.Scan(&id, &planWeight, &direct, &starred, &depth, &age); err != nil {
-			rows.Close()
-			return 0, fmt.Errorf("schedule: scan score aging row: %w", err)
-		}
-		score, err := domain.Score(domain.ScoreInput{PlanWeight: planWeight, DirectAction: direct, Starred: starred, Depth: depth, MaxDepth: maxDepth, AgeMinutes: age}, weights)
-		if err != nil {
-			rows.Close()
-			return 0, err
-		}
-		batch = append(batch, scored{id: id, score: score})
+	_, err := s.backend().Exec(ctx, `
+INSERT INTO schedule_meta (key, value) VALUES ($1, $2)
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, weightsFingerprintKey, fp)
+	if err != nil {
+		return fmt.Errorf("schedule: store weights fingerprint: %w", err)
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return 0, fmt.Errorf("schedule: read score aging rows: %w", err)
-	}
-	rows.Close()
-	for _, row := range batch {
-		if _, err := tx.Exec(ctx, `UPDATE work_items SET score=$2, score_updated_at=now() WHERE id=$1`, row.id, row.score); err != nil {
-			return 0, fmt.Errorf("schedule: store work score: %w", err)
-		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("schedule: commit score aging: %w", err)
-	}
-	return len(batch), nil
+	return nil
 }
 
 // PersonRescorer rescores a person's backlog using the stored pump settings.
@@ -477,21 +528,28 @@ func warnKeylessPending(ctx context.Context, tx pgx.Tx) error {
 }
 
 func pendingKeys(ctx context.Context, tx pgx.Tx) ([]int64, error) {
-	rows, err := tx.Query(ctx, `SELECT DISTINCT key_id FROM work_items WHERE state='pending' AND key_id IS NOT NULL AND not_before <= now() ORDER BY key_id`)
+	// Active keys come from the keys table. Per-key claim uses the pending
+	// score index and returns nothing when a key has no due work.
+	rows, err := tx.Query(ctx, `
+SELECT DISTINCT k.id
+FROM api_keys k
+JOIN flickr_accounts a ON a.key_id = k.id AND a.status = 'ok'
+WHERE k.status = 'valid'
+ORDER BY k.id`)
 	if err != nil {
-		return nil, fmt.Errorf("schedule: list pending keys: %w", err)
+		return nil, fmt.Errorf("schedule: list active keys: %w", err)
 	}
 	defer rows.Close()
 	keys := make([]int64, 0)
 	for rows.Next() {
 		var key int64
 		if err := rows.Scan(&key); err != nil {
-			return nil, fmt.Errorf("schedule: scan pending key: %w", err)
+			return nil, fmt.Errorf("schedule: scan active key: %w", err)
 		}
 		keys = append(keys, key)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("schedule: read pending keys: %w", err)
+		return nil, fmt.Errorf("schedule: read active keys: %w", err)
 	}
 	return keys, nil
 }

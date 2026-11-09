@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -669,6 +670,57 @@ func TestEnqueueDoesNotReopenCompletedFullCrawlWork(t *testing.T) {
 	if state != "done" || attempts != 3 {
 		t.Fatalf("completed full crawl item state=%q attempts=%d, want done and 3", state, attempts)
 	}
+}
+
+func TestEnqueuePersistsStarredInterestOnInsertAndReopen(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	subject := fmt.Sprintf("starred-enqueue-%d", time.Now().UnixNano())
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred) VALUES($1,$2,0,'contact',TRUE)`, userID, subject); err != nil {
+		t.Fatal(err)
+	}
+	store := newPoolEngine(t, pool)
+	enqueue := func(reopen bool) error {
+		t.Helper()
+		return store.Do(ctx, func(w app.Writers) error {
+			return w.Work.Enqueue(ctx, app.NewWork{
+				Kind: "photos", Subject: subject, UserID: userID, Reopen: reopen,
+				Cursor: domain.Cursor{Page: 1, Method: "flickr.people.getPhotos"},
+			})
+		})
+	}
+	assertStarredScore := func(stage string) {
+		t.Helper()
+		var starred bool
+		var score, expected float64
+		err := pool.QueryRow(ctx, `
+			SELECT w.starred, w.score,
+				work_items_static_score(COALESCE(p.weight,1), FALSE, ci.starred, w.depth, w.created_at)
+			FROM work_items w
+			JOIN crawl_interests ci ON ci.user_id=w.user_id AND ci.person_nsid=w.subject_key
+			LEFT JOIN users u ON u.id=w.user_id
+			LEFT JOIN plans p ON p.id=u.plan_id
+			WHERE w.user_id=$1 AND w.kind='photos' AND w.subject_key=$2`, userID, subject).Scan(&starred, &score, &expected)
+		if err != nil {
+			t.Fatalf("read %s starred work item: %v", stage, err)
+		}
+		if !starred || math.Abs(score-expected) > 1e-6 {
+			t.Fatalf("%s starred=%t score=%v expected starred score=%v", stage, starred, score, expected)
+		}
+	}
+	if err := enqueue(false); err != nil {
+		t.Fatalf("enqueue new work: %v", err)
+	}
+	assertStarredScore("insert")
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='done',starred=FALSE WHERE user_id=$1 AND kind='photos' AND subject_key=$2`, userID, subject); err != nil {
+		t.Fatal(err)
+	}
+	if err := enqueue(true); err != nil {
+		t.Fatalf("reopen work: %v", err)
+	}
+	assertStarredScore("reopen")
 }
 
 func TestEngineStopFailsOwnerItemsAndPublishes(t *testing.T) {

@@ -9,9 +9,10 @@ import (
 )
 
 type Querier interface {
+	EnsurePeople(ctx context.Context, arg EnsurePeopleParams) error
 	MarkTombstone(ctx context.Context, arg MarkTombstoneParams) error
+	RefreshChangedPeople(ctx context.Context, arg RefreshChangedPeopleParams) error
 	SetSizes(ctx context.Context, arg SetSizesParams) error
-	UpsertPerson(ctx context.Context, arg []UpsertPersonParams) *UpsertPersonBatchResults
 	UpsertPhoto(ctx context.Context, arg []UpsertPhotoParams) *UpsertPhotoBatchResults
 }
 
