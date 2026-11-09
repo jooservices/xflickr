@@ -182,6 +182,7 @@ func TestContactsRefreshFailureRetainsExistingRows(t *testing.T) {
 	flickr := &scriptedContactsFlickr{responses: []contactsResponse{
 		{body: json.RawMessage(fmt.Sprintf(`{"contacts":{"pages":2,"contact":[{"nsid":%q,"username":"new"}]}}`, newContact))},
 		{err: errors.New("network unavailable")},
+		{body: json.RawMessage(`{"contacts":{"pages":1,"contact":[{"username":"missing-id"}]}}`)},
 	}}
 	engine := contactsRefreshEngine(t, pool, flickr)
 	itemID := insertPhotosFavoritesWork(t, ctx, pool, userID, "contacts", account, 0, facets.Contacts{})
@@ -195,6 +196,23 @@ func TestContactsRefreshFailureRetainsExistingRows(t *testing.T) {
 	_ = engine.Handle(ctx, itemID)
 	if got := count(t, ctx, pool, `SELECT count(*) FROM contacts WHERE person_nsid=$1 AND contact_nsid=$2`, account, oldContact); got != 1 {
 		t.Fatalf("existing relationship removed after incomplete refresh: count=%d", got)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready' WHERE id=$1`, itemID); err != nil {
+		t.Fatal(err)
+	}
+	setContactsCheckpoint(t, ctx, pool, itemID, checkpoint)
+	if err := engine.Handle(ctx, itemID); err != nil {
+		t.Fatalf("malformed contacts page should be deferred for retry: %v", err)
+	}
+	var state string
+	if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE id=$1`, itemID).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state == "done" {
+		t.Fatal("contacts page with a missing NSID completed reconciliation")
+	}
+	if got := count(t, ctx, pool, `SELECT count(*) FROM contacts WHERE person_nsid=$1 AND contact_nsid=$2`, account, oldContact); got != 1 {
+		t.Fatalf("existing relationship removed after malformed contact page: count=%d", got)
 	}
 }
 
@@ -377,7 +395,7 @@ func TestListContactsFromStoredRelationships(t *testing.T) {
 	if err != nil || next != "" || len(page.Items) != 1 {
 		t.Fatalf("page=%+v next=%q err=%v", page, next, err)
 	}
-	if item := page.Items[0]; item.NSID != contact || item.Username != "friend" || item.Realname != "Friend" || item.PhotosCount != 3 || item.AccountNSID != account {
+	if item := page.Items[0]; item.NSID != contact || item.Username != "friend" || item.Realname != "Friend" || item.PhotosCount != 0 || item.AccountNSID != account {
 		t.Fatalf("contact = %+v", item)
 	}
 }

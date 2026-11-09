@@ -65,7 +65,10 @@ func (Contacts) Handle(_ context.Context, p domain.Page) (domain.Result, error) 
 		seenAt = time.Unix(p.Item.Cursor.CheckpointAt, 0).UTC()
 	}
 	for _, item := range items {
-		if item.NSID == "" || item.NSID == p.Item.Subject {
+		if item.NSID == "" {
+			return domain.Result{}, fmt.Errorf("crawl facets: contacts record has no nsid")
+		}
+		if item.NSID == p.Item.Subject {
 			continue
 		}
 		if _, ok := seen[item.NSID]; ok {

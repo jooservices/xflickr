@@ -28,14 +28,19 @@ rows for each connected account's `flickr.contacts.getList` page. Every page
 uses the refresh start time as its `seen_at`; stale relationships are removed
 only when the complete paginated response succeeds. Reconciliation deletes stale
 relationships in 500-row keyset batches through the contacts primary-key index.
-A failed or malformed page leaves the previous list intact. Before the
+A failed or malformed page, including a contact without an NSID, leaves the
+previous list intact. Before the
 relationship write,
 `EnsurePeople` inserts any missing account subject with `username = nsid` and
 `ON CONFLICT DO NOTHING`, so a connected account that never had a `people` row
 still commits without overwriting a real identity.
 
 The authenticated `GET /contacts` endpoint returns distinct contacts of the
-user's connected Flickr accounts with a keyset cursor. The query uses the
+user's connected Flickr accounts with a keyset cursor. Each contact's photo
+count includes only non-tombstoned photos visible to that user under the shared
+visibility policy, capped at 1,000 per contact. Person and contact photo counts
+use the same cap to keep catalog reads bounded. The query counts observed photo
+records instead of using the shared `people.photos_count` field. The query uses the
 `contacts (contact_nsid, person_nsid)` index to select a bounded page before
 loading person details.
 

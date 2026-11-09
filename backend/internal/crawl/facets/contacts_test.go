@@ -66,6 +66,7 @@ func TestContactsFacetPlanAndHandle(t *testing.T) {
 		{name: "missing pages", payload: `{"contacts":{"contact":[]}}`},
 		{name: "zero pages", payload: `{"contacts":{"pages":0,"contact":[]}}`},
 		{name: "empty nonfinal page", payload: `{"contacts":{"pages":2,"contact":[]}}`},
+		{name: "contact missing nsid", payload: `{"contacts":{"pages":1,"contact":[{"username":"missing-id"}]}}`},
 		{name: "page beyond total", payload: `{"contacts":{"pages":1,"contact":[]}}`, number: 2},
 	} {
 		t.Run(malformed.name, func(t *testing.T) {
