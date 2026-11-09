@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -25,6 +26,7 @@ func TestDetachAndDropOldPartitionsKeepsCurrentAndFuture(t *testing.T) {
 	oldDay := today.AddDate(0, 0, -40)
 	future := today.AddDate(0, 0, 3)
 
+	dropAllDailyCallLogPartitions(t, ctx, pool)
 	creator := quotaPostgres.Partitions{Pool: pool}
 	if err := creator.MaintainCallLogPartitions(ctx, oldDay, future); err != nil {
 		t.Fatal(err)
@@ -52,7 +54,13 @@ func TestRetentionRunTwiceIsIdempotent(t *testing.T) {
 	pool, ctx := openRetentionDB(t)
 	today := utcToday()
 	oldDay := today.AddDate(0, 0, -45)
-	if err := (quotaPostgres.Partitions{Pool: pool}).MaintainCallLogPartitions(ctx, oldDay, today.AddDate(0, 0, 2)); err != nil {
+	dropAllDailyCallLogPartitions(t, ctx, pool)
+	creator := quotaPostgres.Partitions{Pool: pool}
+	// One expired day plus the live window so the second tick has nothing left.
+	if err := creator.MaintainCallLogPartitions(ctx, oldDay, oldDay); err != nil {
+		t.Fatal(err)
+	}
+	if err := creator.MaintainCallLogPartitions(ctx, today, today.AddDate(0, 0, 2)); err != nil {
 		t.Fatal(err)
 	}
 	job := maintenanceapp.Retention{
@@ -74,6 +82,7 @@ func TestInsertsStillWorkWhileDetaching(t *testing.T) {
 	pool, ctx := openRetentionDB(t)
 	today := utcToday()
 	oldDay := today.AddDate(0, 0, -50)
+	dropAllDailyCallLogPartitions(t, ctx, pool)
 	if err := (quotaPostgres.Partitions{Pool: pool}).MaintainCallLogPartitions(ctx, oldDay, today.AddDate(0, 0, 1)); err != nil {
 		t.Fatal(err)
 	}
@@ -149,6 +158,30 @@ func openRetentionDB(t *testing.T) (*pgxpool.Pool, context.Context) {
 		t.Fatal(err)
 	}
 	return dbtest.Open(t, cfg), ctx
+}
+
+// dropAllDailyCallLogPartitions clears leftover daily children so each test
+// owns the oldest expired partition it creates. Uses a non-concurrent detach
+// because the worktree database is otherwise idle for this suite.
+func dropAllDailyCallLogPartitions(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+	t.Helper()
+	store := maintenancepg.NewStore(pool)
+	parts, err := store.ListDailyPartitions(ctx)
+	if err != nil {
+		t.Fatalf("list partitions before reset: %v", err)
+	}
+	for _, part := range parts {
+		if _, err := pool.Exec(ctx, "ALTER TABLE api_call_log DETACH PARTITION "+quoteIdent(part.Name)); err != nil {
+			t.Fatalf("detach %s during reset: %v", part.Name, err)
+		}
+		if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS "+quoteIdent(part.Name)); err != nil {
+			t.Fatalf("drop %s during reset: %v", part.Name, err)
+		}
+	}
+}
+
+func quoteIdent(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
 func utcToday() time.Time {
