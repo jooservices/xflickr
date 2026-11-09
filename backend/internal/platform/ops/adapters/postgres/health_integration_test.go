@@ -199,8 +199,12 @@ WHERE tombstoned_at IS NULL
 	rows.Close()
 	joined := strings.Join(plans, "\n")
 	t.Logf("photo sizes pending plan (%d rows):\n%s", rowsWanted, joined)
-	if !strings.Contains(joined, "photos_sizes_pending_idx") {
-		t.Fatalf("expected photos_sizes_pending_idx in plan:\n%s", joined)
+	// Partition children of photos_sizes_pending_idx are named
+	// photos_pNN_owner_nsid_uploaded_at_id_idx.
+	usesPendingIndex := strings.Contains(joined, "photos_sizes_pending_idx") ||
+		strings.Contains(joined, "owner_nsid_uploaded_at_id_idx")
+	if !usesPendingIndex || (!strings.Contains(joined, "Index Only Scan") && !strings.Contains(joined, "Index Scan")) {
+		t.Fatalf("expected index scan on photos_sizes_pending_idx children:\n%s", joined)
 	}
 	if strings.Contains(joined, "Seq Scan on photos") {
 		t.Fatalf("pending count must not seq-scan photos partitions:\n%s", joined)
