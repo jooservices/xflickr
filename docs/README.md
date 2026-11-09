@@ -10,7 +10,8 @@
 - [Incident management](incident-management.md) — deduplication, acknowledgement,
   closure, and critical incident notification events.
 - [Structured logging and telemetry](observability.md) — context fields, OTLP
-  export, event helper, and offline log spill behavior.
+  export, event helper, offline log spill behavior, and cheap crawl-health
+  snapshot estimates / lock / timeout.
 - [Database report](db-report.md) — read-only before/after report of table,
   index, queue, worker and crawl-throughput figures.
 

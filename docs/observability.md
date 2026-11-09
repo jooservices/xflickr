@@ -47,6 +47,31 @@ and per-key `used`/`remaining`. Existing granted-call field names remain stable
 for alerts. Bounded ledger queries and the minute refresh avoid scanning
 unbounded history or making any additional Flickr calls.
 
+## Crawl health snapshot cost
+
+The crawl-health snapshot must stay cheap on multi-tens-of-millions photo
+tables. Catalog sizes (`people`, `photos`, `favorites`, …) and confirmed
+`photo_sizes` use PostgreSQL planner estimates (`pg_class.reltuples`, summed
+across partitions, plus `pg_stats` frequencies for confirmed sizes). Exact
+`count(*)` over `photos` or `favorites` never runs in the monitor loop.
+`counts_estimated` is true on the status JSON and log line when those values
+are estimates.
+
+`photo_sizes_pending` is the count of photos matching the partial index
+`photos_sizes_pending_idx` (photos that still need sizes work) plus
+`photo.sizes` river jobs still waiting (`pending` / `scheduled` /
+`retryable`). Queued photos may appear in both terms; the field is a backlog
+signal, not a unique photo total. Ready and running counts come only from
+`river_job` via the expression index on `(args->>'kind')` for active states.
+
+Only one process runs the snapshot per tick: the monitor wraps the store with
+a PostgreSQL session advisory lock (`pg_try_advisory_lock`). Contenders skip
+the tick with a debug log. Every snapshot statement runs inside a transaction
+with `SET LOCAL statement_timeout` from `ops.health_statement_timeout`
+(default 5s, min 1s, max 60s). A timeout marks the snapshot degraded, logs the
+query name at warn, and continues; it never stops the crawl. The refresh
+interval is `ops.health_interval` (default 60s, min 10s, max 1h).
+
 ## Offline buffering
 
 Logs are exported asynchronously with a 10,000-record SDK queue and 512-record
