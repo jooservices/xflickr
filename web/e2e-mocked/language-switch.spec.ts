@@ -49,9 +49,7 @@ test.describe('language switch', () => {
 
     await mockApi(page, 'user');
     await page.goto('/onboarding');
-    await expect(page.getByTestId('wizard-title')).toContainText(
-      /Thiết lập|API|Flickr|Khóa|kết nối/i,
-    );
+    await expect(page.getByTestId('wizard-title')).toHaveText('Dùng khóa API Flickr của riêng bạn');
     await expect(page.getByText('Set up', { exact: true })).toHaveCount(0);
 
     await page.goto('/keys');

@@ -6,7 +6,7 @@
  * Usage: node scripts/check-i18n.mjs [--fixtures <dir>]
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -17,7 +17,7 @@ const fixtureIdx = args.indexOf('--fixtures');
 const fixturesOnly = fixtureIdx >= 0;
 const fixturePath = fixturesOnly ? args[fixtureIdx + 1] : '';
 const localeRoot = fixturesOnly
-  ? fixturePath.startsWith('/')
+  ? isAbsolute(fixturePath) || win32.isAbsolute(fixturePath)
     ? fixturePath
     : join(webRoot, fixturePath)
   : join(webRoot, 'src/shared/i18n/locales');

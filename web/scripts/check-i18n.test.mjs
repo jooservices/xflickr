@@ -41,6 +41,21 @@ test('fails when vi is missing a key present in en', () => {
   }
 });
 
+test('keeps a drive-qualified fixture path absolute', () => {
+  const fixturePath = 'C:\\Users\\dev\\AppData\\Local\\Temp\\check-i18n-example';
+  const fixtureLocalePath = `${fixturePath}${process.platform === 'win32' ? '\\' : '/'}en`;
+  const result = spawnSync(process.execPath, [script, '--fixtures', fixturePath], {
+    encoding: 'utf8',
+    cwd: webRoot,
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.ok(
+    result.stderr.includes(`scandir '${fixtureLocalePath}'`),
+    result.stderr || result.stdout,
+  );
+});
+
 test('passes the real catalogs', () => {
   const result = spawnSync(process.execPath, [script], {
     encoding: 'utf8',
