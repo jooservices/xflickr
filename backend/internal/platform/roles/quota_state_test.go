@@ -17,6 +17,8 @@ import (
 	crawlhttp "github.com/jooservices/xflickr/internal/crawl/adapters/http"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	"github.com/jooservices/xflickr/internal/platform/config"
+	maintenanceapp "github.com/jooservices/xflickr/internal/platform/maintenance/app"
+	maintenancedomain "github.com/jooservices/xflickr/internal/platform/maintenance/domain"
 	quotahttp "github.com/jooservices/xflickr/internal/quota/adapters/http"
 	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
 	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
@@ -119,12 +121,18 @@ func TestQuotaRuntimeStartRunsCallRecorderAndPartitionMaintenance(t *testing.T) 
 	store := &startStore{rebuilt: make(chan struct{}, 1), flushed: make(chan struct{}, 8)}
 	written := make(chan int, 1)
 	maintained := make(chan struct{}, 1)
+	retained := make(chan struct{}, 1)
 	recorder := quotaapp.NewCallRecorder(callBatchWriterFake{wrote: written}, 4, 1, time.Hour, nil)
 	quota := quotaRuntime{
 		Rebuilder:    &quotaapp.Rebuilder{Store: store, Calls: startCalls{}, Counters: startCounters{}},
 		Flusher:      quotaapp.Flusher{Store: store, Counters: startCounters{}, Interval: time.Hour},
 		CallRecorder: recorder,
 		Partitions:   quotaapp.Partitions{Store: partitionMaintenanceFake{maintained: maintained}, Interval: time.Hour},
+		Retention: maintenanceapp.Retention{
+			Store:    retentionStoreFake{ran: retained},
+			Settings: retentionSettingsFake{},
+			Interval: time.Hour,
+		},
 	}
 	stop := quota.start(context.Background(), nil)
 	if !recorder.Record(quotaapp.CallRecord{At: time.Now(), KeyID: 1, Method: "flickr.test", Status: "ok"}) {
@@ -147,8 +155,37 @@ func TestQuotaRuntimeStartRunsCallRecorderAndPartitionMaintenance(t *testing.T) 
 		stop()
 		t.Fatal("partition maintenance did not run at startup")
 	}
+	select {
+	case <-retained:
+	case <-time.After(time.Second):
+		stop()
+		t.Fatal("call log retention did not run at startup")
+	}
 	stop()
 }
+
+type retentionStoreFake struct{ ran chan struct{} }
+
+func (s retentionStoreFake) TryLock(context.Context) (func(), bool, error) {
+	return func() {}, true, nil
+}
+
+func (s retentionStoreFake) ListDailyPartitions(context.Context) ([]maintenancedomain.DailyPartition, error) {
+	select {
+	case s.ran <- struct{}{}:
+	default:
+	}
+	return nil, nil
+}
+
+func (retentionStoreFake) RollupDay(context.Context, time.Time) error       { return nil }
+func (retentionStoreFake) DetachConcurrently(context.Context, string) error { return nil }
+func (retentionStoreFake) DropTable(context.Context, string) error          { return nil }
+
+type retentionSettingsFake struct{}
+
+func (retentionSettingsFake) RetentionDays(context.Context) (int, error) { return 30, nil }
+func (retentionSettingsFake) DryRun(context.Context) (bool, error)       { return true, nil }
 
 type nopSink struct{}
 
