@@ -98,11 +98,11 @@ func (r *fakeRows) Next() bool {
 	r.i++
 	return true
 }
+
 func (r *fakeRows) Scan(dest ...any) error {
 	row := r.data[r.i-1]
 	for i := range dest {
-		switch ptr := dest[i].(type) {
-		case *string:
+		if ptr, ok := dest[i].(*string); ok {
 			*ptr = row[i].(string)
 		}
 	}
