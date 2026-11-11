@@ -106,5 +106,20 @@
   "shell.loading.spinner": "Checking your access…",
   "shell.loading.text": "Loading cluster status…",
   "shell.me-error.text": "Your session could not be checked. Try again.",
-  "shell.me-error.title": "Could not load the admin area."
+  "shell.me-error.title": "Could not load the admin area.",
+  "defaults.title": "Defaults and plans",
+  "defaults.plans": "Plans",
+  "defaults.refresh": "Refresh",
+  "defaults.loading": "Loading plans",
+  "defaults.empty": "No plans available",
+  "defaults.error": "Could not load plans",
+  "defaults.retry": "Retry",
+  "defaults.stale": "Plans may be out of date",
+  "defaults.partial": "Global defaults and feature flags are not available here yet.",
+  "defaults.weight": "Weight",
+  "defaults.depth": "Depth cap",
+  "defaults.contacts": "Contacts",
+  "defaults.ai": "AI per day",
+  "defaults.zip": "ZIP hours",
+  "defaults.share": "Resource share"
 }

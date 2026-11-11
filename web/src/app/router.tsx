@@ -14,6 +14,7 @@ import { KeysPage } from '../pages/keys';
 import { SetupPage } from '../pages/setup/SetupPage';
 import { CrawlPage } from '../pages/crawl';
 import { ContactsPage } from '../pages/contacts/ContactsPage';
+import { DefaultsPage } from '../pages/admin/defaults/DefaultsPage';
 import { QuotaPage } from '../pages/admin/quota';
 import { IssuesPage } from '../pages/admin/issues';
 import { AlbumsPage } from '../pages/albums';
@@ -72,7 +73,9 @@ const adminPages: RouteObject[] = [
     return {
       path: item.path.slice('/admin/'.length),
       element:
-        item.id === 'nodes' ? (
+        item.id === 'defaults' ? (
+          <DefaultsPage />
+        ) : item.id === 'nodes' ? (
           <NodesPage />
         ) : item.id === 'quota' ? (
           <QuotaPage />
