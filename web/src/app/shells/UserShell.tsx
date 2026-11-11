@@ -12,6 +12,7 @@ import {
   useI18n,
   useLoadingTiming,
   useTheme,
+  clearSessionScopedStorage,
 } from '../../shared';
 import type { MessageKey } from '../../shared/i18n';
 import { AvatarMenu } from './AvatarMenu';
@@ -165,7 +166,11 @@ function Shell({ forbidden }: UserShellProps) {
   useRouteFocus();
 
   useEffect(() => {
-    const onExpired = () => setSessionExpired(true);
+    const onExpired = () => {
+      // The session ended: nothing scoped to it may reappear after the next sign-in.
+      clearSessionScopedStorage();
+      setSessionExpired(true);
+    };
     window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, []);
@@ -214,6 +219,7 @@ function Shell({ forbidden }: UserShellProps) {
 
   const signOut = () => {
     void logout().finally(() => {
+      clearSessionScopedStorage();
       client.clear();
       window.location.assign('/login');
     });

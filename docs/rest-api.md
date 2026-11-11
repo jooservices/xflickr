@@ -34,7 +34,7 @@ and an older route disagree, this document wins and the route changes.
 
 - URLs name resources with plural, lower-case, hyphenated nouns:
   `/api/v1/downloads`, `/api/v1/flickr-accounts`. A singleton owned by the
-  caller sits under `/me` (`/me`, `/me/sharing`, `/me/crawl`).
+  caller sits under `/me` (`/me`, `/me/sharing`, `/me/crawl`, `/me/home`).
 - No verbs in paths. An action is modelled as creating or changing a noun:
   a password reset is `POST /password-resets`, a retry is
   `POST /downloads/{id}/retries`, a revocation is `POST /…/revocations`. There

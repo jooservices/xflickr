@@ -8,7 +8,7 @@
 import type { Link } from './link';
 
 /**
- * Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.
+ * Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.
  */
 export interface Links {
   self: Link;

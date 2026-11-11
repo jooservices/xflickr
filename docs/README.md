@@ -41,6 +41,10 @@
   CSRF, and role checks.
 - [Identity REST API](identity.md) — registration, browser sessions, the
   authenticated user, password changes, and sharing routes.
+- [Home snapshot API](me-home.md) — user-scoped contact counts and the first
+  slice's unavailable Home sections.
+- [Home screen](home-screen.md) — the first UI slice, real contact counts, and
+  the sections that remain unavailable.
 - [Saved searches](saved-searches.md) — user-owned query persistence and its
   internal application and PostgreSQL operations.
 - [Passkey credential storage](passkeys.md) — the WebAuthn credential table and
@@ -64,6 +68,8 @@
   quota caps.
 - [Admin API quota view](admin-quota.md) — live per-key quota state and the
   fields the current API does not expose yet.
+- [Cluster nodes quota states](cluster-nodes.md) — the first `/admin/nodes`
+  slice and its data source, refresh states, and deferred node functionality.
 - [Quota governor](quota.md) — per-key token bucket, clock-second burst cap,
   rolling 60-minute budget, ready-before-grant rebuild, demand-based lane lending and admin floor, and cooldown behavior.
 - [ADR 0007: Ledger ready before any grant](adr/0007-ledger-ready-before-grant.md) — grants never set ready; every role rebuilds first.
@@ -110,6 +116,8 @@
   queue handoff.
 - [Crawl interests](crawl-interests.md) — per-user person depth, lowest-depth
   deduplication, progress reporting, contact priority controls, and pause/resume.
+- [Contacts depth slice](contacts.md) — effective crawl depth and current list
+  availability on the Contacts route.
 - [Crawl engine](crawl-engine.md) — facet interface, registry, page job flow
   and error outcomes.
 - [Group membership crawl](group-membership-crawl.md) — response validation,
@@ -118,6 +126,8 @@
   safe tombstones, and visibility change events.
 - [Web app shells](web-shells.md) — user and admin shells, route guard, tokens,
   state components, and EN/VI i18n.
+- [Library screen](library-screen.md) — catalog-backed favorites, cursor paging,
+  loaded-range filters, and justified virtual rows.
 - [Schedule backlog](schedule.md) — deduplicated work items, cursors, static
   score ordering, and state transitions.
 - [Database performance notes](database.md) — work_items/river_job bloat,

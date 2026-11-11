@@ -129,6 +129,12 @@ func TestUserReadRequiresAuthenticatedRouteAccess(t *testing.T) {
 	}
 }
 
+func TestHomeSnapshotRequiresAuthenticatedUserAccess(t *testing.T) {
+	if got := routeAccess["GET /api/v1/me/home"]; got != identityhttp.AccessUser {
+		t.Fatalf("Home route access = %v, want authenticated user access", got)
+	}
+}
+
 func TestOldIdentityRoutesAreGone(t *testing.T) {
 	router := routerWith(stubSessions{})
 	for _, target := range []struct{ method, path string }{

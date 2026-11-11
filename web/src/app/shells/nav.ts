@@ -30,7 +30,6 @@ export const ADMIN_NAV_GROUPS: readonly AdminNavGroup[] = [
       { id: 'nodes', path: '/admin/nodes', labelKey: 'admin.nav.nodes', icon: 'server' },
       { id: 'quota', path: '/admin/quota', labelKey: 'admin.nav.quota', icon: 'key' },
       { id: 'metrics', path: '/admin/metrics', labelKey: 'admin.nav.metrics', icon: 'chart' },
-      { id: 'events', path: '/admin/events', labelKey: 'admin.nav.events', icon: 'list' },
       { id: 'issues', path: '/admin/issues', labelKey: 'admin.nav.issues', icon: 'flag' },
     ],
   },

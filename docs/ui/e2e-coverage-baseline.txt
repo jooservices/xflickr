@@ -25,7 +25,6 @@ admin-node
 admin-quota
 admin-metrics
 admin-events
-admin-issues
 admin-pipeline
 admin-downloads
 admin-sync

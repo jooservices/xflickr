@@ -36,6 +36,7 @@ var routeAccess = map[string]identityhttp.Access{
 	"PUT /api/v1/me/password":            identityhttp.AccessUser,
 	"GET /api/v1/me/sharing":             identityhttp.AccessUser,
 	"PUT /api/v1/me/sharing":             identityhttp.AccessUser,
+	"GET /api/v1/me/home":                identityhttp.AccessUser,
 	"GET /keys":                          identityhttp.AccessUser,
 	"POST /keys":                         identityhttp.AccessUser,
 	"GET /keys/{id}":                     identityhttp.AccessUser,
@@ -82,6 +83,7 @@ var routeAccess = map[string]identityhttp.Access{
 	"GET /admin/calls/stats":         identityhttp.AccessAdmin,
 	"GET /admin/metrics":             identityhttp.AccessAdmin,
 	"GET /admin/ops/status":          identityhttp.AccessAdmin,
+	"GET /admin/incidents":           identityhttp.AccessAdmin,
 	"POST /admin/nodes":              identityhttp.AccessAdmin,
 
 	"POST /internal/nodes/heartbeat": identityhttp.AccessPublic,

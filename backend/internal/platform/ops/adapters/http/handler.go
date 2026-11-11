@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	opsapp "github.com/jooservices/xflickr/internal/ops/app"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
 	metricsapp "github.com/jooservices/xflickr/internal/platform/metrics/app"
 	"github.com/jooservices/xflickr/internal/platform/ops"
@@ -22,10 +23,11 @@ var _ StatusService = ops.Service{}
 // administrators by the identity middleware; ActorID guards the handler when
 // it is mounted without that middleware.
 type Handler struct {
-	Service StatusService
-	Metrics metricsapp.SeriesReader
-	Now     func() time.Time
-	ActorID func(context.Context) (int64, bool)
+	Service       StatusService
+	Metrics       metricsapp.SeriesReader
+	OpenIncidents *opsapp.OpenIncidents
+	Now           func() time.Time
+	ActorID       func(context.Context) (int64, bool)
 }
 
 // GetAdminOpsStatus returns the crawl health report.

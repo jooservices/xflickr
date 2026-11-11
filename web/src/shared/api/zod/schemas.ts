@@ -30,7 +30,7 @@ export const GetAPIEntryResponse = zod.object({
         }),
       )
       .describe(
-        'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+        'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
       ),
   }),
   meta: zod.record(zod.string(), zod.unknown()),
@@ -75,7 +75,7 @@ export const GetAuthConfigResponse = zod
             }),
           )
           .describe(
-            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
           ),
       }),
     }),
@@ -155,7 +155,7 @@ export const RegisterResponse = zod
             }),
           )
           .describe(
-            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
           ),
       }),
     }),
@@ -200,7 +200,7 @@ export const GetUserResponse = zod
             }),
           )
           .describe(
-            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
           ),
       }),
     }),
@@ -254,7 +254,7 @@ export const LoginResponse = zod
               }),
             )
             .describe(
-              'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+              'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
             ),
         })
         .and(
@@ -279,7 +279,7 @@ export const LoginResponse = zod
                   }),
                 )
                 .describe(
-                  'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+                  'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
                 ),
             }),
           }),
@@ -325,7 +325,7 @@ export const GetCurrentSessionResponse = zod
               }),
             )
             .describe(
-              'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+              'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
             ),
         })
         .and(
@@ -350,7 +350,7 @@ export const GetCurrentSessionResponse = zod
                   }),
                 )
                 .describe(
-                  'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+                  'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
                 ),
             }),
           }),
@@ -406,7 +406,7 @@ export const GetSessionResponse = zod
               }),
             )
             .describe(
-              'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+              'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
             ),
         })
         .and(
@@ -431,7 +431,7 @@ export const GetSessionResponse = zod
                   }),
                 )
                 .describe(
-                  'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+                  'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
                 ),
             }),
           }),
@@ -474,7 +474,7 @@ export const GetMeResponse = zod
             }),
           )
           .describe(
-            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
           ),
       }),
     }),
@@ -520,7 +520,7 @@ export const UpdateMeResponse = zod
             }),
           )
           .describe(
-            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
           ),
       }),
     }),
@@ -569,7 +569,7 @@ export const ListMySessionsResponse = zod
               }),
             )
             .describe(
-              'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+              'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
             ),
         }),
       ),
@@ -628,7 +628,7 @@ export const GetMySessionResponse = zod
               }),
             )
             .describe(
-              'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+              'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
             ),
         })
         .and(
@@ -653,7 +653,7 @@ export const GetMySessionResponse = zod
                   }),
                 )
                 .describe(
-                  'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+                  'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
                 ),
             }),
           }),
@@ -725,7 +725,7 @@ export const GetMeSharingResponse = zod
             }),
           )
           .describe(
-            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
           ),
       }),
     }),
@@ -767,9 +767,83 @@ export const PutMeSharingResponse = zod
             }),
           )
           .describe(
-            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
           ),
       }),
+    }),
+  );
+
+/**
+ * Returns generated_at and contact counts for the authenticated user. Photo totals, newest photos, starred contacts, and activity are not provided by this first slice and are named in unavailable_sections.
+ * @summary Get the current user's Home snapshot
+ */
+export const getMeHomeResponseTwoDataContactsTotalMin = 0;
+
+export const getMeHomeResponseTwoDataContactsDirectMin = 0;
+
+export const getMeHomeResponseTwoDataContactsDiscoveredMin = 0;
+
+export const getMeHomeResponseTwoDataPhotosTotalMin = 0;
+
+export const getMeHomeResponseTwoDataPhotosSizesReadyMin = 0;
+
+export const getMeHomeResponseTwoDataPhotosCaptionedMin = 0;
+
+export const getMeHomeResponseTwoDataUnavailableSectionsMin = 3;
+export const getMeHomeResponseTwoDataUnavailableSectionsMax = 3;
+
+export const GetMeHomeResponse = zod
+  .object({
+    success: zod.literal(true),
+    code: zod.int(),
+    message: zod.string(),
+    data: zod.unknown(),
+    meta: zod.record(zod.string(), zod.unknown()),
+    errors: zod.null(),
+    trace_id: zod.string(),
+  })
+  .and(
+    zod.object({
+      data: zod
+        .object({
+          generated_at: zod.iso.datetime({ offset: true }),
+          contacts: zod.object({
+            total: zod.int().min(getMeHomeResponseTwoDataContactsTotalMin),
+            direct: zod.int().min(getMeHomeResponseTwoDataContactsDirectMin),
+            discovered: zod.int().min(getMeHomeResponseTwoDataContactsDiscoveredMin),
+          }),
+          photos: zod
+            .object({
+              total: zod.int().min(getMeHomeResponseTwoDataPhotosTotalMin).nullable(),
+              sizes_ready: zod.int().min(getMeHomeResponseTwoDataPhotosSizesReadyMin).nullable(),
+              captioned: zod.int().min(getMeHomeResponseTwoDataPhotosCaptionedMin).nullable(),
+            })
+            .describe('Photo metrics are unavailable until JOOXF-391 supplies stored statistics.'),
+          unavailable_sections: zod
+            .array(zod.enum(['photos', 'starred_contacts', 'activity']))
+            .min(getMeHomeResponseTwoDataUnavailableSectionsMin)
+            .max(getMeHomeResponseTwoDataUnavailableSectionsMax)
+            .describe('Home sections without complete data in this API slice.'),
+          links: zod
+            .object({
+              self: zod.object({
+                href: zod.string(),
+                method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+              }),
+            })
+            .catchall(
+              zod.object({
+                href: zod.string(),
+                method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+              }),
+            )
+            .describe(
+              'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
+            ),
+        })
+        .describe(
+          'First Home API slice. Photo metrics are null, and photo, starred-contact, and activity collections are not returned until their sources are available.',
+        ),
     }),
   );
 
@@ -1249,7 +1323,7 @@ export const GetAdminFlagsResponseItem = zod.object({
     )
     .optional()
     .describe(
-      'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+      'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
     ),
 });
 export const GetAdminFlagsResponse = zod.array(GetAdminFlagsResponseItem);
@@ -1294,7 +1368,7 @@ export const UpdateAdminFlagsBody = zod.object({
           )
           .optional()
           .describe(
-            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
           ),
       }),
     )
@@ -1354,7 +1428,7 @@ export const GetAdminFlagResponse = zod.object({
           }),
         )
         .describe(
-          'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+          'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
         ),
     })
     .and(
@@ -1373,7 +1447,7 @@ export const GetAdminFlagResponse = zod.object({
             }),
           )
           .describe(
-            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.',
           ),
       }),
     ),
@@ -1825,6 +1899,43 @@ export const GetAdminOpsStatusResponse = zod.object({
     .enum(['no_key', 'quota_exhausted', 'not_before_in_future', 'unknown'])
     .optional()
     .describe('Present when pending items exist but none is ready.'),
+});
+
+/**
+ * Returns a bounded newest-first page of open incidents. Only safe metadata is exposed; detector titles, scopes, and detail are omitted.
+ * @summary List open incidents
+ */
+export const listAdminOpenIncidentsQueryCursorMax = 128;
+
+export const listAdminOpenIncidentsQueryLimitDefault = 50;
+export const listAdminOpenIncidentsQueryLimitMax = 100;
+
+export const ListAdminOpenIncidentsQueryParams = zod.object({
+  cursor: zod
+    .string()
+    .max(listAdminOpenIncidentsQueryCursorMax)
+    .optional()
+    .describe('Opaque keyset cursor returned by the previous page'),
+  limit: zod
+    .int()
+    .min(1)
+    .max(listAdminOpenIncidentsQueryLimitMax)
+    .default(listAdminOpenIncidentsQueryLimitDefault)
+    .describe('Number of incidents to return'),
+});
+
+export const ListAdminOpenIncidentsResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.int(),
+      severity: zod.enum(['info', 'warning', 'critical']),
+      first_seen: zod.iso.datetime({ offset: true }),
+      last_seen: zod.iso.datetime({ offset: true }),
+      count: zod.int().min(1),
+    }),
+  ),
+  next_cursor: zod.string().describe('Empty when there are no more open incidents'),
+  server_time: zod.iso.datetime({ offset: true }),
 });
 
 /**

@@ -7,6 +7,15 @@ CDN content, select photos, create jobs, persist sync state, or connect a real
 provider. The caller exclusively owns the blob during `Upload` and must retain
 any valid remote ID returned, including with an error.
 
+## Saved target listing foundation
+
+The sync target application service can return one keyset page of metadata
+owned by a user. Pages use the target ID cursor and are limited to 100 rows;
+the PostgreSQL query uses the `(user_id, id)` index and never selects the
+sealed token. This internal foundation does not add an HTTP route, provider
+catalogue, or UI behavior. Those remain part of a later API-backed screen
+slice.
+
 ## Upload and cleanup order
 
 The engine validates context, blob key, and album ID. A supplied remote ID is

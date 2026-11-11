@@ -87,3 +87,41 @@ OpsStatus:
       type: string
       enum: [no_key, quota_exhausted, not_before_in_future, unknown]
       description: Present when pending items exist but none is ready.
+
+AdminOpenIncident:
+  type: object
+  additionalProperties: false
+  required: [id, severity, first_seen, last_seen, count]
+  properties:
+    id:
+      type: integer
+      format: int64
+    severity:
+      type: string
+      enum: [info, warning, critical]
+    first_seen:
+      type: string
+      format: date-time
+    last_seen:
+      type: string
+      format: date-time
+    count:
+      type: integer
+      format: int64
+      minimum: 1
+
+AdminOpenIncidentPage:
+  type: object
+  additionalProperties: false
+  required: [items, next_cursor, server_time]
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/AdminOpenIncident'
+    next_cursor:
+      type: string
+      description: Empty when there are no more open incidents
+    server_time:
+      type: string
+      format: date-time

@@ -22,7 +22,6 @@ export type ShellSummary = {
 };
 
 export type AdminShellData = {
-  open_issues: number;
   unread_notifications: number;
   cluster: {
     status: 'ok' | 'degraded' | 'down' | 'unknown';
@@ -76,7 +75,6 @@ function summarizeAdminQuota(quota: AdminQuota): AdminShellData {
           ? 'down'
           : 'degraded';
   return {
-    open_issues: keys.filter((key) => key.state !== 'ok').length,
     unread_notifications: 0,
     cluster: {
       status,

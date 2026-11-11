@@ -185,7 +185,7 @@ func (StrictHandler) GetAdminCallStats(context.Context, gen.GetAdminCallStatsReq
 	return nil, errQuotaServedByQuota
 }
 
-var errOpsServedByOps = errors.New("identity: ops status is served by the ops module")
+var errOpsServedByOps = errors.New("identity: ops endpoints are served by the ops module")
 
 var errFeatureFlagsServedBySettings = errors.New("identity: feature flags are served by the settings module")
 
@@ -194,6 +194,13 @@ func (StrictHandler) GetAdminOpsStatus(context.Context, gen.GetAdminOpsStatusReq
 }
 
 func (StrictHandler) GetAdminMetrics(context.Context, gen.GetAdminMetricsRequestObject) (gen.GetAdminMetricsResponseObject, error) {
+	return nil, errOpsServedByOps
+}
+
+func (StrictHandler) ListAdminOpenIncidents(
+	context.Context,
+	gen.ListAdminOpenIncidentsRequestObject,
+) (gen.ListAdminOpenIncidentsResponseObject, error) {
 	return nil, errOpsServedByOps
 }
 

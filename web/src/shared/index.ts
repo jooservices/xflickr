@@ -37,3 +37,5 @@ export type { Theme, ThemeRole } from './theme';
 export { LiveOffProvider, useLiveOff } from './live-mode';
 
 export const sharedLayer = 'shared';
+
+export { SESSION_SCOPED_KEY_PREFIX, clearSessionScopedStorage } from './sessionScoped';

@@ -1,0 +1,36 @@
+# Library screen
+
+The Library route currently uses the generated catalog favorites endpoint and
+its opaque cursor. It requests up to 100 favorites at a time, merges duplicate
+photo IDs, and virtualizes justified rows with TanStack Virtual. The backend
+scans a bounded keyset batch before checking removed, tombstoned, and invisible
+records. Its cursor advances past every scanned favorite, so a page can contain
+fewer than requested items, including an empty page with a continuation cursor,
+when many favorites are excluded. Equal favorite dates and photo IDs are
+ordered by Flickr account ID so those rows remain distinct across cursor pages.
+The empty-library state appears only after no continuation cursor remains. The
+row layout uses dimensions from an available catalog size; photos without a
+size URL use a neutral placeholder.
+
+The screen supports filtering the favorites already loaded by contact, sizes
+readiness, and AI caption readiness. Its count is the number of unique favorites
+loaded so far, not an estimate of the full library. Select visible applies to
+all loaded photos matching the current filters, including virtualized photos
+outside the viewport, and does not fetch another page. It preserves selection
+from other filters and pages, skips already selected IDs before applying the
+500-photo cap, and is safe to repeat. Selection stays in the page until cleared
+or the authenticated session ends. Per-photo download-tray controls and the
+download action remain hidden until tray submission is available; the empty
+state does not link to the accounts placeholder.
+
+The approved [Library view spec](ui/views/user-library.md) describes the full
+target. Completing it needs a bounded all-library cursor operation and server
+facets so filters, counts, kind/depth choices, sorting, and URL state cover the
+whole visible library. Library event updates and polling also need the
+corresponding event contract. Until those operations exist, the page does not
+invent records, aggregate all contacts in the browser, or issue full-table
+counts.
+
+The mocked browser suite loads 5,000 favorites through 50 cursor requests,
+scrolls to the final photo, and asserts that fewer than 50 photo cards are
+mounted at once.

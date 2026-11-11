@@ -3,7 +3,7 @@ import { render } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { routes } from '../app/router';
-import { SessionContext } from '../entities';
+import { SessionContext, SessionProvider } from '../entities';
 import type { Session } from '../entities';
 import { I18nBridge, i18nInstance } from '../shared';
 import type { Locale } from '../shared';
@@ -23,27 +23,34 @@ type Options = {
   path?: string;
   locale?: Locale;
   retry?: () => void;
+  managedSession?: boolean;
 };
 
-/** Renders the real route table at `path` with a fixed session (no `GET /api/v1/me`). */
+/** Renders the real route table at `path`, using a fixed session by default. */
 export function renderApp({
   session,
   path = '/',
   locale = 'en',
   retry = () => undefined,
+  managedSession = false,
 }: Options) {
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const app = managedSession ? (
+    <SessionProvider>
+      <RouterProvider router={router} />
+    </SessionProvider>
+  ) : (
+    <SessionContext.Provider value={{ session, retry }}>
+      <RouterProvider router={router} />
+    </SessionContext.Provider>
+  );
   const result = render(
     <QueryClientProvider client={client}>
       <I18nextProvider i18n={i18nInstance}>
-        <I18nBridge initialLocale={locale}>
-          <SessionContext.Provider value={{ session, retry }}>
-            <RouterProvider router={router} />
-          </SessionContext.Provider>
-        </I18nBridge>
+        <I18nBridge initialLocale={locale}>{app}</I18nBridge>
       </I18nextProvider>
     </QueryClientProvider>,
   );
-  return { ...result, router };
+  return { ...result, router, client };
 }

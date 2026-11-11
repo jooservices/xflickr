@@ -91,7 +91,7 @@ func accountScopedSizesMigration(t *testing.T) string {
 	if !ok {
 		t.Fatal("locate migration test source")
 	}
-	migrationPath := filepath.Join(filepath.Dir(source), "../../../migrations/20261112110000_account_scoped_photo_sizes.sql")
+	migrationPath := filepath.Join(filepath.Dir(source), "../../../migrations/20261112120000_account_scoped_photo_sizes.sql")
 	migration, err := os.ReadFile(migrationPath)
 	if err != nil {
 		t.Fatalf("read account-scoped sizes migration: %v", err)

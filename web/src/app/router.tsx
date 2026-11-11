@@ -13,12 +13,19 @@ import { ProfilePage } from '../pages/profile/ProfilePage';
 import { KeysPage } from '../pages/keys';
 import { SetupPage } from '../pages/setup/SetupPage';
 import { CrawlPage } from '../pages/crawl';
+import { ContactsPage } from '../pages/contacts/ContactsPage';
 import { QuotaPage } from '../pages/admin/quota';
+import { IssuesPage } from '../pages/admin/issues';
 import { AlbumsPage } from '../pages/albums';
+import { LibraryPage } from '../pages/library';
+import { HomePage } from '../pages/home/HomePage';
+import { NodesPage } from '../pages/admin/nodes/NodesPage';
 import { RouteErrorPage } from './ErrorBoundary';
 
 function userPageElement(path: string, labelKey: MessageKey) {
+  if (path === '/library') return <LibraryPage />;
   if (path === '/profile') return <ProfilePage />;
+  if (path === '/contacts') return <ContactsPage />;
   if (path === '/crawl') return <CrawlPage />;
   if (path === '/albums') return <AlbumsPage />;
   if (path === '/keys') return <KeysPage />;
@@ -28,15 +35,7 @@ function userPageElement(path: string, labelKey: MessageKey) {
 const userPages: RouteObject[] = [
   {
     index: true,
-    element: (
-      <PlaceholderPage
-        scope="shell"
-        titleKey="shell.nav.home"
-        emptyIcon="image"
-        emptyTitleKey="shell.home.empty.title"
-        emptyTextKey="shell.home.empty.text"
-      />
-    ),
+    element: <HomePage />,
   },
   ...USER_NAV.filter((item) => item.path !== '/').map((item): RouteObject => ({
     path: item.path.slice(1),
@@ -73,8 +72,12 @@ const adminPages: RouteObject[] = [
     return {
       path: item.path.slice('/admin/'.length),
       element:
-        item.id === 'quota' ? (
+        item.id === 'nodes' ? (
+          <NodesPage />
+        ) : item.id === 'quota' ? (
           <QuotaPage />
+        ) : item.id === 'issues' ? (
+          <IssuesPage />
         ) : (
           <PlaceholderPage scope="admin" titleKey={item.labelKey} />
         ),

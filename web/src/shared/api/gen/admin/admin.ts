@@ -22,6 +22,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AdminOpenIncidentPage,
   AdminQueue,
   AdminQuota,
   AdminUser,
@@ -33,6 +34,7 @@ import type {
   FeatureFlag,
   GetAdminCallStatsParams,
   GetAdminMetricsParams,
+  ListAdminOpenIncidentsParams,
   ListAdminUsersParams,
   MetricSeries,
   OpsStatus,
@@ -2097,6 +2099,192 @@ export function useGetAdminOpsStatus<
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetAdminOpsStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type listAdminOpenIncidentsResponse200 = {
+  data: AdminOpenIncidentPage;
+  status: 200;
+};
+
+export type listAdminOpenIncidentsResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type listAdminOpenIncidentsResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type listAdminOpenIncidentsResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type listAdminOpenIncidentsResponse500 = {
+  data: Error;
+  status: 500;
+};
+
+export type listAdminOpenIncidentsResponseSuccess = listAdminOpenIncidentsResponse200 & {
+  headers: Headers;
+};
+export type listAdminOpenIncidentsResponseError = (
+  | listAdminOpenIncidentsResponse400
+  | listAdminOpenIncidentsResponse401
+  | listAdminOpenIncidentsResponse403
+  | listAdminOpenIncidentsResponse500
+) & {
+  headers: Headers;
+};
+
+export type listAdminOpenIncidentsResponse =
+  listAdminOpenIncidentsResponseSuccess | listAdminOpenIncidentsResponseError;
+
+export const getListAdminOpenIncidentsUrl = (params?: ListAdminOpenIncidentsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/admin/incidents?${stringifiedParams}`
+    : `/admin/incidents`;
+};
+
+/**
+ * Returns a bounded newest-first page of open incidents. Only safe metadata is exposed; detector titles, scopes, and detail are omitted.
+ * @summary List open incidents
+ */
+export const listAdminOpenIncidents = async (
+  params?: ListAdminOpenIncidentsParams,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<listAdminOpenIncidentsResponse> => {
+  return customFetch<listAdminOpenIncidentsResponse>(getListAdminOpenIncidentsUrl(params), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getListAdminOpenIncidentsQueryKey = (params?: ListAdminOpenIncidentsParams) => {
+  return [`/admin/incidents`, ...(params ? [params] : [])] as const;
+};
+
+export const getListAdminOpenIncidentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAdminOpenIncidents>>,
+  TError = Error,
+>(
+  params?: ListAdminOpenIncidentsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listAdminOpenIncidents>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListAdminOpenIncidentsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listAdminOpenIncidents>>> = ({ signal }) =>
+    listAdminOpenIncidents(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAdminOpenIncidents>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListAdminOpenIncidentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAdminOpenIncidents>>
+>;
+export type ListAdminOpenIncidentsQueryError = Error;
+
+export function useListAdminOpenIncidents<
+  TData = Awaited<ReturnType<typeof listAdminOpenIncidents>>,
+  TError = Error,
+>(
+  params: undefined | ListAdminOpenIncidentsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listAdminOpenIncidents>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listAdminOpenIncidents>>,
+          TError,
+          Awaited<ReturnType<typeof listAdminOpenIncidents>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListAdminOpenIncidents<
+  TData = Awaited<ReturnType<typeof listAdminOpenIncidents>>,
+  TError = Error,
+>(
+  params?: ListAdminOpenIncidentsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listAdminOpenIncidents>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listAdminOpenIncidents>>,
+          TError,
+          Awaited<ReturnType<typeof listAdminOpenIncidents>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListAdminOpenIncidents<
+  TData = Awaited<ReturnType<typeof listAdminOpenIncidents>>,
+  TError = Error,
+>(
+  params?: ListAdminOpenIncidentsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listAdminOpenIncidents>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List open incidents
+ */
+
+export function useListAdminOpenIncidents<
+  TData = Awaited<ReturnType<typeof listAdminOpenIncidents>>,
+  TError = Error,
+>(
+  params?: ListAdminOpenIncidentsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listAdminOpenIncidents>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListAdminOpenIncidentsQueryOptions(params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

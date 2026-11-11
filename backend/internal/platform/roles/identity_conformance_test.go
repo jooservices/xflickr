@@ -485,8 +485,11 @@ func TestIdentityLinkRelationsResolve(t *testing.T) {
 
 	authenticatedRoot := decode(send(http.MethodGet, "/api/v1", "", true), http.StatusOK)
 	authenticatedLinks := links(authenticatedRoot.Data)
-	if len(authenticatedLinks) != 6 {
+	if len(authenticatedLinks) != 7 {
 		t.Fatalf("authenticated entry links = %+v", authenticatedLinks)
+	}
+	if authenticatedLinks["home"].Href != "/api/v1/me/home" || authenticatedLinks["home"].Method != http.MethodGet {
+		t.Fatalf("home relation = %+v", authenticatedLinks["home"])
 	}
 	current := follow(authenticatedLinks["current-session"], "", true, http.StatusOK)
 	currentLinks := links(current.Data)

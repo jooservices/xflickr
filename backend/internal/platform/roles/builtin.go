@@ -41,6 +41,9 @@ import (
 	crawlsettings "github.com/jooservices/xflickr/internal/crawl/adapters/settings"
 	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
 	crawldomain "github.com/jooservices/xflickr/internal/crawl/domain"
+	homehttp "github.com/jooservices/xflickr/internal/home/adapters/http"
+	homepostgres "github.com/jooservices/xflickr/internal/home/adapters/postgres"
+	homeapp "github.com/jooservices/xflickr/internal/home/app"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identitypostgres "github.com/jooservices/xflickr/internal/identity/adapters/postgres"
 	identityredis "github.com/jooservices/xflickr/internal/identity/adapters/redis"
@@ -868,18 +871,31 @@ func buildConfiguredAPIHandlerSetWithObserver(pool *pgxpool.Pool, redisClient re
 	if err != nil {
 		return apiHandlerSet{}, err
 	}
+	incidentReader, err := opsstore.NewOpenIncidentRepository(pool)
+	if err != nil {
+		return apiHandlerSet{}, fmt.Errorf("api: create open incident reader: %w", err)
+	}
+	openIncidents, err := opsapp.NewOpenIncidents(incidentReader)
+	if err != nil {
+		return apiHandlerSet{}, fmt.Errorf("api: create open incident use case: %w", err)
+	}
 	opsHandler := opshttp.Handler{
-		Service: ops.Service{Store: opspostgres.Store{Pool: pool, DB: pool}},
-		Metrics: metricspostgres.SeriesStore{Pool: pool},
-		Now:     time.Now,
-		ActorID: userIDFromPrincipal,
+		Service:       ops.Service{Store: opspostgres.Store{Pool: pool, DB: pool}},
+		Metrics:       metricspostgres.SeriesStore{Pool: pool},
+		OpenIncidents: openIncidents,
+		Now:           time.Now,
+		ActorID:       userIDFromPrincipal,
 	}
 	nodeService, err := buildNodeService(pool)
 	if err != nil {
 		return apiHandlerSet{}, err
 	}
 	nodesHandler := clusterhttp.Handler{Service: nodeService}
-	return newAPIRoutersWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}, probeReadiness, flags, catalogReads, nodesHandler), nil
+	homeHandler, err := buildHomeHandler(pool)
+	if err != nil {
+		return apiHandlerSet{}, err
+	}
+	return newAPIRoutersWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}, probeReadiness, flags, catalogReads, nodesHandler, homeHandler), nil
 }
 
 func buildNodeService(pool *pgxpool.Pool) (clusterapp.Nodes, error) {
@@ -993,6 +1009,7 @@ type apiServer struct {
 	crawlhttp.CrawlHandler
 	quotahttp.QuotaHandler
 	Sharing   sharinghttp.Handler
+	Home      homehttp.Handler
 	Downloads mediahttp.DownloadHandler
 	Ops       opshttp.Handler
 	Stream    platformsse.Handler
@@ -1013,6 +1030,10 @@ func (s apiServer) HeartbeatNode(ctx context.Context, request gen.HeartbeatNodeR
 
 func (s apiServer) ListPeople(ctx context.Context, request gen.ListPeopleRequestObject) (gen.ListPeopleResponseObject, error) {
 	return s.Catalog.ListPeople(ctx, request)
+}
+
+func (s apiServer) GetMeHome(ctx context.Context, request gen.GetMeHomeRequestObject) (gen.GetMeHomeResponseObject, error) {
+	return s.Home.GetMeHome(ctx, request)
 }
 
 func (s apiServer) GetPerson(ctx context.Context, request gen.GetPersonRequestObject) (gen.GetPersonResponseObject, error) {
@@ -1084,6 +1105,10 @@ func (s apiServer) GetReadiness(ctx context.Context, _ gen.GetReadinessRequestOb
 
 func (s apiServer) GetAdminOpsStatus(ctx context.Context, request gen.GetAdminOpsStatusRequestObject) (gen.GetAdminOpsStatusResponseObject, error) {
 	return s.Ops.GetAdminOpsStatus(ctx, request)
+}
+
+func (s apiServer) ListAdminOpenIncidents(ctx context.Context, request gen.ListAdminOpenIncidentsRequestObject) (gen.ListAdminOpenIncidentsResponseObject, error) {
+	return s.Ops.ListAdminOpenIncidents(ctx, request)
 }
 
 func (s apiServer) GetAdminMetrics(ctx context.Context, request gen.GetAdminMetricsRequestObject) (gen.GetAdminMetricsResponseObject, error) {
@@ -1158,6 +1183,7 @@ func newAPIRoutersWithServices(identity identityhttp.Handler, keys accountshttp.
 	var nodesHandler clusterhttp.Handler
 	var streamHandler platformsse.Handler
 	var readiness *httpx.Readiness
+	var homeHandler homehttp.Handler
 	for _, option := range options {
 		if ops, ok := option.(opshttp.Handler); ok {
 			opsHandler = ops
@@ -1177,8 +1203,11 @@ func newAPIRoutersWithServices(identity identityhttp.Handler, keys accountshttp.
 		if nodes, ok := option.(clusterhttp.Handler); ok {
 			nodesHandler = nodes
 		}
+		if home, ok := option.(homehttp.Handler); ok {
+			homeHandler = home
+		}
 	}
-	server := apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, Ops: opsHandler, Stream: streamHandler, Readiness: readiness, Flags: flagsHandler, Catalog: catalogHandler, Nodes: nodesHandler, planHandler: planHandler{Handler: plans}}
+	server := apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Home: homeHandler, Downloads: downloads, Ops: opsHandler, Stream: streamHandler, Readiness: readiness, Flags: flagsHandler, Catalog: catalogHandler, Nodes: nodesHandler, planHandler: planHandler{Handler: plans}}
 	publicRouter := chi.NewRouter()
 	serveWebAssets(publicRouter, os.Getenv("XFLICKR_WEB_DIR"))
 	publicRouter.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
@@ -1220,6 +1249,18 @@ func buildSharingHandler(pool *pgxpool.Pool) (sharinghttp.Handler, error) {
 		return sharinghttp.Handler{}, err
 	}
 	return sharinghttp.Handler{Change: sharingapp.Change{Repository: repository}, Read: sharingapp.Read{Repository: repository}, ActorID: userIDFromPrincipal}, nil
+}
+
+func buildHomeHandler(pool *pgxpool.Pool) (homehttp.Handler, error) {
+	repository, err := homepostgres.New(pool)
+	if err != nil {
+		return homehttp.Handler{}, err
+	}
+	service, err := homeapp.New(repository, time.Now)
+	if err != nil {
+		return homehttp.Handler{}, err
+	}
+	return homehttp.Handler{Snapshots: service, ActorID: userIDFromPrincipal}, nil
 }
 
 func buildDownloadHandler(pool *pgxpool.Pool, stores ...mediaapp.BlobStore) (mediahttp.DownloadHandler, error) {

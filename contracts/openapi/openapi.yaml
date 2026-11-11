@@ -32,6 +32,8 @@ paths:
     $ref: ./paths/auth.yaml#/password
   /api/v1/me/sharing:
     $ref: ./paths/sharing.yaml#/setting
+  /api/v1/me/home:
+    $ref: ./paths/home.yaml#/snapshot
   /keys:
     $ref: ./paths/keys.yaml#/collection
   /keys/{id}:
@@ -84,6 +86,8 @@ paths:
     $ref: ./paths/metrics.yaml#/series
   /admin/ops/status:
     $ref: ./paths/ops.yaml#/status
+  /admin/incidents:
+    $ref: ./paths/ops.yaml#/open_incidents
   /downloads:
     $ref: ./paths/downloads.yaml#/create
   /downloads/{id}/parts:
@@ -141,6 +145,12 @@ components:
       $ref: ./schemas/auth.yaml#/User
     SharingSetting:
       $ref: ./schemas/sharing.yaml#/SharingSetting
+    HomeContactCounts:
+      $ref: ./schemas/home.yaml#/HomeContactCounts
+    HomePhotoCounts:
+      $ref: ./schemas/home.yaml#/HomePhotoCounts
+    HomeSnapshot:
+      $ref: ./schemas/home.yaml#/HomeSnapshot
     UpdateSharingRequest:
       $ref: ./schemas/sharing.yaml#/UpdateSharingRequest
     ApiKey:
@@ -205,6 +215,10 @@ components:
       $ref: ./schemas/quota.yaml#/AdminQuota
     OpsStatus:
       $ref: ./schemas/ops.yaml#/OpsStatus
+    AdminOpenIncident:
+      $ref: ./schemas/ops.yaml#/AdminOpenIncident
+    AdminOpenIncidentPage:
+      $ref: ./schemas/ops.yaml#/AdminOpenIncidentPage
     CreateDownloadRequest:
       $ref: ./schemas/downloads.yaml#/CreateDownloadRequest
     Download:

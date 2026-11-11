@@ -19,4 +19,7 @@ export const handlers = [
       ],
     }),
   ),
+  http.get('*/admin/incidents', () =>
+    HttpResponse.json({ items: [], next_cursor: '', server_time: '2026-11-12T00:00:00Z' }),
+  ),
 ];

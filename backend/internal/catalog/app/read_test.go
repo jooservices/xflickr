@@ -126,10 +126,14 @@ func TestReadServiceAppliesPolicyAndEncodesKeysets(t *testing.T) {
 	if got, err := service.GetPerson(context.Background(), 42, "person"); err != nil || got.NSID != repo.person.NSID {
 		t.Fatalf("get person=%+v err=%v", got, err)
 	}
-	repo.favorites = FavoritesPage{Items: []Favorite{{Photo: Photo{ID: 9}, FaveDate: now}}, NextCursor: &FavoriteCursor{FaveDate: now, PhotoID: 9}}
+	repo.favorites = FavoritesPage{Items: []Favorite{{Photo: Photo{ID: 9}, FaveDate: now}}, NextCursor: &FavoriteCursor{FaveDate: now, PhotoID: 9, FlickrAccountID: 73}}
 	_, favoriteCursor, err := service.ListFavorites(context.Background(), 42, "", 10)
 	if err != nil || favoriteCursor == "" {
 		t.Fatalf("favorite cursor=%q err=%v", favoriteCursor, err)
+	}
+	decodedFavoriteCursor, err := decodeCursor[FavoriteCursor](favoriteCursor, "favorites")
+	if err != nil || decodedFavoriteCursor.FaveDate != now || decodedFavoriteCursor.PhotoID != 9 || decodedFavoriteCursor.FlickrAccountID != 73 {
+		t.Fatalf("decoded favorite cursor=%+v err=%v", decodedFavoriteCursor, err)
 	}
 	repo.photoOK = true
 	repo.photo = Photo{ID: 9}
@@ -195,6 +199,17 @@ func TestCursorEnvelopeRejectsWrongKindMalformedValuesAndOversize(t *testing.T) 
 	invalidFavorite, _ := json.Marshal(cursorEnvelope[FavoriteCursor]{Version: 1, Kind: "favorites", Value: FavoriteCursor{PhotoID: 1}})
 	if _, err := decodeCursor[FavoriteCursor](base64.RawURLEncoding.EncodeToString(invalidFavorite), "favorites"); !errors.Is(err, ErrInvalidCursor) {
 		t.Fatalf("invalid favorite value error=%v", err)
+	}
+	// A favorites cursor issued before accounts joined the key (no flickr_account_id) must keep working
+	// so paging in flight during the deployment is not interrupted; a negative account id never does.
+	cursorTime := time.Date(2026, 10, 28, 10, 0, 0, 0, time.UTC)
+	legacyFavorite, _ := json.Marshal(cursorEnvelope[FavoriteCursor]{Version: 1, Kind: "favorites", Value: FavoriteCursor{FaveDate: cursorTime, PhotoID: 5}})
+	if decoded, err := decodeCursor[FavoriteCursor](base64.RawURLEncoding.EncodeToString(legacyFavorite), "favorites"); err != nil || decoded.PhotoID != 5 || decoded.FlickrAccountID != 0 {
+		t.Fatalf("legacy favorite cursor = %+v, error = %v; want accepted with account 0", decoded, err)
+	}
+	negativeFavorite, _ := json.Marshal(cursorEnvelope[FavoriteCursor]{Version: 1, Kind: "favorites", Value: FavoriteCursor{FaveDate: cursorTime, PhotoID: 5, FlickrAccountID: -1}})
+	if _, err := decodeCursor[FavoriteCursor](base64.RawURLEncoding.EncodeToString(negativeFavorite), "favorites"); !errors.Is(err, ErrInvalidCursor) {
+		t.Fatalf("negative account favorite cursor error=%v", err)
 	}
 	invalidAlbum, _ := json.Marshal(cursorEnvelope[AlbumCursor]{Version: 1, Kind: "albums", Value: AlbumCursor{}})
 	if _, err := decodeCursor[AlbumCursor](base64.RawURLEncoding.EncodeToString(invalidAlbum), "albums"); !errors.Is(err, ErrInvalidCursor) {

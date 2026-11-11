@@ -1,0 +1,26 @@
+snapshot:
+  get:
+    operationId: GetMeHome
+    summary: Get the current user's Home snapshot
+    description: >-
+      Returns generated_at and contact counts for the authenticated user.
+      Photo totals, newest photos, starred contacts, and activity are not
+      provided by this first slice and are named in unavailable_sections.
+    responses:
+      '200':
+        description: Current user's Home snapshot
+        headers:
+          Cache-Control: { schema: { type: string } }
+        content:
+          application/json:
+            schema: { $ref: ../schemas/home.yaml#/HomeSnapshotEnvelope }
+      '401':
+        description: Authentication required
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
