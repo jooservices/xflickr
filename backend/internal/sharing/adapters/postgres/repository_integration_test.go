@@ -12,8 +12,10 @@ import (
 	catalogpostgres "github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
 	catalogobservations "github.com/jooservices/xflickr/internal/catalog/adapters/postgres/observations"
 	"github.com/jooservices/xflickr/internal/catalog/domain"
+	"github.com/jooservices/xflickr/internal/home/app"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
+	"github.com/jooservices/xflickr/internal/platform/queue"
 	sharingpostgres "github.com/jooservices/xflickr/internal/sharing/adapters/postgres"
 	sharingdomain "github.com/jooservices/xflickr/internal/sharing/domain"
 )
@@ -42,6 +44,7 @@ func TestObservationUpsertAndSharingOutbox(t *testing.T) {
 	}
 	photoID := time.Now().UnixNano()
 	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM river_job WHERE args->>'kind'=$1 AND args->'args'->>'user_id'=$2`, app.RefreshJobKind, fmt.Sprint(userID))
 		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=$1`, photoID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, suffix+"@flickr")
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
@@ -92,13 +95,21 @@ func TestObservationUpsertAndSharingOutbox(t *testing.T) {
 	if observations != 1 || !firstSeen.Equal(firstSeenAgain) {
 		t.Fatalf("observation count/time = %d/%v, want once at %v", observations, firstSeenAgain, firstSeen)
 	}
-	settings, err := sharingpostgres.New(pool)
+	jobs, err := queue.NewRiver(pool, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, err := sharingpostgres.New(pool, jobs)
 	if err != nil {
 		t.Fatal(err)
 	}
 	setting, err := settings.Set(ctx, sharingdomain.Setting{UserID: userID, Enabled: true})
 	if err != nil || !setting.Enabled {
 		t.Fatalf("enable sharing = %+v, %v", setting, err)
+	}
+	var refreshJobs int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE args->>'kind'=$1 AND args->'args'->>'user_id'=$2`, app.RefreshJobKind, fmt.Sprint(userID)).Scan(&refreshJobs); err != nil || refreshJobs != 1 {
+		t.Fatalf("sharing change queued %d Home refresh jobs, err=%v", refreshJobs, err)
 	}
 	if _, err := settings.Set(ctx, sharingdomain.Setting{UserID: userID, Enabled: true}); err != nil {
 		t.Fatal(err)
