@@ -302,32 +302,44 @@ WHERE flickr_accounts.user_id=$1 AND flickr_accounts.status<>'revoked' AND ` + p
 	return page, nil
 }
 
-// ListContactAlbums reads visible album metadata for the user's known contacts.
-func (r *Repository) ListContactAlbums(ctx context.Context, userID int64, cursor *app.AlbumCursor, limit int) (app.ContactAlbumsPage, error) {
-	if ctx == nil || r == nil || r.db == nil || userID <= 0 || limit < 1 || limit > app.MaxPageSize {
-		return app.ContactAlbumsPage{}, errors.New("catalog: invalid contact album read request")
+// ListContactAlbums reads contact album metadata backed by a photo visible to the user.
+func (r *Repository) ListContactAlbums(ctx context.Context, userID int64, predicate sharingapp.SQLPredicate, cursor *app.AlbumCursor, limit int) (app.ContactAlbumsPage, error) {
+	if err := validateRead(ctx, r, userID, predicate, limit); err != nil {
+		return app.ContactAlbumsPage{}, err
 	}
-	query := `SELECT albums.id,albums.owner_nsid,albums.title,albums.updated_at
-FROM albums
-WHERE EXISTS (SELECT 1 FROM contacts
-JOIN flickr_accounts ON flickr_accounts.nsid=contacts.person_nsid
-WHERE contacts.contact_nsid=albums.owner_nsid AND flickr_accounts.user_id=$1
-AND flickr_accounts.status<>'revoked')`
-	args := []any{userID}
+	query := `WITH contact_owners AS MATERIALIZED (
+SELECT DISTINCT contacts.contact_nsid
+FROM flickr_accounts
+JOIN contacts ON contacts.person_nsid=flickr_accounts.nsid
+WHERE flickr_accounts.user_id=$1 AND flickr_accounts.status<>'revoked'
+)
+SELECT albums.id,albums.owner_nsid,albums.title,albums.updated_at
+FROM contact_owners
+JOIN LATERAL (
+SELECT a.id,a.owner_nsid,a.title,a.updated_at
+FROM albums a
+WHERE a.owner_nsid=contact_owners.contact_nsid
+AND EXISTS (SELECT 1 FROM album_photos
+JOIN photos ON photos.id=album_photos.photo_id AND photos.tombstoned_at IS NULL
+WHERE album_photos.album_id=a.id AND ` + predicate.Expression + `)`
+	args := append([]any(nil), predicate.Args...)
 	if cursor != nil {
 		if cursor.ID == "" {
 			return app.ContactAlbumsPage{}, app.ErrInvalidCursor
 		}
 		if cursor.UpdatedAt == nil {
-			query += ` AND albums.updated_at IS NULL AND albums.id<$2`
+			query += ` AND a.updated_at IS NULL AND a.id<$2`
 			args = append(args, cursor.ID)
 		} else {
-			query += ` AND ((albums.updated_at < $2) OR albums.updated_at IS NULL OR (albums.updated_at=$2 AND albums.id<$3))`
+			query += ` AND ((a.updated_at < $2) OR a.updated_at IS NULL OR (a.updated_at=$2 AND a.id<$3))`
 			args = append(args, *cursor.UpdatedAt, cursor.ID)
 		}
 	}
 	args = append(args, limit+1)
-	query += fmt.Sprintf(` ORDER BY albums.updated_at DESC NULLS LAST,albums.id DESC LIMIT $%d`, len(args))
+	pageLimit := len(args)
+	query += fmt.Sprintf(` ORDER BY a.updated_at DESC NULLS LAST,a.id DESC LIMIT $%d
+) AS albums ON true
+ORDER BY albums.updated_at DESC NULLS LAST,albums.id DESC LIMIT $%d`, pageLimit, pageLimit)
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return app.ContactAlbumsPage{}, fmt.Errorf("catalog: list contact albums: %w", err)

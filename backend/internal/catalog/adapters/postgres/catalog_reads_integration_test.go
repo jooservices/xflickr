@@ -126,6 +126,9 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 		{AlbumID: hiddenAlbumID, PhotoID: photoIDs[2], Position: 0},
 		{AlbumID: contactAlbumIDs[0], PhotoID: photoIDs[1], Position: 0},
 		{AlbumID: contactAlbumIDs[1], PhotoID: photoIDs[1], Position: 0},
+		{AlbumID: contactAlbumIDs[2], PhotoID: photoIDs[1], Position: 0},
+		{AlbumID: contactAlbumIDs[3], PhotoID: photoIDs[1], Position: 0},
+		{AlbumID: contactAlbumIDs[4], PhotoID: photoIDs[1], Position: 0},
 	}); err != nil {
 		t.Fatal(err)
 	}

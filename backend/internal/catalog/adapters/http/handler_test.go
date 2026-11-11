@@ -55,7 +55,7 @@ func (s *readRepoStub) ListVisibleAlbums(_ context.Context, _ int64, _ sharingap
 	return s.albums, s.listErr
 }
 
-func (s *readRepoStub) ListContactAlbums(_ context.Context, _ int64, _ *app.AlbumCursor, limit int) (app.ContactAlbumsPage, error) {
+func (s *readRepoStub) ListContactAlbums(_ context.Context, _ int64, _ sharingapp.SQLPredicate, _ *app.AlbumCursor, limit int) (app.ContactAlbumsPage, error) {
 	s.lastLimit = limit
 	s.listCalls++
 	return s.contactAlbums, s.listErr

@@ -57,13 +57,15 @@ operation already exists.
 | Cover | Neutral album placeholder | The list response does not include cover URLs. |
 | Live refresh | `GET /events` (exists) | Authenticated SSE. `albums.updated` **event contract request** with optional `contact_nsid`, `total`, and `updated_at`. |
 
-Album list visibility is based on the album owner's contact relationship to
-the signed-in user's connected accounts. Do not inspect photos, observations,
-or photo counts to include a list row. `updated_at` is ISO 8601 UTC or absent.
-Sort by `updated_at` descending, null timestamps last, then `id` descending.
-The server returns a bounded keyset page; contact filtering remains over the
-albums loaded in the browser. No response may contain Flickr credentials,
-private media, or secret values. Do not persist results in browser storage.
+Album list visibility requires both the album owner's contact relationship to
+the signed-in user's connected accounts and at least one non-tombstoned album
+photo visible to that user under the shared photo-visibility policy. This
+visibility check does not return or expose a photo count. `updated_at` is ISO
+8601 UTC or absent. Sort by `updated_at` descending, null timestamps last, then
+`id` descending. The server returns a bounded keyset page; contact filtering
+remains over the albums loaded in the browser. No response may contain Flickr
+credentials, private media, or secret values. Do not persist results in
+browser storage.
 
 The album-detail route `/albums/{id}` belongs to the album view contract and is
 not added here. A future album detail may show “N photos loaded” for its first

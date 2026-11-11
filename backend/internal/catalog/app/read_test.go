@@ -53,10 +53,8 @@ func (s *readRepositoryStub) ListVisibleAlbums(_ context.Context, userID int64, 
 	return s.albums, s.record(userID, predicate, limit)
 }
 
-func (s *readRepositoryStub) ListContactAlbums(_ context.Context, userID int64, _ *AlbumCursor, limit int) (ContactAlbumsPage, error) {
-	s.seenUser, s.seenLimit = userID, limit
-	s.seenPredicate = sharingapp.SQLPredicate{}
-	return s.contactAlbums, s.err
+func (s *readRepositoryStub) ListContactAlbums(_ context.Context, userID int64, predicate sharingapp.SQLPredicate, _ *AlbumCursor, limit int) (ContactAlbumsPage, error) {
+	return s.contactAlbums, s.record(userID, predicate, limit)
 }
 
 func (s *readRepositoryStub) ListVisibleAlbumPhotos(_ context.Context, userID int64, _ string, predicate sharingapp.SQLPredicate, _ *AlbumPhotoCursor, limit int) (AlbumPhotosPage, error) {
@@ -102,7 +100,7 @@ func TestReadServiceAppliesPolicyAndEncodesKeysets(t *testing.T) {
 	if err != nil || len(contactPage.Items) != 1 || contactPage.Items[0].OwnerNSID != "contact" || contactCursor == "" {
 		t.Fatalf("contact albums=%+v cursor=%q err=%v", contactPage, contactCursor, err)
 	}
-	if repo.seenUser != 42 || repo.seenLimit != 25 || repo.seenPredicate.Expression != "" {
+	if repo.seenUser != 42 || repo.seenLimit != 25 || repo.seenPredicate.Expression == "" || len(repo.seenPredicate.Args) != 1 || repo.seenPredicate.Args[0] != int64(42) {
 		t.Fatalf("contact album scope=%+v", repo)
 	}
 	repo.albumPhotos = AlbumPhotosPage{NextCursor: &AlbumPhotoCursor{Position: 3, PhotoID: 9}}
