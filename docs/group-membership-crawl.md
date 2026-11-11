@@ -2,8 +2,9 @@
 
 The `groups` facet uses the existing `flickr.people.getGroups` request and
 page flow. A non-null `groups` object is required. A `group` array may be empty
-or omitted; both represent a valid empty response. A null group list, malformed
-JSON, or a value with the wrong JSON type is an error.
+or omitted when the response is terminal. An empty page is an error when
+`pages` reports that more pages remain. A null group list, malformed JSON, or a
+value with the wrong JSON type is an error.
 
 Every group must include an `nsid` and `name` that remain non-empty after
 trimming whitespace. The crawler stores their original values. It validates the

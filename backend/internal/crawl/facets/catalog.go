@@ -146,6 +146,9 @@ func (Groups) Handle(_ context.Context, p domain.Page) (domain.Result, error) {
 			return domain.Result{}, fmt.Errorf("crawl facets: decode groups: %w", err)
 		}
 	}
+	if len(items) == 0 && p.Number < e.Groups.Pages {
+		return domain.Result{}, fmt.Errorf("crawl facets: decode groups: empty page before final page")
+	}
 	for i, x := range items {
 		if strings.TrimSpace(x.NSID) == "" {
 			return domain.Result{}, fmt.Errorf("crawl facets: decode groups: group %d has no nsid", i+1)

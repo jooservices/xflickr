@@ -163,7 +163,7 @@ func TestGroupsAcceptsEmptyEnvelope(t *testing.T) {
 
 func TestGroupsRejectsEmptyPageWhenMorePagesRemain(t *testing.T) {
 	for name, payload := range map[string]string{
-		"empty group list": `{"groups":{"pages":2,"group":[]}}`,
+		"empty group list":   `{"groups":{"pages":2,"group":[]}}`,
 		"omitted group list": `{"groups":{"pages":2}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
