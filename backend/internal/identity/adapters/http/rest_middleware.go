@@ -31,7 +31,7 @@ func RequestBodyLimit(next http.Handler) http.Handler {
 func LegacyIdentityRoutes(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		legacy := r.URL.Path == "/auth" || strings.HasPrefix(r.URL.Path, "/auth/")
-		if (r.URL.Path == "/me" || strings.HasPrefix(r.URL.Path, "/me/")) && r.URL.Path != "/me/crawl" && !strings.HasPrefix(r.URL.Path, "/me/crawl/") &&
+		if (r.URL.Path == "/me" || strings.HasPrefix(r.URL.Path, "/me/")) && r.URL.Path != "/me/home" && r.URL.Path != "/me/crawl" && !strings.HasPrefix(r.URL.Path, "/me/crawl/") &&
 			r.URL.Path != "/me/contacts" && !strings.HasPrefix(r.URL.Path, "/me/contacts/") {
 			legacy = true
 		}
