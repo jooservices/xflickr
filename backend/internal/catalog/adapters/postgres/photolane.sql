@@ -25,11 +25,12 @@ WITH rows AS (
     LIMIT $1::int
 ), owners AS (
     SELECT ranked.*, owner_account.id AS account_id,
+           owner_account.key_id AS owner_key_id,
            (cursor.value::jsonb ->> 'uploaded_at')::timestamptz AS cursor_uploaded_at,
            (cursor.value::jsonb ->> 'photo_id')::bigint AS cursor_photo_id
     FROM ranked
     LEFT JOIN LATERAL (
-        SELECT account.id
+        SELECT account.id, account.key_id
         FROM flickr_accounts AS account
         JOIN api_keys AS owner_key
           ON owner_key.id = account.key_id
@@ -47,7 +48,7 @@ WITH rows AS (
     LEFT JOIN schedule_meta AS cursor
       ON cursor.key = 'photo_lane_cursor:' || ranked.person_nsid
 ), photo_batches AS (
-    SELECT o.person_nsid, o.tier, o.sub, o.depth, o.account_id,
+    SELECT o.person_nsid, o.tier, o.sub, o.depth, o.account_id, o.owner_key_id,
            p.id, p.owner_nsid,
            p.uploaded_at, p.sizes_status, p.sizes_checked_at, p.last_update,
            p.visibility, p.server
@@ -111,14 +112,15 @@ WITH rows AS (
     SELECT p.*
     FROM photo_batches AS p
     WHERE (p.sizes_status = 'unavailable' OR p.server = '65535')
-      AND (p.account_id IS NULL OR NOT EXISTS (
+      AND p.account_id IS NOT NULL
+      AND NOT EXISTS (
           SELECT 1
           FROM photo_account_sizes AS result
           WHERE result.photo_id = p.id
             AND result.account_id = p.account_id
             AND result.photo_updated_at = p.last_update
             AND result.photo_visibility = p.visibility
-      ))
+      )
 ), optional_photos AS (
     SELECT p.*
     FROM photo_batches AS p
@@ -172,7 +174,7 @@ WITH rows AS (
           AND result.photo_visibility = p.visibility
     ) AS account_sizes ON true
 ), candidates AS (
-    SELECT p.id, p.owner_nsid, p.tier, p.sub, p.depth, p.uploaded_at,
+    SELECT p.id, p.owner_nsid, p.owner_key_id, p.tier, p.sub, p.depth, p.uploaded_at,
            0 AS facet_priority, 0 AS facet_order, 'sizes'::text AS facet
     FROM photo_states AS p
     WHERE (p.sizes_status <> 'confirmed'
@@ -182,7 +184,7 @@ WITH rows AS (
 
     UNION ALL
 
-    SELECT p.id, p.owner_nsid, p.tier, p.sub, p.depth, p.uploaded_at,
+    SELECT p.id, p.owner_nsid, p.owner_key_id, p.tier, p.sub, p.depth, p.uploaded_at,
            1 AS facet_priority, f.facet_order::int, f.facet
     FROM photo_states AS p
     CROSS JOIN UNNEST($3::text[]) WITH ORDINALITY AS f(facet, facet_order)
@@ -201,8 +203,7 @@ WITH rows AS (
     SELECT DISTINCT ON (batch.person_nsid)
            batch.person_nsid, batch.id, batch.uploaded_at
     FROM photo_batches AS batch
-    WHERE NOT (SELECT more FROM counts)
-      AND NOT EXISTS (
+    WHERE NOT EXISTS (
           SELECT 1 FROM candidates WHERE candidates.owner_nsid = batch.person_nsid
       )
     ORDER BY batch.person_nsid, batch.uploaded_at ASC NULLS FIRST, batch.id ASC
@@ -214,7 +215,7 @@ WITH rows AS (
     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
     RETURNING key
 )
-SELECT counts.more, jobs.id, jobs.owner_nsid, jobs.facet
+SELECT counts.more, jobs.id, jobs.owner_nsid, jobs.facet, jobs.owner_key_id
 FROM counts
 CROSS JOIN (SELECT count(*) FROM cursor_writes) AS cursor_write_count
 LEFT JOIN LATERAL (

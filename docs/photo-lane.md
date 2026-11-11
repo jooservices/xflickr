@@ -120,11 +120,17 @@ result can unlock a facet while global sizes remain provisional.
 Each owner contributes at most 50 live photos to one selection. The query
 applies that limit before checking account-scoped size results and optional
 facet status, using `photos_owner_live_idx` to read each bounded page in upload
-order. A per-owner keyset cursor in `schedule_meta` stores the last upload time
-and photo ID. It advances only after the current page has no eligible jobs and
-the person probe is complete; when the cursor reaches the end, selection wraps
-to the newest page. This lets the lane move past photos already processed by an
-account or facet without repeatedly scanning the owner's full catalog.
+order. A current, valid owner account supplies its key for background size
+jobs, even when another user's interest ranks that contact first. Restricted
+placeholders without a valid owner account are excluded from the background
+lane. Other size jobs continue to use the key pool.
+
+A per-owner keyset cursor in `schedule_meta` stores the last upload time and
+photo ID. It advances only after that owner's current page has no eligible
+jobs, independently of whether more people remain outside the current probe.
+When the cursor reaches the end, selection wraps to the newest page. This lets
+the lane move past photos already processed by an account or facet without
+repeatedly scanning the owner's full catalog.
 
 The account-scoped result primary key `(photo_id, account_id)` supports
 skipping an existing result for the selected owner account. Partition indexes

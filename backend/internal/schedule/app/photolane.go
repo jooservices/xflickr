@@ -150,12 +150,19 @@ func (l PhotoLane) enqueue(ctx context.Context, ref catalogapp.PhotoRef) (bool, 
 	if facet == "" {
 		facet = PhotoFacet
 	}
-	key, err := l.Keys.Choose(ctx, ref.OwnerNSID, quotadomain.Photo)
-	if errors.Is(err, quotaapp.ErrNoKey) {
-		return false, nil
+	var key quotaapp.KeyID
+	if facet == PhotoFacet {
+		key = quotaapp.KeyID(ref.OwnerKeyID)
 	}
-	if err != nil {
-		return false, fmt.Errorf("schedule: choose key for photo %d: %w", ref.ID, err)
+	if key == 0 {
+		var err error
+		key, err = l.Keys.Choose(ctx, ref.OwnerNSID, quotadomain.Photo)
+		if errors.Is(err, quotaapp.ErrNoKey) {
+			return false, nil
+		}
+		if err != nil {
+			return false, fmt.Errorf("schedule: choose key for photo %d: %w", ref.ID, err)
+		}
 	}
 	if l.Eligibility != nil {
 		allowed, err := l.Eligibility.PhotoFacetAllowed(ctx, ref.ID, int64(key), facet)

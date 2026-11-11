@@ -80,13 +80,18 @@ func (l PhotoLane) probe(ctx context.Context, persons, photos int, optionalFacet
 	more := false
 	for rows.Next() {
 		var id *int64
+		var ownerKeyID *int64
 		var owner *string
 		var facet *string
-		if err := rows.Scan(&more, &id, &owner, &facet); err != nil {
+		if err := rows.Scan(&more, &id, &owner, &facet, &ownerKeyID); err != nil {
 			return nil, false, fmt.Errorf("catalog: scan photo lane: %w", err)
 		}
 		if id != nil && owner != nil && facet != nil {
-			out = append(out, app.PhotoRef{ID: *id, OwnerNSID: *owner, Facet: *facet})
+			ref := app.PhotoRef{ID: *id, OwnerNSID: *owner, Facet: *facet}
+			if ownerKeyID != nil {
+				ref.OwnerKeyID = *ownerKeyID
+			}
+			out = append(out, ref)
 		}
 	}
 	if err := rows.Err(); err != nil {

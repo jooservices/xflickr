@@ -455,6 +455,190 @@ func TestPhotoLaneContinuesPastResolvedPhotoBatches(t *testing.T) {
 	}
 }
 
+func TestPhotoLaneSkipsRestrictedPhotosWithoutAnOwnerAccount(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	suffix := fmt.Sprintf("lane-no-owner-%d", time.Now().UnixNano())
+	owner := suffix + "-contact"
+	var userID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role)
+		VALUES($1,'integration-hash','user') RETURNING id`, suffix+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred)
+		VALUES($1,$2,1,'contact',true)`, userID, owner); err != nil {
+		t.Fatal(err)
+	}
+	photoID := time.Now().UnixNano()
+	if _, err := pool.Exec(ctx, `INSERT INTO photos
+		(id,owner_nsid,server,last_update,visibility,sizes,sizes_status,raw,content_hash)
+		VALUES($1,$2,'65535',now(),'public','[]'::jsonb,'unavailable','{}',decode(repeat('ab',32),'hex'))`, photoID, owner); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE id=$1`, photoID)
+		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid=$1`, owner)
+		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id=$1`, userID)
+	})
+
+	refs, err := (postgres.PhotoLane{Pool: pool}).Select(ctx, 1, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range refs {
+		if ref.ID == photoID {
+			t.Fatalf("selected restricted photo %d without an eligible owner account", photoID)
+		}
+	}
+}
+
+func TestPhotoLaneReturnsOwnerKeyWhenFollowerRanksPhotoOwner(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	suffix := fmt.Sprintf("lane-owner-key-%d", time.Now().UnixNano())
+	owner := suffix + "-owner"
+	var ownerUser, followerUser, ownerKey, followerKey, accountID int64
+	for _, user := range []struct {
+		email string
+		id    *int64
+	}{{suffix + "-owner@example.test", &ownerUser}, {suffix + "-follower@example.test", &followerUser}} {
+		if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role)
+			VALUES($1,'integration-hash','user') RETURNING id`, user.email).Scan(user.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, key := range []struct {
+		userID int64
+		label  string
+		id     *int64
+	}{{ownerUser, "owner", &ownerKey}, {followerUser, "follower", &followerKey}} {
+		if err := pool.QueryRow(ctx, `INSERT INTO api_keys
+			(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst,status)
+			VALUES($1,$2,$3,'{}',3600,4,5,'valid') RETURNING id`, key.userID, key.label, suffix+"-"+key.label).Scan(key.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts
+		(user_id,key_id,nsid,username,token_sealed,secret_sealed,status)
+		VALUES($1,$2,$3,'owner','{}','{}','ok') RETURNING id`, ownerUser, ownerKey, owner).Scan(&accountID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred)
+		VALUES($1,$2,0,'connected_account',false),($3,$2,2,'contact',true)`, ownerUser, owner, followerUser); err != nil {
+		t.Fatal(err)
+	}
+	photoID := time.Now().UnixNano()
+	if _, err := pool.Exec(ctx, `INSERT INTO photos
+		(id,owner_nsid,server,last_update,visibility,sizes,sizes_status,raw,content_hash)
+		VALUES($1,$2,'65535',now(),'public','[]'::jsonb,'unavailable','{}',decode(repeat('ab',32),'hex'))`, photoID, owner); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE id=$1`, photoID)
+		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid=$1`, owner)
+		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id=ANY($1)`, []int64{ownerUser, followerUser})
+	})
+
+	refs, err := (postgres.PhotoLane{Pool: pool}).Select(ctx, 1, 0, nil)
+	if err != nil || len(refs) != 1 || refs[0].ID != photoID {
+		t.Fatalf("Select() = %+v, %v; want the restricted owner photo", refs, err)
+	}
+	if refs[0].OwnerKeyID != ownerKey || refs[0].OwnerKeyID == followerKey {
+		t.Fatalf("selected owner key = %d, want owner key %d instead of follower key %d", refs[0].OwnerKeyID, ownerKey, followerKey)
+	}
+}
+
+func TestPhotoLaneAdvancesResolvedOwnerCursorWhenPersonProbeIsFull(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	suffix := fmt.Sprintf("lane-many-owners-%d", time.Now().UnixNano())
+	owners := make([]string, 130)
+	for i := range owners {
+		owners[i] = fmt.Sprintf("0000-%s-%03d", suffix, i)
+	}
+	var userID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role)
+		VALUES($1,'integration-hash','user') RETURNING id`, suffix+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range owners {
+		if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred,selected_until)
+		VALUES($1,$2,0,'test',true,now()+interval '1 hour'),
+		      ($1,$3,0,'test',false,now()+interval '1 hour')`, userID, owners[0], owners[1]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred)
+		SELECT $1,nsid,1,'test',true FROM unnest($2::text[]) AS nsid`, userID, owners[2:]); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now().UnixNano() % 1_000_000_000 * 100
+	if _, err := pool.Exec(ctx, `INSERT INTO photos
+		(id,owner_nsid,server,last_update,visibility,sizes,sizes_status,sizes_checked_at,uploaded_at,raw,content_hash)
+		VALUES($1,$2,'1234',now(),'public','[]'::jsonb,'provisional',NULL,now(),'{}',decode(repeat('ab',32),'hex'))`, base, owners[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO photos
+		(id,owner_nsid,server,last_update,visibility,sizes,sizes_status,sizes_checked_at,uploaded_at,raw,content_hash)
+		SELECT $1+n::bigint,$2,'1234',now(),'public','[]'::jsonb,'confirmed',now(),
+		       now()-n*interval '1 second','{}',decode(repeat('cd',32),'hex')
+		FROM generate_series(1,50) AS n`, base+100, owners[1]); err != nil {
+		t.Fatal(err)
+	}
+	keys := make([]string, len(owners))
+	for i, owner := range owners {
+		keys[i] = "photo_lane_cursor:" + owner
+	}
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM schedule_meta WHERE key=ANY($1)`, keys)
+		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE owner_nsid=ANY($1)`, owners)
+		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid=ANY($1)`, owners)
+		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id=$1`, userID)
+	})
+
+	refs, err := (postgres.PhotoLane{Pool: pool}).Select(ctx, 1, 0, nil)
+	if err != nil || len(refs) != 1 || refs[0].ID != base {
+		t.Fatalf("Select() = %+v, %v; want the first owner's pending photo", refs, err)
+	}
+	var cursor string
+	if err := pool.QueryRow(ctx, `SELECT value FROM schedule_meta WHERE key=$1`, keys[1]).Scan(&cursor); err != nil {
+		t.Fatalf("read resolved owner's cursor: %v", err)
+	}
+	var got struct {
+		PhotoID int64 `json:"photo_id"`
+	}
+	if err := json.Unmarshal([]byte(cursor), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.PhotoID != base+150 {
+		t.Fatalf("resolved owner cursor photo = %d, want %d", got.PhotoID, base+150)
+	}
+}
+
 func TestPhotoLanePlanBoundsPhotoReads(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")

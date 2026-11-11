@@ -125,6 +125,23 @@ func TestPhotoLaneNextEnqueuesInOrderWithKeyAndDedupeKey(t *testing.T) {
 	}
 }
 
+func TestPhotoLaneUsesOwnerAccountKeyInsteadOfInterestPoolKey(t *testing.T) {
+	enqueuer := &fakeEnqueuer{}
+	lane := PhotoLane{
+		Selector: &fakeSelector{refs: []catalogapp.PhotoRef{{
+			ID: 8, OwnerNSID: "owner", OwnerKeyID: 99, Facet: PhotoFacet,
+		}}},
+		Keys:  fakeChooser{},
+		Queue: enqueuer,
+	}
+	if ids, err := lane.Next(t.Context(), 1); err != nil || !reflect.DeepEqual(ids, []int64{8}) {
+		t.Fatalf("Next() = %v, %v; want the owner's photo job", ids, err)
+	}
+	if got := enqueuer.jobs[0].KeyID; got != 99 {
+		t.Fatalf("background size key = %d; want owner account key 99", got)
+	}
+}
+
 func TestPhotoLaneNextSkipsQueuedAndKeylessPhotosAndPages(t *testing.T) {
 	selector := &fakeSelector{refs: []catalogapp.PhotoRef{{ID: 1, OwnerNSID: "owner"}, {ID: 2, OwnerNSID: "nokey"}, {ID: 3, OwnerNSID: "owner"}, {ID: 4, OwnerNSID: "owner"}}}
 	enqueuer := &fakeEnqueuer{queued: map[string]bool{"photo:1:sizes": true}}
