@@ -148,7 +148,7 @@ func TestEnsureAlbumRejectsInvalidNames(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests.Add(1) }))
 	t.Cleanup(server.Close)
 	client := mustClient(t, server.Client(), server.URL, testToken)
-	for _, name := range []string{"", " \t ", ".", "..", "bad/name", `bad\name`, "bad*name", "bad<name", "bad>name", "bad?name", "bad:name", "bad|name", `bad"name`, "bad\nname", "trailing."} {
+	for _, name := range []string{"", " \t ", ".", "..", "~folder", "bad/name", `bad\name`, "bad*name", "bad<name", "bad>name", "bad?name", "bad:name", "bad|name", `bad"name`, "bad\nname", "trailing."} {
 		t.Run(fmt.Sprintf("%q", name), func(t *testing.T) {
 			if _, err := client.EnsureAlbum(t.Context(), name); !errors.Is(err, app.ErrInvalidAlbum) {
 				t.Fatalf("EnsureAlbum() error = %v, want ErrInvalidAlbum", err)

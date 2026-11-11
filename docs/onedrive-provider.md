@@ -7,9 +7,10 @@ SharePoint or broader file permissions.
 
 Each call resolves `/me/drive/special/approot` again, then looks up or creates
 one direct child folder. The returned `RemoteAlbumID` is the Graph driveItem ID.
-Names are trimmed and validated as one folder name; path separators and
-OneDrive-invalid characters are rejected before any request. URL path segments
-are escaped independently.
+Names are trimmed and validated as one folder name; path separators,
+OneDrive-invalid characters, names beginning with `~`, and names ending with a
+period are rejected before any request. URL path segments are escaped
+independently.
 
 HTTP 401 and 429 map to `app.ErrAuthentication` and `app.ErrRateLimited`.
 Other Graph failures and malformed folder responses return contextual errors

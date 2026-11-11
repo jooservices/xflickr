@@ -192,7 +192,8 @@ func graphStatusError(operation string, status int) error {
 }
 
 func validFolderName(name string) bool {
-	if name == "" || name == "." || name == ".." || strings.HasSuffix(name, ".") {
+	if name == "" || name == "." || name == ".." ||
+		strings.HasPrefix(name, "~") || strings.HasSuffix(name, ".") {
 		return false
 	}
 	for _, char := range name {
