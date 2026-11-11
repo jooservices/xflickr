@@ -183,7 +183,9 @@ func TestPhotoFacetEligibilityUsesTheSelectedKeyOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM flickr_accounts WHERE id=$1`, accountID)
+		if _, err := pool.Exec(context.Background(), `DELETE FROM flickr_accounts WHERE id=$1`, accountID); err != nil {
+			t.Errorf("clean up owner account: %v", err)
+		}
 	})
 	// The prior OAuth job may have exhausted transient retries without recording
 	// an account restriction. Its anonymous restriction must not close the lane.
