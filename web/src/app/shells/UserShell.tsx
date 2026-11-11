@@ -166,7 +166,11 @@ function Shell({ forbidden }: UserShellProps) {
   useRouteFocus();
 
   useEffect(() => {
-    const onExpired = () => setSessionExpired(true);
+    const onExpired = () => {
+      // The session ended: nothing scoped to it may reappear after the next sign-in.
+      clearSessionScopedStorage();
+      setSessionExpired(true);
+    };
     window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, []);

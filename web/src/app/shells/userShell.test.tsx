@@ -5,6 +5,8 @@ import { apiKeyBody, flickrAccountBody } from '../../test/fixtures';
 import { server } from '../../test/server';
 import { adminSession, renderApp, userSession } from '../../test/render';
 
+import { SESSION_EXPIRED_EVENT } from '../../shared/api/sessionEvents';
+import { SESSION_SCOPED_KEY_PREFIX } from '../../shared/sessionScoped';
 import { USER_NAV } from './nav';
 
 beforeEach(() => {
@@ -529,5 +531,22 @@ describe('crawling-off banner', () => {
       'shell-token-expired-banner-11',
       'shell-token-expired-banner-12',
     ]);
+  });
+
+  it('drops session-scoped storage when the session expires so it cannot return after sign-in', async () => {
+    window.sessionStorage.setItem(`${SESSION_SCOPED_KEY_PREFIX}library.selection.1`, '[1,2]');
+    window.sessionStorage.setItem('unrelated', 'kept');
+    renderApp({ session: userSession, path: '/profile' });
+    await screen.findByTestId('shell-nav-profile');
+
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+
+    await waitFor(() =>
+      expect(
+        window.sessionStorage.getItem(`${SESSION_SCOPED_KEY_PREFIX}library.selection.1`),
+      ).toBeNull(),
+    );
+    expect(window.sessionStorage.getItem('unrelated')).toBe('kept');
+    window.sessionStorage.clear();
   });
 });
