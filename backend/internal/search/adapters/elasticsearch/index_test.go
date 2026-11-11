@@ -226,8 +226,10 @@ func TestUpsertDocument(t *testing.T) {
 	var requests int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
-		if r.Method != http.MethodPut || r.URL.Path != basePath+"/xflickr_wtjooxf134_photos/_doc/42" || r.URL.RawQuery != "" {
-			t.Errorf("request = %s %s?%s, want PUT to the write alias without a query", r.Method, r.URL.Path, r.URL.RawQuery)
+		if r.Method != http.MethodPut ||
+			r.URL.Path != basePath+"/xflickr_wtjooxf134_photos/_doc/42" ||
+			r.URL.Query().Get("require_alias") != "true" {
+			t.Errorf("request = %s %s?%s, want require_alias=true", r.Method, r.URL.Path, r.URL.RawQuery)
 		}
 		if got := r.Header.Get("Content-Type"); got != "application/json" {
 			t.Errorf("Content-Type = %q, want application/json", got)
@@ -302,6 +304,32 @@ func TestUpsertDocument(t *testing.T) {
 			t.Fatalf("Upsert() error = %v", err)
 		}
 	})
+}
+
+func TestUpsertRequiresExistingAlias(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.URL.Path != "/xflickr_photos/_doc/42" {
+			t.Errorf("request path = %q, want the configured write alias", r.URL.Path)
+		}
+		if r.URL.Query().Get("require_alias") != "true" {
+			// Without strict alias mode, Elasticsearch may auto-create this target.
+			w.WriteHeader(http.StatusCreated)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(server.Close)
+	index := newTestIndex(t, server.URL, "", "", "xflickr_", server.Client())
+
+	err := index.Upsert(t.Context(), app.Document{ID: 42})
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprint(http.StatusNotFound)) {
+		t.Fatalf("Upsert() error = %v, want missing-alias status %d", err, http.StatusNotFound)
+	}
+	if requests != 1 {
+		t.Fatalf("HTTP requests = %d, want exactly one", requests)
+	}
 }
 
 func TestUpsertInvalidDocument(t *testing.T) {

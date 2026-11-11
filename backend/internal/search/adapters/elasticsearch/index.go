@@ -88,7 +88,8 @@ func (i *Index) Upsert(ctx context.Context, doc app.Document) error {
 		return fmt.Errorf("elasticsearch: encode document: %w", err)
 	}
 
-	target := i.baseURL + "/" + i.prefix + "photos/_doc/" + strconv.FormatInt(doc.ID, 10)
+	target := i.baseURL + "/" + i.prefix + "photos/_doc/" +
+		strconv.FormatInt(doc.ID, 10) + "?require_alias=true"
 	request, err := http.NewRequestWithContext(ctx, http.MethodPut, target, bytes.NewReader(body))
 	if err != nil {
 		return requestError{operation: "upsert document", cause: err}
