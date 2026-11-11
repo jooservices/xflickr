@@ -220,7 +220,7 @@ var schemas = map[Key]JSONSchema{
 	ScoreWeightDepth:          {Type: "number", Minimum: minZero},
 	ScoreWeightAgeMinutes:     {Type: "number", Minimum: minZero},
 	ScoreAgingBatchSize:       {Type: "integer", Minimum: minOne},
-	QueueReclaimBatchSize:     {Type: "integer", Minimum: minOne},
+	QueueReclaimBatchSize:     {Type: "integer", Minimum: minOne, Maximum: floatPointer(10000)},
 	OpsHealthInterval:         {Type: "integer", Minimum: floatPointer(10), Maximum: floatPointer(3600)},
 	OpsHealthStatementTimeout: {Type: "integer", Minimum: floatPointer(1), Maximum: floatPointer(60)},
 	APICallLogRetentionDays:   {Type: "integer", Minimum: floatPointer(7), Maximum: floatPointer(365)},
