@@ -61,6 +61,10 @@ stored in `photo_account_sizes` with the exact photo version and visibility.
 Catalog and download reads return those URLs only to that account's XFlickr
 user while the account remains active and the photo version and visibility
 match. Sharing a photo observation does not share its OAuth-authorized sizes.
+Background jobs consider only owner-account outcomes before deciding whether
+owner confirmation is complete; another account's stored result cannot stop
+that lane. Interactive jobs may reuse a current result from any of the
+requesting user's eligible accounts.
 
 A failed signed attempt records its restriction by account ID and stores an
 account-scoped `unavailable` result without resolving waiting downloads yet.
@@ -131,7 +135,13 @@ owner, upload time, and photo ID with tombstones excluded. The existing
 A current, valid owner account supplies its key for background size jobs, even
 when another user's interest ranks that contact first.
 Restricted placeholders without a valid owner account are excluded from the
-background lane. Other size jobs continue to use the key pool.
+background lane. For other photos, the selector matches current anonymous
+restrictions to each interested user's API keys. If no valid owner account can
+continue the confirmation and every valid key for a selected or starred
+interest is restricted for the current photo version, the lane skips that
+photo and advances its owner cursor. An on-demand request can still try the
+requesting user's eligible accounts. Other unrestricted size jobs continue to
+use the key pool.
 
 A per-owner keyset cursor in `schedule_meta` stores the last upload time and
 photo ID. It advances only after that owner's current page has no eligible

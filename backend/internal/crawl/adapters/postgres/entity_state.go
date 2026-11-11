@@ -72,13 +72,15 @@ func (s EntityStates) RecordFailure(ctx context.Context, a app.EntityAccess, sta
 func (s EntityStates) PhotoFacetAllowed(ctx context.Context, photoID, keyID int64, facet string) (bool, error) {
 	var id string
 	var version time.Time
-	err := s.DB.QueryRow(ctx, `SELECT id::text,last_update FROM photos WHERE id=$1`, photoID).Scan(&id, &version)
+	var userID int64
+	err := s.DB.QueryRow(ctx, `SELECT p.id::text,p.last_update,k.user_id
+	FROM photos AS p JOIN api_keys AS k ON k.id=$2 WHERE p.id=$1`, photoID, keyID).Scan(&id, &version, &userID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	blocked, err := s.Suppressed(ctx, app.EntityAccess{EntityRef: app.EntityRef{Kind: "photo", ID: id}, KeyID: keyID, Facet: facet, Version: version}, time.Now())
+	blocked, err := s.Suppressed(ctx, app.EntityAccess{EntityRef: app.EntityRef{Kind: "photo", ID: id}, UserID: userID, KeyID: keyID, Facet: facet, Version: version}, time.Now())
 	return !blocked, err
 }

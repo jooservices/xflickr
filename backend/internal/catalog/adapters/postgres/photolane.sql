@@ -101,14 +101,36 @@ WITH rows AS (
            OR p.sizes_status NOT IN ('confirmed', 'unavailable')
            OR (p.sizes_status = 'confirmed'
                AND p.sizes_checked_at < p.last_update))
-      AND (p.account_id IS NULL OR NOT EXISTS (
-          SELECT 1
-          FROM photo_account_sizes AS result
-          WHERE result.photo_id = p.id
-            AND result.account_id = p.account_id
-            AND result.photo_updated_at = p.last_update
-            AND result.photo_visibility = p.visibility
-      ))
+      AND (
+          (p.account_id IS NOT NULL AND NOT EXISTS (
+              SELECT 1
+              FROM photo_account_sizes AS result
+              WHERE result.photo_id = p.id
+                AND result.account_id = p.account_id
+                AND result.photo_updated_at = p.last_update
+                AND result.photo_visibility = p.visibility
+          ))
+          OR (p.account_id IS NULL AND EXISTS (
+              SELECT 1
+              FROM crawl_interests AS interest
+              JOIN api_keys AS available_key
+                ON available_key.user_id = interest.user_id
+               AND available_key.status = 'valid'
+              WHERE interest.person_nsid = p.owner_nsid
+                AND (interest.starred OR interest.selected_until > now())
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM entity_facet_restrictions AS restriction
+                    WHERE restriction.entity_type = 'photo'
+                      AND restriction.entity_id = p.id::text
+                      AND restriction.facet = 'sizes'
+                      AND restriction.user_id = interest.user_id
+                      AND restriction.key_id = available_key.id
+                      AND restriction.account_id IS NULL
+                      AND restriction.photo_updated_at >= p.last_update
+                )
+          ))
+      )
 ), restricted_photos AS (
     SELECT p.*
     FROM photo_batches AS p

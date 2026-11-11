@@ -27,6 +27,9 @@ func (r stateRow) Scan(dest ...any) error {
 	} else {
 		*dest[0].(*string) = "42"
 		*dest[1].(*time.Time) = time.Unix(100, 0)
+		if len(dest) == 3 {
+			*dest[2].(*int64) = 7
+		}
 	}
 	return nil
 }

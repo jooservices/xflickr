@@ -45,14 +45,24 @@ func ChooseSizesAuth(in SizesAuthInput) SizesAuthDecision {
 	if !in.Placeholder && !in.Restricted {
 		return SizesAuthDecision{Kind: SizesAuthAnonymous}
 	}
-	for _, candidate := range in.Candidates {
-		if !in.OnDemand && !candidate.Owner {
-			continue
-		}
+	for _, candidate := range eligibleSizesAuthCandidates(in.Candidates, in.OnDemand) {
 		if in.Blocked != nil && in.Blocked(candidate) {
 			continue
 		}
 		return SizesAuthDecision{Kind: SizesAuthAccount, Candidate: candidate}
 	}
 	return SizesAuthDecision{Kind: SizesAuthNone}
+}
+
+func eligibleSizesAuthCandidates(candidates []crawldomain.SizesAuthCandidate, onDemand bool) []crawldomain.SizesAuthCandidate {
+	if onDemand {
+		return candidates
+	}
+	eligible := make([]crawldomain.SizesAuthCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.Owner {
+			eligible = append(eligible, candidate)
+		}
+	}
+	return eligible
 }

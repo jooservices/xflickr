@@ -201,6 +201,8 @@ func (s Sizes) decideAuth(ctx context.Context, job SizesJob, photo catalog.Photo
 			return SizesAuthDecision{}, fmt.Errorf("crawl: list sizes auth candidates for photo %d: %w", job.PhotoID, err)
 		}
 	}
+	onDemand := job.Class == string(quotadomain.Interactive)
+	candidates = eligibleSizesAuthCandidates(candidates, onDemand)
 	blocked := map[int64]bool{}
 	existingStatus := catalog.SizesStatus("")
 	for _, candidate := range candidates {
@@ -239,7 +241,7 @@ func (s Sizes) decideAuth(ctx context.Context, job SizesJob, photo catalog.Photo
 	decision := ChooseSizesAuth(SizesAuthInput{
 		Placeholder: photo.HasRestrictedPlaceholder(),
 		Restricted:  restricted,
-		OnDemand:    job.Class == string(quotadomain.Interactive),
+		OnDemand:    onDemand,
 		Candidates:  candidates,
 		Blocked:     func(candidate crawldomain.SizesAuthCandidate) bool { return blocked[candidate.AccountID] },
 	})
