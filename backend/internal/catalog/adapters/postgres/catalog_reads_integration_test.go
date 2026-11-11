@@ -696,12 +696,12 @@ func TestContactsKeysetPageUsesReverseIndexAndBoundedPlan(t *testing.T) {
 	if _, err := tx.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid) SELECT $1, contact_nsid FROM unnest($2::text[]) AS contacts(contact_nsid)`, account, contacts); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO photos(id,owner_nsid,last_update,visibility,raw,content_hash)
-SELECT $1::bigint + photo_number::bigint,
-       CASE WHEN photo_number < $4::bigint + $5::bigint THEN $2 ELSE ($3::text[])[((photo_number - $4::bigint - $5::bigint) % ($6::bigint - 1)) + 2] END,
-       now(),CASE WHEN photo_number >= $4::bigint AND photo_number < $4::bigint + $5::bigint THEN 'public' ELSE 'private' END,
+	if _, err := tx.Exec(ctx, `INSERT INTO photos(id,owner_nsid,last_update,last_seen_at,visibility,raw,content_hash)
+SELECT $1::bigint + photo_number::bigint, $2,
+       now(),now() - photo_number::double precision * interval '1 microsecond',
+       CASE WHEN photo_number >= $3::bigint AND photo_number < $3::bigint + $4::bigint THEN 'public' ELSE 'private' END,
        '{}'::jsonb,decode(repeat('00',32),'hex')
-FROM generate_series(0,$7::bigint-1) AS fixture(photo_number)`, photoBase, contacts[0], contacts, visiblePhotoCount, sharedPhotoCount, len(contacts), fixturePhotoCount); err != nil {
+FROM generate_series(0,$5::bigint-1) AS fixture(photo_number)`, photoBase, contacts[0], visiblePhotoCount, sharedPhotoCount, fixturePhotoCount); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id)
@@ -774,6 +774,16 @@ FROM generate_series(0,$4::bigint-1) AS fixture(photo_number)`, unsharedUserID, 
 	if scans := contactsPhotoPlanSeqScans(plan); len(scans) > 0 {
 		t.Fatalf("contacts visible-photo count plan uses sequential scans on large relations: %v", scans)
 	}
+	// Merge Append can prefetch one head row from each hash partition past the limit.
+	photoRowsExamined := contactsPlanRowsExamined(plan, "photos")
+	if photoRowsExamined > 1016 || photoRowsExamined == 0 {
+		t.Fatalf("contacts visible-photo count examined %.0f photo rows, want 1-1016 including partition heads", photoRowsExamined)
+	}
+	observationRowsExamined := contactsPlanRowsExamined(plan, "observations")
+	t.Logf("bounded contact count examined %.0f photo rows and %.0f observation rows", photoRowsExamined, observationRowsExamined)
+	if observationRowsExamined > 1000 || observationRowsExamined == 0 {
+		t.Fatalf("contacts visible-photo count examined %.0f observations, want 1-1000", observationRowsExamined)
+	}
 }
 
 func contactsPhotoPlanSeqScans(value any) []string {
@@ -802,6 +812,33 @@ func contactsPhotoPlanSeqScans(value any) []string {
 		return scans
 	}
 	return nil
+}
+
+func contactsPlanRowsExamined(value any, relationPrefix string) float64 {
+	switch node := value.(type) {
+	case []any:
+		var rows float64
+		for _, child := range node {
+			rows += contactsPlanRowsExamined(child, relationPrefix)
+		}
+		return rows
+	case map[string]any:
+		relation, _ := node["Relation Name"].(string)
+		var rows float64
+		if relation == relationPrefix || strings.HasPrefix(relation, relationPrefix+"_p") {
+			actualRows, _ := node["Actual Rows"].(float64)
+			loops, _ := node["Actual Loops"].(float64)
+			removedByFilter, _ := node["Rows Removed by Filter"].(float64)
+			removedByRecheck, _ := node["Rows Removed by Index Recheck"].(float64)
+			rows += (actualRows + removedByFilter + removedByRecheck) * loops
+		}
+		for _, child := range node {
+			rows += contactsPlanRowsExamined(child, relationPrefix)
+		}
+		return rows
+	default:
+		return 0
+	}
 }
 
 func contactsPagePlanBounded(value any) bool {
