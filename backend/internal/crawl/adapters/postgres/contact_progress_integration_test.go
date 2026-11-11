@@ -171,6 +171,97 @@ func TestContactProgressStaysAccurateAcrossRecrawlsAndReconciliation(t *testing.
 	}
 }
 
+func TestContactSummaryBackfillKeepsConcurrentWorkerProgress(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	person := fmt.Sprintf("backfill-race-%d@N01", time.Now().UnixNano())
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,'backfill race')`, person); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via) VALUES($1,$2,0,'integration')`, userID, person); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, userID, person)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, person)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
+	})
+
+	workerTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer workerTx.Rollback(ctx)
+	workerPage := make([]catalog.Photo, 10)
+	for i := range workerPage {
+		workerPage[i].ID = int64(i + 1)
+	}
+	item := domain.Item{
+		Kind: "photos", UserID: userID, Subject: person,
+		Cursor: domain.Cursor{Page: 1, Params: map[string]string{"min_upload_date": "1"}},
+	}
+	if err := (contactProgressTx{tx: workerTx}).BeginPage(ctx, item, domain.Result{Photos: workerPage}); err != nil {
+		t.Fatal(err)
+	}
+
+	backfillConn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backfillConn.Release()
+	applicationName := fmt.Sprintf("contact-backfill-test-%d", time.Now().UnixNano())
+	if _, err := backfillConn.Exec(ctx, `SELECT set_config('application_name',$1,false)`, applicationName); err != nil {
+		t.Fatal(err)
+	}
+	backfillDone := make(chan error, 1)
+	go func() {
+		_, updateErr := backfillConn.Exec(ctx, `UPDATE crawl_interests SET
+			photos_crawled=GREATEST(photos_crawled,4),
+			sizes_completed=GREATEST(sizes_completed,1),
+			tombstones_count=GREATEST(tombstones_count,1),
+			favorites_count=GREATEST(favorites_count,1)
+			WHERE user_id=$1 AND person_nsid=$2`, userID, person)
+		backfillDone <- updateErr
+	}()
+
+	deadline := time.NewTimer(5 * time.Second)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer deadline.Stop()
+	defer ticker.Stop()
+	for {
+		var waiting bool
+		if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+			WHERE application_name=$1 AND wait_event_type='Lock')`, applicationName).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		select {
+		case <-ticker.C:
+		case <-deadline.C:
+			t.Fatal("backfill update did not wait for the worker's summary row lock")
+		case <-ctx.Done():
+			t.Fatalf("wait for concurrent backfill update: %v", ctx.Err())
+		}
+	}
+	if err := workerTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-backfillDone; err != nil {
+		t.Fatalf("apply summary backfill update: %v", err)
+	}
+	var photosCrawled int64
+	if err := pool.QueryRow(ctx, `SELECT photos_crawled FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, userID, person).Scan(&photosCrawled); err != nil {
+		t.Fatal(err)
+	}
+	if photosCrawled != 10 {
+		t.Fatalf("photos_crawled=%d after concurrent backfill, want worker progress 10", photosCrawled)
+	}
+}
+
 func summaryValue(t *testing.T, ctx context.Context, tx Conn, column string, userID int64, person string) int64 {
 	t.Helper()
 	var value int64

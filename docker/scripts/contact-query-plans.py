@@ -52,7 +52,22 @@ FROM generate_series(1, 400000) AS g;
 CREATE INDEX photos_owner_recent_idx
     ON photos (owner_nsid, last_update DESC, id DESC)
     WHERE tombstoned_at IS NULL;
-CREATE INDEX photos_owner_contact_id_idx ON photos (owner_nsid, id);
+CREATE INDEX photos_owner_contact_id_idx ON ONLY photos (owner_nsid, id);
+DO $$
+DECLARE partition_no INTEGER;
+BEGIN
+    FOR partition_no IN 0..15 LOOP
+        EXECUTE format(
+            'CREATE INDEX photos_p%s_owner_contact_id_idx ON photos_p%s (owner_nsid, id)',
+            lpad(partition_no::text, 2, '0'), lpad(partition_no::text, 2, '0')
+        );
+        EXECUTE format(
+            'ALTER INDEX photos_owner_contact_id_idx ATTACH PARTITION photos_p%s_owner_contact_id_idx',
+            lpad(partition_no::text, 2, '0')
+        );
+    END LOOP;
+END;
+$$;
 
 CREATE TEMP TABLE observations (
     user_id BIGINT NOT NULL,
@@ -103,7 +118,7 @@ CREATE TEMP TABLE people (nsid TEXT PRIMARY KEY, username TEXT, realname TEXT, i
 INSERT INTO people VALUES ('owner-42', 'owner', 'Owner', '');
 
 CREATE TEMP TABLE albums (
-    id BIGINT PRIMARY KEY,
+    id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     owner_nsid TEXT NOT NULL,
     photos_count BIGINT NOT NULL,
@@ -111,9 +126,47 @@ CREATE TEMP TABLE albums (
     updated_at TIMESTAMPTZ
 ) ON COMMIT DROP;
 INSERT INTO albums
-SELECT g, 'album ' || g, 'owner-42', 10, g, now() - g * INTERVAL '1 minute'
+SELECT g::text, 'album ' || g, 'owner-42', 10, g, now() - g * INTERVAL '1 minute'
 FROM generate_series(1, 101) AS g;
 CREATE INDEX albums_contact_order_idx ON albums (owner_nsid, updated_at DESC, id);
+CREATE TEMP TABLE album_photos (
+    album_id TEXT NOT NULL,
+    photo_id BIGINT NOT NULL,
+    position INTEGER NOT NULL
+) ON COMMIT DROP;
+INSERT INTO album_photos
+SELECT album.id, ((album.id::integer + photo.photo_number - 2) % 800) + 1, photo.photo_number
+FROM albums album
+CROSS JOIN generate_series(1, 10) AS photo(photo_number);
+CREATE INDEX album_photos_order_idx ON album_photos (album_id, position, photo_id);
+
+CREATE TEMP TABLE galleries (
+    id TEXT PRIMARY KEY,
+    owner_nsid TEXT NOT NULL,
+    title TEXT NOT NULL,
+    photos_count BIGINT NOT NULL,
+    updated_at TIMESTAMPTZ
+) ON COMMIT DROP;
+INSERT INTO galleries
+SELECT g::text, 'owner-42', 'gallery ' || g, 10, now() - g * INTERVAL '1 minute'
+FROM generate_series(1, 101) AS g;
+CREATE INDEX galleries_contact_order_idx ON galleries (owner_nsid, updated_at DESC, id DESC);
+
+CREATE TEMP TABLE groups (
+    nsid TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    members_count BIGINT NOT NULL,
+    seen_at TIMESTAMPTZ
+) ON COMMIT DROP;
+INSERT INTO groups
+SELECT 'group-' || g, 'group ' || g, g, now() - g * INTERVAL '1 minute'
+FROM generate_series(1, 101) AS g;
+CREATE TEMP TABLE person_groups (
+    person_nsid TEXT NOT NULL,
+    group_nsid TEXT NOT NULL,
+    PRIMARY KEY (person_nsid, group_nsid)
+) ON COMMIT DROP;
+INSERT INTO person_groups SELECT 'owner-42', nsid FROM groups;
 
 CREATE TEMP TABLE work_items (
     id BIGINT PRIMARY KEY,
@@ -137,10 +190,10 @@ CREATE TEMP TABLE work_items (
     UNIQUE (kind, subject_key, user_id)
 ) ON COMMIT DROP;
 INSERT INTO work_items (id, kind, subject_key, user_id, state)
-SELECT g, 'photo_sizes', g::text, CASE WHEN g <= 800 THEN 42 ELSE 100 + (g % 999) END, 'pending'
+SELECT g, 'photo_sizes', g::text, 42, 'pending'
 FROM generate_series(1, 400000) AS g;
 CREATE INDEX work_items_contact_photo_sizes_idx
-    ON work_items (user_id, id) INCLUDE (subject_key)
+    ON work_items (user_id, subject_key) INCLUDE (id)
     WHERE kind = 'photo_sizes'
       AND state IN ('pending', 'ready', 'running', 'waiting')
       AND direct_action = FALSE;
@@ -161,6 +214,8 @@ CREATE TEMP TABLE contact_group_crawl_preferences (
     changed_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (user_id, person_nsid, group_nsid)
 ) ON COMMIT DROP;
+INSERT INTO contact_group_crawl_preferences
+SELECT 42, 'owner-42', nsid, FALSE, now() FROM groups;
 CREATE TEMP TABLE flickr_accounts (
     id BIGINT PRIMARY KEY,
     user_id BIGINT NOT NULL,
@@ -173,6 +228,27 @@ ANALYZE photos;
 ANALYZE observations;
 ANALYZE favorites;
 ANALYZE work_items;
+ANALYZE album_photos;
+ANALYZE galleries;
+ANALYZE person_groups;
+
+\echo 'Contact photo-size priority batch'
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+WITH batch AS MATERIALIZED (
+    SELECT wi.id, ph.id AS photo_id FROM photos ph
+    JOIN work_items wi ON wi.user_id = 42 AND wi.subject_key = ph.id::text
+    WHERE ph.owner_nsid = 'owner-42' AND ph.id > 0
+      AND ph.tombstoned_at IS NULL AND ph.sizes_status <> 'confirmed'
+      AND wi.kind = 'photo_sizes'
+      AND wi.state IN ('pending', 'ready', 'running', 'waiting')
+      AND wi.direct_action = FALSE
+    ORDER BY ph.id, wi.id LIMIT 500 FOR UPDATE OF wi
+), updated AS (
+    UPDATE work_items wi SET direct_action = TRUE, score_updated_at = NULL,
+        updated_at = now()
+    FROM batch WHERE wi.id = batch.id RETURNING batch.photo_id
+)
+SELECT count(*), COALESCE(max(photo_id), 0) FROM updated;
 
 \echo 'Contact summary backfill photo ID page'
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
@@ -195,6 +271,68 @@ SELECT max(id), count(*) FILTER (WHERE observed)::bigint,
           AND sizes_checked_at >= last_update)::bigint,
        count(*) FILTER (WHERE tombstoned_at IS NOT NULL)::bigint
 FROM attributed;
+
+\echo 'Contact album total count'
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+SELECT count(*) FROM albums WHERE owner_nsid = 'owner-42';
+
+\echo 'Contact album keyset page with visible stored count'
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+SELECT a.id, a.title, p.username,
+       (SELECT count(*) FROM album_photos ap JOIN photos stored ON stored.id = ap.photo_id
+        WHERE ap.album_id = a.id AND stored.tombstoned_at IS NULL
+          AND (EXISTS (SELECT 1 FROM flickr_accounts fa
+                       CROSS JOIN LATERAL (SELECT 1 FROM observations o
+                           WHERE o.user_id = fa.user_id AND o.flickr_account_id = fa.id
+                             AND o.record_kind = 'photo' AND o.record_id = stored.id::text LIMIT 1) seen
+                       WHERE fa.user_id = 42)
+               OR (stored.visibility = 'public' AND EXISTS (
+                   SELECT 1 FROM sharing_settings ss
+                   JOIN flickr_accounts fa ON fa.user_id = ss.user_id
+                   CROSS JOIN LATERAL (SELECT 1 FROM observations o
+                       WHERE o.user_id = ss.user_id AND o.flickr_account_id = fa.id
+                         AND o.record_kind = 'photo' AND o.record_id = stored.id::text LIMIT 1) seen
+                   WHERE ss.enabled)))),
+       a.photos_count,
+       COALESCE((SELECT jsonb_agg(NULLIF(cover.sizes->0->>'url', '')) FROM photos cover
+                 WHERE cover.id = a.primary_photo_id AND cover.tombstoned_at IS NULL
+                   AND cover.sizes->0->>'url' IS NOT NULL), '[]'::jsonb),
+       a.updated_at
+FROM albums a JOIN people p ON p.nsid = a.owner_nsid
+WHERE a.owner_nsid = 'owner-42'
+  AND EXISTS (SELECT 1 FROM crawl_interests ci WHERE ci.user_id = 42 AND ci.person_nsid = 'owner-42')
+  AND (a.updated_at < now() - INTERVAL '50 minutes'
+       OR a.updated_at IS NULL
+       OR (a.updated_at = now() - INTERVAL '50 minutes' AND a.id < '50'))
+ORDER BY a.updated_at DESC NULLS LAST, a.id DESC LIMIT 101;
+
+\echo 'Contact gallery total count'
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+SELECT count(*) FROM galleries WHERE owner_nsid = 'owner-42';
+
+\echo 'Contact gallery keyset page'
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+SELECT id, title, photos_count, updated_at FROM galleries
+WHERE owner_nsid = 'owner-42'
+  AND EXISTS (SELECT 1 FROM crawl_interests ci WHERE ci.user_id = 42 AND ci.person_nsid = 'owner-42')
+  AND (updated_at < now() - INTERVAL '50 minutes' OR updated_at IS NULL
+       OR (updated_at = now() - INTERVAL '50 minutes' AND id < '50'))
+ORDER BY updated_at DESC NULLS LAST, id DESC LIMIT 101;
+
+\echo 'Contact group total count'
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+SELECT count(*) FROM person_groups WHERE person_nsid = 'owner-42';
+
+\echo 'Contact group keyset page'
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+SELECT g.nsid, g.name, g.members_count, COALESCE(pref.enabled, FALSE), g.seen_at
+FROM person_groups pg JOIN groups g ON g.nsid = pg.group_nsid
+LEFT JOIN contact_group_crawl_preferences pref
+  ON pref.user_id = 42 AND pref.person_nsid = 'owner-42' AND pref.group_nsid = g.nsid
+WHERE pg.person_nsid = 'owner-42'
+  AND EXISTS (SELECT 1 FROM crawl_interests ci WHERE ci.user_id = 42 AND ci.person_nsid = 'owner-42')
+  AND (g.name > 'group 50' OR (g.name = 'group 50' AND g.nsid > 'group-50'))
+ORDER BY g.name, g.nsid LIMIT 101;
 
 \echo 'Contact summary backfill favorite ID page'
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
@@ -331,25 +469,6 @@ WHERE f.person_nsid = 'owner-42' AND f.removed_at IS NULL
               WHERE ci.user_id = 42 AND ci.person_nsid = 'owner-42')
 ORDER BY f.fave_date DESC, p.id DESC;
 
-\echo 'Contact size prioritization batch'
-EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
-WITH batch AS (
-    SELECT wi.id FROM work_items wi
-    WHERE wi.user_id = 42 AND wi.kind = 'photo_sizes'
-      AND wi.state IN ('pending', 'ready', 'running', 'waiting')
-      AND wi.direct_action = FALSE AND EXISTS (
-          SELECT 1 FROM photos ph
-          WHERE ph.id = CASE WHEN wi.subject_key ~ '^[0-9]+$' THEN wi.subject_key::bigint END
-            AND ph.owner_nsid = 'owner-42' AND ph.tombstoned_at IS NULL
-            AND ph.sizes_status <> 'confirmed'
-      )
-    ORDER BY wi.id LIMIT 500 FOR UPDATE OF wi
-), updated AS (
-    UPDATE work_items wi SET direct_action = TRUE, score_updated_at = NULL, updated_at = now()
-    FROM batch WHERE wi.id = batch.id RETURNING wi.id
-)
-SELECT count(*) FROM updated;
-
 \echo 'Group pool preference enqueue'
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
 WITH preference AS (
@@ -435,7 +554,7 @@ def main() -> int:
     if full_scans:
         print(f"contact-query-plans: unexpected full scans: {', '.join(full_scans)}", file=sys.stderr)
         return 1
-    for index in ("owner_nsid_id_idx", "work_items_contact_photo_sizes_idx"):
+    for index in ("owner_contact_id_idx", "work_items_contact_photo_sizes_idx"):
         if index not in result.stdout:
             print(f"contact-query-plans: expected index missing from plans: {index}", file=sys.stderr)
             return 1

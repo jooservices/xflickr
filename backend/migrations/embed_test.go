@@ -59,6 +59,7 @@ func TestObservationLookupMigrationBuildsPartitionIndexesConcurrently(t *testing
 	}
 	if strings.Contains(string(migration), "observations_p00_record_lookup_idx") {
 		t.Fatal("migration must reuse the existing p00 lookup index instead of creating a duplicate")
+	}
 }
 
 func TestContactSummaryIndexesCanBeRetriedAfterPartialMigration(t *testing.T) {
@@ -88,5 +89,41 @@ func TestContactSummaryIndexesCanBeRetriedAfterPartialMigration(t *testing.T) {
 	}
 	if !strings.Contains(statement, "ORDER BY id LIMIT 500") || !strings.Contains(statement, "ORDER BY photo_id LIMIT 500") {
 		t.Error("contact summary backfill must process bounded photo and favorite ID pages")
+	}
+}
+
+func TestContactSummaryBackfillPreservesConcurrentProgress(t *testing.T) {
+	sql, err := migrations.Files.ReadFile("20261111170000_contact_screen_summaries.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	statement := string(sql)
+	if strings.Contains(statement, "SET photos_crawled=0") || strings.Contains(statement, "SET favorites_count=0") {
+		t.Fatal("summary backfill must not reset counters updated by crawl workers")
+	}
+	for _, column := range []string{"photos_crawled", "favorites_count", "sizes_completed", "tombstones_count"} {
+		if !strings.Contains(statement, column+"=GREATEST("+column+",") {
+			t.Errorf("summary backfill must preserve concurrent %s progress", column)
+		}
+	}
+}
+
+func TestContactSummaryRollbackChecksDataBeforeSchemaAndAvoidsEnumRewrite(t *testing.T) {
+	sql, err := migrations.Files.ReadFile("20261111170000_contact_screen_summaries.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.SplitN(string(sql), "-- +goose Down", 2)
+	if len(parts) != 2 {
+		t.Fatal("contact summary migration is missing its down section")
+	}
+	down := parts[1]
+	check := strings.Index(down, "SELECT 1 FROM downloads WHERE kind = 'favorites'")
+	firstSchemaChange := strings.Index(down, "DROP INDEX")
+	if check < 0 || firstSchemaChange < 0 || check > firstSchemaChange {
+		t.Fatal("rollback must validate favorite downloads before changing schema")
+	}
+	if strings.Contains(down, "ALTER TABLE downloads") || strings.Contains(down, "DROP TYPE download_kind") || strings.Contains(down, "CREATE TYPE download_kind") {
+		t.Fatal("rollback must not rewrite the downloads table to remove an enum value")
 	}
 }

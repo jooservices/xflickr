@@ -23,7 +23,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS work_items_user_contact_state_idx
     WHERE user_id IS NOT NULL;
 
 CREATE INDEX CONCURRENTLY IF NOT EXISTS work_items_contact_photo_sizes_idx
-    ON work_items (user_id, id) INCLUDE (subject_key)
+    ON work_items (user_id, subject_key) INCLUDE (id)
     WHERE kind = 'photo_sizes' AND state IN ('pending', 'ready', 'running', 'waiting') AND direct_action = FALSE;
 
 CREATE INDEX IF NOT EXISTS photos_owner_recent_idx ON ONLY photos (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
@@ -129,11 +129,6 @@ BEGIN
         sizes_total := 0;
         tombstones_total := 0;
         favorites_total := 0;
-        UPDATE crawl_interests SET photos_crawled=0, favorites_count=0,
-            sizes_completed=0, tombstones_count=0
-        WHERE user_id=contact_user_id AND person_nsid=contact_person_nsid;
-        COMMIT;
-
         photo_after_id := 0;
         LOOP
             WITH photo_page AS MATERIALIZED (
@@ -164,8 +159,9 @@ BEGIN
             photos_total := photos_total + page_photo_count;
             sizes_total := sizes_total + page_size_count;
             tombstones_total := tombstones_total + page_tombstone_count;
-            UPDATE crawl_interests SET photos_crawled=photos_total,
-                sizes_completed=sizes_total, tombstones_count=tombstones_total
+            UPDATE crawl_interests SET photos_crawled=GREATEST(photos_crawled,photos_total),
+                sizes_completed=GREATEST(sizes_completed,sizes_total),
+                tombstones_count=GREATEST(tombstones_count,tombstones_total)
             WHERE user_id=contact_user_id AND person_nsid=contact_person_nsid;
             photo_after_id := page_last_id;
             COMMIT;
@@ -197,7 +193,7 @@ BEGIN
             EXIT WHEN page_last_id IS NULL;
 
             favorites_total := favorites_total + page_favorite_count;
-            UPDATE crawl_interests SET favorites_count=favorites_total
+            UPDATE crawl_interests SET favorites_count=GREATEST(favorites_count,favorites_total)
             WHERE user_id=contact_user_id AND person_nsid=contact_person_nsid;
             favorite_after_id := page_last_id;
             COMMIT;
@@ -214,6 +210,16 @@ CALL backfill_contact_screen_summaries();
 DROP PROCEDURE backfill_contact_screen_summaries();
 
 -- +goose Down
+-- Keep the added enum value: PostgreSQL cannot remove enum labels without
+-- rewriting every dependent row. Refuse rollback while such rows exist before
+-- changing any other schema objects.
+-- +goose StatementBegin
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM downloads WHERE kind = 'favorites') THEN
+        RAISE EXCEPTION 'cannot roll back contact summaries while favorites downloads exist';
+    END IF;
+END $$;
+-- +goose StatementEnd
 DROP INDEX photos_owner_contact_id_idx;
 DROP INDEX photos_owner_recent_idx;
 DROP INDEX CONCURRENTLY IF EXISTS work_items_contact_photo_sizes_idx;
@@ -224,14 +230,3 @@ ALTER TABLE crawl_interests
     DROP COLUMN sizes_completed,
     DROP COLUMN favorites_count,
     DROP COLUMN photos_crawled;
--- +goose StatementBegin
-DO $$ BEGIN
-    IF EXISTS (SELECT 1 FROM downloads WHERE kind = 'favorites') THEN
-        RAISE EXCEPTION 'cannot remove favorites download kind while downloads of that kind exist';
-    END IF;
-END $$;
--- +goose StatementEnd
-ALTER TABLE downloads ALTER COLUMN kind TYPE TEXT USING kind::text;
-DROP TYPE download_kind;
-CREATE TYPE download_kind AS ENUM ('contact', 'album', 'tray');
-ALTER TABLE downloads ALTER COLUMN kind TYPE download_kind USING kind::download_kind;

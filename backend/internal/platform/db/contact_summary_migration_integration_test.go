@@ -80,7 +80,7 @@ func migrationsBeforeContactSummary(t *testing.T) fstest.MapFS {
 			continue
 		}
 		if entry.Name() > contactMigration {
-			t.Fatalf("migration %s must be the latest version for this integration test", contactMigration)
+			continue
 		}
 		data, err := migrations.Files.ReadFile(entry.Name())
 		if err != nil {
