@@ -1,6 +1,8 @@
 package facets
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/jooservices/xflickr/internal/crawl/domain"
@@ -72,19 +74,90 @@ func TestGalleriesMapsResponseOwnersAndPaginates(t *testing.T) {
 }
 
 func TestGroupsMapsResponseAndMemberships(t *testing.T) {
-	payload := `{"groups":{"pages":1,"group":[{"nsid":"grp1@N00","name":"One","members":5,"pool_count":6,"description":"d"},{"nsid":"grp2@N00","name":"Two"}]}}`
+	payload := `{"groups":{"pages":2,"group":[{"nsid":" grp1@N00 ","name":" One ","members":5,"pool_count":6,"description":"d"},{"nsid":"grp2@N00","name":"Two"}]}}`
 	result, err := (Groups{}).Handle(t.Context(), catalogPage("p@N01", payload, 1))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.HasMore || len(result.People) != 0 || len(result.Groups) != 2 || len(result.PersonGroups) != 2 {
+	if !result.HasMore || len(result.People) != 0 || len(result.Groups) != 2 || len(result.PersonGroups) != 2 {
 		t.Fatalf("groups result = %#v", result)
 	}
-	if g := result.Groups[0]; g.NSID != "grp1@N00" || g.Name != "One" || g.MembersCount != 5 || g.PoolCount != 6 || g.Description != "d" {
+	if g := result.Groups[0]; g.NSID != " grp1@N00 " || g.Name != " One " || g.MembersCount != 5 || g.PoolCount != 6 || g.Description != "d" {
 		t.Fatalf("group = %#v", g)
 	}
-	if pg := result.PersonGroups[1]; pg.PersonNSID != "p@N01" || pg.GroupNSID != "grp2@N00" {
+	if pg := result.PersonGroups[0]; pg.PersonNSID != "p@N01" || pg.GroupNSID != " grp1@N00 " {
 		t.Fatalf("membership = %#v", pg)
+	}
+	last, err := (Groups{}).Handle(t.Context(), catalogPage("p@N01", payload, 2))
+	if err != nil || last.HasMore {
+		t.Fatalf("last group page = %#v, %v", last, err)
+	}
+}
+
+func TestGroupsRejectsMissingEnvelope(t *testing.T) {
+	cases := map[string]string{
+		"malformed JSON":          `{`,
+		"missing groups":          `{}`,
+		"null groups":             `{"groups":null}`,
+		"wrong groups type":       `{"groups":[]}`,
+		"wrong group list type":   `{"groups":{"group":"not a list"}}`,
+		"null group list":         `{"groups":{"group":null}}`,
+		"wrong member field type": `{"groups":{"group":[{"nsid":42,"name":"Group"}]}}`,
+	}
+	for name, payload := range cases {
+		t.Run(name, func(t *testing.T) {
+			result, err := (Groups{}).Handle(t.Context(), catalogPage("p@N01", payload, 1))
+			if err == nil {
+				t.Fatal("malformed groups response was accepted")
+			}
+			if !strings.HasPrefix(err.Error(), "crawl facets: decode groups:") {
+				t.Fatalf("error = %q, want groups decode context", err)
+			}
+			if !reflect.DeepEqual(result, domain.Result{}) {
+				t.Fatalf("error result = %#v, want zero result", result)
+			}
+		})
+	}
+}
+
+func TestGroupsRejectsInvalidMember(t *testing.T) {
+	cases := map[string]string{
+		"missing nsid":              `{"groups":{"group":[{"name":"Group"}]}}`,
+		"blank nsid":                `{"groups":{"group":[{"nsid":" \t ","name":"Group"}]}}`,
+		"missing name":              `{"groups":{"group":[{"nsid":"g@N00"}]}}`,
+		"blank name":                `{"groups":{"group":[{"nsid":"g@N00","name":" \n "}]}}`,
+		"valid then invalid member": `{"groups":{"group":[{"nsid":"valid@N00","name":"Valid"},{"nsid":"invalid@N00","name":"  "}]}}`,
+	}
+	for name, payload := range cases {
+		t.Run(name, func(t *testing.T) {
+			result, err := (Groups{}).Handle(t.Context(), catalogPage("p@N01", payload, 1))
+			if err == nil {
+				t.Fatal("invalid group member was accepted")
+			}
+			if !strings.HasPrefix(err.Error(), "crawl facets: decode groups:") {
+				t.Fatalf("error = %q, want groups decode context", err)
+			}
+			if !reflect.DeepEqual(result, domain.Result{}) {
+				t.Fatalf("error result = %#v, want zero result", result)
+			}
+		})
+	}
+}
+
+func TestGroupsAcceptsEmptyEnvelope(t *testing.T) {
+	for name, payload := range map[string]string{
+		"empty group list":    `{"groups":{"group":[]}}`,
+		"empty groups object": `{"groups":{}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, err := (Groups{}).Handle(t.Context(), catalogPage("p@N01", payload, 1))
+			if err != nil {
+				t.Fatalf("empty response: %v", err)
+			}
+			if result.HasMore || len(result.Groups) != 0 || len(result.PersonGroups) != 0 {
+				t.Fatalf("empty response produced groups or memberships: %#v", result)
+			}
+		})
 	}
 }
 
@@ -95,7 +168,6 @@ func TestCatalogFacetsHandleEmptyAndMalformedReplies(t *testing.T) {
 	}{
 		{Albums{}, `{"photosets":{"pages":1,"photoset":[]}}`},
 		{Galleries{}, `{"galleries":{"pages":1,"gallery":[]}}`},
-		{Groups{}, `{"groups":{"pages":1,"group":[]}}`},
 	}
 	for _, tc := range cases {
 		result, err := tc.facet.Handle(t.Context(), catalogPage("p@N01", tc.empty, 1))

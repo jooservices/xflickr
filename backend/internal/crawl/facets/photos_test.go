@@ -77,17 +77,18 @@ func TestFavoritesFacetStoresPhotosAndUniqueOwnerDiscoveries(t *testing.T) {
 
 func TestCatalogFacetsMapReturnedRecordsAndHandleEmptyPages(t *testing.T) {
 	cases := []struct {
-		facet   domain.Facet
-		payload string
-		check   func(domain.Result) bool
+		facet        domain.Facet
+		payload      string
+		emptyPayload string
+		check        func(domain.Result) bool
 	}{
-		{Albums{}, `{"photosets":{"pages":1,"photoset":[{"id":"a1","primary":"12","photos":2,"title":{"_content":"Album"},"description":{"_content":"desc"},"date_create":"1700000000","date_update":"1700000100"}]}}`, func(r domain.Result) bool {
+		{Albums{}, `{"photosets":{"pages":1,"photoset":[{"id":"a1","primary":"12","photos":2,"title":{"_content":"Album"},"description":{"_content":"desc"},"date_create":"1700000000","date_update":"1700000100"}]}}`, "", func(r domain.Result) bool {
 			return len(r.Albums) == 1 && r.Albums[0].ID == "a1" && r.Albums[0].OwnerNSID == "person" && r.Albums[0].PrimaryPhotoID != nil
 		}},
-		{Galleries{}, `{"galleries":{"pages":1,"gallery":[{"id":"g1","owner":"owner","primary_photo_id":"13","count_photos":3,"title":{"_content":"Gallery"}}]}}`, func(r domain.Result) bool {
+		{Galleries{}, `{"galleries":{"pages":1,"gallery":[{"id":"g1","owner":"owner","primary_photo_id":"13","count_photos":3,"title":{"_content":"Gallery"}}]}}`, "", func(r domain.Result) bool {
 			return len(r.Galleries) == 1 && r.Galleries[0].OwnerNSID == "owner" && r.Galleries[0].PhotosCount == 3
 		}},
-		{Groups{}, `{"groups":{"pages":1,"group":[{"nsid":"grp","name":"Group","members":4,"pool_count":5,"description":"desc"}]}}`, func(r domain.Result) bool {
+		{Groups{}, `{"groups":{"pages":1,"group":[{"nsid":"grp","name":"Group","members":4,"pool_count":5,"description":"desc"}]}}`, `{"groups":{}}`, func(r domain.Result) bool {
 			return len(r.Groups) == 1 && len(r.PersonGroups) == 1 && r.PersonGroups[0].PersonNSID == "person"
 		}},
 	}
@@ -96,7 +97,11 @@ func TestCatalogFacetsMapReturnedRecordsAndHandleEmptyPages(t *testing.T) {
 		if err != nil || !tc.check(got) {
 			t.Errorf("%s mapping result=%+v err=%v", tc.facet.Name(), got, err)
 		}
-		empty, err := tc.facet.Handle(t.Context(), domain.Page{Number: 1, Payload: []byte(`{}`)})
+		emptyPayload := tc.emptyPayload
+		if emptyPayload == "" {
+			emptyPayload = `{}`
+		}
+		empty, err := tc.facet.Handle(t.Context(), domain.Page{Number: 1, Payload: []byte(emptyPayload)})
 		if err != nil || empty.HasMore {
 			t.Errorf("%s empty page=%+v err=%v", tc.facet.Name(), empty, err)
 		}
