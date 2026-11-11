@@ -72,6 +72,8 @@
   predicate, retained previous results, and current slice limitations.
 - [Search ranking fusion](search-rrf.md) — BM25 and vector candidate ranking
   merged with Reciprocal Rank Fusion.
+- [AI embedding](ai-embedding.md) — embedding port, bounded Ollama batches,
+  vector dimensions, provenance, and shared circuit breaker behaviour.
 - [Mail delivery](mail.md) — mail port, SMTP adapter, deterministic context
   deadline errors, Mailpit sink, and fake sender for tests.
 - [Downloads](downloads.md) — visible-photo requests, per-item state, and media

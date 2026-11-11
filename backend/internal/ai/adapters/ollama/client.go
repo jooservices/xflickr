@@ -186,6 +186,9 @@ func (c *Client) post(ctx context.Context, endpoint string, payload, result any)
 			Error string `json:"error"`
 		}
 		_ = json.Unmarshal(responseBody, &providerError)
+		if response.StatusCode == http.StatusBadRequest && isEmbeddingContextError(endpoint, providerError.Error) {
+			return fmt.Errorf("%w: Ollama rejected embedding input: %s", aiapp.ErrInvalidTexts, providerError.Error)
+		}
 		if strings.TrimSpace(providerError.Error) == "" {
 			return fmt.Errorf("ollama %s returned HTTP %d", endpoint, response.StatusCode)
 		}
@@ -195,6 +198,15 @@ func (c *Client) post(ctx context.Context, endpoint string, payload, result any)
 		return fmt.Errorf("%w: decode Ollama %s response: %w", aiapp.ErrInvalidResponse, endpoint, err)
 	}
 	return nil
+}
+
+func isEmbeddingContextError(endpoint, message string) bool {
+	if endpoint != "api/embed" {
+		return false
+	}
+	message = strings.ToLower(message)
+	return strings.Contains(message, "context") &&
+		(strings.Contains(message, "window") || strings.Contains(message, "length"))
 }
 
 var _ aiapp.Captioner = (*Client)(nil)
