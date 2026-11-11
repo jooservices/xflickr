@@ -117,15 +117,20 @@ result can unlock a facet while global sizes remain provisional.
 
 `catalog/adapters/postgres/photolane.sql` ranks persons from two indexed,
 `LIMIT`ed streams (selected, starred) and probes only the top-ranked persons.
-Each owner contributes at most 50 photos to one selection, with size work
-ranked before optional facets. Pending sizes use
-`photos_sizes_pending_idx`; legacy `unavailable` rows and placeholder-server
-photos use `photos_sizes_restricted_idx`; optional facets use
-`photos_owner_live_idx`. The account-scoped result primary key
-`(photo_id, account_id)` supports skipping an existing result for the selected
-owner account. Partition indexes are built concurrently. Tombstoned photos
-remain excluded. The caller starts with 128 persons and doubles the probe only
-while it finds too few photos and a stream was cut by its limit.
+Each owner contributes at most 50 live photos to one selection. The query
+applies that limit before checking account-scoped size results and optional
+facet status, using `photos_owner_live_idx` to read each bounded page in upload
+order. A per-owner keyset cursor in `schedule_meta` stores the last upload time
+and photo ID. It advances only after the current page has no eligible jobs and
+the person probe is complete; when the cursor reaches the end, selection wraps
+to the newest page. This lets the lane move past photos already processed by an
+account or facet without repeatedly scanning the owner's full catalog.
+
+The account-scoped result primary key `(photo_id, account_id)` supports
+skipping an existing result for the selected owner account. Partition indexes
+are built concurrently. Tombstoned photos remain excluded. The caller starts
+with 128 persons and doubles the probe only while it finds too few photos and a
+stream was cut by its limit.
 
 Limit: when the best-ranked persons have no pending photos left, the probe
 widens until it reaches persons with work, which costs more per call. The query
