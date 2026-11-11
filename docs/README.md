@@ -7,6 +7,8 @@
 - [Sharing settings and observations](sharing.md)
 - [Ops monitoring](ops-monitoring.md) — crawl health log line, admin status
   endpoint, granted-call and quota-wait counters, OpenObserve stream and alerts.
+- [Scheduler uptime alert](uptime-alerts.md) — crawl-health freshness signal,
+  detection window, and notification limits.
 - [Operations metrics collection](metrics.md) — minute samples, catalogue,
   retention and rollups for the admin operations dashboard (JOOXF-368 phase 1).
 - [Reading queue metric samples](metrics-series-read.md) — bounded admin reads
