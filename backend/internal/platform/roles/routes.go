@@ -1,6 +1,7 @@
 package roles
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
 
@@ -8,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
+	"github.com/jooservices/xflickr/internal/platform/api/gen"
 	"github.com/jooservices/xflickr/internal/platform/api/rest"
 )
 
@@ -118,10 +120,16 @@ func writeAPIError(w http.ResponseWriter, r *http.Request, slug, message string)
 
 func badRequest(w http.ResponseWriter, r *http.Request, _ error) {
 	if r.URL.Path == "/admin/metrics" {
-		writeAPIError(w, r, "invalid-request", "Invalid metrics query")
+		writeMetricsQueryError(w, http.StatusBadRequest, "invalid_request", "Invalid metrics query")
 		return
 	}
 	writeAPIError(w, r, "malformed-request", "Malformed request")
+}
+
+func writeMetricsQueryError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(gen.Error{Code: code, Message: message})
 }
 
 func metricsQueryMultiplicity(next http.Handler) http.Handler {
@@ -134,12 +142,12 @@ func metricsQueryMultiplicity(next http.Handler) http.Handler {
 		if err == nil {
 			for _, name := range []string{"series", "queue", "role", "node", "from", "to", "step"} {
 				if len(query[name]) > 1 {
-					writeAPIError(w, r, "invalid-request", "Invalid metrics query")
+					writeMetricsQueryError(w, http.StatusBadRequest, "invalid_request", "Invalid metrics query")
 					return
 				}
 			}
 		} else {
-			writeAPIError(w, r, "invalid-request", "Invalid metrics query")
+			writeMetricsQueryError(w, http.StatusBadRequest, "invalid_request", "Invalid metrics query")
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -147,5 +155,9 @@ func metricsQueryMultiplicity(next http.Handler) http.Handler {
 }
 
 func internalError(w http.ResponseWriter, r *http.Request, _ error) {
+	if r != nil && r.URL.Path == "/admin/metrics" {
+		writeMetricsQueryError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
+		return
+	}
 	writeAPIError(w, r, "internal-error", "Internal server error")
 }
