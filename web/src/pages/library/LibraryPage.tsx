@@ -123,7 +123,10 @@ export function LibraryPage() {
             {t('user.library.title')}
           </h1>
           <p className={styles.lead} data-testid="user-library-total" aria-live="polite">
-            {t('user.library.lead-loaded', { count: number.format(photos.length) })}
+            {t('user.library.lead-loaded', {
+              count: photos.length,
+              formattedCount: number.format(photos.length),
+            })}
           </p>
         </div>
       </header>
@@ -237,6 +240,19 @@ export function LibraryPage() {
           </aside>
 
           <section className={styles.results} aria-label={t('user.library.results.label')}>
+            {favorites.isRefetchError ? (
+              <div className={styles.moreError} role="alert" data-testid="user-library-stale">
+                <span>{t('user.library.status.stale')}</span>
+                <button
+                  className={styles.clearButton}
+                  type="button"
+                  data-testid="user-library-stale-retry"
+                  onClick={() => void favorites.refetch()}
+                >
+                  {t('user.common.retry')}
+                </button>
+              </div>
+            ) : null}
             <div className={styles.toolbar}>
               <p aria-live="polite">
                 {t('user.library.results.count', {
@@ -322,6 +338,7 @@ export function LibraryPage() {
                 selected={selected}
                 selectionMode={selectionMode}
                 selectionFull={selected.size >= 500}
+                staleNotice={favorites.isRefetchError}
                 onToggleSelected={toggleSelection}
               />
             )}

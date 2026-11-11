@@ -12,6 +12,7 @@ type PhotoGridProps = {
   selected: ReadonlySet<number>;
   selectionMode: boolean;
   selectionFull: boolean;
+  staleNotice: boolean;
   onToggleSelected: (photoId: number) => void;
 };
 
@@ -40,6 +41,7 @@ export function PhotoGrid({
   selected,
   selectionMode,
   selectionFull,
+  staleNotice,
   onToggleSelected,
 }: PhotoGridProps) {
   const { locale, t } = useI18n();
@@ -70,8 +72,9 @@ export function PhotoGrid({
   }, []);
 
   useLayoutEffect(() => {
-    setScrollMargin(gridRef.current?.offsetTop ?? 0);
-  }, [photos.length]);
+    const grid = gridRef.current;
+    if (grid !== null) setScrollMargin(grid.getBoundingClientRect().top + window.scrollY);
+  }, [locale, photos.length, selectionFull, selectionMode, staleNotice]);
 
   const number = new Intl.NumberFormat(locale);
   const virtualRows = virtualizer.getVirtualItems();
@@ -121,6 +124,7 @@ export function PhotoGrid({
                       className={styles.photoTile}
                       data-testid={`user-library-photo-${String(photo.id)}`}
                       role="listitem"
+                      tabIndex={selectionMode ? undefined : 0}
                       style={{ flexBasis: `${String(item.ratio * row.height)}px` }}
                     >
                       {item.url === undefined ? (

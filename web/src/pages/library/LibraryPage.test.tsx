@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw/http';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { server } from '../../test/server';
 import { renderApp, userSession } from '../../test/render';
 
@@ -27,6 +27,11 @@ const json = (body: unknown, status = 200) => HttpResponse.json(body as never, {
 const open = (locale: 'en' | 'vi' = 'en') =>
   renderApp({ session: userSession, path: '/library', locale });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
 describe('LibraryPage', () => {
   it('renders catalog favorites and pages with the returned cursor', async () => {
     const cursors: string[] = [];
@@ -49,6 +54,26 @@ describe('LibraryPage', () => {
 
     expect(await screen.findByTestId('user-library-photo-3')).toBeInTheDocument();
     expect(cursors).toEqual(['', 'page-two']);
+  });
+
+  it('uses singular copy when one favorite photo is loaded', async () => {
+    server.use(http.get('*/favorites', () => json({ items: [favorite(1)] })));
+    open();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('user-library-total')).toHaveTextContent('1 favorite photo loaded'),
+    );
+  });
+
+  it('reveals the photo caption when its tile receives keyboard focus', async () => {
+    server.use(http.get('*/favorites', () => json({ items: [favorite(1)] })));
+    open();
+    const tile = await screen.findByTestId('user-library-photo-1');
+
+    expect(tile).toHaveAttribute('tabindex', '0');
+    tile.focus();
+    expect(document.activeElement).toBe(tile);
+    expect(screen.getByTestId('user-library-photo-caption-1')).toBeInTheDocument();
   });
 
   it('filters the loaded catalog page by contact, sizes and AI status', async () => {
@@ -225,6 +250,30 @@ describe('LibraryPage', () => {
 
     expect(await screen.findByTestId('user-library-empty')).toBeInTheDocument();
     expect(requests).toBe(2);
+  });
+
+  it('keeps loaded photos and offers retry after a background refresh fails', async () => {
+    let requests = 0;
+    server.use(
+      http.get('*/favorites', () => {
+        requests += 1;
+        return requests === 1
+          ? json({ items: [favorite(51)] })
+          : requests === 2
+            ? json({ code: 'unavailable' }, 503)
+            : json({ items: [favorite(51)] });
+      }),
+    );
+    const app = open();
+    await screen.findByTestId('user-library-photo-51');
+
+    await app.client.refetchQueries({ queryKey: ['library', 'favorites'] });
+    expect(await screen.findByTestId('user-library-stale')).toBeInTheDocument();
+    expect(screen.getByTestId('user-library-photo-51')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('user-library-stale-retry'));
+
+    await waitFor(() => expect(screen.queryByTestId('user-library-stale')).not.toBeInTheDocument());
+    expect(requests).toBe(3);
   });
 
   it('retries a failed cursor page without discarding loaded photos', async () => {

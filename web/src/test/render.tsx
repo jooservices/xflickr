@@ -45,5 +45,5 @@ export function renderApp({
       </I18nextProvider>
     </QueryClientProvider>,
   );
-  return { ...result, router };
+  return { ...result, router, client };
 }

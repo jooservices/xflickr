@@ -48,6 +48,9 @@ test('selects visible favorites without losing filtered selection', async ({ pag
   try {
     await page.goto('/library');
     await expect(page.getByTestId('user-library-photo-1')).toBeVisible();
+    const firstPhoto = page.getByTestId('user-library-photo-1');
+    await firstPhoto.focus();
+    await expect(firstPhoto.getByTestId('user-library-photo-caption-1')).toBeVisible();
     await expect(page.getByTestId('user-library-total')).toContainText(
       '100 favorite photos loaded',
     );
@@ -66,15 +69,16 @@ test('selects visible favorites without losing filtered selection', async ({ pag
     await page.getByTestId('user-library-photo-select-1').check();
     await page.getByTestId('user-library-select-visible').click();
     await expect(page.getByTestId('user-library-selection-status')).toContainText('500');
-    await expect(page.getByText('The tray holds up to 500 photos.')).toBeVisible();
+    await expect(
+      page.getByText(
+        'The selection limit is 500 photos. Selected photos have not been added to the download tray.',
+      ),
+    ).toBeVisible();
 
     await page.getByRole('checkbox', { name: 'new@N00' }).check();
     await expect(page.getByTestId('user-library-photo-select-500')).toBeChecked();
     await expect(page.getByTestId('user-library-photo-select-501')).not.toBeChecked();
-    await expect(page.getByTestId('user-library-photo-tray-500')).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    await expect(page.getByTestId('user-library-photo-select-501')).toBeDisabled();
 
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('user-library-select-mode')).toHaveAttribute(
