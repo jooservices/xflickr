@@ -52,6 +52,12 @@ func New(baseURL, token string, client *http.Client) (*Client, error) {
 		parsedURL.RawQuery != "" || parsedURL.ForceQuery || parsedURL.Fragment != "" || parsedURL.RawFragment != "" || strings.Contains(baseURL, "#") {
 		return nil, errors.New("heartbeat: invalid control URL")
 	}
+	if strings.EqualFold(parsedURL.Scheme, "http") {
+		ip := net.ParseIP(parsedURL.Hostname())
+		if ip == nil || !ip.IsLoopback() {
+			return nil, errors.New("heartbeat: cleartext control URL must use a loopback IP")
+		}
+	}
 	if token == "" || strings.IndexFunc(token, unicode.IsSpace) >= 0 {
 		return nil, errors.New("heartbeat: node token is required and cannot contain whitespace")
 	}

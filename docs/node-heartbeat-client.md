@@ -12,6 +12,9 @@ metadata collected for that heartbeat:
 The request includes all three metadata fields and a bearer token. The response
 must contain a node name, a supported state, and a valid RFC3339 heartbeat
 timestamp. The client reads at most 64 KiB of response data and closes the body.
+Remote control URLs must use HTTPS. HTTP is accepted only for a loopback IP
+literal, which supports local tests without sending the node token over a remote
+cleartext connection.
 
 Each call makes one request. The client does not retry and does not follow
 redirects, so the bearer token is not forwarded to another URL. Errors include

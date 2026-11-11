@@ -99,15 +99,17 @@ func TestClientRejectsInvalidInputs(t *testing.T) {
 		{name: "relative URL", url: "control.internal", token: testToken, client: &http.Client{}},
 		{name: "unsupported scheme", url: "ftp://control.internal", token: testToken, client: &http.Client{}},
 		{name: "missing host", url: "http:///heartbeat", token: testToken, client: &http.Client{}},
-		{name: "userinfo", url: "http://user:pass@control.internal", token: testToken, client: &http.Client{}},
-		{name: "query", url: "http://control.internal?key=value", token: testToken, client: &http.Client{}},
-		{name: "empty query", url: "http://control.internal?", token: testToken, client: &http.Client{}},
-		{name: "fragment", url: "http://control.internal#part", token: testToken, client: &http.Client{}},
-		{name: "empty fragment", url: "http://control.internal#", token: testToken, client: &http.Client{}},
-		{name: "path", url: "http://control.internal/prefix", token: testToken, client: &http.Client{}},
-		{name: "empty token", url: "http://control.internal", token: "", client: &http.Client{}},
-		{name: "token whitespace", url: "http://control.internal", token: "node token", client: &http.Client{}},
-		{name: "nil HTTP client", url: "http://control.internal", token: testToken},
+		{name: "remote HTTP", url: "http://control.internal", token: testToken, client: &http.Client{}},
+		{name: "remote HTTP IP", url: "http://192.0.2.10", token: testToken, client: &http.Client{}},
+		{name: "userinfo", url: "https://user:pass@control.internal", token: testToken, client: &http.Client{}},
+		{name: "query", url: "https://control.internal?key=value", token: testToken, client: &http.Client{}},
+		{name: "empty query", url: "https://control.internal?", token: testToken, client: &http.Client{}},
+		{name: "fragment", url: "https://control.internal#part", token: testToken, client: &http.Client{}},
+		{name: "empty fragment", url: "https://control.internal#", token: testToken, client: &http.Client{}},
+		{name: "path", url: "https://control.internal/prefix", token: testToken, client: &http.Client{}},
+		{name: "empty token", url: "https://control.internal", token: "", client: &http.Client{}},
+		{name: "token whitespace", url: "https://control.internal", token: "node token", client: &http.Client{}},
+		{name: "nil HTTP client", url: "https://control.internal", token: testToken},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if _, err := New(test.url, test.token, test.client); err == nil {
@@ -175,7 +177,7 @@ func TestClientHandlesFailures(t *testing.T) {
 				requests.Add(1)
 				return &http.Response{StatusCode: test.status, Header: make(http.Header), Body: body}, nil
 			})
-			client, err := New("http://control.internal", testToken, &http.Client{Transport: transport})
+			client, err := New("https://control.internal", testToken, &http.Client{Transport: transport})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -200,7 +202,7 @@ func TestClientHandlesFailures(t *testing.T) {
 
 	transportError := errors.New("transport failed: " + testToken + " " + responseMarker)
 	var requests atomic.Int32
-	client, err := New("http://control.internal", testToken, &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+	client, err := New("https://control.internal", testToken, &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		requests.Add(1)
 		return nil, transportError
 	})})
@@ -217,7 +219,7 @@ func TestClientHandlesFailures(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	started := make(chan struct{})
-	client, err = New("http://control.internal", testToken, &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+	client, err = New("https://control.internal", testToken, &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		close(started)
 		<-request.Context().Done()
 		return nil, request.Context().Err()
