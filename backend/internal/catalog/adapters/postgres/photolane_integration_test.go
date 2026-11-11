@@ -654,10 +654,6 @@ func TestPhotoLanePlanBoundsPhotoReads(t *testing.T) {
 	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration-hash','user') RETURNING id`, userEmail).Scan(&userID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username)
-		SELECT $1 || '-owner-' || n, $1 || '-owner-' || n FROM generate_series(1,3999) AS n`, suffix); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
 		t.Fatal(err)
 	}
@@ -668,15 +664,14 @@ func TestPhotoLanePlanBoundsPhotoReads(t *testing.T) {
 	t.Cleanup(func() {
 		bg := context.Background()
 		_, _ = pool.Exec(bg, `DELETE FROM schedule_meta WHERE key=$1`, "photo_lane_cursor:"+owner)
-		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE owner_nsid LIKE $1 || '-owner%'`, suffix)
-		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid LIKE $1 || '-owner%'`, suffix)
+		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE owner_nsid=$1`, owner)
+		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid=$1`, owner)
 		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id=$1`, userID)
 	})
 	if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,last_update,visibility,sizes,sizes_status,uploaded_at,raw,content_hash)
-		SELECT $1::bigint+n::bigint,
-			CASE WHEN n <= 1000 THEN $2 ELSE $3 || '-owner-' || ((n % 3999)+1)::text END,
+		SELECT $1::bigint+n::bigint,$2,
 			now(),'public','[]'::jsonb,'provisional',now()-n*interval '1 second','{}',decode(repeat('ab',32),'hex')
-		FROM generate_series(1,400000) AS n`, base, owner, suffix); err != nil {
+		FROM generate_series(1,400000) AS n`, base, owner); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `ANALYZE photos`); err != nil {
@@ -685,7 +680,7 @@ func TestPhotoLanePlanBoundsPhotoReads(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO schedule_meta(key,value)
 		SELECT $1,jsonb_build_object('uploaded_at',uploaded_at,'photo_id',id)::text
 		FROM photos WHERE owner_nsid=$2 AND id=$3
-		ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`, "photo_lane_cursor:"+owner, owner, base+50); err != nil {
+		ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`, "photo_lane_cursor:"+owner, owner, base+200000); err != nil {
 		t.Fatal(err)
 	}
 	queryPool := &photoLanePlanPool{pool: pool}
@@ -697,7 +692,7 @@ func TestPhotoLanePlanBoundsPhotoReads(t *testing.T) {
 		t.Fatalf("continued photo page returned %d rows, want 50", len(refs))
 	}
 	for _, ref := range refs {
-		if ref.OwnerNSID != owner || ref.ID <= base+50 {
+		if ref.OwnerNSID != owner || ref.ID <= base+200000 {
 			t.Fatalf("continued photo page returned %+v, want only photos after the stored cursor", ref)
 		}
 	}
@@ -717,8 +712,8 @@ func TestPhotoLanePlanBoundsPhotoReads(t *testing.T) {
 		t.Fatalf("photo lane plan uses a sequential scan on %s: %s", relation, photoScanNodes(root))
 	}
 	indexes := photoIndexNodes(root)
-	if !strings.Contains(indexes, "owner_last_seen_idx") {
-		t.Fatalf("photo lane plan did not use the existing owner index: %s", photoScanNodes(root))
+	if !strings.Contains(indexes, "photo_lane_order_idx") {
+		t.Fatalf("photo lane plan did not use the owner/upload/id index: %s", photoScanNodes(root))
 	}
 	buffers := planBuffers(root)
 	if buffers > 2000 {
