@@ -52,6 +52,24 @@ func TestContactSummaryMigrationBackfillsExistingData(t *testing.T) {
 	}
 }
 
+func TestContactSummaryBackfillLocksBeforeReadingEachPage(t *testing.T) {
+	sql, err := migrations.Files.ReadFile("20261111170000_contact_screen_summaries.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock := "PERFORM 1 FROM crawl_interests\n            WHERE user_id=contact_user_id AND person_nsid=contact_person_nsid\n            FOR UPDATE;"
+	photoLock := strings.Index(string(sql), lock)
+	photoPage := strings.Index(string(sql), "WITH photo_page AS MATERIALIZED")
+	favoriteLock := strings.Index(string(sql[photoPage+1:]), lock)
+	if favoriteLock >= 0 {
+		favoriteLock += photoPage + 1
+	}
+	favoritePage := strings.Index(string(sql), "WITH favorite_page AS MATERIALIZED")
+	if photoLock < 0 || photoPage < 0 || favoriteLock < photoPage || favoritePage < favoriteLock {
+		t.Fatalf("summary backfill must lock the contact row before each photo and favorite page")
+	}
+}
+
 func TestContactSizePriorityIndexMigrationAttachesEveryPartition(t *testing.T) {
 	ctx, cfg, pool := prepareEmptyMigrationTest(t)
 	if err := db.MigrateFiles(ctx, cfg, db.MigrateUp, io.Discard, migrationsBeforeContactSummary(t)); err != nil {

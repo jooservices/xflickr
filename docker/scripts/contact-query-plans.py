@@ -53,6 +53,8 @@ CREATE INDEX photos_owner_recent_idx
     ON photos (owner_nsid, last_update DESC, id DESC)
     WHERE tombstoned_at IS NULL;
 CREATE INDEX photos_owner_contact_id_idx ON ONLY photos (owner_nsid, id);
+CREATE INDEX photos_owner_pending_sizes_idx ON ONLY photos (owner_nsid, id)
+    WHERE tombstoned_at IS NULL AND sizes_status <> 'confirmed';
 DO $$
 DECLARE partition_no INTEGER;
 BEGIN
@@ -63,6 +65,14 @@ BEGIN
         );
         EXECUTE format(
             'ALTER INDEX photos_owner_contact_id_idx ATTACH PARTITION photos_p%s_owner_contact_id_idx',
+            lpad(partition_no::text, 2, '0')
+        );
+        EXECUTE format(
+            'CREATE INDEX photos_p%s_owner_pending_sizes_idx ON photos_p%s (owner_nsid, id) WHERE tombstoned_at IS NULL AND sizes_status <> ''confirmed''',
+            lpad(partition_no::text, 2, '0'), lpad(partition_no::text, 2, '0')
+        );
+        EXECUTE format(
+            'ALTER INDEX photos_owner_pending_sizes_idx ATTACH PARTITION photos_p%s_owner_pending_sizes_idx',
             lpad(partition_no::text, 2, '0')
         );
     END LOOP;
@@ -234,21 +244,24 @@ ANALYZE person_groups;
 
 \echo 'Contact photo-size priority batch'
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
-WITH batch AS MATERIALIZED (
-    SELECT wi.id, ph.id AS photo_id FROM photos ph
-    JOIN work_items wi ON wi.user_id = 42 AND wi.subject_key = ph.id::text
+WITH photo_page AS MATERIALIZED (
+    SELECT ph.id FROM photos ph
     WHERE ph.owner_nsid = 'owner-42' AND ph.id > 0
       AND ph.tombstoned_at IS NULL AND ph.sizes_status <> 'confirmed'
-      AND wi.kind = 'photo_sizes'
-      AND wi.state IN ('pending', 'ready', 'running', 'waiting')
-      AND wi.direct_action = FALSE
-    ORDER BY ph.id, wi.id LIMIT 500 FOR UPDATE OF wi
+    ORDER BY ph.id LIMIT 501
+), batch AS MATERIALIZED (
+    SELECT id FROM photo_page ORDER BY id LIMIT 500
 ), updated AS (
     UPDATE work_items wi SET direct_action = TRUE, score_updated_at = NULL,
         updated_at = now()
-    FROM batch WHERE wi.id = batch.id RETURNING batch.photo_id
+    FROM batch WHERE wi.user_id = 42 AND wi.subject_key = batch.id::text
+      AND wi.kind = 'photo_sizes'
+      AND wi.state IN ('pending', 'ready', 'running', 'waiting')
+      AND wi.direct_action = FALSE RETURNING wi.id
 )
-SELECT count(*), COALESCE(max(photo_id), 0) FROM updated;
+SELECT (SELECT count(*) FROM updated),
+       COALESCE((SELECT max(id) FROM batch), 0),
+       (SELECT count(*) > 500 FROM photo_page);
 
 \echo 'Contact summary backfill photo ID page'
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
@@ -278,33 +291,44 @@ SELECT count(*) FROM albums WHERE owner_nsid = 'owner-42';
 
 \echo 'Contact album keyset page with visible stored count'
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
-SELECT a.id, a.title, p.username,
-       (SELECT count(*) FROM album_photos ap JOIN photos stored ON stored.id = ap.photo_id
-        WHERE ap.album_id = a.id AND stored.tombstoned_at IS NULL
-          AND (EXISTS (SELECT 1 FROM flickr_accounts fa
-                       CROSS JOIN LATERAL (SELECT 1 FROM observations o
-                           WHERE o.user_id = fa.user_id AND o.flickr_account_id = fa.id
-                             AND o.record_kind = 'photo' AND o.record_id = stored.id::text LIMIT 1) seen
-                       WHERE fa.user_id = 42)
-               OR (stored.visibility = 'public' AND EXISTS (
-                   SELECT 1 FROM sharing_settings ss
-                   JOIN flickr_accounts fa ON fa.user_id = ss.user_id
+WITH album_page AS MATERIALIZED (
+    SELECT a.id, a.title, p.username AS owner_name, a.primary_photo_id,
+           a.photos_count, a.updated_at
+    FROM albums a JOIN people p ON p.nsid = a.owner_nsid
+    WHERE a.owner_nsid = 'owner-42'
+      AND EXISTS (SELECT 1 FROM crawl_interests ci
+                  WHERE ci.user_id = 42 AND ci.person_nsid = 'owner-42')
+      AND (a.updated_at < now() - INTERVAL '50 minutes'
+           OR a.updated_at IS NULL
+           OR (a.updated_at = now() - INTERVAL '50 minutes' AND a.id < '50'))
+    ORDER BY a.updated_at DESC NULLS LAST, a.id DESC LIMIT 101
+), stored_counts AS (
+    SELECT ap.album_id, count(*)::bigint AS stored_count
+    FROM album_page page
+    JOIN album_photos ap ON ap.album_id = page.id
+    JOIN photos stored ON stored.id = ap.photo_id
+    WHERE stored.tombstoned_at IS NULL
+      AND (EXISTS (SELECT 1 FROM flickr_accounts fa
                    CROSS JOIN LATERAL (SELECT 1 FROM observations o
-                       WHERE o.user_id = ss.user_id AND o.flickr_account_id = fa.id
+                       WHERE o.user_id = fa.user_id AND o.flickr_account_id = fa.id
                          AND o.record_kind = 'photo' AND o.record_id = stored.id::text LIMIT 1) seen
-                   WHERE ss.enabled)))),
-       a.photos_count,
+                   WHERE fa.user_id = 42)
+           OR (stored.visibility = 'public' AND EXISTS (
+               SELECT 1 FROM sharing_settings ss
+               JOIN flickr_accounts fa ON fa.user_id = ss.user_id
+               CROSS JOIN LATERAL (SELECT 1 FROM observations o
+                   WHERE o.user_id = ss.user_id AND o.flickr_account_id = fa.id
+                     AND o.record_kind = 'photo' AND o.record_id = stored.id::text LIMIT 1) seen
+               WHERE ss.enabled)))
+    GROUP BY ap.album_id
+)
+SELECT page.id, page.title, page.owner_name, COALESCE(stored_counts.stored_count, 0),
+       page.photos_count,
        COALESCE((SELECT jsonb_agg(NULLIF(cover.sizes->0->>'url', '')) FROM photos cover
-                 WHERE cover.id = a.primary_photo_id AND cover.tombstoned_at IS NULL
+                 WHERE cover.id = page.primary_photo_id AND cover.tombstoned_at IS NULL
                    AND cover.sizes->0->>'url' IS NOT NULL), '[]'::jsonb),
-       a.updated_at
-FROM albums a JOIN people p ON p.nsid = a.owner_nsid
-WHERE a.owner_nsid = 'owner-42'
-  AND EXISTS (SELECT 1 FROM crawl_interests ci WHERE ci.user_id = 42 AND ci.person_nsid = 'owner-42')
-  AND (a.updated_at < now() - INTERVAL '50 minutes'
-       OR a.updated_at IS NULL
-       OR (a.updated_at = now() - INTERVAL '50 minutes' AND a.id < '50'))
-ORDER BY a.updated_at DESC NULLS LAST, a.id DESC LIMIT 101;
+       page.updated_at
+FROM album_page page LEFT JOIN stored_counts ON stored_counts.album_id = page.id;
 
 \echo 'Contact gallery total count'
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
@@ -554,7 +578,11 @@ def main() -> int:
     if full_scans:
         print(f"contact-query-plans: unexpected full scans: {', '.join(full_scans)}", file=sys.stderr)
         return 1
-    for index in ("owner_contact_id_idx", "work_items_contact_photo_sizes_idx"):
+    for index in (
+        "owner_contact_id_idx",
+        "owner_pending_sizes_idx",
+        "work_items_contact_photo_sizes_idx",
+    ):
         if index not in result.stdout:
             print(f"contact-query-plans: expected index missing from plans: {index}", file=sys.stderr)
             return 1
