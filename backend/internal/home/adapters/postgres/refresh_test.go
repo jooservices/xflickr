@@ -13,12 +13,19 @@ import (
 )
 
 type refreshDBStub struct {
-	row      pgx.Row
-	tx       pgx.Tx
-	beginErr error
+	row        pgx.Row
+	sharingRow pgx.Row
+	tx         pgx.Tx
+	beginErr   error
 }
 
-func (d *refreshDBStub) QueryRow(context.Context, string, ...any) pgx.Row {
+func (d *refreshDBStub) QueryRow(_ context.Context, query string, _ ...any) pgx.Row {
+	if strings.Contains(query, "user_home_sharing_syncs") {
+		if d.sharingRow != nil {
+			return d.sharingRow
+		}
+		return refreshRowStub{values: []any{false}}
+	}
 	return d.row
 }
 
@@ -28,23 +35,35 @@ func (d *refreshDBStub) Begin(context.Context) (pgx.Tx, error) {
 
 type refreshTxStub struct {
 	pgx.Tx
-	lockRow   pgx.Row
-	rows      pgx.Rows
-	queryErr  error
-	execQuery string
-	execErr   error
-	commitErr error
+	lockRow    pgx.Row
+	rows       pgx.Rows
+	queryErr   error
+	execQuery  string
+	execErr    error
+	sharingRow pgx.Row
+	execCalls  int
+	commitErr  error
 }
 
 func (tx *refreshTxStub) Query(context.Context, string, ...any) (pgx.Rows, error) {
 	return tx.rows, tx.queryErr
 }
 
-func (tx *refreshTxStub) QueryRow(context.Context, string, ...any) pgx.Row {
+func (tx *refreshTxStub) QueryRow(_ context.Context, query string, _ ...any) pgx.Row {
+	if strings.Contains(query, "SELECT EXISTS (SELECT 1 FROM user_home_sharing_syncs)") {
+		if tx.sharingRow != nil {
+			return tx.sharingRow
+		}
+		return refreshRowStub{values: []any{false}}
+	}
+	if strings.Contains(query, "FROM user_home_sharing_syncs WHERE user_id") {
+		return refreshRowStub{err: pgx.ErrNoRows}
+	}
 	return tx.lockRow
 }
 
 func (tx *refreshTxStub) Exec(_ context.Context, query string, _ ...any) (pgconn.CommandTag, error) {
+	tx.execCalls++
 	if tx.execErr != nil && strings.Contains(query, tx.execQuery) {
 		return pgconn.CommandTag{}, tx.execErr
 	}
@@ -69,6 +88,8 @@ func (row refreshRowStub) Scan(dest ...any) error {
 			*target = value.(string)
 		case *int64:
 			*target = value.(int64)
+		case *bool:
+			*target = value.(bool)
 		}
 	}
 	return nil
@@ -100,6 +121,8 @@ func (rows *refreshRowsStub) Scan(dest ...any) error {
 			*target = value.(string)
 		case *bool:
 			*target = value.(bool)
+		case *int64:
+			*target = value.(int64)
 		}
 	}
 	return nil
@@ -138,6 +161,7 @@ func TestRefreshBatchReportsDatabaseFailures(t *testing.T) {
 		tx   *refreshTxStub
 	}{
 		{name: "begin", db: &refreshDBStub{beginErr: want}},
+		{name: "sharing sync check", tx: &refreshTxStub{sharingRow: refreshRowStub{err: want}}},
 		{name: "start", tx: &refreshTxStub{execQuery: "INSERT INTO user_home_stats_refreshes", execErr: want}},
 		{name: "lock", tx: &refreshTxStub{lockRow: refreshRowStub{err: want}}},
 		{name: "page query", tx: &refreshTxStub{lockRow: refreshRowStub{}, queryErr: want}},
@@ -185,6 +209,17 @@ func TestRefreshBatchRequiresRefreshDatabase(t *testing.T) {
 	}
 }
 
+func TestRefreshBatchWaitsForSharingCandidateSyncs(t *testing.T) {
+	pending := refreshRowStub{values: []any{true}}
+	tx := &refreshTxStub{sharingRow: pending, rows: &refreshRowsStub{}}
+	database := &refreshDBStub{row: refreshRowStub{values: []any{false}}, sharingRow: pending, tx: tx}
+	repository := &Repository{db: database}
+	done, err := repository.RefreshBatch(t.Context(), 9, 2)
+	if err != nil || done || tx.execCalls != 0 {
+		t.Fatalf("refresh during a sharing sync = done %t, err %v, writes %d", done, err, tx.execCalls)
+	}
+}
+
 func TestConfiguredRefreshBatchSizeReadsAdminSetting(t *testing.T) {
 	for _, test := range []struct {
 		name    string
@@ -229,9 +264,6 @@ func TestRefreshPagePaginatesIndexedPhotoSources(t *testing.T) {
 		}
 	}
 	if strings.Contains(refreshPhotoPageSQL, "FROM observations") {
-		t.Fatal("refresh page must not search observations for shared photo IDs")
-	}
-	if strings.Contains(refreshPhotoPageSQL, "FROM sharing_settings") {
-		t.Fatal("refresh page must paginate the shared candidate set directly")
+		t.Fatal("refresh pages must use the bounded shared candidate index")
 	}
 }

@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -10,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	homeapp "github.com/jooservices/xflickr/internal/home/app"
+	"github.com/jooservices/xflickr/internal/platform/queue"
 	"github.com/jooservices/xflickr/internal/sharing/domain"
 )
 
@@ -59,6 +62,35 @@ func (t txStub) Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 	}
 	return pgconn.NewCommandTag("INSERT 0 1"), t.execErr
 }
+
+type queueTxStub struct {
+	pgx.Tx
+	txStub
+}
+
+func (tx queueTxStub) QueryRow(ctx context.Context, query string, args ...any) pgx.Row {
+	return tx.txStub.QueryRow(ctx, query, args...)
+}
+
+func (tx queueTxStub) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
+	return tx.txStub.Exec(ctx, query, args...)
+}
+
+type refreshQueueStub struct {
+	job     queue.Job
+	options queue.Options
+	err     error
+	calls   int
+}
+
+func (q *refreshQueueStub) Enqueue(_ context.Context, _ pgx.Tx, job queue.Job, options queue.Options) error {
+	q.job = job
+	q.options = options
+	q.calls++
+	return q.err
+}
+
+func (*refreshQueueStub) Register(string, queue.Handler) error { return nil }
 
 func TestSetWithTransactionFake(t *testing.T) {
 	now := time.Unix(20, 0).UTC()
@@ -120,12 +152,58 @@ func TestGetDefaultAndStoredSettings(t *testing.T) {
 	}
 }
 
+func TestSetEnqueuesHomeRefreshInChangeTransaction(t *testing.T) {
+	queueErr := errors.New("queue unavailable")
+	for _, test := range []struct {
+		name     string
+		queueErr error
+		wantErr  bool
+	}{
+		{name: "enqueued", wantErr: false},
+		{name: "enqueue failure rolls back setting", queueErr: queueErr, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			now := time.Unix(20, 0).UTC()
+			transaction := queueTxStub{txStub: txStub{insert: rowStub{values: []any{int64(7), true, now}}}}
+			jobs := &refreshQueueStub{err: test.queueErr}
+			repository := &Repository{
+				run: func(_ context.Context, fn func(settingTx) error) error {
+					return fn(transaction)
+				},
+				queue: jobs,
+			}
+			_, err := repository.Set(t.Context(), domain.Setting{UserID: 7, Enabled: true})
+			if (err != nil) != test.wantErr || test.wantErr && !errors.Is(err, queueErr) {
+				t.Fatalf("Set() error = %v, wantErr %t", err, test.wantErr)
+			}
+			if jobs.calls != 1 || jobs.job.Kind != homeapp.RefreshJobKind || jobs.options.Queue != "home" || jobs.options.UniqueByArgs || jobs.options.UniqueByQueue {
+				t.Fatalf("queued Home refresh = %+v, options=%+v", jobs.job, jobs.options)
+			}
+			var args homeapp.RefreshJob
+			if err := json.Unmarshal(jobs.job.Args, &args); err != nil || args.UserID != 7 {
+				t.Fatalf("Home refresh args = %+v, err=%v", args, err)
+			}
+		})
+	}
+}
+
 func TestNewAndSetValidation(t *testing.T) {
 	if _, err := New(nil); err == nil {
 		t.Fatal("expected missing pool error")
 	}
 	if _, err := New(beginnerStub{}); err != nil {
 		t.Fatalf("New() error = %v", err)
+	}
+	if _, err := New(beginnerStub{}, nil); err == nil {
+		t.Fatal("New() accepted a nil refresh queue")
+	}
+	if _, err := New(beginnerStub{}, &refreshQueueStub{}, &refreshQueueStub{}); err == nil {
+		t.Fatal("New() accepted multiple refresh queues")
+	}
+	refreshQueue := &refreshQueueStub{}
+	withRefreshQueue, err := New(beginnerStub{}, refreshQueue)
+	if err != nil || withRefreshQueue.queue != refreshQueue {
+		t.Fatalf("New() refresh queue = %v, err=%v", withRefreshQueue, err)
 	}
 	for _, repo := range []*Repository{nil, {}, {run: func(context.Context, func(settingTx) error) error { return nil }}} {
 		if repo != nil && repo.run != nil {

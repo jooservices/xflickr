@@ -197,8 +197,16 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 	if queueStub.calls != 1 || queueStub.job.Kind != app.RefreshJobKind {
 		t.Fatalf("missing stats row was not queued once: %+v", queueStub)
 	}
-	assertHomePlans(t, ctx, pool, requestDB.statement, userID, 3)
 	refresher := app.Refresher{Processor: repository, BatchSize: 3}
+	for {
+		done, err := refresher.Refresh(ctx, otherUserID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if done {
+			break
+		}
+	}
 	for {
 		done, err := refresher.Refresh(ctx, userID)
 		if err != nil {
@@ -251,7 +259,7 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 	}
 	assertPhotoMissing(t, snapshot.NewPhotos, sharedPublicID)
 	for {
-		done, err := repository.RefreshBatch(ctx, otherUserID, 3)
+		done, err := repository.RefreshBatch(ctx, otherUserID, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -272,7 +280,7 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 	}
 	assertPhotoMissing(t, snapshot.NewPhotos, sharedPublicID)
 	for {
-		done, err := repository.RefreshBatch(ctx, otherUserID, 3)
+		done, err := repository.RefreshBatch(ctx, otherUserID, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -312,7 +320,7 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !snapshot.Estimated || snapshot.Photos.Total != 14 || snapshot.CountsComputedAt == nil || queueStub.calls != 3 {
+	if !snapshot.Estimated || snapshot.Photos.Total != 14 || snapshot.CountsComputedAt == nil || queueStub.calls != 4 {
 		t.Fatalf("stale counts snapshot = %+v, computed_at=%v, estimated=%t, enqueue calls=%d", snapshot.Photos, snapshot.CountsComputedAt, snapshot.Estimated, queueStub.calls)
 	}
 	if len(snapshot.NewPhotos) != 12 || snapshot.NewPhotos[0].ID != sharedPublicID || snapshot.NewPhotos[0].ThumbnailURL == nil || *snapshot.NewPhotos[0].ThumbnailURL == "" {
@@ -394,8 +402,34 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 		t.Fatal(err)
 	}
 	snapshot, err = repository.Load(ctx, userID)
-	if err != nil || !snapshot.Estimated || snapshot.Photos.Total != 0 {
+	if err != nil || !snapshot.Estimated || snapshot.Photos.Total != 13 {
 		t.Fatalf("post-refresh permission change did not invalidate snapshot: %+v estimated=%t err=%v", snapshot.Photos, snapshot.Estimated, err)
+	}
+	if len(snapshot.NewPhotos) != 12 {
+		t.Fatalf("revoked shared photo reduced the visible page to %d entries", len(snapshot.NewPhotos))
+	}
+	assertPhotoMissing(t, snapshot.NewPhotos, sharedPublicID)
+	for {
+		done, err := refresher.Refresh(ctx, otherUserID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if done {
+			break
+		}
+	}
+	for {
+		done, err := refresher.Refresh(ctx, userID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if done {
+			break
+		}
+	}
+	snapshot, err = repository.Load(ctx, userID)
+	if err != nil || snapshot.Estimated || snapshot.Photos.Total != 12 {
+		t.Fatalf("post-revocation refresh = %+v estimated=%t err=%v", snapshot.Photos, snapshot.Estimated, err)
 	}
 }
 

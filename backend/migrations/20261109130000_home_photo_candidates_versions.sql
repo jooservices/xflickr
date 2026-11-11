@@ -7,25 +7,15 @@ CREATE TABLE IF NOT EXISTS user_home_photo_candidates (
     PRIMARY KEY (user_id, photo_id)
 );
 
-INSERT INTO user_home_photo_candidates (user_id, photo_id, uploaded_at)
-SELECT DISTINCT observation.user_id, photo.id, photo.uploaded_at
-FROM observations observation
-JOIN photos photo ON photo.id::text = observation.record_id
-WHERE observation.record_kind = 'photo'
-  AND observation.record_id ~ '^[0-9]+$'
-  AND photo.visibility = 'public'
-  AND photo.tombstoned_at IS NULL
-ON CONFLICT (user_id, photo_id) DO NOTHING;
-
 CREATE TABLE IF NOT EXISTS user_home_shared_photo_candidates (
     photo_id BIGINT PRIMARY KEY REFERENCES photos (id) ON DELETE CASCADE,
     uploaded_at TIMESTAMPTZ
 );
-INSERT INTO user_home_shared_photo_candidates (photo_id, uploaded_at)
-SELECT candidate.photo_id, candidate.uploaded_at
-FROM user_home_photo_candidates candidate
-JOIN sharing_settings setting ON setting.user_id = candidate.user_id AND setting.enabled
-ON CONFLICT (photo_id) DO UPDATE SET uploaded_at = EXCLUDED.uploaded_at;
+CREATE TABLE IF NOT EXISTS user_home_sharing_syncs (
+    user_id BIGINT PRIMARY KEY REFERENCES sharing_settings (user_id) ON DELETE CASCADE,
+    enabled BOOLEAN NOT NULL,
+    cursor_photo_id BIGINT NOT NULL DEFAULT 0
+);
 
 DROP INDEX CONCURRENTLY IF EXISTS user_home_photo_candidates_recent_idx;
 CREATE INDEX CONCURRENTLY user_home_photo_candidates_recent_idx
@@ -45,12 +35,17 @@ CREATE INDEX CONCURRENTLY work_items_user_activity_idx
     WHERE user_id IS NOT NULL
       AND kind IN ('photos', 'sizes')
       AND state IN ('ready', 'running', 'waiting', 'failed', 'done');
+DROP INDEX CONCURRENTLY IF EXISTS work_items_home_contact_state_idx;
+CREATE INDEX CONCURRENTLY work_items_home_contact_state_idx
+    ON work_items (user_id, subject_key, state)
+    WHERE state IN ('pending', 'ready', 'running', 'waiting', 'failed');
 DROP INDEX CONCURRENTLY IF EXISTS downloads_user_activity_idx;
 CREATE INDEX CONCURRENTLY downloads_user_activity_idx
     ON downloads (user_id, created_at DESC, id DESC);
 
 ANALYZE user_home_photo_candidates;
 ANALYZE user_home_shared_photo_candidates;
+ANALYZE user_home_sharing_syncs;
 ANALYZE sharing_settings;
 
 CREATE TABLE IF NOT EXISTS user_home_stats_versions (
@@ -77,7 +72,7 @@ ALTER TABLE user_home_stats_refreshes
 INSERT INTO app_settings (key, value, user_overridable, min, max)
 VALUES ('home.stats_refresh_batch_size', '250'::jsonb, FALSE, 250, 1000)
 ON CONFLICT (key) DO UPDATE
-SET value = LEAST(GREATEST((app_settings.value #>> '{}')::bigint, 250), 1000)::jsonb,
+SET value = to_jsonb(LEAST(GREATEST((app_settings.value #>> '{}')::bigint, 250), 1000)),
     min = 250,
     max = 1000;
 
@@ -288,41 +283,141 @@ END;
 $$;
 
 CREATE OR REPLACE FUNCTION bump_home_sharing_revision() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+    changed BOOLEAN;
+    should_sync BOOLEAN;
 BEGIN
-    INSERT INTO user_home_stats_versions (user_id, revision)
-    VALUES (NEW.user_id, 2)
-    ON CONFLICT (user_id) DO UPDATE
-    SET revision = user_home_stats_versions.revision + 1;
-    IF TG_OP = 'INSERT' AND NEW.enabled THEN
-        INSERT INTO user_home_shared_photo_candidates (photo_id, uploaded_at)
-        SELECT candidate.photo_id, candidate.uploaded_at
-        FROM user_home_photo_candidates candidate
-        WHERE candidate.user_id = NEW.user_id
-        ON CONFLICT (photo_id) DO UPDATE SET uploaded_at = EXCLUDED.uploaded_at;
-        UPDATE user_home_shared_version SET revision = revision + 1 WHERE id = TRUE;
-    ELSIF TG_OP = 'UPDATE' AND OLD.enabled IS DISTINCT FROM NEW.enabled THEN
-        IF NEW.enabled THEN
-            INSERT INTO user_home_shared_photo_candidates (photo_id, uploaded_at)
-            SELECT candidate.photo_id, candidate.uploaded_at
-            FROM user_home_photo_candidates candidate
-            WHERE candidate.user_id = NEW.user_id
-            ON CONFLICT (photo_id) DO UPDATE SET uploaded_at = EXCLUDED.uploaded_at;
-        ELSE
-            DELETE FROM user_home_shared_photo_candidates shared
-            USING user_home_photo_candidates own
-            WHERE own.user_id = OLD.user_id
-              AND own.photo_id = shared.photo_id
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM observations observation
-                  JOIN sharing_settings setting ON setting.user_id = observation.user_id AND setting.enabled
-                  WHERE observation.record_kind = 'photo'
-                    AND observation.record_id = shared.photo_id::text
-              );
-        END IF;
+    IF TG_OP = 'INSERT' THEN
+        changed := TRUE;
+        should_sync := NEW.enabled;
+    ELSE
+        changed := OLD.enabled IS DISTINCT FROM NEW.enabled;
+        should_sync := changed;
+    END IF;
+
+    IF changed THEN
+        INSERT INTO user_home_stats_versions (user_id, revision)
+        VALUES (NEW.user_id, 2)
+        ON CONFLICT (user_id) DO UPDATE
+        SET revision = user_home_stats_versions.revision + 1;
+    END IF;
+    IF should_sync THEN
+        INSERT INTO user_home_sharing_syncs (user_id, enabled, cursor_photo_id)
+        VALUES (NEW.user_id, NEW.enabled, 0)
+        ON CONFLICT (user_id) DO UPDATE
+        SET enabled = EXCLUDED.enabled,
+            cursor_photo_id = 0;
         UPDATE user_home_shared_version SET revision = revision + 1 WHERE id = TRUE;
     END IF;
     RETURN NEW;
+END;
+$$;
+-- +goose StatementEnd
+
+CREATE TABLE IF NOT EXISTS user_home_candidates_backfill_progress (
+    id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+    cursor_photo_id BIGINT NOT NULL DEFAULT 0
+);
+INSERT INTO user_home_candidates_backfill_progress (id, cursor_photo_id)
+VALUES (TRUE, 0) ON CONFLICT (id) DO NOTHING;
+
+-- +goose StatementBegin
+CREATE OR REPLACE PROCEDURE backfill_home_photo_candidates(batch_size INTEGER)
+LANGUAGE plpgsql AS $$
+DECLARE
+    last_photo_id BIGINT;
+    next_photo_id BIGINT;
+    page_count INTEGER;
+BEGIN
+    IF batch_size < 1 OR batch_size > 1000 THEN
+        RAISE EXCEPTION 'home candidate backfill batch size is outside the supported range';
+    END IF;
+
+    CREATE TEMP TABLE IF NOT EXISTS home_photo_candidate_page (
+        photo_id BIGINT PRIMARY KEY
+    ) ON COMMIT DELETE ROWS;
+
+    LOOP
+        SELECT cursor_photo_id INTO last_photo_id
+        FROM user_home_candidates_backfill_progress
+        WHERE id = TRUE
+        FOR UPDATE;
+
+        TRUNCATE pg_temp.home_photo_candidate_page;
+        INSERT INTO pg_temp.home_photo_candidate_page (photo_id)
+        SELECT photo.id
+        FROM photos photo
+        WHERE photo.id > last_photo_id
+        ORDER BY photo.id
+        LIMIT batch_size;
+        GET DIAGNOSTICS page_count = ROW_COUNT;
+        IF page_count = 0 THEN
+            EXIT;
+        END IF;
+
+        SELECT max(photo_id) INTO next_photo_id
+        FROM pg_temp.home_photo_candidate_page;
+
+        INSERT INTO user_home_photo_candidates (user_id, photo_id, uploaded_at)
+        SELECT DISTINCT observation.user_id, photo.id, photo.uploaded_at
+        FROM pg_temp.home_photo_candidate_page page
+        JOIN photos photo ON photo.id = page.photo_id
+        JOIN observations observation
+          ON observation.record_kind = 'photo'
+         AND observation.record_id = photo.id::text
+        WHERE photo.visibility = 'public'
+          AND photo.tombstoned_at IS NULL
+        ON CONFLICT (user_id, photo_id) DO UPDATE
+        SET uploaded_at = EXCLUDED.uploaded_at;
+
+        DELETE FROM user_home_photo_candidates candidate
+        USING pg_temp.home_photo_candidate_page page
+        WHERE candidate.photo_id = page.photo_id
+          AND NOT EXISTS (
+              SELECT 1
+              FROM observations observation
+              JOIN photos photo ON photo.id = page.photo_id
+              WHERE observation.user_id = candidate.user_id
+                AND observation.record_kind = 'photo'
+                AND observation.record_id = page.photo_id::text
+                AND photo.visibility = 'public'
+                AND photo.tombstoned_at IS NULL
+          );
+
+        INSERT INTO user_home_shared_photo_candidates (photo_id, uploaded_at)
+        SELECT DISTINCT candidate.photo_id, candidate.uploaded_at
+        FROM user_home_photo_candidates candidate
+        JOIN pg_temp.home_photo_candidate_page page ON page.photo_id = candidate.photo_id
+        JOIN sharing_settings setting ON setting.user_id = candidate.user_id AND setting.enabled
+        ON CONFLICT (photo_id) DO UPDATE
+        SET uploaded_at = EXCLUDED.uploaded_at;
+
+        DELETE FROM user_home_shared_photo_candidates candidate
+        USING pg_temp.home_photo_candidate_page page
+        WHERE candidate.photo_id = page.photo_id
+          AND NOT EXISTS (
+              SELECT 1
+              FROM photos photo
+              WHERE photo.id = page.photo_id
+                AND photo.visibility = 'public'
+                AND photo.tombstoned_at IS NULL
+                AND EXISTS (
+                    SELECT 1
+                    FROM observations observation
+                    JOIN sharing_settings setting
+                      ON setting.user_id = observation.user_id AND setting.enabled
+                    WHERE observation.record_kind = 'photo'
+                      AND observation.record_id = photo.id::text
+                )
+          );
+
+        UPDATE user_home_candidates_backfill_progress
+        SET cursor_photo_id = next_photo_id
+        WHERE id = TRUE;
+        COMMIT;
+    END LOOP;
+
+    DELETE FROM user_home_candidates_backfill_progress WHERE id = TRUE;
 END;
 $$;
 -- +goose StatementEnd
@@ -344,52 +439,11 @@ CREATE TRIGGER sharing_settings_home_revision
 AFTER INSERT OR UPDATE OF enabled ON sharing_settings
 FOR EACH ROW EXECUTE FUNCTION bump_home_sharing_revision();
 
--- Reconcile after installing triggers so a failed, partially applied migration
--- can safely catch up with observations, visibility, and sharing changes.
-INSERT INTO user_home_photo_candidates (user_id, photo_id, uploaded_at)
-SELECT DISTINCT observation.user_id, photo.id, photo.uploaded_at
-FROM observations observation
-JOIN photos photo ON photo.id::text = observation.record_id
-WHERE observation.record_kind = 'photo'
-  AND photo.visibility = 'public'
-  AND photo.tombstoned_at IS NULL
-ON CONFLICT (user_id, photo_id) DO UPDATE
-SET uploaded_at = EXCLUDED.uploaded_at;
-
-DELETE FROM user_home_photo_candidates candidate
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM observations observation
-    JOIN photos photo ON photo.id = candidate.photo_id
-    WHERE observation.user_id = candidate.user_id
-      AND observation.record_kind = 'photo'
-      AND observation.record_id = candidate.photo_id::text
-      AND photo.visibility = 'public'
-      AND photo.tombstoned_at IS NULL
-);
-
-INSERT INTO user_home_shared_photo_candidates (photo_id, uploaded_at)
-SELECT DISTINCT candidate.photo_id, candidate.uploaded_at
-FROM user_home_photo_candidates candidate
-JOIN sharing_settings setting ON setting.user_id = candidate.user_id AND setting.enabled
-ON CONFLICT (photo_id) DO UPDATE
-SET uploaded_at = EXCLUDED.uploaded_at;
-
-DELETE FROM user_home_shared_photo_candidates candidate
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM photos photo
-    WHERE photo.id = candidate.photo_id
-      AND photo.visibility = 'public'
-      AND photo.tombstoned_at IS NULL
-      AND EXISTS (
-          SELECT 1
-          FROM observations observation
-          JOIN sharing_settings setting ON setting.user_id = observation.user_id AND setting.enabled
-          WHERE observation.record_kind = 'photo'
-            AND observation.record_id = photo.id::text
-      )
-);
+-- Each page commits its candidate changes and cursor independently. The
+-- trigger set is active first, so concurrent changes remain represented.
+CALL backfill_home_photo_candidates(500);
+DROP PROCEDURE backfill_home_photo_candidates(INTEGER);
+DROP TABLE user_home_candidates_backfill_progress;
 ANALYZE user_home_photo_candidates;
 ANALYZE user_home_shared_photo_candidates;
 
@@ -405,6 +459,9 @@ DROP FUNCTION IF EXISTS sync_home_enrichment_revision();
 DROP FUNCTION IF EXISTS sync_home_photo_candidates();
 DROP FUNCTION IF EXISTS sync_home_observation_candidate();
 DROP FUNCTION IF EXISTS sync_home_shared_photo_candidate(BIGINT);
+DROP PROCEDURE IF EXISTS backfill_home_photo_candidates(INTEGER);
+DROP TABLE IF EXISTS user_home_candidates_backfill_progress;
+DROP INDEX CONCURRENTLY IF EXISTS work_items_home_contact_state_idx;
 DROP INDEX CONCURRENTLY IF EXISTS work_items_user_activity_idx;
 DROP INDEX CONCURRENTLY IF EXISTS downloads_user_activity_idx;
 DROP INDEX CONCURRENTLY IF EXISTS sharing_settings_enabled_home_idx;
@@ -415,6 +472,7 @@ ALTER TABLE user_home_stats_refreshes DROP COLUMN IF EXISTS shared_revision, DRO
 ALTER TABLE user_home_stats DROP COLUMN IF EXISTS shared_revision, DROP COLUMN IF EXISTS source_revision;
 DROP TABLE IF EXISTS user_home_shared_version;
 DROP TABLE IF EXISTS user_home_stats_versions;
+DROP TABLE IF EXISTS user_home_sharing_syncs;
 DROP TABLE IF EXISTS user_home_shared_photo_candidates;
 DROP TABLE IF EXISTS user_home_photo_candidates;
 DELETE FROM app_settings WHERE key = 'home.stats_refresh_batch_size';

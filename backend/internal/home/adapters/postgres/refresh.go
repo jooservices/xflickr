@@ -34,27 +34,6 @@ FROM user_home_stats_versions source
 CROSS JOIN user_home_shared_version shared
 WHERE source.user_id = $1 AND shared.id = TRUE
 ON CONFLICT (user_id) DO NOTHING`
-	resetRefreshSQL = `WITH current_versions AS MATERIALIZED (
-    SELECT source.revision AS source_revision, shared.revision AS shared_revision
-    FROM user_home_stats_versions source
-    CROSS JOIN user_home_shared_version shared
-    WHERE source.user_id = $1 AND shared.id = TRUE
-), reset AS (
-    UPDATE user_home_stats_refreshes refresh
-    SET cursor_record_id = '',
-        photos_total = 0,
-        sizes_ready = 0,
-        captioned = 0,
-        source_revision = current_versions.source_revision,
-        shared_revision = current_versions.shared_revision
-    FROM current_versions
-    WHERE refresh.user_id = $1
-      AND (refresh.source_revision <> current_versions.source_revision
-           OR refresh.shared_revision <> current_versions.shared_revision)
-    RETURNING refresh.user_id
-)
-DELETE FROM user_home_contact_stats_refreshes
-WHERE user_id IN (SELECT user_id FROM reset)`
 	lockRefreshSQL = `SELECT cursor_record_id, photos_total, sizes_ready, captioned, source_revision, shared_revision
 FROM user_home_stats_refreshes WHERE user_id = $1 FOR UPDATE`
 	advanceRefreshSQL = `UPDATE user_home_stats_refreshes
@@ -77,10 +56,6 @@ sizes_ready = user_home_contact_stats_refreshes.sizes_ready + EXCLUDED.sizes_rea
 SELECT refresh.user_id, refresh.photos_total, refresh.sizes_ready, refresh.captioned,
        statement_timestamp(), refresh.source_revision, refresh.shared_revision
 FROM user_home_stats_refreshes refresh
-JOIN user_home_stats_versions source
-  ON source.user_id = refresh.user_id AND source.revision = refresh.source_revision
-JOIN user_home_shared_version shared
-  ON shared.id = TRUE AND shared.revision = refresh.shared_revision
 WHERE refresh.user_id = $1
 ON CONFLICT (user_id) DO UPDATE SET
 photos_total = EXCLUDED.photos_total,
@@ -113,13 +88,33 @@ func (r *Repository) RefreshBatch(ctx context.Context, userID int64, batchSize i
 		return false, fmt.Errorf("home: begin stats refresh batch: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := refreshBatch(ctx, tx, userID, batchSize); err != nil {
+	syncPending, err := syncSharingCandidatesBatch(ctx, tx, userID, batchSize)
+	if err != nil {
 		return false, err
+	}
+	if !syncPending {
+		sharingPending, err := hasPendingSharingSync(ctx, tx)
+		if err != nil {
+			return false, err
+		}
+		if !sharingPending {
+			if err := refreshBatch(ctx, tx, userID, batchSize); err != nil {
+				return false, err
+			}
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return false, fmt.Errorf("home: commit stats refresh batch: %w", err)
 	}
 	return refreshCompleted(ctx, r.db, userID)
+}
+
+func hasPendingSharingSync(ctx context.Context, tx refreshTx) (bool, error) {
+	var pending bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM user_home_sharing_syncs)`).Scan(&pending); err != nil {
+		return false, fmt.Errorf("home: check sharing candidate syncs: %w", err)
+	}
+	return pending, nil
 }
 
 func configuredRefreshBatchSize(ctx context.Context, database queryer, requested int) (int, error) {
@@ -139,7 +134,8 @@ FROM app_settings WHERE key = 'home.stats_refresh_batch_size'`).Scan(&configured
 
 func refreshCompleted(ctx context.Context, database queryer, userID int64) (bool, error) {
 	var remaining bool
-	if err := database.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM user_home_stats_refreshes WHERE user_id=$1)`, userID).Scan(&remaining); err != nil {
+	if err := database.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM user_home_stats_refreshes WHERE user_id=$1)
+    OR EXISTS (SELECT 1 FROM user_home_sharing_syncs)`, userID).Scan(&remaining); err != nil {
 		return false, fmt.Errorf("home: check stats refresh progress: %w", err)
 	}
 	return !remaining, nil
@@ -147,9 +143,6 @@ func refreshCompleted(ctx context.Context, database queryer, userID int64) (bool
 
 func refreshBatch(ctx context.Context, tx refreshTx, userID int64, batchSize int) error {
 	if err := execRefresh(ctx, tx, startRefreshSQL, "start stats refresh", userID); err != nil {
-		return err
-	}
-	if err := execRefresh(ctx, tx, resetRefreshSQL, "reset changed stats refresh", userID); err != nil {
 		return err
 	}
 	cursor, err := lockRefresh(ctx, tx, userID)
@@ -262,7 +255,7 @@ func publishRefresh(ctx context.Context, tx refreshTx, userID int64) error {
 		return fmt.Errorf("home: publish stats refresh: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return execRefresh(ctx, tx, resetRefreshSQL, "reset changed stats refresh", userID)
+		return nil
 	}
 	statements := []struct {
 		query string
@@ -303,10 +296,14 @@ WITH candidate_pages AS MATERIALIZED (
      LIMIT $3)
     UNION
     (SELECT shared_candidate.photo_id
-     FROM user_home_shared_photo_candidates shared_candidate
-     WHERE shared_candidate.photo_id > COALESCE(NULLIF($2, '')::bigint, 0)
-     ORDER BY shared_candidate.photo_id
-     LIMIT $3)
+     FROM (
+         SELECT shared_candidate.photo_id
+         FROM user_home_shared_photo_candidates shared_candidate
+         WHERE shared_candidate.photo_id > COALESCE(NULLIF($2, '')::bigint, 0)
+         ORDER BY shared_candidate.photo_id
+         LIMIT $3
+     ) shared_candidate
+    )
 ),
 page AS (
     SELECT candidate_pages.photo_id

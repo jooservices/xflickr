@@ -3,12 +3,45 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 )
+
+func TestHomeQueryPlansUseBoundedIndexedSources(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
+	defer cancel()
+	pool := dbtest.Open(t, homeDatabase(t))
+	suffix := fmt.Sprintf("home-plan-%d", time.Now().UnixNano())
+	var userID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration','user') RETURNING id`, suffix+"@example.invalid").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	personNSID := suffix + "@flickr"
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,'plan-contact')`, personNSID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred) VALUES($1,$2,1,'home-plan',TRUE)`, userID, personNSID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stop()
+		_, _ = pool.Exec(cleanup, `DELETE FROM users WHERE id=$1`, userID)
+		_, _ = pool.Exec(cleanup, `DELETE FROM people WHERE nsid=$1`, personNSID)
+	})
+	assertHomePlans(t, ctx, pool, homeSnapshotSQL, userID, 3)
+}
 
 func assertHomePlans(t *testing.T, ctx context.Context, pool *pgxpool.Pool, statement string, userID int64, batchSize int) {
 	t.Helper()
@@ -16,7 +49,12 @@ func assertHomePlans(t *testing.T, ctx context.Context, pool *pgxpool.Pool, stat
 	if err != nil {
 		t.Fatalf("begin Home query plan transaction: %v", err)
 	}
-	defer conn.Release()
+	defer func() {
+		if err := conn.Conn().Close(context.Background()); err != nil {
+			t.Errorf("close Home plan fixture connection: %v", err)
+		}
+		conn.Release()
+	}()
 	setup, err := conn.Begin(ctx)
 	if err != nil {
 		t.Fatalf("begin Home plan fixture transaction: %v", err)
@@ -30,12 +68,21 @@ func assertHomePlans(t *testing.T, ctx context.Context, pool *pgxpool.Pool, stat
 		t.Fatalf("begin Home query plan transaction: %v", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	var seqScanSetting string
+	if err := tx.QueryRow(ctx, `SHOW enable_seqscan`).Scan(&seqScanSetting); err != nil {
+		t.Fatalf("read planner sequential scan setting: %v", err)
+	}
+	if seqScanSetting != "on" {
+		t.Fatalf("query plan fixture requires the default sequential scan setting, got %q", seqScanSetting)
+	}
 	requestPlan := explainHomePlan(t, ctx, tx, statement, userID)
 	assertCandidatePlan(t, requestPlan, 12)
 	assertWorkItemPlan(t, requestPlan)
 	refreshPlan := explainHomePlan(t, ctx, tx, refreshPhotoPageSQL, userID, "", batchSize)
 	assertCandidatePlan(t, refreshPlan, batchSize)
-	t.Log("request and refresh EXPLAIN ANALYZE passed with the default planner and 400,000 candidates")
+	if !t.Failed() {
+		t.Log("request and refresh EXPLAIN ANALYZE passed with the default planner and 400,000 candidates")
+	}
 }
 
 func createPlanFixtures(t *testing.T, ctx context.Context, tx pgx.Tx, userID int64) {
@@ -46,8 +93,6 @@ func createPlanFixtures(t *testing.T, ctx context.Context, tx pgx.Tx, userID int
 	}{
 		{`CREATE TEMP TABLE user_home_photo_candidates (user_id BIGINT NOT NULL, photo_id BIGINT NOT NULL, uploaded_at TIMESTAMPTZ)`, "own candidate table"},
 		{`CREATE TEMP TABLE user_home_shared_photo_candidates (photo_id BIGINT NOT NULL, uploaded_at TIMESTAMPTZ)`, "shared candidate table"},
-		{`CREATE INDEX ON user_home_photo_candidates (user_id, uploaded_at DESC NULLS LAST, photo_id DESC)`, "own candidate index"},
-		{`CREATE INDEX ON user_home_shared_photo_candidates (uploaded_at DESC NULLS LAST, photo_id DESC)`, "shared candidate index"},
 		{`INSERT INTO user_home_photo_candidates
 SELECT $1, candidate_id::bigint, statement_timestamp() - candidate_id * interval '1 second'
 FROM generate_series(1, 200000) AS candidate(candidate_id)`, "200,000 own candidates"},
@@ -62,6 +107,10 @@ WHERE candidate.user_id=$1 ORDER BY candidate.photo_id LIMIT 12`, "visible own c
 SELECT candidate.photo_id, statement_timestamp() + interval '1 year'
 FROM public.user_home_shared_photo_candidates candidate
 ORDER BY candidate.photo_id LIMIT 12`, "visible shared candidates"},
+		{`CREATE UNIQUE INDEX ON user_home_photo_candidates (user_id, photo_id)`, "own candidate primary key"},
+		{`CREATE INDEX ON user_home_photo_candidates (user_id, uploaded_at DESC NULLS LAST, photo_id DESC)`, "own candidate recent index"},
+		{`CREATE UNIQUE INDEX ON user_home_shared_photo_candidates (photo_id)`, "shared candidate primary key"},
+		{`CREATE INDEX ON user_home_shared_photo_candidates (uploaded_at DESC NULLS LAST, photo_id DESC)`, "shared candidate recent index"},
 		{`CREATE TEMP TABLE work_items (id BIGINT, kind TEXT, subject_key TEXT, user_id BIGINT, state TEXT, updated_at TIMESTAMPTZ)`, "work item table"},
 		{`CREATE INDEX ON work_items (user_id, subject_key, state)
 WHERE state IN ('pending', 'ready', 'running', 'waiting', 'failed')`, "contact state index"},
@@ -83,7 +132,9 @@ WHERE user_id IS NOT NULL AND kind IN ('photos', 'sizes')
 		t.Fatalf("select starred contact for work item fixture: %v", err)
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO work_items
-SELECT candidate_id, 'photos', $2, $1,
+SELECT candidate_id, 'photos',
+       CASE WHEN candidate_id <= 3 THEN $2 ELSE 'other-' || candidate_id::text END,
+       CASE WHEN candidate_id <= 3 THEN $1 ELSE $1 + candidate_id END,
        CASE candidate_id % 3 WHEN 0 THEN 'failed' WHEN 1 THEN 'running' ELSE 'pending' END,
        statement_timestamp() - candidate_id * interval '1 second'
 FROM generate_series(1, 5000) AS candidate(candidate_id)`, userID, contactNSID); err != nil {

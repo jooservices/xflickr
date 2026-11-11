@@ -139,31 +139,33 @@ starred_data AS (
     SELECT contact.person_nsid,
            contact.name,
            contact.icon,
-           CASE WHEN COALESCE(stats.is_current, FALSE)
-                THEN COALESCE(counts.photos_total, 0) ELSE 0 END::bigint AS photos_count,
-           CASE WHEN COALESCE(stats.is_current, FALSE)
-                THEN COALESCE(counts.sizes_ready, 0) ELSE 0 END::bigint AS sizes_ready,
-           CASE WHEN COALESCE(stats.is_current, FALSE)
-                THEN COALESCE(counts.photos_total, 0) ELSE 0 END::bigint AS sizes_total,
+           COALESCE(counts.photos_total, 0)::bigint AS photos_count,
+           COALESCE(counts.sizes_ready, 0)::bigint AS sizes_ready,
+           COALESCE(counts.photos_total, 0)::bigint AS sizes_total,
            CASE
-             WHEN COALESCE(state.failed, FALSE) THEN 'attention'
-             WHEN COALESCE(state.running, FALSE) THEN 'crawling'
-             WHEN COALESCE(state.queued, FALSE) THEN 'waiting'
+             WHEN EXISTS (
+                 SELECT 1 FROM work_items item
+                 WHERE item.user_id = $1
+                   AND item.subject_key = contact.person_nsid
+                   AND item.state = 'failed'
+             ) THEN 'attention'
+             WHEN EXISTS (
+                 SELECT 1 FROM work_items item
+                 WHERE item.user_id = $1
+                   AND item.subject_key = contact.person_nsid
+                   AND item.state = 'running'
+             ) THEN 'crawling'
+             WHEN EXISTS (
+                 SELECT 1 FROM work_items item
+                 WHERE item.user_id = $1
+                   AND item.subject_key = contact.person_nsid
+                   AND item.state IN ('pending', 'ready', 'waiting')
+             ) THEN 'waiting'
              ELSE 'idle'
            END AS crawl_state
     FROM starred_contacts contact
     LEFT JOIN user_home_contact_stats counts
       ON counts.user_id = $1 AND counts.person_nsid = contact.person_nsid
-    LEFT JOIN current_stats stats ON stats.user_id = $1
-    LEFT JOIN LATERAL (
-        SELECT bool_or(item.state = 'failed') AS failed,
-               bool_or(item.state = 'running') AS running,
-               bool_or(item.state IN ('pending', 'ready', 'waiting')) AS queued
-        FROM work_items item
-        WHERE item.user_id = $1
-          AND item.subject_key = contact.person_nsid
-          AND item.state IN ('pending', 'ready', 'running', 'waiting', 'failed')
-    ) state ON TRUE
 ),
 own_photo_candidates AS MATERIALIZED (
     SELECT candidate.photo_id, candidate.uploaded_at
@@ -173,10 +175,20 @@ own_photo_candidates AS MATERIALIZED (
     LIMIT 12
 ),
 shared_photo_candidates AS MATERIALIZED (
-    SELECT shared_candidate.photo_id, shared_candidate.uploaded_at
-    FROM user_home_shared_photo_candidates shared_candidate
-    ORDER BY shared_candidate.uploaded_at DESC NULLS LAST, shared_candidate.photo_id DESC
-    LIMIT 12
+    SELECT candidate.photo_id, candidate.uploaded_at
+    FROM (
+        SELECT shared_candidate.photo_id, shared_candidate.uploaded_at
+        FROM user_home_shared_photo_candidates shared_candidate
+        ORDER BY shared_candidate.uploaded_at DESC NULLS LAST, shared_candidate.photo_id DESC
+        LIMIT 12
+    ) candidate
+    WHERE EXISTS (
+        SELECT 1
+        FROM observations observation
+        JOIN sharing_settings setting ON setting.user_id = observation.user_id AND setting.enabled
+        WHERE observation.record_kind = 'photo'
+          AND observation.record_id = candidate.photo_id::text
+    )
 ),
 newest_photo_candidates AS MATERIALIZED (
     SELECT photo_id, uploaded_at FROM own_photo_candidates
@@ -328,9 +340,9 @@ SELECT statement_timestamp(),
        contact_counts.total,
        contact_counts.direct,
        contact_counts.discovered,
-       CASE WHEN COALESCE(stats.is_current, FALSE) THEN COALESCE(stats.photos_total, 0) ELSE 0 END::bigint,
-       CASE WHEN COALESCE(stats.is_current, FALSE) THEN COALESCE(stats.sizes_ready, 0) ELSE 0 END::bigint,
-       CASE WHEN COALESCE(stats.is_current, FALSE) THEN COALESCE(stats.captioned, 0) ELSE 0 END::bigint,
+       COALESCE(stats.photos_total, 0)::bigint,
+       COALESCE(stats.sizes_ready, 0)::bigint,
+       COALESCE(stats.captioned, 0)::bigint,
        stats.computed_at,
        COALESCE(
            stats.computed_at < statement_timestamp() - make_interval(secs => refresh_interval.seconds::double precision)

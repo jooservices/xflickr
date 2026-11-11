@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	homeapp "github.com/jooservices/xflickr/internal/home/app"
 	"github.com/jooservices/xflickr/internal/platform/db"
+	"github.com/jooservices/xflickr/internal/platform/queue"
 	"github.com/jooservices/xflickr/internal/sharing/app"
 	"github.com/jooservices/xflickr/internal/sharing/domain"
 )
@@ -20,7 +23,8 @@ type settingTx interface {
 }
 
 type Repository struct {
-	run func(context.Context, func(settingTx) error) error
+	run   func(context.Context, func(settingTx) error) error
+	queue queue.JobQueue
 }
 
 var (
@@ -28,14 +32,21 @@ var (
 	_ app.Reader     = (*Repository)(nil)
 )
 
-func New(pool db.Beginner) (*Repository, error) {
+func New(pool db.Beginner, refreshQueues ...queue.JobQueue) (*Repository, error) {
 	if pool == nil {
 		return nil, errors.New("sharing: database is required")
+	}
+	if len(refreshQueues) > 1 || len(refreshQueues) == 1 && refreshQueues[0] == nil {
+		return nil, errors.New("sharing: at most one non-nil refresh queue is allowed")
 	}
 	run := func(ctx context.Context, fn func(settingTx) error) error {
 		return db.NewUnitOfWork(pool).Do(ctx, func(tx db.Tx) error { return fn(tx) })
 	}
-	return &Repository{run: run}, nil
+	repository := &Repository{run: run}
+	if len(refreshQueues) == 1 {
+		repository.queue = refreshQueues[0]
+	}
+	return repository, nil
 }
 
 func (r *Repository) Set(ctx context.Context, setting domain.Setting) (domain.Setting, error) {
@@ -63,6 +74,23 @@ func (r *Repository) Set(ctx context.Context, setting domain.Setting) (domain.Se
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO outbox_events (topic, key, payload) VALUES ($1, $2, $3)`, domain.ChangedTopic, fmt.Sprint(setting.UserID), payload); err != nil {
 			return fmt.Errorf("sharing: publish changed event: %w", err)
+		}
+		if r.queue != nil {
+			transaction, ok := tx.(pgx.Tx)
+			if !ok {
+				return errors.New("sharing: refresh queue requires a PostgreSQL transaction")
+			}
+			jobArgs, err := json.Marshal(homeapp.RefreshJob{UserID: setting.UserID})
+			if err != nil {
+				return fmt.Errorf("sharing: encode Home refresh job: %w", err)
+			}
+			// Each setting change needs its own wake-up; a unique running job
+			// could finish just before this transaction commits.
+			if err := r.queue.Enqueue(ctx, transaction, queue.Job{Kind: homeapp.RefreshJobKind, Args: jobArgs}, queue.Options{
+				Queue: "home", MaxAttempts: 5, LeaseTimeout: time.Minute,
+			}); err != nil {
+				return fmt.Errorf("sharing: enqueue Home refresh: %w", err)
+			}
 		}
 		return nil
 	})

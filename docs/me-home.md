@@ -13,18 +13,24 @@ first refresh. `estimated` is true when counts are absent, older than the
 administrator setting `home.stats_refresh_interval` (900 seconds by default),
 or their source or sharing revision has changed.
 An absent or stale snapshot enqueues one unique `home.stats.refresh` job and
-returns cached values immediately (zero when no snapshot exists).
+returns cached values immediately, retaining the last computed counts while a
+refresh is pending (zero only before the first snapshot exists).
 
 The sync worker refreshes counts in keyset pages capped by the administrator
 setting `home.stats_refresh_batch_size` (250 rows by default; maximum 1,000).
-Public, non-tombstoned photo candidates are indexed by observer
-and updated when observations, photo visibility, or sharing permissions
-change. A global indexed candidate set contains photos shared by at least one
-enabled account. Home reads and refresh pages union that set with the user's
-own candidates, so work stays bounded independently of the number of sharing
-accounts. Counts and per-contact totals are staged and replaced after the
-final page. A source revision change resets the staged work, and publication
-checks both the user and shared revisions.
+Public, non-tombstoned photo candidates are indexed by observer and updated
+when observations or photo visibility change. A global indexed candidate set
+contains photos shared by at least one enabled account. Changing sharing
+permission queues a bounded, keyset-paginated candidate sync in the same
+transaction as the setting update. Home checks the current enabled setting
+before returning shared photos, so disabling sharing revokes access immediately
+while candidate cleanup continues. Refreshes retain their cursor across source
+revision changes, publish the completed counts as estimated when revisions
+changed during the pass, and then reconcile on the next pass.
+
+The candidate migration installs change triggers before its initial backfill.
+It processes at most 500 photo IDs per transaction and commits a persistent
+keyset checkpoint after each page so an interrupted migration can resume.
 
 The request reads at most 12 newest photos from the user's candidate index and
 12 from the global shared candidate index before joining photos.

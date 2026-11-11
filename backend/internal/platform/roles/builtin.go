@@ -790,7 +790,7 @@ func buildConfiguredAPIHandlerSetWithObserver(pool *pgxpool.Pool, redisClient re
 	if err != nil {
 		return apiHandlerSet{}, err
 	}
-	sharing, err := buildSharingHandler(pool)
+	sharing, err := buildSharingHandler(pool, refreshQueue)
 	if err != nil {
 		return apiHandlerSet{}, err
 	}
@@ -1104,8 +1104,8 @@ func newAPIRoutersWithServices(identity identityhttp.Handler, keys accountshttp.
 	return apiHandlerSet{public: public, internal: internal}
 }
 
-func buildSharingHandler(pool *pgxpool.Pool) (sharinghttp.Handler, error) {
-	repository, err := sharingpostgres.New(pool)
+func buildSharingHandler(pool *pgxpool.Pool, refreshQueues ...queue.JobQueue) (sharinghttp.Handler, error) {
+	repository, err := sharingpostgres.New(pool, refreshQueues...)
 	if err != nil {
 		return sharinghttp.Handler{}, err
 	}
