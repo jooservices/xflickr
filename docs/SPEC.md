@@ -258,6 +258,17 @@ guide feature implementation; operational environment rules live in
   active backlog rows so the scheduler recomputes priority from the updated
   flags.
 
+## AI enrichment freshness
+
+- An enrichment is current only when the record for the exact photo, kind, and
+  model key exists and its model version exactly matches the target version.
+  Model and version comparisons are case-sensitive.
+- Missing results and mismatched versions need enrichment. A freshness check
+  reports only that predicate; it does not infer stale counts.
+- Keep previous enrichment records and payloads available to search until a
+  newer result succeeds. Automatic stale selection and queueing are not
+  implemented in the current slice.
+
 ## API and MCP
 
 - Everything a user can do in the UI is available through a strictly RESTful
