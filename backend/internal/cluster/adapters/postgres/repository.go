@@ -22,6 +22,14 @@ type pool interface {
 
 type Repository struct{ pool pool }
 
+const findDuplicateEgressSQL = `
+SELECT name FROM nodes
+WHERE egress_ip = $1::inet AND egress_ip IS NOT NULL AND name <> $2
+  AND state <> 'disabled' AND roles @> ARRAY['crawl']::text[]
+  AND last_heartbeat_at >= $3::timestamptz - $4::interval
+  AND (cooling_until IS NULL OR cooling_until <= $3::timestamptz)
+ORDER BY name LIMIT 1`
+
 func New(database *pgxpool.Pool) *Repository { return &Repository{pool: database} }
 
 func (repository *Repository) Create(ctx context.Context, node domain.Node, tokenHash []byte) (domain.Node, error) {
@@ -54,6 +62,23 @@ WHERE token_hash = $1 AND state <> 'disabled'`, tokenHash))
 		return domain.Node{}, fmt.Errorf("cluster: authenticate node token: %w", err)
 	}
 	return node, nil
+}
+
+// FindDuplicateEgress returns one eligible node sharing node's egress IP.
+func (repository *Repository) FindDuplicateEgress(ctx context.Context, node domain.Node, at time.Time) (string, error) {
+	if node.EgressIP == "" {
+		return "", nil
+	}
+	warningInterval := pgtype.Interval{Microseconds: domain.WarningAfter.Microseconds(), Valid: true}
+	var duplicate string
+	err := repository.pool.QueryRow(ctx, findDuplicateEgressSQL, node.EgressIP, node.Name, at.UTC(), warningInterval).Scan(&duplicate)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("cluster: find duplicate egress IP: %w", err)
+	}
+	return duplicate, nil
 }
 
 func (repository *Repository) Heartbeat(ctx context.Context, name string, input app.HeartbeatInput, at time.Time) (domain.Node, error) {
