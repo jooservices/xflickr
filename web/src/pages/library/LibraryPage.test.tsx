@@ -339,6 +339,25 @@ describe('LibraryPage', () => {
     expect(document.querySelector('a[href="/accounts"]')).toBeNull();
   });
 
+  it.each([
+    {
+      locale: 'en' as const,
+      title: 'No favorite photos yet',
+      text: 'Photos you mark as favorites on Flickr appear here.',
+    },
+    {
+      locale: 'vi' as const,
+      title: 'Chưa có ảnh yêu thích',
+      text: 'Ảnh bạn đánh dấu yêu thích trên Flickr sẽ xuất hiện tại đây.',
+    },
+  ])('describes an empty favorites list in $locale', async ({ locale, title, text }) => {
+    server.use(http.get('*/favorites', () => json({ items: [] })));
+    open(locale);
+
+    expect(await screen.findByRole('heading', { level: 2, name: title })).toBeInTheDocument();
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
   it('waits for the final cursor page before showing the library empty state', async () => {
     server.use(
       http.get('*/favorites', ({ request }) => {
