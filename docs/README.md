@@ -63,6 +63,8 @@
   capabilities, upload verification, and reusable adapter contract tests.
 - [AI captioning](ai-captioning.md) — caption port, Ollama vision requests,
   timeout, concurrency, response validation, and circuit breaker behaviour.
+- [Search ranking fusion](search-rrf.md) — BM25 and vector candidate ranking
+  merged with Reciprocal Rank Fusion.
 - [Mail delivery](mail.md) — mail port, SMTP adapter, deterministic context
   deadline errors, Mailpit sink, and fake sender for tests.
 - [Downloads](downloads.md) — visible-photo requests, per-item state, and media
