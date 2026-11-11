@@ -6,8 +6,10 @@ input, in input order, with the model name and version used for inference.
 
 The first adapter slice uses the fixed `bge-m3` model. For each call it reads
 `modified_at` from `/api/show`, then sends the original input strings to
-`/api/embed`. Invalid input, provider failures, malformed responses, and
-incorrect vector counts or dimensions return an error without partial results.
+`/api/embed` with truncation disabled. Inputs beyond the model context window
+return a provider error instead of an embedding for truncated text. Invalid
+input, provider failures, malformed responses, and incorrect vector counts or
+dimensions return an error without partial results.
 
 Embedding and caption requests on the same Ollama client share its timeout,
 concurrency semaphore, and circuit breaker. Caller cancellation does not count

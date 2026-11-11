@@ -15,8 +15,9 @@ const (
 )
 
 type embedRequest struct {
-	Model string   `json:"model"`
-	Input []string `json:"input"`
+	Model    string   `json:"model"`
+	Input    []string `json:"input"`
+	Truncate bool     `json:"truncate"`
 }
 
 type embedResponse struct {
@@ -72,7 +73,7 @@ func (c *Client) embed(ctx context.Context, texts []string) ([][]float32, aiapp.
 	}
 
 	var response embedResponse
-	request := embedRequest{Model: embeddingModel, Input: texts}
+	request := embedRequest{Model: embeddingModel, Input: texts, Truncate: false}
 	if err := c.post(ctx, "api/embed", request, &response); err != nil {
 		return nil, aiapp.ModelInfo{}, err
 	}

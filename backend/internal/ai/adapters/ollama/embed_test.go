@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -70,6 +71,46 @@ func TestEmbedSuccess(t *testing.T) {
 	}
 	if len(paths) != 4 || paths[0] != "/api/show" || paths[1] != "/api/embed" || paths[2] != "/api/show" || paths[3] != "/api/embed" {
 		t.Fatalf("request paths = %v, want show/embed for each call", paths)
+	}
+}
+
+func TestEmbedRejectsInputBeyondContextWindow(t *testing.T) {
+	const simulatedContextWindow = 8 * 1024
+	text := strings.Repeat("word ", 20_000)
+	var providerRejected atomic.Bool
+	server := testOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/show" {
+			writeJSON(t, w, map[string]string{"modified_at": "version-1"})
+			return
+		}
+		var request struct {
+			Input    []string `json:"input"`
+			Truncate *bool    `json:"truncate"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode embed request: %v", err)
+			return
+		}
+		if len(request.Input) != 1 || request.Input[0] != text {
+			t.Errorf("embed input was not sent in full")
+			return
+		}
+		if len(request.Input[0]) > simulatedContextWindow {
+			if request.Truncate != nil && !*request.Truncate {
+				providerRejected.Store(true)
+				http.Error(w, `{"error":"input exceeds the context window"}`, http.StatusBadRequest)
+				return
+			}
+			writeJSON(t, w, embedResponse{Embeddings: [][]float32{embedding(0.5)}})
+			return
+		}
+		writeJSON(t, w, embedResponse{Embeddings: [][]float32{embedding(0.5)}})
+	})
+	client := newClient(t, server, time.Second, 1)
+
+	assertEmbedError(t, client, t.Context(), []string{text})
+	if !providerRejected.Load() {
+		t.Fatal("provider did not reject the input beyond its context window")
 	}
 }
 
