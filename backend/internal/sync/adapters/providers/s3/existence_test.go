@@ -193,6 +193,8 @@ func TestExistsWithETagUsesS3Head(t *testing.T) {
 			w.Header().Set("ETag", `"remote-etag"`)
 			w.Header().Set("Last-Modified", time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC).Format(http.TimeFormat))
 			w.WriteHeader(http.StatusOK)
+		case "empty unavailable":
+			w.WriteHeader(http.StatusServiceUnavailable)
 		case "missing":
 			w.WriteHeader(http.StatusNotFound)
 		case "unauthorized":
@@ -210,6 +212,7 @@ func TestExistsWithETagUsesS3Head(t *testing.T) {
 	client, err := minio.New(endpoint.Host, &minio.Options{
 		Creds:        credentials.NewStaticV4("fake-access", "fake-secret", ""),
 		BucketLookup: minio.BucketLookupPath,
+		MaxRetries:   2,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -230,7 +233,8 @@ func TestExistsWithETagUsesS3Head(t *testing.T) {
 		wantRequests      int32
 		wantRegionLookups int32
 	}{
-		{name: "default client discovers region and retries", code: "retry once", want: true, wantRequests: 2, wantRegionLookups: 1},
+		{name: "client discovers region and retries", code: "retry once", want: true, wantRequests: 2, wantRegionLookups: 1},
+		{name: "empty service unavailable after retries", code: "empty unavailable", wantError: app.ErrRateLimited, wantRequests: 2},
 		{name: "missing object", code: "missing", wantRequests: 1},
 		{name: "authentication", code: "unauthorized", wantError: app.ErrAuthentication, wantRequests: 1},
 		{name: "forbidden", code: "forbidden", wantError: app.ErrAuthentication, wantRequests: 1},

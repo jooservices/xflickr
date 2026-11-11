@@ -74,7 +74,7 @@ func classifyStatError(err error) error {
 		return nil
 	case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:
 		return fmt.Errorf("sync s3: stat object: %w", app.ErrAuthentication)
-	case response.StatusCode == http.StatusTooManyRequests || (response.StatusCode == http.StatusServiceUnavailable && response.Code == "SlowDown"):
+	case response.StatusCode == http.StatusTooManyRequests || response.StatusCode == http.StatusServiceUnavailable:
 		return fmt.Errorf("sync s3: stat object: %w", app.ErrRateLimited)
 	default:
 		return errors.New("sync s3: stat object failed")
