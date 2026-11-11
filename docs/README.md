@@ -55,6 +55,8 @@
   account status, and events.
 - [Catalog people and photos](catalog.md) — partitioned photo metadata,
   idempotent upserts, compressed source payloads, and size status.
+- [Search index bootstrap](search-index.md) — the versioned Elasticsearch
+  photo index, mapping, alias, and this slice's limits.
 - [Temporary media storage](media.md) — blob storage port, local storage cap,
   and five-minute expiry cleanup.
 - [Cloud storage provider contract](cloud-sync-providers.md) — provider port,
