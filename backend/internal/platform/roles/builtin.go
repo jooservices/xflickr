@@ -559,6 +559,9 @@ func newSchedulerPump(pool *pgxpool.Pool, governor quotaRedis.Governor, store sc
 		return scheduleapp.Pump{}, err
 	}
 	pump := scheduleapp.Pump{Store: store, QueueState: queuepostgres.New(pool), Credits: governor, Queue: queueAdapter, Settings: settings}
+	if source, ok := store.(scheduleapp.PumpSettingsSource); ok {
+		pump.SettingsSource = source
+	}
 	if len(stores) > 0 && stores[0] != nil {
 		pump.MediaPressure = mediaapp.Pressure{Store: stores[0]}
 	}

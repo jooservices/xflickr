@@ -102,7 +102,7 @@ func TestHourlyCeilingHoldsPendingWorkUntilReset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := scheduleapp.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 1000, MediaReadyCap: 1000, AIReadyCap: 1000, SyncReadyCap: 1000, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute}
+	settings := scheduleapp.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 1000, MediaReadyCap: 1000, AIReadyCap: 1000, SyncReadyCap: 1000, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute, ReclaimBatchSize: 100}
 	store := scheduleriver.Store{Pool: pool}
 	if _, err := store.Pump(ctx, settings, governor, adapter); err != nil {
 		t.Fatal(err)

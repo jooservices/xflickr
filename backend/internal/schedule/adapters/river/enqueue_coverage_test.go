@@ -217,12 +217,12 @@ func (unavailableKey) Error() string { return "key unavailable" }
 func (unavailableKey) KeyUnavailable() bool { return true }
 
 func coverageSettings() app.PumpSettings {
-	return app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 20, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 3, RetryBackoff: time.Second, LeaseTimeout: time.Minute, AgingBatchSize: 10, MaxDepth: 5, ScoreWeights: domain.ScoreWeights{PlanWeight: 1, DirectAction: 1, Starred: 1, Depth: 1, AgeMinutes: 1}}
+	return app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 20, MediaReadyCap: 10, AIReadyCap: 10, SyncReadyCap: 10, RetryMax: 3, RetryBackoff: time.Second, LeaseTimeout: time.Minute, ReclaimBatchSize: 100, AgingBatchSize: 10, MaxDepth: 5, ScoreWeights: domain.ScoreWeights{PlanWeight: 1, DirectAction: 1, Starred: 1, Depth: 1, AgeMinutes: 1}}
 }
 
 func TestLoadSettingsReadsValidSettingsAndRejectsMalformedValues(t *testing.T) {
 	ctx := context.Background()
-	good := map[string]string{"per_key_ready_cap": "10", "node_ready_cap": "20", "media_ready_cap": "7", "ai_ready_cap": "8", "sync_ready_cap": "9", "retry_max": "4", "retry_backoff": "3", "lease_timeout": "30", "max_depth": "5", "score_aging_batch_size": "11", "score_weight_plan": "1.5", "score_weight_direct_action": "2", "score_weight_starred": "3", "score_weight_depth": "4", "score_weight_age_minutes": "0.5"}
+	good := map[string]string{"per_key_ready_cap": "10", "node_ready_cap": "20", "media_ready_cap": "7", "ai_ready_cap": "8", "sync_ready_cap": "9", "retry_max": "4", "retry_backoff": "3", "lease_timeout": "30", "max_depth": "5", "score_aging_batch_size": "11", "queue.reclaim_batch_size": "100", "score_weight_plan": "1.5", "score_weight_direct_action": "2", "score_weight_starred": "3", "score_weight_depth": "4", "score_weight_age_minutes": "0.5"}
 	validRows := func(values map[string]string) *coverageRows {
 		rows := make([][]any, 0, len(values))
 		for key, value := range values {
@@ -232,7 +232,7 @@ func TestLoadSettingsReadsValidSettingsAndRejectsMalformedValues(t *testing.T) {
 	}
 	pool := &coverageDatabase{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) { return validRows(good), nil }}
 	got, err := loadSettings(ctx, pool)
-	if err != nil || got.MediaReadyCap != 7 || got.RetryBackoff != 3*time.Second || got.ScoreWeights.AgeMinutes != 0.5 {
+	if err != nil || got.MediaReadyCap != 7 || got.RetryBackoff != 3*time.Second || got.ReclaimBatchSize != 100 || got.ScoreWeights.AgeMinutes != 0.5 {
 		t.Fatalf("settings=%#v err=%v", got, err)
 	}
 	tests := []struct {
@@ -267,6 +267,7 @@ func TestLoadSettingsReadsValidSettingsAndRejectsMalformedValues(t *testing.T) {
 	for _, tc := range []struct{ name, key, value, want string }{
 		{name: "integer parse", key: "retry_max", value: "bad", want: "parse pump setting retry_max"},
 		{name: "nonpositive age batch", key: "score_aging_batch_size", value: "0", want: "score aging batch size must be positive"},
+		{name: "nonpositive reclaim batch", key: "queue.reclaim_batch_size", value: "0", want: "invalid pump settings"},
 		{name: "decimal parse", key: "score_weight_plan", value: "bad", want: "parse pump setting score_weight_plan"},
 		{name: "settings validation", key: "media_ready_cap", value: "-1", want: "invalid pump settings"},
 		{name: "score validation", key: "score_weight_plan", value: "-1", want: "invalid score settings"},
@@ -286,6 +287,134 @@ func TestLoadSettingsReadsValidSettingsAndRejectsMalformedValues(t *testing.T) {
 	}
 	if _, err := loadSettings(nil, pool); err == nil || !strings.Contains(err.Error(), "settings context") {
 		t.Fatalf("nil context error=%v", err)
+	}
+}
+
+func TestLoadPumpSettingsReadsCurrentBatchSize(t *testing.T) {
+	settings := map[string]string{
+		"per_key_ready_cap": "10", "node_ready_cap": "20", "media_ready_cap": "7",
+		"ai_ready_cap": "8", "sync_ready_cap": "9", "retry_max": "4",
+		"retry_backoff": "3", "lease_timeout": "30", "max_depth": "5",
+		"score_aging_batch_size": "11", "queue.reclaim_batch_size": "17",
+		"score_weight_plan": "1.5", "score_weight_direct_action": "2",
+		"score_weight_starred": "3", "score_weight_depth": "4",
+		"score_weight_age_minutes": "0.5",
+	}
+	rows := make([][]any, 0, len(settings))
+	for key, value := range settings {
+		rows = append(rows, []any{key, value})
+	}
+	db := &coverageDatabase{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
+		return coverageRowsOf(rows...), nil
+	}}
+	got, err := (Store{database: db}).LoadPumpSettings(t.Context())
+	if err != nil || got.ReclaimBatchSize != 17 {
+		t.Fatalf("LoadPumpSettings() batch size = %d, error = %v; want 17", got.ReclaimBatchSize, err)
+	}
+	if _, err := (Store{}).LoadPumpSettings(t.Context()); err == nil {
+		t.Fatal("LoadPumpSettings accepted a missing database")
+	}
+}
+
+func TestKeylessOwnerCursorHandlesBoundedWrapAndErrors(t *testing.T) {
+	ctx := context.Background()
+	var assignedIDs []int64
+	tx := &coverageTx{
+		rowFn: func(context.Context, string, ...any) pgx.Row {
+			return coverageRow{values: []any{"10"}}
+		},
+		queryFn: func(_ context.Context, query string, _ ...any) (pgx.Rows, error) {
+			switch {
+			case strings.Contains(query, "id > $1"):
+				return coverageRowsOf([]any{int64(11)}), nil
+			case strings.Contains(query, "id <= $1"):
+				return coverageRowsOf([]any{int64(10)}), nil
+			default:
+				return nil, fmt.Errorf("unexpected candidate query: %s", query)
+			}
+		},
+		execFn: func(_ context.Context, query string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(query, "UPDATE work_items") {
+				assignedIDs = append([]int64(nil), args[0].([]int64)...)
+			}
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		},
+	}
+	if err := assignOwnerKeys(ctx, tx, 2); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(assignedIDs, []int64{11, 10}) {
+		t.Fatalf("assigned candidate IDs = %v, want [11 10] across cursor wrap", assignedIDs)
+	}
+	for _, value := range []string{"not-an-integer", "-1"} {
+		t.Run(value, func(t *testing.T) {
+			invalid := &coverageTx{rowFn: func(context.Context, string, ...any) pgx.Row {
+				return coverageRow{values: []any{value}}
+			}}
+			if err := assignOwnerKeys(ctx, invalid, 1); err == nil {
+				t.Fatalf("assignOwnerKeys accepted cursor %q", value)
+			}
+		})
+	}
+	if err := assignOwnerKeys(ctx, &coverageTx{}, 0); err == nil {
+		t.Fatal("assignOwnerKeys accepted a zero batch size")
+	}
+}
+
+func TestScheduleCursorHelpersAndExpiredCursorValidation(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name   string
+		value  string
+		valid  bool
+		wantID int64
+	}{
+		{name: "empty", valid: true},
+		{name: "valid", value: `{"expires_at":"2026-11-10T00:00:00Z","id":42}`, valid: true, wantID: 42},
+		{name: "malformed", value: "{", valid: false},
+		{name: "missing id", value: `{"expires_at":"2026-11-10T00:00:00Z"}`, valid: false},
+		{name: "missing time", value: `{"id":42}`, valid: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseExpiredLeaseCursor(tc.value)
+			if tc.valid && err != nil {
+				t.Fatalf("parseExpiredLeaseCursor() error = %v", err)
+			}
+			if !tc.valid && err == nil {
+				t.Fatal("parseExpiredLeaseCursor() accepted an invalid cursor")
+			}
+			if got.ID != tc.wantID {
+				t.Fatalf("cursor ID = %d, want %d", got.ID, tc.wantID)
+			}
+		})
+	}
+	if _, err := selectKeylessOwnerCandidates(ctx, &coverageTx{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
+		return nil, errors.New("query")
+	}}, 0, 1, false); err == nil {
+		t.Fatal("candidate selection ignored a query error")
+	}
+	for _, rows := range []*coverageRows{
+		{index: -1, values: [][]any{{"bad"}}},
+		{index: -1, err: errors.New("iteration")},
+	} {
+		if _, err := selectKeylessOwnerCandidates(ctx, &coverageTx{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) { return rows, nil }}, 0, 1, false); err == nil {
+			t.Fatal("candidate selection ignored a row error")
+		}
+	}
+	if _, err := lockScheduleMetaCursor(ctx, &coverageTx{execFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
+		return pgconn.CommandTag{}, errors.New("insert")
+	}}, "cursor", "0"); err == nil {
+		t.Fatal("cursor lock ignored initialization error")
+	}
+	if _, err := lockScheduleMetaCursor(ctx, &coverageTx{rowFn: func(context.Context, string, ...any) pgx.Row {
+		return coverageRow{err: errors.New("lock")}
+	}}, "cursor", "0"); err == nil {
+		t.Fatal("cursor lock ignored row lock error")
+	}
+	if err := storeScheduleMetaCursor(ctx, &coverageTx{execFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
+		return pgconn.CommandTag{}, errors.New("update")
+	}}, "cursor", "1"); err == nil {
+		t.Fatal("cursor store ignored update error")
 	}
 }
 
@@ -328,11 +457,14 @@ func TestPumpLeaderTransactionsAndKeyHandling(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tx := &coverageTx{rowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
-				if strings.Contains(sql, "count(*)") {
+				if strings.Contains(sql, "schedule_meta") {
+					return coverageRow{values: []any{"0"}}
+				}
+				if strings.Contains(sql, "EXISTS") {
 					if tc.keylessErr != nil {
 						return coverageRow{err: tc.keylessErr}
 					}
-					return coverageRow{values: []any{int64(0)}}
+					return coverageRow{values: []any{false}}
 				}
 				return coverageRow{err: fmt.Errorf("unexpected tx row %s", sql)}
 			}, execFn: func(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
@@ -340,6 +472,11 @@ func TestPumpLeaderTransactionsAndKeyHandling(t *testing.T) {
 					return pgconn.CommandTag{}, tc.assignErr
 				}
 				return pgconn.NewCommandTag("UPDATE 1"), nil
+			}, queryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
+				if tc.assignErr != nil {
+					return coverageRowsOf([]any{int64(5)}), nil
+				}
+				return coverageRowsOf(), nil
 			}, commitErr: tc.commitErr}
 			conn := &coverageConnection{rowFn: func(context.Context, string, ...any) pgx.Row {
 				if tc.lockRow != nil {
@@ -358,7 +495,7 @@ func TestPumpLeaderTransactionsAndKeyHandling(t *testing.T) {
 					return nil, tc.listErr
 				}
 				return tc.keys, nil
-			}, inflight: func(_ context.Context, _ pgx.Tx, key int64, worker string) (int, error) {
+			}, inflight: func(_ context.Context, _ pgx.Tx, key int64, worker string, _ int) (int, error) {
 				if tc.pumpErr != nil && worker == "" && key == 1 {
 					return 0, tc.pumpErr
 				}
@@ -410,7 +547,7 @@ func TestPumpHelpersAndQueueDispatch(t *testing.T) {
 	}{
 		{name: "no credits", credits: 0},
 		{name: "credit provider error", creditErr: errors.New("credits"), wantErr: "quota credits"},
-		{name: "count error", credits: 5, countErrAt: 2, wantErr: "count failed"},
+		{name: "count error", credits: 5, countErrAt: 1, wantErr: "count failed"},
 		{name: "key cap reached", credits: 5, counts: []int{10}},
 		{name: "worker limit reached", credits: 5, settings: app.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 20, MediaReadyCap: 0, AIReadyCap: 0, SyncReadyCap: 0}},
 		{name: "share group and selected job", credits: 5, want: 1},
@@ -452,7 +589,7 @@ func TestPumpHelpersAndQueueDispatch(t *testing.T) {
 				return pgconn.NewCommandTag("UPDATE 1"), nil
 			}}
 			countCalls := 0
-			store := Store{inflight: func(context.Context, pgx.Tx, int64, string) (int, error) {
+			store := Store{inflight: func(context.Context, pgx.Tx, int64, string, int) (int, error) {
 				countCalls++
 				if tc.countErrAt == countCalls {
 					return 0, errors.New("count failed")
@@ -464,7 +601,7 @@ func TestPumpHelpersAndQueueDispatch(t *testing.T) {
 			}}
 			credit := &coverageCredits{capacity: tc.credits, err: tc.creditErr}
 			jobs := &coverageJobs{err: tc.queueErr}
-			got, err := store.pumpKey(ctx, tx, 1, limits, credit, jobs, store.inflight)
+			got, err := store.pumpKey(ctx, tx, 1, limits, credit, jobs, store.inflight, inflightSnapshot{workers: map[string]int{"media": 0, "ai": 0, "sync": 0}})
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("error=%v want %q", err, tc.wantErr)
@@ -472,8 +609,8 @@ func TestPumpHelpersAndQueueDispatch(t *testing.T) {
 			} else if err != nil {
 				t.Fatal(err)
 			}
-			if got != tc.want {
-				t.Fatalf("dispatched=%d want=%d", got, tc.want)
+			if got.total != tc.want {
+				t.Fatalf("dispatched=%d want=%d", got.total, tc.want)
 			}
 		})
 	}
@@ -488,9 +625,9 @@ func TestPumpHelpersAndQueueDispatch(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
-			store := Store{inflight: func(context.Context, pgx.Tx, int64, string) (int, error) {
+			store := Store{inflight: func(context.Context, pgx.Tx, int64, string, int) (int, error) {
 				calls++
-				if tc.name == "key unavailable skipped" && calls == 1 {
+				if tc.name == "key unavailable skipped" && calls == 5 {
 					return 0, unavailableKey{}
 				}
 				if tc.err != nil {
@@ -515,19 +652,29 @@ func TestPumpHelpersAndQueueDispatch(t *testing.T) {
 
 func TestScheduleSQLHelpersAndRescore(t *testing.T) {
 	ctx := context.Background()
-	if err := assignOwnerKeys(ctx, &coverageTx{}); err != nil {
+	assignTx := &coverageTx{
+		rowFn: func(context.Context, string, ...any) pgx.Row {
+			return coverageRow{values: []any{"0"}}
+		},
+	}
+	if err := assignOwnerKeys(ctx, assignTx, 100); err != nil {
 		t.Fatal(err)
 	}
-	if err := assignOwnerKeys(ctx, &coverageTx{execFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
-		return pgconn.CommandTag{}, errors.New("assign")
-	}}); err == nil {
+	if err := assignOwnerKeys(ctx, &coverageTx{
+		rowFn: func(context.Context, string, ...any) pgx.Row {
+			return coverageRow{values: []any{"0"}}
+		},
+		execFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
+			return pgconn.CommandTag{}, errors.New("assign")
+		},
+	}, 100); err == nil {
 		t.Fatal("ignored assignment error")
 	}
 	if err := warnKeylessPending(ctx, &coverageTx{rowFn: func(context.Context, string, ...any) pgx.Row { return coverageRow{err: errors.New("count")} }}); err == nil {
 		t.Fatal("ignored warning count error")
 	}
-	for _, count := range []int64{0, 2} {
-		if err := warnKeylessPending(ctx, &coverageTx{rowFn: func(context.Context, string, ...any) pgx.Row { return coverageRow{values: []any{count}} }}); err != nil {
+	for _, found := range []bool{false, true} {
+		if err := warnKeylessPending(ctx, &coverageTx{rowFn: func(context.Context, string, ...any) pgx.Row { return coverageRow{values: []any{found}} }}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -558,13 +705,6 @@ func TestScheduleSQLHelpersAndRescore(t *testing.T) {
 			}
 		})
 	}
-	if _, err := countInflight(ctx, &coverageTx{rowFn: func(context.Context, string, ...any) pgx.Row { return coverageRow{err: errors.New("count")} }}, 1, "media"); err == nil {
-		t.Fatal("ignored inflight error")
-	}
-	if got, err := countInflight(ctx, &coverageTx{rowFn: func(context.Context, string, ...any) pgx.Row { return coverageRow{values: []any{int(4)}} }}, 1, "media"); err != nil || got != 4 {
-		t.Fatalf("count=%d err=%v", got, err)
-	}
-
 	settings := coverageSettings()
 	tests := []struct {
 		name     string
@@ -618,13 +758,99 @@ func TestScheduleSQLHelpersAndRescore(t *testing.T) {
 	}
 }
 
+func TestPumpReadsGlobalInflightCountsOncePerTick(t *testing.T) {
+	ctx := context.Background()
+	settings := coverageSettings()
+	countCalls := 0
+	store := Store{inflight: func(context.Context, pgx.Tx, int64, string, int) (int, error) {
+		countCalls++
+		return 0, nil
+	}}
+	_, err := store.pumpKeys(ctx, &coverageTx{}, []int64{1, 2}, settings, &coverageCredits{capacity: 5}, &coverageJobs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countCalls != 6 {
+		t.Fatalf("inflight queries per tick = %d, want 4 global and one per key", countCalls)
+	}
+}
+
+func TestCountInflightSelectsAndCountsOnlyBoundedIDs(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name   string
+		keyID  int64
+		worker string
+		args   []any
+	}{
+		{name: "node", args: []any{10}},
+		{name: "key", keyID: 1, args: []any{int64(1), 10}},
+		{name: "worker", worker: "media", args: []any{"media", 10}},
+		{name: "key and worker", keyID: 1, worker: "media", args: []any{int64(1), "media", 10}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var query string
+			var args []any
+			rows := coverageRowsOf([]any{int64(3)}, []any{int64(7)})
+			tx := &coverageTx{queryFn: func(_ context.Context, sql string, values ...any) (pgx.Rows, error) {
+				query = sql
+				args = values
+				return rows, nil
+			}}
+			got, err := countInflight(ctx, tx, test.keyID, test.worker, 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != 2 {
+				t.Fatalf("count = %d, want 2 selected IDs", got)
+			}
+			upperQuery := strings.ToUpper(query)
+			if !strings.Contains(upperQuery, "SELECT ID") || !strings.Contains(upperQuery, "LIMIT") || strings.Contains(upperQuery, "COUNT(") {
+				t.Fatalf("inflight query = %q, want bounded ID selection", query)
+			}
+			if !reflect.DeepEqual(args, test.args) {
+				t.Fatalf("query args = %v, want %v", args, test.args)
+			}
+			if !rows.closed {
+				t.Fatal("inflight rows were not closed")
+			}
+		})
+	}
+}
+
+func TestCountInflightReportsQueryAndReadErrors(t *testing.T) {
+	ctx := context.Background()
+	for _, test := range []struct {
+		name     string
+		rows     *coverageRows
+		queryErr error
+	}{
+		{name: "query", queryErr: errors.New("query")},
+		{name: "scan", rows: &coverageRows{index: -1, values: [][]any{{int64(1)}}, scanErr: errors.New("scan")}},
+		{name: "rows", rows: &coverageRows{index: -1, values: [][]any{{int64(1)}}, err: errors.New("iterate")}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tx := &coverageTx{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
+				return test.rows, test.queryErr
+			}}
+			if _, err := countInflight(ctx, tx, 1, "media", 10); err == nil || !strings.Contains(err.Error(), "count inflight work") {
+				t.Fatalf("countInflight() error = %v, want contextual error", err)
+			}
+			if test.rows != nil && !test.rows.closed {
+				t.Fatal("inflight rows were not closed after error")
+			}
+		})
+	}
+}
+
 func TestRequeueAndReclaimLeasePaths(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC)
 	if _, err := (Store{}).Requeue(ctx, nil, now); err == nil {
 		t.Fatal("Requeue accepted missing database")
 	}
-	if _, err := (Store{}).Reclaim(ctx, 3, time.Second, now); err == nil {
+	if _, err := (Store{}).Reclaim(ctx, 3, time.Second, 100, now); err == nil {
 		t.Fatal("Reclaim accepted missing database")
 	}
 	db := &coverageDatabase{execFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
@@ -655,21 +881,23 @@ func TestRequeueAndReclaimLeasePaths(t *testing.T) {
 	}{
 		{name: "no expired rows", retryMax: 3},
 		{name: "begin error", beginErr: errors.New("begin"), wantErr: "begin reclaim"},
-		{name: "select error", queryErr: errors.New("query"), retryMax: 3, wantErr: "select expired leases"},
-		{name: "scan error", scanErr: errors.New("scan"), leases: [][]any{{int64(1), 2, "photo.sizes"}}, retryMax: 3, wantErr: "scan expired lease"},
-		{name: "read error", rowsErr: errors.New("read"), retryMax: 3, wantErr: "read expired leases"},
-		{name: "retry lease", leases: [][]any{{int64(1), 0, "photo.sizes"}}, retryMax: 3, want: 1},
-		{name: "retry update error", leases: [][]any{{int64(1), 0, "photo.sizes"}}, retryMax: 3, leaseExecErr: errors.New("lease update"), wantErr: "return expired lease"},
-		{name: "exhausted publishes dead letter", leases: [][]any{{int64(2), 2, "photo.sizes"}}, retryMax: 3, want: 1},
-		{name: "dead letter error", leases: [][]any{{int64(2), 2, "photo.sizes"}}, retryMax: 3, outboxErr: errors.New("outbox"), wantErr: "outbox: insert event"},
-		{name: "failed lease update error", leases: [][]any{{int64(2), 2, "photo.sizes"}}, retryMax: 3, leaseExecErr: errors.New("failed update"), wantErr: "fail exhausted lease"},
+		{name: "select error", queryErr: errors.New("query"), retryMax: 3, wantErr: "select expired lease candidates"},
+		{name: "scan error", scanErr: errors.New("scan"), leases: [][]any{{int64(1), 2, "photo.sizes", now.Add(-time.Minute), true}}, retryMax: 3, wantErr: "scan expired lease candidate"},
+		{name: "read error", rowsErr: errors.New("read"), retryMax: 3, wantErr: "read expired lease candidates"},
+		{name: "retry lease", leases: [][]any{{int64(1), 0, "photo.sizes", now.Add(-time.Minute), true}}, retryMax: 3, want: 1},
+		{name: "retry update error", leases: [][]any{{int64(1), 0, "photo.sizes", now.Add(-time.Minute), true}}, retryMax: 3, leaseExecErr: errors.New("lease update"), wantErr: "return expired lease"},
+		{name: "exhausted publishes dead letter", leases: [][]any{{int64(2), 2, "photo.sizes", now.Add(-time.Minute), true}}, retryMax: 3, want: 1},
+		{name: "dead letter error", leases: [][]any{{int64(2), 2, "photo.sizes", now.Add(-time.Minute), true}}, retryMax: 3, outboxErr: errors.New("outbox"), wantErr: "outbox: insert event"},
+		{name: "failed lease update error", leases: [][]any{{int64(2), 2, "photo.sizes", now.Add(-time.Minute), true}}, retryMax: 3, leaseExecErr: errors.New("failed update"), wantErr: "fail exhausted lease"},
 		{name: "self heal error", retryMax: 3, selfHealErr: errors.New("selfheal"), wantErr: "self-heal lease-expired work"},
 		{name: "commit error", retryMax: 3, commitErr: errors.New("commit"), wantErr: "commit reclaim"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			rows := &coverageRows{index: -1, values: tc.leases, scanErr: tc.scanErr, err: tc.rowsErr}
-			tx := &coverageTx{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
+			tx := &coverageTx{rowFn: func(context.Context, string, ...any) pgx.Row {
+				return coverageRow{values: []any{""}}
+			}, queryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
 				if tc.queryErr != nil {
 					return nil, tc.queryErr
 				}
@@ -701,7 +929,7 @@ func TestRequeueAndReclaimLeasePaths(t *testing.T) {
 				}
 				return tx, nil
 			}}
-			got, err := (Store{database: db}).Reclaim(ctx, tc.retryMax, time.Second, now)
+			got, err := (Store{database: db}).Reclaim(ctx, tc.retryMax, time.Second, 100, now)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("error=%v want %q", err, tc.wantErr)

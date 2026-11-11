@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -14,21 +15,22 @@ const PumpInterval = 2 * time.Second
 
 // PumpSettings are the dispatch caps read from application settings.
 type PumpSettings struct {
-	PerKeyReadyCap int
-	NodeReadyCap   int
-	MediaReadyCap  int
-	AIReadyCap     int
-	SyncReadyCap   int
-	RetryMax       int
-	RetryBackoff   time.Duration
-	LeaseTimeout   time.Duration
-	AgingBatchSize int
-	MaxDepth       int
-	ScoreWeights   domain.ScoreWeights
+	PerKeyReadyCap   int
+	NodeReadyCap     int
+	MediaReadyCap    int
+	AIReadyCap       int
+	SyncReadyCap     int
+	RetryMax         int
+	RetryBackoff     time.Duration
+	LeaseTimeout     time.Duration
+	ReclaimBatchSize int
+	AgingBatchSize   int
+	MaxDepth         int
+	ScoreWeights     domain.ScoreWeights
 }
 
 func (s PumpSettings) Validate() error {
-	if s.PerKeyReadyCap < 0 || s.NodeReadyCap < 0 || s.MediaReadyCap < 0 || s.AIReadyCap < 0 || s.SyncReadyCap < 0 || s.RetryMax < 0 || s.RetryBackoff < 0 || s.LeaseTimeout < 0 || s.AgingBatchSize < 0 || s.MaxDepth < 0 {
+	if s.PerKeyReadyCap < 0 || s.NodeReadyCap < 0 || s.MediaReadyCap < 0 || s.AIReadyCap < 0 || s.SyncReadyCap < 0 || s.RetryMax < 0 || s.RetryBackoff < 0 || s.LeaseTimeout < 0 || s.ReclaimBatchSize < 1 || s.AgingBatchSize < 0 || s.MaxDepth < 0 {
 		return errors.New("schedule: invalid pump settings")
 	}
 	if s.AgingBatchSize > 0 {
@@ -42,7 +44,12 @@ func (s PumpSettings) Validate() error {
 // PumpStore dispatches a bounded batch atomically and reclaims expired leases.
 type PumpStore interface {
 	Pump(context.Context, PumpSettings, CreditProvider, queue.JobQueue) (int, error)
-	Reclaim(context.Context, int, time.Duration, time.Time) (int, error)
+	Reclaim(context.Context, int, time.Duration, int, time.Time) (int, error)
+}
+
+// PumpSettingsSource loads the current administrator settings for each tick.
+type PumpSettingsSource interface {
+	LoadPumpSettings(context.Context) (PumpSettings, error)
 }
 
 // CreditProvider reports the remaining Flickr calls a key may spend in the
@@ -68,15 +75,16 @@ type PhotoLaneDispatcher interface {
 
 // Pump coordinates a single bounded scheduling pass.
 type Pump struct {
-	Store         PumpStore
-	Credits       CreditProvider
-	Queue         queue.JobQueue
-	Settings      PumpSettings
-	Logger        *slog.Logger
-	QueueState    QueueStatePublisher
-	ChangeChecks  ChangeCheckScheduler
-	PhotoLane     PhotoLaneDispatcher
-	MediaPressure interface {
+	Store          PumpStore
+	Credits        CreditProvider
+	Queue          queue.JobQueue
+	Settings       PumpSettings
+	SettingsSource PumpSettingsSource
+	Logger         *slog.Logger
+	QueueState     QueueStatePublisher
+	ChangeChecks   ChangeCheckScheduler
+	PhotoLane      PhotoLaneDispatcher
+	MediaPressure  interface {
 		Full(context.Context) (bool, error)
 	}
 	QueueStateInterval time.Duration
@@ -87,10 +95,18 @@ func (p Pump) RunOnce(ctx context.Context) (int, error) {
 	if ctx == nil || p.Store == nil || p.Credits == nil || p.Queue == nil {
 		return 0, errors.New("schedule: pump dependencies are required")
 	}
-	if err := p.Settings.Validate(); err != nil {
+	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	if err := ctx.Err(); err != nil {
+	settings := p.Settings
+	if p.SettingsSource != nil {
+		loaded, err := p.SettingsSource.LoadPumpSettings(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("schedule: load current pump settings: %w", err)
+		}
+		settings = loaded
+	}
+	if err := settings.Validate(); err != nil {
 		return 0, err
 	}
 	if p.ChangeChecks != nil {
@@ -102,25 +118,25 @@ func (p Pump) RunOnce(ctx context.Context) (int, error) {
 			logger.ErrorContext(ctx, "scheduler change check pass failed", "error", err)
 		}
 	}
-	if _, err := p.Store.Reclaim(ctx, p.Settings.RetryMax, p.Settings.RetryBackoff, time.Now()); err != nil {
+	if _, err := p.Store.Reclaim(ctx, settings.RetryMax, settings.RetryBackoff, settings.ReclaimBatchSize, time.Now()); err != nil {
 		return 0, err
 	}
-	if p.Settings.AgingBatchSize > 0 {
+	if settings.AgingBatchSize > 0 {
 		rescoreStore, ok := p.Store.(WeightsRescoreStore)
 		if !ok {
 			return 0, errors.New("schedule: pump store does not support weights rescore")
 		}
-		if _, err := (WeightsRescore{Store: rescoreStore, BatchSize: p.Settings.AgingBatchSize, MaxDepth: p.Settings.MaxDepth, Weights: p.Settings.ScoreWeights}).RunBatch(ctx); err != nil {
+		if _, err := (WeightsRescore{Store: rescoreStore, BatchSize: settings.AgingBatchSize, MaxDepth: settings.MaxDepth, Weights: settings.ScoreWeights}).RunBatch(ctx); err != nil {
 			return 0, err
 		}
 	}
-	settings := p.settingsUnderPressure(ctx)
-	dispatched, err := p.Store.Pump(ctx, settings, p.Credits, p.Queue)
+	dispatchSettings := p.settingsUnderPressure(ctx, settings)
+	dispatched, err := p.Store.Pump(ctx, dispatchSettings, p.Credits, p.Queue)
 	if err != nil {
 		return dispatched, err
 	}
-	if p.PhotoLane != nil && p.Settings.SyncReadyCap > 0 {
-		photos, err := p.PhotoLane.Next(ctx, p.Settings.SyncReadyCap)
+	if p.PhotoLane != nil && settings.SyncReadyCap > 0 {
+		photos, err := p.PhotoLane.Next(ctx, settings.SyncReadyCap)
 		if err != nil {
 			return dispatched, err
 		}
@@ -132,8 +148,7 @@ func (p Pump) RunOnce(ctx context.Context) (int, error) {
 // settingsUnderPressure stops pumping media jobs when temporary storage is
 // full. A failing pressure check is logged and treated as full for media only,
 // so the other queues keep running.
-func (p Pump) settingsUnderPressure(ctx context.Context) PumpSettings {
-	settings := p.Settings
+func (p Pump) settingsUnderPressure(ctx context.Context, settings PumpSettings) PumpSettings {
 	if p.MediaPressure == nil {
 		return settings
 	}

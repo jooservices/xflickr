@@ -523,6 +523,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		"score_weight_depth":                      {value: "5", min: &zero},
 		"score_weight_age_minutes":                {value: "0.1", min: &zero},
 		"score_aging_batch_size":                  {value: "500", min: &minimum},
+		"queue.reclaim_batch_size":                {value: "100", min: &minimum},
 		"ops.health_interval":                     {value: "60", min: &healthIntervalMin, max: &healthIntervalMax},
 		"ops.health_statement_timeout":            {value: "5", min: &healthTimeoutMin, max: &healthTimeoutMax},
 		"maintenance.api_call_log_retention_days": {value: "30", min: &retentionMin, max: &retentionMax},
@@ -536,7 +537,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 	}
 	for key, expected := range want {
 		item, ok := got[key]
-		wantOverridable := key != "photo_lane_floor_share" && key != "usable_hourly_quota" && key != "restricted_recheck_interval" && key != "registration_open" && key != "photo_info_enabled" && key != "photo_exif_enabled" && key != "photo_contexts_enabled" && key != "photo_comments_enabled" && key != "photo_favorites_enabled" && key != "per_key_ready_cap" && key != "node_ready_cap" && key != "media_ready_cap" && key != "ai_ready_cap" && key != "sync_ready_cap" && key != "lease_timeout" && key != "metrics.retention_days" && key != "queue.completed_retention" && key != "queue.discarded_retention" && !strings.HasPrefix(key, "ops.") && !strings.HasPrefix(key, "score_") && !strings.HasPrefix(key, "maintenance.")
+		wantOverridable := key != "photo_lane_floor_share" && key != "usable_hourly_quota" && key != "restricted_recheck_interval" && key != "registration_open" && key != "photo_info_enabled" && key != "photo_exif_enabled" && key != "photo_contexts_enabled" && key != "photo_comments_enabled" && key != "photo_favorites_enabled" && key != "per_key_ready_cap" && key != "node_ready_cap" && key != "media_ready_cap" && key != "ai_ready_cap" && key != "sync_ready_cap" && key != "lease_timeout" && key != "metrics.retention_days" && key != "queue.completed_retention" && key != "queue.discarded_retention" && key != "queue.reclaim_batch_size" && !strings.HasPrefix(key, "ops.") && !strings.HasPrefix(key, "score_") && !strings.HasPrefix(key, "maintenance.")
 		if !ok || item.overridable != wantOverridable || !jsonEqual(item.value, expected.value) || !floatPtrEqual(item.minimum, expected.min) || !floatPtrEqual(item.maximum, expected.max) {
 			t.Fatalf("seed %s = value %s overridable %v min %v max %v", key, item.value, item.overridable, item.minimum, item.maximum)
 		}
@@ -574,7 +575,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		SyncReadyCap:              100,
 		LeaseTimeout:              2 * time.Minute,
 		ScoreWeightPlan:           10, ScoreWeightDirectAction: 100, ScoreWeightStarred: 20,
-		ScoreWeightDepth: 5, ScoreWeightAgeMinutes: 0.1, ScoreAgingBatchSize: 500,
+		ScoreWeightDepth: 5, ScoreWeightAgeMinutes: 0.1, ScoreAgingBatchSize: 500, QueueReclaimBatchSize: 100,
 		OpsHealthInterval:         time.Minute,
 		OpsHealthStatementTimeout: 5 * time.Second,
 		APICallLogRetentionDays:   30, APICallLogDryRun: false,

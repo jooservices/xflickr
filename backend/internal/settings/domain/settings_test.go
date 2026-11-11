@@ -62,6 +62,7 @@ func TestMergeSeededDefaults(t *testing.T) {
 		ScoreWeightDepth:          5,
 		ScoreWeightAgeMinutes:     0.1,
 		ScoreAgingBatchSize:       500,
+		QueueReclaimBatchSize:     100,
 		OpsHealthInterval:         time.Minute,
 		OpsHealthStatementTimeout: 5 * time.Second,
 		APICallLogRetentionDays:   30,
@@ -182,6 +183,7 @@ func TestJSONSchemaPerKey(t *testing.T) {
 		PhotoContextsEnabled:  `{"type":"boolean"}`,
 		PhotoCommentsEnabled:  `{"type":"boolean"}`,
 		PhotoFavoritesEnabled: `{"type":"boolean"}`,
+		QueueReclaimBatchSize: `{"type":"integer","minimum":1,"maximum":10000}`,
 	}
 	if len(Keys()) != len(schemas) {
 		t.Fatalf("keys = %d, schemas = %d", len(Keys()), len(schemas))
@@ -242,6 +244,7 @@ func TestValidateValueAcceptsValuesInsideCaps(t *testing.T) {
 		{name: "zero retry backoff", key: RetryBackoff, raw: "0"},
 		{name: "completed retention default", key: QueueCompletedRetention, raw: "86400", min: floatPointer(60), max: floatPointer(604800)},
 		{name: "discarded retention default", key: QueueDiscardedRetention, raw: "604800", min: floatPointer(3600), max: floatPointer(2592000)},
+		{name: "reclaim batch size at schema maximum", key: QueueReclaimBatchSize, raw: "10000"},
 		{name: "call log retention minimum", key: APICallLogRetentionDays, raw: "7", min: floatPointer(7), max: floatPointer(365)},
 		{name: "call log retention maximum", key: APICallLogRetentionDays, raw: "365", min: floatPointer(7), max: floatPointer(365)},
 		{name: "call log dry run false", key: APICallLogDryRun, raw: "false"},
@@ -298,6 +301,7 @@ func TestValidateValueRejectsValuesOutsideCaps(t *testing.T) {
 		{name: "discarded retention above cap", key: QueueDiscardedRetention, raw: "2592001", min: floatPointer(3600), max: floatPointer(2592000), wantCap: "2592000", want: "exceeds cap 2592000"},
 		{name: "call log retention below schema", key: APICallLogRetentionDays, raw: "6", wantCap: "7", want: "schema cap 7"},
 		{name: "call log retention above schema", key: APICallLogRetentionDays, raw: "366", wantCap: "365", want: "schema cap 365"},
+		{name: "reclaim batch size above schema", key: QueueReclaimBatchSize, raw: "10001", wantCap: "10000", want: "schema cap 10000"},
 		{name: "call log dry run number", key: APICallLogDryRun, raw: "1", want: "must be a boolean"},
 	}
 	for _, test := range tests {
@@ -317,6 +321,22 @@ func TestValidateValueRejectsValuesOutsideCaps(t *testing.T) {
 				t.Fatalf("error = %q, want key %s and %q", err, test.key, test.want)
 			}
 		})
+	}
+}
+
+func TestMergeRejectsStoredReclaimBatchSizeAboveSchemaMaximum(t *testing.T) {
+	snapshot := DefaultSnapshot()
+	setting := snapshot.Settings[QueueReclaimBatchSize]
+	setting.Value = json.RawMessage("10001")
+	snapshot.Settings[QueueReclaimBatchSize] = setting
+
+	_, _, err := Merge(snapshot)
+	var validation *ValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("Merge() error = %v, want ValidationError", err)
+	}
+	if validation.Key != QueueReclaimBatchSize || validation.Cap != "10000" {
+		t.Fatalf("validation = %+v, want reclaim batch size capped at 10000", validation)
 	}
 }
 

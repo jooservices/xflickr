@@ -682,11 +682,11 @@ func TestNewSchedulerPumpWiresQueueStatePublisher(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newQuotaRuntime() error = %v", err)
 	}
-	pump, err := newSchedulerPump(&pgxpool.Pool{}, quota.Governor, nil, nil, settings)
+	pump, err := newSchedulerPump(&pgxpool.Pool{}, quota.Governor, pumpSettingsStoreStub{}, nil, settings)
 	if err != nil {
 		t.Fatalf("newSchedulerPump() error = %v", err)
 	}
-	if pump.QueueState == nil || pump.ChangeChecks == nil || pump.PhotoLane == nil || pump.Settings.RetryMax != settings.RetryMax {
+	if pump.QueueState == nil || pump.ChangeChecks == nil || pump.PhotoLane == nil || pump.Settings.RetryMax != settings.RetryMax || pump.SettingsSource == nil {
 		t.Fatalf("scheduler pump wiring = %+v", pump)
 	}
 }

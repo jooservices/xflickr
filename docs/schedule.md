@@ -52,7 +52,16 @@ A row that failed only because its lease expired (`last_error = 'lease
 expired'`, an infrastructure fault such as a stopped worker) is not final.
 Reclaim returns it to `pending` once it has been failed for `SelfHealAfter`
 (15 minutes), with `attempts` reset to 0 and the error cleared. Failures with
-any other error stay failed.
+any other error stay failed. Each tick examines at most
+`queue.reclaim_batch_size` expired leases and self-heal failures. A persistent
+cursor advances across lease candidates before checking for a live River job,
+so active jobs do not hold the first batch in place. The setting is reloaded on
+each pump tick and takes effect without restarting the scheduler.
+
+The pump also assigns owner keys to a bounded, ID-ordered batch of pending
+keyless rows. Its cursor advances across rows whose owner has no active Flickr
+account, so they do not starve later rows that can be dispatched. Both passes
+use the administrator setting `queue.reclaim_batch_size` (default 100).
 
 `xflickr requeue [--id N[,N...]]` returns failed rows to `pending` with
 `attempts` reset: all failed rows without `--id`, otherwise only the listed ids

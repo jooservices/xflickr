@@ -38,9 +38,14 @@ Sizes are approximate per partition × 16 partitions unless noted.
 | `crawl_interests_person_nsid_idx` | crawl_interests | | used | `interests.go` by `person_nsid` | keep |
 | `crawl_interests_paused_idx` | crawl_interests | partial | used | pause checks / enqueue filters | keep |
 | `crawl_interests_selected_idx` / `_starred_idx` / `_depth_idx` | crawl_interests | | used | `photolane.sql` ranking streams | keep |
+| `work_items_failed_lease_expired_idx` | work_items | partial | not in audit window | Reclaim self-heal for lease-expired failures ordered by `updated_at, id` | keep (JOOXF-386) |
+| `river_job_active_work_item_idx` | river_job | partial expression | not in audit window | Reclaim's live-job lookup by work item ID | keep (JOOXF-386) |
+| `work_items_active_key_count_idx` | work_items | partial | not in audit window | bounded active count by key | keep (JOOXF-386) |
+| `work_items_active_worker_count_idx` | work_items | partial | not in audit window | bounded active count by worker queue | keep (JOOXF-386) |
+| `work_items_pending_keyless_due_idx` | work_items | partial | not in audit window | keyless pending warning by due time | keep (JOOXF-386) |
 
-`work_items` and River indexes are owned by JOOXF-370 and are out of scope for
-the index-drop audit above.
+Existing `work_items` and River indexes are owned by JOOXF-370 and are out of
+scope for the index-drop audit above.
 
 ## Scheduler plan backlog count
 
@@ -300,6 +305,57 @@ non-HOT; measure with the synthetic steady-state test.
 Existing heap and index bloat is cleared with the lead-only runbook
 [rebuild-work-items.md](runbooks/rebuild-work-items.md). Never rewrite
 `work_items` inside a migration.
+
+JOOXF-386 uses `work_items_failed_lease_expired_idx` on `(updated_at, id)` for
+rows with both `state='failed'` and `last_error='lease expired'`. Other failed
+errors are absent from this index. Reclaim first selects at most
+`queue.reclaim_batch_size` expired lease candidates through
+the existing `work_items_ready_lease_idx`, then checks those candidates for a
+live River job. A persistent `(lease_expires_at, id)` cursor advances past live
+jobs, so they cannot hold up later candidates. The same admin setting bounds
+self-heal failures per tick (default 100) and is reloaded on every pump tick.
+
+Keyless owner assignment is also bounded by this setting. It walks
+`work_items_pending_keyless_idx` in ID order and persists a cursor, including
+when an owner has no active Flickr account, so those rows do not starve later
+eligible work. The pump bounds inflight counts at configured ready caps, reads
+global node/queue counts once per tick, and reads one count per active key. The
+active worker partial index also serves the node count; the active key partial
+index serves per-key counts.
+
+`river_job_active_work_item_idx` supports the bounded candidate check that
+leaves a work item alone while a live River job owns it. The integration
+`EXPLAIN ANALYZE` fixture contains 400,000 work items, 100,000 failed rows with
+ineligible errors, 10,000 expired leases with live River jobs, and about
+110,000 active River jobs total. It asserts the self-heal, lease, node-count,
+and keyless selectors use their partial indexes; candidate rows, River lookups,
+and shared-buffer touches stay within the tested batch bounds. The recorded
+pump and maintenance plans also fail on a `work_items` sequential scan. The
+backlog integration test checks that a 250-row ready and failed backlog drains
+in batches of 100.
+
+The new indexes use `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY`
+in migrations marked `NO TRANSACTION`, so index builds do not block table
+writes. A failed concurrent build can leave an invalid index, which makes a
+later `CREATE INDEX CONCURRENTLY IF NOT EXISTS` skip rebuilding it. Before
+retrying a failed migration, inspect only the affected index:
+
+```sql
+SELECT indexrelid::regclass, indisvalid
+FROM pg_index
+WHERE indexrelid = to_regclass('public.<index_name>');
+```
+
+If `indisvalid` is false, remove the remnant with
+`DROP INDEX CONCURRENTLY IF EXISTS public.<index_name>`, then rerun the
+migration. Do not drop a valid index as part of this recovery.
+
+During an authorized deployment, record the `work_items.seq_scan` delta in
+`pg_stat_user_tables` over a two-minute window immediately before the migration,
+then repeat the same measurement after the migration is deployed and the
+scheduler is running. Compare the two deltas and record both values on
+JOOXF-386. Worktree plans do not establish production behavior; no production
+measurement or deployment was performed for this PR.
 
 ## river_job (JOOXF-370)
 

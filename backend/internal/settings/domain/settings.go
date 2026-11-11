@@ -51,6 +51,7 @@ const (
 	ScoreWeightDepth          Key = "score_weight_depth"
 	ScoreWeightAgeMinutes     Key = "score_weight_age_minutes"
 	ScoreAgingBatchSize       Key = "score_aging_batch_size"
+	QueueReclaimBatchSize     Key = "queue.reclaim_batch_size"
 	OpsHealthInterval         Key = "ops.health_interval"
 	OpsHealthStatementTimeout Key = "ops.health_statement_timeout"
 	APICallLogRetentionDays   Key = "maintenance.api_call_log_retention_days"
@@ -96,6 +97,7 @@ type Effective struct {
 	ScoreWeightDepth          float64
 	ScoreWeightAgeMinutes     float64
 	ScoreAgingBatchSize       int
+	QueueReclaimBatchSize     int
 	OpsHealthInterval         time.Duration
 	OpsHealthStatementTimeout time.Duration
 	APICallLogRetentionDays   int
@@ -218,6 +220,7 @@ var schemas = map[Key]JSONSchema{
 	ScoreWeightDepth:          {Type: "number", Minimum: minZero},
 	ScoreWeightAgeMinutes:     {Type: "number", Minimum: minZero},
 	ScoreAgingBatchSize:       {Type: "integer", Minimum: minOne},
+	QueueReclaimBatchSize:     {Type: "integer", Minimum: minOne, Maximum: floatPointer(10000)},
 	OpsHealthInterval:         {Type: "integer", Minimum: floatPointer(10), Maximum: floatPointer(3600)},
 	OpsHealthStatementTimeout: {Type: "integer", Minimum: floatPointer(1), Maximum: floatPointer(60)},
 	APICallLogRetentionDays:   {Type: "integer", Minimum: floatPointer(7), Maximum: floatPointer(365)},
@@ -264,7 +267,7 @@ func Keys() []Key {
 		AIReadyCap,
 		SyncReadyCap,
 		LeaseTimeout,
-		ScoreWeightPlan, ScoreWeightDirectAction, ScoreWeightStarred, ScoreWeightDepth, ScoreWeightAgeMinutes, ScoreAgingBatchSize,
+		ScoreWeightPlan, ScoreWeightDirectAction, ScoreWeightStarred, ScoreWeightDepth, ScoreWeightAgeMinutes, ScoreAgingBatchSize, QueueReclaimBatchSize,
 		OpsHealthInterval,
 		OpsHealthStatementTimeout,
 		APICallLogRetentionDays,
@@ -312,6 +315,7 @@ func Defaults() []Definition {
 		{Key: ScoreWeightDepth, Value: json.RawMessage("5"), UserOverridable: false, Min: floatPointer(0)},
 		{Key: ScoreWeightAgeMinutes, Value: json.RawMessage("0.1"), UserOverridable: false, Min: floatPointer(0)},
 		{Key: ScoreAgingBatchSize, Value: json.RawMessage("500"), UserOverridable: false, Min: floatPointer(1)},
+		{Key: QueueReclaimBatchSize, Value: json.RawMessage("100"), UserOverridable: false, Min: floatPointer(1)},
 		{Key: OpsHealthInterval, Value: json.RawMessage("60"), UserOverridable: false, Min: floatPointer(10), Max: floatPointer(3600)},
 		{Key: OpsHealthStatementTimeout, Value: json.RawMessage("5"), UserOverridable: false, Min: floatPointer(1), Max: floatPointer(60)},
 		{Key: APICallLogRetentionDays, Value: json.RawMessage("30"), UserOverridable: false, Min: floatPointer(7), Max: floatPointer(365)},
@@ -610,6 +614,9 @@ func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
 	}
 	if result.ScoreAgingBatchSize, err = integer(values[ScoreAgingBatchSize]); err != nil {
 		return Effective{}, nil, invalidStored(ScoreAgingBatchSize, err)
+	}
+	if result.QueueReclaimBatchSize, err = integer(values[QueueReclaimBatchSize]); err != nil {
+		return Effective{}, nil, invalidStored(QueueReclaimBatchSize, err)
 	}
 	if result.OpsHealthInterval, err = duration(values[OpsHealthInterval]); err != nil {
 		return Effective{}, nil, invalidStored(OpsHealthInterval, err)

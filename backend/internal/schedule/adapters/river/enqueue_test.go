@@ -58,7 +58,7 @@ func TestRescorePendingBatchValidatesDependencies(t *testing.T) {
 }
 
 func TestPumpValidatesDependenciesContextAndDatabase(t *testing.T) {
-	settings := app.PumpSettings{PerKeyReadyCap: 1, NodeReadyCap: 1, MediaReadyCap: 1, AIReadyCap: 1, SyncReadyCap: 1, RetryMax: 1, LeaseTimeout: time.Second}
+	settings := app.PumpSettings{PerKeyReadyCap: 1, NodeReadyCap: 1, MediaReadyCap: 1, AIReadyCap: 1, SyncReadyCap: 1, RetryMax: 1, LeaseTimeout: time.Second, ReclaimBatchSize: 100}
 	if _, err := (Store{}).Pump(context.Background(), settings, nil, nil); err == nil {
 		t.Fatal("Pump accepted missing dependencies")
 	}
@@ -71,10 +71,10 @@ func TestPumpValidatesDependenciesContextAndDatabase(t *testing.T) {
 }
 
 func TestReclaimValidatesPoolAndDatabase(t *testing.T) {
-	if _, err := (Store{}).Reclaim(context.Background(), 5, 30*time.Second, time.Now()); err == nil {
+	if _, err := (Store{}).Reclaim(context.Background(), 5, 30*time.Second, 100, time.Now()); err == nil {
 		t.Fatal("Reclaim accepted nil pool")
 	}
-	if _, err := (Store{Pool: closedPool(t)}).Reclaim(context.Background(), 5, 30*time.Second, time.Now()); err == nil {
+	if _, err := (Store{Pool: closedPool(t)}).Reclaim(context.Background(), 5, 30*time.Second, 100, time.Now()); err == nil {
 		t.Fatal("Reclaim ignored database error")
 	}
 }

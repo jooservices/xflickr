@@ -123,9 +123,38 @@ type explainNode struct {
 	NodeType         string        `json:"Node Type"`
 	RelationName     string        `json:"Relation Name"`
 	IndexName        string        `json:"Index Name"`
+	ActualRows       float64       `json:"Actual Rows"`
+	ActualLoops      float64       `json:"Actual Loops"`
+	RowsRemoved      float64       `json:"Rows Removed by Filter"`
 	SharedHitBlocks  int           `json:"Shared Hit Blocks"`
 	SharedReadBlocks int           `json:"Shared Read Blocks"`
 	Plans            []explainNode `json:"Plans"`
+}
+
+func maxActualRowsOnIndex(node explainNode, relation, index string) float64 {
+	rows := float64(0)
+	if node.RelationName == relation && node.IndexName == index && node.ActualRows > rows {
+		rows = node.ActualRows
+	}
+	for _, child := range node.Plans {
+		if childRows := maxActualRowsOnIndex(child, relation, index); childRows > rows {
+			rows = childRows
+		}
+	}
+	return rows
+}
+
+func maxActualLoopsOnRelation(node explainNode, relation string) float64 {
+	loops := float64(0)
+	if node.RelationName == relation && node.ActualLoops > loops {
+		loops = node.ActualLoops
+	}
+	for _, child := range node.Plans {
+		if childLoops := maxActualLoopsOnRelation(child, relation); childLoops > loops {
+			loops = childLoops
+		}
+	}
+	return loops
 }
 
 func explainStatement(ctx context.Context, tx pgx.Tx, query string, args ...any) (explainDocument, error) {
@@ -191,12 +220,12 @@ func TestPumpReturnsBacklogAndInflightReadErrors(t *testing.T) {
 	pool := internalIntegrationPool(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
-	settings := app.PumpSettings{PerKeyReadyCap: 1, NodeReadyCap: 1, MediaReadyCap: 1, AIReadyCap: 1, SyncReadyCap: 1, RetryMax: 1, LeaseTimeout: time.Second}
+	settings := app.PumpSettings{PerKeyReadyCap: 1, NodeReadyCap: 1, MediaReadyCap: 1, AIReadyCap: 1, SyncReadyCap: 1, RetryMax: 1, LeaseTimeout: time.Second, ReclaimBatchSize: 100}
 	store := Store{Pool: pool, listKeys: func(context.Context, pgx.Tx) ([]int64, error) { return nil, errors.New("backlog read") }}
 	if _, err := store.Pump(ctx, settings, internalCapacity(1), internalQueue{}); err == nil {
 		t.Fatal("Pump ignored pending key query error")
 	}
-	store = Store{Pool: pool, listKeys: func(context.Context, pgx.Tx) ([]int64, error) { return []int64{1}, nil }, inflight: func(context.Context, pgx.Tx, int64, string) (int, error) { return 0, errors.New("inflight read") }}
+	store = Store{Pool: pool, listKeys: func(context.Context, pgx.Tx) ([]int64, error) { return []int64{1}, nil }, inflight: func(context.Context, pgx.Tx, int64, string, int) (int, error) { return 0, errors.New("inflight read") }}
 	if _, err := store.Pump(ctx, settings, internalCapacity(1), internalQueue{}); err == nil {
 		t.Fatal("Pump ignored inflight query error")
 	}
@@ -221,7 +250,7 @@ func TestPumpWarnsAboutKeylessPendingWorkOncePerMinute(t *testing.T) {
 	keylessWarnMu.Lock()
 	keylessWarnLast = time.Time{}
 	keylessWarnMu.Unlock()
-	settings := app.PumpSettings{PerKeyReadyCap: 1, NodeReadyCap: 1, MediaReadyCap: 1, AIReadyCap: 1, SyncReadyCap: 1, RetryMax: 1, LeaseTimeout: time.Second}
+	settings := app.PumpSettings{PerKeyReadyCap: 1, NodeReadyCap: 1, MediaReadyCap: 1, AIReadyCap: 1, SyncReadyCap: 1, RetryMax: 1, LeaseTimeout: time.Second, ReclaimBatchSize: 100}
 	store := Store{Pool: pool, listKeys: func(context.Context, pgx.Tx) ([]int64, error) { return nil, nil }}
 	for range 2 {
 		if _, err := store.Pump(ctx, settings, internalCapacity(1), internalQueue{}); err != nil {
@@ -260,7 +289,7 @@ func TestKeylessQueriesReturnDatabaseErrors(t *testing.T) {
 	if err := warnKeylessPending(ctx, tx); err == nil {
 		t.Fatal("warnKeylessPending ignored the count query error")
 	}
-	if err := assignOwnerKeys(ctx, tx); err == nil {
+	if err := assignOwnerKeys(ctx, tx, 100); err == nil {
 		t.Fatal("assignOwnerKeys ignored the update error")
 	}
 }
