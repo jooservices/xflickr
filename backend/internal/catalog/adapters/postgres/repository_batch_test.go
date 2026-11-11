@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 type repositoryTestDB struct {
 	batch      *repositoryTestBatch
+	batchCalls int
 	execErr    error
 	execErrors []error
 	execCalls  int
@@ -35,6 +37,7 @@ func (d *repositoryTestDB) Query(context.Context, string, ...any) (pgx.Rows, err
 }
 func (*repositoryTestDB) QueryRow(context.Context, string, ...any) pgx.Row { return nil }
 func (d *repositoryTestDB) SendBatch(context.Context, *pgx.Batch) pgx.BatchResults {
+	d.batchCalls++
 	return d.batch
 }
 
@@ -135,8 +138,135 @@ func TestCrawlCatalogWritersMapDomainRecordsToBatchUpserts(t *testing.T) {
 	if err := repository.UpsertGalleriesBatch(ctx, []Gallery{{ID: "batch-gallery", OwnerNSID: "person", PrimaryPhotoID: &photoID, PhotosCount: 1}}); err != nil {
 		t.Fatalf("upsert gallery batch: %v", err)
 	}
-	if db.batch.index != 7 {
-		t.Fatalf("catalog batch statements = %d, want 7", db.batch.index)
+	if db.batch.index != 8 {
+		t.Fatalf("catalog batch statements = %d, want 8", db.batch.index)
+	}
+}
+
+func TestPrepareFavorites(t *testing.T) {
+	first := time.Date(2026, 11, 10, 10, 0, 0, 0, time.UTC)
+	last := first.Add(time.Hour)
+	input := []Favorite{
+		{PersonNSID: "person-b", PhotoID: 2, FaveDate: first, SeenAt: first},
+		{PersonNSID: "person-a", PhotoID: 1, FaveDate: first, SeenAt: first},
+		{PersonNSID: "person-a", PhotoID: 1, FaveDate: last},
+		{PersonNSID: "person-a", PhotoID: 2, FaveDate: first, SeenAt: first},
+	}
+	original := append([]Favorite(nil), input...)
+
+	prepared, err := prepareFavorites(input)
+	if err != nil {
+		t.Fatalf("prepare favorites: %v", err)
+	}
+	wantKeys := []Favorite{
+		{PersonNSID: "person-a", PhotoID: 1, FaveDate: last},
+		{PersonNSID: "person-a", PhotoID: 2, FaveDate: first, SeenAt: first},
+		{PersonNSID: "person-b", PhotoID: 2, FaveDate: first, SeenAt: first},
+	}
+	if len(prepared) != len(wantKeys) {
+		t.Fatalf("prepared favorites = %d, want %d", len(prepared), len(wantKeys))
+	}
+	for i, want := range wantKeys {
+		got := prepared[i]
+		if got.PersonNSID != want.PersonNSID || got.PhotoID != want.PhotoID || !got.FaveDate.Equal(want.FaveDate) {
+			t.Fatalf("prepared[%d] = %+v, want key/date %+v", i, got, want)
+		}
+		if want.SeenAt.IsZero() {
+			if got.SeenAt.IsZero() {
+				t.Fatalf("prepared[%d] has zero SeenAt", i)
+			}
+		} else if !got.SeenAt.Equal(want.SeenAt) {
+			t.Fatalf("prepared[%d].SeenAt = %s, want %s", i, got.SeenAt, want.SeenAt)
+		}
+	}
+	if !reflect.DeepEqual(input, original) {
+		t.Fatalf("prepareFavorites modified input: got %+v, want %+v", input, original)
+	}
+
+	invalidCases := []struct {
+		name     string
+		favorite Favorite
+	}{
+		{name: "missing person", favorite: Favorite{PhotoID: 1, FaveDate: first}},
+		{name: "nonpositive photo", favorite: Favorite{PersonNSID: "person-a", FaveDate: first}},
+		{name: "missing date", favorite: Favorite{PersonNSID: "person-a", PhotoID: 1}},
+	}
+	for _, tc := range invalidCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := prepareFavorites([]Favorite{tc.favorite}); err == nil {
+				t.Fatal("invalid favorite succeeded")
+			}
+		})
+	}
+}
+
+func TestFavoritesBatchRejectsInvalidBeforeWrite(t *testing.T) {
+	valid := Favorite{PersonNSID: "person", PhotoID: 1, FaveDate: time.Date(2026, 11, 10, 10, 0, 0, 0, time.UTC)}
+	tooMany := make([]Favorite, favoritesBatchMax+1)
+	for i := range tooMany {
+		tooMany[i] = valid
+		tooMany[i].PhotoID = int64(i + 1)
+	}
+	maximum := append([]Favorite(nil), tooMany[:favoritesBatchMax]...)
+	cases := []struct {
+		name           string
+		favorites      []Favorite
+		wantError      bool
+		wantBatch      int
+		wantStatements int
+	}{
+		{name: "empty"},
+		{name: "invalid after valid", favorites: []Favorite{valid, {PersonNSID: "person", PhotoID: 2}}, wantError: true},
+		{name: "over maximum", favorites: tooMany, wantError: true},
+		{name: "maximum", favorites: maximum, wantBatch: 1, wantStatements: favoritesBatchMax * 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := &repositoryTestDB{batch: &repositoryTestBatch{}}
+			repository, err := New(db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = repository.UpsertFavoritesBatch(t.Context(), tc.favorites)
+			if (err != nil) != tc.wantError {
+				t.Fatalf("UpsertFavoritesBatch error = %v, wantError %t", err, tc.wantError)
+			}
+			if db.batchCalls != tc.wantBatch || db.batch.index != tc.wantStatements {
+				t.Fatalf("SendBatch calls=%d statements=%d, want %d calls and %d statements", db.batchCalls, db.batch.index, tc.wantBatch, tc.wantStatements)
+			}
+		})
+	}
+}
+
+func TestFavoritesBatchPropagatesErrors(t *testing.T) {
+	batchError := errors.New("favorite batch failed")
+	favorite := Favorite{PersonNSID: "person", PhotoID: 1, FaveDate: time.Date(2026, 11, 10, 10, 0, 0, 0, time.UTC)}
+	cases := []struct {
+		name      string
+		errs      []error
+		wantExecs int
+	}{
+		{name: "insert phase", errs: []error{batchError}, wantExecs: 1},
+		{name: "update phase", errs: []error{nil, batchError}, wantExecs: 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := &repositoryTestDB{batch: &repositoryTestBatch{errs: tc.errs}}
+			repository, err := New(db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = repository.UpsertFavoritesBatch(t.Context(), []Favorite{favorite})
+			if !errors.Is(err, batchError) {
+				t.Fatalf("UpsertFavoritesBatch error = %v, want wrapped batch error", err)
+			}
+			if db.batch.index != tc.wantExecs {
+				t.Fatalf("batch statements executed = %d, want %d", db.batch.index, tc.wantExecs)
+			}
+			if db.batchCalls != 1 {
+				t.Fatalf("SendBatch calls = %d, want 1", db.batchCalls)
+			}
+		})
 	}
 }
 

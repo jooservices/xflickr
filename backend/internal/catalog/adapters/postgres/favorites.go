@@ -4,10 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 )
+
+const favoritesBatchMax = UpsertPeopleBatchMax
+
+const favoriteInsertSQL = `INSERT INTO favorites (person_nsid, photo_id, fave_date, seen_at)
+	VALUES ($1, $2, $3, $4)
+	ON CONFLICT (person_nsid, photo_id) DO NOTHING`
+
+const favoriteUpdateSQL = `UPDATE favorites
+	SET fave_date = $3, seen_at = $4, removed_at = NULL
+	WHERE person_nsid = $1 AND photo_id = $2
+	  AND ((fave_date, seen_at) IS DISTINCT FROM ($3, $4)
+	       OR removed_at IS NOT NULL)`
 
 // Favorite is a person's Flickr favorite and its reconciliation timestamp.
 type Favorite struct {
@@ -34,16 +47,47 @@ func (r *Repository) UpsertFavoritesBatch(ctx context.Context, favorites []Favor
 	if err := validateBatchSize(len(favorites)); err != nil {
 		return err
 	}
+	prepared, err := prepareFavorites(favorites)
+	if err != nil {
+		return err
+	}
+	if len(prepared) == 0 {
+		return nil
+	}
 	batch := &pgx.Batch{}
-	for _, favorite := range favorites {
-		if favorite.PersonNSID == "" || favorite.PhotoID <= 0 || favorite.FaveDate.IsZero() {
-			return errors.New("catalog: invalid favorite")
-		}
-		batch.Queue(`INSERT INTO favorites (person_nsid, photo_id, fave_date, seen_at) VALUES ($1,$2,$3,$4)
-			ON CONFLICT (person_nsid, photo_id) DO UPDATE SET fave_date=EXCLUDED.fave_date, seen_at=EXCLUDED.seen_at, removed_at=NULL
-			WHERE (favorites.fave_date, favorites.seen_at) IS DISTINCT FROM (EXCLUDED.fave_date, EXCLUDED.seen_at) OR favorites.removed_at IS NOT NULL`, favorite.PersonNSID, favorite.PhotoID, favorite.FaveDate, seenAt(favorite.SeenAt))
+	for _, favorite := range prepared {
+		batch.Queue(favoriteInsertSQL, favorite.PersonNSID, favorite.PhotoID, favorite.FaveDate, favorite.SeenAt)
+	}
+	for _, favorite := range prepared {
+		batch.Queue(favoriteUpdateSQL, favorite.PersonNSID, favorite.PhotoID, favorite.FaveDate, favorite.SeenAt)
 	}
 	return executeBatch(ctx, r.db, batch, "favorites")
+}
+
+func prepareFavorites(favorites []Favorite) ([]Favorite, error) {
+	ordered := append([]Favorite(nil), favorites...)
+	for i := range ordered {
+		favorite := &ordered[i]
+		if favorite.PersonNSID == "" || favorite.PhotoID <= 0 || favorite.FaveDate.IsZero() {
+			return nil, errors.New("catalog: invalid favorite")
+		}
+		favorite.SeenAt = seenAt(favorite.SeenAt)
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].PersonNSID != ordered[j].PersonNSID {
+			return ordered[i].PersonNSID < ordered[j].PersonNSID
+		}
+		return ordered[i].PhotoID < ordered[j].PhotoID
+	})
+	unique := make([]Favorite, 0, len(ordered))
+	for _, favorite := range ordered {
+		if len(unique) > 0 && unique[len(unique)-1].PersonNSID == favorite.PersonNSID && unique[len(unique)-1].PhotoID == favorite.PhotoID {
+			unique[len(unique)-1] = favorite
+			continue
+		}
+		unique = append(unique, favorite)
+	}
+	return unique, nil
 }
 
 // ListFavorites returns at most limit favorites in descending keyset order.
