@@ -10,7 +10,17 @@ import photolane_plan  # noqa: E402
 
 
 class PhotoLanePlanTests(unittest.TestCase):
-    def test_query_uses_shared_confirmation_sql_and_fourth_limit_parameter(self) -> None:
+    def test_parse_plan_documents_reads_adjacent_json_results(self) -> None:
+        output = '[\n  {"Plan": {"Node Type": "Limit"}}\n]\n[\n  {"Plan": {"Node Type": "Index Scan"}}\n]'
+        self.assertEqual(
+            photolane_plan.parse_plan_documents(output),
+            [
+                [{"Plan": {"Node Type": "Limit"}}],
+                [{"Plan": {"Node Type": "Index Scan"}}],
+            ],
+        )
+
+    def test_query_uses_shared_confirmation_sql_and_cursor_parameter(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             selector_path = root / photolane_plan.SELECTOR_PATH
@@ -27,8 +37,10 @@ class PhotoLanePlanTests(unittest.TestCase):
 
         self.assertNotIn("__PHOTO_SIZES_CONFIRMED__", sql)
         self.assertEqual(sql.count("EXISTS (SELECT 1 FROM photo_account_sizes)"), 2)
-        self.assertIn("PREPARE photolane_plan (integer, integer, text[], integer)", sql)
-        self.assertIn("EXECUTE photolane_plan(1, 20, ARRAY[]::text[], 50)", sql)
+        self.assertIn("PREPARE photolane_plan (integer, integer, text[], integer, integer)", sql)
+        self.assertIn("EXECUTE photolane_plan(1, 20, ARRAY[]::text[], 50, 0)", sql)
+        self.assertIn("OFFSET 199", sql)
+        self.assertIn("generate_series(1, 400000)", sql)
 
     def test_fixture_gives_one_owner_four_hundred_thousand_keyset_photos(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -43,8 +55,31 @@ class PhotoLanePlanTests(unittest.TestCase):
             sql = photolane_plan.query_sql(root, 100, "owner@N00", "owner@example.test")
 
         self.assertIn("generate_series(1, 400000)", sql)
+        self.assertEqual(sql.count("generate_series(1, 400000)"), 2)
         self.assertIn("'owner@N00', now() - n * interval '1 second'", sql)
         self.assertIn("photo_lane_cursor:owner@N00", sql)
+
+    def test_ready_cap_plan_requires_active_kind_index(self) -> None:
+        for index_name in (
+            "river_job_kind_active_idx",
+            "river_job_args_kind_active_idx",
+        ):
+            with self.subTest(index_name=index_name):
+                plan = [
+                    {
+                        "Plan": {
+                            "Node Type": "Limit",
+                            "Plans": [
+                                {
+                                    "Node Type": "Index Scan",
+                                    "Relation Name": "river_job",
+                                    "Index Name": index_name,
+                                }
+                            ],
+                        }
+                    }
+                ]
+                self.assertTrue(photolane_plan.has_active_kind_index(plan))
 
     def test_plan_inspection_requires_order_index_and_rejects_photo_seq_scan(self) -> None:
         plan = [
