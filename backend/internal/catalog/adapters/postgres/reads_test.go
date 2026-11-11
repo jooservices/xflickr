@@ -215,8 +215,19 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 	}
 	lateralIndex := strings.Index(db.query, "CROSS JOIN LATERAL")
 	innerLimitIndex := strings.Index(db.query, "LIMIT $2")
-	mergeOrderIndex := strings.LastIndex(db.query, "ORDER BY")
-	if lateralIndex < 0 || innerLimitIndex < lateralIndex || mergeOrderIndex < innerLimitIndex || strings.Count(db.query, "LIMIT $2") != 2 {
+	accountPageEnd := strings.Index(db.query, ") account_favorites")
+	pageCTEIndex := strings.Index(db.query, "favorites_page AS MATERIALIZED")
+	mergeOrderIndex := strings.Index(db.query, "ORDER BY fave_date DESC,photo_id DESC")
+	mergeLimitIndex := -1
+	if mergeOrderIndex >= 0 {
+		if offset := strings.Index(db.query[mergeOrderIndex:], "LIMIT $2"); offset >= 0 {
+			mergeLimitIndex = mergeOrderIndex + offset
+		}
+	}
+	photoColumnsIndex := strings.Index(db.query, "SELECT "+photoReadColumns)
+	if lateralIndex < 0 || innerLimitIndex < lateralIndex || accountPageEnd < innerLimitIndex ||
+		pageCTEIndex < accountPageEnd || mergeOrderIndex < pageCTEIndex || mergeLimitIndex < mergeOrderIndex ||
+		photoColumnsIndex < mergeLimitIndex || strings.Count(db.query, "LIMIT $2") != 2 {
 		t.Fatalf("favorites query must bound each account before the global merge: %s", db.query)
 	}
 	db.rows = &readsRows{rows: [][]any{readTestPhotoRow(12, pgtype.Timestamptz{Time: now.Add(-2 * time.Second), Valid: true})}}

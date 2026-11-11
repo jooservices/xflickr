@@ -96,14 +96,7 @@ WITH visible_account_favorites AS MATERIALIZED (
     SELECT account_favorites.*
     FROM (SELECT nsid FROM flickr_accounts WHERE user_id={USER_ID} AND status<>'revoked') accounts
     CROSS JOIN LATERAL (
-        SELECT photos.id, photos.owner_nsid, photos.title, photos.description,
-               photos.tags, photos.taken_at, photos.uploaded_at, photos.last_update,
-               photos.visibility, photos.sizes_status, photos.sizes,
-               CASE WHEN EXISTS (
-                   SELECT 1 FROM photo_enrichments e
-                   WHERE e.photo_id=photos.id AND e.kind='caption'
-               ) THEN 'ready' ELSE 'none' END,
-               favorites.fave_date
+        SELECT favorites.photo_id, favorites.fave_date
         FROM favorites JOIN photos ON photos.id=favorites.photo_id
         WHERE favorites.person_nsid=accounts.nsid
           AND favorites.removed_at IS NULL
@@ -125,10 +118,22 @@ WITH visible_account_favorites AS MATERIALIZED (
         ORDER BY favorites.fave_date DESC, photos.id DESC
         LIMIT 101
     ) account_favorites
+), favorites_page AS MATERIALIZED (
+    SELECT photo_id, fave_date
+    FROM visible_account_favorites
+    ORDER BY fave_date DESC, photo_id DESC
+    LIMIT 101
 )
-SELECT * FROM visible_account_favorites
-ORDER BY fave_date DESC, id DESC
-LIMIT 101;
+SELECT photos.id, photos.owner_nsid, photos.title, photos.description,
+       photos.tags, photos.taken_at, photos.uploaded_at, photos.last_update,
+       photos.visibility, photos.sizes_status, photos.sizes,
+       CASE WHEN EXISTS (
+           SELECT 1 FROM photo_enrichments e
+           WHERE e.photo_id=photos.id AND e.kind='caption'
+       ) THEN 'ready' ELSE 'none' END,
+       favorites_page.fave_date
+FROM favorites_page JOIN photos ON photos.id=favorites_page.photo_id
+ORDER BY favorites_page.fave_date DESC, photos.id DESC;
 ROLLBACK;
 """
 

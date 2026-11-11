@@ -165,30 +165,33 @@ func (r *Repository) ListVisibleFavorites(ctx context.Context, userID int64, pre
 		return app.FavoritesPage{}, err
 	}
 	query := `WITH visible_account_favorites AS MATERIALIZED (
-SELECT account_favorites.*
+SELECT account_favorites.photo_id, account_favorites.fave_date
 FROM (SELECT nsid FROM flickr_accounts WHERE user_id=$1 AND status<>'revoked') accounts
 CROSS JOIN LATERAL (
-SELECT ` + photoReadColumns + `, favorites.fave_date
+SELECT favorites.photo_id, favorites.fave_date
 FROM favorites JOIN photos ON photos.id=favorites.photo_id
 WHERE favorites.person_nsid=accounts.nsid AND favorites.removed_at IS NULL
 AND photos.tombstoned_at IS NULL AND ` + predicate.Expression
 	args := append([]any(nil), predicate.Args...)
+	pageLimit := "$2"
 	if cursor != nil {
 		if cursor.FaveDate.IsZero() || cursor.PhotoID <= 0 {
 			return app.FavoritesPage{}, app.ErrInvalidCursor
 		}
-		query += ` AND (favorites.fave_date,photos.id)<($2,$3) ORDER BY favorites.fave_date DESC,photos.id DESC LIMIT $4
-) account_favorites
-)
-SELECT * FROM visible_account_favorites ORDER BY fave_date DESC,id DESC LIMIT $4`
-		args = append(args, cursor.FaveDate, cursor.PhotoID, limit+1)
-	} else {
-		query += ` ORDER BY favorites.fave_date DESC,photos.id DESC LIMIT $2
-) account_favorites
-)
-SELECT * FROM visible_account_favorites ORDER BY fave_date DESC,id DESC LIMIT $2`
-		args = append(args, limit+1)
+		query += ` AND (favorites.fave_date,photos.id)<($2,$3)`
+		args = append(args, cursor.FaveDate, cursor.PhotoID)
+		pageLimit = "$4"
 	}
+	args = append(args, limit+1)
+	query += ` ORDER BY favorites.fave_date DESC,photos.id DESC LIMIT ` + pageLimit + `
+) account_favorites
+), favorites_page AS MATERIALIZED (
+SELECT photo_id, fave_date FROM visible_account_favorites
+ORDER BY fave_date DESC,photo_id DESC LIMIT ` + pageLimit + `
+)
+SELECT ` + photoReadColumns + `, favorites_page.fave_date
+FROM favorites_page JOIN photos ON photos.id=favorites_page.photo_id
+ORDER BY favorites_page.fave_date DESC,photos.id DESC`
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return app.FavoritesPage{}, fmt.Errorf("catalog: list visible favorites: %w", err)
