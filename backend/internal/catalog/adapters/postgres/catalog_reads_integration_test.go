@@ -184,7 +184,7 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	}
 }
 
-func TestContactAlbumListUsesOwnerVisibilityWithoutPhotoCounts(t *testing.T) {
+func TestContactAlbumListRequiresVisiblePhotoAndIsolatesUsers(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
 	}
@@ -278,7 +278,15 @@ func TestContactAlbumListUsesOwnerVisibilityWithoutPhotoCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Items) != 2 || page.Items[0].ID != albumIDs[0] || page.Items[1].ID != albumIDs[1] {
-		t.Fatalf("contact album list should be scoped by owner contact, not photo visibility: %+v", page.Items)
+	if len(page.Items) != 1 || page.Items[0].ID != albumIDs[0] {
+		t.Fatalf("contact album list=%+v, want only the album containing a photo visible to the user", page.Items)
+	}
+
+	otherUserPage, _, err := reads.ListContactAlbums(ctx, userIDs[1], "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(otherUserPage.Items) != 0 {
+		t.Fatalf("other user's contact albums=%+v, want no albums without a contact relationship", otherUserPage.Items)
 	}
 }
