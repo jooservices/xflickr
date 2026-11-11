@@ -11,6 +11,8 @@ import (
 var (
 	// ErrInvalidImage reports an empty image passed to a captioner.
 	ErrInvalidImage = errors.New("ai: image is required")
+	// ErrInvalidTexts reports invalid or unsupported embedding input texts.
+	ErrInvalidTexts = errors.New("ai: invalid embedding texts")
 	// ErrInvalidCaption reports a caption without required text or model metadata.
 	ErrInvalidCaption = errors.New("ai: invalid caption")
 	// ErrInvalidResponse reports a provider response that does not match the contract.
@@ -40,4 +42,15 @@ func (c Caption) Validate() error {
 // Captioner describes an image and identifies the model version used.
 type Captioner interface {
 	Describe(context.Context, []byte) (Caption, error)
+}
+
+// ModelInfo identifies the model and provider version used for an inference.
+type ModelInfo struct {
+	Model   string
+	Version string
+}
+
+// Embedder returns one vector for each input text and identifies the model used.
+type Embedder interface {
+	Embed(context.Context, []string) ([][]float32, ModelInfo, error)
 }
