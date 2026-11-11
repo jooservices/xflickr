@@ -101,6 +101,9 @@ type Store interface {
 	// Start moves a ready item to running; it reports false when the item is
 	// not runnable (finished, or already reclaimed).
 	Start(ctx context.Context, id int64) (bool, error)
+	// StampScanStart persists a photos/favorites scan-start checkpoint on the
+	// stored cursor when it is still missing, before the first Flickr page.
+	StampScanStart(ctx context.Context, id int64, at int64, expected domain.Cursor) error
 	Defer(ctx context.Context, id int64, deferral Deferral) error
 	Finish(ctx context.Context, id int64) error
 	Fail(ctx context.Context, id int64, reason string) error
@@ -233,10 +236,33 @@ func (e *Engine) Handle(ctx context.Context, id int64) error {
 	if err != nil || !started {
 		return err
 	}
+	if err := e.ensureScanStart(ctx, &item); err != nil {
+		return err
+	}
 	if err := e.run(ctx, item, facet); err != nil {
 		return err
 	}
 	e.notifyProgress(ctx, item.UserID)
+	return nil
+}
+
+// ensureScanStart captures the scan-start checkpoint before the first page of
+// an initial photos/favorites scan. The value is kept on the in-memory cursor
+// and persisted so Finish and later page advances share the same bound.
+func (e *Engine) ensureScanStart(ctx context.Context, item *domain.Item) error {
+	if item == nil || !domain.NeedsScanStartCheckpoint(item.Kind) || item.Cursor.CheckpointAt > 0 {
+		return nil
+	}
+	expected := item.Cursor
+	if item.Cursor.Page > 1 {
+		item.Cursor.Page = 1
+		item.Cursor.Continuation = ""
+	}
+	at := e.now().Unix()
+	item.Cursor.CheckpointAt = at
+	if err := e.Store.StampScanStart(ctx, item.ID, at, expected); err != nil {
+		return fmt.Errorf("crawl: stamp scan-start checkpoint: %w", err)
+	}
 	return nil
 }
 
@@ -557,6 +583,9 @@ func (e *Engine) enqueue(ctx context.Context, w Writers, item domain.Item, spec 
 	}
 	if err := spec.Validate(); err != nil {
 		return err
+	}
+	if domain.NeedsScanStartCheckpoint(spec.Kind) && spec.CheckpointAt <= 0 {
+		spec.CheckpointAt = e.now().Unix()
 	}
 	return w.Work.Enqueue(ctx, NewWork{Kind: spec.Kind, Subject: spec.Subject, UserID: item.UserID, Depth: depth, Cursor: domain.NewCursor(spec), Reopen: spec.Reopen})
 }

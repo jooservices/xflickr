@@ -44,6 +44,9 @@ func executeWithCommandsAndHealth(ctx context.Context, args []string, envRoles s
 	if len(args) > 0 && args[0] == "backfill-observations" {
 		return runObservationBackfill(ctx, args[1:], stdout, stderr, roles.BackfillObservations)
 	}
+	if len(args) > 0 && args[0] == "repair-checkpoints" {
+		return runCheckpointRepair(ctx, args[1:], stdout, stderr, roles.RepairZeroCheckpoints)
+	}
 	if len(args) > 0 && args[0] == "migrate" {
 		return runMigrate(ctx, args[1:], stdout, stderr, runMigrations)
 	}

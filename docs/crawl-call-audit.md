@@ -44,7 +44,7 @@ estimates, not additive with the follow-up proposals.
 
 | Facet / method | Calls per entity or cycle | Rows stored per successful call | Waste / finding | Estimated hourly saving from this PR | Fix / disposition |
 | --- | --- | --- | --- | --- | --- |
-| `photos` / `people.getPhotos` | Initial `P(photos)`; incremental `P(new photos)` after positive probe | Up to 500 photos plus distinct owners and observer records | Initial discovery plans have no checkpoint; independent reconcile/check can reread the same list | 0 attributed from supplied 216/h | Follow-ups 2 and 3; retain URL extras and privacy |
+| `photos` / `people.getPhotos` | Initial `P(photos)`; incremental `P(new photos)` after positive probe | Up to 500 photos plus distinct owners and observer records | Initial discovery now stores a scan-start checkpoint (JOOXF-345); independent reconcile/check can still reread the same list | 0 attributed from supplied 216/h | Follow-up 2 delivered; follow-up 3 remains; retain URL extras and privacy |
 | `favorites` / `favorites.getList` | Initial `P(favorites)`; incremental `P(new favorites)` | Up to 500 photos, timestamped favorite relationships, distinct owners and observations | Relationship omitted if neither `date_faved` nor `date_favorite` is positive; photo still stored. Depth limit blocks owner discovery, not this list | 0 attributed from supplied 540/h | Follow-ups 2 and 3; no invented favorite timestamps |
 | `albums` / `photosets.getList` | `P(albums)` initially and per catalog refresh | Up to 500 album metadata rows; no album-photo relationship fetch | String `photos` causes page parsing failure and retries | 0–12/h of supplied 15/h under five-attempt model | Accept existing Flickr numeric-string type |
 | `galleries` / `galleries.getList` | Continuation cursor initially and per refresh; first request uses `continuation=0`, subsequent requests relay the response cursor until `-1` | Up to 500 gallery metadata rows; no gallery-photo relationship fetch | String `count_photos` is accepted; cursor progress commits with gallery rows. Missing continuation falls back to the legacy page counter; repeated cursors and empty nonterminal pages stop with a warning | No measured quota change; prevents repeated or skipped continuation pages | Delivered in JOOXF-349 |
@@ -68,9 +68,11 @@ probe does not advance that checkpoint. Flickr documents the photo lower bound
 as inclusive: retaining the same boundary is safe for late arrivals but can
 reread boundary records. Do not blindly add one second and lose records.
 
-Initial `Registry.Plan` work from `Engine.discover` has no checkpoint, so its
-completion cannot establish an incremental baseline. The first cycle can queue
-both `check` and `reconcile` because null timestamps are due. Reconciliation
+Initial `Registry.Plan` photo and favorite work receives a checkpoint when it
+is enqueued; a missing value is filled before its first page request. The
+successful final page records a separate completion marker and updates the
+interest checkpoint in the same transaction. The first cycle can queue both
+`check` and `reconcile` because null timestamps are due. Reconciliation
 completion updates only `last_reconciled_at`, not the incremental checkpoints.
 Consequently initial pages, a positive check from zero, and reconciliation may
 read unchanged data under different work kinds. This is not proof that all
@@ -185,10 +187,12 @@ open; the fixture numbers must not be reported as satisfying it.
    successes that fail parsing separately; sample safe response structure
    without secrets; compare complete quota windows and rows/relationships
    persisted. First establish whether the 198/h group baseline is affected.
-2. **Establish incremental checkpoints after initial scans.** Carry a stable
-   scan-start checkpoint from discovery and update only after all pages commit;
-   address existing zero checkpoints without live data cleanup in this PR.
-   Cover inclusive timestamps, late arrivals, failed pages and caller scope.
+2. **Establish incremental checkpoints after initial scans.** **Delivered in
+   JOOXF-345.** Carry a stable scan-start checkpoint through page commits and
+   update only after a successful final page. The offline `repair-checkpoints`
+   command uses observer-scoped completion evidence; legacy work without
+   markers gets a conservative full-list catch-up floor. Cover inclusive
+   timestamps, late arrivals, failed pages and caller scope.
 3. **Coordinate initial, check and reconcile work.** Avoid simultaneous full
    lists for the same observer while retaining discovery from favorites and
    complete owner-aware deletion diffs. Reconciliation intentionally suppresses
