@@ -107,6 +107,10 @@ func (s Sizes) Handle(ctx context.Context, job SizesJob) error {
 	if err != nil {
 		return fmt.Errorf("crawl: load photo %d sizes state: %w", job.PhotoID, err)
 	}
+	return s.handleLoadedPhoto(ctx, job, photo, exists)
+}
+
+func (s Sizes) handleLoadedPhoto(ctx context.Context, job SizesJob, photo catalog.Photo, exists bool) error {
 	restricted := exists && (photo.HasRestrictedPlaceholder() || photo.Visibility != catalog.VisibilityPublic)
 	if shouldSkipSizes(photo, exists) && !restricted {
 		if !exists {
@@ -125,6 +129,10 @@ func (s Sizes) Handle(ctx context.Context, job SizesJob) error {
 	if restricted {
 		return s.retryAuthenticated(ctx, job, photo, true, userID)
 	}
+	return s.handleAnonymousSizes(ctx, job, photo, access, userID)
+}
+
+func (s Sizes) handleAnonymousSizes(ctx context.Context, job SizesJob, photo catalog.Photo, access EntityAccess, userID int64) error {
 	if s.States != nil && userID > 0 {
 		suppressed, err := s.States.Suppressed(ctx, access, s.now())
 		if err != nil {
