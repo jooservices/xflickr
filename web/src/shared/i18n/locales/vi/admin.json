@@ -106,5 +106,20 @@
   "shell.loading.spinner": "Đang kiểm tra quyền truy cập…",
   "shell.loading.text": "Đang tải trạng thái cụm…",
   "shell.me-error.text": "Không thể kiểm tra phiên của bạn. Hãy thử lại.",
-  "shell.me-error.title": "Không thể tải khu vực quản trị."
+  "shell.me-error.title": "Không thể tải khu vực quản trị.",
+  "defaults.title": "Mặc định và gói",
+  "defaults.plans": "Các gói",
+  "defaults.refresh": "Làm mới",
+  "defaults.loading": "Đang tải các gói",
+  "defaults.empty": "Chưa có gói nào",
+  "defaults.error": "Không thể tải các gói",
+  "defaults.retry": "Thử lại",
+  "defaults.stale": "Dữ liệu gói có thể đã cũ",
+  "defaults.partial": "Cấu hình mặc định và cờ tính năng chưa có tại đây.",
+  "defaults.weight": "Trọng số",
+  "defaults.depth": "Giới hạn độ sâu",
+  "defaults.contacts": "Liên hệ",
+  "defaults.ai": "AI mỗi ngày",
+  "defaults.zip": "Giờ lưu ZIP",
+  "defaults.share": "Tỷ lệ tài nguyên"
 }

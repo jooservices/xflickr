@@ -1,5 +1,7 @@
 # Documentation
 
+- [Admin Defaults plans slice](admin-defaults.md) — read-only server plans and deferred scope.
+
 - [Download progress events](download-progress.md)
 - [Health and readiness probes](health-probes.md)
 
