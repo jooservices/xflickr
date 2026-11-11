@@ -392,6 +392,37 @@ describe('LibraryPage', () => {
     expect(disconnect).toHaveBeenCalled();
   });
 
+  it('re-measures the grid offset when content above it changes height', async () => {
+    const callbacks: ResizeObserverCallback[] = [];
+    class ResizeObserverStub {
+      constructor(callback: ResizeObserverCallback) {
+        callbacks.push(callback);
+      }
+
+      observe = vi.fn();
+
+      disconnect = vi.fn();
+
+      unobserve = vi.fn();
+    }
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub);
+    let top = 100;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      () =>
+        ({ top, bottom: top, left: 0, right: 0, width: 800, height: 0, x: 0, y: top }) as DOMRect,
+    );
+    server.use(http.get('*/favorites', () => json({ items: [favorite(61), favorite(62)] })));
+    open();
+
+    const grid = await screen.findByTestId('user-library-grid');
+    expect(grid).toHaveAttribute('data-scroll-margin', '100');
+    top = 260;
+    for (const callback of callbacks) {
+      callback([], {} as ResizeObserver);
+    }
+    await waitFor(() => expect(grid).toHaveAttribute('data-scroll-margin', '260'));
+  });
+
   it('hides download navigation and does not request downloads for a selection', async () => {
     let downloadRequests = 0;
     server.use(

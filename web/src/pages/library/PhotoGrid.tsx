@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { CatalogFavorite, CatalogPhoto } from '../../shared/api/gen/models';
 import { useI18n } from '../../shared/i18n';
@@ -71,10 +71,31 @@ export function PhotoGrid({
     return () => observer.disconnect();
   }, []);
 
-  useLayoutEffect(() => {
+  const measureScrollMargin = useCallback(() => {
     const grid = gridRef.current;
-    if (grid !== null) setScrollMargin(grid.getBoundingClientRect().top + window.scrollY);
-  }, [locale, photos.length, selectionFull, selectionMode, staleNotice]);
+    if (grid === null) return;
+    const next = Math.round(grid.getBoundingClientRect().top + window.scrollY);
+    setScrollMargin((current) => (current === next ? current : next));
+  }, []);
+
+  useLayoutEffect(() => {
+    measureScrollMargin();
+  }, [locale, measureScrollMargin, photos.length, selectionFull, selectionMode, staleNotice]);
+
+  // Content above the grid (filters, notices, the selection bar) can change height without changing
+  // any prop used above, which would leave the virtualizer positioning rows from a stale offset.
+  useEffect(() => {
+    window.addEventListener('resize', measureScrollMargin);
+    if (typeof ResizeObserver === 'undefined') {
+      return () => window.removeEventListener('resize', measureScrollMargin);
+    }
+    const observer = new ResizeObserver(() => measureScrollMargin());
+    observer.observe(document.body);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measureScrollMargin);
+    };
+  }, [measureScrollMargin]);
 
   const number = new Intl.NumberFormat(locale);
   const virtualRows = virtualizer.getVirtualItems();
@@ -84,6 +105,7 @@ export function PhotoGrid({
       className={styles.gridViewport}
       ref={gridRef}
       data-testid="user-library-grid"
+      data-scroll-margin={scrollMargin}
       role="region"
       aria-label={t('user.library.results.label')}
       aria-busy="false"
