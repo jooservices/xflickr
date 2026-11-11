@@ -31,7 +31,13 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	personIDs := []string{user1NSID, user2NSID, hiddenNSID}
 	photoIDs := []int64{time.Now().UnixNano(), time.Now().UnixNano() + 1, time.Now().UnixNano() + 2}
 	albumID, hiddenAlbumID := suffix+"-album", suffix+"-hidden-album"
-	contactAlbumIDs := []string{suffix + "-contact-album-1", suffix + "-contact-album-2"}
+	contactAlbumIDs := []string{
+		suffix + "-contact-album-1",
+		suffix + "-contact-album-2",
+		suffix + "-contact-album-3",
+		suffix + "-contact-album-null-1",
+		suffix + "-contact-album-null-2",
+	}
 	var user1ID, user2ID, account1ID, account2ID int64
 	defer func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=ANY($1) OR contact_nsid=ANY($1)`, personIDs)
@@ -100,9 +106,15 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if err := repository.UpsertAlbumsBatch(ctx, []postgres.Album{
 		{ID: albumID, OwnerNSID: user1NSID, Title: "Mixed", PrimaryPhotoID: &photoIDs[2], PhotosCount: 2, UpdatedAt: now},
 		{ID: hiddenAlbumID, OwnerNSID: user1NSID, Title: "Hidden", PrimaryPhotoID: &photoIDs[2], PhotosCount: 1, UpdatedAt: now.Add(-time.Second)},
-		{ID: contactAlbumIDs[0], OwnerNSID: user2NSID, Title: "Contact with no stored photos", PhotosCount: 12, UpdatedAt: now},
-		{ID: contactAlbumIDs[1], OwnerNSID: user2NSID, Title: "Older contact album", PhotosCount: 0, UpdatedAt: now.Add(-time.Second)},
+		{ID: contactAlbumIDs[0], OwnerNSID: user2NSID, Title: "Newest contact album", PhotosCount: 12, UpdatedAt: now.Add(2 * time.Second)},
+		{ID: contactAlbumIDs[1], OwnerNSID: user2NSID, Title: "Second contact album", PhotosCount: 0, UpdatedAt: now.Add(time.Second)},
+		{ID: contactAlbumIDs[2], OwnerNSID: user2NSID, Title: "Third contact album", PhotosCount: 0, UpdatedAt: now},
+		{ID: contactAlbumIDs[3], OwnerNSID: user2NSID, Title: "Null timestamp one", PhotosCount: 0, UpdatedAt: now},
+		{ID: contactAlbumIDs[4], OwnerNSID: user2NSID, Title: "Null timestamp two", PhotosCount: 0, UpdatedAt: now},
 	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE albums SET updated_at=NULL WHERE id=ANY($1)`, contactAlbumIDs[3:]); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid) VALUES($1,$2)`, user1NSID, user2NSID); err != nil {
@@ -158,17 +170,21 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if _, _, err := reads.ListAlbumPhotos(ctx, user1ID, hiddenAlbumID, "", 10); !errors.Is(err, app.ErrNotFound) {
 		t.Fatalf("hidden album error=%v", err)
 	}
-	contactPage, contactCursor, err := reads.ListContactAlbums(ctx, user1ID, "", 1)
-	if err != nil || len(contactPage.Items) != 1 || contactPage.Items[0].ID != contactAlbumIDs[0] || contactPage.Items[0].TotalCount != 1 || contactCursor == "" {
+	contactPage, contactCursor, err := reads.ListContactAlbums(ctx, user1ID, "", 2)
+	if err != nil || len(contactPage.Items) != 2 || contactPage.Items[0].ID != contactAlbumIDs[0] || contactPage.Items[1].ID != contactAlbumIDs[1] || contactCursor == "" {
 		t.Fatalf("first contact album page=%+v cursor=%q err=%v", contactPage, contactCursor, err)
 	}
-	contactPage, _, err = reads.ListContactAlbums(ctx, user1ID, contactCursor, 10)
-	if err != nil || len(contactPage.Items) != 1 || contactPage.Items[0].ID != contactAlbumIDs[1] || contactPage.Items[0].TotalCount != 1 {
+	contactPage, contactCursor, err = reads.ListContactAlbums(ctx, user1ID, contactCursor, 2)
+	if err != nil || len(contactPage.Items) != 2 || contactPage.Items[0].ID != contactAlbumIDs[2] || contactPage.Items[1].ID != contactAlbumIDs[4] || contactPage.Items[1].UpdatedAt != nil || contactCursor == "" {
 		t.Fatalf("second contact album page=%+v err=%v", contactPage, err)
+	}
+	contactPage, contactCursor, err = reads.ListContactAlbums(ctx, user1ID, contactCursor, 2)
+	if err != nil || len(contactPage.Items) != 1 || contactPage.Items[0].ID != contactAlbumIDs[3] || contactPage.Items[0].UpdatedAt != nil || contactCursor != "" {
+		t.Fatalf("third contact album page=%+v cursor=%q err=%v", contactPage, contactCursor, err)
 	}
 }
 
-func TestContactAlbumsRespectSharingForMetadataAndPhotoCount(t *testing.T) {
+func TestContactAlbumListUsesOwnerVisibilityWithoutPhotoCounts(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
 	}
@@ -184,7 +200,7 @@ func TestContactAlbumsRespectSharingForMetadataAndPhotoCount(t *testing.T) {
 	userNSIDs := []string{suffix + "-user", suffix + "-contact"}
 	photoStart := time.Now().UnixNano()
 	photoIDs := []int64{photoStart, photoStart + 1, photoStart + 2}
-	albumIDs := []string{suffix + "-visible", suffix + "-hidden"}
+	albumIDs := []string{suffix + "-visible", suffix + "-hidden", suffix + "-not-contact"}
 	var userIDs, accountIDs [2]int64
 	defer func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=ANY($1) OR contact_nsid=ANY($1)`, userNSIDs)
@@ -245,6 +261,7 @@ func TestContactAlbumsRespectSharingForMetadataAndPhotoCount(t *testing.T) {
 	if err := repository.UpsertAlbumsBatch(ctx, []postgres.Album{
 		{ID: albumIDs[0], OwnerNSID: userNSIDs[1], Title: "Visible album", PhotosCount: 99, UpdatedAt: now},
 		{ID: albumIDs[1], OwnerNSID: userNSIDs[1], Title: "Hidden album", PhotosCount: 77, UpdatedAt: now.Add(-time.Second)},
+		{ID: albumIDs[2], OwnerNSID: userNSIDs[0], Title: "Not a contact album", PhotosCount: 0, UpdatedAt: now.Add(-2 * time.Second)},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -261,10 +278,7 @@ func TestContactAlbumsRespectSharingForMetadataAndPhotoCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Items) != 1 || page.Items[0].ID != albumIDs[0] {
-		t.Fatalf("contact albums exposed records without visible photos: %+v", page.Items)
-	}
-	if page.Items[0].TotalCount != 1 {
-		t.Fatalf("contact album count=%d, want only the one visible photo", page.Items[0].TotalCount)
+	if len(page.Items) != 2 || page.Items[0].ID != albumIDs[0] || page.Items[1].ID != albumIDs[1] {
+		t.Fatalf("contact album list should be scoped by owner contact, not photo visibility: %+v", page.Items)
 	}
 }

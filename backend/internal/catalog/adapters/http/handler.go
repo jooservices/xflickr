@@ -125,7 +125,7 @@ func (h Handler) ListMyAlbums(ctx context.Context, request gen.ListMyAlbumsReque
 	}
 	items := make([]gen.MyAlbum, 0, len(page.Items))
 	for _, album := range page.Items {
-		items = append(items, gen.MyAlbum{ID: album.ID, OwnerNsid: album.OwnerNSID, Title: album.Title, TotalCount: album.TotalCount, UpdatedAt: album.UpdatedAt})
+		items = append(items, gen.MyAlbum{ID: album.ID, OwnerNsid: album.OwnerNSID, Title: album.Title, UpdatedAt: album.UpdatedAt})
 	}
 	return gen.ListMyAlbums200JSONResponse(gen.MyAlbumPage{Items: items, NextCursor: optionalString(next)}), nil
 }

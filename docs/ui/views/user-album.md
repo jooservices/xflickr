@@ -10,9 +10,10 @@ Build ticket: JOOXF-174.
 
 ## Purpose
 
-Show one Flickr album, its owner, Flickr photo count, XFlickr stored-photo
-count, and the ordered photo records available to the signed-in user. Let the
-user prepare a ZIP download or send the album to a connected cloud destination.
+Show one Flickr album, its owner, and the ordered photo records available to
+the signed-in user. A loaded count may describe only the bounded photo page;
+never display a Flickr or catalog total. Let the user prepare a ZIP download
+or send the album to a connected cloud destination.
 
 ## Route and access
 
@@ -33,8 +34,8 @@ Inside the USER shell main column (max width 1200px, 24px desktop padding,
 16px mobile padding), render:
 
 1. Breadcrumb link `Albums` to `/albums`.
-2. Album heading with title, owner name, stored / Flickr total counts, and
-   last-updated relative time when available.
+2. Album heading with title, owner name, and last-updated relative time when
+   available. When the first bounded photo page loads, show “N photos loaded”.
 3. Owner link to `/contacts/{owner_nsid}` and two actions: `Download album`
    and `Send to cloud`. Both open the existing POC `New download` modal with
    this album selected. `Send to cloud` preselects a connected destination.
@@ -42,9 +43,8 @@ Inside the USER shell main column (max width 1200px, 24px desktop padding,
    best stored size URL, descriptive alt text from the photo title (or a
    localized untitled fallback), and opens the existing photo lightbox. Do not
    add selection, editing, sorting, or pagination controls.
-5. When fewer photos are stored than the Flickr total, show a partial-store
-   notice with both counts. Stored photos remain usable; unavailable or
-   private photos are not represented by broken image placeholders.
+5. Stored photos remain usable; unavailable or private photos are not
+   represented by broken image placeholders.
 
 The grid has four columns at 1100px and above, three at 800–1099px, two at
 500–799px, and two compact columns below 500px (390px viewport). The shell
@@ -61,19 +61,18 @@ endpoints.
 
 | Element | Source | Fields used |
 | --- | --- | --- |
-| Album header and stored count | `GET /me/albums/{album_id}` **contract request** | `id`, `title`, `owner_nsid`, `owner_name`, `stored_count`, `total_count`, `updated_at` |
+| Album header and loaded count | `GET /me/albums/{album_id}` **contract request** | `id`, `title`, `owner_nsid`, `owner_name`, `updated_at`; count only the photos in the first bounded page |
 | Photo grid | Same detail response, `photos[]` | `id`, `title`, `alt_text`, `position`, `size_urls` (named size to URL map); include only photos visible to this user |
-| Partial-store notice | Same detail response | `stored_count`, `total_count`; show when stored count is less than total count |
 | Owner link | Same detail response | `owner_nsid`, `owner_name`; owner name falls back to NSID |
 | New download modal estimate | `POST /downloads/estimate` **contract request**, already specified by the Downloads view | `kind: album`, `subject: album_id`, `size`, `destination`; response `item_count`, `estimated_bytes`, `missing_sizes`, `required_size_checks`, `server_time` |
 | Create album download | Existing `POST /downloads`; its size and destination extension is specified by the Downloads view | `kind: album`, `subject: album_id`, selected `size`, and `destination: zip` |
 | Send to cloud | `GET /cloud/providers` and `POST /downloads` **contract requests** | Provider `id`, `name`, `status`; list only `status=connected`. Create request uses `kind: album`, `subject: album_id`, `size`, and `destination` set to the connected `cloud_provider_id` |
-| Live refresh | `GET /events` exists | Add `album.updated` event contract with `album_id`, optional `stored_count`, and `updated_at`; resume using `Last-Event-ID` |
+| Live refresh | `GET /events` exists | Add `album.updated` event contract with `album_id` and `updated_at`; resume using `Last-Event-ID` |
 
 Request `GET /me/albums/{album_id}` returns the current user's view of that
-album. `total_count` is Flickr's photoset count; `stored_count` is the number
-of eligible stored photo records in that album. `photos` contains those
-eligible records in `position`, then `id`, ascending order. URLs come only
+album. `photos` contains eligible records in `position`, then `id`, ascending
+order, with a bounded page and cursor. Any displayed count is the number of
+photos returned in that page, not an album total. URLs come only
 from recorded Flickr sizes and are selected server-side; the client never
 constructs Flickr URLs. Return no credentials, private observations from
 another user, or photos the current user cannot view. Return `updated_at` as
@@ -116,10 +115,9 @@ create a separate cloud upload flow.
 
 ### Normal
 
-Show the album header and photo grid. Show the stored-vs-total notice when
-partial; omit it when all photos are stored. A successful album with zero
-photos uses Empty. Mark the mockup state `data-state="ready"` for the shared
-UI gate.
+Show the album header and photo grid. The loaded count describes only the
+first bounded photo page. A successful album with zero photos uses Empty. Mark
+the mockup state `data-state="ready"` for the shared UI gate.
 
 ### Ready
 
@@ -147,14 +145,12 @@ For initial network or server failure, show “Could not load this album”,
 or server error text. A 401 follows the shell session-expiry flow. A 404 uses
 the same unavailable-album copy as an unknown id.
 
-### Partial / stale
+### Stale
 
-Partial means `stored_count < total_count`; keep the stored photos available
-and display “{stored_count} of {total_count} photos stored”. If a background
-refresh fails, retain usable content and show “Album may be out of date” with
-`Retry`. A broken or expired size URL gets the neutral photo placeholder and
-does not fail the whole album. A stale timestamp is rendered as “Updated
-{relative_time}”.
+If a background refresh fails, retain usable content and show “Album may be
+out of date” with `Retry`. A broken or expired size URL gets the neutral photo
+placeholder and does not fail the whole album. A stale timestamp is rendered
+as “Updated {relative_time}”.
 
 ### Forbidden
 
@@ -167,13 +163,13 @@ after access is denied.
 
 This view is live. Reuse authenticated `GET /events`; on `album.updated` for
 the current `album_id`, coalesce events for 500ms and refetch the detail.
-Update counts, timestamp, and changed photo records without moving focus or
+Update the loaded count, timestamp, and changed photo records without moving focus or
 announcing every tile. Resume with `Last-Event-ID` as the shell specifies.
 
 If SSE is unavailable or disconnected for 5 seconds, poll detail every 30
 seconds while the document is visible. Pause polling while hidden and refresh
 once when visible again. Do not poll faster than 30 seconds; stop on route
-exit. Failed background refresh keeps usable data and enters Partial / stale.
+exit. Failed background refresh keeps usable data and enters Stale.
 
 ## Responsive
 
@@ -211,7 +207,7 @@ Album/photo titles and owner names come from Flickr and are not translated.
 | --- | --- | --- |
 | `user.album.breadcrumb` | Albums | Album |
 | `user.album.owner.link` | Open contact {owner_name} | Mở liên hệ {owner_name} |
-| `user.album.counts` | {stored_count} of {total_count} photos stored | Đã lưu {stored_count}/{total_count} ảnh |
+| `user.album.loaded-count` | {count} photos loaded | Đã tải {count} ảnh |
 | `user.album.updated` | Updated {relative_time} | Cập nhật {relative_time} |
 | `user.album.action.download` | Download album | Tải album xuống |
 | `user.album.action.cloud` | Send to cloud | Gửi lên đám mây |
@@ -223,7 +219,6 @@ Album/photo titles and owner names come from Flickr and are not translated.
 | `user.album.error.title` | Could not load this album | Không thể tải album này |
 | `user.album.error.body` | Check your connection, then try again. | Kiểm tra kết nối rồi thử lại. |
 | `user.album.error.unavailable` | This album is unavailable. | Album này không khả dụng. |
-| `user.album.partial.notice` | {stored_count} of {total_count} photos stored | Đã lưu {stored_count}/{total_count} ảnh |
 | `user.album.partial.stale` | Album may be out of date | Album có thể chưa được cập nhật |
 | `user.album.cloud.connect` | Connect a cloud destination | Kết nối nơi lưu trữ đám mây |
 | `user.album.photo.untitled` | Untitled photo | Ảnh chưa có tiêu đề |
@@ -237,8 +232,7 @@ Stable E2E hooks:
 - `data-testid="album-breadcrumb"`
 - `data-testid="album-header"`
 - `data-testid="album-owner"`
-- `data-testid="album-counts"`
-- `data-testid="album-partial-notice"`
+- `data-testid="album-loaded-count"`
 - `data-testid="album-download"`
 - `data-testid="album-send-to-cloud"`
 - `data-testid="album-grid"`

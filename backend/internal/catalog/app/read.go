@@ -94,11 +94,10 @@ type Album struct {
 
 // ContactAlbum is public album metadata for an album owned by one of the user's contacts.
 type ContactAlbum struct {
-	ID         string
-	OwnerNSID  string
-	Title      string
-	TotalCount int64
-	UpdatedAt  *time.Time
+	ID        string
+	OwnerNSID string
+	Title     string
+	UpdatedAt *time.Time
 }
 
 type PeoplePage struct {

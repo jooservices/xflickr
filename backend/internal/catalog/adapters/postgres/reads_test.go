@@ -304,7 +304,7 @@ func TestVisiblePhotoReadFailuresAreNotExposedAsRecords(t *testing.T) {
 	}
 }
 
-func TestContactAlbumReadsFilterVisiblePhotosAndUseStableKeysets(t *testing.T) {
+func TestContactAlbumReadsUseOwnerVisibilityAndStableKeysets(t *testing.T) {
 	ctx := context.Background()
 	const userID int64 = 75
 	db := &readsDB{}
@@ -314,31 +314,31 @@ func TestContactAlbumReadsFilterVisiblePhotosAndUseStableKeysets(t *testing.T) {
 	}
 	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
 	db.rows = &readsRows{rows: [][]any{
-		{"contact-album-1", "contact-1", "Album 1", int64(1), pgtype.Timestamptz{Time: now, Valid: true}},
-		{"contact-album-2", "contact-2", "Album 2", int64(2), pgtype.Timestamptz{Time: now.Add(-time.Hour), Valid: true}},
+		{"contact-album-1", "contact-1", "Album 1", pgtype.Timestamptz{Time: now, Valid: true}},
+		{"contact-album-2", "contact-2", "Album 2", pgtype.Timestamptz{Time: now.Add(-time.Hour), Valid: true}},
 	}}
 
 	page, err := repository.ListContactAlbums(ctx, userID, nil, 1)
-	if err != nil || len(page.Items) != 1 || page.Items[0].TotalCount != 1 || page.NextCursor == nil {
+	if err != nil || len(page.Items) != 1 || page.Items[0].ID != "contact-album-1" || page.NextCursor == nil {
 		t.Fatalf("contact albums=%+v err=%v", page, err)
 	}
-	if !strings.Contains(db.query, "count(photos.id)") || !strings.Contains(db.query, "JOIN album_photos") ||
-		!strings.Contains(db.query, "JOIN photos") || !strings.Contains(db.query, "photos.tombstoned_at IS NULL") ||
-		!strings.Contains(db.query, "observations o WHERE o.user_id = $1") || !strings.Contains(db.query, "sharing_settings") ||
+	if strings.Contains(db.query, "photos") || strings.Contains(db.query, "observations") ||
+		strings.Contains(db.query, "GROUP BY") || strings.Contains(db.query, "count(") ||
 		!strings.Contains(db.query, "contacts") || !strings.Contains(db.query, "flickr_accounts.user_id=$1") ||
-		!strings.Contains(db.query, "GROUP BY albums.id") || strings.Contains(db.query, "albums.photos_count") {
-		t.Fatalf("contact album query does not apply photo visibility: %s", db.query)
+		!strings.Contains(db.query, "ORDER BY albums.updated_at DESC NULLS LAST,albums.id DESC") ||
+		!strings.Contains(db.query, "LIMIT $2") {
+		t.Fatalf("contact album query must page owner-visible album metadata only: %s", db.query)
 	}
 	if db.args[0] != userID || db.args[1] != 2 {
 		t.Fatalf("contact album args=%v", db.args)
 	}
 
-	db.rows = &readsRows{rows: [][]any{{"contact-album-2", "contact-2", "Album 2", int64(2), pgtype.Timestamptz{Time: now.Add(-time.Hour), Valid: true}}}}
+	db.rows = &readsRows{rows: [][]any{{"contact-album-2", "contact-2", "Album 2", pgtype.Timestamptz{Time: now.Add(-time.Hour), Valid: true}}}}
 	page, err = repository.ListContactAlbums(ctx, userID, page.NextCursor, 1)
 	if err != nil || len(page.Items) != 1 || page.Items[0].ID != "contact-album-2" {
 		t.Fatalf("contact album cursor page=%+v err=%v", page, err)
 	}
-	if !strings.Contains(db.query, "albums.updated_at < $2") || db.args[2] != "contact-album-1" || db.args[3] != 2 {
+	if !strings.Contains(db.query, "albums.updated_at < $2") || db.args[1] != now || db.args[2] != "contact-album-1" || db.args[3] != 2 {
 		t.Fatalf("contact album cursor query=%q args=%v", db.query, db.args)
 	}
 
@@ -364,7 +364,7 @@ func TestContactAlbumReadsFilterVisiblePhotosAndUseStableKeysets(t *testing.T) {
 	if _, err := repository.ListContactAlbums(ctx, userID, nil, 1); err == nil {
 		t.Fatal("rows error ignored")
 	}
-	db.rows = &readsRows{rows: [][]any{{"contact-album-null", "contact-3", "Album without update time", int64(3), pgtype.Timestamptz{}}}}
+	db.rows = &readsRows{rows: [][]any{{"contact-album-null", "contact-3", "Album without update time", pgtype.Timestamptz{}}}}
 	page, err = repository.ListContactAlbums(ctx, userID, nil, 1)
 	if err != nil || len(page.Items) != 1 || page.Items[0].UpdatedAt != nil {
 		t.Fatalf("contact album with null timestamp=%+v err=%v", page, err)

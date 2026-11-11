@@ -104,9 +104,8 @@ MyAlbum:
     id: { type: string }
     owner_nsid: { type: string }
     title: { type: string }
-    total_count: { type: integer, format: int64, minimum: 0, description: Count of album photos visible to this user }
     updated_at: { type: string, format: date-time }
-  required: [id, owner_nsid, title, total_count]
+  required: [id, owner_nsid, title]
 
 MyAlbumPage:
   type: object

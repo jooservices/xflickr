@@ -307,34 +307,27 @@ func (r *Repository) ListContactAlbums(ctx context.Context, userID int64, cursor
 	if ctx == nil || r == nil || r.db == nil || userID <= 0 || limit < 1 || limit > app.MaxPageSize {
 		return app.ContactAlbumsPage{}, errors.New("catalog: invalid contact album read request")
 	}
-	predicate := sharingapp.Filter(sharingdomain.User{ID: userID}).SQL
-	query := `SELECT albums.id,albums.owner_nsid,albums.title,count(photos.id),albums.updated_at
+	query := `SELECT albums.id,albums.owner_nsid,albums.title,albums.updated_at
 FROM albums
-JOIN album_photos ON album_photos.album_id=albums.id
-JOIN photos ON photos.id=album_photos.photo_id AND photos.tombstoned_at IS NULL AND ` + predicate.Expression + `
 WHERE EXISTS (SELECT 1 FROM contacts
 JOIN flickr_accounts ON flickr_accounts.nsid=contacts.person_nsid
 WHERE contacts.contact_nsid=albums.owner_nsid AND flickr_accounts.user_id=$1
-AND flickr_accounts.status<>'revoked')
-GROUP BY albums.id`
-	args := append([]any(nil), predicate.Args...)
+AND flickr_accounts.status<>'revoked')`
+	args := []any{userID}
 	if cursor != nil {
 		if cursor.ID == "" {
 			return app.ContactAlbumsPage{}, app.ErrInvalidCursor
 		}
 		if cursor.UpdatedAt == nil {
 			query += ` AND albums.updated_at IS NULL AND albums.id<$2`
-			args = append(args, cursor.ID, limit+1)
-			query += ` ORDER BY albums.updated_at DESC NULLS LAST,albums.id DESC LIMIT $3`
+			args = append(args, cursor.ID)
 		} else {
 			query += ` AND ((albums.updated_at < $2) OR albums.updated_at IS NULL OR (albums.updated_at=$2 AND albums.id<$3))`
-			args = append(args, *cursor.UpdatedAt, cursor.ID, limit+1)
-			query += ` ORDER BY albums.updated_at DESC NULLS LAST,albums.id DESC LIMIT $4`
+			args = append(args, *cursor.UpdatedAt, cursor.ID)
 		}
-	} else {
-		query += ` ORDER BY albums.updated_at DESC NULLS LAST,albums.id DESC LIMIT $2`
-		args = append(args, limit+1)
 	}
+	args = append(args, limit+1)
+	query += fmt.Sprintf(` ORDER BY albums.updated_at DESC NULLS LAST,albums.id DESC LIMIT $%d`, len(args))
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return app.ContactAlbumsPage{}, fmt.Errorf("catalog: list contact albums: %w", err)
@@ -344,7 +337,7 @@ GROUP BY albums.id`
 	for rows.Next() {
 		var album app.ContactAlbum
 		var updated pgtype.Timestamptz
-		if err := rows.Scan(&album.ID, &album.OwnerNSID, &album.Title, &album.TotalCount, &updated); err != nil {
+		if err := rows.Scan(&album.ID, &album.OwnerNSID, &album.Title, &updated); err != nil {
 			return app.ContactAlbumsPage{}, fmt.Errorf("catalog: scan contact album: %w", err)
 		}
 		if updated.Valid {

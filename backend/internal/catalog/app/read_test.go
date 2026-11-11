@@ -95,7 +95,7 @@ func TestReadServiceAppliesPolicyAndEncodesKeysets(t *testing.T) {
 		t.Fatalf("album cursor=%q err=%v", albumCursor, err)
 	}
 	repo.contactAlbums = ContactAlbumsPage{
-		Items:      []ContactAlbum{{ID: "contact-album", OwnerNSID: "contact", TotalCount: 9}},
+		Items:      []ContactAlbum{{ID: "contact-album", OwnerNSID: "contact"}},
 		NextCursor: &AlbumCursor{ID: "contact-album"},
 	}
 	contactPage, contactCursor, err := service.ListContactAlbums(context.Background(), 42, "", 25)

@@ -10,10 +10,5 @@ export interface MyAlbum {
   id: string;
   owner_nsid: string;
   title: string;
-  /**
-   * Count of album photos visible to this user
-   * @minimum 0
-   */
-  total_count: number;
   updated_at?: string;
 }

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+cd "$project_root/backend"
+XFLICKR_INTEGRATION_TEST=1 go test -p 1 -tags=album_plan -run '^TestContactAlbumListPlanDoesNotReadPhotosOrObservations$' -v ./internal/catalog/adapters/postgres

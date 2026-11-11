@@ -177,7 +177,7 @@ func TestHandlerMapsAllCatalogReadResponses(t *testing.T) {
 		photos:        app.PhotosPage{Items: []app.Photo{photo}, NextCursor: &app.PhotoCursor{LastUpdate: now, ID: photo.ID}},
 		favorites:     app.FavoritesPage{Items: []app.Favorite{{Photo: photo, FaveDate: now}}},
 		albums:        app.AlbumsPage{Items: []app.Album{{ID: "album", OwnerNSID: "owner", Title: "Album", VisiblePhotosCount: 1}}},
-		contactAlbums: app.ContactAlbumsPage{Items: []app.ContactAlbum{{ID: "contact-album", OwnerNSID: "contact", Title: "Contact album", TotalCount: 8}}},
+		contactAlbums: app.ContactAlbumsPage{Items: []app.ContactAlbum{{ID: "contact-album", OwnerNSID: "contact", Title: "Contact album"}}},
 		albumPhotos:   app.AlbumPhotosPage{Items: []app.Photo{photo}, NextCursor: &app.AlbumPhotoCursor{Position: 0, PhotoID: photo.ID}},
 		photo:         photo, photoOK: true,
 	}
@@ -233,7 +233,7 @@ func TestHandlerMapsAllCatalogReadResponses(t *testing.T) {
 		t.Fatal(err)
 	}
 	contactAlbums := contactAlbumsResponse.(gen.ListMyAlbums200JSONResponse)
-	if len(contactAlbums.Items) != 1 || contactAlbums.Items[0].ID != "contact-album" || contactAlbums.Items[0].TotalCount != 8 {
+	if len(contactAlbums.Items) != 1 || contactAlbums.Items[0].ID != "contact-album" {
 		t.Fatalf("contact albums=%+v", contactAlbums)
 	}
 

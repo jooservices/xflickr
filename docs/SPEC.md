@@ -113,7 +113,10 @@ guide feature implementation; operational environment rules live in
 - Catalog read endpoints reuse the same visibility policy as other photo reads.
   Omit hidden photos from lists and answer hidden detail reads with 404, the
   same response as a missing row. Exclude tombstones and report only visible
-  photo counts for people and albums. Use opaque keyset cursors for list pages.
+  photo counts where photo-backed counts are required. `/me/albums` is scoped
+  by each album owner's contact relationship and must not inspect or count
+  album photos. Album detail may show only the number of photos in the bounded
+  page loaded, never a total. Use opaque keyset cursors for list pages.
 
 ## Crawl work and quota
 

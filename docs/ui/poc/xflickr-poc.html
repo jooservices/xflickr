@@ -1256,12 +1256,12 @@ function vContact(id) {
 function albumCard(a) {
   const ps = a.photos.slice(0, 3).map(id => PH[id]), c = CMAP[a.owner];
   return `<button class="album-card" data-go="album" data-arg="${a.id}"><div class="album-stack">${ps.length ? ps.map(p => `<img src="${photoSVG(p)}" alt="">`).join('') : `<span class="ph-empty">${icon('album', 28)}</span>`}</div>
-    <div><b>${esc(a.title)}</b><div class="small muted">${esc(c.name)} · ${a.photos.length} stored of ${a.totalOnFlickr}</div></div></button>`;
+    <div><b>${esc(a.title)}</b><div class="small muted">${esc(c.name)} · updated ${ago(a.updated * 1440)}</div></div></button>`;
 }
 function vAlbums() { return pageHead(t('Albums'), 'Albums of all your contacts. Download a whole album as one ZIP or send it to a cloud.') + `<div class="grid auto">${ALBUMS.map(albumCard).join('')}</div>`; }
 function vAlbum(id) {
   const a = ALBUMS.find(x => x.id === +id) || ALBUMS[0], c = CMAP[a.owner], ps = a.photos.map(i => PH[i]);
-  return crumb(t('Albums'), 'go', 'albums') + pageHead(esc(a.title), `${esc(c.name)} · ${a.photos.length} photos stored of ${a.totalOnFlickr} on Flickr · updated ${ago(a.updated * 1440)}`,
+  return crumb(t('Albums'), 'go', 'albums') + pageHead(esc(a.title), `${esc(c.name)} · ${ps.length} photos loaded · updated ${ago(a.updated * 1440)}`,
     `<button class="btn" data-go="contact" data-arg="${c.id}">${avatar(c.name, c.hue, 22)} ${esc(c.name)}</button><button class="btn primary" data-act="new-dl" data-arg="album|${a.id}" ${ps.length ? '' : 'disabled'}>${icon('download', 16)} ${t('Download album')}</button>`) +
     (ps.length ? jgrid(ps, 'album') : emptyBlock('album', 'This album is empty', 'The album exists on Flickr but has no photos. Nothing to download.'));
 }

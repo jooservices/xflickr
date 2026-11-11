@@ -26,19 +26,15 @@ async function loadAlbums(cursor?: string): Promise<MyAlbumPage> {
   return response.data;
 }
 
-function AlbumCard({
-  album,
-  photoCountLabel,
-  summary,
-}: {
-  album: MyAlbumPage['items'][number];
-  photoCountLabel: string;
-  summary: string;
-}) {
+function AlbumCard({ album, locale }: { album: MyAlbumPage['items'][number]; locale: string }) {
+  const updatedAt = album.updated_at ? new Date(album.updated_at) : null;
+  const updatedAtLabel = updatedAt && !Number.isNaN(updatedAt.getTime())
+    ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(updatedAt)
+    : null;
+
   return (
     <article
       className={styles.albumCard}
-      aria-label={summary}
       data-testid="album-card"
       data-album-id={album.id}
     >
@@ -52,7 +48,7 @@ function AlbumCard({
       <h2 className={styles.title}>{album.title || album.id}</h2>
       <span className={styles.meta}>
         <span>{album.owner_nsid}</span>
-        <span>{photoCountLabel}</span>
+        {updatedAtLabel ? <time dateTime={album.updated_at}>{updatedAtLabel}</time> : null}
       </span>
     </article>
   );
@@ -260,27 +256,9 @@ export function AlbumsPage() {
 
       {!albums.isPending && !initialError && visibleAlbums.length > 0 ? (
         <div className={styles.grid} data-testid="albums-grid">
-          {visibleAlbums.map((album) => {
-            const formattedCount = new Intl.NumberFormat(locale).format(album.total_count);
-            return (
-              <AlbumCard
-                key={album.id}
-                album={album}
-                photoCountLabel={t(
-                  album.total_count === 1 ? 'albums.card.total-one' : 'albums.card.total-many',
-                  { count: formattedCount },
-                )}
-                summary={t(
-                  album.total_count === 1 ? 'albums.card.summary-one' : 'albums.card.summary-many',
-                  {
-                    title: album.title || album.id,
-                    owner: album.owner_nsid,
-                    count: formattedCount,
-                  },
-                )}
-              />
-            );
-          })}
+          {visibleAlbums.map((album) => (
+            <AlbumCard key={album.id} album={album} locale={locale} />
+          ))}
         </div>
       ) : null}
 

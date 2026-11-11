@@ -2084,18 +2084,12 @@ export const ListMyAlbumsQueryParams = zod.object({
   limit: zod.int().min(1).max(listMyAlbumsQueryLimitMax).default(listMyAlbumsQueryLimitDefault),
 });
 
-export const listMyAlbumsResponseItemsItemTotalCountMin = 0;
-
 export const ListMyAlbumsResponse = zod.object({
   items: zod.array(
     zod.object({
       id: zod.string(),
       owner_nsid: zod.string(),
       title: zod.string(),
-      total_count: zod
-        .int()
-        .min(listMyAlbumsResponseItemsItemTotalCountMin)
-        .describe('Count of album photos visible to this user'),
       updated_at: zod.iso.datetime({ offset: true }).optional(),
     }),
   ),

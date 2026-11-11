@@ -10,17 +10,12 @@ const albums = {
       id: 'album-1',
       owner_nsid: 'owner-1',
       title: 'Vietnam 2024',
-      description: '',
-      total_count: 8,
-      primary_photo_id: 10,
       updated_at: '2026-11-08T12:00:00Z',
     },
     {
       id: 'album-2',
       owner_nsid: 'owner-2',
       title: 'Night skies',
-      description: '',
-      total_count: 1,
       updated_at: '2026-11-07T12:00:00Z',
     },
   ],
@@ -52,9 +47,10 @@ describe('AlbumsPage', () => {
     expect(await screen.findAllByTestId('album-card')).toHaveLength(2);
     expect(requestedPath).toBe('/me/albums');
     expect(screen.getAllByTestId('album-card')[0]).toHaveAttribute('data-album-id', 'album-1');
-    expect(screen.getAllByTestId('album-card')[0]).toHaveAccessibleName(
-      /Vietnam 2024.*owner-1.*8 visible photos/,
-    );
+    expect(screen.getAllByTestId('album-card')[0]).toHaveTextContent('Vietnam 2024');
+    expect(screen.getAllByTestId('album-card')[0]).toHaveTextContent('owner-1');
+    expect(screen.getAllByTestId('album-card')[0]).toHaveTextContent('Nov 8, 2026');
+    expect(screen.getAllByTestId('album-card')[0]).not.toHaveTextContent(/visible photo|stored of/i);
     expect(screen.getAllByTestId('album-card')[0]).not.toHaveAttribute('href');
     expect(screen.getByTestId('albums-filter')).toHaveValue('');
     expect(requestedCursor).toBeNull();
@@ -63,9 +59,8 @@ describe('AlbumsPage', () => {
     await waitFor(() => expect(router.state.location.search).toBe('?contact=owner-2'));
     expect(screen.getAllByTestId('album-card')).toHaveLength(1);
     expect(screen.getByTestId('album-card')).toHaveAttribute('data-album-id', 'album-2');
-    expect(screen.getByTestId('album-card')).toHaveAccessibleName(
-      /Night skies.*owner-2.*1 visible photo$/,
-    );
+    expect(screen.getByTestId('album-card')).toHaveTextContent('Night skies');
+    expect(screen.getByTestId('album-card')).not.toHaveTextContent(/visible photo|stored of/i);
   });
 
   it('loads the next keyset page without hiding albums already on screen', async () => {
