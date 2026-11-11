@@ -569,3 +569,90 @@ func TestContactsCalledOncePerIntervalPerAccount(t *testing.T) {
 		t.Fatalf("reopened state = %q err=%v", state, err)
 	}
 }
+
+func TestContactsSharedNSIDUsesOneRefreshAcrossUsers(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	firstUserID := insertInterestTestUser(t, ctx, pool)
+	secondUserID := insertInterestTestUser(t, ctx, pool)
+	firstKeyID := seedOwnerKey(t, ctx, pool, firstUserID, "")
+	secondKeyID := seedOwnerKey(t, ctx, pool, secondUserID, "")
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	account := "shared-refresh-acct-" + suffix
+	contact := "shared-refresh-contact-" + suffix
+	t.Cleanup(func() {
+		cleanupContactsScanState(t, pool, account)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=$1 OR contact_nsid=$2`, account, contact)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{account, contact})
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status)
+		VALUES($1,$2,$3,'first account','{}','{}','ok'),($4,$5,$3,'second account','{}','{}','ok')`,
+		firstUserID, firstKeyID, account, secondUserID, secondKeyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,'account'),($2,'contact')`, account, contact); err != nil {
+		t.Fatal(err)
+	}
+	repository, err := NewCycleRepository(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	queued, err := repository.ScheduleContacts(ctx, firstUserID, now, time.Hour)
+	if err != nil || !queued {
+		t.Fatalf("first user's schedule = %v, %v; want queued", queued, err)
+	}
+	queued, err = repository.ScheduleContacts(ctx, secondUserID, now, time.Hour)
+	if err != nil || queued {
+		t.Fatalf("second user's schedule = %v, %v; want the shared refresh to remain queued once", queued, err)
+	}
+	if got := count(t, ctx, pool, `SELECT count(*) FROM work_items WHERE kind='contacts' AND subject_key=$1`, account); got != 1 {
+		t.Fatalf("queued contact work items = %d, want one for the shared NSID", got)
+	}
+	var itemID int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM work_items WHERE kind='contacts' AND subject_key=$1`, account).Scan(&itemID); err != nil {
+		t.Fatal(err)
+	}
+	flickr := &scriptedContactsFlickr{responses: []contactsResponse{
+		{body: json.RawMessage(fmt.Sprintf(`{"contacts":{"pages":2,"contact":[{"nsid":%q}]}}`, contact))},
+		{body: json.RawMessage(fmt.Sprintf(`{"contacts":{"pages":2,"contact":[{"nsid":%q}]}}`, contact))},
+	}}
+	engine := contactsRefreshEngine(t, pool, flickr)
+	for page := 1; page <= 2; page++ {
+		if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready' WHERE id=$1`, itemID); err != nil {
+			t.Fatal(err)
+		}
+		if err := engine.Handle(ctx, itemID); err != nil {
+			t.Fatalf("handle shared contacts page %d: %v", page, err)
+		}
+	}
+	if flickr.calls != 2 {
+		t.Fatalf("Flickr calls = %d, want each of two pages exactly once", flickr.calls)
+	}
+	for _, userID := range []int64{firstUserID, secondUserID} {
+		var depth int
+		if err := pool.QueryRow(ctx, `SELECT depth FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, userID, contact).Scan(&depth); err != nil {
+			t.Fatalf("read contact interest for user %d: %v", userID, err)
+		}
+		if depth != 1 {
+			t.Errorf("contact interest for user %d has depth %d, want 1", userID, depth)
+		}
+	}
+	queued, err = repository.ScheduleContacts(ctx, firstUserID, now.Add(30*time.Minute), time.Hour)
+	if err != nil || queued {
+		t.Fatalf("first user's within-interval schedule = %v, %v; want no refresh", queued, err)
+	}
+	queued, err = repository.ScheduleContacts(ctx, secondUserID, now.Add(30*time.Minute), time.Hour)
+	if err != nil || queued {
+		t.Fatalf("second user's within-interval schedule = %v, %v; want no refresh", queued, err)
+	}
+	queued, err = repository.ScheduleContacts(ctx, firstUserID, now.Add(2*time.Hour), time.Hour)
+	if err != nil || !queued {
+		t.Fatalf("first user's elapsed-interval schedule = %v, %v; want refresh", queued, err)
+	}
+	queued, err = repository.ScheduleContacts(ctx, secondUserID, now.Add(2*time.Hour), time.Hour)
+	if err != nil || queued {
+		t.Fatalf("second user's elapsed-interval schedule = %v, %v; want the shared refresh to remain queued once", queued, err)
+	}
+}

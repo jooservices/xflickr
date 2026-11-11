@@ -219,8 +219,11 @@ func TestScheduleContactsEnqueuesAndRejectsInvalidCalls(t *testing.T) {
 	tx := &cycleTxFake{}
 	repository := &CycleRepository{begin: func(context.Context) (cycleTx, error) { return tx, nil }}
 	queued, err := repository.ScheduleContacts(context.Background(), 9, now, time.Hour)
-	if err != nil || !queued || tx.execs != 1 || !strings.Contains(tx.lastExec, "contacts") {
+	if err != nil || !queued || tx.execs != 2 || !strings.Contains(tx.lastExec, "contacts") {
 		t.Fatalf("ScheduleContacts() = %v, %v; execs=%d last=%q", queued, err, tx.execs, tx.lastExec)
+	}
+	if !strings.Contains(tx.execRecords[0].query, "pg_advisory_xact_lock") || !strings.Contains(tx.lastExec, "previous.subject_key=account.nsid") {
+		t.Fatalf("contacts scheduling is not serialized and deduplicated by NSID: %#v", tx.execRecords)
 	}
 	if len(tx.execArgs) < 4 || tx.execArgs[0] != int64(9) {
 		t.Fatalf("exec args = %#v", tx.execArgs)
@@ -252,10 +255,15 @@ func TestScheduleContactsEnqueuesAndRejectsInvalidCalls(t *testing.T) {
 	if _, err := repository.ScheduleContacts(context.Background(), 1, now, time.Hour); !errors.Is(err, beginErr) {
 		t.Fatalf("begin error = %v", err)
 	}
-	failing := &cycleTxFake{execErrAt: 1}
-	repository.begin = func(context.Context) (cycleTx, error) { return failing, nil }
-	if _, err := repository.ScheduleContacts(context.Background(), 1, now, time.Hour); err == nil {
-		t.Fatal("exec failure not returned")
+	lockFail := &cycleTxFake{execErrAt: 1}
+	repository.begin = func(context.Context) (cycleTx, error) { return lockFail, nil }
+	if _, err := repository.ScheduleContacts(context.Background(), 1, now, time.Hour); err == nil || !strings.Contains(err.Error(), "lock contacts scheduling") {
+		t.Fatalf("lock failure = %v", err)
+	}
+	insertFail := &cycleTxFake{execErrAt: 2}
+	repository.begin = func(context.Context) (cycleTx, error) { return insertFail, nil }
+	if _, err := repository.ScheduleContacts(context.Background(), 1, now, time.Hour); err == nil || !strings.Contains(err.Error(), "enqueue contacts refresh") {
+		t.Fatalf("enqueue failure = %v", err)
 	}
 	commitFail := &cycleTxFake{commitErr: errors.New("commit failed")}
 	repository.begin = func(context.Context) (cycleTx, error) { return commitFail, nil }

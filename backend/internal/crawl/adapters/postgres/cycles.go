@@ -148,8 +148,9 @@ func validateCycleSchedule(ctx context.Context, repository *CycleRepository, use
 }
 
 // ScheduleContacts enqueues flickr.contacts.getList work for each connected
-// account at most once per refresh interval. Existing active items are left
-// alone; completed or failed items reopen only after the interval elapses.
+// account NSID at most once per refresh interval across all XFlickr users.
+// Existing active items are left alone; completed or failed items reopen only
+// after the interval elapses.
 func (repository *CycleRepository) ScheduleContacts(ctx context.Context, userID int64, now time.Time, interval time.Duration) (bool, error) {
 	if repository == nil || repository.begin == nil {
 		return false, errDatabaseRequired
@@ -168,6 +169,9 @@ func (repository *CycleRepository) ScheduleContacts(ctx context.Context, userID 
 		return false, fmt.Errorf("crawl: begin contacts scheduling: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('crawl.contacts.schedule', 0))`); err != nil {
+		return false, fmt.Errorf("crawl: lock contacts scheduling: %w", err)
+	}
 	cursorJSON, err := json.Marshal(map[string]any{
 		"page": 1, "method": "flickr.contacts.getList", "checkpoint_at": now.Unix(),
 		"params": map[string]string{"user_id": "", "per_page": "500"},
@@ -177,8 +181,15 @@ func (repository *CycleRepository) ScheduleContacts(ctx context.Context, userID 
 	}
 	cutoff := now.Add(-interval)
 	tag, err := tx.Exec(ctx, `INSERT INTO work_items (kind, subject_key, user_id, key_id, depth, cursor)
-		SELECT 'contacts', nsid, user_id, key_id, 0, jsonb_set($2::jsonb, '{params,user_id}', to_jsonb(nsid))
-		FROM flickr_accounts WHERE user_id=$1 AND status='ok'
+		SELECT 'contacts', account.nsid, account.user_id, account.key_id, 0,
+			jsonb_set($2::jsonb, '{params,user_id}', to_jsonb(account.nsid))
+		FROM flickr_accounts AS account
+		WHERE account.user_id=$1 AND account.status='ok'
+			AND NOT EXISTS (
+				SELECT 1 FROM work_items AS previous
+				WHERE previous.kind='contacts' AND previous.subject_key=account.nsid
+					AND (previous.state NOT IN ('done','failed') OR previous.updated_at > $4)
+			)
 		ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO UPDATE SET
 			key_id=COALESCE(EXCLUDED.key_id, work_items.key_id), state='pending', cursor=EXCLUDED.cursor, attempts=0, last_error=NULL,
 			not_before=$3, lease_expires_at=NULL, updated_at=$3
