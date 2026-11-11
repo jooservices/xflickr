@@ -13,12 +13,14 @@ import { ProfilePage } from '../pages/profile/ProfilePage';
 import { KeysPage } from '../pages/keys';
 import { SetupPage } from '../pages/setup/SetupPage';
 import { CrawlPage } from '../pages/crawl';
+import { ContactsPage } from '../pages/contacts/ContactsPage';
 import { QuotaPage } from '../pages/admin/quota';
 import { AlbumsPage } from '../pages/albums';
 import { RouteErrorPage } from './ErrorBoundary';
 
 function userPageElement(path: string, labelKey: MessageKey) {
   if (path === '/profile') return <ProfilePage />;
+  if (path === '/contacts') return <ContactsPage />;
   if (path === '/crawl') return <CrawlPage />;
   if (path === '/albums') return <AlbumsPage />;
   if (path === '/keys') return <KeysPage />;

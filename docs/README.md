@@ -110,6 +110,8 @@
   queue handoff.
 - [Crawl interests](crawl-interests.md) — per-user person depth, lowest-depth
   deduplication, progress reporting, contact priority controls, and pause/resume.
+- [Contacts depth slice](contacts.md) — effective crawl depth and current list
+  availability on the Contacts route.
 - [Crawl engine](crawl-engine.md) — facet interface, registry, page job flow
   and error outcomes.
 - [Group membership crawl](group-membership-crawl.md) — response validation,
