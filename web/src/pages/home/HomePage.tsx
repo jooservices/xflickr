@@ -4,7 +4,13 @@ import type { JSX } from 'react';
 import { useNavigate } from 'react-router';
 import type { HomeSnapshot } from '../../shared/api/gen/models';
 import { getGetMeHomeQueryKey, getMeHome, logout } from '../../shared/api/gen/default/default';
-import { EmptyState, ErrorState, LoadingState, useI18n } from '../../shared';
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  clearSessionScopedStorage,
+  useI18n,
+} from '../../shared';
 import { SESSION_QUERY_KEY } from '../../entities';
 
 class HomeRequestError extends Error {
@@ -54,6 +60,7 @@ export function HomePage(): JSX.Element {
         setSignOutFailed(true);
         return;
       }
+      clearSessionScopedStorage();
       client.setQueryData(SESSION_QUERY_KEY, { status: 'unauthenticated' });
       client.removeQueries({
         predicate: (query) => query.queryKey[0] !== SESSION_QUERY_KEY[0],

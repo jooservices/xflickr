@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw/http';
 import { describe, expect, it } from 'vitest';
+import { SESSION_SCOPED_KEY_PREFIX } from '../../shared/sessionScoped';
 import { getGetMeHomeQueryKey } from '../../shared/api/gen/default/default';
 import { userEnvelope } from '../../test/rest';
 import { server } from '../../test/server';
@@ -180,7 +181,27 @@ describe('HomePage', () => {
     expect(requests).toBe(2);
   });
 
+  it('treats a wrongly typed snapshot as a retryable error instead of showing NaN', async () => {
+    server.use(
+      http.get(homeEndpoint, () =>
+        json(
+          envelope({
+            ...snapshot,
+            contacts: { total: 'many', direct: null, discovered: -1 },
+          }),
+        ),
+      ),
+    );
+    open();
+
+    const alert = await screen.findByTestId('user-home-error');
+    expect(alert).toHaveTextContent('Home could not load');
+    expect(screen.queryByText('NaN')).not.toBeInTheDocument();
+    expect(screen.getByTestId('user-home-error-retry')).toBeEnabled();
+  });
+
   it('logs out before opening sign-in from the forbidden state', async () => {
+    window.sessionStorage.setItem(`${SESSION_SCOPED_KEY_PREFIX}library.selection.2`, '[1]');
     let loggedOut = false;
     let finishLogout!: () => void;
     const logoutPending = new Promise<void>((resolve) => {
@@ -216,6 +237,9 @@ describe('HomePage', () => {
     expect(await screen.findByTestId('auth-login-form')).toBeInTheDocument();
     await waitFor(() => expect(router.state.location.pathname).toBe('/login'));
     expect(loggedOut).toBe(true);
+    expect(
+      window.sessionStorage.getItem(`${SESSION_SCOPED_KEY_PREFIX}library.selection.2`),
+    ).toBeNull();
   });
 
   it.each([
