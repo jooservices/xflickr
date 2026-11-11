@@ -86,3 +86,23 @@ jobs:
 
       - name: Fail when generated code is stale
         run: make gen-stale
+
+  security:
+    name: security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Test web security audit wrapper
+        run: bash docker/scripts/security-audit-web.test.sh
+
+      - name: Audit web dependencies
+        run: bash docker/scripts/security-audit-web.sh

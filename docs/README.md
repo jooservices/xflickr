@@ -122,3 +122,4 @@ The current web API to contract and backend route mapping is generated in
 - [Crawl call audit](crawl-call-audit.md) — per-facet call yield, numeric-count retry fix, one-hour fixture evidence and proposed follow-ups (JOOXF-310).
 - [REST building blocks](rest-building-blocks.md) — additive Slice 0 helpers, discovery, idempotency guarantees and reusable conformance cases.
 - [Coverage gates](coverage-gate.md) — per-package and per-file 85 percent gates, changed-file diff, and the shrinking baseline.
+- [Security scanning](security-scanning.md) — web dependency audit in CI and remaining scanner coverage.
