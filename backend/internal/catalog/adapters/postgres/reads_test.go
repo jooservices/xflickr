@@ -213,6 +213,12 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 	if err != nil || len(favorites.Items) != 1 || favorites.NextCursor == nil || favorites.Items[0].Photo.ID != 10 {
 		t.Fatalf("favorites=%+v err=%v", favorites, err)
 	}
+	lateralIndex := strings.Index(db.query, "CROSS JOIN LATERAL")
+	innerLimitIndex := strings.Index(db.query, "LIMIT $2")
+	mergeOrderIndex := strings.LastIndex(db.query, "ORDER BY")
+	if lateralIndex < 0 || innerLimitIndex < lateralIndex || mergeOrderIndex < innerLimitIndex || strings.Count(db.query, "LIMIT $2") != 2 {
+		t.Fatalf("favorites query must bound each account before the global merge: %s", db.query)
+	}
 	db.rows = &readsRows{rows: [][]any{readTestPhotoRow(12, pgtype.Timestamptz{Time: now.Add(-2 * time.Second), Valid: true})}}
 	if _, err := repository.ListVisibleFavorites(ctx, userID, predicate, &app.FavoriteCursor{FaveDate: now, PhotoID: 11}, 1); err != nil {
 		t.Fatalf("favorite cursor=%v", err)

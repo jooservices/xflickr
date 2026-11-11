@@ -27,9 +27,13 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	}
 	reads := app.ReadService{Repository: repository}
 	suffix := fmt.Sprintf("catalog-read-%d", time.Now().UnixNano())
-	user1NSID, user2NSID, hiddenNSID := suffix+"-u1", suffix+"-u2", suffix+"-hidden"
-	personIDs := []string{user1NSID, user2NSID, hiddenNSID}
-	photoIDs := []int64{time.Now().UnixNano(), time.Now().UnixNano() + 1, time.Now().UnixNano() + 2}
+	user1NSID, user1SecondNSID := suffix+"-u1", suffix+"-u1-second"
+	user2NSID, hiddenNSID := suffix+"-u2", suffix+"-hidden"
+	personIDs := []string{user1NSID, user1SecondNSID, user2NSID, hiddenNSID}
+	photoIDs := []int64{
+		time.Now().UnixNano(), time.Now().UnixNano() + 1, time.Now().UnixNano() + 2,
+		time.Now().UnixNano() + 3, time.Now().UnixNano() + 4,
+	}
 	albumID, hiddenAlbumID := suffix+"-album", suffix+"-hidden-album"
 	var user1ID, user2ID, account1ID, account2ID int64
 	defer func() {
@@ -54,13 +58,19 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'user-one','{}','{}','ok') RETURNING id`, user1ID, key1ID, user1NSID).Scan(&account1ID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'user-one-second','{}','{}','ok')`, user1ID, key1ID, user1SecondNSID); err != nil {
+		t.Fatal(err)
+	}
 	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'user-two','{}','{}','ok') RETURNING id`, user2ID, key2ID, user2NSID).Scan(&account2ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE sharing_settings SET enabled=true WHERE user_id=$1`, user2ID); err != nil {
 		t.Fatal(err)
 	}
-	people := []domain.Person{{NSID: user1NSID, Username: "one"}, {NSID: user2NSID, Username: "two"}, {NSID: hiddenNSID, Username: "hidden"}}
+	people := []domain.Person{
+		{NSID: user1NSID, Username: "one"}, {NSID: user1SecondNSID, Username: "one-second"},
+		{NSID: user2NSID, Username: "two"}, {NSID: hiddenNSID, Username: "hidden"},
+	}
 	if err := repository.UpsertPeople(ctx, people); err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +79,8 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 		{ID: photoIDs[0], OwnerNSID: user1NSID, Title: "private to one", LastUpdate: now, Visibility: domain.VisibilityPrivate, Raw: []byte(`{"id":1}`)},
 		{ID: photoIDs[1], OwnerNSID: user2NSID, Title: "shared public", LastUpdate: now.Add(-time.Second), Visibility: domain.VisibilityPublic, Tags: []string{"shared"}, Sizes: []byte(`[{"label":"Large","width":1200,"height":800}]`), SizesStatus: domain.SizesConfirmed, Raw: []byte(`{"id":2}`)},
 		{ID: photoIDs[2], OwnerNSID: hiddenNSID, Title: "private to two", LastUpdate: now.Add(-2 * time.Second), Visibility: domain.VisibilityPrivate, Raw: []byte(`{"id":3}`)},
+		{ID: photoIDs[3], OwnerNSID: user2NSID, Title: "shared public second", LastUpdate: now.Add(-3 * time.Second), Visibility: domain.VisibilityPublic, Raw: []byte(`{"id":4}`)},
+		{ID: photoIDs[4], OwnerNSID: user2NSID, Title: "shared public third", LastUpdate: now.Add(-4 * time.Second), Visibility: domain.VisibilityPublic, Raw: []byte(`{"id":5}`)},
 	}
 	if err := repository.UpsertPhotos(ctx, photos); err != nil {
 		t.Fatal(err)
@@ -83,6 +95,8 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 		{user2ID, account2ID, "person", hiddenNSID},
 		{user2ID, account2ID, "photo", fmt.Sprint(photoIDs[1])},
 		{user2ID, account2ID, "photo", fmt.Sprint(photoIDs[2])},
+		{user2ID, account2ID, "photo", fmt.Sprint(photoIDs[3])},
+		{user2ID, account2ID, "photo", fmt.Sprint(photoIDs[4])},
 	}
 	for _, observation := range observations {
 		if _, err := pool.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) VALUES($1,$2,$3,$4)`, observation.userID, observation.accountID, observation.kind, observation.id); err != nil {
@@ -92,6 +106,8 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if err := repository.UpsertFavoritesBatch(ctx, []postgres.Favorite{
 		{PersonNSID: user1NSID, PhotoID: photoIDs[1], FaveDate: now},
 		{PersonNSID: user1NSID, PhotoID: photoIDs[2], FaveDate: now.Add(-time.Second)},
+		{PersonNSID: user1NSID, PhotoID: photoIDs[4], FaveDate: now.Add(-3 * time.Second)},
+		{PersonNSID: user1SecondNSID, PhotoID: photoIDs[3], FaveDate: now.Add(-2 * time.Second)},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -118,14 +134,14 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 		t.Fatalf("second people page=%+v err=%v", peoplePage2, err)
 	}
 	visiblePeople := map[string]int64{peoplePage.Items[0].NSID: peoplePage.Items[0].PhotosCount, peoplePage2.Items[0].NSID: peoplePage2.Items[0].PhotosCount}
-	if len(visiblePeople) != 2 || visiblePeople[user1NSID] != 1 || visiblePeople[user2NSID] != 1 {
+	if len(visiblePeople) != 2 || visiblePeople[user1NSID] != 1 || visiblePeople[user2NSID] != 3 {
 		t.Fatalf("user one visible people/counts=%v", visiblePeople)
 	}
 	if _, err := reads.GetPerson(ctx, user1ID, hiddenNSID); !errors.Is(err, app.ErrNotFound) {
 		t.Fatalf("hidden person error=%v", err)
 	}
 	personPhotos, _, err := reads.ListPersonPhotos(ctx, user1ID, user2NSID, "", 10)
-	if err != nil || len(personPhotos.Items) != 1 || personPhotos.Items[0].ID != photoIDs[1] || personPhotos.Items[0].SizesStatus != "confirmed" || personPhotos.Items[0].Sizes[0].Label != "Large" {
+	if err != nil || len(personPhotos.Items) != 3 || personPhotos.Items[0].ID != photoIDs[1] || personPhotos.Items[0].SizesStatus != "confirmed" || personPhotos.Items[0].Sizes[0].Label != "Large" {
 		t.Fatalf("visible person photos=%+v err=%v", personPhotos, err)
 	}
 	if _, err := reads.GetPhoto(ctx, user2ID, photoIDs[0]); !errors.Is(err, app.ErrNotFound) {
@@ -134,9 +150,13 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if photo, err := reads.GetPhoto(ctx, user1ID, photoIDs[1]); err != nil || photo.ID != photoIDs[1] {
 		t.Fatalf("shared photo=%+v err=%v", photo, err)
 	}
-	favorites, _, err := reads.ListFavorites(ctx, user1ID, "", 10)
-	if err != nil || len(favorites.Items) != 1 || favorites.Items[0].Photo.ID != photoIDs[1] {
+	favorites, favoritesCursor, err := reads.ListFavorites(ctx, user1ID, "", 2)
+	if err != nil || len(favorites.Items) != 2 || favorites.Items[0].Photo.ID != photoIDs[1] || favorites.Items[1].Photo.ID != photoIDs[3] || favoritesCursor == "" {
 		t.Fatalf("visible favorites=%+v err=%v", favorites, err)
+	}
+	favorites, _, err = reads.ListFavorites(ctx, user1ID, favoritesCursor, 2)
+	if err != nil || len(favorites.Items) != 1 || favorites.Items[0].Photo.ID != photoIDs[4] {
+		t.Fatalf("second visible favorites page=%+v err=%v", favorites, err)
 	}
 	albums, _, err := reads.ListAlbums(ctx, user1ID, "", 10)
 	if err != nil || len(albums.Items) != 1 || albums.Items[0].ID != albumID || albums.Items[0].VisiblePhotosCount != 1 || albums.Items[0].PrimaryPhotoID != nil {
