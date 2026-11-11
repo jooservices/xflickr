@@ -112,6 +112,8 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 		{AlbumID: albumID, PhotoID: photoIDs[1], Position: 0},
 		{AlbumID: albumID, PhotoID: photoIDs[2], Position: 1},
 		{AlbumID: hiddenAlbumID, PhotoID: photoIDs[2], Position: 0},
+		{AlbumID: contactAlbumIDs[0], PhotoID: photoIDs[1], Position: 0},
+		{AlbumID: contactAlbumIDs[1], PhotoID: photoIDs[1], Position: 0},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -157,11 +159,112 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 		t.Fatalf("hidden album error=%v", err)
 	}
 	contactPage, contactCursor, err := reads.ListContactAlbums(ctx, user1ID, "", 1)
-	if err != nil || len(contactPage.Items) != 1 || contactPage.Items[0].ID != contactAlbumIDs[0] || contactPage.Items[0].TotalCount != 12 || contactCursor == "" {
+	if err != nil || len(contactPage.Items) != 1 || contactPage.Items[0].ID != contactAlbumIDs[0] || contactPage.Items[0].TotalCount != 1 || contactCursor == "" {
 		t.Fatalf("first contact album page=%+v cursor=%q err=%v", contactPage, contactCursor, err)
 	}
 	contactPage, _, err = reads.ListContactAlbums(ctx, user1ID, contactCursor, 10)
-	if err != nil || len(contactPage.Items) != 1 || contactPage.Items[0].ID != contactAlbumIDs[1] || contactPage.Items[0].TotalCount != 0 {
+	if err != nil || len(contactPage.Items) != 1 || contactPage.Items[0].ID != contactAlbumIDs[1] || contactPage.Items[0].TotalCount != 1 {
 		t.Fatalf("second contact album page=%+v err=%v", contactPage, err)
+	}
+}
+
+func TestContactAlbumsRespectSharingForMetadataAndPhotoCount(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	repository, err := postgres.New(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reads := app.ReadService{Repository: repository}
+	suffix := fmt.Sprintf("contact-album-visibility-%d", time.Now().UnixNano())
+	userNSIDs := []string{suffix + "-user", suffix + "-contact"}
+	photoStart := time.Now().UnixNano()
+	photoIDs := []int64{photoStart, photoStart + 1, photoStart + 2}
+	albumIDs := []string{suffix + "-visible", suffix + "-hidden"}
+	var userIDs, accountIDs [2]int64
+	defer func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=ANY($1) OR contact_nsid=ANY($1)`, userNSIDs)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM albums WHERE id=ANY($1)`, albumIDs)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=ANY($1)`, photoIDs)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, userNSIDs)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=ANY($1)`, userIDs[:])
+	}()
+	for i := range userIDs {
+		if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration','user') RETURNING id`, fmt.Sprintf("%s-%d@example.invalid", suffix, i)).Scan(&userIDs[i]); err != nil {
+			t.Fatal(err)
+		}
+		var keyID int64
+		if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'test',$2,'{}',1000,10,20) RETURNING id`, userIDs[i], fmt.Sprintf("%s-key-%d", suffix, i)).Scan(&keyID); err != nil {
+			t.Fatal(err)
+		}
+		if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,$4,'{}','{}','ok') RETURNING id`, userIDs[i], keyID, userNSIDs[i], fmt.Sprintf("user-%d", i)).Scan(&accountIDs[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var sharingEnabled bool
+	if err := pool.QueryRow(ctx, `SELECT enabled FROM sharing_settings WHERE user_id=$1`, userIDs[1]).Scan(&sharingEnabled); err != nil {
+		t.Fatal(err)
+	}
+	if sharingEnabled {
+		t.Fatal("contact sharing is enabled; expected the default disabled policy")
+	}
+	people := []domain.Person{{NSID: userNSIDs[0], Username: "user"}, {NSID: userNSIDs[1], Username: "contact"}}
+	if err := repository.UpsertPeople(ctx, people); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	photos := []domain.Photo{
+		{ID: photoIDs[0], OwnerNSID: userNSIDs[1], Title: "visible", LastUpdate: now, Visibility: domain.VisibilityPublic, Raw: []byte(`{"id":1}`)},
+		{ID: photoIDs[1], OwnerNSID: userNSIDs[1], Title: "unshared public", LastUpdate: now.Add(-time.Second), Visibility: domain.VisibilityPublic, Raw: []byte(`{"id":2}`)},
+		{ID: photoIDs[2], OwnerNSID: userNSIDs[1], Title: "private", LastUpdate: now.Add(-2 * time.Second), Visibility: domain.VisibilityPrivate, Raw: []byte(`{"id":3}`)},
+	}
+	if err := repository.UpsertPhotos(ctx, photos); err != nil {
+		t.Fatal(err)
+	}
+	observations := []struct {
+		userID, accountID int64
+		photoID           int64
+	}{
+		{userIDs[0], accountIDs[0], photoIDs[0]},
+		{userIDs[1], accountIDs[1], photoIDs[0]},
+		{userIDs[1], accountIDs[1], photoIDs[1]},
+		{userIDs[1], accountIDs[1], photoIDs[2]},
+	}
+	for _, observation := range observations {
+		if _, err := pool.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) VALUES($1,$2,'photo',$3)`, observation.userID, observation.accountID, fmt.Sprint(observation.photoID)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid) VALUES($1,$2)`, userNSIDs[0], userNSIDs[1]); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.UpsertAlbumsBatch(ctx, []postgres.Album{
+		{ID: albumIDs[0], OwnerNSID: userNSIDs[1], Title: "Visible album", PhotosCount: 99, UpdatedAt: now},
+		{ID: albumIDs[1], OwnerNSID: userNSIDs[1], Title: "Hidden album", PhotosCount: 77, UpdatedAt: now.Add(-time.Second)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.UpsertAlbumPhotosBatch(ctx, []postgres.AlbumPhoto{
+		{AlbumID: albumIDs[0], PhotoID: photoIDs[0], Position: 0},
+		{AlbumID: albumIDs[0], PhotoID: photoIDs[1], Position: 1},
+		{AlbumID: albumIDs[0], PhotoID: photoIDs[2], Position: 2},
+		{AlbumID: albumIDs[1], PhotoID: photoIDs[1], Position: 0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	page, _, err := reads.ListContactAlbums(ctx, userIDs[0], "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != albumIDs[0] {
+		t.Fatalf("contact albums exposed records without visible photos: %+v", page.Items)
+	}
+	if page.Items[0].TotalCount != 1 {
+		t.Fatalf("contact album count=%d, want only the one visible photo", page.Items[0].TotalCount)
 	}
 }

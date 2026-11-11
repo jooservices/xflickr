@@ -11,7 +11,7 @@ export interface MyAlbum {
   owner_nsid: string;
   title: string;
   /**
-   * Flickr's public photoset count
+   * Count of album photos visible to this user
    * @minimum 0
    */
   total_count: number;

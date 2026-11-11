@@ -53,7 +53,7 @@ describe('AlbumsPage', () => {
     expect(requestedPath).toBe('/me/albums');
     expect(screen.getAllByTestId('album-card')[0]).toHaveAttribute('data-album-id', 'album-1');
     expect(screen.getAllByTestId('album-card')[0]).toHaveAccessibleName(
-      /Vietnam 2024.*owner-1.*8 photos on Flickr/,
+      /Vietnam 2024.*owner-1.*8 visible photos/,
     );
     expect(screen.getAllByTestId('album-card')[0]).not.toHaveAttribute('href');
     expect(screen.getByTestId('albums-filter')).toHaveValue('');
@@ -64,7 +64,7 @@ describe('AlbumsPage', () => {
     expect(screen.getAllByTestId('album-card')).toHaveLength(1);
     expect(screen.getByTestId('album-card')).toHaveAttribute('data-album-id', 'album-2');
     expect(screen.getByTestId('album-card')).toHaveAccessibleName(
-      /Night skies.*owner-2.*1 photo on Flickr$/,
+      /Night skies.*owner-2.*1 visible photo$/,
     );
   });
 

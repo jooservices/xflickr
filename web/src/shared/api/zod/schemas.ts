@@ -2095,7 +2095,7 @@ export const ListMyAlbumsResponse = zod.object({
       total_count: zod
         .int()
         .min(listMyAlbumsResponseItemsItemTotalCountMin)
-        .describe("Flickr's public photoset count"),
+        .describe('Count of album photos visible to this user'),
       updated_at: zod.iso.datetime({ offset: true }).optional(),
     }),
   ),

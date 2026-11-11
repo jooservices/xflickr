@@ -302,18 +302,22 @@ WHERE flickr_accounts.user_id=$1 AND flickr_accounts.status<>'revoked' AND ` + p
 	return page, nil
 }
 
-// ListContactAlbums reads bounded album metadata for the user's known contacts.
+// ListContactAlbums reads visible album metadata for the user's known contacts.
 func (r *Repository) ListContactAlbums(ctx context.Context, userID int64, cursor *app.AlbumCursor, limit int) (app.ContactAlbumsPage, error) {
 	if ctx == nil || r == nil || r.db == nil || userID <= 0 || limit < 1 || limit > app.MaxPageSize {
 		return app.ContactAlbumsPage{}, errors.New("catalog: invalid contact album read request")
 	}
-	query := `SELECT albums.id,albums.owner_nsid,albums.title,albums.photos_count,albums.updated_at
+	predicate := sharingapp.Filter(sharingdomain.User{ID: userID}).SQL
+	query := `SELECT albums.id,albums.owner_nsid,albums.title,count(photos.id),albums.updated_at
 FROM albums
+JOIN album_photos ON album_photos.album_id=albums.id
+JOIN photos ON photos.id=album_photos.photo_id AND photos.tombstoned_at IS NULL AND ` + predicate.Expression + `
 WHERE EXISTS (SELECT 1 FROM contacts
 JOIN flickr_accounts ON flickr_accounts.nsid=contacts.person_nsid
 WHERE contacts.contact_nsid=albums.owner_nsid AND flickr_accounts.user_id=$1
-AND flickr_accounts.status<>'revoked')`
-	args := []any{userID}
+AND flickr_accounts.status<>'revoked')
+GROUP BY albums.id`
+	args := append([]any(nil), predicate.Args...)
 	if cursor != nil {
 		if cursor.ID == "" {
 			return app.ContactAlbumsPage{}, app.ErrInvalidCursor
