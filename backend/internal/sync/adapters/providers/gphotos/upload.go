@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/jooservices/xflickr/internal/sync/app"
 )
@@ -51,9 +53,8 @@ func (c *Client) UploadBytes(ctx context.Context, asset app.Asset) (string, erro
 		return "", fmt.Errorf("gphotos: upload request canceled: %w", err)
 	}
 
-	digest := sha256.New()
-	stream := &countingReader{reader: io.TeeReader(asset.Content, digest)}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.uploadURL, io.NopCloser(stream))
+	stream := &countingReader{reader: asset.Content, digest: sha256.New(), done: make(chan struct{})}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.uploadURL, stream)
 	if err != nil {
 		return "", errors.New("gphotos: create upload request")
 	}
@@ -64,18 +65,26 @@ func (c *Client) UploadBytes(ctx context.Context, asset app.Asset) (string, erro
 
 	response, err := c.client.Do(request)
 	if err != nil {
+		_ = stream.Close()
 		if contextErr := ctx.Err(); contextErr != nil {
 			return "", fmt.Errorf("gphotos: upload request canceled: %w", contextErr)
 		}
-		if stream.reachedEOF && stream.count != asset.Size {
-			return "", fmt.Errorf("%w: uploaded byte count does not match metadata", app.ErrInvalidAsset)
+		if stream.isComplete() {
+			count, _, reachedEOF := stream.snapshot()
+			if reachedEOF && count != asset.Size {
+				return "", fmt.Errorf("%w: uploaded byte count does not match metadata", app.ErrInvalidAsset)
+			}
 		}
 		return "", errors.New("gphotos: send upload request")
 	}
 	if response == nil || response.Body == nil {
+		_ = stream.Close()
 		return "", errors.New("gphotos: upload response has no body")
 	}
 	defer func() { _ = response.Body.Close() }()
+	if !stream.wait(ctx) {
+		return "", fmt.Errorf("gphotos: upload request canceled: %w", ctx.Err())
+	}
 
 	switch response.StatusCode {
 	case http.StatusOK:
@@ -87,10 +96,10 @@ func (c *Client) UploadBytes(ctx context.Context, asset app.Asset) (string, erro
 		return "", fmt.Errorf("gphotos: upload request failed with HTTP status %d", response.StatusCode)
 	}
 
-	if stream.count != asset.Size {
+	count, actualDigest, _ := stream.snapshot()
+	if count != asset.Size {
 		return "", fmt.Errorf("%w: uploaded byte count does not match metadata", app.ErrInvalidAsset)
 	}
-	actualDigest := hex.EncodeToString(digest.Sum(nil))
 	if !strings.EqualFold(actualDigest, asset.SHA256) {
 		return "", fmt.Errorf("%w: uploaded SHA-256 does not match metadata", app.ErrInvalidAsset)
 	}
@@ -121,16 +130,90 @@ func readUploadToken(body io.Reader, ctx context.Context) (string, error) {
 }
 
 type countingReader struct {
-	reader     io.Reader
-	count      int64
-	reachedEOF bool
+	reader      io.Reader
+	digest      hash.Hash
+	done        chan struct{}
+	doneOnce    sync.Once
+	mu          sync.Mutex
+	count       int64
+	activeReads int
+	reachedEOF  bool
+	closed      bool
 }
 
 func (r *countingReader) Read(p []byte) (int, error) {
+	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return 0, io.ErrClosedPipe
+	}
+	r.activeReads++
+	r.mu.Unlock()
+
 	n, err := r.reader.Read(p)
+	r.mu.Lock()
 	r.count += int64(n)
-	if err == io.EOF {
+	if n > 0 {
+		_, _ = r.digest.Write(p[:n])
+	}
+	if errors.Is(err, io.EOF) {
 		r.reachedEOF = true
 	}
+	r.activeReads--
+	finished := r.activeReads == 0 && (r.closed || r.reachedEOF)
+	r.mu.Unlock()
+	if finished {
+		r.finish()
+	}
 	return n, err
+}
+
+func (r *countingReader) Close() error {
+	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return nil
+	}
+	r.closed = true
+	activeReads := r.activeReads
+	closer, canClose := r.reader.(io.Closer)
+	r.mu.Unlock()
+
+	var err error
+	if canClose {
+		err = closer.Close()
+	}
+	if activeReads == 0 {
+		r.finish()
+	}
+	return err
+}
+
+func (r *countingReader) wait(ctx context.Context) bool {
+	select {
+	case <-r.done:
+		return true
+	case <-ctx.Done():
+		_ = r.Close()
+		return false
+	}
+}
+
+func (r *countingReader) snapshot() (int64, string, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.count, hex.EncodeToString(r.digest.Sum(nil)), r.reachedEOF
+}
+
+func (r *countingReader) isComplete() bool {
+	select {
+	case <-r.done:
+		return true
+	default:
+		return false
+	}
+}
+
+func (r *countingReader) finish() {
+	r.doneOnce.Do(func() { close(r.done) })
 }

@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/jooservices/xflickr/internal/sync/app"
 )
@@ -64,6 +66,51 @@ func TestUploadBytesSuccess(t *testing.T) {
 	}
 	if requests != 1 {
 		t.Fatalf("requests = %d, want 1", requests)
+	}
+}
+
+func TestUploadBytesWaitsForConcurrentRequestBodyRead(t *testing.T) {
+	assetReader := &gatedReader{
+		content: []byte("photo bytes"), started: make(chan struct{}), release: make(chan struct{}),
+	}
+	readDone := make(chan struct{})
+	client := mustNewClient(t, roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		go func() {
+			defer close(readDone)
+			_, _ = io.Copy(io.Discard, request.Body)
+			_ = request.Body.Close()
+		}()
+		<-assetReader.started
+		return response(request, http.StatusOK, strings.NewReader("temporary-upload-token")), nil
+	}))
+	asset := testAsset("photo bytes")
+	asset.Content = assetReader
+	type uploadResult struct {
+		token string
+		err   error
+	}
+	result := make(chan uploadResult, 1)
+	go func() {
+		token, err := client.UploadBytes(t.Context(), asset)
+		result <- uploadResult{token: token, err: err}
+	}()
+
+	select {
+	case <-result:
+		close(assetReader.release)
+		<-readDone
+		t.Fatal("UploadBytes returned before the request body read completed")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(assetReader.release)
+	<-readDone
+	select {
+	case got := <-result:
+		if got.err != nil || got.token != "temporary-upload-token" {
+			t.Fatalf("UploadBytes() = %q, %v; want upload token", got.token, got.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("UploadBytes did not finish after the request body read completed")
 	}
 }
 
@@ -299,6 +346,24 @@ func TestNewClientRejectsInvalidArguments(t *testing.T) {
 }
 
 type contextKey struct{}
+
+type gatedReader struct {
+	content []byte
+	started chan struct{}
+	release chan struct{}
+	start   sync.Once
+}
+
+func (r *gatedReader) Read(p []byte) (int, error) {
+	r.start.Do(func() { close(r.started) })
+	<-r.release
+	if len(r.content) == 0 {
+		return 0, io.EOF
+	}
+	n := copy(p, r.content)
+	r.content = r.content[n:]
+	return n, nil
+}
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
