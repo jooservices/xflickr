@@ -86,6 +86,12 @@ func TestNewRequiresDatabase(t *testing.T) {
 	if _, err := New(nil); err == nil {
 		t.Fatal("New(nil) succeeded")
 	}
+	queue := &refreshQueueStub{}
+	for _, queues := range [][]refreshEnqueuer{{nil}, {queue, queue}} {
+		if _, err := New(&queryerStub{}, queues...); err == nil {
+			t.Fatalf("New() succeeded with invalid refresh queues: %#v", queues)
+		}
+	}
 }
 
 func TestLoadRejectsInvalidRepositoryContextAndUser(t *testing.T) {
@@ -284,26 +290,28 @@ func TestLoadWrapsDatabaseErrors(t *testing.T) {
 func TestLoadReportsInvalidSnapshotJSON(t *testing.T) {
 	valid := []byte(`[]`)
 	for _, test := range []struct {
-		name string
-		new  []byte
-		star []byte
-		act  []byte
+		name      string
+		operation string
+		new       []byte
+		star      []byte
+		act       []byte
 	}{
-		{name: "new photos", new: []byte(`{`), star: valid, act: valid},
-		{name: "starred contacts", new: valid, star: []byte(`{`), act: valid},
-		{name: "activity", new: valid, star: valid, act: []byte(`{`)},
+		{name: "new photos", operation: "decode newest photos", new: []byte(`{`), star: valid, act: valid},
+		{name: "starred contacts", operation: "decode starred contacts", new: valid, star: []byte(`{`), act: valid},
+		{name: "activity", operation: "decode activity", new: valid, star: valid, act: []byte(`{`)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			values := []any{
 				time.Date(2026, time.November, 9, 10, 0, 0, 0, time.UTC), int64(0), int64(0), int64(0), int64(0), int64(0), int64(0), (*time.Time)(nil), false,
+				false,
 				test.new, test.star, test.act,
 			}
 			repository, err := New(&queryerStub{row: stubRow{values: values}})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := repository.Load(t.Context(), 1); err == nil {
-				t.Fatal("Load() succeeded with invalid snapshot JSON")
+			if _, err := repository.Load(t.Context(), 1); err == nil || !strings.Contains(err.Error(), test.operation) {
+				t.Fatalf("Load() error = %v, want %s error", err, test.operation)
 			}
 		})
 	}

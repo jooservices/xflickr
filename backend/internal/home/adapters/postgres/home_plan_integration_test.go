@@ -75,11 +75,11 @@ func assertHomePlans(t *testing.T, ctx context.Context, pool *pgxpool.Pool, stat
 	if seqScanSetting != "on" {
 		t.Fatalf("query plan fixture requires the default sequential scan setting, got %q", seqScanSetting)
 	}
-	requestPlan := explainHomePlan(t, ctx, tx, statement, userID)
-	assertCandidatePlan(t, requestPlan, 12)
+	requestPlan := explainHomePlan(t, ctx, tx, "Home request snapshot", statement, userID)
+	assertCandidatePlan(t, requestPlan, 12, 4*50)
 	assertWorkItemPlan(t, requestPlan)
-	refreshPlan := explainHomePlan(t, ctx, tx, refreshPhotoPageSQL, userID, "", batchSize)
-	assertCandidatePlan(t, refreshPlan, batchSize)
+	refreshPlan := explainHomePlan(t, ctx, tx, "Home refresh photo page", refreshPhotoPageSQL, userID, "", batchSize)
+	assertCandidatePlan(t, refreshPlan, batchSize, batchSize)
 	if !t.Failed() {
 		t.Log("request and refresh EXPLAIN ANALYZE passed with the default planner and 400,000 candidates")
 	}
@@ -93,20 +93,34 @@ func createPlanFixtures(t *testing.T, ctx context.Context, tx pgx.Tx, userID int
 	}{
 		{`CREATE TEMP TABLE user_home_photo_candidates (user_id BIGINT NOT NULL, photo_id BIGINT NOT NULL, uploaded_at TIMESTAMPTZ)`, "own candidate table"},
 		{`CREATE TEMP TABLE user_home_shared_photo_candidates (photo_id BIGINT NOT NULL, uploaded_at TIMESTAMPTZ)`, "shared candidate table"},
+		{`CREATE TEMP TABLE photos (
+    id BIGINT PRIMARY KEY,
+    title TEXT NOT NULL,
+    owner_nsid TEXT NOT NULL,
+    taken_at TIMESTAMPTZ,
+    uploaded_at TIMESTAMPTZ,
+    sizes JSONB NOT NULL,
+    last_update TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp(),
+    sizes_status TEXT NOT NULL DEFAULT 'none',
+    sizes_checked_at TIMESTAMPTZ,
+    visibility TEXT NOT NULL,
+    tombstoned_at TIMESTAMPTZ
+)`, "candidate photos"},
 		{`INSERT INTO user_home_photo_candidates
 SELECT $1, candidate_id::bigint, statement_timestamp() - candidate_id * interval '1 second'
 FROM generate_series(1, 200000) AS candidate(candidate_id)`, "200,000 own candidates"},
 		{`INSERT INTO user_home_shared_photo_candidates
 SELECT candidate_id::bigint, statement_timestamp() - candidate_id * interval '1 second'
 FROM generate_series(1, 200000) AS candidate(candidate_id)`, "200,000 shared candidates"},
-		{`INSERT INTO user_home_photo_candidates
-SELECT $1, candidate.photo_id, statement_timestamp() + interval '1 year'
-FROM public.user_home_photo_candidates candidate
-WHERE candidate.user_id=$1 ORDER BY candidate.photo_id LIMIT 12`, "visible own candidates"},
-		{`INSERT INTO user_home_shared_photo_candidates
-SELECT candidate.photo_id, statement_timestamp() + interval '1 year'
-FROM public.user_home_shared_photo_candidates candidate
-ORDER BY candidate.photo_id LIMIT 12`, "visible shared candidates"},
+		{`INSERT INTO user_home_photo_candidates (user_id, photo_id, uploaded_at)
+SELECT $1, 400000 + candidate_id, statement_timestamp() + interval '1 year'
+FROM generate_series(1, 12) AS candidate(candidate_id)`, "12 visible own candidates"},
+		{`INSERT INTO user_home_shared_photo_candidates (photo_id, uploaded_at)
+SELECT 400000 + candidate_id, statement_timestamp() + interval '1 year'
+FROM generate_series(1, 12) AS candidate(candidate_id)`, "12 revoked shared candidates"},
+		{`INSERT INTO photos (id, title, owner_nsid, taken_at, uploaded_at, sizes, visibility)
+SELECT 400000 + candidate_id, 'plan photo', 'plan-owner', statement_timestamp(), statement_timestamp(), '[]'::jsonb, 'public'
+FROM generate_series(1, 12) AS candidate(candidate_id)`, "candidate photos"},
 		{`CREATE UNIQUE INDEX ON user_home_photo_candidates (user_id, photo_id)`, "own candidate primary key"},
 		{`CREATE INDEX ON user_home_photo_candidates (user_id, uploaded_at DESC NULLS LAST, photo_id DESC)`, "own candidate recent index"},
 		{`CREATE UNIQUE INDEX ON user_home_shared_photo_candidates (photo_id)`, "shared candidate primary key"},
@@ -147,12 +161,13 @@ FROM generate_series(1, 5000) AS candidate(candidate_id)`, userID, contactNSID);
 	}
 }
 
-func explainHomePlan(t *testing.T, ctx context.Context, tx pgx.Tx, statement string, args ...any) explainNode {
+func explainHomePlan(t *testing.T, ctx context.Context, tx pgx.Tx, label, statement string, args ...any) explainNode {
 	t.Helper()
 	var raw []byte
 	if err := tx.QueryRow(ctx, "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+statement, args...).Scan(&raw); err != nil {
 		t.Fatalf("explain Home query: %v", err)
 	}
+	t.Logf("EXPLAIN %s (ANALYZE, BUFFERS, FORMAT JSON): %s", label, raw)
 	var document explainDocument
 	if err := json.Unmarshal(raw, &document); err != nil {
 		t.Fatalf("decode Home query plan: %v", err)
@@ -163,9 +178,10 @@ func explainHomePlan(t *testing.T, ctx context.Context, tx pgx.Tx, statement str
 	return document[0].Plan
 }
 
-func assertCandidatePlan(t *testing.T, root explainNode, limit int) {
+func assertCandidatePlan(t *testing.T, root explainNode, ownLimit, sharedLimit int) {
 	t.Helper()
 	seenOwn, seenShared := false, false
+	rowsRead := map[string]float64{}
 	var visit func(explainNode)
 	visit = func(node explainNode) {
 		for _, relation := range []string{"user_home_photo_candidates", "user_home_shared_photo_candidates"} {
@@ -180,9 +196,7 @@ func assertCandidatePlan(t *testing.T, root explainNode, limit int) {
 			if node.NodeType == "Seq Scan" {
 				t.Errorf("Home plan sequentially scans %s", relation)
 			}
-			if node.ActualRows*node.ActualLoops > float64(limit) {
-				t.Errorf("Home plan reads %.0f rows from %s, over limit %d", node.ActualRows*node.ActualLoops, relation, limit)
-			}
+			rowsRead[relation] += node.ActualRows * node.ActualLoops
 		}
 		for _, child := range node.Plans {
 			visit(child)
@@ -191,6 +205,12 @@ func assertCandidatePlan(t *testing.T, root explainNode, limit int) {
 	visit(root)
 	if !seenOwn || !seenShared {
 		t.Fatalf("Home plan candidate sources own=%t shared=%t", seenOwn, seenShared)
+	}
+	if rowsRead["user_home_photo_candidates"] > float64(ownLimit) {
+		t.Errorf("Home plan reads %.0f own candidates, over limit %d", rowsRead["user_home_photo_candidates"], ownLimit)
+	}
+	if rowsRead["user_home_shared_photo_candidates"] > float64(sharedLimit) {
+		t.Errorf("Home plan reads %.0f shared candidates, over limit %d", rowsRead["user_home_shared_photo_candidates"], sharedLimit)
 	}
 }
 
