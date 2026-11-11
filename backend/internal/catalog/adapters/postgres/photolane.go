@@ -55,7 +55,7 @@ func (l PhotoLane) Select(ctx context.Context, limit, skip int, optionalFacets [
 	want := limit + skip
 	var refs []app.PhotoRef
 	for chunk := firstPersonChunk; ; chunk *= 2 {
-		found, more, err := l.probe(ctx, chunk, want, optionalFacets)
+		found, more, err := l.probe(ctx, chunk, want, skip, optionalFacets)
 		if err != nil {
 			return nil, err
 		}
@@ -70,8 +70,8 @@ func (l PhotoLane) Select(ctx context.Context, limit, skip int, optionalFacets [
 	return refs[skip:], nil
 }
 
-func (l PhotoLane) probe(ctx context.Context, persons, photos int, optionalFacets []string) ([]app.PhotoRef, bool, error) {
-	rows, err := l.Pool.Query(ctx, photoLaneQuery(), persons, photos, optionalFacets, maxPhotosPerOwner)
+func (l PhotoLane) probe(ctx context.Context, persons, photos, skip int, optionalFacets []string) ([]app.PhotoRef, bool, error) {
+	rows, err := l.Pool.Query(ctx, photoLaneQuery(), persons, photos, optionalFacets, maxPhotosPerOwner, skip)
 	if err != nil {
 		return nil, false, fmt.Errorf("catalog: select photo lane: %w", err)
 	}

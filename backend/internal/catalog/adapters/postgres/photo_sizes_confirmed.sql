@@ -1,5 +1,6 @@
 (
-    (p.sizes_status = 'confirmed'
+    (p.visibility = 'public'
+     AND p.sizes_status = 'confirmed'
      AND p.sizes_checked_at >= p.last_update
      AND p.server <> '65535')
     OR EXISTS (

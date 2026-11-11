@@ -71,7 +71,7 @@ func TestPhotoLaneSelectSkipsAndStopsWhenFilled(t *testing.T) {
 	if err != nil || len(refs) != 2 || refs[0].ID != 8 || refs[1].ID != 9 || refs[1].OwnerNSID != "owner" || refs[1].Facet != "sizes" {
 		t.Fatalf("Select() = %v, %v, want photos 8 and 9", refs, err)
 	}
-	if len(pool.args) != 1 || pool.args[0][0] != firstPersonChunk || pool.args[0][1] != 3 || pool.args[0][2].([]string)[0] != "info" || pool.args[0][3] != maxPhotosPerOwner {
+	if len(pool.args) != 1 || pool.args[0][0] != firstPersonChunk || pool.args[0][1] != 3 || pool.args[0][2].([]string)[0] != "info" || pool.args[0][3] != maxPhotosPerOwner || pool.args[0][4] != 1 {
 		t.Fatalf("probe args = %v, want one probe of %d persons for 3 photos", pool.args, firstPersonChunk)
 	}
 }

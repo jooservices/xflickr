@@ -15,10 +15,12 @@ user's key and the interactive quota class. They do not require a starred or
 selected owner. A photo being opened in the Lightbox screen (JOOXF-171) will
 enqueue an interactive size confirmation through the same download flow.
 Listing URLs and dimensions remain provisional until needed. Once a current
-global result or an eligible photo-owner account result confirms sizes, enabled
-optional facets may be selected for photos owned by starred or actively selected
-contacts. Account-scoped confirmation can unlock optional work while the
-catalog's global `sizes_status` remains provisional.
+global result for a public photo or an eligible photo-owner account result
+confirms sizes, enabled optional facets may be selected for photos owned by
+starred or actively selected contacts. A global result from a non-public photo
+does not confirm sizes for the account lane. Account-scoped confirmation can
+unlock optional work while the catalog's global `sizes_status` remains
+provisional.
 
 ## Ordering
 
@@ -34,9 +36,12 @@ Each selected photo is charged to a key through `KeyPool.Choose` (class
 args carry `photo_id`, `owner_nsid`, `facet` (`sizes`), `key_id`, `class`
 (`photo`) and `dedupe_key` (`photo:<id>:<facet>`). A photo whose dedupe key is
 already in a waiting or running River job is skipped, as is a photo whose owner
-has no eligible key. A transaction-scoped advisory lock on the dedupe key keeps
-concurrent producers from inserting the same job twice. `Next` pages past
-skipped photos (bounded) so already-queued photos do not starve the lane.
+has no eligible key. The preferred owner key is retained only while it is valid,
+outside cooldown, and has positive quota capacity. A transaction-scoped
+advisory lock on the dedupe key keeps concurrent producers from inserting the
+same job twice. `Next` pages past skipped photos (bounded) so already-queued or
+restricted facets do not pin the owner cursor. Cursor advancement considers
+only candidates after the caller's processed offset.
 
 For each job, the handler resolves the XFlickr user who owns its API key and
 checks that user's restriction for the current photo version. It reuses a
@@ -144,7 +149,9 @@ it finds too few photos and a stream was cut by its limit.
 Limit: when the best-ranked persons have no pending photos left, the probe
 widens until it reaches persons with work, which costs more per call. The query
 places all sizes work before optional facet work and keeps enabled facets in a
-stable order.
+stable order. The River ready-cap check uses bounded existence probes on the
+active-kind index; it stops after the configured capacity instead of counting
+the full job table for every enqueue.
 
 ## Historical baseline before on-demand filtering (5M photos, 50k people and interests)
 

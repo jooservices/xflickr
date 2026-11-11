@@ -97,7 +97,8 @@ WITH rows AS (
     SELECT p.*
     FROM photo_batches AS p
     WHERE p.server <> '65535'
-      AND (p.sizes_status NOT IN ('confirmed', 'unavailable')
+      AND (p.visibility <> 'public'
+           OR p.sizes_status NOT IN ('confirmed', 'unavailable')
            OR (p.sizes_status = 'confirmed'
                AND p.sizes_checked_at < p.last_update))
       AND (p.account_id IS NULL OR NOT EXISTS (
@@ -111,7 +112,8 @@ WITH rows AS (
 ), restricted_photos AS (
     SELECT p.*
     FROM photo_batches AS p
-    WHERE (p.sizes_status = 'unavailable' OR p.server = '65535')
+    WHERE (p.sizes_status = 'unavailable' OR p.server = '65535'
+           OR p.visibility <> 'public')
       AND p.account_id IS NOT NULL
       AND NOT EXISTS (
           SELECT 1
@@ -179,6 +181,7 @@ WITH rows AS (
     FROM photo_states AS p
     WHERE (p.sizes_status <> 'confirmed'
            OR p.sizes_checked_at < p.last_update
+           OR p.visibility <> 'public'
            OR p.server = '65535')
       AND NOT p.owner_sizes_resolved
 
@@ -196,6 +199,13 @@ WITH rows AS (
             AND done.facet = f.facet
             AND done.photo_updated_at >= p.last_update
       )
+), ranked_candidates AS (
+    SELECT candidates.*,
+           row_number() OVER (
+               ORDER BY facet_priority, tier, sub, depth, owner_nsid,
+                        uploaded_at DESC NULLS LAST, id DESC, facet_order
+           ) AS rn
+    FROM candidates
 ), counts AS (
     SELECT coalesce(max(n), 0) >= $1::int AS more
     FROM (SELECT count(*) AS n FROM rows GROUP BY tier) AS streams
@@ -204,7 +214,10 @@ WITH rows AS (
            batch.person_nsid, batch.id, batch.uploaded_at
     FROM photo_batches AS batch
     WHERE NOT EXISTS (
-          SELECT 1 FROM candidates WHERE candidates.owner_nsid = batch.person_nsid
+          SELECT 1
+          FROM ranked_candidates AS pending
+          WHERE pending.owner_nsid = batch.person_nsid
+            AND pending.rn > $5::bigint
       )
     ORDER BY batch.person_nsid, batch.uploaded_at ASC NULLS FIRST, batch.id ASC
 ), cursor_writes AS (
@@ -219,14 +232,9 @@ SELECT counts.more, jobs.id, jobs.owner_nsid, jobs.facet, jobs.owner_key_id
 FROM counts
 CROSS JOIN (SELECT count(*) FROM cursor_writes) AS cursor_write_count
 LEFT JOIN LATERAL (
-    SELECT candidates.*,
-           row_number() OVER (
-               ORDER BY facet_priority, tier, sub, depth, owner_nsid,
-                        uploaded_at DESC NULLS LAST, id DESC, facet_order
-           ) AS rn
-    FROM candidates
-    ORDER BY facet_priority, tier, sub, depth, owner_nsid,
-             uploaded_at DESC NULLS LAST, id DESC, facet_order
+    SELECT *
+    FROM ranked_candidates
+    ORDER BY rn
     LIMIT $2::int
 ) AS jobs ON true
 ORDER BY jobs.rn

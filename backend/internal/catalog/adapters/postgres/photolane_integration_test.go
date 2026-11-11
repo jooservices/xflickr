@@ -16,6 +16,9 @@ import (
 	"github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
 	catalogapp "github.com/jooservices/xflickr/internal/catalog/app"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
+	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
+	quotadomain "github.com/jooservices/xflickr/internal/quota/domain"
+	scheduleapp "github.com/jooservices/xflickr/internal/schedule/app"
 )
 
 func TestPhotoLaneSelectsOnlyStarredOrActiveSelectedContacts(t *testing.T) {
@@ -494,6 +497,152 @@ func TestPhotoLaneSkipsRestrictedPhotosWithoutAnOwnerAccount(t *testing.T) {
 			t.Fatalf("selected restricted photo %d without an eligible owner account", photoID)
 		}
 	}
+}
+
+func TestPhotoLaneAdvancesPastRestrictedFacet(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	suffix := fmt.Sprintf("lane-restricted-cursor-%d", time.Now().UnixNano())
+	owner := suffix + "-owner"
+	base := time.Now().UnixNano() % 1_000_000_000 * 100
+	var userID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role)
+		VALUES($1,'integration-hash','user') RETURNING id`, suffix+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred)
+		VALUES($1,$2,0,'test',true)`, userID, owner); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM schedule_meta WHERE key=$1`, "photo_lane_cursor:"+owner)
+		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE owner_nsid=$1`, owner)
+		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid=$1`, owner)
+		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id=$1`, userID)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO photos
+		(id,owner_nsid,server,last_update,visibility,sizes,sizes_status,sizes_checked_at,uploaded_at,raw,content_hash)
+		SELECT $1::bigint+n::bigint,$2,'1234',now(),'public','[]'::jsonb,'confirmed',now(),
+			now()-n*interval '1 second','{}',decode(repeat('ab',32),'hex')
+		FROM generate_series(1,51) AS n`, base, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO photo_facet_status(photo_id,facet,photo_updated_at)
+		SELECT id,'info',last_update FROM photos
+		WHERE owner_nsid=$1 AND id NOT IN ($2,$3)`, owner, base+1, base+51); err != nil {
+		t.Fatal(err)
+	}
+	queue := &photoLaneQueue{}
+	lane := scheduleapp.PhotoLane{
+		Selector: postgres.PhotoLane{Pool: pool},
+		Keys:     photoLaneKeys{},
+		Queue:    queue,
+		Settings: photoLaneSettings{info: true},
+		Eligibility: photoLaneEligibility{
+			deniedPhoto: base + 1,
+		},
+	}
+	if ids, err := lane.Next(ctx, 1); err != nil || len(ids) != 0 {
+		t.Fatalf("Next() with only restricted work = %v, %v; want no enqueues", ids, err)
+	}
+	ids, err := lane.Next(ctx, 1)
+	if err != nil || !reflect.DeepEqual(ids, []int64{base + 51}) {
+		t.Fatalf("Next() after restricted page = %v, %v; want the older photo %d", ids, err, base+51)
+	}
+}
+
+func TestPhotoLaneSelectsNonPublicPhotoForOwnerSizesConfirmation(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	suffix := fmt.Sprintf("lane-private-sizes-%d", time.Now().UnixNano())
+	owner := suffix + "-owner"
+	photoID := time.Now().UnixNano()
+	var userID, keyID, accountID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role)
+		VALUES($1,'integration-hash','user') RETURNING id`, suffix+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred)
+		VALUES($1,$2,0,'connected_account',true)`, userID, owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys
+		(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst,status)
+		VALUES($1,'lane-private',$2,'{}',3600,4,5,'valid') RETURNING id`, userID, "key-"+suffix).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts
+		(user_id,key_id,nsid,username,token_sealed,secret_sealed,status)
+		VALUES($1,$2,$3,'lane','{}','{}','ok') RETURNING id`, userID, keyID, owner).Scan(&accountID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE id=$1`, photoID)
+		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid=$1`, owner)
+		_, _ = pool.Exec(bg, `DELETE FROM flickr_accounts WHERE id=$1`, accountID)
+		_, _ = pool.Exec(bg, `DELETE FROM api_keys WHERE id=$1`, keyID)
+		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id=$1`, userID)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO photos
+		(id,owner_nsid,server,last_update,visibility,sizes,sizes_status,sizes_checked_at,uploaded_at,raw,content_hash)
+		VALUES($1,$2,'1234',now(),'private','[]'::jsonb,'confirmed',now(),now(),'{}',decode(repeat('ab',32),'hex'))`, photoID, owner); err != nil {
+		t.Fatal(err)
+	}
+	refs, err := (postgres.PhotoLane{Pool: pool}).Select(ctx, 20, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range refs {
+		if ref.ID == photoID && ref.Facet == "sizes" {
+			return
+		}
+	}
+	t.Fatalf("photo lane omitted non-public globally confirmed photo %d from owner size confirmation", photoID)
+}
+
+type photoLaneKeys struct{}
+
+func (photoLaneKeys) Choose(context.Context, string, quotadomain.Class) (quotaapp.KeyID, error) {
+	return 42, nil
+}
+
+func (photoLaneKeys) Available(context.Context, string, quotaapp.KeyID, quotadomain.Class) (bool, error) {
+	return true, nil
+}
+
+type photoLaneQueue struct{ jobs []scheduleapp.PhotoJob }
+
+func (q *photoLaneQueue) EnqueuePhoto(_ context.Context, job scheduleapp.PhotoJob) (bool, error) {
+	q.jobs = append(q.jobs, job)
+	return true, nil
+}
+
+type photoLaneSettings struct{ info bool }
+
+func (s photoLaneSettings) PhotoFacets(context.Context) (scheduleapp.PhotoFacetOptions, error) {
+	return scheduleapp.PhotoFacetOptions{Info: s.info}, nil
+}
+
+type photoLaneEligibility struct{ deniedPhoto int64 }
+
+func (e photoLaneEligibility) PhotoFacetAllowed(_ context.Context, photoID, _ int64, _ string) (bool, error) {
+	return photoID != e.deniedPhoto, nil
 }
 
 func TestPhotoLaneReturnsOwnerKeyWhenFollowerRanksPhotoOwner(t *testing.T) {
