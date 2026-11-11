@@ -403,6 +403,10 @@ func TestPhotoLaneContinuesPastResolvedPhotoBatches(t *testing.T) {
 		FROM photos WHERE owner_nsid=$1 AND id<>$3`, owners[0], accountID, base+56); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO photo_facet_status(photo_id,facet,photo_updated_at)
+		SELECT id,'info',last_update FROM photos WHERE owner_nsid=$1`, owners[0]); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.Exec(ctx, `INSERT INTO photos
 		(id,owner_nsid,server,last_update,visibility,sizes,sizes_status,sizes_checked_at,uploaded_at,raw,content_hash)
 		SELECT $1::bigint+n::bigint,$2,'1234',now(),'public','[]'::jsonb,'confirmed',now(),
@@ -479,6 +483,7 @@ func TestPhotoLanePlanBoundsPhotoReads(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM schedule_meta WHERE key=$1`, "photo_lane_cursor:"+owner)
 		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE owner_nsid LIKE $1 || '-owner%'`, suffix)
 		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid LIKE $1 || '-owner%'`, suffix)
 		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id=$1`, userID)
@@ -493,9 +498,24 @@ func TestPhotoLanePlanBoundsPhotoReads(t *testing.T) {
 	if _, err := pool.Exec(ctx, `ANALYZE photos`); err != nil {
 		t.Fatal(err)
 	}
-	queryPool := &photoLanePlanPool{pool: pool}
-	if _, err := (postgres.PhotoLane{Pool: queryPool}).Select(ctx, 50, 0, nil); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO schedule_meta(key,value)
+		SELECT $1,jsonb_build_object('uploaded_at',uploaded_at,'photo_id',id)::text
+		FROM photos WHERE owner_nsid=$2 AND id=$3
+		ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`, "photo_lane_cursor:"+owner, owner, base+50); err != nil {
 		t.Fatal(err)
+	}
+	queryPool := &photoLanePlanPool{pool: pool}
+	refs, err := (postgres.PhotoLane{Pool: queryPool}).Select(ctx, 50, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 50 {
+		t.Fatalf("continued photo page returned %d rows, want 50", len(refs))
+	}
+	for _, ref := range refs {
+		if ref.OwnerNSID != owner || ref.ID <= base+50 {
+			t.Fatalf("continued photo page returned %+v, want only photos after the stored cursor", ref)
+		}
 	}
 	var encoded []byte
 	if err := pool.QueryRow(ctx, `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) `+queryPool.query, queryPool.args...).Scan(&encoded); err != nil {

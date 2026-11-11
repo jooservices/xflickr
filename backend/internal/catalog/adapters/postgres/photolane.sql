@@ -1,7 +1,7 @@
 -- The photo lane drains size confirmation work before optional facets. Selected
 -- or starred contacts are the only owners eligible for background photo work. $1 is
 -- the person probe size, $2 is the outer job count, $3 is the enabled facet list,
--- and $4 is the per-owner photo cap.
+-- and $4 bounds raw photo reads per owner before result/facet filters.
 WITH rows AS (
     (SELECT person_nsid, 0 AS tier, CASE WHEN starred THEN 0 ELSE 1 END AS sub, depth
      FROM crawl_interests
@@ -24,7 +24,9 @@ WITH rows AS (
     ORDER BY tier, sub, depth, person_nsid
     LIMIT $1::int
 ), owners AS (
-    SELECT ranked.*, owner_account.id AS account_id
+    SELECT ranked.*, owner_account.id AS account_id,
+           (cursor.value::jsonb ->> 'uploaded_at')::timestamptz AS cursor_uploaded_at,
+           (cursor.value::jsonb ->> 'photo_id')::bigint AS cursor_photo_id
     FROM ranked
     LEFT JOIN LATERAL (
         SELECT account.id
@@ -42,109 +44,109 @@ WITH rows AS (
         ORDER BY account.id
         LIMIT 1
     ) AS owner_account ON true
+    LEFT JOIN schedule_meta AS cursor
+      ON cursor.key = 'photo_lane_cursor:' || ranked.person_nsid
+), photo_batches AS (
+    SELECT o.person_nsid, o.tier, o.sub, o.depth, o.account_id,
+           p.id, p.owner_nsid,
+           p.uploaded_at, p.sizes_status, p.sizes_checked_at, p.last_update,
+           p.visibility, p.server
+    FROM owners AS o
+    CROSS JOIN LATERAL (
+        WITH after_nonnull AS (
+            SELECT p.id, p.owner_nsid, p.uploaded_at, p.sizes_status,
+                   p.sizes_checked_at, p.last_update, p.visibility, p.server
+            FROM photos AS p
+            WHERE p.owner_nsid = o.person_nsid
+              AND p.tombstoned_at IS NULL
+              AND o.cursor_photo_id IS NOT NULL
+              AND o.cursor_uploaded_at IS NOT NULL
+              AND p.uploaded_at IS NOT NULL
+              AND (p.uploaded_at, p.id) < (o.cursor_uploaded_at, o.cursor_photo_id)
+            ORDER BY p.uploaded_at DESC NULLS LAST, p.id DESC
+            LIMIT $4::int
+        ), after_null AS (
+            SELECT p.id, p.owner_nsid, p.uploaded_at, p.sizes_status,
+                   p.sizes_checked_at, p.last_update, p.visibility, p.server
+            FROM photos AS p
+            WHERE p.owner_nsid = o.person_nsid
+              AND p.tombstoned_at IS NULL
+              AND o.cursor_photo_id IS NOT NULL
+              AND p.uploaded_at IS NULL
+              AND (o.cursor_uploaded_at IS NOT NULL OR p.id < o.cursor_photo_id)
+            ORDER BY p.uploaded_at DESC NULLS LAST, p.id DESC
+            LIMIT GREATEST(0, $4::int - (SELECT count(*)::int FROM after_nonnull))
+        ), after_page AS (
+            SELECT * FROM after_nonnull
+            UNION ALL
+            SELECT * FROM after_null
+        )
+        SELECT * FROM after_page
+        UNION ALL
+        (SELECT p.id, p.owner_nsid, p.uploaded_at, p.sizes_status,
+                p.sizes_checked_at, p.last_update, p.visibility, p.server
+         FROM photos AS p
+         WHERE p.owner_nsid = o.person_nsid
+           AND p.tombstoned_at IS NULL
+           AND (o.cursor_photo_id IS NULL OR NOT EXISTS (SELECT 1 FROM after_page))
+         ORDER BY p.uploaded_at DESC NULLS LAST, p.id DESC
+         LIMIT $4::int)
+    ) AS p
 ), pending_photos AS (
-    SELECT o.person_nsid, o.tier, o.sub, o.depth, p.id, p.owner_nsid,
-           p.uploaded_at, p.sizes_status, p.sizes_checked_at, p.last_update,
-           p.visibility, p.server
-    FROM owners AS o
-    CROSS JOIN LATERAL (
-        SELECT p.id, p.owner_nsid, p.uploaded_at, p.sizes_status,
-               p.sizes_checked_at, p.last_update, p.visibility, p.server
-        FROM photos AS p
-        WHERE p.owner_nsid = o.person_nsid
-          AND p.tombstoned_at IS NULL
-          AND p.server <> '65535'
-          AND (p.sizes_status NOT IN ('confirmed', 'unavailable')
-               OR (p.sizes_status = 'confirmed'
-                   AND p.sizes_checked_at < p.last_update))
-          AND (o.account_id IS NULL OR NOT EXISTS (
-              SELECT 1
-              FROM photo_account_sizes AS result
-              WHERE result.photo_id = p.id
-                AND result.account_id = o.account_id
-                AND result.photo_updated_at = p.last_update
-                AND result.photo_visibility = p.visibility
-          ))
-        ORDER BY p.uploaded_at DESC NULLS LAST, p.id DESC
-        LIMIT $4::int
-    ) AS p
+    SELECT p.*
+    FROM photo_batches AS p
+    WHERE p.server <> '65535'
+      AND (p.sizes_status NOT IN ('confirmed', 'unavailable')
+           OR (p.sizes_status = 'confirmed'
+               AND p.sizes_checked_at < p.last_update))
+      AND (p.account_id IS NULL OR NOT EXISTS (
+          SELECT 1
+          FROM photo_account_sizes AS result
+          WHERE result.photo_id = p.id
+            AND result.account_id = p.account_id
+            AND result.photo_updated_at = p.last_update
+            AND result.photo_visibility = p.visibility
+      ))
 ), restricted_photos AS (
-    SELECT o.person_nsid, o.tier, o.sub, o.depth, p.id, p.owner_nsid,
-           p.uploaded_at, p.sizes_status, p.sizes_checked_at, p.last_update,
-           p.visibility, p.server
-    FROM owners AS o
-    CROSS JOIN LATERAL (
-        SELECT p.id, p.owner_nsid, p.uploaded_at, p.sizes_status,
-               p.sizes_checked_at, p.last_update, p.visibility, p.server
-        FROM photos AS p
-        WHERE p.owner_nsid = o.person_nsid
-          AND p.tombstoned_at IS NULL
-          AND (p.sizes_status = 'unavailable' OR p.server = '65535')
-          AND (o.account_id IS NULL OR NOT EXISTS (
-              SELECT 1
-              FROM photo_account_sizes AS result
-              WHERE result.photo_id = p.id
-                AND result.account_id = o.account_id
-                AND result.photo_updated_at = p.last_update
-                AND result.photo_visibility = p.visibility
-          ))
-        ORDER BY p.uploaded_at DESC NULLS LAST, p.id DESC
-        LIMIT $4::int
-    ) AS p
+    SELECT p.*
+    FROM photo_batches AS p
+    WHERE (p.sizes_status = 'unavailable' OR p.server = '65535')
+      AND (p.account_id IS NULL OR NOT EXISTS (
+          SELECT 1
+          FROM photo_account_sizes AS result
+          WHERE result.photo_id = p.id
+            AND result.account_id = p.account_id
+            AND result.photo_updated_at = p.last_update
+            AND result.photo_visibility = p.visibility
+      ))
 ), optional_photos AS (
-    SELECT o.person_nsid, o.tier, o.sub, o.depth, p.id, p.owner_nsid,
-           p.uploaded_at, p.sizes_status, p.sizes_checked_at, p.last_update,
-           p.visibility, p.server
-    FROM owners AS o
-    CROSS JOIN LATERAL (
-        SELECT p.id, p.owner_nsid, p.uploaded_at, p.sizes_status,
-               p.sizes_checked_at, p.last_update, p.visibility, p.server
-        FROM photos AS p
-        WHERE p.owner_nsid = o.person_nsid
-          AND p.tombstoned_at IS NULL
-          AND cardinality($3::text[]) > 0
-          AND __PHOTO_SIZES_CONFIRMED__
-          AND EXISTS (
+    SELECT p.*
+    FROM photo_batches AS p
+    WHERE cardinality($3::text[]) > 0
+      AND __PHOTO_SIZES_CONFIRMED__
+      AND EXISTS (
+          SELECT 1
+          FROM unnest($3::text[]) AS enabled(facet)
+          WHERE NOT EXISTS (
               SELECT 1
-              FROM unnest($3::text[]) AS enabled(facet)
-              WHERE NOT EXISTS (
-                  SELECT 1
-                  FROM photo_facet_status AS done
-                  WHERE done.photo_id = p.id
-                    AND done.facet = enabled.facet
-                    AND done.photo_updated_at >= p.last_update
-              )
+              FROM photo_facet_status AS done
+              WHERE done.photo_id = p.id
+                AND done.facet = enabled.facet
+                AND done.photo_updated_at >= p.last_update
           )
-          AND EXISTS (
-              SELECT 1
-              FROM crawl_interests AS i
-              WHERE i.person_nsid = p.owner_nsid
-                AND (i.starred OR (i.selected_until IS NOT NULL AND i.selected_until > now()))
-          )
-        ORDER BY p.uploaded_at DESC NULLS LAST, p.id DESC
-        LIMIT $4::int
-    ) AS p
+      )
+      AND EXISTS (
+          SELECT 1
+          FROM crawl_interests AS i
+          WHERE i.person_nsid = p.owner_nsid
+            AND (i.starred OR (i.selected_until IS NOT NULL AND i.selected_until > now()))
+      )
 ), candidate_photos AS (
-    SELECT person_nsid, tier, sub, depth, id, owner_nsid, uploaded_at,
-           sizes_status, sizes_checked_at, last_update, visibility, server
-    FROM (
-        SELECT candidates.*,
-               row_number() OVER (
-                   PARTITION BY person_nsid
-                   ORDER BY CASE WHEN (sizes_status <> 'confirmed'
-                                       OR sizes_checked_at < last_update
-                                       OR server = '65535') THEN 0 ELSE 1 END,
-                            uploaded_at DESC NULLS LAST, id DESC
-               ) AS owner_row
-        FROM (
-            SELECT * FROM pending_photos
-            UNION
-            SELECT * FROM restricted_photos
-            UNION
-            SELECT * FROM optional_photos
-        ) AS candidates
-    ) AS bounded
-    WHERE owner_row <= $4::int
+    SELECT * FROM pending_photos
+    UNION
+    SELECT * FROM restricted_photos
+    UNION
+    SELECT * FROM optional_photos
 ), photo_states AS (
     SELECT p.*,
            __PHOTO_SIZES_CONFIRMED__ AS sizes_confirmed,
@@ -195,9 +197,26 @@ WITH rows AS (
 ), counts AS (
     SELECT coalesce(max(n), 0) >= $1::int AS more
     FROM (SELECT count(*) AS n FROM rows GROUP BY tier) AS streams
+), cursor_updates AS (
+    SELECT DISTINCT ON (batch.person_nsid)
+           batch.person_nsid, batch.id, batch.uploaded_at
+    FROM photo_batches AS batch
+    WHERE NOT (SELECT more FROM counts)
+      AND NOT EXISTS (
+          SELECT 1 FROM candidates WHERE candidates.owner_nsid = batch.person_nsid
+      )
+    ORDER BY batch.person_nsid, batch.uploaded_at ASC NULLS FIRST, batch.id ASC
+), cursor_writes AS (
+    INSERT INTO schedule_meta (key, value)
+    SELECT 'photo_lane_cursor:' || person_nsid,
+           jsonb_build_object('uploaded_at', uploaded_at, 'photo_id', id)::text
+    FROM cursor_updates
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+    RETURNING key
 )
 SELECT counts.more, jobs.id, jobs.owner_nsid, jobs.facet
 FROM counts
+CROSS JOIN (SELECT count(*) FROM cursor_writes) AS cursor_write_count
 LEFT JOIN LATERAL (
     SELECT candidates.*,
            row_number() OVER (
