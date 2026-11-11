@@ -112,5 +112,6 @@ MyAlbumPage:
   additionalProperties: false
   properties:
     items: { type: array, items: { $ref: '#/MyAlbum' } }
+    contact_owners: { type: array, items: { type: string } }
     next_cursor: { type: string }
-  required: [items]
+  required: [items, contact_owners]

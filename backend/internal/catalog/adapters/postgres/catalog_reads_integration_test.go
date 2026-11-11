@@ -173,15 +173,15 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if _, _, err := reads.ListAlbumPhotos(ctx, user1ID, hiddenAlbumID, "", 10); !errors.Is(err, app.ErrNotFound) {
 		t.Fatalf("hidden album error=%v", err)
 	}
-	contactPage, contactCursor, err := reads.ListContactAlbums(ctx, user1ID, "", 2)
+	contactPage, contactCursor, err := reads.ListContactAlbums(ctx, user1ID, "", "", 2)
 	if err != nil || len(contactPage.Items) != 2 || contactPage.Items[0].ID != contactAlbumIDs[0] || contactPage.Items[1].ID != contactAlbumIDs[1] || contactCursor == "" {
 		t.Fatalf("first contact album page=%+v cursor=%q err=%v", contactPage, contactCursor, err)
 	}
-	contactPage, contactCursor, err = reads.ListContactAlbums(ctx, user1ID, contactCursor, 2)
+	contactPage, contactCursor, err = reads.ListContactAlbums(ctx, user1ID, "", contactCursor, 2)
 	if err != nil || len(contactPage.Items) != 2 || contactPage.Items[0].ID != contactAlbumIDs[2] || contactPage.Items[1].ID != contactAlbumIDs[4] || contactPage.Items[1].UpdatedAt != nil || contactCursor == "" {
 		t.Fatalf("second contact album page=%+v err=%v", contactPage, err)
 	}
-	contactPage, contactCursor, err = reads.ListContactAlbums(ctx, user1ID, contactCursor, 2)
+	contactPage, contactCursor, err = reads.ListContactAlbums(ctx, user1ID, "", contactCursor, 2)
 	if err != nil || len(contactPage.Items) != 1 || contactPage.Items[0].ID != contactAlbumIDs[3] || contactPage.Items[0].UpdatedAt != nil || contactCursor != "" {
 		t.Fatalf("third contact album page=%+v cursor=%q err=%v", contactPage, contactCursor, err)
 	}
@@ -277,7 +277,7 @@ func TestContactAlbumListRequiresVisiblePhotoAndIsolatesUsers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	page, _, err := reads.ListContactAlbums(ctx, userIDs[0], "", 10)
+	page, _, err := reads.ListContactAlbums(ctx, userIDs[0], "", "", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ func TestContactAlbumListRequiresVisiblePhotoAndIsolatesUsers(t *testing.T) {
 		t.Fatalf("contact album list=%+v, want only the album containing a photo visible to the user", page.Items)
 	}
 
-	otherUserPage, _, err := reads.ListContactAlbums(ctx, userIDs[1], "", 10)
+	otherUserPage, _, err := reads.ListContactAlbums(ctx, userIDs[1], "", "", 10)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -36,8 +36,11 @@ type FavoriteCursor struct {
 	PhotoID  int64     `json:"photo_id"`
 }
 type AlbumCursor struct {
-	UpdatedAt *time.Time `json:"updated_at"`
-	ID        string     `json:"id"`
+	UpdatedAt     *time.Time `json:"updated_at"`
+	ID            string     `json:"id"`
+	OwnerNSID     string     `json:"owner_nsid,omitempty"`
+	ProbePosition int        `json:"probe_position,omitempty"`
+	ProbePhotoID  int64      `json:"probe_photo_id,omitempty"`
 }
 type AlbumPhotoCursor struct {
 	Position int   `json:"position"`
@@ -123,8 +126,9 @@ type AlbumsPage struct {
 
 // ContactAlbumsPage contains one contact album page and its next keyset cursor.
 type ContactAlbumsPage struct {
-	Items      []ContactAlbum
-	NextCursor *AlbumCursor
+	Items         []ContactAlbum
+	ContactOwners []string
+	NextCursor    *AlbumCursor
 }
 
 // ReadRepository performs catalog reads with a predicate from the reusable
@@ -136,7 +140,7 @@ type ReadRepository interface {
 	ListPersonPhotos(context.Context, int64, string, sharingapp.SQLPredicate, *PhotoCursor, int) (PhotosPage, error)
 	ListVisibleFavorites(context.Context, int64, sharingapp.SQLPredicate, *FavoriteCursor, int) (FavoritesPage, error)
 	ListVisibleAlbums(context.Context, int64, sharingapp.SQLPredicate, *AlbumCursor, int) (AlbumsPage, error)
-	ListContactAlbums(context.Context, int64, sharingapp.SQLPredicate, *AlbumCursor, int) (ContactAlbumsPage, error)
+	ListContactAlbums(context.Context, int64, string, sharingapp.SQLPredicate, *AlbumCursor, int) (ContactAlbumsPage, error)
 	ListVisibleAlbumPhotos(context.Context, int64, string, sharingapp.SQLPredicate, *AlbumPhotoCursor, int) (AlbumPhotosPage, error)
 	GetPhoto(context.Context, int64, int64, sharingapp.SQLPredicate) (Photo, bool, error)
 }
@@ -246,7 +250,7 @@ func (s ReadService) ListAlbums(ctx context.Context, userID int64, cursor string
 }
 
 // ListContactAlbums returns contact albums with at least one photo visible to the signed-in user.
-func (s ReadService) ListContactAlbums(ctx context.Context, userID int64, cursor string, limit int) (ContactAlbumsPage, string, error) {
+func (s ReadService) ListContactAlbums(ctx context.Context, userID int64, ownerNSID, cursor string, limit int) (ContactAlbumsPage, string, error) {
 	if err := s.validate(ctx, userID); err != nil {
 		return ContactAlbumsPage{}, "", err
 	}
@@ -254,11 +258,14 @@ func (s ReadService) ListContactAlbums(ctx context.Context, userID int64, cursor
 	if err != nil {
 		return ContactAlbumsPage{}, "", err
 	}
+	if parsed != nil && parsed.OwnerNSID != ownerNSID {
+		return ContactAlbumsPage{}, "", ErrInvalidCursor
+	}
 	limit, err = normalizeLimit(limit)
 	if err != nil {
 		return ContactAlbumsPage{}, "", err
 	}
-	page, err := s.Repository.ListContactAlbums(ctx, userID, visibility(userID), parsed, limit)
+	page, err := s.Repository.ListContactAlbums(ctx, userID, ownerNSID, visibility(userID), parsed, limit)
 	if err != nil {
 		return ContactAlbumsPage{}, "", err
 	}
@@ -371,7 +378,8 @@ func validateCursor(cursor any) error {
 			return ErrInvalidCursor
 		}
 	case AlbumCursor:
-		if value.ID == "" {
+		if value.ID == "" || value.ProbePosition < 0 || value.ProbePhotoID < 0 ||
+			(value.ProbePhotoID == 0 && value.ProbePosition != 0) {
 			return ErrInvalidCursor
 		}
 	case AlbumPhotoCursor:

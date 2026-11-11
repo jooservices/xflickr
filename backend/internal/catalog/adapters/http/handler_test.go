@@ -25,6 +25,7 @@ type readRepoStub struct {
 	listErr       error
 	lastLimit     int
 	listCalls     int
+	lastOwnerNSID string
 }
 
 func (s *readRepoStub) ListPeople(_ context.Context, _ int64, _ sharingapp.SQLPredicate, _ *app.PersonCursor, limit int) (app.PeoplePage, error) {
@@ -55,9 +56,10 @@ func (s *readRepoStub) ListVisibleAlbums(_ context.Context, _ int64, _ sharingap
 	return s.albums, s.listErr
 }
 
-func (s *readRepoStub) ListContactAlbums(_ context.Context, _ int64, _ sharingapp.SQLPredicate, _ *app.AlbumCursor, limit int) (app.ContactAlbumsPage, error) {
+func (s *readRepoStub) ListContactAlbums(_ context.Context, _ int64, ownerNSID string, _ sharingapp.SQLPredicate, _ *app.AlbumCursor, limit int) (app.ContactAlbumsPage, error) {
 	s.lastLimit = limit
 	s.listCalls++
+	s.lastOwnerNSID = ownerNSID
 	return s.contactAlbums, s.listErr
 }
 
@@ -173,13 +175,16 @@ func TestHandlerMapsAllCatalogReadResponses(t *testing.T) {
 	person := app.Person{NSID: "owner", Username: "owner-name", Realname: "Owner", Icon: "icon", PhotosCount: 1}
 	repo := &readRepoStub{
 		person: person, personOK: true,
-		people:        app.PeoplePage{Items: []app.Person{person}, NextCursor: &app.PersonCursor{NSID: "owner"}},
-		photos:        app.PhotosPage{Items: []app.Photo{photo}, NextCursor: &app.PhotoCursor{LastUpdate: now, ID: photo.ID}},
-		favorites:     app.FavoritesPage{Items: []app.Favorite{{Photo: photo, FaveDate: now}}},
-		albums:        app.AlbumsPage{Items: []app.Album{{ID: "album", OwnerNSID: "owner", Title: "Album", VisiblePhotosCount: 1}}},
-		contactAlbums: app.ContactAlbumsPage{Items: []app.ContactAlbum{{ID: "contact-album", OwnerNSID: "contact", Title: "Contact album"}}},
-		albumPhotos:   app.AlbumPhotosPage{Items: []app.Photo{photo}, NextCursor: &app.AlbumPhotoCursor{Position: 0, PhotoID: photo.ID}},
-		photo:         photo, photoOK: true,
+		people:    app.PeoplePage{Items: []app.Person{person}, NextCursor: &app.PersonCursor{NSID: "owner"}},
+		photos:    app.PhotosPage{Items: []app.Photo{photo}, NextCursor: &app.PhotoCursor{LastUpdate: now, ID: photo.ID}},
+		favorites: app.FavoritesPage{Items: []app.Favorite{{Photo: photo, FaveDate: now}}},
+		albums:    app.AlbumsPage{Items: []app.Album{{ID: "album", OwnerNSID: "owner", Title: "Album", VisiblePhotosCount: 1}}},
+		contactAlbums: app.ContactAlbumsPage{
+			Items:         []app.ContactAlbum{{ID: "contact-album", OwnerNSID: "contact", Title: "Contact album"}},
+			ContactOwners: []string{"contact", "later-contact"},
+		},
+		albumPhotos: app.AlbumPhotosPage{Items: []app.Photo{photo}, NextCursor: &app.AlbumPhotoCursor{Position: 0, PhotoID: photo.ID}},
+		photo:       photo, photoOK: true,
 	}
 	handler := Handler{Reads: app.ReadService{Repository: repo}, ActorID: func(context.Context) (int64, bool) { return 71, true }}
 	ctx := context.Background()
@@ -228,12 +233,16 @@ func TestHandlerMapsAllCatalogReadResponses(t *testing.T) {
 		t.Fatalf("albums=%+v", albums)
 	}
 
-	contactAlbumsResponse, err := handler.ListMyAlbums(ctx, gen.ListMyAlbumsRequestObject{})
+	ownerNSID := "later-contact"
+	contactAlbumsResponse, err := handler.ListMyAlbums(ctx, gen.ListMyAlbumsRequestObject{
+		Params: gen.ListMyAlbumsParams{OwnerNsid: &ownerNSID},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	contactAlbums := contactAlbumsResponse.(gen.ListMyAlbums200JSONResponse)
-	if len(contactAlbums.Items) != 1 || contactAlbums.Items[0].ID != "contact-album" {
+	if len(contactAlbums.Items) != 1 || contactAlbums.Items[0].ID != "contact-album" ||
+		len(contactAlbums.ContactOwners) != 2 || repo.lastOwnerNSID != ownerNSID {
 		t.Fatalf("contact albums=%+v", contactAlbums)
 	}
 

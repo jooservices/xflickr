@@ -29,9 +29,10 @@ Inside the USER shell main column (max width 1200px, 24px desktop padding,
 
 1. Page heading `Albums` and brief description, “Albums of all your contacts.”
 2. A labelled contact filter with `All contacts` selected by default, followed
-   by one option per contact with albums. The selected filter is stored as
-   `contact` in the query string; selecting All removes it. Unknown or
-   inaccessible contact ids reset to All and show the standard inline notice.
+   by every contact owner with album metadata. The server returns the complete
+   `contact_owners` option list. The selected filter is stored as `contact` in
+   the query string; selecting All removes it. Unknown or inaccessible contact
+   ids reset to All and show the standard inline notice.
 3. A responsive, newest-updated-first grid of album cards. Each card shows a
    cover (use the neutral album placeholder until a cover URL is returned),
    title, owner NSID, and update date when available. Do not show a photo count.
@@ -45,15 +46,16 @@ to their own specifications.
 
 ## Data and API
 
-The authenticated `GET /me/albums` operation returns contact album metadata
-and keyset cursors. It does not return cover URLs, owner display names, or a
-photo count. Do not call Flickr from the browser. The authenticated `/events`
-operation already exists.
+The authenticated `GET /me/albums` operation returns contact album metadata,
+the complete `contact_owners` list, and keyset cursors. The optional
+`owner_nsid` query parameter filters album results on the server. The operation
+does not return cover URLs, owner display names, or a photo count. Do not call
+Flickr from the browser. The authenticated `/events` operation already exists.
 
 | Element | Source | Fields used |
 | --- | --- | --- |
 | Album cards and list metadata | `GET /me/albums` | `items[]`: `id`, `title`, `owner_nsid`, optional `updated_at`; response `next_cursor` |
-| Contact filter options | Derived from loaded album pages | Distinct `owner_nsid` values. |
+| Contact filter options | `GET /me/albums` | `contact_owners[]`, independent of the album page cursor. |
 | Cover | Neutral album placeholder | The list response does not include cover URLs. |
 | Live refresh | `GET /events` (exists) | Authenticated SSE. `albums.updated` **event contract request** with optional `contact_nsid`, `total`, and `updated_at`. |
 
@@ -62,10 +64,11 @@ the signed-in user's connected accounts and at least one non-tombstoned album
 photo visible to that user under the shared photo-visibility policy. This
 visibility check does not return or expose a photo count. `updated_at` is ISO
 8601 UTC or absent. Sort by `updated_at` descending, null timestamps last, then
-`id` descending. The server returns a bounded keyset page; contact filtering
-remains over the albums loaded in the browser. No response may contain Flickr
-credentials, private media, or secret values. Do not persist results in
-browser storage.
+`id` descending. The server filters albums by `owner_nsid` and advances a
+bounded keyset probe. A page may have no visible items and a cursor when more
+candidates remain; do not show the final Empty state until the cursor is
+exhausted. No response may contain Flickr credentials, private media, or secret
+values. Do not persist results in browser storage.
 
 The album-detail route `/albums/{id}` belongs to the album view contract and is
 not added here. A future album detail may show “N photos loaded” for its first

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -17,10 +18,13 @@ import (
 
 var _ app.ReadRepository = (*Repository)(nil)
 
-const photoReadColumns = `photos.id, photos.owner_nsid, photos.title, photos.description,
+const (
+	contactAlbumPhotoProbeLimit = 128
+	photoReadColumns            = `photos.id, photos.owner_nsid, photos.title, photos.description,
 photos.tags, photos.taken_at, photos.uploaded_at, photos.last_update, photos.visibility,
 photos.sizes_status, photos.sizes,
 CASE WHEN EXISTS (SELECT 1 FROM photo_enrichments e WHERE e.photo_id=photos.id AND e.kind='caption') THEN 'ready' ELSE 'none' END`
+)
 
 type rowScanner interface{ Scan(...any) error }
 
@@ -303,69 +307,156 @@ WHERE flickr_accounts.user_id=$1 AND flickr_accounts.status<>'revoked' AND ` + p
 }
 
 // ListContactAlbums reads contact album metadata backed by a photo visible to the user.
-func (r *Repository) ListContactAlbums(ctx context.Context, userID int64, predicate sharingapp.SQLPredicate, cursor *app.AlbumCursor, limit int) (app.ContactAlbumsPage, error) {
+func (r *Repository) ListContactAlbums(ctx context.Context, userID int64, ownerNSID string, predicate sharingapp.SQLPredicate, cursor *app.AlbumCursor, limit int) (app.ContactAlbumsPage, error) {
 	if err := validateRead(ctx, r, userID, predicate, limit); err != nil {
 		return app.ContactAlbumsPage{}, err
 	}
+	if len(ownerNSID) > 255 || strings.TrimSpace(ownerNSID) != ownerNSID {
+		return app.ContactAlbumsPage{}, app.ErrInvalidPage
+	}
+	if cursor != nil && (cursor.ID == "" || cursor.OwnerNSID != ownerNSID || cursor.ProbePosition < 0 ||
+		cursor.ProbePhotoID < 0 || (cursor.ProbePhotoID == 0 && cursor.ProbePosition != 0)) {
+		return app.ContactAlbumsPage{}, app.ErrInvalidCursor
+	}
+	owners, err := r.listContactAlbumOwners(ctx, userID)
+	if err != nil {
+		return app.ContactAlbumsPage{}, err
+	}
+	args := append([]any(nil), predicate.Args...)
+	args = append(args, ownerNSID)
+	args = append(args, "", (*time.Time)(nil), 0, int64(0), limit+1, contactAlbumPhotoProbeLimit+1)
 	query := `WITH contact_owners AS MATERIALIZED (
 SELECT DISTINCT contacts.contact_nsid
 FROM flickr_accounts
 JOIN contacts ON contacts.person_nsid=flickr_accounts.nsid
 WHERE flickr_accounts.user_id=$1 AND flickr_accounts.status<>'revoked'
-)
+AND ($2='' OR contacts.contact_nsid=$2)
+), candidate_albums AS MATERIALIZED (
 SELECT albums.id,albums.owner_nsid,albums.title,albums.updated_at
 FROM contact_owners
 JOIN LATERAL (
 SELECT a.id,a.owner_nsid,a.title,a.updated_at
 FROM albums a
 WHERE a.owner_nsid=contact_owners.contact_nsid
-AND EXISTS (SELECT 1 FROM album_photos
-JOIN photos ON photos.id=album_photos.photo_id AND photos.tombstoned_at IS NULL
-WHERE album_photos.album_id=a.id AND ` + predicate.Expression + `)`
-	args := append([]any(nil), predicate.Args...)
-	if cursor != nil {
-		if cursor.ID == "" {
-			return app.ContactAlbumsPage{}, app.ErrInvalidCursor
-		}
-		if cursor.UpdatedAt == nil {
-			query += ` AND a.updated_at IS NULL AND a.id<$2`
-			args = append(args, cursor.ID)
-		} else {
-			query += ` AND ((a.updated_at < $2) OR a.updated_at IS NULL OR (a.updated_at=$2 AND a.id<$3))`
-			args = append(args, *cursor.UpdatedAt, cursor.ID)
-		}
-	}
-	args = append(args, limit+1)
-	pageLimit := len(args)
-	query += fmt.Sprintf(` ORDER BY a.updated_at DESC NULLS LAST,a.id DESC LIMIT $%d
+AND ($3='' OR ($6>0 AND a.id=$3)
+OR ($4::timestamptz IS NOT NULL AND (a.updated_at<$4::timestamptz OR a.updated_at IS NULL OR (a.updated_at=$4::timestamptz AND a.id<$3)))
+OR ($4::timestamptz IS NULL AND a.updated_at IS NULL AND a.id<$3))
+ORDER BY a.updated_at DESC NULLS LAST,a.id DESC LIMIT $7
 ) AS albums ON true
-ORDER BY albums.updated_at DESC NULLS LAST,albums.id DESC LIMIT $%d`, pageLimit, pageLimit)
+ORDER BY albums.updated_at DESC NULLS LAST,albums.id DESC LIMIT $7
+), photo_candidates AS MATERIALIZED (
+SELECT candidates.id AS album_id,members.position,members.photo_id,
+row_number() OVER (PARTITION BY candidates.id ORDER BY members.position,members.photo_id) AS probe_number
+FROM candidate_albums candidates
+CROSS JOIN LATERAL (
+SELECT album_photos.position,album_photos.photo_id
+FROM album_photos
+WHERE album_photos.album_id=candidates.id
+AND ($6=0 OR candidates.id<>$3 OR (album_photos.position,album_photos.photo_id)>($5,$6))
+ORDER BY album_photos.position,album_photos.photo_id LIMIT $8
+) AS members
+), photo_visibility AS (
+SELECT photo_candidates.album_id,
+bool_or(photos.tombstoned_at IS NULL AND ` + predicate.Expression + `) AS visible
+FROM photo_candidates
+JOIN photos ON photos.id=photo_candidates.photo_id
+WHERE photo_candidates.probe_number<=` + fmt.Sprint(contactAlbumPhotoProbeLimit) + `
+GROUP BY photo_candidates.album_id
+), photo_probe_state AS (
+SELECT album_id,bool_or(probe_number>` + fmt.Sprint(contactAlbumPhotoProbeLimit) + `) AS has_more,
+(array_agg(position ORDER BY probe_number DESC) FILTER (WHERE probe_number<=` + fmt.Sprint(contactAlbumPhotoProbeLimit) + `))[1] AS last_position,
+(array_agg(photo_id ORDER BY probe_number DESC) FILTER (WHERE probe_number<=` + fmt.Sprint(contactAlbumPhotoProbeLimit) + `))[1] AS last_photo_id
+FROM photo_candidates GROUP BY album_id
+)
+SELECT candidates.id,candidates.owner_nsid,candidates.title,candidates.updated_at,
+COALESCE(photo_visibility.visible,false),
+COALESCE(photo_probe_state.has_more,false),
+photo_probe_state.last_position,photo_probe_state.last_photo_id
+FROM candidate_albums candidates
+LEFT JOIN photo_visibility ON photo_visibility.album_id=candidates.id
+LEFT JOIN photo_probe_state ON photo_probe_state.album_id=candidates.id
+ORDER BY candidates.updated_at DESC NULLS LAST,candidates.id DESC`
+	if cursor != nil {
+		args[2] = cursor.ID
+		args[3] = cursor.UpdatedAt
+		args[4] = cursor.ProbePosition
+		args[5] = cursor.ProbePhotoID
+	}
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return app.ContactAlbumsPage{}, fmt.Errorf("catalog: list contact albums: %w", err)
 	}
 	defer rows.Close()
-	page := app.ContactAlbumsPage{Items: make([]app.ContactAlbum, 0, limit)}
+	page := app.ContactAlbumsPage{Items: make([]app.ContactAlbum, 0, limit), ContactOwners: owners}
+	var lastCompleted *app.AlbumCursor
+	candidateCount := 0
 	for rows.Next() {
+		candidateCount++
 		var album app.ContactAlbum
 		var updated pgtype.Timestamptz
-		if err := rows.Scan(&album.ID, &album.OwnerNSID, &album.Title, &updated); err != nil {
+		var visible, hasMore bool
+		var probePosition pgtype.Int4
+		var probePhotoID pgtype.Int8
+		if err := rows.Scan(&album.ID, &album.OwnerNSID, &album.Title, &updated, &visible, &hasMore, &probePosition, &probePhotoID); err != nil {
 			return app.ContactAlbumsPage{}, fmt.Errorf("catalog: scan contact album: %w", err)
 		}
 		if updated.Valid {
 			album.UpdatedAt = &updated.Time
 		}
-		page.Items = append(page.Items, album)
+		anchor := &app.AlbumCursor{ID: album.ID, UpdatedAt: album.UpdatedAt, OwnerNSID: ownerNSID}
+		if len(page.Items) == limit {
+			page.NextCursor = lastCompleted
+			break
+		}
+		if visible {
+			page.Items = append(page.Items, album)
+			lastCompleted = anchor
+			continue
+		}
+		if hasMore {
+			if !probePosition.Valid || !probePhotoID.Valid {
+				return app.ContactAlbumsPage{}, errors.New("catalog: contact album photo probe is missing its continuation key")
+			}
+			anchor.ProbePosition = int(probePosition.Int32)
+			anchor.ProbePhotoID = probePhotoID.Int64
+			page.NextCursor = anchor
+			break
+		}
+		lastCompleted = anchor
 	}
 	if err := rows.Err(); err != nil {
 		return app.ContactAlbumsPage{}, fmt.Errorf("catalog: list contact albums: %w", err)
 	}
-	if len(page.Items) > limit {
-		last := page.Items[limit-1]
-		page.Items = page.Items[:limit]
-		page.NextCursor = &app.AlbumCursor{UpdatedAt: last.UpdatedAt, ID: last.ID}
+	if page.NextCursor == nil && lastCompleted != nil && candidateCount == limit+1 {
+		// The candidate window is deliberately bounded; a full window can continue.
+		page.NextCursor = lastCompleted
 	}
 	return page, nil
+}
+
+func (r *Repository) listContactAlbumOwners(ctx context.Context, userID int64) ([]string, error) {
+	rows, err := r.db.Query(ctx, `SELECT DISTINCT contacts.contact_nsid
+FROM flickr_accounts
+JOIN contacts ON contacts.person_nsid=flickr_accounts.nsid
+WHERE flickr_accounts.user_id=$1 AND flickr_accounts.status<>'revoked'
+AND EXISTS (SELECT 1 FROM albums WHERE albums.owner_nsid=contacts.contact_nsid)
+ORDER BY contacts.contact_nsid`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("catalog: list contact album owners: %w", err)
+	}
+	defer rows.Close()
+	owners := make([]string, 0)
+	for rows.Next() {
+		var owner string
+		if err := rows.Scan(&owner); err != nil {
+			return nil, fmt.Errorf("catalog: scan contact album owner: %w", err)
+		}
+		owners = append(owners, owner)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("catalog: list contact album owners: %w", err)
+	}
+	return owners, nil
 }
 
 func (r *Repository) ListVisibleAlbumPhotos(ctx context.Context, userID int64, albumID string, predicate sharingapp.SQLPredicate, cursor *app.AlbumPhotoCursor, limit int) (app.AlbumPhotosPage, error) {

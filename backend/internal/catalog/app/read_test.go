@@ -25,6 +25,7 @@ type readRepositoryStub struct {
 	err           error
 	seenUser      int64
 	seenLimit     int
+	seenOwner     string
 	seenPredicate sharingapp.SQLPredicate
 }
 
@@ -53,7 +54,8 @@ func (s *readRepositoryStub) ListVisibleAlbums(_ context.Context, userID int64, 
 	return s.albums, s.record(userID, predicate, limit)
 }
 
-func (s *readRepositoryStub) ListContactAlbums(_ context.Context, userID int64, predicate sharingapp.SQLPredicate, _ *AlbumCursor, limit int) (ContactAlbumsPage, error) {
+func (s *readRepositoryStub) ListContactAlbums(_ context.Context, userID int64, ownerNSID string, predicate sharingapp.SQLPredicate, _ *AlbumCursor, limit int) (ContactAlbumsPage, error) {
+	s.seenOwner = ownerNSID
 	return s.contactAlbums, s.record(userID, predicate, limit)
 }
 
@@ -93,15 +95,26 @@ func TestReadServiceAppliesPolicyAndEncodesKeysets(t *testing.T) {
 		t.Fatalf("album cursor=%q err=%v", albumCursor, err)
 	}
 	repo.contactAlbums = ContactAlbumsPage{
-		Items:      []ContactAlbum{{ID: "contact-album", OwnerNSID: "contact"}},
-		NextCursor: &AlbumCursor{ID: "contact-album"},
+		Items:         []ContactAlbum{{ID: "contact-album", OwnerNSID: "contact"}},
+		ContactOwners: []string{"contact", "later-contact"},
+		NextCursor:    &AlbumCursor{ID: "contact-album"},
 	}
-	contactPage, contactCursor, err := service.ListContactAlbums(context.Background(), 42, "", 25)
+	contactPage, contactCursor, err := service.ListContactAlbums(context.Background(), 42, "", "", 25)
 	if err != nil || len(contactPage.Items) != 1 || contactPage.Items[0].OwnerNSID != "contact" || contactCursor == "" {
 		t.Fatalf("contact albums=%+v cursor=%q err=%v", contactPage, contactCursor, err)
 	}
-	if repo.seenUser != 42 || repo.seenLimit != 25 || repo.seenPredicate.Expression == "" || len(repo.seenPredicate.Args) != 1 || repo.seenPredicate.Args[0] != int64(42) {
+	if repo.seenUser != 42 || repo.seenLimit != 25 || repo.seenOwner != "" || len(contactPage.ContactOwners) != 2 || repo.seenPredicate.Expression == "" || len(repo.seenPredicate.Args) != 1 || repo.seenPredicate.Args[0] != int64(42) {
 		t.Fatalf("contact album scope=%+v", repo)
+	}
+	if _, _, err := service.ListContactAlbums(context.Background(), 42, "contact", contactCursor, 25); !errors.Is(err, ErrInvalidCursor) {
+		t.Fatalf("cursor reused for a different contact filter: %v", err)
+	}
+	repo.contactAlbums.NextCursor = &AlbumCursor{ID: "filtered-album", OwnerNSID: "contact"}
+	filteredPage, filteredCursor, err := service.ListContactAlbums(context.Background(), 42, "contact", "", 25)
+	decodedContactCursor, decodeErr := decodeCursor[AlbumCursor](filteredCursor, "my-albums")
+	if err != nil || decodeErr != nil || len(filteredPage.ContactOwners) != 2 || repo.seenOwner != "contact" ||
+		decodedContactCursor.OwnerNSID != "contact" {
+		t.Fatalf("filtered contact page=%+v cursor=%+v owner=%q err=%v decode=%v", filteredPage, decodedContactCursor, repo.seenOwner, err, decodeErr)
 	}
 	repo.albumPhotos = AlbumPhotosPage{NextCursor: &AlbumPhotoCursor{Position: 3, PhotoID: 9}}
 	_, albumPhotoCursor, err := service.ListAlbumPhotos(context.Background(), 42, "album", "", 10)
@@ -137,10 +150,10 @@ func TestReadServiceRejectsInvalidPageAndCursorWithoutReading(t *testing.T) {
 	if _, _, err := service.ListPeople(context.Background(), 1, "", 0); !errors.Is(err, ErrInvalidPage) {
 		t.Fatalf("zero limit error=%v", err)
 	}
-	if _, _, err := service.ListContactAlbums(context.Background(), 1, "not-base64", 10); !errors.Is(err, ErrInvalidCursor) {
+	if _, _, err := service.ListContactAlbums(context.Background(), 1, "", "not-base64", 10); !errors.Is(err, ErrInvalidCursor) {
 		t.Fatalf("invalid contact album cursor error=%v", err)
 	}
-	if _, _, err := service.ListContactAlbums(context.Background(), 1, "", MaxPageSize+1); !errors.Is(err, ErrInvalidPage) {
+	if _, _, err := service.ListContactAlbums(context.Background(), 1, "", "", MaxPageSize+1); !errors.Is(err, ErrInvalidPage) {
 		t.Fatalf("invalid contact album limit error=%v", err)
 	}
 	if _, _, err := service.ListPersonPhotos(context.Background(), 1, " \t ", "", 10); !errors.Is(err, ErrNotFound) {
@@ -229,7 +242,7 @@ func TestReadServicePropagatesRepositoryErrorsAndNotFound(t *testing.T) {
 	if _, _, err := service.ListAlbums(ctx, 3, "", 1); !errors.Is(err, boom) {
 		t.Fatalf("albums error=%v", err)
 	}
-	if _, _, err := service.ListContactAlbums(ctx, 3, "", 1); !errors.Is(err, boom) {
+	if _, _, err := service.ListContactAlbums(ctx, 3, "", "", 1); !errors.Is(err, boom) {
 		t.Fatalf("contact albums error=%v", err)
 	}
 	if _, _, err := service.ListAlbumPhotos(ctx, 3, "album", "", 1); !errors.Is(err, boom) {

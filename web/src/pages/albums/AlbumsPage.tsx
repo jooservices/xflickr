@@ -20,8 +20,8 @@ function responseStatus(error: unknown): number | undefined {
   return error instanceof AlbumsRequestError ? error.status : undefined;
 }
 
-async function loadAlbums(cursor?: string): Promise<MyAlbumPage> {
-  const response = await listMyAlbums({ cursor, limit: PAGE_SIZE });
+async function loadAlbums(cursor?: string, ownerNSID?: string): Promise<MyAlbumPage> {
+  const response = await listMyAlbums({ cursor, limit: PAGE_SIZE, owner_nsid: ownerNSID });
   if (response.status !== 200) throw new AlbumsRequestError(response.status);
   return response.data;
 }
@@ -57,29 +57,28 @@ export function AlbumsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const contact = new URLSearchParams(location.search).get('contact') ?? '';
   const albums = useInfiniteQuery({
-    queryKey: albumQueryKey,
+    queryKey: [...albumQueryKey, contact],
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) => loadAlbums(pageParam),
+    queryFn: ({ pageParam }) => loadAlbums(pageParam, contact),
     getNextPageParam: (lastPage) => lastPage.next_cursor,
+    placeholderData: (previousData) => previousData,
     retry: false,
   });
   const skeletonVisible = useLoadingTiming(albums.isPending, 200);
-  const contact = new URLSearchParams(location.search).get('contact') ?? '';
   const allAlbums = useMemo(
     () => albums.data?.pages.flatMap((page) => page.items) ?? [],
     [albums.data],
   );
   const owners = useMemo(
     () =>
-      [...new Set(allAlbums.map((album) => album.owner_nsid))].sort((left, right) =>
+      [...new Set(albums.data?.pages[0]?.contact_owners ?? [])].sort((left, right) =>
         left.localeCompare(right),
       ),
-    [allAlbums],
+    [albums.data],
   );
-  const visibleAlbums = contact
-    ? allAlbums.filter((album) => album.owner_nsid === contact)
-    : allAlbums;
+  const visibleAlbums = allAlbums;
   const unavailableContact =
     (location.state as { albumsContactUnavailable?: unknown } | null)?.albumsContactUnavailable ===
     true;
@@ -95,14 +94,7 @@ export function AlbumsPage() {
   }, [t]);
 
   useEffect(() => {
-    if (
-      !contact ||
-      albums.isPending ||
-      albums.isError ||
-      albums.hasNextPage ||
-      owners.includes(contact)
-    )
-      return;
+    if (!contact || albums.isPending || albums.isError || owners.includes(contact)) return;
     const next = new URLSearchParams(location.search);
     next.delete('contact');
     const currentState =
@@ -116,7 +108,6 @@ export function AlbumsPage() {
     );
   }, [
     albums.isError,
-    albums.hasNextPage,
     albums.isPending,
     contact,
     location.pathname,
@@ -242,7 +233,7 @@ export function AlbumsPage() {
         </>
       ) : null}
 
-      {!albums.isPending && !initialError && allAlbums.length === 0 ? (
+      {!albums.isPending && !initialError && allAlbums.length === 0 && !albums.hasNextPage ? (
         <EmptyState
           testId="albums"
           icon="album"

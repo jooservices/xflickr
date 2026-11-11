@@ -16,4 +16,8 @@ export type ListMyAlbumsParams = {
    * @maximum 100
    */
   limit?: number;
+  /**
+   * @maxLength 255
+   */
+  owner_nsid?: string;
 };

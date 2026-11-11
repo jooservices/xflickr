@@ -19,6 +19,7 @@ const albums = {
       updated_at: '2026-11-07T12:00:00Z',
     },
   ],
+  contact_owners: ['owner-1', 'owner-2'],
   next_cursor: undefined,
 };
 
@@ -31,12 +32,18 @@ describe('AlbumsPage', () => {
   it('shows paginated contact albums with an owner filter and contact query state', async () => {
     let requestedCursor: string | null = null;
     let requestedPath = '';
+    let requestedOwner = '';
     server.use(
       http.get('*/me/albums', ({ request }) => {
         const url = new URL(request.url);
         requestedPath = url.pathname;
         requestedCursor = url.searchParams.get('cursor');
-        return json(albums);
+        const owner = url.searchParams.get('owner_nsid');
+        requestedOwner = owner ?? '';
+        return json({
+          ...albums,
+          items: owner ? albums.items.filter((album) => album.owner_nsid === owner) : albums.items,
+        });
       }),
     );
 
@@ -59,10 +66,38 @@ describe('AlbumsPage', () => {
 
     fireEvent.change(screen.getByTestId('albums-filter'), { target: { value: 'owner-2' } });
     await waitFor(() => expect(router.state.location.search).toBe('?contact=owner-2'));
-    expect(screen.getAllByTestId('album-card')).toHaveLength(1);
+    await waitFor(() => expect(requestedOwner).toBe('owner-2'));
+    await waitFor(() => expect(screen.getAllByTestId('album-card')).toHaveLength(1));
     expect(screen.getByTestId('album-card')).toHaveAttribute('data-album-id', 'album-2');
     expect(screen.getByTestId('album-card')).toHaveTextContent('Night skies');
     expect(screen.getByTestId('album-card')).not.toHaveTextContent(/visible photo|stored of/i);
+  });
+
+  it('offers all contact owners and filters albums on the server', async () => {
+    let requestedOwner = '';
+    server.use(
+      http.get('*/me/albums', ({ request }) => {
+        const url = new URL(request.url);
+        requestedOwner = url.searchParams.get('owner_nsid') ?? '';
+        return requestedOwner === 'owner-2'
+          ? json({ items: [albums.items[1]], contact_owners: ['owner-1', 'owner-2'] })
+          : json({
+              items: [albums.items[0]],
+              contact_owners: ['owner-1', 'owner-2'],
+              next_cursor: 'next',
+            });
+      }),
+    );
+
+    const { router } = open();
+
+    expect(await screen.findByTestId('album-card')).toHaveAttribute('data-album-id', 'album-1');
+    expect(screen.getByRole('option', { name: 'owner-2' })).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('albums-filter'), { target: { value: 'owner-2' } });
+
+    await waitFor(() => expect(router.state.location.search).toBe('?contact=owner-2'));
+    await waitFor(() => expect(requestedOwner).toBe('owner-2'));
+    expect(await screen.findByTestId('album-card')).toHaveAttribute('data-album-id', 'album-2');
   });
 
   it('loads the next keyset page without hiding albums already on screen', async () => {
@@ -131,26 +166,19 @@ describe('AlbumsPage', () => {
   });
 
   it('keeps a contact query until keyset pages establish it is unavailable', async () => {
-    let calls = 0;
+    let requestedOwner = '';
     server.use(
       http.get('*/me/albums', ({ request }) => {
-        calls += 1;
-        const cursor = new URL(request.url).searchParams.get('cursor');
-        return cursor === 'next'
-          ? json({ items: [{ ...albums.items[1], id: 'album-3' }] })
-          : json({ items: [albums.items[0]], next_cursor: 'next' });
+        requestedOwner = new URL(request.url).searchParams.get('owner_nsid') ?? '';
+        return json({ items: [albums.items[1]], contact_owners: ['owner-1', 'owner-2'] });
       }),
     );
     const { router } = open('/albums?contact=owner-2');
 
-    expect(await screen.findByTestId('albums-load-more')).toBeInTheDocument();
+    expect(await screen.findByTestId('album-card')).toHaveAttribute('data-album-id', 'album-2');
     expect(screen.getByTestId('albums-filter')).toHaveValue('owner-2');
     expect(router.state.location.search).toBe('?contact=owner-2');
-    fireEvent.click(screen.getByTestId('albums-load-more'));
-
-    expect(await screen.findByTestId('album-card')).toHaveAttribute('data-album-id', 'album-3');
-    expect(router.state.location.search).toBe('?contact=owner-2');
-    expect(calls).toBe(2);
+    await waitFor(() => expect(requestedOwner).toBe('owner-2'));
   });
 
   it('shows the delayed skeleton during the initial request', async () => {

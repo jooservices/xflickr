@@ -83,6 +83,7 @@ my_albums:
     parameters:
       - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
       - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      - { name: owner_nsid, in: query, schema: { type: string, maxLength: 255 } }
     responses:
       '200': { description: Contact album page, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/MyAlbumPage } } } }
       '400': { description: Invalid page request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }

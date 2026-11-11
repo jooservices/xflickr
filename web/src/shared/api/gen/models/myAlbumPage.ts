@@ -9,5 +9,6 @@ import type { MyAlbum } from './myAlbum';
 
 export interface MyAlbumPage {
   items: MyAlbum[];
+  contact_owners: string[];
   next_cursor?: string;
 }

@@ -20,11 +20,12 @@ import (
 	"github.com/jooservices/xflickr/internal/sharing/domain"
 )
 
-const albumPlanFixtureSize = 2_000_000
+const albumPlanFixtureSize = 400_000
 
 type planDB struct {
-	tx   pgx.Tx
-	plan []byte
+	tx        pgx.Tx
+	plan      []byte
+	ownerPlan []byte
 }
 
 func (db *planDB) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
@@ -32,41 +33,52 @@ func (db *planDB) Exec(ctx context.Context, sql string, args ...any) (pgconn.Com
 }
 
 func (db *planDB) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	if strings.HasPrefix(strings.TrimSpace(sql), "SELECT DISTINCT contacts.contact_nsid") {
+		if err := savePlan(ctx, db.tx, sql, args, &db.ownerPlan); err != nil {
+			return nil, fmt.Errorf("explain contact album owners: %w", err)
+		}
+		return db.tx.Query(ctx, "SELECT 1 WHERE false")
+	}
 	if strings.Contains(sql, "FROM albums a") && strings.Contains(sql, "ORDER BY albums.updated_at") {
-		planSQL := "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + sql
-		rows, err := db.tx.Query(ctx, planSQL, args...)
-		if err != nil {
+		if err := savePlan(ctx, db.tx, sql, args, &db.plan); err != nil {
 			return nil, fmt.Errorf("explain contact album list: %w", err)
-		}
-		if !rows.Next() {
-			rows.Close()
-			if err := rows.Err(); err != nil {
-				return nil, fmt.Errorf("explain contact album list: %w", err)
-			}
-			return nil, fmt.Errorf("explain contact album list returned no plan")
-		}
-		values, err := rows.Values()
-		rows.Close()
-		if err != nil {
-			return nil, fmt.Errorf("read contact album plan: %w", err)
-		}
-		if len(values) != 1 {
-			return nil, fmt.Errorf("explain contact album list returned %d columns, want 1", len(values))
-		}
-		switch value := values[0].(type) {
-		case []byte:
-			db.plan = append(db.plan[:0], value...)
-		case string:
-			db.plan = append(db.plan[:0], value...)
-		default:
-			db.plan, err = json.Marshal(value)
-			if err != nil {
-				return nil, fmt.Errorf("encode contact album plan: %w", err)
-			}
 		}
 		return db.tx.Query(ctx, "SELECT 1 WHERE false")
 	}
 	return db.tx.Query(ctx, sql, args...)
+}
+
+func savePlan(ctx context.Context, tx pgx.Tx, sql string, args []any, target *[]byte) error {
+	rows, err := tx.Query(ctx, "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+sql, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		return fmt.Errorf("explain returned no plan")
+	}
+	values, err := rows.Values()
+	if err != nil {
+		return err
+	}
+	if len(values) != 1 {
+		return fmt.Errorf("explain returned %d columns, want 1", len(values))
+	}
+	switch value := values[0].(type) {
+	case []byte:
+		*target = append((*target)[:0], value...)
+	case string:
+		*target = append((*target)[:0], value...)
+	default:
+		*target, err = json.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("encode plan: %w", err)
+		}
+	}
+	return nil
 }
 
 func (db *planDB) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
@@ -97,42 +109,76 @@ func TestContactAlbumListPlanUsesVisibilityIndexes(t *testing.T) {
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 
-	createAlbumPlanFixture(t, ctx, tx)
+	userID, observationUserID, observationAccountID, viewerNSID, contactNSID := createPlanIdentity(t, ctx, tx)
+	createAlbumPlanFixture(t, ctx, tx, userID, observationUserID, observationAccountID, viewerNSID, contactNSID)
 	db := &planDB{tx: tx}
 	repository, err := postgres.New(db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	predicate := app.Filter(domain.User{ID: 42}).SQL
-	if _, err := repository.ListContactAlbums(ctx, 42, predicate, nil, 50); err != nil {
+	predicate := app.Filter(domain.User{ID: userID}).SQL
+	if _, err := repository.ListContactAlbums(ctx, userID, "", predicate, nil, 50); err != nil {
 		t.Fatal(err)
 	}
 
-	var documents []struct {
-		Plan explainNode `json:"Plan"`
-	}
-	if err := json.Unmarshal(db.plan, &documents); err != nil {
-		preview := db.plan
-		if len(preview) > 200 {
-			preview = preview[:200]
+	listPlan := decodePlan(t, db.plan, "contact album list")
+	ownerPlan := decodePlan(t, db.ownerPlan, "contact album owners")
+	t.Logf("EXPLAIN (ANALYZE, BUFFERS) on %d albums, photos, memberships, and observations; list: %s; owners: %s", albumPlanFixtureSize, db.plan, db.ownerPlan)
+	for _, plan := range []struct {
+		name string
+		root explainNode
+	}{{name: "contact album list", root: listPlan}, {name: "contact album owners", root: ownerPlan}} {
+		if relation, nodeType, ok := findSequentialScan(plan.root); ok {
+			t.Fatalf("%s plan uses %s on %s", plan.name, nodeType, relation)
 		}
-		t.Fatalf("decode contact album query plan (%d bytes, prefix %q): %v", len(db.plan), preview, err)
 	}
-	if len(documents) != 1 {
-		t.Fatalf("EXPLAIN returned %d plan documents, want 1", len(documents))
-	}
-	t.Logf("EXPLAIN (ANALYZE, BUFFERS) on %d albums and %d photos: %s", 400_000, albumPlanFixtureSize, db.plan)
-	if relation, nodeType, ok := findSequentialScan(documents[0].Plan); ok {
-		t.Fatalf("contact album list plan uses %s on %s", nodeType, relation)
-	}
-	for _, index := range []string{"albums_contact_page_idx", "album_photos_order_idx", "photos_pkey", "observations_pkey"} {
-		if !containsIndex(documents[0].Plan, index) {
+	for _, index := range []string{"albums_contact_page_idx", "album_photos_order_idx", "photos_pkey"} {
+		if !containsIndex(listPlan, index) {
 			t.Fatalf("contact album list plan does not use %s: %s", index, db.plan)
 		}
 	}
+	verifyObservationPartitionPlans(t, ctx, tx)
 }
 
-func createAlbumPlanFixture(t *testing.T, ctx context.Context, tx pgx.Tx) {
+func decodePlan(t *testing.T, raw []byte, name string) explainNode {
+	t.Helper()
+	var documents []struct {
+		Plan explainNode `json:"Plan"`
+	}
+	if err := json.Unmarshal(raw, &documents); err != nil {
+		preview := raw
+		if len(preview) > 200 {
+			preview = preview[:200]
+		}
+		t.Fatalf("decode %s plan (%d bytes, prefix %q): %v", name, len(raw), preview, err)
+	}
+	if len(documents) != 1 {
+		t.Fatalf("%s EXPLAIN returned %d plan documents, want 1", name, len(documents))
+	}
+	return documents[0].Plan
+}
+
+func createPlanIdentity(t *testing.T, ctx context.Context, tx pgx.Tx) (int64, int64, int64, string, string) {
+	t.Helper()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	viewerNSID, contactNSID := "album-plan-viewer-"+suffix, "album-plan-contact-"+suffix
+	var userID, observationUserID, observationKeyID, observationAccountID int64
+	if err := tx.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration','user') RETURNING id`, "album-plan-viewer-"+suffix+"@example.invalid").Scan(&userID); err != nil {
+		t.Fatalf("create plan user: %v", err)
+	}
+	if err := tx.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration','user') RETURNING id`, "album-plan-observer-"+suffix+"@example.invalid").Scan(&observationUserID); err != nil {
+		t.Fatalf("create plan observation user: %v", err)
+	}
+	if err := tx.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'plan',$2,'{}',1000,10,20) RETURNING id`, observationUserID, "album-plan-observer-key-"+suffix).Scan(&observationKeyID); err != nil {
+		t.Fatalf("create plan observation key: %v", err)
+	}
+	if err := tx.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'plan','{}','{}','ok') RETURNING id`, observationUserID, observationKeyID, "album-plan-observer-"+suffix).Scan(&observationAccountID); err != nil {
+		t.Fatalf("create plan observation account: %v", err)
+	}
+	return userID, observationUserID, observationAccountID, viewerNSID, contactNSID
+}
+
+func createAlbumPlanFixture(t *testing.T, ctx context.Context, tx pgx.Tx, userID, observationUserID, observationAccountID int64, viewerNSID, contactNSID string) {
 	t.Helper()
 	statements := []string{
 		`CREATE TEMP TABLE albums (id text PRIMARY KEY, owner_nsid text NOT NULL, title text NOT NULL, updated_at timestamptz) ON COMMIT DROP`,
@@ -143,7 +189,6 @@ func createAlbumPlanFixture(t *testing.T, ctx context.Context, tx pgx.Tx) {
 		`CREATE TEMP TABLE photos (id bigint PRIMARY KEY, tombstoned_at timestamptz, visibility text NOT NULL) ON COMMIT DROP`,
 		`CREATE TEMP TABLE album_photos (album_id text NOT NULL, photo_id bigint NOT NULL, position integer NOT NULL) ON COMMIT DROP`,
 		`CREATE INDEX album_photos_order_idx ON album_photos (album_id, position, photo_id)`,
-		`CREATE TEMP TABLE observations (user_id bigint NOT NULL, flickr_account_id bigint NOT NULL, record_kind text NOT NULL, record_id text NOT NULL, PRIMARY KEY(user_id, flickr_account_id, record_kind, record_id)) ON COMMIT DROP`,
 		`CREATE TEMP TABLE sharing_settings (user_id bigint PRIMARY KEY, enabled boolean NOT NULL) ON COMMIT DROP`,
 	}
 	for _, statement := range statements {
@@ -154,23 +199,59 @@ func createAlbumPlanFixture(t *testing.T, ctx context.Context, tx pgx.Tx) {
 	fixtures := []struct {
 		name string
 		sql  string
+		args []any
 	}{
-		{name: "account", sql: `INSERT INTO flickr_accounts(user_id,nsid,status) VALUES (42,'account-owner','ok')`},
-		{name: "contact", sql: `INSERT INTO contacts(person_nsid,contact_nsid) VALUES ('account-owner','contact-owner')`},
-		{name: "sharing setting", sql: `INSERT INTO sharing_settings(user_id,enabled) VALUES (42,false)`},
-		{name: "albums", sql: `INSERT INTO albums(id,owner_nsid,title,updated_at) SELECT 'album-'||g,'contact-owner','Album '||g,TIMESTAMPTZ '2026-01-01 00:00:00+00' - g * INTERVAL '1 second' FROM generate_series(1,400000) AS g`},
-		{name: "photos", sql: `INSERT INTO photos(id,tombstoned_at,visibility) SELECT g,NULL,'public' FROM generate_series(1,2000000) AS g`},
-		{name: "album photos", sql: `INSERT INTO album_photos(album_id,photo_id,position) SELECT 'album-'||((g-1)%400000+1),g,0 FROM generate_series(1,2000000) AS g`},
-		{name: "observations", sql: `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) SELECT 42,1,'photo',g::text FROM generate_series(1,2000000) AS g`},
+		{name: "contact account", sql: `INSERT INTO flickr_accounts(user_id,nsid,status) VALUES ($1,$2,'ok')`, args: []any{userID, viewerNSID}},
+		{name: "contact", sql: `INSERT INTO contacts(person_nsid,contact_nsid) VALUES ($1,$2)`, args: []any{viewerNSID, contactNSID}},
+		{name: "sharing setting", sql: `INSERT INTO sharing_settings(user_id,enabled) VALUES ($1,true)`, args: []any{observationUserID}},
+		{name: "albums", sql: `INSERT INTO albums(id,owner_nsid,title,updated_at) SELECT 'album-'||g,$1,'Album '||g,TIMESTAMPTZ '2026-01-01 00:00:00+00' - g * INTERVAL '1 second' FROM generate_series(1,400000) AS g`, args: []any{contactNSID}},
+		{name: "photos", sql: `INSERT INTO photos(id,tombstoned_at,visibility) SELECT g,NULL,'public' FROM generate_series(1,400000) AS g`},
+		{name: "album photos", sql: `INSERT INTO album_photos(album_id,photo_id,position) SELECT 'album-'||g,g,0 FROM generate_series(1,400000) AS g`},
 	}
 	for _, fixture := range fixtures {
-		if _, err := tx.Exec(ctx, fixture.sql); err != nil {
+		if _, err := tx.Exec(ctx, fixture.sql, fixture.args...); err != nil {
 			t.Fatalf("insert %s plan fixture: %v", fixture.name, err)
+		}
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) SELECT $1,$2,'photo',g::text FROM generate_series(1,400000) AS g`, observationUserID, observationAccountID); err != nil {
+		t.Fatalf("insert observations plan fixture: %v", err)
+	}
+	for _, remainder := range []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15} {
+		var recordID string
+		if err := tx.QueryRow(ctx, `SELECT ('plan-marker-'||candidate)::text FROM generate_series(1,512) AS candidate WHERE satisfies_hash_partition('observations'::regclass,16,$1,('plan-marker-'||candidate)::text) LIMIT 1`, remainder).Scan(&recordID); err != nil {
+			t.Fatalf("find observation id for partition %02d: %v", remainder, err)
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) VALUES($1,$2,'photo',$3)`, observationUserID, observationAccountID, recordID); err != nil {
+			t.Fatalf("insert observation partition marker %02d: %v", remainder, err)
 		}
 	}
 	for _, table := range []string{"albums", "contacts", "flickr_accounts", "photos", "album_photos", "observations", "sharing_settings"} {
 		if _, err := tx.Exec(ctx, "ANALYZE "+table); err != nil {
 			t.Fatalf("analyze %s plan fixture: %v", table, err)
+		}
+	}
+}
+
+func verifyObservationPartitionPlans(t *testing.T, ctx context.Context, tx pgx.Tx) {
+	t.Helper()
+	for remainder := 0; remainder < 16; remainder++ {
+		partition := fmt.Sprintf("observations_p%02d", remainder)
+		var recordID string
+		if err := tx.QueryRow(ctx, "SELECT record_id FROM "+partition+" WHERE record_id LIKE 'plan-marker-%' LIMIT 1").Scan(&recordID); err != nil {
+			t.Fatalf("read marker from %s: %v", partition, err)
+		}
+		var raw []byte
+		query := `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT 1 FROM observations o JOIN sharing_settings ss ON ss.user_id=o.user_id WHERE o.record_kind='photo' AND o.record_id=$1 AND ss.enabled`
+		if err := tx.QueryRow(ctx, query, recordID).Scan(&raw); err != nil {
+			t.Fatalf("explain lookup on %s: %v", partition, err)
+		}
+		root := decodePlan(t, raw, partition)
+		index := partition + "_kind_record_idx"
+		if relation, nodeType, ok := findSequentialScan(root); ok {
+			t.Fatalf("lookup plan for %s uses %s on %s: %s", partition, nodeType, relation, raw)
+		}
+		if !containsIndex(root, index) {
+			t.Fatalf("lookup plan for %s does not use %s: %s", partition, index, raw)
 		}
 	}
 }
@@ -188,12 +269,15 @@ func findSequentialScan(node explainNode) (string, string, bool) {
 }
 
 func isLargeCatalogRelation(relation string) bool {
+	if strings.HasPrefix(relation, "albums_") || strings.HasPrefix(relation, "album_photos_") ||
+		strings.HasPrefix(relation, "photos_") || strings.HasPrefix(relation, "observations_") {
+		return true
+	}
 	switch relation {
 	case "albums", "album_photos", "photos", "observations":
 		return true
-	default:
-		return false
 	}
+	return false
 }
 
 func containsIndex(node explainNode, index string) bool {
