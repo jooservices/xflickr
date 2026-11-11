@@ -30,7 +30,7 @@ describe('validateBody', () => {
       }),
     ).toEqual({ status: 'ok', dependencies: [{ name: 'api.postgres', status: 'ok' }] });
     expect(validateBody('/keys/9', 'DELETE', 204, undefined)).toBeUndefined();
-    expect(validateBody('/auth/logout', 'POST', 200, undefined)).toBeUndefined();
+    expect(validateBody('/api/v1/sessions/current', 'DELETE', 204, undefined)).toBeUndefined();
     expect(
       validateBody('/downloads/9/parts', 'GET', 200, {
         download_id: 9,
@@ -84,7 +84,7 @@ describe('validateBody', () => {
     ['/flickr-accounts', 'GET', null],
     ['/flickr-accounts', 'GET', { items: [] }],
     ['/me/crawl/settings', 'GET', { depth_max: 'x' }],
-    ['/me', 'GET', {}],
+    ['/api/v1/me', 'GET', {}],
     ['/unknown/path', 'GET', []],
     ['/unknown/path', 'GET', 'html'],
   ])('rejects %s %s answering %j', (path, method, body) => {
@@ -103,7 +103,7 @@ describe('validateBody', () => {
   });
 
   it('accepts an object from a path without a schema', () => {
-    expect(validateBody('/auth/passkey/options', 'POST', 200, { challenge: 'x' })).toEqual({
+    expect(validateBody('/api/v1/untyped-resource', 'POST', 200, { challenge: 'x' })).toEqual({
       challenge: 'x',
     });
   });

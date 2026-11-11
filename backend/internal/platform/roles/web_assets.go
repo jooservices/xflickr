@@ -1,7 +1,6 @@
 package roles
 
 import (
-	"encoding/json"
 	"net/http"
 	"path"
 	"path/filepath"
@@ -12,6 +11,13 @@ import (
 
 func serveWebAssets(router *chi.Mux, root string) {
 	if root == "" {
+		router.NotFound(func(w http.ResponseWriter, r *http.Request) {
+			if isBackendOnlyPath(r.URL.Path) {
+				writeAPIError(w, r, "not-found", "Resource not found")
+				return
+			}
+			http.NotFound(w, r)
+		})
 		return
 	}
 	files := http.FileServer(http.Dir(root))
@@ -40,11 +46,11 @@ func serveWebAssets(router *chi.Mux, root string) {
 			serveIndex(w, r, root)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		if r.Method != http.MethodHead {
-			_ = json.NewEncoder(w).Encode(map[string]string{"code": "not_found"})
+		if isBackendOnlyPath(r.URL.Path) {
+			writeAPIError(w, r, "not-found", "Resource not found")
+			return
 		}
+		writeAPIError(w, r, "not-found", "Resource not found")
 	})
 }
 
@@ -74,7 +80,7 @@ func isPageFallback(r *http.Request) bool {
 }
 
 func isBackendOnlyPath(requestPath string) bool {
-	for _, prefix := range []string{"/auth", "/flickr-accounts", "/healthz", "/readyz"} {
+	for _, prefix := range []string{"/api/v1", "/auth", "/me", "/flickr-accounts", "/healthz", "/readyz"} {
 		if requestPath == prefix || strings.HasPrefix(requestPath, prefix+"/") {
 			return true
 		}

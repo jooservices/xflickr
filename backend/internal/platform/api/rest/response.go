@@ -84,6 +84,11 @@ func ProblemTypes() []ProblemType {
 		{"malformed-request", "Malformed request", 400},
 		{"unsupported-media-type", "Unsupported media type", 415},
 		{"internal-error", "Internal server error", 500},
+		{"email-taken", "Email already registered", 409},
+		{"registration-closed", "Registration closed", 409},
+		{"invalid-current-password", "Current password is incorrect", 422},
+		{"csrf-rejected", "CSRF token rejected", 403},
+		{"method-not-allowed", "Method not allowed", 405},
 	}
 }
 
@@ -111,8 +116,13 @@ func NewProblem(slug, detail string, fields FieldErrors) *Problem {
 }
 
 func WriteProblem(w http.ResponseWriter, r *http.Request, p *Problem, traceID string) error {
+	return WriteProblemAt(w, r.URL.Path, p, traceID)
+}
+
+// WriteProblemAt writes a registered problem response with an explicit URI path.
+func WriteProblemAt(w http.ResponseWriter, path string, p *Problem, traceID string) error {
 	body := *p
-	body.Instance = r.URL.Path
+	body.Instance = path
 	body.TraceID = traceID
 	if body.Status == http.StatusUnauthorized && w.Header().Get("WWW-Authenticate") == "" {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="api"`)

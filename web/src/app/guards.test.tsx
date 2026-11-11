@@ -82,7 +82,7 @@ describe('AdminGuard', () => {
     expect(screen.queryByText('admin area')).toBeNull();
   });
 
-  it('shows the failure element when /me failed', () => {
+  it('shows the failure element when /api/v1/me failed', () => {
     renderGuard({ status: 'error' });
 
     expect(screen.getByText('failed')).toBeInTheDocument();

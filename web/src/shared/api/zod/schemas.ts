@@ -30,7 +30,7 @@ export const GetAPIEntryResponse = zod.object({
         }),
       )
       .describe(
-        'Relations: self, authentication-options, me, events, keys, flickr-accounts, people, albums, favorites, users, plans, flags. Only available relations are present. During additive migration these point to existing routes; later slices replace their targets.',
+        'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
       ),
   }),
   meta: zod.record(zod.string(), zod.unknown()),
@@ -42,14 +42,44 @@ export const GetAPIEntryResponse = zod.object({
  * @summary Get public authentication options
  */
 
-export const GetAuthConfigResponse = zod.object({
-  registration_open: zod.boolean(),
-  passkey_enabled: zod.boolean(),
-  terms_url: zod.string().optional(),
-  privacy_url: zod.string().optional(),
-  password_min: zod.int().min(1),
-  password_max: zod.int().min(1),
-});
+export const GetAuthConfigResponse = zod
+  .object({
+    success: zod.literal(true),
+    code: zod.int(),
+    message: zod.string(),
+    data: zod.unknown(),
+    meta: zod.record(zod.string(), zod.unknown()),
+    errors: zod.null(),
+    trace_id: zod.string(),
+  })
+  .and(
+    zod.object({
+      data: zod.object({
+        registration_open: zod.boolean(),
+        passkey_enabled: zod.boolean(),
+        terms_url: zod.string().optional(),
+        privacy_url: zod.string().optional(),
+        password_min: zod.int().min(1),
+        password_max: zod.int().min(1),
+        links: zod
+          .object({
+            self: zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          })
+          .catchall(
+            zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          )
+          .describe(
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+          ),
+      }),
+    }),
+  );
 
 /**
  * Returns the process status and build version.
@@ -93,16 +123,91 @@ export const RegisterBody = zod.object({
   locale: zod.enum(['en', 'vi']),
 });
 
-export const RegisterResponse = zod.object({
-  id: zod.int(),
-  email: zod.email(),
-  role: zod.enum(['admin', 'user']),
-  locale: zod.string(),
-  created_at: zod.iso.datetime({ offset: true }),
-});
+export const RegisterResponse = zod
+  .object({
+    success: zod.literal(true),
+    code: zod.int(),
+    message: zod.string(),
+    data: zod.unknown(),
+    meta: zod.record(zod.string(), zod.unknown()),
+    errors: zod.null(),
+    trace_id: zod.string(),
+  })
+  .and(
+    zod.object({
+      data: zod.object({
+        id: zod.int(),
+        email: zod.email(),
+        role: zod.enum(['admin', 'user']),
+        locale: zod.string(),
+        created_at: zod.iso.datetime({ offset: true }),
+        links: zod
+          .object({
+            self: zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          })
+          .catchall(
+            zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          )
+          .describe(
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+          ),
+      }),
+    }),
+  );
 
 /**
- * @summary Log in with email and password
+ * @summary Get a public user projection
+ */
+
+export const GetUserParams = zod.object({
+  id: zod.int().min(1),
+});
+
+export const GetUserResponse = zod
+  .object({
+    success: zod.literal(true),
+    code: zod.int(),
+    message: zod.string(),
+    data: zod.unknown(),
+    meta: zod.record(zod.string(), zod.unknown()),
+    errors: zod.null(),
+    trace_id: zod.string(),
+  })
+  .and(
+    zod.object({
+      data: zod.object({
+        id: zod.int(),
+        role: zod.enum(['admin', 'user']),
+        locale: zod.string(),
+        created_at: zod.iso.datetime({ offset: true }),
+        links: zod
+          .object({
+            self: zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          })
+          .catchall(
+            zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          )
+          .describe(
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+          ),
+      }),
+    }),
+  );
+
+/**
+ * @summary Create a browser session with email and password
  */
 export const loginBodyEmailMax = 254;
 
@@ -114,79 +219,460 @@ export const LoginBody = zod.object({
   password: zod.string().min(loginBodyPasswordMin).max(loginBodyPasswordMax),
 });
 
-export const LoginResponse = zod.object({
-  id: zod.int(),
-  email: zod.email(),
-  role: zod.enum(['admin', 'user']),
-  locale: zod.string(),
-  created_at: zod.iso.datetime({ offset: true }),
-});
+export const LoginResponse = zod
+  .object({
+    success: zod.literal(true),
+    code: zod.int(),
+    message: zod.string(),
+    data: zod.unknown(),
+    meta: zod.record(zod.string(), zod.unknown()),
+    errors: zod.null(),
+    trace_id: zod.string(),
+  })
+  .and(
+    zod.object({
+      data: zod
+        .object({
+          id: zod.string(),
+          current: zod.boolean(),
+          user_agent_label: zod.string(),
+          ip_masked: zod.string(),
+          last_seen_at: zod.iso.datetime({ offset: true }),
+          created_at: zod.iso.datetime({ offset: true }),
+          expires_at: zod.iso.datetime({ offset: true }),
+          links: zod
+            .object({
+              self: zod.object({
+                href: zod.string(),
+                method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+              }),
+            })
+            .catchall(
+              zod.object({
+                href: zod.string(),
+                method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+              }),
+            )
+            .describe(
+              'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+            ),
+        })
+        .and(
+          zod.object({
+            user: zod.object({
+              id: zod.int(),
+              email: zod.email(),
+              role: zod.enum(['admin', 'user']),
+              locale: zod.string(),
+              created_at: zod.iso.datetime({ offset: true }),
+              links: zod
+                .object({
+                  self: zod.object({
+                    href: zod.string(),
+                    method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+                  }),
+                })
+                .catchall(
+                  zod.object({
+                    href: zod.string(),
+                    method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+                  }),
+                )
+                .describe(
+                  'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+                ),
+            }),
+          }),
+        ),
+    }),
+  );
 
 /**
- * @summary Log out the current session
+ * @summary Get the current browser session
+ */
+export const GetCurrentSessionResponse = zod
+  .object({
+    success: zod.literal(true),
+    code: zod.int(),
+    message: zod.string(),
+    data: zod.unknown(),
+    meta: zod.record(zod.string(), zod.unknown()),
+    errors: zod.null(),
+    trace_id: zod.string(),
+  })
+  .and(
+    zod.object({
+      data: zod
+        .object({
+          id: zod.string(),
+          current: zod.boolean(),
+          user_agent_label: zod.string(),
+          ip_masked: zod.string(),
+          last_seen_at: zod.iso.datetime({ offset: true }),
+          created_at: zod.iso.datetime({ offset: true }),
+          expires_at: zod.iso.datetime({ offset: true }),
+          links: zod
+            .object({
+              self: zod.object({
+                href: zod.string(),
+                method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+              }),
+            })
+            .catchall(
+              zod.object({
+                href: zod.string(),
+                method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+              }),
+            )
+            .describe(
+              'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+            ),
+        })
+        .and(
+          zod.object({
+            user: zod.object({
+              id: zod.int(),
+              email: zod.email(),
+              role: zod.enum(['admin', 'user']),
+              locale: zod.string(),
+              created_at: zod.iso.datetime({ offset: true }),
+              links: zod
+                .object({
+                  self: zod.object({
+                    href: zod.string(),
+                    method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+                  }),
+                })
+                .catchall(
+                  zod.object({
+                    href: zod.string(),
+                    method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+                  }),
+                )
+                .describe(
+                  'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+                ),
+            }),
+          }),
+        ),
+    }),
+  );
+
+/**
+ * @summary Revoke the current browser session
  */
 export const LogoutResponse = zod.void();
 
 /**
- * Deletes every server-side session for the authenticated user except the session presented by the xf_session cookie.
- * @summary Revoke every session except the current one
+ * @summary Get an owned browser session
  */
-export const RevokeOtherSessionsResponse = zod.void();
+
+export const GetSessionParams = zod.object({
+  id: zod.int().min(1),
+});
+
+export const GetSessionResponse = zod
+  .object({
+    success: zod.literal(true),
+    code: zod.int(),
+    message: zod.string(),
+    data: zod.unknown(),
+    meta: zod.record(zod.string(), zod.unknown()),
+    errors: zod.null(),
+    trace_id: zod.string(),
+  })
+  .and(
+    zod.object({
+      data: zod
+        .object({
+          id: zod.string(),
+          current: zod.boolean(),
+          user_agent_label: zod.string(),
+          ip_masked: zod.string(),
+          last_seen_at: zod.iso.datetime({ offset: true }),
+          created_at: zod.iso.datetime({ offset: true }),
+          expires_at: zod.iso.datetime({ offset: true }),
+          links: zod
+            .object({
+              self: zod.object({
+                href: zod.string(),
+                method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+              }),
+            })
+            .catchall(
+              zod.object({
+                href: zod.string(),
+                method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+              }),
+            )
+            .describe(
+              'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+            ),
+        })
+        .and(
+          zod.object({
+            user: zod.object({
+              id: zod.int(),
+              email: zod.email(),
+              role: zod.enum(['admin', 'user']),
+              locale: zod.string(),
+              created_at: zod.iso.datetime({ offset: true }),
+              links: zod
+                .object({
+                  self: zod.object({
+                    href: zod.string(),
+                    method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+                  }),
+                })
+                .catchall(
+                  zod.object({
+                    href: zod.string(),
+                    method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+                  }),
+                )
+                .describe(
+                  'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+                ),
+            }),
+          }),
+        ),
+    }),
+  );
 
 /**
  * @summary Get the authenticated user
  */
-export const GetMeResponse = zod.object({
-  id: zod.int(),
-  email: zod.email(),
-  role: zod.enum(['admin', 'user']),
-  locale: zod.string(),
-  created_at: zod.iso.datetime({ offset: true }),
-});
+export const GetMeResponse = zod
+  .object({
+    success: zod.literal(true),
+    code: zod.int(),
+    message: zod.string(),
+    data: zod.unknown(),
+    meta: zod.record(zod.string(), zod.unknown()),
+    errors: zod.null(),
+    trace_id: zod.string(),
+  })
+  .and(
+    zod.object({
+      data: zod.object({
+        id: zod.int(),
+        email: zod.email(),
+        role: zod.enum(['admin', 'user']),
+        locale: zod.string(),
+        created_at: zod.iso.datetime({ offset: true }),
+        links: zod
+          .object({
+            self: zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          })
+          .catchall(
+            zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          )
+          .describe(
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+          ),
+      }),
+    }),
+  );
 
 /**
- * Updates the user's preferred language. Unsafe requests require a valid CSRF token.
+ * Applies a locale-only JSON Merge Patch.
  * @summary Update the authenticated user's profile
  */
 export const UpdateMeBody = zod.object({
-  locale: zod.enum(['en', 'vi']),
+  locale: zod.enum(['en', 'vi']).optional(),
 });
 
-export const UpdateMeResponse = zod.object({
-  id: zod.int(),
-  email: zod.email(),
-  role: zod.enum(['admin', 'user']),
-  locale: zod.string(),
-  created_at: zod.iso.datetime({ offset: true }),
+export const UpdateMeResponse = zod
+  .object({
+    success: zod.literal(true),
+    code: zod.int(),
+    message: zod.string(),
+    data: zod.unknown(),
+    meta: zod.record(zod.string(), zod.unknown()),
+    errors: zod.null(),
+    trace_id: zod.string(),
+  })
+  .and(
+    zod.object({
+      data: zod.object({
+        id: zod.int(),
+        email: zod.email(),
+        role: zod.enum(['admin', 'user']),
+        locale: zod.string(),
+        created_at: zod.iso.datetime({ offset: true }),
+        links: zod
+          .object({
+            self: zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          })
+          .catchall(
+            zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          )
+          .describe(
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+          ),
+      }),
+    }),
+  );
+
+export const listMySessionsQueryLimitDefault = 50;
+export const listMySessionsQueryLimitMax = 100;
+
+export const ListMySessionsQueryParams = zod.object({
+  limit: zod.int().min(1).max(listMySessionsQueryLimitMax).default(listMySessionsQueryLimitDefault),
+  cursor: zod.string().optional(),
 });
+
+export const ListMySessionsResponse = zod
+  .object({
+    success: zod.literal(true),
+    code: zod.int(),
+    message: zod.string(),
+    data: zod.unknown(),
+    meta: zod.record(zod.string(), zod.unknown()),
+    errors: zod.null(),
+    trace_id: zod.string(),
+  })
+  .and(
+    zod.object({
+      data: zod.array(
+        zod.object({
+          id: zod.string(),
+          current: zod.boolean(),
+          user_agent_label: zod.string(),
+          ip_masked: zod.string(),
+          last_seen_at: zod.iso.datetime({ offset: true }),
+          created_at: zod.iso.datetime({ offset: true }),
+          expires_at: zod.iso.datetime({ offset: true }),
+          links: zod
+            .object({
+              self: zod.object({
+                href: zod.string(),
+                method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+              }),
+            })
+            .catchall(
+              zod.object({
+                href: zod.string(),
+                method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+              }),
+            )
+            .describe(
+              'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+            ),
+        }),
+      ),
+    }),
+  );
 
 /**
- * @summary List the current user's active sessions
+ * @summary Revoke every session except the current one
  */
-export const ListMySessionsResponse = zod.object({
-  items: zod.array(
-    zod.object({
-      id: zod.string(),
-      current: zod.boolean(),
-      user_agent_label: zod.string(),
-      ip_masked: zod.string(),
-      last_seen_at: zod.iso.datetime({ offset: true }),
-      created_at: zod.iso.datetime({ offset: true }),
-    }),
-  ),
+export const RevokeOtherSessionsQueryParams = zod.object({
+  scope: zod.enum(['others']),
 });
+
+export const RevokeOtherSessionsResponse = zod.void();
+
+/**
+ * @summary Get an owned session from the current user's session collection
+ */
+
+export const GetMySessionParams = zod.object({
+  id: zod.int().min(1),
+});
+
+export const GetMySessionResponse = zod
+  .object({
+    success: zod.literal(true),
+    code: zod.int(),
+    message: zod.string(),
+    data: zod.unknown(),
+    meta: zod.record(zod.string(), zod.unknown()),
+    errors: zod.null(),
+    trace_id: zod.string(),
+  })
+  .and(
+    zod.object({
+      data: zod
+        .object({
+          id: zod.string(),
+          current: zod.boolean(),
+          user_agent_label: zod.string(),
+          ip_masked: zod.string(),
+          last_seen_at: zod.iso.datetime({ offset: true }),
+          created_at: zod.iso.datetime({ offset: true }),
+          expires_at: zod.iso.datetime({ offset: true }),
+          links: zod
+            .object({
+              self: zod.object({
+                href: zod.string(),
+                method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+              }),
+            })
+            .catchall(
+              zod.object({
+                href: zod.string(),
+                method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+              }),
+            )
+            .describe(
+              'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+            ),
+        })
+        .and(
+          zod.object({
+            user: zod.object({
+              id: zod.int(),
+              email: zod.email(),
+              role: zod.enum(['admin', 'user']),
+              locale: zod.string(),
+              created_at: zod.iso.datetime({ offset: true }),
+              links: zod
+                .object({
+                  self: zod.object({
+                    href: zod.string(),
+                    method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+                  }),
+                })
+                .catchall(
+                  zod.object({
+                    href: zod.string(),
+                    method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+                  }),
+                )
+                .describe(
+                  'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+                ),
+            }),
+          }),
+        ),
+    }),
+  );
 
 /**
  * @summary Revoke one of the current user's sessions
  */
+
 export const RevokeMySessionParams = zod.object({
-  id: zod.int(),
+  id: zod.int().min(1),
 });
 
 export const RevokeMySessionResponse = zod.void();
 
 /**
- * @summary Change the current user's password
+ * @summary Replace the current user's password
  */
 export const changeMyPasswordBodyCurrentPasswordMin = 8;
 export const changeMyPasswordBodyCurrentPasswordMax = 128;
@@ -208,16 +694,84 @@ export const ChangeMyPasswordBody = zod.object({
 export const ChangeMyPasswordResponse = zod.void();
 
 /**
- * @summary Update the current user's sharing choice
+ * @summary Get the current user's sharing choice
+ */
+export const GetMeSharingResponse = zod
+  .object({
+    success: zod.literal(true),
+    code: zod.int(),
+    message: zod.string(),
+    data: zod.unknown(),
+    meta: zod.record(zod.string(), zod.unknown()),
+    errors: zod.null(),
+    trace_id: zod.string(),
+  })
+  .and(
+    zod.object({
+      data: zod.object({
+        enabled: zod.boolean(),
+        changed_at: zod.iso.datetime({ offset: true }).nullable(),
+        links: zod
+          .object({
+            self: zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          })
+          .catchall(
+            zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          )
+          .describe(
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+          ),
+      }),
+    }),
+  );
+
+/**
+ * @summary Replace the current user's sharing choice
  */
 export const PutMeSharingBody = zod.object({
   enabled: zod.boolean(),
 });
 
-export const PutMeSharingResponse = zod.object({
-  enabled: zod.boolean(),
-  changed_at: zod.iso.datetime({ offset: true }),
-});
+export const PutMeSharingResponse = zod
+  .object({
+    success: zod.literal(true),
+    code: zod.int(),
+    message: zod.string(),
+    data: zod.unknown(),
+    meta: zod.record(zod.string(), zod.unknown()),
+    errors: zod.null(),
+    trace_id: zod.string(),
+  })
+  .and(
+    zod.object({
+      data: zod.object({
+        enabled: zod.boolean(),
+        changed_at: zod.iso.datetime({ offset: true }).nullable(),
+        links: zod
+          .object({
+            self: zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          })
+          .catchall(
+            zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          )
+          .describe(
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+          ),
+      }),
+    }),
+  );
 
 /**
  * Returns every API key owned by the signed-in user. Secrets are never included.

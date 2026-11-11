@@ -72,9 +72,11 @@ guide feature implementation; operational environment rules live in
   disabled state (`PATCH /admin/users/{id}`). The last active administrator
   cannot be disabled or demoted, and each change is recorded through the audit
   port.
-- `DELETE /auth/sessions` revokes every session belonging to the current user
-  except the session that sent the request. Logout revokes the current session
-  and clears the session cookie.
+- User records can be read by their owner or an administrator. Other users are
+  hidden with 404.
+- `DELETE /api/v1/me/sessions?scope=others` revokes every session belonging to
+  the current user except the session that sent the request. Logout revokes the
+  current session and clears the session cookie.
 - Feature flags default off when unknown. An enabled flag can target all users,
   active administrators, or explicit user IDs. Admin updates take effect in
   the current API process immediately and in other API processes within 30 s.

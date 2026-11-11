@@ -8,5 +8,5 @@
 import type { UpdateMeRequestLocale } from './updateMeRequestLocale';
 
 export interface UpdateMeRequest {
-  locale: UpdateMeRequestLocale;
+  locale?: UpdateMeRequestLocale;
 }

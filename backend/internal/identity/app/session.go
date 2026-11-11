@@ -11,6 +11,9 @@ import (
 // ErrUnauthenticated means the request has no usable session.
 var ErrUnauthenticated = errors.New("identity: authentication required")
 
+// ErrSessionNotFound means the session is missing or does not belong to the user.
+var ErrSessionNotFound = errors.New("identity: session not found")
+
 // Authenticated is the principal resolved from a session cookie.
 type Authenticated struct {
 	User      domain.User
@@ -27,7 +30,15 @@ type SessionRepository interface {
 	DeleteOtherSessions(context.Context, int64, []byte) error
 	DeleteSessionByHash(context.Context, []byte) error
 	ListSessions(context.Context, int64) ([]domain.Session, error)
+	ListSessionsPage(context.Context, int64, *SessionCursor, int) ([]domain.Session, error)
+	FindSessionByID(context.Context, int64, int64) (domain.Session, error)
 	DeleteSessionByID(context.Context, int64, int64) (bool, error)
+}
+
+// SessionCursor identifies the last session returned by a page.
+type SessionCursor struct {
+	LastSeenAt time.Time `json:"last_seen_at"`
+	ID         int64     `json:"id"`
 }
 
 // SessionUserReader loads the account that owns a session.
@@ -145,6 +156,34 @@ func (s Sessions) List(ctx context.Context, userID int64) ([]domain.Session, err
 		return nil, errors.New("identity: session repository is required")
 	}
 	return s.Repository.ListSessions(ctx, userID)
+}
+
+// ListPage returns at most limit sessions after the cursor, newest activity first.
+func (s Sessions) ListPage(ctx context.Context, userID int64, cursor *SessionCursor, limit int) ([]domain.Session, error) {
+	if userID <= 0 {
+		return nil, ErrUnauthenticated
+	}
+	if limit < 1 {
+		return nil, errors.New("identity: session page limit must be positive")
+	}
+	if s.Repository == nil {
+		return nil, errors.New("identity: session repository is required")
+	}
+	return s.Repository.ListSessionsPage(ctx, userID, cursor, limit)
+}
+
+// FindByID returns a live session only when it belongs to userID.
+func (s Sessions) FindByID(ctx context.Context, userID, sessionID int64) (domain.Session, error) {
+	if userID <= 0 {
+		return domain.Session{}, ErrUnauthenticated
+	}
+	if sessionID <= 0 {
+		return domain.Session{}, ErrSessionNotFound
+	}
+	if s.Repository == nil {
+		return domain.Session{}, errors.New("identity: session repository is required")
+	}
+	return s.Repository.FindSessionByID(ctx, userID, sessionID)
 }
 
 // RevokeByID removes a session only when it belongs to userID.

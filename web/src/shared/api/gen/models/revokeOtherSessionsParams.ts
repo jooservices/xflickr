@@ -5,8 +5,8 @@
  * HTTP API shared by the XFlickr backend and web client.
  * OpenAPI spec version: 0.0.0
  */
+import type { RevokeOtherSessionsScope } from './revokeOtherSessionsScope';
 
-export type LoginRateLimitedDetails = {
-  /** @minimum 1 */
-  retry_after_seconds: number;
+export type RevokeOtherSessionsParams = {
+  scope: RevokeOtherSessionsScope;
 };

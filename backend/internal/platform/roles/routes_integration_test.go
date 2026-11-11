@@ -101,8 +101,8 @@ func TestRoutesWithSessionIntegration(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 		return rec
 	}
-	login := send(http.MethodPost, "/auth/login", fmt.Sprintf(`{"email":%q,"password":%q}`, email, password))
-	if login.Code != http.StatusOK {
+	login := send(http.MethodPost, "/api/v1/sessions", fmt.Sprintf(`{"email":%q,"password":%q}`, email, password))
+	if login.Code != http.StatusCreated {
 		t.Fatalf("login status=%d body=%s", login.Code, login.Body.String())
 	}
 	var session *http.Cookie
@@ -125,6 +125,9 @@ func TestRoutesWithSessionIntegration(t *testing.T) {
 	for _, key := range keys {
 		method, pattern := splitRoute(key)
 		path := samplePath(pattern)
+		if key == "DELETE /api/v1/me/sessions" {
+			path += "?scope=others"
+		}
 		if rec := send(method, path, ""); rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s without session = %d, want 401", key, rec.Code)
 		}
@@ -138,8 +141,8 @@ func TestRoutesWithSessionIntegration(t *testing.T) {
 		t.Logf("%-34s %d", key, rec.Code)
 	}
 
-	unknown := send(http.MethodGet, "/keys/usage", "", session)
-	if unknown.Code != http.StatusBadRequest || !strings.Contains(unknown.Body.String(), `"code":"invalid_request"`) {
-		t.Fatalf("GET /keys/usage = %d %s", unknown.Code, unknown.Body.String())
+	unknown := send(http.MethodGet, "/__routes-integration-unknown", "", session)
+	if unknown.Code != http.StatusNotFound {
+		t.Fatalf("GET /__routes-integration-unknown = %d %s", unknown.Code, unknown.Body.String())
 	}
 }

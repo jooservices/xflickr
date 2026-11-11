@@ -13,6 +13,7 @@ import (
 	"github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
+	"github.com/jooservices/xflickr/internal/platform/api/rest"
 )
 
 type fakeSessions struct {
@@ -33,6 +34,8 @@ type fakeSessions struct {
 	revokeOthersErr error
 	listed          []domain.Session
 	listErr         error
+	pageErr         error
+	findErr         error
 	revokeByID      int64
 	revokeByIDUser  int64
 	revokeByIDOK    bool
@@ -70,6 +73,25 @@ func (f *fakeSessions) RevokeOthers(_ context.Context, userID int64, tokenHash [
 
 func (f *fakeSessions) List(context.Context, int64) ([]domain.Session, error) {
 	return f.listed, f.listErr
+}
+
+func (f *fakeSessions) ListPage(context.Context, int64, *app.SessionCursor, int) ([]domain.Session, error) {
+	if f.pageErr != nil {
+		return nil, f.pageErr
+	}
+	return f.listed, f.listErr
+}
+
+func (f *fakeSessions) FindByID(_ context.Context, userID, sessionID int64) (domain.Session, error) {
+	if f.findErr != nil {
+		return domain.Session{}, f.findErr
+	}
+	for _, session := range f.listed {
+		if session.UserID == userID && session.ID == sessionID {
+			return session, nil
+		}
+	}
+	return domain.Session{}, app.ErrSessionNotFound
 }
 
 func (f *fakeSessions) RevokeByID(_ context.Context, userID, sessionID int64) (bool, error) {
@@ -132,7 +154,7 @@ func TestRequireUserAndRequireAdminMatrix(t *testing.T) {
 				}
 				w.WriteHeader(http.StatusOK)
 			}))
-			request := httptest.NewRequest(http.MethodGet, "/me", nil)
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
 			if tc.name != "user no cookie" && tc.name != "admin no cookie" {
 				request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: tc.cookie})
 			}
@@ -145,12 +167,12 @@ func TestRequireUserAndRequireAdminMatrix(t *testing.T) {
 				t.Fatalf("next called = %v", called)
 			}
 			if tc.code != "" {
-				var payload gen.Error
+				var payload rest.Problem
 				if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 					t.Fatal(err)
 				}
-				if payload.Code != tc.code {
-					t.Fatalf("code = %s", payload.Code)
+				if payload.Type != "/problems/"+strings.ReplaceAll(tc.code, "_", "-") {
+					t.Fatalf("type = %s", payload.Type)
 				}
 			}
 			if tc.name == "user slid" {
@@ -224,7 +246,7 @@ func TestCSRFRejectsAndAcceptsUnsafeMethods(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			called = false
-			request := httptest.NewRequest(tc.method, "/auth/sessions", nil)
+			request := httptest.NewRequest(tc.method, "/api/v1/me/sessions", nil)
 			if tc.cookie != "" {
 				request.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: tc.cookie})
 			}
@@ -237,12 +259,12 @@ func TestCSRFRejectsAndAcceptsUnsafeMethods(t *testing.T) {
 				t.Fatalf("status=%d next=%v body=%s", response.Code, called, response.Body.String())
 			}
 			if tc.want == http.StatusForbidden {
-				var payload gen.Error
+				var payload rest.Problem
 				if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 					t.Fatal(err)
 				}
-				if payload.Code != codeCSRFRejected {
-					t.Fatalf("code = %s", payload.Code)
+				if payload.Type != "/problems/csrf-rejected" {
+					t.Fatalf("type = %s", payload.Type)
 				}
 			}
 			if tc.issue {
@@ -282,13 +304,13 @@ func TestProtectRoutesLeavesPublicRequestsOpen(t *testing.T) {
 	if openResponse.Code != http.StatusNoContent {
 		t.Fatalf("health status = %d", openResponse.Code)
 	}
-	me := httptest.NewRequest(http.MethodGet, "/me", nil)
+	me := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
 	meResponse := httptest.NewRecorder()
 	router.ServeHTTP(meResponse, me)
 	if meResponse.Code != http.StatusUnauthorized {
 		t.Fatalf("me status = %d", meResponse.Code)
 	}
-	revoke := httptest.NewRequest(http.MethodDelete, "/auth/sessions", nil)
+	revoke := httptest.NewRequest(http.MethodDelete, "/api/v1/me/sessions?scope=others", nil)
 	revoke.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "present"})
 	revokeResponse := httptest.NewRecorder()
 	router.ServeHTTP(revokeResponse, revoke)
@@ -330,13 +352,13 @@ func TestLoginAndLogoutMaintainSessionCookies(t *testing.T) {
 		Sessions:     fake,
 	}
 	server := gen.NewStrictHandler(StrictHandler{Handler: handler}, []gen.StrictMiddlewareFunc{MaintainSessionCookies(handler.Sessions)})
-	login := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"email":"u@example.com","password":"secret12"}`))
+	login := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(`{"email":"u@example.com","password":"secret12"}`))
 	login.Header.Set("Content-Type", "application/json")
 	login.Header.Set("User-Agent", "Mozilla/5.0 Firefox/122 Linux")
 	login = login.WithContext(WithRemoteAddress(login.Context(), "127.0.0.1:9"))
 	loginResponse := httptest.NewRecorder()
 	server.Login(loginResponse, login)
-	if loginResponse.Code != http.StatusOK {
+	if loginResponse.Code != http.StatusCreated {
 		t.Fatalf("login status = %d body = %s", loginResponse.Code, loginResponse.Body.String())
 	}
 	if fake.issuedUser != 4 {
@@ -354,7 +376,7 @@ func TestLoginAndLogoutMaintainSessionCookies(t *testing.T) {
 		t.Fatalf("login csrf cookie = %+v", issuedCSRF)
 	}
 
-	denied := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"email":"u@example.com","password":"wrongpass"}`))
+	denied := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(`{"email":"u@example.com","password":"wrongpass"}`))
 	denied.Header.Set("Content-Type", "application/json")
 	denied = denied.WithContext(WithRemoteAddress(denied.Context(), "127.0.0.1:9"))
 	deniedResponse := httptest.NewRecorder()
@@ -366,7 +388,7 @@ func TestLoginAndLogoutMaintainSessionCookies(t *testing.T) {
 		t.Fatal("failed login set a session cookie")
 	}
 
-	logout := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	logout := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", nil)
 	logout.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "opaque-session"})
 	logoutResponse := httptest.NewRecorder()
 	server.Logout(logoutResponse, logout)
@@ -394,7 +416,7 @@ func TestMaintainSessionCookiesReportsFailures(t *testing.T) {
 	}
 	server := gen.NewStrictHandler(StrictHandler{Handler: handler}, []gen.StrictMiddlewareFunc{MaintainSessionCookies(handler.Sessions)})
 	loginRequest := func() *http.Request {
-		request := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"email":"u@example.com","password":"secret12"}`))
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(`{"email":"u@example.com","password":"secret12"}`))
 		request.Header.Set("Content-Type", "application/json")
 		return request.WithContext(WithRemoteAddress(request.Context(), "127.0.0.1:9"))
 	}
@@ -406,7 +428,7 @@ func TestMaintainSessionCookiesReportsFailures(t *testing.T) {
 
 	logoutHandler := Handler{Sessions: &fakeSessions{revokeErr: io.EOF}}
 	logoutServer := gen.NewStrictHandler(StrictHandler{Handler: logoutHandler}, []gen.StrictMiddlewareFunc{MaintainSessionCookies(logoutHandler.Sessions)})
-	logout := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	logout := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", nil)
 	logout.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "opaque-session"})
 	logoutResponse := httptest.NewRecorder()
 	logoutServer.Logout(logoutResponse, logout)
@@ -414,7 +436,7 @@ func TestMaintainSessionCookiesReportsFailures(t *testing.T) {
 		t.Fatalf("logout status = %d", logoutResponse.Code)
 	}
 
-	bare := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	bare := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", nil)
 	bareResponse := httptest.NewRecorder()
 	logoutServer = gen.NewStrictHandler(StrictHandler{}, []gen.StrictMiddlewareFunc{MaintainSessionCookies(&fakeSessions{})})
 	logoutServer.Logout(bareResponse, bare)
@@ -437,40 +459,41 @@ func TestMaintainSessionCookiesReportsFailures(t *testing.T) {
 
 func TestRevokeOtherSessionsResponses(t *testing.T) {
 	handler := Handler{}
-	got, err := handler.RevokeOtherSessions(context.Background(), gen.RevokeOtherSessionsRequestObject{})
+	params := gen.RevokeOtherSessionsParams{Scope: gen.Others}
+	got, err := handler.RevokeOtherSessions(context.Background(), gen.RevokeOtherSessionsRequestObject{Params: params})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := got.(gen.RevokeOtherSessions401Response); !ok {
+	if response, ok := got.(*apiResponse); !ok || response.problem == nil || response.problem.Status != http.StatusUnauthorized {
 		t.Fatalf("response = %T", got)
 	}
 	fake := &fakeSessions{}
 	handler.Sessions = fake
 	ctx := WithPrincipal(context.Background(), Principal{User: domain.User{ID: 3}, TokenHash: []byte{7, 7}})
-	got, err = handler.RevokeOtherSessions(ctx, gen.RevokeOtherSessionsRequestObject{})
+	got, err = handler.RevokeOtherSessions(ctx, gen.RevokeOtherSessionsRequestObject{Params: params})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := got.(gen.RevokeOtherSessions204Response); !ok {
+	if response, ok := got.(*apiResponse); !ok || response.status != http.StatusNoContent {
 		t.Fatalf("response = %T", got)
 	}
 	if fake.revokedUser != 3 || len(fake.revokedHash) != 2 {
 		t.Fatalf("revoked user=%d hash=%v", fake.revokedUser, fake.revokedHash)
 	}
 	fake.revokeOthersErr = app.ErrUnauthenticated
-	got, err = handler.RevokeOtherSessions(ctx, gen.RevokeOtherSessionsRequestObject{})
+	got, err = handler.RevokeOtherSessions(ctx, gen.RevokeOtherSessionsRequestObject{Params: params})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := got.(gen.RevokeOtherSessions401Response); !ok {
+	if response, ok := got.(*apiResponse); !ok || response.problem == nil || response.problem.Status != http.StatusUnauthorized {
 		t.Fatalf("response = %T", got)
 	}
 	fake.revokeOthersErr = io.EOF
-	if _, err = handler.RevokeOtherSessions(ctx, gen.RevokeOtherSessionsRequestObject{}); err == nil {
+	if _, err = handler.RevokeOtherSessions(ctx, gen.RevokeOtherSessionsRequestObject{Params: params}); err == nil {
 		t.Fatal("expected revoke error")
 	}
 	handler.Sessions = nil
-	if _, err = handler.RevokeOtherSessions(ctx, gen.RevokeOtherSessionsRequestObject{}); err == nil {
+	if _, err = handler.RevokeOtherSessions(ctx, gen.RevokeOtherSessionsRequestObject{Params: params}); err == nil {
 		t.Fatal("expected missing service error")
 	}
 }
@@ -479,7 +502,7 @@ func TestCSRFOptionsIsSafe(t *testing.T) {
 	handler := CSRF(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	request := httptest.NewRequest(http.MethodOptions, "/auth/login", nil)
+	request := httptest.NewRequest(http.MethodOptions, "/api/v1/sessions", nil)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusNoContent {
@@ -506,10 +529,10 @@ func TestLoginResponseWithoutUserDoesNotIssueASession(t *testing.T) {
 	middleware := MaintainSessionCookies(&fakeSessions{raw: "raw"})
 	wrapped := middleware(func(_ context.Context, _ http.ResponseWriter, _ *http.Request, _ any) (any, error) {
 		called = true
-		return gen.Login401Response{}, nil
+		return gen.Login401ApplicationProblemPlusJSONResponse{}, nil
 	}, loginOperationID)
 	response := httptest.NewRecorder()
-	got, err := wrapped(context.Background(), response, httptest.NewRequest(http.MethodPost, "/auth/login", nil), nil)
+	got, err := wrapped(context.Background(), response, httptest.NewRequest(http.MethodPost, "/api/v1/sessions", nil), nil)
 	if err != nil || !called {
 		t.Fatalf("response=%v err=%v called=%v", got, err, called)
 	}

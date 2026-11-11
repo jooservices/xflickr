@@ -5,6 +5,7 @@
  * HTTP API shared by the XFlickr backend and web client.
  * OpenAPI spec version: 0.0.0
  */
+import type { Links } from './links';
 import type { UserRole } from './userRole';
 
 export interface User {
@@ -13,4 +14,5 @@ export interface User {
   role: UserRole;
   locale: string;
   created_at: string;
+  links: Links;
 }

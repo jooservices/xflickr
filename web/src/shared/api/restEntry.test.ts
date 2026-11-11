@@ -24,6 +24,6 @@ describe('additive REST discovery contract', () => {
     const problem = { type: '/problems/unauthenticated', status: 401 };
     expect(validateBody('/api/v1', 'GET', 401, problem)).toEqual(problem);
     const legacy = { code: 'unauthenticated', message: 'Authentication required' };
-    expect(validateBody('/me', 'GET', 401, legacy)).toEqual(legacy);
+    expect(validateBody('/api/v1/me', 'GET', 401, legacy)).toEqual(legacy);
   });
 });

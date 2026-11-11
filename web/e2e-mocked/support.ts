@@ -7,7 +7,8 @@ import type { Page } from '@playwright/test';
 type Role = 'user' | 'admin';
 
 const endpoints = [
-  '/me',
+  '/api/v1/me',
+  '/api/v1/me/sessions',
   '/healthz',
   '/keys',
   '/flickr-accounts',
@@ -55,17 +56,53 @@ export async function mockApi(page: Page, role: Role | 'anonymous'): Promise<voi
       const { pathname } = new URL(route.request().url());
       const json = (body: unknown, status = 200) =>
         route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+      const envelope = (data: unknown) => ({
+        success: true,
+        code: 200,
+        message: 'OK',
+        data,
+        meta: {},
+        errors: null,
+        trace_id: 'test-trace',
+      });
       switch (pathname) {
-        case '/me':
+        case '/api/v1/me':
           return role === 'anonymous'
-            ? json({}, 401)
-            : json({
-                id: 1,
-                email: `${role}@example.test`,
-                role,
-                locale: 'en',
-                created_at: '2026-10-01T00:00:00Z',
-              });
+            ? json(
+                {
+                  type: '/problems/unauthenticated',
+                  title: 'Unauthenticated',
+                  status: 401,
+                  detail: 'Sign in required',
+                  instance: pathname,
+                  trace_id: 'test-trace',
+                  errors: null,
+                },
+                401,
+              )
+            : json(
+                envelope({
+                  id: 1,
+                  email: `${role}@example.test`,
+                  role,
+                  locale: 'en',
+                  created_at: '2026-10-01T00:00:00Z',
+                  links: {
+                    self: { href: '/api/v1/me', method: 'GET' },
+                    update: { href: '/api/v1/me', method: 'PATCH' },
+                    sessions: { href: '/api/v1/me/sessions', method: 'GET' },
+                    'revoke-other-sessions': {
+                      href: '/api/v1/me/sessions?scope=others',
+                      method: 'DELETE',
+                    },
+                    password: { href: '/api/v1/me/password', method: 'PUT' },
+                    sharing: { href: '/api/v1/me/sharing', method: 'GET' },
+                    'update-sharing': { href: '/api/v1/me/sharing', method: 'PUT' },
+                  },
+                }),
+              );
+        case '/api/v1/me/sessions':
+          return json(envelope([]));
         case '/admin/quota':
           return role === 'admin'
             ? json({

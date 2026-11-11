@@ -6,29 +6,31 @@ info:
 paths:
   /api/v1:
     $ref: ./paths/rest.yaml#/entry
-  /auth/config:
-    $ref: ./paths/auth.yaml#/config
+  /api/v1/authentication-options:
+    $ref: ./paths/auth.yaml#/authentication_options
   /healthz:
     $ref: ./paths/common.yaml#/healthz
   /readyz:
     $ref: ./paths/common.yaml#/readyz
-  /auth/register:
-    $ref: ./paths/auth.yaml#/register
-  /auth/login:
-    $ref: ./paths/auth.yaml#/login
-  /auth/logout:
-    $ref: ./paths/auth.yaml#/logout
-  /auth/sessions:
+  /api/v1/users:
+    $ref: ./paths/auth.yaml#/users
+  /api/v1/users/{id}:
+    $ref: ./paths/auth.yaml#/user
+  /api/v1/sessions:
     $ref: ./paths/auth.yaml#/sessions
-  /me:
+  /api/v1/sessions/current:
+    $ref: ./paths/auth.yaml#/session_current
+  /api/v1/sessions/{id}:
+    $ref: ./paths/auth.yaml#/session
+  /api/v1/me:
     $ref: ./paths/auth.yaml#/me
-  /me/sessions:
-    $ref: ./paths/auth.yaml#/me~1sessions
-  /me/sessions/{id}:
-    $ref: ./paths/auth.yaml#/me~1sessions~1{id}
-  /me/password:
-    $ref: ./paths/auth.yaml#/me~1password
-  /me/sharing:
+  /api/v1/me/sessions:
+    $ref: ./paths/auth.yaml#/me_sessions
+  /api/v1/me/sessions/{id}:
+    $ref: ./paths/auth.yaml#/my_session
+  /api/v1/me/password:
+    $ref: ./paths/auth.yaml#/password
+  /api/v1/me/sharing:
     $ref: ./paths/sharing.yaml#/setting
   /keys:
     $ref: ./paths/keys.yaml#/collection

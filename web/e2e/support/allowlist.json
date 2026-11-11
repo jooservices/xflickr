@@ -3,7 +3,7 @@
   "responses": [
     {
       "method": "GET",
-      "path": "/me",
+      "path": "/api/v1/me",
       "status": 401,
       "reason": "The sign-in and registration pages ask who is signed in; anonymous visitors get 401 by design."
     }

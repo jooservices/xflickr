@@ -77,6 +77,14 @@ func (passwordSessions) ListSessions(context.Context, int64) ([]domain.Session, 
 	return nil, nil
 }
 
+func (passwordSessions) ListSessionsPage(context.Context, int64, *app.SessionCursor, int) ([]domain.Session, error) {
+	return nil, nil
+}
+
+func (passwordSessions) FindSessionByID(context.Context, int64, int64) (domain.Session, error) {
+	return domain.Session{}, app.ErrSessionNotFound
+}
+
 func (passwordSessions) DeleteSessionByID(context.Context, int64, int64) (bool, error) {
 	return false, nil
 }
@@ -103,10 +111,11 @@ func TestRegisterResponses(t *testing.T) {
 	password := "secret12"
 	short := "short"
 	for _, tc := range []struct {
-		name string
-		body *gen.RegisterJSONRequestBody
-		want any
-	}{{"created", registerBody(email, &password), gen.Register201JSONResponse{}}, {"missing body", nil, gen.Register400JSONResponse{}}, {"missing password", registerBody(email, nil), gen.Register400JSONResponse{}}, {"invalid input", registerBody(email, &short), gen.Register400JSONResponse{}}, {"closed", registerBody(email, &password), gen.Register409JSONResponse{}}, {"duplicate", registerBody(email, &password), gen.Register409JSONResponse{}}} {
+		name        string
+		body        *gen.RegisterJSONRequestBody
+		wantStatus  int
+		wantProblem string
+	}{{"created", registerBody(email, &password), http.StatusCreated, ""}, {"missing body", nil, http.StatusBadRequest, "malformed-request"}, {"missing password", registerBody(email, nil), http.StatusUnprocessableEntity, "validation-error"}, {"invalid input", registerBody(email, &short), http.StatusUnprocessableEntity, "validation-error"}, {"closed", registerBody(email, &password), http.StatusConflict, "registration-closed"}, {"duplicate", registerBody(email, &password), http.StatusConflict, "email-taken"}} {
 		h := good
 		if tc.name == "closed" {
 			h.RegisterUseCase.Repository = repo{err: app.ErrRegistrationClosed}
@@ -118,21 +127,19 @@ func TestRegisterResponses(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		switch tc.want.(type) {
-		case gen.Register201JSONResponse:
-			if _, ok := got.(gen.Register201JSONResponse); !ok {
-				t.Fatalf("%s response %T", tc.name, got)
+		response, ok := got.(*apiResponse)
+		gotStatus := 0
+		if ok {
+			gotStatus = response.status
+			if response.problem != nil {
+				gotStatus = response.problem.Status
 			}
-		case gen.Register400JSONResponse:
-			response, ok := got.(gen.Register400JSONResponse)
-			if !ok || response.Code != gen.ValidationFailed || response.Details.Fields.Password == nil {
-				t.Fatalf("%s response %T", tc.name, got)
-			}
-		case gen.Register409JSONResponse:
-			response, ok := got.(gen.Register409JSONResponse)
-			if !ok || (tc.name == "closed" && response.Code != gen.RegistrationClosed) || (tc.name == "duplicate" && response.Code != gen.EmailTaken) {
-				t.Fatalf("%s response %T", tc.name, got)
-			}
+		}
+		if !ok || gotStatus != tc.wantStatus {
+			t.Fatalf("%s response = %#v", tc.name, got)
+		}
+		if tc.wantProblem != "" && (response.problem == nil || response.problem.Type != "/problems/"+tc.wantProblem) {
+			t.Fatalf("%s problem = %#v", tc.name, response.problem)
 		}
 	}
 }
@@ -160,8 +167,12 @@ func TestGetAuthConfig(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			config := gen.AuthConfig(response.(gen.GetAuthConfig200JSONResponse))
-			if config.RegistrationOpen != tc.open || config.PasskeyEnabled || config.PasswordMin != app.MinPasswordBytes || config.PasswordMax != app.MaxPasswordBytes {
+			config, ok := response.(*apiResponse)
+			if !ok {
+				t.Fatalf("GetAuthConfig() response = %T", response)
+			}
+			data := config.data.(map[string]any)
+			if data["registration_open"] != tc.open || data["passkey_enabled"] != false || data["password_min"] != app.MinPasswordBytes || data["password_max"] != app.MaxPasswordBytes {
 				t.Fatalf("GetAuthConfig() = %#v", config)
 			}
 		})
@@ -172,40 +183,50 @@ func TestGetAuthConfig(t *testing.T) {
 }
 
 func TestUpdateMeResponses(t *testing.T) {
-	h := Handler{Profile: app.UpdateProfile{Repository: localeRepo{user: domain.User{ID: 3, Email: "u@example.test", Role: domain.RoleUser}}}}
-	body := &gen.UpdateMeRequest{Locale: gen.UpdateMeRequestLocaleVi}
+	profileUser := domain.User{ID: 3, Email: "u@example.test", Role: domain.RoleUser}
+	h := Handler{Profile: app.UpdateProfile{Repository: localeRepo{user: profileUser}}, Users: repo{user: profileUser}}
+	locale := gen.UpdateMeRequestLocaleVi
+	body := &gen.UpdateMeRequest{Locale: &locale}
 	got, err := h.UpdateMe(WithUserID(context.Background(), 3), gen.UpdateMeRequestObject{Body: body})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response, ok := got.(gen.UpdateMe200JSONResponse); !ok || response.Locale != "vi" {
+	if response, ok := got.(*apiResponse); !ok || response.status != http.StatusOK || response.data.(map[string]any)["locale"] != "vi" {
 		t.Fatalf("UpdateMe() = %#v, want updated user", got)
 	}
 
 	for _, tc := range []struct {
-		name string
-		ctx  context.Context
-		body *gen.UpdateMeRequest
-		want any
+		name   string
+		ctx    context.Context
+		body   *gen.UpdateMeRequest
+		status int
+		slug   string
 	}{
-		{name: "unauthenticated", ctx: context.Background(), body: body, want: gen.UpdateMe401Response{}},
-		{name: "missing body", ctx: WithUserID(context.Background(), 3), want: gen.UpdateMe400Response{}},
-		{name: "invalid locale", ctx: WithUserID(context.Background(), 3), body: &gen.UpdateMeRequest{Locale: "fr"}, want: gen.UpdateMe400Response{}},
+		{name: "unauthenticated", ctx: context.Background(), body: body, status: http.StatusUnauthorized, slug: "unauthenticated"},
+		{name: "missing body", ctx: WithUserID(context.Background(), 3), status: http.StatusBadRequest, slug: "malformed-request"},
+		{name: "invalid locale", ctx: WithUserID(context.Background(), 3), body: func() *gen.UpdateMeRequest {
+			value := gen.UpdateMeRequestLocale("fr")
+			return &gen.UpdateMeRequest{Locale: &value}
+		}(), status: http.StatusUnprocessableEntity, slug: "validation-error"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			response, err := h.UpdateMe(tc.ctx, gen.UpdateMeRequestObject{Body: tc.body})
 			if err != nil {
 				t.Fatal(err)
 			}
-			switch tc.want.(type) {
-			case gen.UpdateMe401Response:
-				if _, ok := response.(gen.UpdateMe401Response); !ok {
-					t.Fatalf("response = %#v", response)
+			value, ok := response.(*apiResponse)
+			gotStatus := 0
+			if ok {
+				gotStatus = value.status
+				if value.problem != nil {
+					gotStatus = value.problem.Status
 				}
-			case gen.UpdateMe400Response:
-				if _, ok := response.(gen.UpdateMe400Response); !ok {
-					t.Fatalf("response = %#v", response)
-				}
+			}
+			if !ok || gotStatus != tc.status {
+				t.Fatalf("response = %#v", response)
+			}
+			if tc.slug != "" && (value.problem == nil || value.problem.Type != "/problems/"+tc.slug) {
+				t.Fatalf("problem = %#v", value.problem)
 			}
 		})
 	}
@@ -227,32 +248,33 @@ func TestSessionProfileHandlers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, ok := listed.(gen.ListMySessions200JSONResponse)
-	if !ok || len(response.Items) != 2 || !response.Items[0].Current || response.Items[1].Current {
+	response, ok := listed.(*apiResponse)
+	if !ok || response.status != http.StatusOK {
 		t.Fatalf("session list = %#v", listed)
 	}
-	if response.Items[0].UserAgentLabel != "Firefox on Linux" || response.Items[0].IPMasked != "203.0.113.x" || response.Items[1].UserAgentLabel != "Chrome on Windows" {
-		t.Fatalf("session metadata = %#v", response.Items)
+	items := response.data.([]map[string]any)
+	if len(items) != 2 || items[0]["current"] != true || items[1]["current"] != false || items[0]["user_agent_label"] != "Firefox on Linux" || items[0]["ip_masked"] != "203.0.113.x" || items[1]["user_agent_label"] != "Chrome on Windows" {
+		t.Fatalf("session metadata = %#v", items)
 	}
 	revoked, err := h.RevokeMySession(ctx, gen.RevokeMySessionRequestObject{ID: 32})
 	if err != nil || fake.revokeByIDUser != 9 || fake.revokeByID != 32 {
 		t.Fatalf("session revoke response=%T user=%d id=%d err=%v", revoked, fake.revokeByIDUser, fake.revokeByID, err)
 	}
-	if _, ok := revoked.(gen.RevokeMySession204Response); !ok {
+	if response, ok := revoked.(*apiResponse); !ok || response.status != http.StatusNoContent {
 		t.Fatalf("session revoke response = %T", revoked)
 	}
 	current, err := h.RevokeMySession(ctx, gen.RevokeMySessionRequestObject{ID: 31})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := current.(gen.RevokeMySession404Response); !ok {
+	if response, ok := current.(*apiResponse); !ok || response.problem == nil || response.problem.Status != http.StatusNotFound {
 		t.Fatalf("current session revoke response = %T", current)
 	}
 	missing, err := h.ListMySessions(context.Background(), gen.ListMySessionsRequestObject{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := missing.(gen.ListMySessions401Response); !ok {
+	if response, ok := missing.(*apiResponse); !ok || response.problem == nil || response.problem.Status != http.StatusUnauthorized {
 		t.Fatalf("anonymous session list response = %T", missing)
 	}
 }
@@ -302,7 +324,7 @@ func TestRegisterInfrastructureErrorsAreServerErrors(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := gen.NewStrictHandler(StrictHandler{Handler: tc.handler}, nil)
-			request := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body))
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(body))
 			request.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
 			server.Register(response, request)
@@ -325,7 +347,7 @@ func TestLoginResponses(t *testing.T) {
 		limiter rateLimit
 		body    *gen.LoginJSONRequestBody
 		want    string
-	}{{"success", repo{user: domain.User{ID: 1, PasswordHash: hash, CreatedAt: time.Now()}}, rateLimit{allowed: true}, request.Body, "ok"}, {"bad password", repo{user: domain.User{PasswordHash: hash}}, rateLimit{allowed: true}, func() *gen.AuthRequest { p := "badpass1"; return &gen.AuthRequest{Password: &p} }(), "unauthorized"}, {"missing body", repo{}, rateLimit{}, nil, "unauthorized"}, {"limited", repo{}, rateLimit{allowed: false, remaining: 37 * time.Second}, request.Body, "limited"}, {"limiter error", repo{}, rateLimit{err: errors.New("redis")}, request.Body, "error"}} {
+	}{{"success", repo{user: domain.User{ID: 1, PasswordHash: hash, CreatedAt: time.Now()}}, rateLimit{allowed: true}, request.Body, "ok"}, {"bad password", repo{user: domain.User{PasswordHash: hash}}, rateLimit{allowed: true}, func() *gen.AuthRequest { p := "badpass1"; return &gen.AuthRequest{Password: &p} }(), "unauthorized"}, {"missing body", repo{}, rateLimit{}, nil, "malformed"}, {"limited", repo{}, rateLimit{allowed: false, remaining: 37 * time.Second}, request.Body, "limited"}, {"limiter error", repo{}, rateLimit{err: errors.New("redis")}, request.Body, "error"}} {
 		h := Handler{LoginUseCase: app.Login{Repository: tc.repo, Limiter: tc.limiter, DummyPasswordHash: dummy}}
 		req := request
 		req.Body = tc.body
@@ -340,19 +362,26 @@ func TestLoginResponses(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		value, ok := got.(*apiResponse)
+		if !ok {
+			t.Fatalf("%s response = %T", tc.name, got)
+		}
 		switch tc.want {
 		case "ok":
-			if _, ok := got.(gen.Login200JSONResponse); !ok {
-				t.Fatalf("%s response %T", tc.name, got)
+			if value.status != http.StatusCreated || value.location != "/api/v1/sessions/current" {
+				t.Fatalf("%s response %#v", tc.name, value)
 			}
 		case "limited":
-			limited, ok := got.(gen.Login429JSONResponse)
-			if !ok || limited.Body.Details.RetryAfterSeconds != 37 || limited.Headers.RetryAfter == nil || *limited.Headers.RetryAfter != 37 {
-				t.Fatalf("%s response %T", tc.name, got)
+			if value.problem == nil || value.problem.Status != http.StatusTooManyRequests || value.retryAfter != 37 {
+				t.Fatalf("%s response %#v", tc.name, value)
+			}
+		case "malformed":
+			if value.problem == nil || value.problem.Status != http.StatusBadRequest {
+				t.Fatalf("%s response %#v", tc.name, value)
 			}
 		default:
-			if _, ok := got.(gen.Login401Response); !ok {
-				t.Fatalf("%s response %T", tc.name, got)
+			if value.problem == nil || value.problem.Status != http.StatusUnauthorized {
+				t.Fatalf("%s response %#v", tc.name, value)
 			}
 		}
 	}
@@ -372,15 +401,15 @@ func TestChangeMyPasswordDistinguishesInvalidPasswordAndUnauthenticated(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	invalid, ok := response.(gen.ChangeMyPassword400JSONResponse)
-	if !ok || invalid.Code != "invalid_current_password" {
+	invalid, ok := response.(*apiResponse)
+	if !ok || invalid.problem == nil || invalid.problem.Type != "/problems/invalid-current-password" {
 		t.Fatalf("wrong password response = %#v", response)
 	}
 	response, err = h.ChangeMyPassword(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := response.(gen.ChangeMyPassword401Response); !ok {
+	if value, ok := response.(*apiResponse); !ok || value.problem == nil || value.problem.Status != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated response = %#v", response)
 	}
 }
@@ -404,8 +433,8 @@ func TestChangeMyPasswordRateLimitResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	limited, ok := response.(gen.ChangeMyPassword429JSONResponse)
-	if !ok || limited.Body.Details.RetryAfterSeconds != 45 || limited.Headers.RetryAfter == nil || *limited.Headers.RetryAfter != 45 {
+	limited, ok := response.(*apiResponse)
+	if !ok || limited.problem == nil || limited.problem.Status != http.StatusTooManyRequests || limited.retryAfter != 45 {
 		t.Fatalf("rate limit response = %#v", response)
 	}
 }
@@ -438,7 +467,7 @@ func TestLogoutGetMeHealthAndMiddleware(t *testing.T) {
 }
 
 func TestRequestBodyLimitRejectsOversizedBodyBeforeDecode(t *testing.T) {
-	request := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(strings.Repeat("x", 16*1024+1)))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(strings.Repeat("x", 16*1024+1)))
 	response := httptest.NewRecorder()
 	handler := RequestBodyLimit(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := io.ReadAll(r.Body)

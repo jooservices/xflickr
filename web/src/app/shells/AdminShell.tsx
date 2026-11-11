@@ -145,7 +145,7 @@ export function AdminGuardLoading() {
   );
 }
 
-/** `GET /me` failed with a non-401 error: banner with Retry, skeleton below. */
+/** `GET /api/v1/me` failed with a non-401 error: banner with Retry, skeleton below. */
 export function AdminGuardFailed() {
   const { t } = useI18n();
   const { retry } = useSession();

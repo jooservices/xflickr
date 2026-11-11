@@ -1,8 +1,30 @@
 setting:
+  get:
+    operationId: GetMeSharing
+    tags: [sharing]
+    summary: Get the current user's sharing choice
+    responses:
+      '200':
+        description: Persisted sharing setting
+        headers:
+          Cache-Control: { schema: { type: string } }
+        content:
+          application/json:
+            schema: { $ref: ../schemas/sharing.yaml#/SharingEnvelope }
+      '401':
+        description: Authentication required
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
   put:
     operationId: PutMeSharing
     tags: [sharing]
-    summary: Update the current user's sharing choice
+    summary: Replace the current user's sharing choice
     requestBody:
       required: true
       content:
@@ -11,8 +33,33 @@ setting:
     responses:
       '200':
         description: Current sharing setting
+        headers:
+          Cache-Control: { schema: { type: string } }
         content:
           application/json:
-            schema: { $ref: ../schemas/sharing.yaml#/SharingSetting }
-      '400': { description: Invalid request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
-      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+            schema: { $ref: ../schemas/sharing.yaml#/SharingEnvelope }
+      '400':
+        description: Malformed request
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '401':
+        description: Authentication required
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '403':
+        description: CSRF token is missing or invalid
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '422':
+        description: Invalid sharing choice
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      default:
+        description: Problem response
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }

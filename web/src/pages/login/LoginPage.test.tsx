@@ -3,6 +3,7 @@ import { http, HttpResponse } from 'msw/http';
 import { describe, expect, it, vi } from 'vitest';
 import { server } from '../../test/server';
 import { renderApp } from '../../test/render';
+import { authenticationOptions, sessionEnvelope } from '../../test/rest';
 
 const signedOut = { status: 'unauthenticated' as const };
 
@@ -10,23 +11,24 @@ describe('LoginPage', () => {
   it('submits credentials and sends a signed-in user to a safe return path', async () => {
     let posted: unknown;
     server.use(
-      http.get('*/auth/config', () =>
-        HttpResponse.json({
-          registration_open: false,
-          passkey_enabled: false,
-          password_min: 8,
-          password_max: 128,
-        }),
+      http.get('*/api/v1/authentication-options', () =>
+        HttpResponse.json(authenticationOptions({ registration_open: false })),
       ),
-      http.post('*/auth/login', async ({ request }) => {
+      http.post('*/api/v1/sessions', async ({ request }) => {
         posted = await request.json();
-        return HttpResponse.json({
-          id: 4,
-          email: 'a@example.test',
-          role: 'user',
-          locale: 'en',
-          created_at: '2026-01-01T00:00:00Z',
-        });
+        return HttpResponse.json(
+          sessionEnvelope(
+            { id: 'session-4', current: true },
+            {
+              id: 4,
+              email: 'a@example.test',
+              role: 'user',
+              locale: 'en',
+              created_at: '2026-01-01T00:00:00Z',
+            },
+          ),
+          { status: 201 },
+        );
       }),
     );
     const { router } = renderApp({ session: signedOut, path: '/login?return_to=%2Falbums%2F42' });
@@ -43,7 +45,7 @@ describe('LoginPage', () => {
   });
 
   it('shows neutral invalid credentials and clears the password after an MSW error', async () => {
-    server.use(http.post('*/auth/login', () => new HttpResponse(null, { status: 401 })));
+    server.use(http.post('*/api/v1/sessions', () => new HttpResponse(null, { status: 401 })));
     renderApp({ session: signedOut, path: '/login' });
     fireEvent.change(await screen.findByTestId('auth-login-email'), {
       target: { value: 'a@example.test' },
@@ -62,13 +64,8 @@ describe('LoginPage', () => {
   it('offers no passkey action because the backend has no passkey endpoints', async () => {
     vi.stubGlobal('PublicKeyCredential', () => undefined);
     server.use(
-      http.get('*/auth/config', () =>
-        HttpResponse.json({
-          registration_open: true,
-          passkey_enabled: true,
-          password_min: 8,
-          password_max: 128,
-        }),
+      http.get('*/api/v1/authentication-options', () =>
+        HttpResponse.json(authenticationOptions({ passkey_enabled: true })),
       ),
     );
     renderApp({ session: signedOut, path: '/login' });
@@ -79,7 +76,7 @@ describe('LoginPage', () => {
   });
 
   it('shows the form with partial defaults when auth config fails', async () => {
-    server.use(http.get('*/auth/config', () => HttpResponse.error()));
+    server.use(http.get('*/api/v1/authentication-options', () => HttpResponse.error()));
     renderApp({ session: signedOut, path: '/login' });
     expect(await screen.findByTestId('auth-partial-note')).toBeInTheDocument();
     expect(screen.getByTestId('auth-login-to-register')).toBeInTheDocument();
@@ -99,14 +96,20 @@ describe('LoginPage', () => {
       target: { value: 'password123' },
     });
     server.use(
-      http.post('*/auth/login', () =>
-        HttpResponse.json({
-          id: 4,
-          email: 'a@example.test',
-          role: 'user',
-          locale: 'en',
-          created_at: '2026-01-01T00:00:00Z',
-        }),
+      http.post('*/api/v1/sessions', () =>
+        HttpResponse.json(
+          sessionEnvelope(
+            { id: 'session-4', current: true },
+            {
+              id: 4,
+              email: 'a@example.test',
+              role: 'user',
+              locale: 'en',
+              created_at: '2026-01-01T00:00:00Z',
+            },
+          ),
+          { status: 201 },
+        ),
       ),
     );
     fireEvent.click(screen.getByTestId('auth-login-submit'));
@@ -115,11 +118,10 @@ describe('LoginPage', () => {
 
   it.each([
     [429, 'Too many attempts', 'auth-ratelimit-banner'],
-    [423, 'account is locked', 'auth-locked-banner'],
     [403, 'account is disabled', 'auth-disabled-banner'],
     [500, 'could not reach XFlickr', 'auth-error-banner'],
   ])('shows the correct sign-in state for HTTP %i', async (status, message, testId) => {
-    server.use(http.post('*/auth/login', () => new HttpResponse(null, { status })));
+    server.use(http.post('*/api/v1/sessions', () => new HttpResponse(null, { status })));
     renderApp({ session: signedOut, path: '/login' });
     fireEvent.change(await screen.findByTestId('auth-login-email'), {
       target: { value: 'a@example.test' },
@@ -135,7 +137,7 @@ describe('LoginPage', () => {
   it('uses Retry-After for the cooldown and re-enables sign in when it expires', async () => {
     server.use(
       http.post(
-        '*/auth/login',
+        '*/api/v1/sessions',
         () =>
           new HttpResponse(JSON.stringify({ details: { retry_after_seconds: 4 } }), {
             status: 429,
@@ -159,14 +161,29 @@ describe('LoginPage', () => {
     expect(screen.getByTestId('auth-cooldown-ended')).toHaveTextContent('try signing in again');
   });
 
-  it('uses locked_until to show the unlock time and keep the form blocked until then', async () => {
-    const lockedUntil = new Date(Date.now() + 1500).toISOString();
+  it.each([
+    ['en', 'This account is locked after repeated failed sign-ins. It unlocks at '],
+    ['vi', 'Tài khoản bị khóa sau nhiều lần đăng nhập sai. Sẽ mở khóa lúc '],
+  ] as const)('shows the unlock time for a locked account in %s', async (locale, message) => {
+    const now = Date.UTC(2026, 10, 10, 12, 0, 0);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
     server.use(
-      http.post('*/auth/login', () =>
-        HttpResponse.json({ details: { locked_until: lockedUntil } }, { status: 423 }),
+      http.post('*/api/v1/sessions', () =>
+        HttpResponse.json(
+          {
+            type: '/problems/account-locked',
+            title: 'Account locked',
+            status: 429,
+            detail: 'Try again later',
+            instance: '/api/v1/sessions',
+            trace_id: 'test-trace',
+            errors: null,
+          },
+          { status: 429, headers: { 'Retry-After': '120' } },
+        ),
       ),
     );
-    renderApp({ session: signedOut, path: '/login' });
+    renderApp({ session: signedOut, path: '/login', locale });
     fireEvent.change(await screen.findByTestId('auth-login-email'), {
       target: { value: 'a@example.test' },
     });
@@ -174,13 +191,14 @@ describe('LoginPage', () => {
       target: { value: 'password123' },
     });
     fireEvent.click(screen.getByTestId('auth-login-submit'));
-    expect(await screen.findByTestId('auth-locked-banner')).toHaveTextContent(
-      new Date(lockedUntil).toLocaleTimeString('en'),
-    );
-    expect(screen.getByTestId('auth-login-submit')).toBeDisabled();
-    await waitFor(() => expect(screen.getByTestId('auth-login-submit')).toBeEnabled(), {
-      timeout: 3000,
+    const banner = await screen.findByTestId('auth-locked-banner');
+    const unlockTime = new Date(now + 120_000).toLocaleTimeString(locale, {
+      hour: 'numeric',
+      minute: '2-digit',
     });
+    expect(banner).toHaveTextContent(`${message}${unlockTime}.`);
+    expect(screen.getByTestId('auth-login-submit')).toBeDisabled();
+    clock.mockRestore();
   });
 
   it('validates email and password, allows password reveal and opens registration', async () => {

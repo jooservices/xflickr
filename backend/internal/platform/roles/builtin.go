@@ -898,6 +898,10 @@ func (s apiServer) PutMeSharing(ctx context.Context, request gen.PutMeSharingReq
 	return s.Sharing.PutMeSharing(ctx, request)
 }
 
+func (s apiServer) GetMeSharing(ctx context.Context, request gen.GetMeSharingRequestObject) (gen.GetMeSharingResponseObject, error) {
+	return s.Sharing.GetMeSharing(ctx, request)
+}
+
 func (s apiServer) GetReadiness(ctx context.Context, _ gen.GetReadinessRequestObject) (gen.GetReadinessResponseObject, error) {
 	status, ready := s.Readiness.Evaluate(ctx)
 	response := gen.Readiness{
@@ -1015,6 +1019,10 @@ func newAPIRoutersWithServices(identity identityhttp.Handler, keys accountshttp.
 	server := apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Downloads: downloads, Ops: opsHandler, Stream: streamHandler, Readiness: readiness, Flags: flagsHandler, Catalog: catalogHandler, Nodes: nodesHandler, planHandler: planHandler{Handler: plans}}
 	publicRouter := chi.NewRouter()
 	serveWebAssets(publicRouter, os.Getenv("XFLICKR_WEB_DIR"))
+	publicRouter.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		writeAPIError(w, r, "method-not-allowed", "Method not allowed")
+	})
+	publicRouter.Use(identityhttp.LegacyIdentityRoutes)
 	publicRouter.Use(clusterhttp.PublicInternalPathBlocker)
 	publicRouter.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1022,9 +1030,11 @@ func newAPIRoutersWithServices(identity identityhttp.Handler, keys accountshttp.
 		})
 	})
 	publicRouter.Use(identityhttp.RequestBodyLimit)
+	publicRouter.Use(identityhttp.PrivateIdentityCache)
 	publicRouter.Use(identityhttp.CSRF)
 	publicRouter.Use(identityhttp.ProtectRoutes(identity.Sessions, accessResolver(publicRouter)))
 	publicRouter.Use(metricsQueryMultiplicity)
+	publicRouter.Use(identityhttp.Contract)
 	strict := gen.NewStrictHandlerWithOptions(server, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		discoveryAuthentication(identity.Sessions),
@@ -1046,7 +1056,7 @@ func buildSharingHandler(pool *pgxpool.Pool) (sharinghttp.Handler, error) {
 	if err != nil {
 		return sharinghttp.Handler{}, err
 	}
-	return sharinghttp.Handler{Change: sharingapp.Change{Repository: repository}, ActorID: userIDFromPrincipal}, nil
+	return sharinghttp.Handler{Change: sharingapp.Change{Repository: repository}, Read: sharingapp.Read{Repository: repository}, ActorID: userIDFromPrincipal}, nil
 }
 
 func buildDownloadHandler(pool *pgxpool.Pool, stores ...mediaapp.BlobStore) (mediahttp.DownloadHandler, error) {

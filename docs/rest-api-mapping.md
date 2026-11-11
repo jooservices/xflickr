@@ -149,19 +149,26 @@ All target names include their literal prefix; no implicit `/api/v1` is hidden.
 
 ### Identity and sharing
 
-| Current method/path (operation) | Target method/path | Current statuses → target success/body (P on all errors) | Pagination / filters | Resource links beyond self | Breaking | Consumer key |
-| --- | --- | --- | --- | --- | --- | --- |
-| `GET /auth/config` (`GetAuthConfig`) | `GET /api/v1/authentication-options` | 200 → 200 E; public options object | N | users POST, sessions POST | W; C | I |
-| `POST /auth/register` (`Register`) | `POST /api/v1/users` | 201,400,409 → 201 E + L; user representation | N | me GET, sessions POST | W; C | I |
-| `POST /auth/login` (`Login`) | `POST /api/v1/sessions` | 200,401,429,423,403 → 200 user → 201 E + L; session with user, cookie retained; 423: D5 | N | user GET, revocation DELETE | W; C | I |
-| `POST /auth/logout` (`Logout`) | `DELETE /api/v1/sessions/current` | 204 → 204 B; clear cookie | N | No body; discover from session | W; C | I |
-| `DELETE /auth/sessions` (`RevokeOtherSessions`) | `DELETE /api/v1/me/sessions?scope=others` | 204,401,403 → 204 B | Allowlist scope=others; no body | No body; discover from me | W; C | P |
-| `GET /me` (`GetMe`) | `GET /api/v1/me` | 200,401 → 200 E; user | N | sessions GET, password PUT, sharing PUT, crawl GET | W; C | P |
-| `PATCH /me` (`UpdateMe`) | `PATCH /api/v1/me` | 200,400,401,403 → 200 E; locale-only merge patch | N | sessions GET, sharing PUT | W; C | P |
-| `GET /me/sessions` (`ListMySessions`) | `GET /api/v1/me/sessions` | 200,401 → 200 E; SessionList → array | C; no field filters | revocation DELETE per member | W; C | P |
-| `DELETE /me/sessions/{id}` (`RevokeMySession`) | `DELETE /api/v1/me/sessions/{id}` | 204,401,403,404 → 204 B; retain missing/hidden 404 | N | No body; discover from session member | W; C | P |
-| `POST /me/password` (`ChangeMyPassword`) | `PUT /api/v1/me/password` | 204,400,401,403,429 → 204 B; full new credential with current-password proof, not partial user update | N | No body; discover from me | W; C | P |
-| `PUT /me/sharing` (`PutMeSharing`) | `PUT /api/v1/me/sharing` | 200,400,401 → 200 E; full sharing choice | N | me GET | W; C | S |
+| Current method/path (operation) | Target method/path | Current statuses → target success/body (P on all errors) | Pagination / filters | Resource links beyond self | Breaking | Consumer key | Delivery |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `GET /auth/config` (`GetAuthConfig`) | `GET /api/v1/authentication-options` | 200 → 200 E; public options object | N | users POST, sessions POST | W; C | I | Delivered (JOOXF-353) |
+| `POST /auth/register` (`Register`) | `POST /api/v1/users` | 201,400,409 → 201 E + L; user representation | N | me GET, sessions POST | W; C | I | Delivered (JOOXF-353) |
+| `POST /auth/login` (`Login`) | `POST /api/v1/sessions` | 200,401,429,423,403 → 201 E + L; session with user, cookie retained; lockout is 429 per D5, not 423 | N | user GET, revocation DELETE | W; C | I | Delivered (JOOXF-353) |
+| `POST /auth/logout` (`Logout`) | `DELETE /api/v1/sessions/current` | 204 → 204 B; clear cookie | N | No body; discover from session | W; C | I | Delivered (JOOXF-353) |
+| `DELETE /auth/sessions` (`RevokeOtherSessions`) | `DELETE /api/v1/me/sessions?scope=others` | 204,401,403 → 204 B | Allowlist scope=others; no body | No body; discover from me | W; C | P | Delivered (JOOXF-353) |
+| `GET /me` (`GetMe`) | `GET /api/v1/me` | 200,401 → 200 E; user | N | sessions GET, password PUT, sharing GET/PUT; crawl GET is withheld until the Crawl slice | W; C | P | Delivered (JOOXF-353) |
+| `PATCH /me` (`UpdateMe`) | `PATCH /api/v1/me` | 200,400,401,403,415,422 → 200 E; locale-only merge patch | N | sessions GET, sharing GET/PUT | W; C | P | Delivered (JOOXF-353) |
+| `GET /me/sessions` (`ListMySessions`) | `GET /api/v1/me/sessions` | 200,401,422 → 200 E; SessionList → array | Opaque cursor; limit 50 by default, maximum 100; no field filters | revocation DELETE per member | W; C | P | Delivered (JOOXF-353) |
+| `DELETE /me/sessions/{id}` (`RevokeMySession`) | `DELETE /api/v1/me/sessions/{id}` | 204,401,403,404 → 204 B; retain missing/hidden 404 | N | No body; discover from session member | W; C | P | Delivered (JOOXF-353) |
+| `POST /me/password` (`ChangeMyPassword`) | `PUT /api/v1/me/password` | 204,400,401,403,429 → 204 B; full new credential with current-password proof, not partial user update | N | No body; discover from me | W; C | P | Delivered (JOOXF-353) |
+| `PUT /me/sharing` (`PutMeSharing`) | `PUT /api/v1/me/sharing` | 200,400,401,403,422 → 200 E; full sharing choice | N | me GET | W; C | S | Delivered (JOOXF-353) |
+
+JOOXF-353 also delivered the supporting identity reads required to dereference
+registration and session links: `GET /api/v1/users/{id}`,
+`GET /api/v1/sessions/current`, `GET /api/v1/sessions/{id}`,
+`GET /api/v1/me/sessions/{id}`, and `GET /api/v1/me/sharing`. Every legacy
+identity route above is removed in the same release; it has no compatibility
+alias.
 
 ### Accounts, keys and quota
 
@@ -407,9 +414,9 @@ this audit does not invent authentication behavior.
 
 ## (b) Decisions the rules do not settle
 
-These are recommendations for review, not amendments or permission to implement
-contradictory behavior. All unaffected mapping work can proceed. Record the
-lead's answer on JOOXF-316 before finalizing each affected contract.
+The lead finalized D1–D8 for this delivery split. The audit notes below retain
+their original rationale; they are not pending questions. This identity slice
+applies the final decisions relevant to its routes.
 
 1. **D1 — Pause scope mismatch.** Starting mapping says POST pause/resume →
    PATCH `/me/crawl` with `paused`. Actual contract/router say **PUT**, body
@@ -443,13 +450,12 @@ lead's answer on JOOXF-316 before finalizing each affected contract.
    a separate noun child transfer is also possible. Lead should choose the
    representation and session/user/favorite canonical URI before client generation.
    Preserve owner-only expiry and never expose `file:` links to browsers.
-5. **D5 — Existing 423/410 states.** Login contract has 423 locked; provisional
-   identity specs additionally use 410 expired and 423 locked. Rule 5 lists
-   other statuses without defining these cases. Recommendation: configurable
-   lockout returns 429 with Retry-After and `/problems/account-locked`;
-   expired one-time flow returns 409 with a stable expired problem type and
-   restart relation. If 410/423 must remain, the lead must explicitly record
-   that policy in the rules; this audit does not silently extend them.
+5. **D5 — Existing 423/410 states.** Final decision: configurable login
+   lockout returns 429 with `Retry-After` and `/problems/account-locked`; 410
+   and 423 are not used. Expired one-time flows return 409 with a stable
+   expired problem type and restart relation. Identity login implements the
+   429 lockout response; later reset and verification flows apply the same
+   decision when delivered.
 6. **D6 — Probe bodies.** Only unversioned placement is exempted. Current
    health/readiness have bare JSON, and unready 503 is a Readiness success-like
    shape. Recommendation: keep paths/status semantics and use E/links for

@@ -5,9 +5,10 @@
  * HTTP API shared by the XFlickr backend and web client.
  * OpenAPI spec version: 0.0.0
  */
-import type { RegisterConflictCode } from './registerConflictCode';
 
-export interface RegisterConflict {
-  code: RegisterConflictCode;
-  message: string;
-}
+export type PublicUserRole = (typeof PublicUserRole)[keyof typeof PublicUserRole];
+
+export const PublicUserRole = {
+  admin: 'admin',
+  user: 'user',
+} as const;

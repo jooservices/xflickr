@@ -4,9 +4,8 @@ import { Link, useLocation, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '../../shared';
 import { useTheme } from '../../shared/theme';
-import { asResult, fetchCsrfConfig, validatedReturnTo } from '../../features/auth/api';
+import { fetchCsrfConfig, validatedReturnTo } from '../../features/auth/api';
 import { login } from '../../shared/api/gen/default/default';
-import type { AuthUser } from '../../features/auth/api';
 import { SESSION_QUERY_KEY } from '../../entities/session/SessionProvider';
 import { useSession } from '../../entities';
 import styles from '../auth.module.css';
@@ -104,44 +103,33 @@ export function LoginPage() {
     }
     setBusy(true);
     try {
-      const response = asResult<AuthUser>(await login({ email: email.trim(), password }));
-      if (response.status === 200) {
+      const response = await login({ email: email.trim(), password });
+      if (response.status === 201) {
+        const user = response.data.data?.user;
+        if (!user) throw new Error('Session response has no user');
         setPassword('');
         queryClient.setQueryData(SESSION_QUERY_KEY, {
           status: 'authenticated',
-          user: response.data,
+          user,
         });
         localStorage.setItem('xf.signed-in', String(Date.now()));
-        document.documentElement.lang = response.data.locale || locale;
-        void navigate(response.data.role === 'admin' && returnTo === '/' ? '/admin' : returnTo, {
+        document.documentElement.lang = user.locale || locale;
+        void navigate(user.role === 'admin' && returnTo === '/' ? '/admin' : returnTo, {
           replace: true,
         });
       } else if (response.status === 429) {
-        const details = (response.data as { details?: { retry_after_seconds?: number } }).details;
         const headerSeconds = Number(response.headers.get('Retry-After'));
         const seconds = Math.max(
           1,
-          Math.ceil(
-            Number.isFinite(headerSeconds) && headerSeconds > 0
-              ? headerSeconds
-              : (details?.retry_after_seconds ?? 60),
-          ),
+          Math.ceil(Number.isFinite(headerSeconds) && headerSeconds > 0 ? headerSeconds : 60),
         );
-        setCooldown({ seconds, locked: false });
-        setError(t('auth.error.rate-limited', { minutes: Math.ceil(seconds / 60) }));
-        setPassword('');
-      } else if (response.status === 423) {
-        const lockedUntil = (response.data as { details?: { locked_until?: string } }).details
-          ?.locked_until;
-        const unlock = lockedUntil ? Date.parse(lockedUntil) : Number.NaN;
-        const seconds = Number.isFinite(unlock)
-          ? Math.max(1, Math.ceil((unlock - Date.now()) / 1000))
-          : 60;
-        setCooldown({ seconds, locked: true, unlock });
+        const locked = response.data.type === '/problems/account-locked';
+        const unlock = locked ? Date.now() + seconds * 1000 : undefined;
+        setCooldown({ seconds, locked, unlock });
         setError(
-          t('auth.error.locked', {
-            time: Number.isFinite(unlock) ? new Date(unlock).toLocaleTimeString(locale) : '',
-          }),
+          locked
+            ? t('auth.error.locked', { time: '' })
+            : t('auth.error.rate-limited', { minutes: Math.ceil(seconds / 60) }),
         );
         setPassword('');
       } else if (response.status === 403) {
@@ -246,7 +234,14 @@ export function LoginPage() {
                       : 'auth-error-banner'
               }
             >
-              {error}
+              {cooldown?.locked && cooldown.unlock !== undefined
+                ? t('auth.error.locked', {
+                    time: new Date(cooldown.unlock).toLocaleTimeString(locale, {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    }),
+                  })
+                : error}
               {cooldown && (
                 <span
                   className={styles.muted}

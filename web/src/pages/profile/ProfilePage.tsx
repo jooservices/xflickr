@@ -5,8 +5,8 @@ import { useBlocker, useNavigate } from 'react-router';
 import { useSession } from '../../entities';
 import { SESSION_QUERY_KEY } from '../../entities/session/SessionProvider';
 import { useI18n } from '../../shared';
-import type { Locale } from '../../shared/i18n';
-import { asResult, csrfFetchOptions, signalSessionExpired } from '../../features/auth/api';
+import type { Locale } from '../../shared';
+import { csrfFetchOptions, signalSessionExpired } from '../../features/auth/api';
 import {
   changeMyPassword,
   listMySessions,
@@ -15,8 +15,15 @@ import {
   revokeOtherSessions,
   updateMe,
 } from '../../shared/api/gen/default/default';
-import type { Session } from '../../shared/api/gen/models/session';
+import type { RESTEnvelopeMeta } from '../../shared/api/gen/models/rESTEnvelopeMeta';
+import type { RESTPagination } from '../../shared/api/gen/models/rESTPagination';
+import type { SessionSummary } from '../../shared/api/gen/models/sessionSummary';
 import styles from './ProfilePage.module.css';
+
+function nextSessionsCursor(meta: RESTEnvelopeMeta): string | undefined {
+  const pagination = meta.pagination as RESTPagination | undefined;
+  return pagination?.has_more && pagination.next_cursor ? pagination.next_cursor : undefined;
+}
 
 export function ProfilePage() {
   const { session } = useSession();
@@ -25,8 +32,11 @@ export function ProfilePage() {
   const navigate = useNavigate();
   const user = session.status === 'authenticated' ? session.user : undefined;
   const [language, setLanguage] = useState<Locale>(locale);
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessionsNextCursor, setSessionsNextCursor] = useState<string | undefined>();
   const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsMoreLoading, setSessionsMoreLoading] = useState(false);
+  const [sessionsMoreError, setSessionsMoreError] = useState(false);
   const [sessionsError, setSessionsError] = useState(false);
   const [sessionsHasLoaded, setSessionsHasLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -45,7 +55,7 @@ export function ProfilePage() {
     Boolean(currentPassword || newPassword || confirmPassword);
   const blocker = useBlocker(dirty);
   const [confirmAction, setConfirmAction] = useState<
-    { kind: 'one'; session: Session } | { kind: 'others' } | null
+    { kind: 'one'; session: SessionSummary } | { kind: 'others' } | null
   >(null);
   const confirmationTrigger = useRef<HTMLElement | null>(null);
   const sessionsHeading = useRef<HTMLHeadingElement>(null);
@@ -95,10 +105,12 @@ export function ProfilePage() {
 
   const loadSessions = useCallback(async () => {
     try {
-      const result = await listMySessions({ credentials: 'same-origin' });
+      const result = await listMySessions(undefined, { credentials: 'same-origin' });
       signalSessionExpired(result.status);
       if (result.status !== 200) throw new Error('Could not load sessions');
-      setSessions(result.data.items ?? []);
+      setSessions(result.data.data ?? []);
+      setSessionsNextCursor(nextSessionsCursor(result.data.meta));
+      setSessionsMoreError(false);
       setSessionsUpdatedAt(Date.now());
       setSessionsHasLoaded(true);
       setSessionsError(false);
@@ -109,9 +121,32 @@ export function ProfilePage() {
     }
   }, []);
 
+  const loadMoreSessions = useCallback(async () => {
+    if (!sessionsNextCursor || sessionsMoreLoading) return;
+    setSessionsMoreLoading(true);
+    setSessionsMoreError(false);
+    try {
+      const result = await listMySessions(
+        { cursor: sessionsNextCursor },
+        { credentials: 'same-origin' },
+      );
+      signalSessionExpired(result.status);
+      if (result.status !== 200) throw new Error('Could not load more sessions');
+      setSessions((current) => [...current, ...(result.data.data ?? [])]);
+      setSessionsNextCursor(nextSessionsCursor(result.data.meta));
+      setSessionsUpdatedAt(Date.now());
+      setSessionsHasLoaded(true);
+      setSessionsError(false);
+    } catch {
+      setSessionsMoreError(true);
+    } finally {
+      setSessionsMoreLoading(false);
+    }
+  }, [sessionsMoreLoading, sessionsNextCursor]);
+
   useEffect(() => {
     let active = true;
-    void listMySessions({ credentials: 'same-origin' })
+    void listMySessions(undefined, { credentials: 'same-origin' })
       .then((result) => {
         if (!active) return;
         signalSessionExpired(result.status);
@@ -119,7 +154,9 @@ export function ProfilePage() {
           setSessionsError(true);
           return;
         }
-        setSessions(result.data.items ?? []);
+        setSessions(result.data.data ?? []);
+        setSessionsNextCursor(nextSessionsCursor(result.data.meta));
+        setSessionsMoreError(false);
         setSessionsUpdatedAt(Date.now());
         setSessionsHasLoaded(true);
         setSessionsError(false);
@@ -148,11 +185,11 @@ export function ProfilePage() {
     setSaving(true);
     setMessage('');
     try {
-      const result = asResult<typeof user>(await updateMe({ locale: language }));
+      const result = await updateMe({ locale: language });
       if (result.status !== 200) throw new Error('Could not save profile');
       setLocale(language);
-      if (result.data)
-        client.setQueryData(SESSION_QUERY_KEY, { status: 'authenticated', user: result.data });
+      if (result.data.data)
+        client.setQueryData(SESSION_QUERY_KEY, { status: 'authenticated', user: result.data.data });
       setMessage(t('profile.toast.saved'));
       setChangedElsewhere(false);
       if (typeof BroadcastChannel !== 'undefined') {
@@ -195,17 +232,13 @@ export function ProfilePage() {
           current_password: currentPassword,
           new_password: newPassword,
         },
-        csrfFetchOptions('POST'),
+        csrfFetchOptions('PUT'),
       );
       if (result.status === 401) {
         signalSessionExpired(result.status);
         return;
       }
-      if (
-        result.status === 400 &&
-        'code' in result.data &&
-        result.data.code === 'invalid_current_password'
-      ) {
+      if (result.status === 422 && result.data.type === '/problems/invalid-current-password') {
         setPasswordError(t('profile.password.error.current'));
         setCurrentPassword('');
         return;
@@ -230,12 +263,12 @@ export function ProfilePage() {
   }
 
   async function confirmRevokeOthers() {
-    const result = await revokeOtherSessions();
+    const result = await revokeOtherSessions({ scope: 'others' }, csrfFetchOptions('DELETE'));
     if (result.status === 204) await loadSessions();
     else setSessionsError(true);
   }
 
-  async function confirmRevokeOne(item: Session) {
+  async function confirmRevokeOne(item: SessionSummary) {
     const result = await revokeMySession(Number(item.id), csrfFetchOptions('DELETE'));
     signalSessionExpired(result.status);
     if (result.status === 204 || result.status === 404)
@@ -496,6 +529,33 @@ export function ProfilePage() {
                     </li>
                   ))}
                 </ul>
+              )}
+              {sessionsMoreError ? (
+                <p className={styles.error} role="alert" data-testid="profile-error-more-sessions">
+                  {t('profile.sessions.more-error')}{' '}
+                  <button
+                    className={styles.secondary}
+                    type="button"
+                    onClick={() => void loadMoreSessions()}
+                    data-testid="profile-error-retry-more-sessions"
+                  >
+                    {t('common.retry')}
+                  </button>
+                </p>
+              ) : (
+                sessionsNextCursor && (
+                  <button
+                    className={styles.secondary}
+                    type="button"
+                    disabled={sessionsMoreLoading}
+                    onClick={() => void loadMoreSessions()}
+                    data-testid="profile-sessions-load-more"
+                  >
+                    {sessionsMoreLoading
+                      ? t('profile.sessions.loading-more')
+                      : t('profile.sessions.load-more')}
+                  </button>
+                )
               )}
             </>
           )}

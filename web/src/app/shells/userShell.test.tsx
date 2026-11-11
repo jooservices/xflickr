@@ -198,7 +198,7 @@ describe('user shell', () => {
 });
 
 describe('user shell global states', () => {
-  it('shows disabled tabs and the loading line while /me is pending', () => {
+  it('shows disabled tabs and the loading line while /api/v1/me is pending', () => {
     renderApp({ session: { status: 'loading' } });
 
     expect(screen.getByText('Loading XFlickr…')).toBeInTheDocument();
@@ -207,7 +207,7 @@ describe('user shell global states', () => {
     expect(screen.queryByTestId('shell-tray-button')).toBeNull();
   });
 
-  it('shows the error banner with Retry when /me failed', () => {
+  it('shows the error banner with Retry when /api/v1/me failed', () => {
     const retry = vi.fn();
     renderApp({ session: { status: 'error' }, retry });
 

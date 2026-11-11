@@ -71,7 +71,7 @@ func (repo *Repository) DeleteSessionByHash(ctx context.Context, tokenHash []byt
 }
 
 func (repo *Repository) ListSessions(ctx context.Context, userID int64) ([]domain.Session, error) {
-	rows, err := repo.pool.Query(ctx, `SELECT id, user_id, expires_at, last_seen_at, created_at, user_agent, ip_address FROM sessions WHERE user_id = $1 AND expires_at > now() ORDER BY last_seen_at DESC`, userID)
+	rows, err := repo.pool.Query(ctx, `SELECT id, user_id, expires_at, last_seen_at, created_at, user_agent, ip_address FROM sessions WHERE user_id = $1 AND expires_at > now() ORDER BY last_seen_at DESC, id DESC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("identity: list sessions: %w", err)
 	}
@@ -88,6 +88,53 @@ func (repo *Repository) ListSessions(ctx context.Context, userID int64) ([]domai
 		return nil, fmt.Errorf("identity: list sessions: %w", err)
 	}
 	return items, nil
+}
+
+func (repo *Repository) ListSessionsPage(ctx context.Context, userID int64, cursor *app.SessionCursor, limit int) ([]domain.Session, error) {
+	var after time.Time
+	var afterID int64
+	hasCursor := cursor != nil
+	if hasCursor {
+		after, afterID = cursor.LastSeenAt, cursor.ID
+	}
+	rows, err := repo.pool.Query(ctx, `
+SELECT id, user_id, expires_at, last_seen_at, created_at, user_agent, ip_address
+FROM sessions
+WHERE user_id = $1 AND expires_at > now()
+  AND (NOT $2 OR last_seen_at < $3 OR (last_seen_at = $3 AND id < $4))
+ORDER BY last_seen_at DESC, id DESC
+LIMIT $5`, userID, hasCursor, after, afterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("identity: list session page: %w", err)
+	}
+	defer rows.Close()
+	items := make([]domain.Session, 0, limit)
+	for rows.Next() {
+		var session domain.Session
+		if err := rows.Scan(&session.ID, &session.UserID, &session.ExpiresAt, &session.LastSeenAt, &session.CreatedAt, &session.UserAgent, &session.IPAddress); err != nil {
+			return nil, fmt.Errorf("identity: scan session page: %w", err)
+		}
+		items = append(items, session)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("identity: list session page: %w", err)
+	}
+	return items, nil
+}
+
+func (repo *Repository) FindSessionByID(ctx context.Context, userID, sessionID int64) (domain.Session, error) {
+	var session domain.Session
+	err := repo.pool.QueryRow(ctx, `
+SELECT id, user_id, expires_at, last_seen_at, created_at, user_agent, ip_address
+FROM sessions
+WHERE user_id = $1 AND id = $2 AND expires_at > now()`, userID, sessionID).Scan(&session.ID, &session.UserID, &session.ExpiresAt, &session.LastSeenAt, &session.CreatedAt, &session.UserAgent, &session.IPAddress)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Session{}, app.ErrSessionNotFound
+		}
+		return domain.Session{}, fmt.Errorf("identity: find session by id: %w", err)
+	}
+	return session, nil
 }
 
 func (repo *Repository) DeleteSessionByID(ctx context.Context, userID, sessionID int64) (bool, error) {

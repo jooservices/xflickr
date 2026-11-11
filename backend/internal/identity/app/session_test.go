@@ -30,6 +30,13 @@ type sessionMemory struct {
 	othersErr   error
 	listed      []domain.Session
 	listErr     error
+	pageCursor  *SessionCursor
+	pageLimit   int
+	pageErr     error
+	findID      int64
+	findUser    int64
+	findByID    domain.Session
+	findByIDErr error
 	revokedID   int64
 	revokedFor  int64
 	revokeIDOK  bool
@@ -75,6 +82,22 @@ func (m *sessionMemory) DeleteSessionByHash(_ context.Context, tokenHash []byte)
 
 func (m *sessionMemory) ListSessions(context.Context, int64) ([]domain.Session, error) {
 	return m.listed, m.listErr
+}
+
+func (m *sessionMemory) ListSessionsPage(_ context.Context, _ int64, cursor *SessionCursor, limit int) ([]domain.Session, error) {
+	m.pageCursor, m.pageLimit = cursor, limit
+	return m.listed, m.pageErr
+}
+
+func (m *sessionMemory) FindSessionByID(_ context.Context, userID, sessionID int64) (domain.Session, error) {
+	m.findUser, m.findID = userID, sessionID
+	if m.findByIDErr != nil {
+		return domain.Session{}, m.findByIDErr
+	}
+	if m.findByID.ID != sessionID || m.findByID.UserID != userID {
+		return domain.Session{}, ErrSessionNotFound
+	}
+	return m.findByID, nil
 }
 
 func (m *sessionMemory) DeleteSessionByID(_ context.Context, userID, sessionID int64) (bool, error) {
@@ -166,6 +189,50 @@ func TestListAndRevokeSessions(t *testing.T) {
 	memory.revokeIDErr = errors.New("database unavailable")
 	if _, err := service.RevokeByID(context.Background(), 7, 2); err == nil {
 		t.Fatal("RevokeByID() ignored a repository failure")
+	}
+}
+
+func TestListPageAndFindOwnedSession(t *testing.T) {
+	cursor := &SessionCursor{LastSeenAt: time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC), ID: 4}
+	memory := &sessionMemory{listed: []domain.Session{{ID: 3}}, findByID: domain.Session{ID: 3, UserID: 7}}
+	service := Sessions{Repository: memory}
+	items, err := service.ListPage(context.Background(), 7, cursor, 11)
+	if err != nil || len(items) != 1 || memory.pageCursor != cursor || memory.pageLimit != 11 {
+		t.Fatalf("ListPage() = %v, %v; cursor=%+v limit=%d", items, err, memory.pageCursor, memory.pageLimit)
+	}
+	if _, err := service.ListPage(context.Background(), 0, nil, 10); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("ListPage() without user = %v", err)
+	}
+	if _, err := service.ListPage(context.Background(), 7, nil, 0); err == nil {
+		t.Fatal("ListPage() accepted a nonpositive limit")
+	}
+	if _, err := (Sessions{}).ListPage(context.Background(), 7, nil, 1); err == nil {
+		t.Fatal("ListPage() without repository succeeded")
+	}
+	memory.pageErr = errors.New("database unavailable")
+	if _, err := service.ListPage(context.Background(), 7, nil, 1); err == nil {
+		t.Fatal("ListPage() ignored a repository failure")
+	}
+
+	got, err := service.FindByID(context.Background(), 7, 3)
+	if err != nil || got.ID != 3 || memory.findUser != 7 || memory.findID != 3 {
+		t.Fatalf("FindByID() = %+v, %v", got, err)
+	}
+	if _, err := service.FindByID(context.Background(), 7, 4); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("FindByID() for another/missing session = %v", err)
+	}
+	if _, err := service.FindByID(context.Background(), 0, 3); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("FindByID() without user = %v", err)
+	}
+	if _, err := service.FindByID(context.Background(), 7, 0); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("FindByID() with invalid id = %v", err)
+	}
+	if _, err := (Sessions{}).FindByID(context.Background(), 7, 3); err == nil {
+		t.Fatal("FindByID() without repository succeeded")
+	}
+	memory.findByIDErr = errors.New("database unavailable")
+	if _, err := service.FindByID(context.Background(), 7, 3); err == nil {
+		t.Fatal("FindByID() ignored a repository failure")
 	}
 }
 

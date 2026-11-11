@@ -53,12 +53,12 @@ describe('avatar menu', () => {
     });
   });
 
-  it('signs out through POST /auth/logout', async () => {
+  it('signs out through DELETE /api/v1/sessions/current', async () => {
     const assign = vi.fn();
     vi.stubGlobal('location', { ...window.location, assign });
     const logout = vi.fn();
     server.use(
-      http.post('*/auth/logout', () => {
+      http.delete('*/api/v1/sessions/current', () => {
         logout();
         return new HttpResponse(null, { status: 204 });
       }),

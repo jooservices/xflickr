@@ -6,9 +6,11 @@ record for that account do not change the original timestamp. Catalog upserts
 can write observations through the catalog observer port in the same database
 transaction.
 
-Sharing defaults to off for every user. `PUT /me/sharing` updates the current
-user's choice and publishes `sharing.changed` only when the value changes. The
-outbox event and setting update commit together.
+Sharing defaults to off for every user. `GET /api/v1/me/sharing` returns the
+current choice in the standard REST envelope. `PUT /api/v1/me/sharing` replaces
+that choice and publishes `sharing.changed` only when the value changes. The
+outbox event and setting update commit together. Both responses are private and
+not stored by caches; errors use `application/problem+json`.
 
 See [the sharing and privacy rules](SPEC.md#sharing-and-privacy).
 

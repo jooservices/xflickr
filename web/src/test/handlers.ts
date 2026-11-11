@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw/http';
 import { crawlHandlers } from './crawl';
+import { authenticationOptions, sessionCollectionEnvelope } from './rest';
 
 export const handlers = [
   ...crawlHandlers,
@@ -7,10 +8,8 @@ export const handlers = [
     HttpResponse.json({ status: 'ok', version: 'test' }),
   ),
   http.get('*/healthz', () => HttpResponse.json({ status: 'ok', version: 'test' })),
-  http.get('*/auth/config', () =>
-    HttpResponse.json({ registration_open: true, passkey_enabled: false }),
-  ),
-  http.get('*/me/sessions', () => HttpResponse.json({ items: [] })),
+  http.get('*/api/v1/authentication-options', () => HttpResponse.json(authenticationOptions())),
+  http.get('*/api/v1/me/sessions', () => HttpResponse.json(sessionCollectionEnvelope([]))),
   http.get('*/keys', () => HttpResponse.json([])),
   http.get('*/flickr-accounts', () => HttpResponse.json([])),
   http.get('*/admin/quota', () =>

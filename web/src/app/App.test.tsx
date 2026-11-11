@@ -7,6 +7,7 @@ import { server } from '../test/server';
 import { App } from './App';
 
 import { routes } from './router';
+import { userEnvelope } from '../test/rest';
 
 function renderBooted(path: string) {
   const router = createMemoryRouter(routes, { initialEntries: [path] });
@@ -19,16 +20,18 @@ describe('App', () => {
     window.localStorage.clear();
   });
 
-  it('boots with GET /me and renders the user shell', async () => {
+  it('boots with GET /api/v1/me and renders the user shell', async () => {
     server.use(
-      http.get('*/me', () =>
-        HttpResponse.json({
-          id: 5,
-          email: 'anna@example.test',
-          role: 'user',
-          locale: 'en',
-          created_at: '2026-10-01T00:00:00Z',
-        }),
+      http.get('*/api/v1/me', () =>
+        HttpResponse.json(
+          userEnvelope({
+            id: 5,
+            email: 'anna@example.test',
+            role: 'user',
+            locale: 'en',
+            created_at: '2026-10-01T00:00:00Z',
+          }),
+        ),
       ),
     );
     renderBooted('/library');
@@ -40,27 +43,29 @@ describe('App', () => {
     );
   });
 
-  it('shows the session-expired modal when /me answers 401', async () => {
-    server.use(http.get('*/me', () => new HttpResponse(null, { status: 401 })));
+  it('shows the session-expired modal when /api/v1/me answers 401', async () => {
+    server.use(http.get('*/api/v1/me', () => new HttpResponse(null, { status: 401 })));
     renderBooted('/');
 
     expect(await screen.findByTestId('shell-session-modal')).toBeInTheDocument();
   });
 
-  it('shows the error state when /me fails and Retry repeats the request', async () => {
-    server.use(http.get('*/me', () => new HttpResponse(null, { status: 500 })));
+  it('shows the error state when /api/v1/me fails and Retry repeats the request', async () => {
+    server.use(http.get('*/api/v1/me', () => new HttpResponse(null, { status: 500 })));
     renderBooted('/');
     const retry = await screen.findByTestId('shell-error-retry');
 
     server.use(
-      http.get('*/me', () =>
-        HttpResponse.json({
-          id: 5,
-          email: 'anna@example.test',
-          role: 'user',
-          locale: 'en',
-          created_at: '2026-10-01T00:00:00Z',
-        }),
+      http.get('*/api/v1/me', () =>
+        HttpResponse.json(
+          userEnvelope({
+            id: 5,
+            email: 'anna@example.test',
+            role: 'user',
+            locale: 'en',
+            created_at: '2026-10-01T00:00:00Z',
+          }),
+        ),
       ),
     );
     retry.click();
@@ -72,7 +77,7 @@ describe('App', () => {
   });
 
   it('sends an anonymous visitor of /admin to the login page', async () => {
-    server.use(http.get('*/me', () => new HttpResponse(null, { status: 401 })));
+    server.use(http.get('*/api/v1/me', () => new HttpResponse(null, { status: 401 })));
     const router = createMemoryRouter(routes, { initialEntries: ['/admin/users'] });
     render(<App router={router} />);
 

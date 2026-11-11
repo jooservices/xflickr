@@ -23,7 +23,10 @@ type Repository struct {
 	run func(context.Context, func(settingTx) error) error
 }
 
-var _ app.Repository = (*Repository)(nil)
+var (
+	_ app.Repository = (*Repository)(nil)
+	_ app.Reader     = (*Repository)(nil)
+)
 
 func New(pool db.Beginner) (*Repository, error) {
 	if pool == nil {
@@ -65,6 +68,29 @@ func (r *Repository) Set(ctx context.Context, setting domain.Setting) (domain.Se
 	})
 	if err != nil {
 		return domain.Setting{}, err
+	}
+	return result, nil
+}
+
+// Get loads a user's sharing setting, defaulting to disabled when it has never
+// been changed.
+func (r *Repository) Get(ctx context.Context, userID int64) (domain.Setting, error) {
+	if r == nil || r.run == nil || ctx == nil || userID <= 0 {
+		return domain.Setting{}, errors.New("sharing: database, context and user are required")
+	}
+	result := domain.Setting{UserID: userID}
+	err := r.run(ctx, func(tx settingTx) error {
+		err := tx.QueryRow(ctx, `SELECT user_id, enabled, changed_at FROM sharing_settings WHERE user_id=$1`, userID).Scan(&result.UserID, &result.Enabled, &result.ChangedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("sharing: load setting: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.Setting{}, fmt.Errorf("sharing: read setting: %w", err)
 	}
 	return result, nil
 }

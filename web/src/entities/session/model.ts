@@ -11,7 +11,7 @@ export type SessionUser = {
 
 /**
  * What the shells know about the viewer.
- * `loading`: GET /me is pending. `unauthenticated`: it answered 401.
+ * `loading`: GET /api/v1/me is pending. `unauthenticated`: it answered 401.
  * `error`: it failed for another reason (network, 5xx, timeout).
  */
 export type Session =
@@ -22,7 +22,7 @@ export type Session =
 
 export type SessionValue = {
   session: Session;
-  /** Repeats GET /me. */
+  /** Repeats GET /api/v1/me. */
   retry: () => void;
 };
 

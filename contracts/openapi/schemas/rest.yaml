@@ -11,7 +11,7 @@ Link:
       enum: [GET, POST, PUT, PATCH, DELETE]
 Links:
   type: object
-  description: 'Relations: self, authentication-options, me, events, keys, flickr-accounts, people, albums, favorites, users, plans, flags. Only available relations are present. During additive migration these point to existing routes; later slices replace their targets.'
+  description: 'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.'
   required: [self]
   properties:
     self:
@@ -72,7 +72,7 @@ RESTProblem:
     type:
       type: string
       description: Stable problem URI; clients branch on this value.
-      enum: [/problems/key-invalid, /problems/temp-storage-full, /problems/reconnect-required, /problems/account-locked, /problems/token-expired, /problems/validation-error, /problems/not-found, /problems/conflict, /problems/precondition-failed, /problems/rate-limited, /problems/unauthenticated, /problems/forbidden, /problems/malformed-request, /problems/unsupported-media-type, /problems/internal-error]
+      enum: [/problems/key-invalid, /problems/temp-storage-full, /problems/reconnect-required, /problems/account-locked, /problems/token-expired, /problems/validation-error, /problems/not-found, /problems/conflict, /problems/precondition-failed, /problems/rate-limited, /problems/unauthenticated, /problems/forbidden, /problems/malformed-request, /problems/unsupported-media-type, /problems/internal-error, /problems/email-taken, /problems/registration-closed, /problems/invalid-current-password, /problems/csrf-rejected, /problems/method-not-allowed]
     title:
       type: string
     status:

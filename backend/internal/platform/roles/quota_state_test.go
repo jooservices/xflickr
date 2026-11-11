@@ -196,7 +196,7 @@ func TestAPIRouterServesQuotaEndpointsBehindAuthentication(t *testing.T) {
 	for _, path := range []string{"/keys/1/quota", "/admin/quota"} {
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
-		if response.Code != http.StatusUnauthorized || !strings.Contains(response.Body.String(), `"code":"unauthenticated"`) {
+		if response.Code != http.StatusUnauthorized || !strings.Contains(response.Body.String(), `"type":"/problems/unauthenticated"`) {
 			t.Fatalf("GET %s status=%d body=%s", path, response.Code, response.Body.String())
 		}
 	}
@@ -226,7 +226,7 @@ func TestAPIRouterServesSPAForHTMLNavigationOnPagePaths(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusUnauthorized || !strings.Contains(response.Body.String(), `"code":"unauthenticated"`) {
+	if response.Code != http.StatusUnauthorized || !strings.Contains(response.Body.String(), `"type":"/problems/unauthenticated"`) {
 		t.Fatalf("GET /keys as API request status=%d body=%q, want unauthenticated API response", response.Code, response.Body.String())
 	}
 
@@ -234,7 +234,7 @@ func TestAPIRouterServesSPAForHTMLNavigationOnPagePaths(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusNotFound || !strings.Contains(response.Header().Get("Content-Type"), "application/json") || !strings.Contains(response.Body.String(), `"code":"not_found"`) {
+	if response.Code != http.StatusNotFound || response.Header().Get("Content-Type") != "application/problem+json" || !strings.Contains(response.Body.String(), `"type":"/problems/not-found"`) {
 		t.Fatalf("GET /unknown status=%d content-type=%q body=%q, want JSON 404", response.Code, response.Header().Get("Content-Type"), response.Body.String())
 	}
 }

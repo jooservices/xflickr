@@ -25,7 +25,7 @@ type Options = {
   retry?: () => void;
 };
 
-/** Renders the real route table at `path` with a fixed session (no `GET /me`). */
+/** Renders the real route table at `path` with a fixed session (no `GET /api/v1/me`). */
 export function renderApp({
   session,
   path = '/',
