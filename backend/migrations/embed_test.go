@@ -59,5 +59,26 @@ func TestObservationLookupMigrationBuildsPartitionIndexesConcurrently(t *testing
 	}
 	if strings.Contains(string(migration), "observations_p00_record_lookup_idx") {
 		t.Fatal("migration must reuse the existing p00 lookup index instead of creating a duplicate")
+}
+
+func TestContactSummaryIndexesCanBeRetriedAfterPartialMigration(t *testing.T) {
+	sql, err := migrations.Files.ReadFile("20261111170000_contact_screen_summaries.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	statement := string(sql)
+	for _, name := range []string{"work_items_user_contact_state_idx", "work_items_contact_photo_sizes_idx"} {
+		if !strings.Contains(statement, "CREATE INDEX CONCURRENTLY IF NOT EXISTS "+name) {
+			t.Errorf("%s must be created concurrently and skipped when a previous run succeeded", name)
+		}
+	}
+	for partition := 0; partition < 16; partition++ {
+		name := fmt.Sprintf("photos_p%02d_owner_recent_idx", partition)
+		if !strings.Contains(statement, "CREATE INDEX CONCURRENTLY IF NOT EXISTS "+name) {
+			t.Errorf("%s must be created concurrently and skipped when a previous run succeeded", name)
+		}
+	}
+	if !strings.Contains(statement, "pg_inherits") || !strings.Contains(statement, "ATTACH PARTITION") {
+		t.Fatal("partition indexes must be attached only when not already attached")
 	}
 }

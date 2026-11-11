@@ -18,49 +18,56 @@ CREATE TABLE IF NOT EXISTS contact_group_crawl_preferences (
     FOREIGN KEY (user_id, person_nsid) REFERENCES crawl_interests(user_id, person_nsid) ON DELETE CASCADE
 );
 
-DROP INDEX CONCURRENTLY IF EXISTS work_items_user_contact_state_idx;
-CREATE INDEX CONCURRENTLY work_items_user_contact_state_idx
+CREATE INDEX CONCURRENTLY IF NOT EXISTS work_items_user_contact_state_idx
     ON work_items (user_id, subject_key, updated_at DESC, id DESC) INCLUDE (state, kind)
     WHERE user_id IS NOT NULL;
 
-DROP INDEX CONCURRENTLY IF EXISTS work_items_contact_photo_sizes_idx;
-CREATE INDEX CONCURRENTLY work_items_contact_photo_sizes_idx
+CREATE INDEX CONCURRENTLY IF NOT EXISTS work_items_contact_photo_sizes_idx
     ON work_items (user_id, id) INCLUDE (subject_key)
     WHERE kind = 'photo_sizes' AND state IN ('pending', 'ready', 'running', 'waiting') AND direct_action = FALSE;
 
 CREATE INDEX IF NOT EXISTS photos_owner_recent_idx ON ONLY photos (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-CREATE INDEX CONCURRENTLY photos_p00_owner_recent_idx ON photos_p00 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-CREATE INDEX CONCURRENTLY photos_p01_owner_recent_idx ON photos_p01 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-CREATE INDEX CONCURRENTLY photos_p02_owner_recent_idx ON photos_p02 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-CREATE INDEX CONCURRENTLY photos_p03_owner_recent_idx ON photos_p03 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-CREATE INDEX CONCURRENTLY photos_p04_owner_recent_idx ON photos_p04 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-CREATE INDEX CONCURRENTLY photos_p05_owner_recent_idx ON photos_p05 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-CREATE INDEX CONCURRENTLY photos_p06_owner_recent_idx ON photos_p06 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-CREATE INDEX CONCURRENTLY photos_p07_owner_recent_idx ON photos_p07 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-CREATE INDEX CONCURRENTLY photos_p08_owner_recent_idx ON photos_p08 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-CREATE INDEX CONCURRENTLY photos_p09_owner_recent_idx ON photos_p09 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-CREATE INDEX CONCURRENTLY photos_p10_owner_recent_idx ON photos_p10 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-CREATE INDEX CONCURRENTLY photos_p11_owner_recent_idx ON photos_p11 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-CREATE INDEX CONCURRENTLY photos_p12_owner_recent_idx ON photos_p12 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-CREATE INDEX CONCURRENTLY photos_p13_owner_recent_idx ON photos_p13 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-CREATE INDEX CONCURRENTLY photos_p14_owner_recent_idx ON photos_p14 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-CREATE INDEX CONCURRENTLY photos_p15_owner_recent_idx ON photos_p15 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
-ALTER INDEX photos_owner_recent_idx ATTACH PARTITION photos_p00_owner_recent_idx;
-ALTER INDEX photos_owner_recent_idx ATTACH PARTITION photos_p01_owner_recent_idx;
-ALTER INDEX photos_owner_recent_idx ATTACH PARTITION photos_p02_owner_recent_idx;
-ALTER INDEX photos_owner_recent_idx ATTACH PARTITION photos_p03_owner_recent_idx;
-ALTER INDEX photos_owner_recent_idx ATTACH PARTITION photos_p04_owner_recent_idx;
-ALTER INDEX photos_owner_recent_idx ATTACH PARTITION photos_p05_owner_recent_idx;
-ALTER INDEX photos_owner_recent_idx ATTACH PARTITION photos_p06_owner_recent_idx;
-ALTER INDEX photos_owner_recent_idx ATTACH PARTITION photos_p07_owner_recent_idx;
-ALTER INDEX photos_owner_recent_idx ATTACH PARTITION photos_p08_owner_recent_idx;
-ALTER INDEX photos_owner_recent_idx ATTACH PARTITION photos_p09_owner_recent_idx;
-ALTER INDEX photos_owner_recent_idx ATTACH PARTITION photos_p10_owner_recent_idx;
-ALTER INDEX photos_owner_recent_idx ATTACH PARTITION photos_p11_owner_recent_idx;
-ALTER INDEX photos_owner_recent_idx ATTACH PARTITION photos_p12_owner_recent_idx;
-ALTER INDEX photos_owner_recent_idx ATTACH PARTITION photos_p13_owner_recent_idx;
-ALTER INDEX photos_owner_recent_idx ATTACH PARTITION photos_p14_owner_recent_idx;
-ALTER INDEX photos_owner_recent_idx ATTACH PARTITION photos_p15_owner_recent_idx;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS photos_p00_owner_recent_idx ON photos_p00 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS photos_p01_owner_recent_idx ON photos_p01 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS photos_p02_owner_recent_idx ON photos_p02 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS photos_p03_owner_recent_idx ON photos_p03 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS photos_p04_owner_recent_idx ON photos_p04 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS photos_p05_owner_recent_idx ON photos_p05 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS photos_p06_owner_recent_idx ON photos_p06 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS photos_p07_owner_recent_idx ON photos_p07 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS photos_p08_owner_recent_idx ON photos_p08 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS photos_p09_owner_recent_idx ON photos_p09 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS photos_p10_owner_recent_idx ON photos_p10 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS photos_p11_owner_recent_idx ON photos_p11 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS photos_p12_owner_recent_idx ON photos_p12 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS photos_p13_owner_recent_idx ON photos_p13 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS photos_p14_owner_recent_idx ON photos_p14 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS photos_p15_owner_recent_idx ON photos_p15 (owner_nsid, last_update DESC, id DESC) WHERE tombstoned_at IS NULL;
+
+-- +goose StatementBegin
+DO $$
+DECLARE
+    partition_name TEXT;
+    index_name TEXT;
+BEGIN
+    FOREACH partition_name IN ARRAY ARRAY[
+        'photos_p00', 'photos_p01', 'photos_p02', 'photos_p03',
+        'photos_p04', 'photos_p05', 'photos_p06', 'photos_p07',
+        'photos_p08', 'photos_p09', 'photos_p10', 'photos_p11',
+        'photos_p12', 'photos_p13', 'photos_p14', 'photos_p15'
+    ] LOOP
+        index_name := partition_name || '_owner_recent_idx';
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_inherits
+            WHERE inhparent = 'photos_owner_recent_idx'::regclass
+              AND inhrelid = to_regclass(index_name)
+        ) THEN
+            EXECUTE format('ALTER INDEX photos_owner_recent_idx ATTACH PARTITION %I', index_name);
+        END IF;
+    END LOOP;
+END;
+$$;
+-- +goose StatementEnd
 
 -- Backfill newly added summaries from records attributed to each user. Each
 -- transaction handles at most 100 contacts so long migrations release locks.
