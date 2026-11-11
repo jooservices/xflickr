@@ -249,7 +249,7 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 		t.Fatal(err)
 	}
 	assertSharingSyncPending(t, ctx, pool, otherUserID, true)
-	assertSharedCandidate(t, ctx, pool, sharedPublicID, true)
+	assertSharedCandidate(t, ctx, pool, sharedPublicID, false)
 	snapshot, err = repository.Load(ctx, userID)
 	if err != nil {
 		t.Fatal(err)
@@ -273,12 +273,12 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 		t.Fatal(err)
 	}
 	assertSharingSyncPending(t, ctx, pool, otherUserID, true)
-	assertSharedCandidate(t, ctx, pool, sharedPublicID, false)
+	assertSharedCandidate(t, ctx, pool, sharedPublicID, true)
 	snapshot, err = repository.Load(ctx, userID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertPhotoMissing(t, snapshot.NewPhotos, sharedPublicID)
+	assertPhotoPresent(t, snapshot.NewPhotos, sharedPublicID)
 	for {
 		done, err := repository.RefreshBatch(ctx, otherUserID, 1)
 		if err != nil {
@@ -679,6 +679,169 @@ $body$`, function, photoID, lockKey)
 	assertPhotoMissing(t, snapshot.NewPhotos, photoID)
 }
 
+func TestHomeSnapshotSkipsCandidateAddedDuringVisibilityChange(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	pool := dbtest.Open(t, homeDatabase(t))
+	suffix := fmt.Sprintf("home-sharing-race-%d", time.Now().UnixNano())
+	owner := suffix + "-owner"
+	var ownerID, viewerID, keyID, accountID int64
+	photoID := time.Now().UnixNano()
+	t.Cleanup(func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stop()
+		_, _ = pool.Exec(cleanup, `DELETE FROM photos WHERE id=$1`, photoID)
+		_, _ = pool.Exec(cleanup, `DELETE FROM people WHERE nsid=$1`, owner)
+		_, _ = pool.Exec(cleanup, `DELETE FROM users WHERE id=ANY($1::bigint[])`, []int64{ownerID, viewerID})
+	})
+	for i, target := range []*int64{&ownerID, &viewerID} {
+		if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration','user') RETURNING id`, fmt.Sprintf("%s-%d@example.invalid", suffix, i)).Scan(target); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst)
+		VALUES($1,'home-race',$2,'{}',100,10,10) RETURNING id`, ownerID, suffix).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status)
+		VALUES($1,$2,$3,$3,'{}','{}','ok') RETURNING id`, ownerID, keyID, owner).Scan(&accountID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO sharing_settings(user_id,enabled,changed_at) VALUES($1,true,statement_timestamp())`, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,title,last_update,uploaded_at,taken_at,visibility,sizes,sizes_status,raw,content_hash)
+		VALUES($1,$2,'race photo',statement_timestamp(),statement_timestamp(),statement_timestamp(),'public','[]'::jsonb,'provisional','{}',decode(repeat('ab',32),'hex'))`, photoID, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) VALUES($1,$2,'photo',$3)`, ownerID, accountID, fmt.Sprint(photoID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM user_home_shared_photo_candidates WHERE photo_id=$1`, photoID); err != nil {
+		t.Fatal(err)
+	}
+	lockKey := photoID + 987654321
+	function := pgx.Identifier{fmt.Sprintf("home_sharing_pause_%d", ownerID)}.Sanitize()
+	trigger := pgx.Identifier{fmt.Sprintf("home_sharing_pause_trigger_%d", ownerID)}.Sanitize()
+	functionSQL := fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $body$
+BEGIN
+  IF NEW.photo_id = %d THEN PERFORM pg_advisory_xact_lock(%d); END IF;
+  RETURN NEW;
+END;
+$body$`, function, photoID, lockKey)
+	if _, err := pool.Exec(ctx, functionSQL); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `CREATE TRIGGER `+trigger+` BEFORE INSERT ON user_home_shared_photo_candidates FOR EACH ROW EXECUTE FUNCTION `+function+`()`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stop()
+		_, _ = pool.Exec(cleanup, `DROP TRIGGER IF EXISTS `+trigger+` ON user_home_shared_photo_candidates`)
+		_, _ = pool.Exec(cleanup, `DROP FUNCTION IF EXISTS `+function+`() `)
+	})
+	holder, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockHeld := false
+	var worker *pgxpool.Conn
+	var syncDone chan struct{}
+	defer func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stop()
+		if lockHeld {
+			_, _ = holder.Exec(cleanup, `SELECT pg_advisory_unlock($1)`, lockKey)
+		}
+		if syncDone != nil {
+			select {
+			case <-syncDone:
+			case <-cleanup.Done():
+			}
+		}
+		if worker != nil {
+			worker.Release()
+		}
+		holder.Release()
+	}()
+	if _, err := holder.Exec(ctx, `SELECT pg_advisory_lock($1)`, lockKey); err != nil {
+		t.Fatal(err)
+	}
+	lockHeld = true
+	worker, err = pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workerPID int32
+	if err := worker.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&workerPID); err != nil {
+		t.Fatal(err)
+	}
+	syncDone = make(chan struct{})
+	syncResult := make(chan error, 1)
+	go func() {
+		tx, beginErr := worker.Begin(ctx)
+		if beginErr != nil {
+			syncResult <- beginErr
+			close(syncDone)
+			return
+		}
+		_, syncErr := syncSharingCandidatesBatch(ctx, tx, ownerID, 10)
+		if syncErr == nil {
+			syncErr = tx.Commit(ctx)
+		} else {
+			_ = tx.Rollback(ctx)
+		}
+		syncResult <- syncErr
+		close(syncDone)
+	}()
+	if !awaitBackendLock(ctx, pool, workerPID, syncDone) {
+		t.Fatal("sharing candidate sync did not pause before inserting its stale candidate")
+	}
+	if _, err := pool.Exec(ctx, `UPDATE photos SET visibility='private' WHERE id=$1`, photoID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := holder.Exec(ctx, `SELECT pg_advisory_unlock($1)`, lockKey); err != nil {
+		t.Fatal(err)
+	}
+	lockHeld = false
+	<-syncDone
+	if err := <-syncResult; err != nil {
+		t.Fatal(err)
+	}
+	assertSharedCandidate(t, ctx, pool, photoID, true)
+	repository, err := New(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := repository.Load(ctx, viewerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPhotoMissing(t, snapshot.NewPhotos, photoID)
+	if _, err := pool.Exec(ctx, `UPDATE photos SET visibility='public' WHERE id=$1`, photoID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE photos SET tombstoned_at=statement_timestamp() WHERE id=$1`, photoID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO user_home_shared_photo_candidates(photo_id,uploaded_at)
+		SELECT id,uploaded_at FROM photos WHERE id=$1 ON CONFLICT(photo_id) DO UPDATE SET uploaded_at=EXCLUDED.uploaded_at`, photoID); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err = repository.Load(ctx, viewerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPhotoMissing(t, snapshot.NewPhotos, photoID)
+}
+
 func awaitBackendLock(ctx context.Context, pool *pgxpool.Pool, pid int32, done <-chan struct{}) bool {
 	for {
 		select {
@@ -851,9 +1014,19 @@ func assertPhotoMissing(t *testing.T, photos []app.Photo, photoID int64) {
 	t.Helper()
 	for _, photo := range photos {
 		if photo.ID == photoID {
-			t.Fatalf("photo %d remains visible after sharing was revoked or before it was granted", photoID)
+			t.Fatalf("photo %d remains visible without current access", photoID)
 		}
 	}
+}
+
+func assertPhotoPresent(t *testing.T, photos []app.Photo, photoID int64) {
+	t.Helper()
+	for _, photo := range photos {
+		if photo.ID == photoID {
+			return
+		}
+	}
+	t.Fatalf("photo %d is missing from the Home snapshot", photoID)
 }
 
 func assertSharedCandidate(t *testing.T, ctx context.Context, pool *pgxpool.Pool, photoID int64, want bool) {
