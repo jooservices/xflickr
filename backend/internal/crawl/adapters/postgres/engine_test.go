@@ -42,8 +42,6 @@ func (r engRow) Scan(dest ...any) error {
 			*p = r.values[i].(bool)
 		case *string:
 			*p = r.values[i].(string)
-		case *bool:
-			*p = r.values[i].(bool)
 		case *[]byte:
 			*p = r.values[i].([]byte)
 		}
