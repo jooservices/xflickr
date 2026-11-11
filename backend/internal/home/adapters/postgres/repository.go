@@ -188,6 +188,8 @@ enabled_sharers AS MATERIALIZED (
     SELECT setting.user_id
     FROM sharing_settings setting
     WHERE setting.enabled
+    ORDER BY setting.user_id
+    LIMIT 200
 ),
 shared_photo_candidates AS MATERIALIZED (
     SELECT permitted.photo_id, permitted.uploaded_at
@@ -196,10 +198,15 @@ shared_photo_candidates AS MATERIALIZED (
         FROM enabled_sharers sharer
         CROSS JOIN LATERAL (
             SELECT shared_candidate.photo_id, shared_candidate.uploaded_at
-            FROM user_home_photo_candidates shared_candidate
+            FROM (
+                SELECT recent.photo_id, recent.uploaded_at
+                FROM user_home_photo_candidates recent
+                WHERE recent.user_id = sharer.user_id
+                ORDER BY recent.uploaded_at DESC NULLS LAST, recent.photo_id DESC
+                LIMIT 100
+            ) shared_candidate
             JOIN photos photo ON photo.id = shared_candidate.photo_id
-            WHERE shared_candidate.user_id = sharer.user_id
-              AND photo.visibility = 'public'
+            WHERE photo.visibility = 'public'
               AND photo.tombstoned_at IS NULL
               AND EXISTS (
                   SELECT 1

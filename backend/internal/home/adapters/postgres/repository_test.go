@@ -231,8 +231,10 @@ func TestLoadFiltersSharedCandidatesBeforeLimit(t *testing.T) {
 		"enabled_sharers AS MATERIALIZED",
 		"FROM sharing_settings setting",
 		"CROSS JOIN LATERAL",
-		"shared_candidate.user_id = sharer.user_id",
+		"recent.user_id = sharer.user_id",
 		"setting.enabled",
+		"LIMIT 200", // at most 200 enabled sharers are scanned per request
+		"LIMIT 100", // at most 100 newest candidates are read per sharer before the permission filter
 	} {
 		if !strings.Contains(reader.query, fragment) {
 			t.Errorf("shared photo scan is missing %q", fragment)
@@ -244,7 +246,7 @@ func TestLoadFiltersSharedCandidatesBeforeLimit(t *testing.T) {
 		t.Fatal("Home query is missing the shared and own candidate sources")
 	}
 	sharedCandidates := reader.query[sharedStart:ownStart]
-	permissionFilter := strings.Index(sharedCandidates, "shared_candidate.user_id = sharer.user_id")
+	permissionFilter := strings.Index(sharedCandidates, "recent.user_id = sharer.user_id")
 	pageLimit := strings.Index(sharedCandidates, "LIMIT 12")
 	if permissionFilter < 0 || pageLimit < 0 || permissionFilter > pageLimit {
 		t.Fatal("shared candidates must filter each sharer's permissions before its bounded page limit")
