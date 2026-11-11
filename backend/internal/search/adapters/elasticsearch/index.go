@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // Index creates the versioned photo index and its write alias.
@@ -36,9 +37,9 @@ func NewIndex(baseURL, username, password, prefix string, client *http.Client) (
 		return nil, errors.New("elasticsearch: physical index name exceeds 255 bytes")
 	}
 
-	origin := url.URL{Scheme: parsed.Scheme, Host: parsed.Host}
+	endpoint := strings.TrimRight(parsed.String(), "/")
 	return &Index{
-		baseURL: origin.String(), username: username, password: password,
+		baseURL: endpoint, username: username, password: password,
 		prefix: prefix, client: client,
 	}, nil
 }

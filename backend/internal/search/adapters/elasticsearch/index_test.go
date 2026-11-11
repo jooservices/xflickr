@@ -93,11 +93,13 @@ func TestNewIndexValidation(t *testing.T) {
 func TestCreateIndex(t *testing.T) {
 	for _, test := range []struct {
 		name       string
+		basePath   string
 		username   string
 		password   string
 		statusCode int
 	}{
 		{name: "without authentication", statusCode: http.StatusOK},
+		{name: "preserves endpoint base path", basePath: "/search-gateway/v1", statusCode: http.StatusOK},
 		{name: "with basic authentication", username: "indexer", password: "password", statusCode: http.StatusCreated},
 		{name: "basic authentication with empty password", username: "indexer", statusCode: http.StatusCreated},
 		{name: "no content response", statusCode: http.StatusNoContent},
@@ -109,8 +111,9 @@ func TestCreateIndex(t *testing.T) {
 				if r.Method != http.MethodPut {
 					t.Errorf("method = %q, want PUT", r.Method)
 				}
-				if r.URL.Path != "/xflickr_wtjooxf134_photos-v1" {
-					t.Errorf("path = %q, want /xflickr_wtjooxf134_photos-v1", r.URL.Path)
+				wantPath := test.basePath + "/xflickr_wtjooxf134_photos-v1"
+				if r.URL.Path != wantPath {
+					t.Errorf("path = %q, want %s", r.URL.Path, wantPath)
 				}
 				if got := r.Header.Get("Content-Type"); got != "application/json" {
 					t.Errorf("Content-Type = %q, want application/json", got)
@@ -138,7 +141,7 @@ func TestCreateIndex(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			index, err := elasticsearch.NewIndex(server.URL, test.username, test.password, "xflickr_wtjooxf134_", server.Client())
+			index, err := elasticsearch.NewIndex(server.URL+test.basePath, test.username, test.password, "xflickr_wtjooxf134_", server.Client())
 			if err != nil {
 				t.Fatalf("NewIndex() error = %v", err)
 			}

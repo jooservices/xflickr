@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,9 +38,8 @@ func TestCreateIndexIntegration(t *testing.T) {
 	searchURL := integrationSetting(values, "SEARCH_URL", "http://127.0.0.1:19200")
 	username := integrationSetting(values, "SEARCH_USERNAME", "")
 	password := integrationSetting(values, "SEARCH_PASSWORD", "")
-	indexPrefix := integrationSetting(values, "OPENSEARCH_INDEX_PREFIX", "")
-	const worktreePrefix = "xflickr_wtjooxf134_"
-	if indexPrefix != worktreePrefix {
+	worktreePrefix, err := worktreeIndexPrefix(values)
+	if err != nil {
 		t.Fatal("configured search prefix does not identify this worktree")
 	}
 
@@ -123,6 +123,99 @@ func TestCreateIndexIntegration(t *testing.T) {
 	if !document.Found || document.Source.Title != "integration photo" || len(document.Source.VisibleTo) != 1 || document.Source.VisibleTo[0] != "123" || document.Source.PubliclyShared == nil || *document.Source.PubliclyShared || len(document.Source.ID) != 0 {
 		t.Fatalf("document read through alias = %+v, want the indexed fields", document)
 	}
+}
+
+func TestWorktreeIndexPrefix(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings map[string]string
+		want     string
+		wantErr  bool
+	}{
+		{
+			name: "uses current worktree configuration",
+			settings: map[string]string{
+				"DB_DATABASE": "xflickr_wtsearch42", "OPENSEARCH_INDEX_PREFIX": "xflickr_wtsearch42_",
+			},
+			want: "xflickr_wtsearch42_",
+		},
+		{
+			name: "accepts legacy database setting",
+			settings: map[string]string{
+				"DB_NAME": "xflickr_wtsearch42", "OPENSEARCH_INDEX_PREFIX": "xflickr_wtsearch42_",
+			},
+			want: "xflickr_wtsearch42_",
+		},
+		{
+			name: "rejects non worktree database",
+			settings: map[string]string{
+				"DB_NAME": "xflickr_test", "OPENSEARCH_INDEX_PREFIX": "xflickr_test_",
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects prefix for another database",
+			settings: map[string]string{
+				"DB_DATABASE": "xflickr_wtsearch42", "OPENSEARCH_INDEX_PREFIX": "xflickr_wtjooxf134_",
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects conflicting database aliases",
+			settings: map[string]string{
+				"DB_DATABASE": "xflickr_wtsearch42", "DB_NAME": "xflickr_wtother42",
+				"OPENSEARCH_INDEX_PREFIX": "xflickr_wtsearch42_",
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects missing prefix",
+			settings: map[string]string{
+				"DB_DATABASE": "xflickr_wtsearch42",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := worktreeIndexPrefix(test.settings)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("worktreeIndexPrefix() error = %v, wantErr %t", err, test.wantErr)
+			}
+			if got != test.want {
+				t.Fatalf("worktreeIndexPrefix() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func worktreeIndexPrefix(settings map[string]string) (string, error) {
+	database := settings["DB_DATABASE"]
+	legacyDatabase := settings["DB_NAME"]
+	if database != "" && legacyDatabase != "" && database != legacyDatabase {
+		return "", errors.New("conflicting worktree database settings")
+	}
+	if database == "" {
+		database = legacyDatabase
+	}
+	const worktreeDatabasePrefix = "xflickr_wt"
+	worktreeID := strings.TrimPrefix(database, worktreeDatabasePrefix)
+	if len(worktreeID) < 1 || len(worktreeID) > 12 || worktreeID == database {
+		return "", errors.New("invalid worktree database")
+	}
+	for _, character := range worktreeID {
+		if character < 'a' || character > 'z' {
+			if character < '0' || character > '9' {
+				return "", errors.New("invalid worktree database")
+			}
+		}
+	}
+	prefix := settings["OPENSEARCH_INDEX_PREFIX"]
+	if prefix != database+"_" {
+		return "", errors.New("index prefix does not match worktree database")
+	}
+	return prefix, nil
 }
 
 func integrationSetting(values map[string]string, key, defaultValue string) string {
