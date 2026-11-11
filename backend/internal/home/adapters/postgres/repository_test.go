@@ -256,7 +256,7 @@ func TestLoadQueuesMissingSnapshotRefresh(t *testing.T) {
 func TestLoadWrapsRefreshEnqueueErrors(t *testing.T) {
 	want := errors.New("queue unavailable")
 	reader := &queryerStub{row: stubRow{values: []any{
-		time.Now(), int64(0), int64(0), int64(0), int64(1),
+		time.Now(), int64(0), int64(0), int64(0),
 		(*int64)(nil), (*int64)(nil), (*int64)(nil), (*time.Time)(nil), true, true,
 		[]byte(`[]`), []byte(`[]`), []byte(`[]`),
 	}}}
