@@ -88,13 +88,14 @@ func createBoundedContactAlbumFixture(t *testing.T, ctx context.Context, tx pgx.
 	}
 }
 
-// TestContactAlbumOwnerFilterIsNotTruncatedAtFiveHundredContacts proves the owner filter lists every
-// contact of a user with 600 contacts, so a contact past the old 500 cut-off can still be selected.
-func TestContactAlbumOwnerFilterIsNotTruncatedAtFiveHundredContacts(t *testing.T) {
+// TestContactAlbumOwnerFilterAlwaysIncludesTheSelectedContact proves the selected contact is listed even
+// when it sorts past the 5000-contact cut-off, so a deep link to it is never reset to "All", and that a
+// non-contact is never added.
+func TestContactAlbumOwnerFilterAlwaysIncludesTheSelectedContact(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 	pool := dbtest.Open(t, loadCatalogDatabase(t))
 	tx, err := pool.Begin(ctx)
@@ -103,7 +104,7 @@ func TestContactAlbumOwnerFilterIsNotTruncatedAtFiveHundredContacts(t *testing.T
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	createBoundedContactAlbumFixture(t, ctx, tx)
-	if _, err := tx.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid) SELECT 'account-owner','many-'||lpad(g::text,4,'0') FROM generate_series(1,600) AS g`); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid) SELECT 'account-owner','many-'||lpad(g::text,5,'0') FROM generate_series(1,5200) AS g`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -117,11 +118,30 @@ func TestContactAlbumOwnerFilterIsNotTruncatedAtFiveHundredContacts(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.ContactOwners) != 601 {
-		t.Fatalf("contact owners = %d, want all 601 contacts (600 new + the fixture contact)", len(page.ContactOwners))
+	if len(page.ContactOwners) != 5000 {
+		t.Fatalf("contact owners without a selection = %d, want the first 5000", len(page.ContactOwners))
 	}
-	last := page.ContactOwners[len(page.ContactOwners)-1]
-	if last != "many-0600" && last != "contact-owner" {
-		t.Fatalf("last contact owner = %q, want the contact past the old 500 cut-off to be present", last)
+	past := "many-05200"
+	page, err = repository.ListContactAlbums(ctx, userID, past, predicate, nil, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, owner := range page.ContactOwners {
+		if owner == past {
+			found = true
+		}
+	}
+	if !found || len(page.ContactOwners) != 5001 {
+		t.Fatalf("selected contact past the cut-off: present=%t, owners=%d; want present and 5001 owners", found, len(page.ContactOwners))
+	}
+	page, err = repository.ListContactAlbums(ctx, userID, "not-a-contact", predicate, nil, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range page.ContactOwners {
+		if owner == "not-a-contact" {
+			t.Fatal("a non-contact was added to the owner filter")
+		}
 	}
 }

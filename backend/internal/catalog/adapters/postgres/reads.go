@@ -318,7 +318,7 @@ func (r *Repository) ListContactAlbums(ctx context.Context, userID int64, ownerN
 		cursor.ProbePhotoID < 0 || (cursor.ProbePhotoID == 0 && cursor.ProbePosition != 0)) {
 		return app.ContactAlbumsPage{}, app.ErrInvalidCursor
 	}
-	owners, err := r.listContactAlbumOwners(ctx, userID)
+	owners, err := r.listContactAlbumOwners(ctx, userID, ownerNSID)
 	if err != nil {
 		return app.ContactAlbumsPage{}, err
 	}
@@ -434,16 +434,32 @@ ORDER BY candidates.updated_at DESC NULLS LAST,candidates.id DESC`
 	return page, nil
 }
 
-// listContactAlbumOwners returns the user's own contacts (at most 5000, far above any real contact list) for the album owner filter. It is
+// listContactAlbumOwners returns the user's own contacts for the album owner filter: the first 5000 in
+// NSID order plus the contact that is currently selected, if it is one of the user's contacts (a point
+// lookup on the contacts primary key). The selected contact is therefore never missing from the list,
+// whatever its position, so a deep link from the Contacts screen is not reset to "All". The list is
 // deliberately NOT derived from albums: whether a contact has albums at all would otherwise be visible
 // even when every photo of those albums is hidden by the sharing policy.
-func (r *Repository) listContactAlbumOwners(ctx context.Context, userID int64) ([]string, error) {
-	rows, err := r.db.Query(ctx, `SELECT DISTINCT contacts.contact_nsid
-FROM flickr_accounts
-JOIN contacts ON contacts.person_nsid=flickr_accounts.nsid
-WHERE flickr_accounts.user_id=$1 AND flickr_accounts.status<>'revoked'
+func (r *Repository) listContactAlbumOwners(ctx context.Context, userID int64, selected string) ([]string, error) {
+	rows, err := r.db.Query(ctx, `WITH my_accounts AS MATERIALIZED (
+SELECT nsid FROM flickr_accounts WHERE user_id=$1 AND status<>'revoked'
+), first_contacts AS (
+SELECT DISTINCT contacts.contact_nsid
+FROM my_accounts
+JOIN contacts ON contacts.person_nsid=my_accounts.nsid
 ORDER BY contacts.contact_nsid
-LIMIT 5000`, userID)
+LIMIT 5000
+), selected_contact AS (
+SELECT contacts.contact_nsid
+FROM my_accounts
+JOIN contacts ON contacts.person_nsid=my_accounts.nsid AND contacts.contact_nsid=$2
+WHERE $2<>''
+LIMIT 1
+)
+SELECT contact_nsid FROM first_contacts
+UNION
+SELECT contact_nsid FROM selected_contact
+ORDER BY contact_nsid`, userID, selected)
 	if err != nil {
 		return nil, fmt.Errorf("catalog: list contact album owners: %w", err)
 	}

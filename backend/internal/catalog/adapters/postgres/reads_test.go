@@ -34,7 +34,7 @@ func (*readsDB) Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 
 func (db *readsDB) Query(_ context.Context, query string, args ...any) (pgx.Rows, error) {
 	db.query, db.args = query, append([]any(nil), args...)
-	if strings.HasPrefix(strings.TrimSpace(query), "SELECT DISTINCT contacts.contact_nsid") {
+	if strings.Contains(query, "first_contacts AS") && strings.Contains(query, "selected_contact AS") {
 		if db.ownerRows == nil {
 			return &readsRows{}, db.queryErr
 		}
