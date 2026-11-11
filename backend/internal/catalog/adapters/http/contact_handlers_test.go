@@ -11,18 +11,19 @@ import (
 
 type contactReadsStub struct {
 	app.ContactReadRepository
-	err         error
-	missing     bool
-	interests   app.ContactInterestPage
-	detail      app.ContactDetail
-	photos      app.ContactPhotoPage
-	favorites   app.ContactFavoritePage
-	albums      app.ContactAlbumPage
-	galleries   app.ContactGalleryPage
-	groups      app.ContactGroupPage
-	about       app.ContactAbout
-	pool        app.ContactPoolCrawl
-	prioritised int64
+	err            error
+	missing        bool
+	interests      app.ContactInterestPage
+	detail         app.ContactDetail
+	photos         app.ContactPhotoPage
+	favorites      app.ContactFavoritePage
+	albums         app.ContactAlbumPage
+	galleries      app.ContactGalleryPage
+	groups         app.ContactGroupPage
+	about          app.ContactAbout
+	pool           app.ContactPoolCrawl
+	prioritised    int64
+	priorityCursor *string
 }
 
 func (s *contactReadsStub) ListContactInterests(context.Context, int64, string, string, string, string, int) (app.ContactInterestPage, error) {
@@ -61,8 +62,8 @@ func (s *contactReadsStub) SetContactGroupPoolCrawl(context.Context, int64, stri
 	return s.pool, !s.missing, s.err
 }
 
-func (s *contactReadsStub) PrioritiseContactSizes(context.Context, int64, string) (int64, error) {
-	return s.prioritised, s.err
+func (s *contactReadsStub) PrioritiseContactSizes(context.Context, int64, string, string) (app.ContactSizesPriorityPage, error) {
+	return app.ContactSizesPriorityPage{Prioritised: s.prioritised, NextCursor: s.priorityCursor}, s.err
 }
 
 func TestContactHandlersReturnContactSections(t *testing.T) {
@@ -70,15 +71,17 @@ func TestContactHandlersReturnContactSections(t *testing.T) {
 	url := "https://images.example.invalid/a.jpg"
 	cursor := "next"
 	stub := &contactReadsStub{
-		interests: app.ContactInterestPage{Items: []app.ContactInterest{{NSID: "one@N00", Name: "One", Username: "one", AvatarURL: &url, Status: "crawling", RecentPhotos: []app.ContactRecentPhoto{{ID: "9", Alt: "Night", ThumbnailURL: &url}}}}, Counts: app.ContactInterestCounts{All: 1}, NextCursor: &cursor},
-		detail:    app.ContactDetail{NSID: "one@N00", Username: "one", RealName: "One", AvatarURL: &url, FoundVia: []app.ContactFoundVia{{NSID: "root@N00", Label: "Root"}}, CrawlStatus: "running", PhotoRecordsTotal: pointer[int64](10), Facets: []app.ContactFacet{{Name: "photos", Completed: 5, Total: pointer[int64](10), Status: "partial"}}, Counts: app.ContactCounts{Photos: 10}},
-		photos:    app.ContactPhotoPage{Items: []app.ContactPhoto{{ID: "9", Title: "Night", ThumbnailURL: &url, Width: pointer(640), Height: pointer(480), SizesAvailable: true}}, Total: 1, NextCursor: &cursor},
-		favorites: app.ContactFavoritePage{Items: []app.ContactFavorite{{ContactPhoto: app.ContactPhoto{ID: "9", Title: "Night"}, OwnerNSID: "owner@N00", OwnerName: stringPointer("Owner")}}, Total: 1},
-		albums:    app.ContactAlbumPage{Items: []app.ContactAlbum{{ID: "album", Title: "Trip", OwnerName: "One", StoredCount: 3, TotalCount: 4, CoverPhotoURLs: []string{url}}}, Total: 1},
-		galleries: app.ContactGalleryPage{Items: []app.ContactGallery{{ID: "gallery", Title: "Best", PhotoCount: 2}}, Total: 1},
-		groups:    app.ContactGroupPage{Items: []app.ContactGroup{{NSID: "group", Name: "Street", MembersCount: 20}}, Total: 1},
-		about:     app.ContactAbout{Facets: []app.ContactFacet{{Name: "photos", Completed: 5, Status: "partial"}}, TombstoneCount: 2, LastChangeCheckAt: &now, TombstoneUpdatedAt: &now, UpdatedAt: &now},
-		pool:      app.ContactPoolCrawl{Enabled: true, ChangedAt: now}, prioritised: 4,
+		interests:      app.ContactInterestPage{Items: []app.ContactInterest{{NSID: "one@N00", Name: "One", Username: "one", AvatarURL: &url, Status: "crawling", RecentPhotos: []app.ContactRecentPhoto{{ID: "9", Alt: "Night", ThumbnailURL: &url}}}}, Counts: app.ContactInterestCounts{All: 1}, NextCursor: &cursor},
+		detail:         app.ContactDetail{NSID: "one@N00", Username: "one", RealName: "One", AvatarURL: &url, FoundVia: []app.ContactFoundVia{{NSID: "root@N00", Label: "Root"}}, CrawlStatus: "running", PhotoRecordsTotal: pointer[int64](10), Facets: []app.ContactFacet{{Name: "photos", Completed: 5, Total: pointer[int64](10), Status: "partial"}}, Counts: app.ContactCounts{Photos: 10}},
+		photos:         app.ContactPhotoPage{Items: []app.ContactPhoto{{ID: "9", Title: "Night", ThumbnailURL: &url, Width: pointer(640), Height: pointer(480), SizesAvailable: true}}, Total: 1, NextCursor: &cursor},
+		favorites:      app.ContactFavoritePage{Items: []app.ContactFavorite{{ContactPhoto: app.ContactPhoto{ID: "9", Title: "Night"}, OwnerNSID: "owner@N00", OwnerName: stringPointer("Owner")}}, Total: 1},
+		albums:         app.ContactAlbumPage{Items: []app.ContactAlbum{{ID: "album", Title: "Trip", OwnerName: "One", StoredCount: 3, TotalCount: 4, CoverPhotoURLs: []string{url}}}, Total: 1},
+		galleries:      app.ContactGalleryPage{Items: []app.ContactGallery{{ID: "gallery", Title: "Best", PhotoCount: 2}}, Total: 1},
+		groups:         app.ContactGroupPage{Items: []app.ContactGroup{{NSID: "group", Name: "Street", MembersCount: 20}}, Total: 1},
+		about:          app.ContactAbout{Facets: []app.ContactFacet{{Name: "photos", Completed: 5, Status: "partial"}}, TombstoneCount: 2, LastChangeCheckAt: &now, TombstoneUpdatedAt: &now, UpdatedAt: &now},
+		pool:           app.ContactPoolCrawl{Enabled: true, ChangedAt: now},
+		prioritised:    4,
+		priorityCursor: &cursor,
 	}
 	handler := Handler{ContactReads: app.ContactReads{Repository: stub}, ActorID: func(context.Context) (int64, bool) { return 7, true }}
 	limit := 30
@@ -111,7 +114,7 @@ func TestContactHandlersReturnContactSections(t *testing.T) {
 			return handler.SetMeContactGroupPoolCrawl(t.Context(), gen.SetMeContactGroupPoolCrawlRequestObject{Nsid: "one@N00", GroupNsid: "group", Body: &gen.ContactGroupPoolCrawlRequest{Enabled: true}})
 		},
 		func() (any, error) {
-			return handler.PrioritiseMeContactSizes(t.Context(), gen.PrioritiseMeContactSizesRequestObject{Nsid: "one@N00"})
+			return handler.PrioritiseMeContactSizes(t.Context(), gen.PrioritiseMeContactSizesRequestObject{Nsid: "one@N00", Params: gen.PrioritiseMeContactSizesParams{Cursor: &cursor}})
 		},
 	}
 	for _, request := range requests {
@@ -157,7 +160,7 @@ func TestContactHandlersReturnContactSections(t *testing.T) {
 				t.Fatalf("pool response=%+v", value)
 			}
 		case gen.PrioritiseMeContactSizes200JSONResponse:
-			if value.Prioritised != 4 {
+			if value.Prioritised != 4 || value.NextCursor == nil || *value.NextCursor != cursor {
 				t.Fatalf("sizes response=%+v", value)
 			}
 		default:

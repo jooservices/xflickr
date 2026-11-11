@@ -1921,10 +1921,19 @@ export const PrioritiseMeContactSizesParams = zod.object({
   nsid: zod.string().min(1).max(prioritiseMeContactSizesPathNsidMax),
 });
 
+export const prioritiseMeContactSizesQueryCursorMax = 1024;
+
+export const PrioritiseMeContactSizesQueryParams = zod.object({
+  cursor: zod.string().max(prioritiseMeContactSizesQueryCursorMax).optional(),
+});
+
 export const prioritiseMeContactSizesResponsePrioritisedMin = 0;
+
+export const prioritiseMeContactSizesResponseNextCursorMax = 1024;
 
 export const PrioritiseMeContactSizesResponse = zod.object({
   prioritised: zod.int().min(prioritiseMeContactSizesResponsePrioritisedMin),
+  next_cursor: zod.string().max(prioritiseMeContactSizesResponseNextCursorMax).nullable(),
 });
 
 /**

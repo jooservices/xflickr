@@ -9,4 +9,9 @@
 export interface SizesPriorityResponse {
   /** @minimum 0 */
   prioritised: number;
+  /**
+   * @maxLength 1024
+   * @nullable
+   */
+  next_cursor: string | null;
 }

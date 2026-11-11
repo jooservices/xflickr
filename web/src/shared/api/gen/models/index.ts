@@ -139,6 +139,7 @@ export * from './opsStatusWorkItems';
 export * from './plan';
 export * from './planLaneBacklog';
 export * from './planLaneBacklogLane';
+export * from './prioritiseMeContactSizesParams';
 export * from './publicUser';
 export * from './publicUserEnvelope';
 export * from './publicUserRole';

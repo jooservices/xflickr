@@ -135,7 +135,8 @@ sizes_priority:
     security: [{ SessionCookie: [] }]
     parameters:
       - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
     responses:
-      '200': { description: Number of pending size items reprioritised, content: { application/json: { schema: { $ref: ../schemas/queue.yaml#/SizesPriorityResponse } } } }
+      '200': { description: Bounded batch of pending size items reprioritised, content: { application/json: { schema: { $ref: ../schemas/queue.yaml#/SizesPriorityResponse } } } }
       '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
       '404': { description: Contact not found, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }

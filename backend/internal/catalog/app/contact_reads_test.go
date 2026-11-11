@@ -62,9 +62,9 @@ func (f *contactReadFake) SetContactGroupPoolCrawl(_ context.Context, _ int64, n
 	return ContactPoolCrawl{Enabled: enabled}, !f.missing, f.err
 }
 
-func (f *contactReadFake) PrioritiseContactSizes(_ context.Context, _ int64, nsid string) (int64, error) {
-	f.called = "sizes:" + nsid
-	return 3, f.err
+func (f *contactReadFake) PrioritiseContactSizes(_ context.Context, _ int64, nsid, cursor string) (ContactSizesPriorityPage, error) {
+	f.called = "sizes:" + nsid + ":" + cursor
+	return ContactSizesPriorityPage{Prioritised: 3}, f.err
 }
 
 func TestContactReadsValidateAndForwardListOptions(t *testing.T) {
@@ -123,7 +123,7 @@ func TestContactReadsRequireScopedContactAndForwardSections(t *testing.T) {
 		{"groups", func() error { _, err := service.ListContactGroups(ctx, 2, "one@N00", "next", 30); return err }, "groups:one@N00"},
 		{"about", func() error { _, err := service.GetContactAbout(ctx, 2, "one@N00"); return err }, "about:one@N00"},
 		{"pool", func() error { _, err := service.SetContactGroupPoolCrawl(ctx, 2, "one@N00", "group", true); return err }, "pool:one@N00:group"},
-		{"sizes", func() error { _, err := service.PrioritiseContactSizes(ctx, 2, "one@N00"); return err }, "sizes:one@N00"},
+		{"sizes", func() error { _, err := service.PrioritiseContactSizes(ctx, 2, "one@N00", "next"); return err }, "sizes:one@N00:next"},
 	}
 	for _, check := range checks {
 		t.Run(check.name, func(t *testing.T) {
@@ -185,7 +185,7 @@ func TestContactReadsMapMissingResourcesAndPropagateEachRepositoryError(t *testi
 		{"groups", func() error { _, err := service.ListContactGroups(ctx, 1, "one@N00", "", 30); return err }},
 		{"about", func() error { _, err := service.GetContactAbout(ctx, 1, "one@N00"); return err }},
 		{"pool", func() error { _, err := service.SetContactGroupPoolCrawl(ctx, 1, "one@N00", "group", true); return err }},
-		{"sizes", func() error { _, err := service.PrioritiseContactSizes(ctx, 1, "one@N00"); return err }},
+		{"sizes", func() error { _, err := service.PrioritiseContactSizes(ctx, 1, "one@N00", ""); return err }},
 	}
 	for _, call := range calls {
 		t.Run(call.name, func(t *testing.T) {

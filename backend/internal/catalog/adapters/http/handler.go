@@ -411,14 +411,14 @@ func (h Handler) PrioritiseMeContactSizes(ctx context.Context, request gen.Prior
 	if !ok {
 		return gen.PrioritiseMeContactSizes401JSONResponse(gen.Error{Code: "unauthenticated"}), nil
 	}
-	count, err := h.ContactReads.PrioritiseContactSizes(ctx, userID, request.Nsid)
+	page, err := h.ContactReads.PrioritiseContactSizes(ctx, userID, request.Nsid, stringParam(request.Params.Cursor))
 	if errors.Is(err, app.ErrNotFound) {
 		return gen.PrioritiseMeContactSizes404JSONResponse(notFoundError()), nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return gen.PrioritiseMeContactSizes200JSONResponse(gen.SizesPriorityResponse{Prioritised: count}), nil
+	return gen.PrioritiseMeContactSizes200JSONResponse(gen.SizesPriorityResponse{Prioritised: page.Prioritised, NextCursor: page.NextCursor}), nil
 }
 
 func contactDetail(value app.ContactDetail) gen.ContactDetail {

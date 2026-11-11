@@ -459,13 +459,13 @@ export function ContactPage() {
         ? await resumeCrawlContact({ nsid: id })
         : await pauseCrawlContact({ nsid: id });
       if (response.status !== 204) throw apiError(response.status);
-      return paused;
+      return !paused;
     },
     onMutate: (paused) => {
       setActionError(false);
       setActionMessage('');
       queryClient.setQueryData<ContactDetail>(personKey, (current) =>
-        current ? { ...current, paused } : current,
+        current ? { ...current, paused: !paused } : current,
       );
     },
     onError: () => {
@@ -474,14 +474,20 @@ export function ContactPage() {
     },
     onSuccess: (paused) =>
       setActionMessage(
-        t(paused ? 'contact.action.resume.success' : 'contact.action.pause.success'),
+        t(paused ? 'contact.action.pause.success' : 'contact.action.resume.success'),
       ),
   });
   const prioritiseSizes = useMutation({
     mutationFn: async () => {
-      const response = await prioritiseMeContactSizes(id);
-      if (response.status !== 200) throw apiError(response.status);
-      return response.data.prioritised;
+      let total = 0;
+      let cursor: string | undefined;
+      do {
+        const response = await prioritiseMeContactSizes(id, cursor ? { cursor } : undefined);
+        if (response.status !== 200) throw apiError(response.status);
+        total += response.data.prioritised;
+        cursor = response.data.next_cursor ?? undefined;
+      } while (cursor);
+      return total;
     },
     onMutate: () => {
       setActionError(false);

@@ -136,6 +136,10 @@ type ContactPoolCrawl struct {
 	Enabled   bool
 	ChangedAt time.Time
 }
+type ContactSizesPriorityPage struct {
+	Prioritised int64
+	NextCursor  *string
+}
 
 type ContactReadRepository interface {
 	ListContactInterests(context.Context, int64, string, string, string, string, int) (ContactInterestPage, error)
@@ -147,7 +151,7 @@ type ContactReadRepository interface {
 	ListContactGroups(context.Context, int64, string, string, int) (ContactGroupPage, error)
 	GetContactAbout(context.Context, int64, string) (ContactAbout, bool, error)
 	SetContactGroupPoolCrawl(context.Context, int64, string, string, bool) (ContactPoolCrawl, bool, error)
-	PrioritiseContactSizes(context.Context, int64, string) (int64, error)
+	PrioritiseContactSizes(context.Context, int64, string, string) (ContactSizesPriorityPage, error)
 }
 
 type ContactReads struct{ Repository ContactReadRepository }
@@ -278,11 +282,11 @@ func (s ContactReads) SetContactGroupPoolCrawl(ctx context.Context, userID int64
 	return value, nil
 }
 
-func (s ContactReads) PrioritiseContactSizes(ctx context.Context, userID int64, nsid string) (int64, error) {
+func (s ContactReads) PrioritiseContactSizes(ctx context.Context, userID int64, nsid, cursor string) (ContactSizesPriorityPage, error) {
 	if err := s.readyContact(ctx, userID, nsid); err != nil {
-		return 0, err
+		return ContactSizesPriorityPage{}, err
 	}
-	return s.Repository.PrioritiseContactSizes(ctx, userID, nsid)
+	return s.Repository.PrioritiseContactSizes(ctx, userID, nsid, cursor)
 }
 
 func (s ContactReads) ready(ctx context.Context, userID int64) error {

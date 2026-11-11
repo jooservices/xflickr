@@ -134,9 +134,10 @@ CrawlInterestPage:
 SizesPriorityResponse:
   type: object
   additionalProperties: false
-  required: [prioritised]
+  required: [prioritised, next_cursor]
   properties:
     prioritised: { type: integer, format: int64, minimum: 0 }
+    next_cursor: { type: [string, 'null'], maxLength: 1024 }
 
 QueueLane:
   type: object

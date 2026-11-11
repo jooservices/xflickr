@@ -29,6 +29,7 @@ import type {
   CrawlStatus,
   Error,
   ListMeCrawlInterestsParams,
+  PrioritiseMeContactSizesParams,
   SizesPriorityResponse,
   StarContactRequest,
   UpdateCrawlSettingsRequest,
@@ -787,8 +788,23 @@ export type prioritiseMeContactSizesResponseError = (
 export type prioritiseMeContactSizesResponse =
   prioritiseMeContactSizesResponseSuccess | prioritiseMeContactSizesResponseError;
 
-export const getPrioritiseMeContactSizesUrl = (nsid: string) => {
-  return `/me/contacts/${nsid}/sizes-priority`;
+export const getPrioritiseMeContactSizesUrl = (
+  nsid: string,
+  params?: PrioritiseMeContactSizesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/me/contacts/${nsid}/sizes-priority?${stringifiedParams}`
+    : `/me/contacts/${nsid}/sizes-priority`;
 };
 
 /**
@@ -796,12 +812,16 @@ export const getPrioritiseMeContactSizesUrl = (nsid: string) => {
  */
 export const prioritiseMeContactSizes = async (
   nsid: string,
+  params?: PrioritiseMeContactSizesParams,
   options?: Parameters<typeof customFetch>[1],
 ): Promise<prioritiseMeContactSizesResponse> => {
-  return customFetch<prioritiseMeContactSizesResponse>(getPrioritiseMeContactSizesUrl(nsid), {
-    ...options,
-    method: 'PUT',
-  });
+  return customFetch<prioritiseMeContactSizesResponse>(
+    getPrioritiseMeContactSizesUrl(nsid, params),
+    {
+      ...options,
+      method: 'PUT',
+    },
+  );
 };
 
 export const getPrioritiseMeContactSizesMutationKey = () => ['prioritiseMeContactSizes'] as const;
@@ -834,9 +854,9 @@ export const getPrioritiseMeContactSizesMutationOptions = <
     Awaited<ReturnType<typeof prioritiseMeContactSizes>>,
     PrioritiseMeContactSizesMutationVariables
   > = (props) => {
-    const { nsid } = props ?? {};
+    const { nsid, params } = props ?? {};
 
-    return prioritiseMeContactSizes(nsid, requestOptions);
+    return prioritiseMeContactSizes(nsid, params, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -847,7 +867,10 @@ export type PrioritiseMeContactSizesMutationResult = NonNullable<
 >;
 
 export type PrioritiseMeContactSizesMutationError = Error;
-export type PrioritiseMeContactSizesMutationVariables = { nsid: string };
+export type PrioritiseMeContactSizesMutationVariables = {
+  nsid: string;
+  params?: PrioritiseMeContactSizesParams;
+};
 
 /**
  * @summary Prioritise pending size work for a contact
