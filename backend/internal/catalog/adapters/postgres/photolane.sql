@@ -22,32 +22,63 @@ WITH rows AS (
     FROM best
     ORDER BY tier, sub, depth, person_nsid
     LIMIT $1::int
-), candidates AS (
+), candidate_photos AS (
     SELECT p.id, p.owner_nsid, r.tier, r.sub, r.depth, p.uploaded_at,
-           0 AS facet_priority, 0 AS facet_order, 'sizes'::text AS facet
+           p.sizes_status, p.sizes_checked_at, p.last_update,
+           p.visibility, p.server
     FROM ranked AS r
     JOIN photos AS p ON p.owner_nsid = r.person_nsid
-    WHERE (p.sizes_status NOT IN ('confirmed', 'unavailable')
-           OR (p.sizes_status IN ('confirmed','unavailable') AND p.sizes_checked_at < p.last_update))
-      AND p.tombstoned_at IS NULL
-      AND NOT EXISTS (
-          SELECT 1
-          FROM photo_account_sizes AS account_sizes
-          WHERE account_sizes.photo_id = p.id
-            AND account_sizes.photo_updated_at = p.last_update
-            AND account_sizes.photo_visibility = p.visibility
-      )
+    WHERE p.tombstoned_at IS NULL
+      AND (p.sizes_status <> 'confirmed'
+           OR p.sizes_checked_at < p.last_update
+           OR p.server = '65535'
+           OR (cardinality($3::text[]) > 0
+               AND p.sizes_status = 'confirmed'
+               AND p.sizes_checked_at >= p.last_update))
+), photo_states AS (
+    SELECT p.*,
+           coalesce(account_sizes.resolved, false) AS owner_sizes_resolved,
+           coalesce(account_sizes.confirmed, false) AS owner_sizes_confirmed
+    FROM candidate_photos AS p
+    LEFT JOIN LATERAL (
+        SELECT bool_or(result.sizes_status IN ('confirmed', 'unavailable')) AS resolved,
+               bool_or(result.sizes_status = 'confirmed') AS confirmed
+        FROM photo_account_sizes AS result
+        JOIN flickr_accounts AS owner_account
+          ON owner_account.id = result.account_id
+         AND owner_account.nsid = p.owner_nsid
+         AND owner_account.status = 'ok'
+        JOIN api_keys AS owner_key
+          ON owner_key.id = owner_account.key_id
+         AND owner_key.user_id = owner_account.user_id
+         AND owner_key.status = 'valid'
+        JOIN crawl_interests AS owner_interest
+          ON owner_interest.user_id = owner_account.user_id
+         AND owner_interest.person_nsid = p.owner_nsid
+         AND owner_interest.depth = 0
+        WHERE result.photo_id = p.id
+          AND result.photo_updated_at = p.last_update
+          AND result.photo_visibility = p.visibility
+    ) AS account_sizes ON true
+), candidates AS (
+    SELECT p.id, p.owner_nsid, p.tier, p.sub, p.depth, p.uploaded_at,
+           0 AS facet_priority, 0 AS facet_order, 'sizes'::text AS facet
+    FROM photo_states AS p
+    WHERE (p.sizes_status <> 'confirmed'
+           OR p.sizes_checked_at < p.last_update
+           OR p.server = '65535')
+      AND NOT p.owner_sizes_resolved
 
     UNION ALL
 
-    SELECT p.id, p.owner_nsid, r.tier, r.sub, r.depth, p.uploaded_at,
+    SELECT p.id, p.owner_nsid, p.tier, p.sub, p.depth, p.uploaded_at,
            1 AS facet_priority, f.facet_order::int, f.facet
-    FROM ranked AS r
-    JOIN photos AS p ON p.owner_nsid = r.person_nsid
+    FROM photo_states AS p
     CROSS JOIN UNNEST($3::text[]) WITH ORDINALITY AS f(facet, facet_order)
-    WHERE p.sizes_status = 'confirmed'
-      AND p.sizes_checked_at >= p.last_update
-      AND p.tombstoned_at IS NULL
+    WHERE ((p.sizes_status = 'confirmed'
+            AND p.sizes_checked_at >= p.last_update
+            AND p.server <> '65535')
+           OR p.owner_sizes_confirmed)
       AND EXISTS (
           SELECT 1
           FROM crawl_interests AS i
