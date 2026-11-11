@@ -298,7 +298,7 @@ export function LibraryPage() {
             </div>
 
             {selected.size >= 500 ? (
-              <p className={styles.limit}>{t('user.library.tray.limit')}</p>
+              <p className={styles.limit}>{t('user.library.selection.limit')}</p>
             ) : null}
 
             {photos.length === 0 ? (

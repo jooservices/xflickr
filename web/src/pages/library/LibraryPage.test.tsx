@@ -115,7 +115,7 @@ describe('LibraryPage', () => {
     expect(downloadRequests).toBe(0);
   });
 
-  it('fills the last tray slot with the first new photo', async () => {
+  it('fills the last selection slot with the first new photo', async () => {
     const total = 501;
     server.use(
       http.get('*/favorites', ({ request }) => {
@@ -159,13 +159,23 @@ describe('LibraryPage', () => {
     fireEvent.click(screen.getByTestId('user-library-select-visible'));
 
     expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('500');
-    expect(screen.getByText('The tray holds up to 500 photos.')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'The selection limit is 500 photos. Selected photos have not been added to the download tray.',
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('shell-lang-toggle'));
+    expect(
+      screen.getByText(
+        'Giới hạn lựa chọn là 500 ảnh. Các ảnh đã chọn chưa được thêm vào danh sách tải.',
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByTestId('user-library-photo-select-500')).toBeChecked();
     expect(screen.getByTestId('user-library-photo-select-501')).not.toBeChecked();
     expect(screen.queryByTestId('user-library-photo-tray-501')).not.toBeInTheDocument();
   }, 15_000);
 
-  it('preserves selection across filters and Escape, then clears the entire tray', async () => {
+  it('preserves selection across filters and Escape, then clears the entire selection', async () => {
     let favoritesRequests = 0;
     server.use(
       http.get('*/favorites', () => {

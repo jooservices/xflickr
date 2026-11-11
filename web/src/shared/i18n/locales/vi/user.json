@@ -46,6 +46,6 @@
   "library.status.loading": "Đang tải thư viện…",
   "library.title": "Thư viện",
   "library.tray.add": "Thêm {{title}} vào danh sách tải",
-  "library.tray.limit": "Danh sách tải chứa tối đa 500 ảnh.",
+  "library.selection.limit": "Giới hạn lựa chọn là 500 ảnh. Các ảnh đã chọn chưa được thêm vào danh sách tải.",
   "library.tray.remove": "Xóa {{title}} khỏi danh sách tải"
 }

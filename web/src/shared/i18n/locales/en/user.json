@@ -46,6 +46,6 @@
   "library.status.loading": "Loading your library…",
   "library.title": "Library",
   "library.tray.add": "Add {{title}} to download tray",
-  "library.tray.limit": "The tray holds up to 500 photos.",
+  "library.selection.limit": "The selection limit is 500 photos. Selected photos have not been added to the download tray.",
   "library.tray.remove": "Remove {{title}} from download tray"
 }
