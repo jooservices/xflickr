@@ -173,6 +173,7 @@ func TestStartAvoidsRedundantRunningUpdate(t *testing.T) {
 	pool := openEngineTestPool(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -195,9 +196,9 @@ func TestStartAvoidsRedundantRunningUpdate(t *testing.T) {
 	for _, test := range cases {
 		var id int64
 		err := tx.QueryRow(ctx, `INSERT INTO work_items
-			(kind, subject_key, state, updated_at, last_error, attempts, cursor)
-			VALUES ('start_transition', $1, $2, now() - interval '1 hour', 'preserved', 2, '{"page":7}')
-			RETURNING id`, suffix+"-"+test.state, test.state).Scan(&id)
+			(kind, subject_key, state, updated_at, last_error, attempts, cursor, user_id)
+			VALUES ('start_transition', $1, $2, now() - interval '1 hour', 'preserved', 2, '{"page":7}', $3)
+			RETURNING id`, suffix+"-"+test.state, test.state, userID).Scan(&id)
 		if err != nil {
 			t.Fatalf("insert %s work item: %v", test.state, err)
 		}
@@ -246,10 +247,11 @@ func TestStartSerializesConcurrentTransitions(t *testing.T) {
 	pool := openEngineTestPool(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
 	suffix := fmt.Sprintf("start-lock-%d", time.Now().UnixNano())
 	var id int64
-	if err := pool.QueryRow(ctx, `INSERT INTO work_items(kind, subject_key, state)
-		VALUES ('start_lock', $1, 'ready') RETURNING id`, suffix).Scan(&id); err != nil {
+	if err := pool.QueryRow(ctx, `INSERT INTO work_items(kind, subject_key, state, user_id)
+		VALUES ('start_lock', $1, 'ready', $2) RETURNING id`, suffix, userID).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE id = $1`, id) })
