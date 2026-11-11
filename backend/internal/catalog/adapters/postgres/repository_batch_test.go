@@ -16,6 +16,7 @@ import (
 type repositoryTestDB struct {
 	batch      *repositoryTestBatch
 	batchCalls int
+	lastBatch  *pgx.Batch
 	execErr    error
 	execErrors []error
 	execCalls  int
@@ -36,8 +37,9 @@ func (d *repositoryTestDB) Query(context.Context, string, ...any) (pgx.Rows, err
 	return d.rows, d.queryErr
 }
 func (*repositoryTestDB) QueryRow(context.Context, string, ...any) pgx.Row { return nil }
-func (d *repositoryTestDB) SendBatch(context.Context, *pgx.Batch) pgx.BatchResults {
+func (d *repositoryTestDB) SendBatch(_ context.Context, batch *pgx.Batch) pgx.BatchResults {
 	d.batchCalls++
+	d.lastBatch = batch
 	return d.batch
 }
 
@@ -132,14 +134,24 @@ func TestCrawlCatalogWritersMapDomainRecordsToBatchUpserts(t *testing.T) {
 	if err := repository.UpsertPersonGroups(ctx, []catalog.PersonGroup{{PersonNSID: "person", GroupNSID: "group"}}); err != nil {
 		t.Fatalf("upsert crawl person groups: %v", err)
 	}
+	if err := repository.UpsertGroupPoolPhotos(ctx, []catalog.GroupPoolPhoto{{GroupNSID: "group", PhotoID: photoID}}); err != nil {
+		t.Fatalf("upsert crawl group pool photos: %v", err)
+	}
+	queued := db.lastBatch.QueuedQueries[0].Arguments
+	if len(queued) != 3 || queued[0] != "group" || queued[1] != photoID {
+		t.Fatalf("group pool values = %#v, want group and photo id", queued)
+	}
+	if seenAt, ok := queued[2].(time.Time); !ok || seenAt.IsZero() {
+		t.Fatalf("group pool seen time = %#v, want a nonzero time", queued[2])
+	}
 	if err := repository.UpsertAlbumsBatch(ctx, []Album{{ID: "batch-album", OwnerNSID: "person", PrimaryPhotoID: &photoID, PhotosCount: 1}}); err != nil {
 		t.Fatalf("upsert album batch: %v", err)
 	}
 	if err := repository.UpsertGalleriesBatch(ctx, []Gallery{{ID: "batch-gallery", OwnerNSID: "person", PrimaryPhotoID: &photoID, PhotosCount: 1}}); err != nil {
 		t.Fatalf("upsert gallery batch: %v", err)
 	}
-	if db.batch.index != 8 {
-		t.Fatalf("catalog batch statements = %d, want 8", db.batch.index)
+	if db.batch.index != 9 {
+		t.Fatalf("catalog batch statements = %d, want 9", db.batch.index)
 	}
 }
 
