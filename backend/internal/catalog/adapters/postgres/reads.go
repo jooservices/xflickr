@@ -434,7 +434,7 @@ ORDER BY candidates.updated_at DESC NULLS LAST,candidates.id DESC`
 	return page, nil
 }
 
-// listContactAlbumOwners returns the user's own contacts (at most 500) for the album owner filter. It is
+// listContactAlbumOwners returns the user's own contacts (at most 5000, far above any real contact list) for the album owner filter. It is
 // deliberately NOT derived from albums: whether a contact has albums at all would otherwise be visible
 // even when every photo of those albums is hidden by the sharing policy.
 func (r *Repository) listContactAlbumOwners(ctx context.Context, userID int64) ([]string, error) {
@@ -443,7 +443,7 @@ FROM flickr_accounts
 JOIN contacts ON contacts.person_nsid=flickr_accounts.nsid
 WHERE flickr_accounts.user_id=$1 AND flickr_accounts.status<>'revoked'
 ORDER BY contacts.contact_nsid
-LIMIT 500`, userID)
+LIMIT 5000`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("catalog: list contact album owners: %w", err)
 	}

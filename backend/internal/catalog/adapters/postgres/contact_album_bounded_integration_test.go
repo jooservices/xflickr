@@ -87,3 +87,41 @@ func createBoundedContactAlbumFixture(t *testing.T, ctx context.Context, tx pgx.
 		}
 	}
 }
+
+// TestContactAlbumOwnerFilterIsNotTruncatedAtFiveHundredContacts proves the owner filter lists every
+// contact of a user with 600 contacts, so a contact past the old 500 cut-off can still be selected.
+func TestContactAlbumOwnerFilterIsNotTruncatedAtFiveHundredContacts(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	createBoundedContactAlbumFixture(t, ctx, tx)
+	if _, err := tx.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid) SELECT 'account-owner','many-'||lpad(g::text,4,'0') FROM generate_series(1,600) AS g`); err != nil {
+		t.Fatal(err)
+	}
+
+	repository, err := postgres.New(tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userID := int64(42)
+	predicate := sharingapp.Filter(sharingdomain.User{ID: userID}).SQL
+	page, err := repository.ListContactAlbums(ctx, userID, "", predicate, nil, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.ContactOwners) != 601 {
+		t.Fatalf("contact owners = %d, want all 601 contacts (600 new + the fixture contact)", len(page.ContactOwners))
+	}
+	last := page.ContactOwners[len(page.ContactOwners)-1]
+	if last != "many-0600" && last != "contact-owner" {
+		t.Fatalf("last contact owner = %q, want the contact past the old 500 cut-off to be present", last)
+	}
+}
