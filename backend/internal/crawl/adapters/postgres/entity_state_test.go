@@ -15,6 +15,7 @@ import (
 type stateRow struct {
 	err     error
 	blocked bool
+	accountID int64
 	missing bool
 }
 
@@ -27,8 +28,11 @@ func (r stateRow) Scan(dest ...any) error {
 	} else {
 		*dest[0].(*string) = "42"
 		*dest[1].(*time.Time) = time.Unix(100, 0)
-		if len(dest) == 3 {
+		if len(dest) >= 3 {
 			*dest[2].(*int64) = 7
+		}
+		if len(dest) == 4 {
+			*dest[3].(*int64) = r.accountID
 		}
 	}
 	return nil
@@ -38,9 +42,19 @@ type stateDBFake struct {
 	row   stateRow
 	err   error
 	execs int
+	accessAccount int64
+	accountBlocked bool
 }
 
-func (d *stateDBFake) QueryRow(context.Context, string, ...any) pgx.Row { return d.row }
+func (d *stateDBFake) QueryRow(_ context.Context, _ string, args ...any) pgx.Row {
+	if len(args) == 9 {
+		d.accessAccount = args[8].(int64)
+		if d.row.accountID > 0 {
+			return stateRow{blocked: d.accessAccount == 0 || d.accountBlocked}
+		}
+	}
+	return d.row
+}
 func (d *stateDBFake) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
 	d.execs++
 	return pgconn.CommandTag{}, d.err
@@ -78,5 +92,23 @@ func TestEntityStateStorageErrorsAndEligibility(t *testing.T) {
 	}
 	if _, err := s.Suppressed(ctx, a, time.Now()); !errors.Is(err, db.row.err) {
 		t.Fatal("lost suppressed read error")
+	}
+}
+
+func TestPhotoSizesEligibilitySeparatesAnonymousAndOwnerRestrictions(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		restricted bool
+	}{ {"transient OAuth failure can be scheduled again", false}, {"terminal owner restriction closes scheduling", true} } {
+		t.Run(tc.name, func(t *testing.T) {
+			db := &stateDBFake{row: stateRow{accountID: 91}, accountBlocked: tc.restricted}
+			allowed, err := (EntityStates{DB: db}).PhotoFacetAllowed(t.Context(), 42, 1, "sizes")
+			if err != nil || allowed == tc.restricted {
+				t.Fatalf("owner eligibility = %v, %v; want %v", allowed, err, !tc.restricted)
+			}
+			if db.accessAccount != 91 {
+				t.Fatalf("restriction scope = %d; want owner account 91", db.accessAccount)
+			}
+		})
 	}
 }

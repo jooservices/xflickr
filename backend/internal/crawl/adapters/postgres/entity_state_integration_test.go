@@ -177,6 +177,35 @@ func TestPhotoFacetEligibilityUsesTheSelectedKeyOwner(t *testing.T) {
 	if allowed, err := states.PhotoFacetAllowed(ctx, photoID, keyID, "sizes"); err != nil || allowed {
 		t.Fatalf("PhotoFacetAllowed() = %v, %v; want the selected key's restriction to block scheduling", allowed, err)
 	}
+	var accountID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status)
+		VALUES($1,$2,$3,$3,'{}','{}','ok') RETURNING id`, userID, keyID, owner).Scan(&accountID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM flickr_accounts WHERE id=$1`, accountID)
+	})
+	// The prior OAuth job may have exhausted transient retries without recording
+	// an account restriction. Its anonymous restriction must not close the lane.
+	if allowed, err := states.PhotoFacetAllowed(ctx, photoID, keyID, "sizes"); err != nil || !allowed {
+		t.Fatalf("owner OAuth recovery eligibility = %v, %v; want true", allowed, err)
+	}
+	access.Facet = "exif"
+	if err := states.RecordFailure(ctx, access, "restricted", "permission_denied", now, now); err != nil {
+		t.Fatal(err)
+	}
+	if allowed, err := states.PhotoFacetAllowed(ctx, photoID, keyID, "exif"); err != nil || allowed {
+		t.Fatalf("anonymous optional facet eligibility = %v, %v; want false", allowed, err)
+	}
+	access.Facet = "sizes"
+	access.AccountID = accountID
+	if err := states.RecordFailure(ctx, access, "restricted", "permission_denied", now, now); err != nil {
+		t.Fatal(err)
+	}
+	if allowed, err := states.PhotoFacetAllowed(ctx, photoID, keyID, "sizes"); err != nil || allowed {
+		t.Fatalf("restricted owner account eligibility = %v, %v; want false", allowed, err)
+	}
+
 }
 
 func TestPhotoSizeRestrictionDistinguishesAccountsSharingAKey(t *testing.T) {
