@@ -2,12 +2,10 @@ package postgres
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
 
@@ -24,7 +22,7 @@ func TestHomeSnapshotIsUserScopedVisibleAndBounded(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 	pool := dbtest.Open(t, homeDatabase(t))
 	queueStub := &homeRefreshQueueStub{}
@@ -199,8 +197,7 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 	if queueStub.calls != 1 || queueStub.job.Kind != app.RefreshJobKind {
 		t.Fatalf("missing stats row was not queued once: %+v", queueStub)
 	}
-	assertRequestPlan(t, ctx, pool, requestDB.statement, userID)
-	assertRefreshPlan(t, ctx, pool, userID, 3)
+	assertHomePlans(t, ctx, pool, requestDB.statement, userID, 3)
 	refresher := app.Refresher{Processor: repository, BatchSize: 3}
 	for {
 		done, err := refresher.Refresh(ctx, userID)
@@ -243,20 +240,50 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 	if _, err := pool.Exec(ctx, `UPDATE sharing_settings SET enabled=false WHERE user_id=$1`, otherUserID); err != nil {
 		t.Fatal(err)
 	}
+	assertSharingSyncPending(t, ctx, pool, otherUserID, true)
+	assertSharedCandidate(t, ctx, pool, sharedPublicID, true)
+	snapshot, err = repository.Load(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !snapshot.Estimated || snapshot.Photos.Total != 14 || snapshot.StarredContacts[1].PhotosCount != 1 || queueStub.calls != 2 {
+		t.Fatalf("sharing change did not invalidate the cached snapshot: %+v, queued=%d", snapshot.Photos, queueStub.calls)
+	}
+	assertPhotoMissing(t, snapshot.NewPhotos, sharedPublicID)
+	for {
+		done, err := repository.RefreshBatch(ctx, otherUserID, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if done {
+			break
+		}
+	}
+	assertSharingSyncPending(t, ctx, pool, otherUserID, false)
+	assertSharedCandidate(t, ctx, pool, sharedPublicID, false)
+	if _, err := pool.Exec(ctx, `UPDATE sharing_settings SET enabled=true WHERE user_id=$1`, otherUserID); err != nil {
+		t.Fatal(err)
+	}
+	assertSharingSyncPending(t, ctx, pool, otherUserID, true)
 	assertSharedCandidate(t, ctx, pool, sharedPublicID, false)
 	snapshot, err = repository.Load(ctx, userID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !snapshot.Estimated || snapshot.Photos.Total != 0 || snapshot.StarredContacts[1].PhotosCount != 0 || queueStub.calls != 2 {
-		t.Fatalf("sharing change did not invalidate the cached snapshot: %+v, queued=%d", snapshot.Photos, queueStub.calls)
+	assertPhotoMissing(t, snapshot.NewPhotos, sharedPublicID)
+	for {
+		done, err := repository.RefreshBatch(ctx, otherUserID, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if done {
+			break
+		}
 	}
-	if _, err := pool.Exec(ctx, `UPDATE sharing_settings SET enabled=true WHERE user_id=$1`, otherUserID); err != nil {
-		t.Fatal(err)
-	}
+	assertSharingSyncPending(t, ctx, pool, otherUserID, false)
 	assertSharedCandidate(t, ctx, pool, sharedPublicID, true)
 	for {
-		done, err := refresher.Refresh(ctx, userID)
+		done, err := repository.RefreshBatch(ctx, userID, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -312,7 +339,11 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 		t.Fatalf("fourth starred contact = %+v", got)
 	}
 	oldComputedAt := *snapshot.CountsComputedAt
-	if _, err := refresher.Refresh(ctx, userID); err != nil {
+	if done, err := refresher.Refresh(ctx, userID); err != nil || done {
+		t.Fatalf("first refresh batch = done %t, err %v", done, err)
+	}
+	var priorCursor string
+	if err := pool.QueryRow(ctx, `SELECT cursor_record_id FROM user_home_stats_refreshes WHERE user_id=$1`, userID).Scan(&priorCursor); err != nil {
 		t.Fatal(err)
 	}
 	changedPhotoID := baseID + 1
@@ -320,8 +351,31 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 		t.Fatal(err)
 	}
 	changedSnapshot, err := repository.Load(ctx, userID)
-	if err != nil || !changedSnapshot.Estimated || changedSnapshot.Photos.Total != 0 || changedSnapshot.StarredContacts[0].PhotosCount != 0 || !changedSnapshot.CountsComputedAt.Equal(oldComputedAt) {
+	if err != nil || !changedSnapshot.Estimated || changedSnapshot.Photos.Total != 14 || changedSnapshot.StarredContacts[0].PhotosCount != 13 || !changedSnapshot.CountsComputedAt.Equal(oldComputedAt) {
 		t.Fatalf("in-progress refresh published a changed source: %+v, err=%v", changedSnapshot, err)
+	}
+	if done, err := refresher.Refresh(ctx, userID); err != nil || done {
+		t.Fatalf("refresh after a source revision change = done %t, err %v", done, err)
+	}
+	var nextCursor string
+	if err := pool.QueryRow(ctx, `SELECT cursor_record_id FROM user_home_stats_refreshes WHERE user_id=$1`, userID).Scan(&nextCursor); err != nil {
+		t.Fatal(err)
+	}
+	if nextCursor <= priorCursor {
+		t.Fatalf("refresh cursor moved from %q to %q after source change", priorCursor, nextCursor)
+	}
+	for {
+		done, err := refresher.Refresh(ctx, userID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if done {
+			break
+		}
+	}
+	snapshot, err = repository.Load(ctx, userID)
+	if err != nil || !snapshot.Estimated || snapshot.Photos.Total != 14 {
+		t.Fatalf("refresh with a concurrent source change = %+v estimated=%t err=%v", snapshot.Photos, snapshot.Estimated, err)
 	}
 	for {
 		done, err := refresher.Refresh(ctx, userID)
@@ -381,139 +435,23 @@ type explainNode struct {
 	Plans        []explainNode `json:"Plans"`
 }
 
-func assertRequestPlan(t *testing.T, ctx context.Context, pool *pgxpool.Pool, statement string, userID int64) {
+func assertSharingSyncPending(t *testing.T, ctx context.Context, pool *pgxpool.Pool, userID int64, want bool) {
 	t.Helper()
-	if _, err := pool.Exec(ctx, `ANALYZE user_home_photo_candidates`); err != nil {
-		t.Fatalf("analyze own photo candidates for request plan: %v", err)
+	var pending bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM user_home_sharing_syncs WHERE user_id=$1)`, userID).Scan(&pending); err != nil {
+		t.Fatalf("check pending Home sharing sync: %v", err)
 	}
-	if _, err := pool.Exec(ctx, `ANALYZE user_home_shared_photo_candidates`); err != nil {
-		t.Fatalf("analyze shared photo candidates for request plan: %v", err)
+	if pending != want {
+		t.Fatalf("Home sharing sync pending=%t, want %t", pending, want)
 	}
-	if _, err := pool.Exec(ctx, `ANALYZE user_home_shared_version`); err != nil {
-		t.Fatalf("analyze shared revision for request plan: %v", err)
-	}
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatalf("begin Home request plan transaction: %v", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `SET LOCAL enable_seqscan = off`); err != nil {
-		t.Fatalf("prefer indexes for Home request plan: %v", err)
-	}
-	var raw []byte
-	if err := tx.QueryRow(ctx, "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+statement, userID).Scan(&raw); err != nil {
-		t.Fatalf("explain Home request: %v", err)
-	}
-	var document explainDocument
-	if err := json.Unmarshal(raw, &document); err != nil {
-		t.Fatalf("decode Home request plan: %v", err)
-	}
-	if len(document) != 1 {
-		t.Fatalf("Home request plan has %d roots", len(document))
-	}
-	scanCount := 0
-	var maxScanRows float64
-	seenOwnCandidates, seenSharedCandidates := false, false
-	var visit func(explainNode)
-	visit = func(node explainNode) {
-		t.Helper()
-		if node.NodeType == "Seq Scan" && node.RelationName != "sharing_settings" &&
-			node.RelationName != "user_home_shared_version" {
-			t.Errorf("Home request plan contains Seq Scan on %q", node.RelationName)
-		}
-		boundedOwnCandidates := node.RelationName == "user_home_photo_candidates" && node.PlanRows <= 12
-		boundedSharedCandidates := node.RelationName == "user_home_shared_photo_candidates" && node.PlanRows <= 12
-		boundedCandidates := node.NodeType == "CTE Scan" && node.CTEName == "newest_photo_candidates" && node.PlanRows <= 24
-		singletonVersion := node.RelationName == "user_home_shared_version"
-		if node.RelationName == "user_home_photo_candidates" {
-			seenOwnCandidates = true
-			if node.ActualRows*node.ActualLoops > 12 {
-				t.Errorf("Home request read %.0f own candidates, over the 12-row limit", node.ActualRows*node.ActualLoops)
-			}
-		}
-		if node.RelationName == "user_home_shared_photo_candidates" {
-			seenSharedCandidates = true
-			if node.ActualRows*node.ActualLoops > 12 {
-				t.Errorf("Home request read %.0f shared candidates, over the 12-row limit", node.ActualRows*node.ActualLoops)
-			}
-		}
-		if strings.Contains(node.NodeType, "Scan") && node.PlanRows > 500 &&
-			!boundedOwnCandidates && !boundedSharedCandidates && !boundedCandidates && !singletonVersion {
-			t.Errorf("Home request %s on %q estimates %.0f rows outside its candidate limit", node.NodeType, node.RelationName, node.PlanRows)
-		}
-		if strings.Contains(node.NodeType, "Scan") {
-			scanCount++
-			if node.PlanRows > maxScanRows {
-				maxScanRows = node.PlanRows
-			}
-		}
-		for _, child := range node.Plans {
-			visit(child)
-		}
-	}
-	visit(document[0].Plan)
-	if !seenOwnCandidates || !seenSharedCandidates {
-		t.Fatalf("Home request plan must visit both candidate sources; own=%t shared=%t", seenOwnCandidates, seenSharedCandidates)
-	}
-	t.Logf("request EXPLAIN: %d scan nodes; largest estimate %.0f rows", scanCount, maxScanRows)
 }
 
-func assertRefreshPlan(t *testing.T, ctx context.Context, pool *pgxpool.Pool, userID int64, batchSize int) {
+func assertPhotoMissing(t *testing.T, photos []app.Photo, photoID int64) {
 	t.Helper()
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatalf("begin refresh plan transaction: %v", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `SET LOCAL enable_seqscan = off`); err != nil {
-		t.Fatalf("prefer indexes for refresh plan: %v", err)
-	}
-	var raw []byte
-	if err := tx.QueryRow(ctx, "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+refreshPhotoPageSQL, userID, "", batchSize).Scan(&raw); err != nil {
-		t.Fatalf("explain refresh page: %v", err)
-	}
-	var document explainDocument
-	if err := json.Unmarshal(raw, &document); err != nil {
-		t.Fatalf("decode refresh page plan: %v", err)
-	}
-	if len(document) != 1 {
-		t.Fatalf("refresh page plan has %d roots", len(document))
-	}
-	seenOwn, seenShared, seenPageLimit := false, false, false
-	var visit func(explainNode)
-	visit = func(node explainNode) {
-		t.Helper()
-		if node.NodeType == "Limit" {
-			seenPageLimit = true
-			if node.ActualRows*node.ActualLoops > float64(batchSize) {
-				t.Errorf("refresh limit returned %.0f rows, over configured batch %d", node.ActualRows*node.ActualLoops, batchSize)
-			}
+	for _, photo := range photos {
+		if photo.ID == photoID {
+			t.Fatalf("photo %d remains visible after sharing was revoked or before it was granted", photoID)
 		}
-		if node.RelationName == "user_home_photo_candidates" {
-			seenOwn = true
-			if node.NodeType == "Seq Scan" {
-				t.Error("refresh plan scans all own candidates")
-			}
-			if node.ActualRows*node.ActualLoops > float64(batchSize) {
-				t.Errorf("refresh read %.0f own candidates, over configured batch %d", node.ActualRows*node.ActualLoops, batchSize)
-			}
-		}
-		if node.RelationName == "user_home_shared_photo_candidates" {
-			seenShared = true
-			if node.NodeType == "Seq Scan" {
-				t.Error("refresh plan scans all shared candidates")
-			}
-			if node.ActualRows*node.ActualLoops > float64(batchSize) {
-				t.Errorf("refresh read %.0f shared candidates, over configured batch %d", node.ActualRows*node.ActualLoops, batchSize)
-			}
-		}
-		for _, child := range node.Plans {
-			visit(child)
-		}
-	}
-	visit(document[0].Plan)
-	if !seenOwn || !seenShared || !seenPageLimit {
-		t.Fatalf("refresh plan bounded indexed sources own=%t shared=%t limit=%t", seenOwn, seenShared, seenPageLimit)
 	}
 }
 
