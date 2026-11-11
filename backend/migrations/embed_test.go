@@ -63,7 +63,7 @@ func TestObservationLookupMigrationBuildsPartitionIndexesConcurrently(t *testing
 }
 
 func TestContactsKeysetIndexMigrationBuildsConcurrentlyAndRepairsOnRetry(t *testing.T) {
-	sql, err := fs.ReadFile(migrations.Files, "20261110100000_contacts_keyset_index.sql")
+	sql, err := fs.ReadFile(migrations.Files, "20261111100000_contacts_keyset_index.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
