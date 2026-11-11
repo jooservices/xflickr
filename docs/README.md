@@ -65,6 +65,8 @@
   and five-minute expiry cleanup.
 - [Cloud storage provider contract](cloud-sync-providers.md) — provider port,
   capabilities, upload verification, and reusable adapter contract tests.
+- [Cloud sync engine](cloud-sync-engine.md) — temporary blob ownership, upload
+  verification order, cleanup, and retry boundaries.
 - [AI captioning](ai-captioning.md) — caption port, Ollama vision requests,
   timeout, concurrency, response validation, and circuit breaker behaviour.
 - [Fake AI Captioner](fake-ai-captioner.md)
