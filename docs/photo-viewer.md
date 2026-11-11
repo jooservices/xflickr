@@ -19,4 +19,6 @@ viewer uses one unavailable state for both.
 Component/MSW tests cover loading, empty, success, preview failure, retryable
 errors, 404, 401 session expiry, navigation, translations, and focus behavior.
 The mocked Playwright scenario covers keyboard use, accessibility, and desktop
-and mobile reflow. No database, SQL, migration, or product route is changed.
+and mobile reflow. The sharing visibility filter used by photo detail reads is
+supported by a concurrent observations index migration; its behavior and the
+API contract do not change.

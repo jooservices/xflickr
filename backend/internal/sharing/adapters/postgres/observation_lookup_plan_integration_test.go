@@ -121,7 +121,7 @@ func TestObservationLookupUsesRecordIndex(t *testing.T) {
 	if strings.Contains(planText, "Seq Scan on observations") || strings.Contains(planText, "Seq Scan on observations_p") {
 		t.Fatalf("photo sharing lookup scans observations sequentially:\n%s", planText)
 	}
-	if !strings.Contains(planText, "record_lookup_idx") {
-		t.Fatalf("photo sharing lookup did not use the observations record index:\n%s", planText)
+	if !strings.Contains(planText, "observations_p00_kind_record_idx") && !strings.Contains(planText, "record_lookup_idx") {
+		t.Fatalf("photo sharing lookup did not use a partition record index:\n%s", planText)
 	}
 }

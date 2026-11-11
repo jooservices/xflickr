@@ -46,7 +46,7 @@ func TestObservationLookupMigrationBuildsPartitionIndexesConcurrently(t *testing
 	if !strings.Contains(string(migration), "-- +goose NO TRANSACTION") {
 		t.Fatal("observation lookup migration must run outside a transaction")
 	}
-	for partition := range 16 {
+	for partition := 1; partition < 16; partition++ {
 		index := fmt.Sprintf("observations_p%02d_record_lookup_idx", partition)
 		create := fmt.Sprintf("CREATE INDEX CONCURRENTLY IF NOT EXISTS %s ON observations_p%02d (record_id, record_kind, user_id);", index, partition)
 		drop := fmt.Sprintf("DROP INDEX CONCURRENTLY IF EXISTS %s;", index)
@@ -56,5 +56,8 @@ func TestObservationLookupMigrationBuildsPartitionIndexesConcurrently(t *testing
 		if !strings.Contains(string(migration), drop) {
 			t.Errorf("migration does not drop partition lookup index %s concurrently", index)
 		}
+	}
+	if strings.Contains(string(migration), "observations_p00_record_lookup_idx") {
+		t.Fatal("migration must reuse the existing p00 lookup index instead of creating a duplicate")
 	}
 }
