@@ -23,6 +23,9 @@ func TestOpenUsesMigratedWorktreeDatabase(t *testing.T) {
 	if currentDatabase != dbConfig.Name {
 		t.Fatalf("connected database does not match the configured test database")
 	}
+	if !relationExists(t, t.Context(), dbConfig, "public.key_assignments") {
+		t.Fatal("key_assignments table is missing from the migrated worktree database")
+	}
 }
 
 func TestEmptyDatabaseIsCreatedAndDroppedWithoutTouchingWorktreeSchema(t *testing.T) {
