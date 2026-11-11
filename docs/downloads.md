@@ -23,6 +23,12 @@ Flickr call. Restricted placeholders fail without calling Flickr.
 
 Photos whose sizes are already current and confirmed keep the direct fetch path.
 
+Contact downloads select at most 501 photos for the requested owner, ordered by
+photo ID, and exclude tombstones before applying the limit. The partial
+`photos_owner_download_id_idx` on each photo partition supports this bounded
+selection. Migration `20261112030000_photos_owner_download_id_idx.sql` builds
+the partition indexes concurrently.
+
 Once every item is ready or failed, a `media.pack` job streams ready originals
 into ZIP parts using the stored method. Each part is capped at 2 GiB and stored
 in the configured blob store. The final part contains `manifest.csv`, with a
