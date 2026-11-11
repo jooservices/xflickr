@@ -5,7 +5,7 @@
   "is_real_time": false,
   "query_condition": {
     "type": "sql",
-    "sql": "SELECT count(CASE WHEN event='crawl.health' AND _timestamp >= now() - INTERVAL '90 seconds' THEN 1 END) AS health_recent, count(CASE WHEN event='crawl.health.key' AND _timestamp >= now() - INTERVAL '90 seconds' THEN 1 END) AS key_recent FROM \"{{OPENOBSERVE_STREAM}}\" HAVING health_recent=0 OR key_recent=0"
+    "sql": "SELECT count(CASE WHEN event='crawl.health'\n  AND _timestamp >= now() - INTERVAL '90 seconds' THEN 1 END) AS health_recent\nFROM \"{{OPENOBSERVE_STREAM}}\"\nHAVING health_recent=0"
   },
   "trigger_condition": {
     "period": 2,
@@ -16,5 +16,5 @@
   },
   "destinations": [],
   "enabled": true,
-  "description": "Impact: Crawl health or per-key quota telemetry is missing or stale. Action: Check the configured OpenObserve destination, stream, and XFlickr telemetry delivery."
+  "description": "Impact: Scheduler crawl-health telemetry is stale. Action: Check the scheduler, snapshot and OpenObserve ingestion."
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"regexp"
 	"strings"
@@ -35,10 +36,17 @@ type Repository interface {
 	Heartbeat(context.Context, string, HeartbeatInput, time.Time) (domain.Node, error)
 }
 
+// DuplicateChecker checks whether a successful heartbeat creates an operational duplicate.
+type DuplicateChecker interface {
+	CheckDuplicate(context.Context, domain.Node, time.Time) error
+}
+
 type Nodes struct {
-	Repository    Repository
-	Now           func() time.Time
-	GenerateToken func() (string, error)
+	Repository       Repository
+	DuplicateChecker DuplicateChecker
+	Logger           *slog.Logger
+	Now              func() time.Time
+	GenerateToken    func() (string, error)
 }
 
 func (service Nodes) Create(ctx context.Context, name string, roles []string) (domain.Node, string, error) {
@@ -104,9 +112,19 @@ func (service Nodes) Heartbeat(ctx context.Context, name string, input Heartbeat
 	if clock == nil {
 		clock = time.Now
 	}
-	updated, err := service.Repository.Heartbeat(ctx, name, input, clock().UTC())
+	at := clock().UTC()
+	updated, err := service.Repository.Heartbeat(ctx, name, input, at)
 	if err != nil {
 		return domain.Node{}, fmt.Errorf("cluster: record heartbeat: %w", err)
+	}
+	if service.DuplicateChecker != nil {
+		if err := service.DuplicateChecker.CheckDuplicate(ctx, updated, at); err != nil {
+			logger := service.Logger
+			if logger == nil {
+				logger = slog.Default()
+			}
+			logger.WarnContext(ctx, "duplicate egress check failed", "node_name", updated.Name, "error_type", fmt.Sprintf("%T", err))
+		}
 	}
 	return updated, nil
 }

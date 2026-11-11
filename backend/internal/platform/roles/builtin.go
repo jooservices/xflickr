@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +35,7 @@ import (
 	clusterhttp "github.com/jooservices/xflickr/internal/cluster/adapters/http"
 	clusterpostgres "github.com/jooservices/xflickr/internal/cluster/adapters/postgres"
 	clusterapp "github.com/jooservices/xflickr/internal/cluster/app"
+	clusterdomain "github.com/jooservices/xflickr/internal/cluster/domain"
 	crawlhttp "github.com/jooservices/xflickr/internal/crawl/adapters/http"
 	crawlpostgres "github.com/jooservices/xflickr/internal/crawl/adapters/postgres"
 	crawlsettings "github.com/jooservices/xflickr/internal/crawl/adapters/settings"
@@ -47,6 +50,9 @@ import (
 	mediapostgres "github.com/jooservices/xflickr/internal/media/adapters/postgres"
 	medias3 "github.com/jooservices/xflickr/internal/media/adapters/s3"
 	mediaapp "github.com/jooservices/xflickr/internal/media/app"
+	opsstore "github.com/jooservices/xflickr/internal/ops/adapters/postgres"
+	opsapp "github.com/jooservices/xflickr/internal/ops/app"
+	opsdomain "github.com/jooservices/xflickr/internal/ops/domain"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
 	auditpostgres "github.com/jooservices/xflickr/internal/platform/audit/adapters/postgres"
 	"github.com/jooservices/xflickr/internal/platform/config"
@@ -775,10 +781,64 @@ func buildConfiguredAPIHandlerSetWithObserver(pool *pgxpool.Pool, redisClient re
 		Now:     time.Now,
 		ActorID: userIDFromPrincipal,
 	}
-	nodeRepository := clusterpostgres.New(pool)
-	nodeService := clusterapp.Nodes{Repository: nodeRepository}
+	nodeService, err := buildNodeService(pool)
+	if err != nil {
+		return apiHandlerSet{}, err
+	}
 	nodesHandler := clusterhttp.Handler{Service: nodeService}
 	return newAPIRoutersWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}, probeReadiness, flags, catalogReads, nodesHandler), nil
+}
+
+func buildNodeService(pool *pgxpool.Pool) (clusterapp.Nodes, error) {
+	nodeRepository := clusterpostgres.New(pool)
+	incidentRepository, err := opsstore.NewIncidentRepository(pool)
+	if err != nil {
+		return clusterapp.Nodes{}, fmt.Errorf("api: create duplicate egress incident repository: %w", err)
+	}
+	return clusterapp.Nodes{
+		Repository:       nodeRepository,
+		DuplicateChecker: duplicateEgressChecker{nodes: nodeRepository, incidents: opsapp.NewIncidents(incidentRepository)},
+		Logger:           slog.Default(),
+	}, nil
+}
+
+type duplicateEgressChecker struct {
+	nodes     duplicateEgressFinder
+	incidents duplicateIncidentOpener
+}
+
+type duplicateEgressFinder interface {
+	FindDuplicateEgress(context.Context, clusterdomain.Node, time.Time) (string, error)
+}
+
+type duplicateIncidentOpener interface {
+	Open(context.Context, opsdomain.Incident) (opsdomain.Incident, error)
+}
+
+func (checker duplicateEgressChecker) CheckDuplicate(ctx context.Context, node clusterdomain.Node, at time.Time) error {
+	if node.EgressIP == "" || node.EffectiveState(at) != clusterdomain.StateOnline || !slices.Contains(node.Roles, "crawl") {
+		return nil
+	}
+	duplicate, err := checker.nodes.FindDuplicateEgress(ctx, node, at)
+	if err != nil {
+		return fmt.Errorf("cluster: check duplicate egress IP: %w", err)
+	}
+	if duplicate == "" {
+		return nil
+	}
+	names := []string{node.Name, duplicate}
+	sort.Strings(names)
+	_, err = checker.incidents.Open(ctx, opsdomain.Incident{
+		Kind:     "duplicate_egress_ip",
+		Scope:    fmt.Sprintf("%d:%s|%d:%s", len(names[0]), names[0], len(names[1]), names[1]),
+		Severity: opsdomain.SeverityWarning,
+		Title:    "Duplicate egress IP",
+		Detail:   json.RawMessage("{}"),
+	})
+	if err != nil {
+		return fmt.Errorf("cluster: open duplicate egress incident: %w", err)
+	}
+	return nil
 }
 
 func buildFeatureFlagHandler(pool *pgxpool.Pool) (settingshttp.Handler, error) {

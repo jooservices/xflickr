@@ -91,12 +91,27 @@ func (e *Engine) Load(ctx context.Context, id int64) (domain.Item, error) {
 // Start marks a ready item running. A running item stays running, so a rerun
 // after a crash proceeds; any other state is not runnable.
 func (e *Engine) Start(ctx context.Context, id int64) (bool, error) {
-	tag, err := e.conn.Exec(ctx, `UPDATE work_items SET state = 'running', updated_at = now() WHERE id = $1 AND state IN ('ready', 'running')`, id)
-	if err != nil {
+	var started bool
+	if err := e.conn.QueryRow(ctx, startSQL, id).Scan(&started); err != nil {
 		return false, fmt.Errorf("crawl: start work item: %w", err)
 	}
-	return tag.RowsAffected() > 0, nil
+	return started, nil
 }
+
+const startSQL = `WITH target AS MATERIALIZED (
+    SELECT id, state
+    FROM work_items
+    WHERE id = $1 AND state IN ('ready', 'running')
+    FOR UPDATE
+),
+changed AS (
+    UPDATE work_items AS w
+    SET state = 'running', updated_at = now()
+    FROM target AS t
+    WHERE w.id = t.id AND t.state = 'ready'
+    RETURNING w.id
+)
+SELECT EXISTS (SELECT 1 FROM target)`
 
 // StampScanStart writes checkpoint_at onto the unchanged photos/favorites
 // cursor when it is still missing. A legacy later-page cursor restarts at page

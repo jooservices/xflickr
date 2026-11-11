@@ -34,6 +34,11 @@ nothing. Observations are unique per item, page, kind and subject. A crash
 between the call and the commit rolls everything back and the rerun repeats the
 page.
 
+`Start` locks the selected work item and decides its transition in one SQL
+statement. A `ready` item becomes `running` and gets a new `updated_at`; a
+`running` item remains runnable without writing a new row version or extending
+its lease. Other states and a missing ID are not runnable.
+
 The late people refresh keeps its row locks until the page transaction commits,
 so it runs after the other writes and locks changed rows in NSID order. The
 earlier ensure step is ordered by NSID and does not update or row-lock existing

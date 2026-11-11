@@ -7,6 +7,8 @@
 - [Sharing settings and observations](sharing.md)
 - [Ops monitoring](ops-monitoring.md) — crawl health log line, admin status
   endpoint, granted-call and quota-wait counters, OpenObserve stream and alerts.
+- [Scheduler uptime alert](uptime-alerts.md) — crawl-health freshness signal,
+  detection window, and notification limits.
 - [Operations metrics collection](metrics.md) — minute samples, catalogue,
   retention and rollups for the admin operations dashboard (JOOXF-368 phase 1).
 - [Reading queue metric samples](metrics-series-read.md) — bounded admin reads
@@ -44,6 +46,9 @@
 - [Admin user management](admin-users.md) — list, disable and promote users,
   last-administrator rule, and audit port.
 - [Node registry and heartbeat](nodes.md) — one-time node tokens, isolated internal listener, and heartbeat health.
+- [Duplicate egress IP detection](node-duplicate-egress.md) — heartbeat checks,
+  eligibility, incident scope, and slice limitations.
+- [Key-to-node assignment](key-node-assignment.md) — immutable initial assignments, eligibility, and logical queue lookup.
 - [Node heartbeat client](node-heartbeat-client.md) — one-shot authenticated
   heartbeat requests and client limits.
 - [Feature flags](feature-flags.md) — administrator-managed rollout flags,
@@ -73,12 +78,16 @@
   capabilities, upload verification, and reusable adapter contract tests.
 - [Dropbox metadata check](dropbox-provider.md) — known-path metadata checks,
   App-folder paths, content hash semantics, and current slice limits.
+- [S3 sync provider existence check](s3-sync-provider.md) — object HEAD checks
+  by key and ETag, with the first adapter slice's limits.
 - [Cloud sync engine](cloud-sync-engine.md) — temporary blob ownership, upload
   verification order, cleanup, and retry boundaries.
 - [Google Drive provider slice](google-drive-provider.md) — My Drive root
   folder lookup and creation, error mapping, and deferred provider work.
 - [Google Photos raw upload slice](sync-gphotos.md) — standalone upload-token
   client and its current scope limits.
+- [OneDrive folder adapter](onedrive-provider.md) — App Folder lookup and
+  creation for the initial `EnsureAlbum` slice.
 - [AI captioning](ai-captioning.md) — caption port, Ollama vision requests,
   timeout, concurrency, response validation, and circuit breaker behaviour.
 - [Fake AI Captioner](fake-ai-captioner.md)
