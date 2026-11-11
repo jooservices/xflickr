@@ -161,6 +161,26 @@ func TestGroupsAcceptsEmptyEnvelope(t *testing.T) {
 	}
 }
 
+func TestGroupsRejectsEmptyPageWhenMorePagesRemain(t *testing.T) {
+	for name, payload := range map[string]string{
+		"empty group list": `{"groups":{"pages":2,"group":[]}}`,
+		"omitted group list": `{"groups":{"pages":2}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, err := (Groups{}).Handle(t.Context(), catalogPage("p@N01", payload, 1))
+			if err == nil {
+				t.Fatal("empty intermediate page was accepted")
+			}
+			if !strings.HasPrefix(err.Error(), "crawl facets: decode groups:") {
+				t.Fatalf("error = %q, want groups decode context", err)
+			}
+			if !reflect.DeepEqual(result, domain.Result{}) {
+				t.Fatalf("error result = %#v, want zero result", result)
+			}
+		})
+	}
+}
+
 func TestCatalogFacetsHandleEmptyAndMalformedReplies(t *testing.T) {
 	cases := []struct {
 		facet domain.Facet

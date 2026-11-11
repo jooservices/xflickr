@@ -112,6 +112,37 @@ func TestGroupsInvalidEnvelopeDoesNotCommit(t *testing.T) {
 	}
 }
 
+func TestGroupsEmptyIntermediatePageDoesNotFinishWork(t *testing.T) {
+	registry := NewRegistry()
+	if err := registry.Register(facets.Groups{}); err != nil {
+		t.Fatal(err)
+	}
+	item := domain.Item{
+		ID: 45, Kind: "groups", Subject: "p@N01", UserID: 3, Depth: 1, State: domain.StateReady, Attempts: 1,
+		Cursor: domain.Cursor{Page: 1, Method: "flickr.people.getGroups", Params: map[string]string{"user_id": "p@N01"}},
+	}
+	tx := &fakeTx{current: domain.Item{State: domain.StateRunning, Cursor: item.Cursor}}
+	flickr := &fakeFlickr{payload: json.RawMessage(`{"groups":{"pages":2,"group":[]}}`)}
+	store := &fakeStore{item: item, started: true}
+	engine := &Engine{
+		Registry: registry, Store: store, Units: tx, Keys: fakeKeys{id: 9},
+		Governor: fakeGovernor{permit: &fakePermit{}}, Flickr: flickr, Settings: fakeSettings{max: 3},
+		Now: func() time.Time { return epoch },
+	}
+	if err := engine.Handle(t.Context(), item.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(tx.groups) != 0 || len(tx.personGroups) != 0 || len(tx.log) != 0 {
+		t.Fatalf("empty intermediate page wrote groups=%d memberships=%d writes=%v", len(tx.groups), len(tx.personGroups), tx.log)
+	}
+	if tx.finished || tx.advanced != nil {
+		t.Fatalf("empty intermediate page committed progress: finished=%v advanced=%v", tx.finished, tx.advanced)
+	}
+	if len(store.calls) != 2 || store.calls[0] != "start" || store.calls[1] != "defer" {
+		t.Fatalf("work item calls = %#v, want start and existing failure deferral", store.calls)
+	}
+}
+
 func largeGroupsPayload(t *testing.T, n int) json.RawMessage {
 	t.Helper()
 	var b strings.Builder
