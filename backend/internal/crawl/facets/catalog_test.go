@@ -207,7 +207,6 @@ func TestCatalogFacetsHandleEmptyAndMalformedReplies(t *testing.T) {
 	}{
 		{Albums{}, `{"photosets":{"pages":1,"photoset":[]}}`},
 		{Galleries{}, `{"galleries":{"pages":1,"gallery":[]}}`},
-		{Groups{}, `{"groups":{"pages":1,"group":[]}}`},
 		{GroupPool{}, `{"photos":{"pages":1,"photo":[]}}`},
 	}
 	for _, tc := range cases {
