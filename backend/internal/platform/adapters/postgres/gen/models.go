@@ -637,6 +637,13 @@ type Incident struct {
 	ClosedAt  pgtype.Timestamptz
 }
 
+type KeyAssignment struct {
+	KeyID  int64
+	Node   string
+	Since  pgtype.Timestamptz
+	Reason string
+}
+
 type MetricRollup struct {
 	ID         int64
 	Name       string

@@ -44,6 +44,7 @@
 - [Admin user management](admin-users.md) — list, disable and promote users,
   last-administrator rule, and audit port.
 - [Node registry and heartbeat](nodes.md) — one-time node tokens, isolated internal listener, and heartbeat health.
+- [Key-to-node assignment](key-node-assignment.md) — immutable initial assignments, eligibility, and logical queue lookup.
 - [Node heartbeat client](node-heartbeat-client.md) — one-shot authenticated
   heartbeat requests and client limits.
 - [Feature flags](feature-flags.md) — administrator-managed rollout flags,
