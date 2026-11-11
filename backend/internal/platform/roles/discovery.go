@@ -82,6 +82,7 @@ func (apiServer) GetAPIEntry(ctx context.Context, _ gen.GetAPIEntryRequestObject
 	if _, ok := identityhttp.PrincipalFrom(ctx); ok {
 		collections["me"] = rest.NewLink("/api/v1/me", http.MethodGet)
 		collections["current-session"] = rest.NewLink("/api/v1/sessions/current", http.MethodGet)
+		collections["home"] = rest.NewLink("/api/v1/me/home", http.MethodGet)
 	}
 	return discoveryResponse{collections, discoveryTraceID(ctx)}, nil
 }
