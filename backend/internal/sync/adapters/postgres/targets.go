@@ -24,6 +24,10 @@ VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7)`
 	getSQL = `
 SELECT id,user_id,provider,label,config,status
 FROM sync_targets WHERE id=$1 AND user_id=$2`
+
+	listSQL = `
+SELECT id,user_id,provider,label,config,status
+FROM sync_targets WHERE user_id=$1 AND id>$2 ORDER BY id LIMIT $3`
 )
 
 // Repository stores targets in PostgreSQL and omits sealed tokens from reads.
@@ -95,6 +99,37 @@ func (r *Repository) Get(ctx context.Context, userID, id int64) (app.Target, err
 		return app.Target{}, fmt.Errorf("sync: get target: %w", err)
 	}
 	return target, nil
+}
+
+// List returns one bounded page of targets owned by userID after afterID.
+func (r *Repository) List(ctx context.Context, userID, afterID int64, limit int) ([]app.Target, error) {
+	if err := r.ready(ctx); err != nil {
+		return nil, err
+	}
+	targets := make([]app.Target, 0)
+	err := r.unit.Do(ctx, func(tx db.Tx) error {
+		rows, err := tx.Query(ctx, listSQL, userID, afterID, limit)
+		if err != nil {
+			return fmt.Errorf("sync: query targets: %w", err)
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			target, err := scanTarget(rows)
+			if err != nil {
+				return err
+			}
+			targets = append(targets, target)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("sync: iterate targets: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("sync: list targets: %w", err)
+	}
+	return targets, nil
 }
 
 func (r *Repository) ready(ctx context.Context) error {

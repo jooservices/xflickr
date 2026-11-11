@@ -142,6 +142,64 @@ func TestTargetsGetEnforcesOwnership(t *testing.T) {
 	}
 }
 
+func TestTargetsListUsesOwnerCursorAndLimit(t *testing.T) {
+	want := []Target{
+		{ID: 43, UserID: 7, Provider: "drive", Label: "Archive", Status: "connected", Config: json.RawMessage(`{"folder":"archive"}`)},
+		{ID: 44, UserID: 7, Provider: "dropbox", Label: "Photos", Status: "reconnect_required", Config: json.RawMessage(`{}`)},
+	}
+	repository := &targetRepositoryFake{listed: want}
+	service := Targets{Repository: repository}
+
+	got, err := service.List(t.Context(), 7, 42, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(want) || got[0].ID != 43 || got[1].ID != 44 || got[1].Status != "reconnect_required" {
+		t.Fatalf("listed targets = %+v", got)
+	}
+	if repository.listUserID != 7 || repository.listAfterID != 42 || repository.listLimit != 5 {
+		t.Fatalf("list arguments = user %d, after %d, limit %d", repository.listUserID, repository.listAfterID, repository.listLimit)
+	}
+}
+
+func TestTargetsListRejectsInvalidPage(t *testing.T) {
+	cases := []struct {
+		name    string
+		service Targets
+		ctx     context.Context
+		userID  int64
+		afterID int64
+		limit   int
+	}{
+		{name: "missing repository", ctx: t.Context(), userID: 7, limit: 1},
+		{name: "nil context", service: targetTestService(), userID: 7, limit: 1},
+		{name: "nonpositive user", service: targetTestService(), ctx: t.Context(), limit: 1},
+		{name: "negative cursor", service: targetTestService(), ctx: t.Context(), userID: 7, afterID: -1, limit: 1},
+		{name: "zero limit", service: targetTestService(), ctx: t.Context(), userID: 7, limit: 0},
+		{name: "limit too large", service: targetTestService(), ctx: t.Context(), userID: 7, limit: maxTargetPageSize + 1},
+		{name: "canceled context", service: targetTestService(), ctx: canceledTargetContext(t), userID: 7, limit: 1},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := test.service.List(test.ctx, test.userID, test.afterID, test.limit)
+			if err == nil {
+				t.Fatal("List accepted an invalid page")
+			}
+			if repository, ok := test.service.Repository.(*targetRepositoryFake); ok && repository.listCalls != 0 {
+				t.Fatalf("invalid page reached repository %d times", repository.listCalls)
+			}
+		})
+	}
+}
+
+func TestTargetsListWrapsRepositoryFailure(t *testing.T) {
+	readErr := errors.New("read failed")
+	service := Targets{Repository: &targetRepositoryFake{listErr: readErr}}
+	if _, err := service.List(t.Context(), 7, 0, 5); !errors.Is(err, readErr) || !strings.Contains(err.Error(), "list targets") {
+		t.Fatalf("list error = %v", err)
+	}
+}
+
 func targetTestService() Targets {
 	return Targets{Repository: &targetRepositoryFake{id: 1}, Sealer: &targetSealerFake{sealed: targetTestSealed()}}
 }
@@ -176,11 +234,17 @@ func (sealer *targetSealerFake) Seal(plaintext, aad []byte) (crypto.Sealed, erro
 type targetRepositoryFake struct {
 	id          int64
 	target      Target
+	listed      []Target
 	created     Target
 	createCalls int
 	getUserID   int64
 	getID       int64
+	listUserID  int64
+	listAfterID int64
+	listLimit   int
+	listCalls   int
 	getErr      error
+	listErr     error
 	createErr   error
 	inserted    bool
 }
@@ -209,4 +273,15 @@ func (repository *targetRepositoryFake) Get(_ context.Context, userID, id int64)
 		return Target{}, repository.getErr
 	}
 	return repository.target, nil
+}
+
+func (repository *targetRepositoryFake) List(_ context.Context, userID, afterID int64, limit int) ([]Target, error) {
+	repository.listCalls++
+	repository.listUserID = userID
+	repository.listAfterID = afterID
+	repository.listLimit = limit
+	if repository.listErr != nil {
+		return nil, repository.listErr
+	}
+	return repository.listed, nil
 }
