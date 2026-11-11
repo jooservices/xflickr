@@ -33,23 +33,24 @@ export function useAdminQuota(enabled: boolean) {
   const queryClient = useQueryClient();
   const liveOff = useLiveOff();
   const previousLiveOff = useRef(liveOff);
+  const queryFn = async ({ signal }: { signal: AbortSignal }) => {
+    try {
+      const data = await loadAdminQuota(signal);
+      queryClient.setQueryData(ADMIN_QUOTA_POLL_FAILURES_QUERY_KEY, 0);
+      return data;
+    } catch (error) {
+      if (!(error instanceof Error && error.name === 'AbortError')) {
+        queryClient.setQueryData<number>(
+          ADMIN_QUOTA_POLL_FAILURES_QUERY_KEY,
+          (count) => (count ?? 0) + 1,
+        );
+      }
+      throw error;
+    }
+  };
   const query = useQuery({
     queryKey: ADMIN_QUOTA_QUERY_KEY,
-    queryFn: async ({ signal }) => {
-      try {
-        const data = await loadAdminQuota(signal);
-        queryClient.setQueryData(ADMIN_QUOTA_POLL_FAILURES_QUERY_KEY, 0);
-        return data;
-      } catch (error) {
-        if (!(error instanceof Error && error.name === 'AbortError')) {
-          queryClient.setQueryData<number>(
-            ADMIN_QUOTA_POLL_FAILURES_QUERY_KEY,
-            (count) => (count ?? 0) + 1,
-          );
-        }
-        throw error;
-      }
-    },
+    queryFn,
     enabled: enabled && !liveOff,
     retry: false,
     refetchInterval: (query) => {
@@ -85,5 +86,19 @@ export function useAdminQuota(enabled: boolean) {
     });
   }, [liveOff, queryClient]);
 
-  return query;
+  return {
+    ...query,
+    loadOnce: async () => {
+      await queryClient.cancelQueries(
+        { queryKey: ADMIN_QUOTA_QUERY_KEY, exact: true },
+        { revert: true },
+      );
+      await queryClient.query({
+        queryKey: ADMIN_QUOTA_QUERY_KEY,
+        queryFn,
+        networkMode: 'always',
+        retry: false,
+      });
+    },
+  };
 }

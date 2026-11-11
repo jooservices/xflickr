@@ -227,24 +227,24 @@ describe('API quota page', () => {
       locale: 'en' as const,
       title: 'No API quota snapshot yet.',
       button: 'Load once',
-      usage: '300 / 3,600',
+      error: 'Could not load API quota.',
     },
     {
       locale: 'vi' as const,
       title: 'Chưa có bản chụp hạn mức API.',
       button: 'Tải một lần',
-      usage: '300 / 3.600',
+      error: 'Không thể tải hạn mức API.',
     },
   ])(
-    'offers a one-shot load while offline before the first snapshot ($locale)',
-    async ({ locale, title, button, usage }) => {
+    'attempts a one-shot load and shows its error while offline ($locale)',
+    async ({ locale, title, button, error }) => {
       let calls = 0;
       let unmount: () => void = () => undefined;
       onlineManager.setOnline(false);
       server.use(
         http.get('*/admin/quota', () => {
           calls += 1;
-          return HttpResponse.json({ keys: [{ ...key, used: 300 }] });
+          return new HttpResponse(null, { status: 503 });
         }),
       );
 
@@ -255,15 +255,16 @@ describe('API quota page', () => {
         expect(waiting).toHaveTextContent(title);
         expect(waiting).toHaveTextContent('Live');
         expect(calls).toBe(0);
+        const liveToggle = screen.getByTestId('admin-live-toggle');
+        fireEvent.click(liveToggle);
+        expect(liveToggle).toHaveAttribute('aria-pressed', 'false');
 
         const loadButton = screen.getByTestId('admin-quota-waiting-load-once');
         expect(loadButton).toHaveTextContent(button);
         fireEvent.click(loadButton);
-        expect(calls).toBe(0);
-        onlineManager.setOnline(true);
-
-        expect(await screen.findByTestId('admin-quota-key-table')).toHaveTextContent(usage);
+        expect(await screen.findByTestId('admin-quota-error')).toHaveTextContent(error);
         expect(calls).toBe(1);
+        expect(liveToggle).toHaveAttribute('aria-pressed', 'false');
       } finally {
         unmount();
         onlineManager.setOnline(true);

@@ -226,7 +226,7 @@ export function QuotaPage() {
             <button
               className={styles.refresh}
               type="button"
-              onClick={() => void query.refetch()}
+              onClick={() => void query.loadOnce().catch(() => undefined)}
               disabled={query.isFetching}
               aria-busy={query.isFetching}
               data-testid="admin-quota-waiting-load-once"
