@@ -53,6 +53,11 @@ func TestRunWithHealthSharesReadinessAcrossRoles(t *testing.T) {
 	}()
 
 	status, body := awaitProbeStatus(t, port, "/readyz", http.StatusServiceUnavailable)
+	// The first 503 may still be the startup phase; wait until the role's own check reports.
+	for deadline := time.Now().Add(2 * time.Second); !strings.Contains(body, "\"name\":\"first.dependency\",\"status\":\"error\"") && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+		status, body = awaitProbeStatus(t, port, "/readyz", http.StatusServiceUnavailable)
+	}
 	if !strings.Contains(body, "\"name\":\"first.dependency\",\"status\":\"error\"") {
 		t.Fatalf("readiness response omitted the failing role: %s", body)
 	}
