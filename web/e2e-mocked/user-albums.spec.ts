@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test';
 import { expectNoSeriousViolations, mockApi, test } from './support';
 
-test('filters catalog albums and opens an album route', async ({ page }) => {
+test('filters contact albums without linking to an unavailable detail route', async ({ page }) => {
   const browserErrors: string[] = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
   page.on('console', (message) => {
@@ -9,7 +9,7 @@ test('filters catalog albums and opens an album route', async ({ page }) => {
   });
   await mockApi(page, 'user');
   await page.route(
-    (url) => url.pathname === '/albums' && url.searchParams.has('limit'),
+    (url) => url.pathname === '/me/albums' && url.searchParams.has('limit'),
     async (route) => {
       const cursor = new URL(route.request().url()).searchParams.get('cursor');
       const items = cursor
@@ -19,7 +19,7 @@ test('filters catalog albums and opens an album route', async ({ page }) => {
               owner_nsid: 'owner-2',
               title: 'Night skies',
               description: '',
-              photos_count: 3,
+              total_count: 3,
             },
           ]
         : [
@@ -28,7 +28,7 @@ test('filters catalog albums and opens an album route', async ({ page }) => {
               owner_nsid: 'owner-1',
               title: 'Vietnam 2024',
               description: '',
-              photos_count: 8,
+              total_count: 8,
             },
           ];
       await route.fulfill({
@@ -46,6 +46,6 @@ test('filters catalog albums and opens an album route', async ({ page }) => {
 
   await page.getByTestId('albums-filter').selectOption('owner-1');
   await expect(page).toHaveURL(/contact=owner-1/);
-  await expect(page.getByTestId('album-card')).toHaveAttribute('href', '/albums/album-1');
+  await expect(page.getByTestId('album-card')).not.toHaveAttribute('href');
   expect(browserErrors).toEqual([]);
 });

@@ -1,13 +1,13 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router';
-import type { CatalogAlbumPage } from '../../shared/api/gen/models';
-import { listAlbums } from '../../shared/api/gen/catalog/catalog';
+import { useLocation, useNavigate } from 'react-router';
+import type { MyAlbumPage } from '../../shared/api/gen/models';
+import { listMyAlbums } from '../../shared/api/gen/catalog/catalog';
 import { EmptyState, ForbiddenState, Icon, useI18n, useLoadingTiming } from '../../shared';
 import styles from './AlbumsPage.module.css';
 
 const PAGE_SIZE = 50;
-const albumQueryKey = ['catalog', 'albums'] as const;
+const albumQueryKey = ['catalog', 'my-albums'] as const;
 
 class AlbumsRequestError extends Error {
   constructor(readonly status: number) {
@@ -20,8 +20,8 @@ function responseStatus(error: unknown): number | undefined {
   return error instanceof AlbumsRequestError ? error.status : undefined;
 }
 
-async function loadAlbums(cursor?: string): Promise<CatalogAlbumPage> {
-  const response = await listAlbums({ cursor, limit: PAGE_SIZE });
+async function loadAlbums(cursor?: string): Promise<MyAlbumPage> {
+  const response = await listMyAlbums({ cursor, limit: PAGE_SIZE });
   if (response.status !== 200) throw new AlbumsRequestError(response.status);
   return response.data;
 }
@@ -29,17 +29,16 @@ async function loadAlbums(cursor?: string): Promise<CatalogAlbumPage> {
 function AlbumCard({
   album,
   photoCountLabel,
-  openLabel,
+  summary,
 }: {
-  album: CatalogAlbumPage['items'][number];
+  album: MyAlbumPage['items'][number];
   photoCountLabel: string;
-  openLabel: string;
+  summary: string;
 }) {
   return (
-    <Link
-      to={`/albums/${encodeURIComponent(album.id)}`}
+    <article
       className={styles.albumCard}
-      aria-description={openLabel}
+      aria-label={summary}
       data-testid="album-card"
       data-album-id={album.id}
     >
@@ -50,16 +49,16 @@ function AlbumCard({
           <Icon name="album" size={30} />
         </span>
       </span>
-      <span className={styles.title}>{album.title || album.id}</span>
+      <h2 className={styles.title}>{album.title || album.id}</h2>
       <span className={styles.meta}>
         <span>{album.owner_nsid}</span>
         <span>{photoCountLabel}</span>
       </span>
-    </Link>
+    </article>
   );
 }
 
-/** Lists catalog albums with the generated, cursor-based REST client. */
+/** Lists contact albums with the generated, cursor-based REST client. */
 export function AlbumsPage() {
   const { t, locale } = useI18n();
   const navigate = useNavigate();
@@ -256,30 +255,29 @@ export function AlbumsPage() {
           icon="album"
           title={t('albums.empty.title')}
           text={t('albums.empty.body')}
-          action={
-            <Link to="/contacts" className={styles.action} data-testid="albums-empty-action">
-              {t('albums.empty.action')}
-            </Link>
-          }
         />
       ) : null}
 
       {!albums.isPending && !initialError && visibleAlbums.length > 0 ? (
         <div className={styles.grid} data-testid="albums-grid">
           {visibleAlbums.map((album) => {
-            const formattedCount = new Intl.NumberFormat(locale).format(album.photos_count);
+            const formattedCount = new Intl.NumberFormat(locale).format(album.total_count);
             return (
               <AlbumCard
                 key={album.id}
                 album={album}
                 photoCountLabel={t(
-                  album.photos_count === 1 ? 'albums.card.visible-one' : 'albums.card.visible-many',
+                  album.total_count === 1 ? 'albums.card.total-one' : 'albums.card.total-many',
                   { count: formattedCount },
                 )}
-                openLabel={t('albums.card.open', {
-                  title: album.title || album.id,
-                  owner: album.owner_nsid,
-                })}
+                summary={t(
+                  album.total_count === 1 ? 'albums.card.summary-one' : 'albums.card.summary-many',
+                  {
+                    title: album.title || album.id,
+                    owner: album.owner_nsid,
+                    count: formattedCount,
+                  },
+                )}
               />
             );
           })}

@@ -20,7 +20,6 @@
 }
 
 .heading:focus-visible,
-.albumCard:focus-visible,
 .action:focus-visible,
 .filter:focus-visible {
   outline: 2px solid var(--accent, #3869d4);
@@ -120,12 +119,8 @@
   box-shadow: 0 6px 18px var(--shade, rgb(20 32 55 / 10%));
 }
 
-.albumCard:hover .coverFront {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 24px var(--shade, rgb(20 32 55 / 14%));
-}
-
 .title {
+  margin: 0;
   overflow: hidden;
   color: var(--ink, #252b33);
   font-size: 1.05rem;

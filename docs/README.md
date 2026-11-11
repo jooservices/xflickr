@@ -114,6 +114,8 @@
 - [UI view catalogue](ui/README.md) — all views, overlays, and the spec gate.
 - [Albums screens](ui/views/user-albums.md) — album list and detail data, states,
   and interactions.
+- [Albums feature](albums.md) — implemented list behavior, contact-scoped API,
+  and current limitations.
 - [User interface proof of concept](ui/poc/README.md) — static design prototype.
 - [UI design system](ui/design-system.md) — themes, typography, iconography, and
   accessibility rules.
