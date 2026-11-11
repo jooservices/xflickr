@@ -14,6 +14,7 @@ import { KeysPage } from '../pages/keys';
 import { SetupPage } from '../pages/setup/SetupPage';
 import { CrawlPage } from '../pages/crawl';
 import { QuotaPage } from '../pages/admin/quota';
+import { AlbumsPage } from '../pages/albums';
 import { LibraryPage } from '../pages/library';
 import { RouteErrorPage } from './ErrorBoundary';
 
@@ -21,6 +22,7 @@ function userPageElement(path: string, labelKey: MessageKey) {
   if (path === '/library') return <LibraryPage />;
   if (path === '/profile') return <ProfilePage />;
   if (path === '/crawl') return <CrawlPage />;
+  if (path === '/albums') return <AlbumsPage />;
   if (path === '/keys') return <KeysPage />;
   return <PlaceholderPage scope="shell" titleKey={labelKey} unavailable />;
 }

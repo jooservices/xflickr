@@ -2072,6 +2072,35 @@ export const ListFavoritesResponse = zod.object({
 });
 
 /**
+ * @summary List albums belonging to the signed-in user's contacts
+ */
+export const listMyAlbumsQueryCursorMax = 1024;
+
+export const listMyAlbumsQueryLimitDefault = 50;
+export const listMyAlbumsQueryLimitMax = 100;
+
+export const listMyAlbumsQueryOwnerNsidMax = 255;
+
+export const ListMyAlbumsQueryParams = zod.object({
+  cursor: zod.string().max(listMyAlbumsQueryCursorMax).optional(),
+  limit: zod.int().min(1).max(listMyAlbumsQueryLimitMax).default(listMyAlbumsQueryLimitDefault),
+  owner_nsid: zod.string().max(listMyAlbumsQueryOwnerNsidMax).optional(),
+});
+
+export const ListMyAlbumsResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.string(),
+      owner_nsid: zod.string(),
+      title: zod.string(),
+      updated_at: zod.iso.datetime({ offset: true }).optional(),
+    }),
+  ),
+  contact_owners: zod.array(zod.string()),
+  next_cursor: zod.string().optional(),
+});
+
+/**
  * @summary List albums with visible photos from the user's connected Flickr accounts
  */
 export const listAlbumsQueryCursorMax = 1024;

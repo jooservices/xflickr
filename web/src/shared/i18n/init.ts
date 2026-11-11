@@ -2,6 +2,7 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import adminEn from './locales/en/admin.json';
 import authEn from './locales/en/auth.json';
+import albumsEn from './locales/en/albums.json';
 import commonEn from './locales/en/common.json';
 import crawlEn from './locales/en/crawl.json';
 import errorsEn from './locales/en/errors.json';
@@ -14,6 +15,7 @@ import shellEn from './locales/en/shell.json';
 import userEn from './locales/en/user.json';
 import adminVi from './locales/vi/admin.json';
 import authVi from './locales/vi/auth.json';
+import albumsVi from './locales/vi/albums.json';
 import commonVi from './locales/vi/common.json';
 import crawlVi from './locales/vi/crawl.json';
 import errorsVi from './locales/vi/errors.json';
@@ -33,6 +35,7 @@ export const LOCALE_STORAGE_KEY = 'xf.locale';
 
 export const NAMESPACES = [
   'admin',
+  'albums',
   'auth',
   'common',
   'crawl',
@@ -49,6 +52,7 @@ export type Namespace = (typeof NAMESPACES)[number];
 
 const enResources = {
   admin: adminEn,
+  albums: albumsEn,
   auth: authEn,
   common: commonEn,
   crawl: crawlEn,
@@ -64,6 +68,7 @@ const enResources = {
 
 const viResources = {
   admin: adminVi,
+  albums: albumsVi,
   auth: authVi,
   common: commonVi,
   crawl: crawlVi,

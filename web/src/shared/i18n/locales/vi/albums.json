@@ -1,0 +1,14 @@
+{
+  "title": "Album",
+  "description": "Album của tất cả liên hệ của bạn.",
+  "filter.label": "Lọc theo liên hệ",
+  "filter.all": "Tất cả liên hệ",
+  "filter.unavailable": "Không thể truy cập liên hệ này. Đang hiển thị tất cả liên hệ.",
+  "empty.title": "Chưa có album",
+  "empty.body": "Album từ các liên hệ sẽ xuất hiện ở đây sau khi được khám phá.",
+  "error.title": "Không thể tải album",
+  "error.body": "Kiểm tra kết nối rồi thử lại.",
+  "partial.message": "Album có thể chưa được cập nhật",
+  "loading.label": "Đang tải album",
+  "action.more": "Tải thêm album"
+}

@@ -684,6 +684,17 @@ type Node struct {
 	TokenHash       []byte
 }
 
+type Notification struct {
+	ID        int64
+	UserID    int64
+	Kind      string
+	Title     string
+	Body      string
+	Level     string
+	ReadAt    pgtype.Timestamptz
+	CreatedAt pgtype.Timestamptz
+}
+
 type Observation struct {
 	UserID          int64
 	FlickrAccountID int64

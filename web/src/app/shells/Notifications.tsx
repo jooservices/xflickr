@@ -18,6 +18,7 @@ export function Notifications({ count, buttonTestId, countTestId }: BellProps) {
   const close = () => {
     setOpen(false);
   };
+  const pointerStartedOnScrimRef = useRef(false);
   const openerRef = useRef<HTMLButtonElement>(null);
   const ref = useOverlay<HTMLDivElement>({ open, onClose: close, trap: true, openerRef });
 
@@ -41,7 +42,18 @@ export function Notifications({ count, buttonTestId, countTestId }: BellProps) {
         <CountBadge count={count} testId={countTestId} />
       </button>
       {open ? (
-        <div className={styles.scrimSide}>
+        <div
+          className={styles.scrimSide}
+          onPointerDown={(event) => {
+            pointerStartedOnScrimRef.current = event.target === event.currentTarget;
+          }}
+          onClick={(event) => {
+            const shouldClose =
+              pointerStartedOnScrimRef.current && event.target === event.currentTarget;
+            pointerStartedOnScrimRef.current = false;
+            if (shouldClose) close();
+          }}
+        >
           <div
             ref={ref}
             className={styles.drawer}

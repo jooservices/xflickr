@@ -58,6 +58,7 @@ var routeAccess = map[string]identityhttp.Access{
 	"GET /people/{nsid}":                 identityhttp.AccessUser,
 	"GET /people/{nsid}/photos":          identityhttp.AccessUser,
 	"GET /favorites":                     identityhttp.AccessUser,
+	"GET /me/albums":                     identityhttp.AccessUser,
 	"GET /albums":                        identityhttp.AccessUser,
 	"GET /albums/{id}/photos":            identityhttp.AccessUser,
 	"GET /photos/{id}":                   identityhttp.AccessUser,

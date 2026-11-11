@@ -1,0 +1,14 @@
+{
+  "title": "Albums",
+  "description": "Albums from all your contacts.",
+  "filter.label": "Filter by contact",
+  "filter.all": "All contacts",
+  "filter.unavailable": "This contact is unavailable. Showing all contacts.",
+  "empty.title": "No albums yet",
+  "empty.body": "Albums from your contacts will appear here after they are discovered.",
+  "error.title": "Could not load albums",
+  "error.body": "Check your connection, then try again.",
+  "partial.message": "Albums may be out of date",
+  "loading.label": "Loading albums",
+  "action.more": "Load more albums"
+}

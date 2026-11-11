@@ -9,12 +9,17 @@
   endpoint, granted-call and quota-wait counters, OpenObserve stream and alerts.
 - [Scheduler uptime alert](uptime-alerts.md) — crawl-health freshness signal,
   detection window, and notification limits.
+- [OpenObserve provisioning](openobserve-provisioning.md)
 - [Operations metrics collection](metrics.md) — minute samples, catalogue,
   retention and rollups for the admin operations dashboard (JOOXF-368 phase 1).
 - [Reading queue metric samples](metrics-series-read.md) — bounded admin reads
   of one stored queue, role, and node series (JOOXF-163 slice 1).
 - [Incident management](incident-management.md) — deduplication, acknowledgement,
   closure, and critical incident notification events.
+- [Notifications panel](notifications-panel.md) — drawer dismissal, focus return,
+  and deferred notification functionality.
+- [Notifications storage](notifications.md) — user ownership, schema, and
+  deferred notification behavior.
 - [Structured logging and telemetry](observability.md) — context fields, OTLP
   export, event helper, offline log spill behavior, and cheap crawl-health
   snapshot estimates / lock / timeout.
@@ -127,6 +132,10 @@
   ETA estimates, and the `queue.state` event.
 - [Architecture decision records](adr/README.md) — durable architecture choices.
 - [UI view catalogue](ui/README.md) — all views, overlays, and the spec gate.
+- [Albums screens](ui/views/user-albums.md) — album list and detail data, states,
+  and interactions.
+- [Albums feature](albums.md) — implemented list behavior, contact-scoped API,
+  and current limitations.
 - [User interface proof of concept](ui/poc/README.md) — static design prototype.
 - [UI design system](ui/design-system.md) — themes, typography, iconography, and
   accessibility rules.

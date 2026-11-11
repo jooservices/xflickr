@@ -110,6 +110,32 @@ func (h Handler) ListAlbums(ctx context.Context, request gen.ListAlbumsRequestOb
 	return gen.ListAlbums200JSONResponse(gen.CatalogAlbumPage{Items: items, NextCursor: optionalString(next)}), nil
 }
 
+// ListMyAlbums returns album metadata for contacts of the signed-in user.
+func (h Handler) ListMyAlbums(ctx context.Context, request gen.ListMyAlbumsRequestObject) (gen.ListMyAlbumsResponseObject, error) {
+	userID, ok := h.actor(ctx)
+	if !ok {
+		return gen.ListMyAlbums401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
+	}
+	page, next, err := h.Reads.ListContactAlbums(
+		ctx,
+		userID,
+		stringParam(request.Params.OwnerNsid),
+		stringParam(request.Params.Cursor),
+		pageLimit(request.Params.Limit),
+	)
+	if errors.Is(err, app.ErrInvalidCursor) || errors.Is(err, app.ErrInvalidPage) {
+		return gen.ListMyAlbums400JSONResponse(invalidPageError()), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	items := make([]gen.MyAlbum, 0, len(page.Items))
+	for _, album := range page.Items {
+		items = append(items, gen.MyAlbum{ID: album.ID, OwnerNsid: album.OwnerNSID, Title: album.Title, UpdatedAt: album.UpdatedAt})
+	}
+	return gen.ListMyAlbums200JSONResponse(gen.MyAlbumPage{Items: items, ContactOwners: page.ContactOwners, NextCursor: optionalString(next)}), nil
+}
+
 func (h Handler) ListAlbumPhotos(ctx context.Context, request gen.ListAlbumPhotosRequestObject) (gen.ListAlbumPhotosResponseObject, error) {
 	userID, ok := h.actor(ctx)
 	if !ok {

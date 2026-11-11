@@ -1,11 +1,22 @@
 package http
 
 import (
+	"context"
 	"errors"
 	"testing"
 
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
 )
+
+func (StrictHandler) ListMyAlbums(context.Context, gen.ListMyAlbumsRequestObject) (gen.ListMyAlbumsResponseObject, error) {
+	return nil, errCatalogServedByCatalog
+}
+
+func TestStrictHandlerLeavesContactAlbumsToCatalog(t *testing.T) {
+	if _, err := (StrictHandler{}).ListMyAlbums(t.Context(), gen.ListMyAlbumsRequestObject{}); !errors.Is(err, errCatalogServedByCatalog) {
+		t.Fatalf("list contact albums error = %v", err)
+	}
+}
 
 func TestStrictHandlerReportsPlatformReadinessUnavailable(t *testing.T) {
 	response, err := (StrictHandler{}).GetReadiness(t.Context(), gen.GetReadinessRequestObject{})
