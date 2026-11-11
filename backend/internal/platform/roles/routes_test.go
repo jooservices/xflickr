@@ -50,7 +50,7 @@ func routerWith(sessions identityhttp.SessionService) http.Handler {
 
 // samplePath fills the path parameters of a route pattern.
 func samplePath(pattern string) string {
-	for _, name := range []string{"{id}", "{nsid}", "{partNumber}"} {
+	for _, name := range []string{"{id}", "{nsid}", "{partNumber}", "{name}"} {
 		pattern = strings.ReplaceAll(pattern, name, "1")
 	}
 	return pattern
@@ -176,6 +176,12 @@ func TestRoutesEnforceDeclaredAccess(t *testing.T) {
 		asUser.ServeHTTP(userResponse, request(true))
 		switch access {
 		case identityhttp.AccessPublic:
+			if key == "GET /api/v1/admin/flags/{name}" {
+				if anonymousResponse.Code != http.StatusUnauthorized || userResponse.Code != http.StatusForbidden {
+					t.Errorf("%s strict middleware answered anonymous/user %d/%d, want 401/403", key, anonymousResponse.Code, userResponse.Code)
+				}
+				continue
+			}
 			if anonymousResponse.Code == http.StatusUnauthorized || anonymousResponse.Code == http.StatusForbidden && !strings.Contains(anonymousResponse.Body.String(), "csrf") {
 				t.Errorf("%s public route answered %d", key, anonymousResponse.Code)
 			}

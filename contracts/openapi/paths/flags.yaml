@@ -48,3 +48,69 @@ collection:
         content:
           application/json:
             schema: { $ref: ../schemas/common.yaml#/Error }
+item:
+  get:
+    operationId: GetAdminFlag
+    tags: [admin]
+    summary: Read one configured feature flag
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[a-z][a-z0-9_.-]{0,127}$'
+    responses:
+      '200':
+        description: Feature flag representation
+        headers:
+          ETag:
+            description: Strong validator of the public flag fields.
+            required: true
+            schema:
+              type: string
+              pattern: '^"[a-f0-9]{64}"$'
+          Cache-Control:
+            description: Prevent storage of the private administrator response.
+            required: true
+            schema: { type: string, enum: ['private, no-store'] }
+        content:
+          application/json:
+            schema: { $ref: ../schemas/flags.yaml#/RESTFeatureFlagEnvelope }
+      '400':
+        description: Malformed query string
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '401':
+        description: Authentication required
+        headers:
+          WWW-Authenticate:
+            required: true
+            schema: { type: string }
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '403':
+        description: Administrator role required
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '404':
+        description: Feature flag not found
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '422':
+        description: Invalid flag name or unsupported query parameter
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }
+      '500':
+        description: Feature flag storage failure
+        content:
+          application/problem+json:
+            schema: { $ref: ../schemas/rest.yaml#/RESTProblem }

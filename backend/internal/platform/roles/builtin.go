@@ -890,6 +890,11 @@ func (s apiServer) GetAdminFlags(ctx context.Context, request gen.GetAdminFlagsR
 	return s.Flags.GetAdminFlags(ctx, request)
 }
 
+// GetAdminFlag delegates the one-flag read to the settings HTTP adapter.
+func (s apiServer) GetAdminFlag(ctx context.Context, request gen.GetAdminFlagRequestObject) (gen.GetAdminFlagResponseObject, error) {
+	return s.Flags.GetAdminFlag(ctx, request)
+}
+
 func (s apiServer) UpdateAdminFlags(ctx context.Context, request gen.UpdateAdminFlagsRequestObject) (gen.UpdateAdminFlagsResponseObject, error) {
 	return s.Flags.UpdateAdminFlags(ctx, request)
 }
@@ -1038,6 +1043,7 @@ func newAPIRoutersWithServices(identity identityhttp.Handler, keys accountshttp.
 	strict := gen.NewStrictHandlerWithOptions(server, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		discoveryAuthentication(identity.Sessions),
+		flagReadAuthentication(identity.Sessions),
 		identityhttp.MaintainSessionCookies(identity.Sessions),
 	}, gen.StrictHTTPServerOptions{RequestErrorHandlerFunc: badRequest, ResponseErrorHandlerFunc: internalError})
 	public := gen.HandlerWithOptions(strict, gen.ChiServerOptions{BaseRouter: publicRouter, ErrorHandlerFunc: badRequest})

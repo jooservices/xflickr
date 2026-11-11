@@ -60,6 +60,10 @@ export type HTTPStatusCode5xx = 500 | 501 | 502 | 503 | 504 | 505 | 507 | 511;
 export type HTTPStatusCodes =
   HTTPStatusCode1xx | HTTPStatusCode2xx | HTTPStatusCode3xx | HTTPStatusCode4xx | HTTPStatusCode5xx;
 
+type AwaitedInput<T> = PromiseLike<T> | T;
+
+type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
+
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {

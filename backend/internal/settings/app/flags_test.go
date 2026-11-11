@@ -18,7 +18,9 @@ type featureFlagRepoStub struct {
 	listErr   error
 	adminErr  error
 	writeErr  error
+	getErr    error
 	listCalls int
+	getCalls  int
 	adminCall int
 	writes    int
 	updated   []domain.FeatureFlag
@@ -27,6 +29,19 @@ type featureFlagRepoStub struct {
 func (repository *featureFlagRepoStub) ListFlags(context.Context) ([]domain.FeatureFlag, error) {
 	repository.listCalls++
 	return cloneFeatureFlags(repository.flags), repository.listErr
+}
+
+func (repository *featureFlagRepoStub) GetFlag(_ context.Context, name string) (domain.FeatureFlag, error) {
+	repository.getCalls++
+	if repository.getErr != nil {
+		return domain.FeatureFlag{}, repository.getErr
+	}
+	for _, flag := range repository.flags {
+		if flag.Name == name {
+			return flag, nil
+		}
+	}
+	return domain.FeatureFlag{}, ErrFeatureFlagNotFound
 }
 
 func (repository *featureFlagRepoStub) UserIsAdmin(_ context.Context, userID int64) (bool, error) {
@@ -233,6 +248,71 @@ func TestFeatureFlagsContextAndRepositoryValidation(t *testing.T) {
 	}
 }
 
+func TestFeatureFlagsGetReadsRepositoryWithoutUsingSnapshot(t *testing.T) {
+	repository := &featureFlagRepoStub{flags: []domain.FeatureFlag{{
+		Name: "admin.banner", Enabled: false, Audience: domain.AudienceUserIDs, UserIDs: []int64{9, 3},
+	}}}
+	service := NewFeatureFlags(repository)
+	if _, err := service.List(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	repository.flags[0].Enabled = true
+
+	flag, err := service.Get(t.Context(), "admin.banner")
+	if err != nil || !flag.Enabled || !reflect.DeepEqual(flag.UserIDs, []int64{9, 3}) {
+		t.Fatalf("Get() = %+v, %v; want the current stored flag and user order", flag, err)
+	}
+	if repository.getCalls != 1 || repository.listCalls != 1 {
+		t.Fatalf("direct reads = %d, snapshot reads = %d; want one of each", repository.getCalls, repository.listCalls)
+	}
+}
+
+func TestFeatureFlagsGetPropagatesNotFoundErrorsAndContext(t *testing.T) {
+	databaseErr := errors.New("database unavailable")
+	for _, test := range []struct {
+		name       string
+		flags      []domain.FeatureFlag
+		getErr     error
+		canceled   bool
+		want       error
+		wantDetail string
+	}{
+		{name: "not found", want: ErrFeatureFlagNotFound},
+		{name: "repository error", getErr: databaseErr, want: databaseErr, wantDetail: "get feature flag"},
+		{name: "canceled context", canceled: true, want: context.Canceled},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &featureFlagRepoStub{flags: test.flags, getErr: test.getErr}
+			service := NewFeatureFlags(repository)
+			ctx := t.Context()
+			if test.canceled {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+			_, err := service.Get(ctx, "missing")
+			if !errors.Is(err, test.want) || (test.wantDetail != "" && !strings.Contains(err.Error(), test.wantDetail)) {
+				t.Fatalf("Get() error = %v; want %v containing %q", err, test.want, test.wantDetail)
+			}
+			wantCalls := 1
+			if test.canceled {
+				wantCalls = 0
+			}
+			if repository.getCalls != wantCalls || repository.listCalls != 0 {
+				t.Fatalf("repository reads = get %d, list %d; want get %d, list 0", repository.getCalls, repository.listCalls, wantCalls)
+			}
+		})
+	}
+
+	if _, err := (*FeatureFlags)(nil).Get(t.Context(), "missing"); !errors.Is(err, ErrFlagRepositoryRequired) {
+		t.Fatalf("nil service Get() error = %v", err)
+	}
+	service := NewFeatureFlags(&featureFlagRepoStub{})
+	if _, err := service.Get(nil, "missing"); !errors.Is(err, ErrContextRequired) {
+		t.Fatalf("nil context Get() error = %v", err)
+	}
+}
+
 type inFlightFlagRepo struct {
 	mu      sync.Mutex
 	flags   []domain.FeatureFlag
@@ -252,6 +332,17 @@ func (repository *inFlightFlagRepo) ListFlags(context.Context) ([]domain.Feature
 		<-repository.release
 	}
 	return flags, nil
+}
+
+func (repository *inFlightFlagRepo) GetFlag(_ context.Context, name string) (domain.FeatureFlag, error) {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	for _, flag := range repository.flags {
+		if flag.Name == name {
+			return flag, nil
+		}
+	}
+	return domain.FeatureFlag{}, ErrFeatureFlagNotFound
 }
 
 func (repository *inFlightFlagRepo) UserIsAdmin(context.Context, int64) (bool, error) {
