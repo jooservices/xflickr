@@ -34,6 +34,8 @@
   CSRF, and role checks.
 - [Identity REST API](identity.md) — registration, browser sessions, the
   authenticated user, password changes, and sharing routes.
+- [Passkey credential storage](passkeys.md) — the WebAuthn credential table and
+  the current storage-only scope; passkey login is not available yet.
 - [Social sign-in and account linking](social-signin.md) — provider-neutral
   Google, Facebook, X and Apple sign-in, first-time registration, link and
   unlink rules, and error states.

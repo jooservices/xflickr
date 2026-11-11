@@ -1398,6 +1398,12 @@ type UserSetting struct {
 	Value  []byte
 }
 
+type WebauthnCredential struct {
+	CredentialID   []byte
+	UserID         int64
+	CredentialJson []byte
+}
+
 type WorkItem struct {
 	ID             int64
 	Kind           string
