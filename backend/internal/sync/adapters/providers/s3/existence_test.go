@@ -116,6 +116,9 @@ func TestExistsWithETagMatchesAndDoesNotMatch(t *testing.T) {
 	}
 }
 
+// errNotChecked marks cases where a 404 must surface as an error because the object was never checked.
+var errNotChecked = errors.New("sync s3: stat object: not found without a missing-key code")
+
 func TestExistsWithETagMapsProviderErrors(t *testing.T) {
 	responseBody := "private-provider-response-body"
 	for _, test := range []struct {
@@ -123,7 +126,9 @@ func TestExistsWithETagMapsProviderErrors(t *testing.T) {
 		err  error
 		want error
 	}{
-		{name: "not found", err: minio.ErrorResponse{StatusCode: http.StatusNotFound}},
+		{name: "not found", err: minio.ErrorResponse{StatusCode: http.StatusNotFound, Code: "NoSuchKey"}},
+		{name: "bucket not found", err: minio.ErrorResponse{StatusCode: http.StatusNotFound, Code: "NoSuchBucket"}, want: errNotChecked},
+		{name: "not found without a code", err: minio.ErrorResponse{StatusCode: http.StatusNotFound}, want: errNotChecked},
 		{name: "unauthorized", err: minio.ErrorResponse{StatusCode: http.StatusUnauthorized}, want: app.ErrAuthentication},
 		{name: "forbidden", err: minio.ErrorResponse{StatusCode: http.StatusForbidden}, want: app.ErrAuthentication},
 		{name: "too many requests", err: minio.ErrorResponse{StatusCode: http.StatusTooManyRequests}, want: app.ErrRateLimited},
@@ -143,6 +148,12 @@ func TestExistsWithETagMapsProviderErrors(t *testing.T) {
 			}
 			if err == nil {
 				t.Fatal("expected provider error")
+			}
+			if test.want == errNotChecked {
+				if found || !strings.Contains(err.Error(), "stat object") {
+					t.Fatalf("ExistsWithETag() = %t, %v; want false and a stat object error", found, err)
+				}
+				return
 			}
 			if test.want != nil && !errors.Is(err, test.want) {
 				t.Fatalf("ExistsWithETag() error = %v; want errors.Is(_, %v)", err, test.want)

@@ -13,7 +13,10 @@ import (
 	"github.com/jooservices/xflickr/internal/sync/app"
 )
 
-var errInvalidObjectCheck = errors.New("sync s3: invalid object check")
+var (
+	errInvalidObjectCheck = errors.New("sync s3: invalid object check")
+	errObjectAbsent       = errors.New("sync s3: object absent")
+)
 
 type statClient interface {
 	StatObject(context.Context, string, string, minio.StatObjectOptions) (minio.ObjectInfo, error)
@@ -51,7 +54,11 @@ func (c *ObjectChecker) ExistsWithETag(ctx context.Context, bucket, key, etag st
 
 	info, err := c.client.StatObject(ctx, bucket, key, minio.StatObjectOptions{})
 	if err != nil {
-		return false, classifyStatError(err)
+		classified := classifyStatError(err)
+		if errors.Is(classified, errObjectAbsent) {
+			return false, nil
+		}
+		return false, classified
 	}
 	return normalizeETag(info.ETag) == expectedETag, nil
 }
@@ -70,8 +77,13 @@ func classifyStatError(err error) error {
 
 	response := minio.ToErrorResponse(err)
 	switch {
+	case response.StatusCode == http.StatusNotFound && response.Code == "NoSuchKey":
+		// Only the object HEAD itself reporting a missing key means "absent". Any other 404
+		// (for example NoSuchBucket from the region lookup that runs before the HEAD) means
+		// the object was never checked and must not be reported as missing.
+		return errObjectAbsent
 	case response.StatusCode == http.StatusNotFound:
-		return nil
+		return fmt.Errorf("sync s3: stat object: not found without a missing-key code (%s)", response.Code)
 	case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:
 		return fmt.Errorf("sync s3: stat object: %w", app.ErrAuthentication)
 	case response.StatusCode == http.StatusTooManyRequests || response.StatusCode == http.StatusServiceUnavailable:
