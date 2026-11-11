@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jooservices/xflickr/internal/platform/api/gen"
 	"github.com/jooservices/xflickr/internal/platform/api/rest"
 )
 
@@ -69,6 +71,48 @@ func TestRequestBodyLimit(t *testing.T) {
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(strings.Repeat("x", 16*1024+1))))
 	if !called || response.Code != http.StatusNoContent {
 		t.Fatalf("called = %v, status = %d", called, response.Code)
+	}
+}
+
+func TestRequestBodyLimitAllowsLargeAdminFlagsPayload(t *testing.T) {
+	userIDs := make([]int64, 10_000)
+	for i := range userIDs {
+		userIDs[i] = int64(i + 1)
+	}
+	payload, err := json.Marshal(gen.UpdateAdminFlagsJSONRequestBody{
+		Flags: []gen.FeatureFlag{{
+			Name:     "targeted",
+			Enabled:  true,
+			Audience: gen.UserIds,
+			UserIds:  userIDs,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(payload) <= maxIdentityBodyBytes {
+		t.Fatalf("admin flags payload size = %d, want more than %d bytes", len(payload), maxIdentityBodyBytes)
+	}
+
+	response := httptest.NewRecorder()
+	handler := RequestBodyLimit(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		var body gen.UpdateAdminFlagsJSONRequestBody
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Errorf("decode large admin flags payload: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if len(body.Flags) != 1 || len(body.Flags[0].UserIds) != len(userIDs) {
+			t.Errorf("decoded user IDs = %d, want %d", len(body.Flags[0].UserIds), len(userIDs))
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	request := httptest.NewRequest(http.MethodPut, "/admin/flags", bytes.NewReader(payload))
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("large valid admin flags payload status = %d, want %d", response.Code, http.StatusNoContent)
 	}
 }
 
