@@ -26,12 +26,13 @@ type Client struct {
 }
 
 // New validates the HTTP client, Graph base URL, and delegated access token.
+// The base URL must be https: the bearer token is never sent over an unencrypted connection.
 func New(client *http.Client, baseURL, accessToken string) (*Client, error) {
 	if client == nil {
 		return nil, fmt.Errorf("onedrive: HTTP client is required")
 	}
 	parsed, err := url.Parse(baseURL)
-	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" ||
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" ||
 		parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" ||
 		strings.Contains(baseURL, "#") || parsed.Opaque != "" {
 		return nil, fmt.Errorf("onedrive: invalid Graph base URL")

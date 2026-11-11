@@ -18,7 +18,7 @@ const testToken = "fake-access-token"
 
 func TestEnsureAlbumCreatesFolder(t *testing.T) {
 	var calls []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, r.Method+" "+r.URL.EscapedPath())
 		if r.Header.Get("Authorization") != "Bearer "+testToken {
 			t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
@@ -64,7 +64,7 @@ func TestEnsureAlbumCreatesFolder(t *testing.T) {
 
 func TestEnsureAlbumReturnsExistingFolder(t *testing.T) {
 	var roots, posts atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1.0/me/drive/special/approot" {
 			roots.Add(1)
 			writeJSON(t, w, http.StatusOK, `{"id":"root-1","folder":{}}`)
@@ -92,7 +92,7 @@ func TestEnsureAlbumReturnsExistingFolder(t *testing.T) {
 
 func TestEnsureAlbumResolvesCreateConflict(t *testing.T) {
 	var lookups, creates atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/v1.0/me/drive/special/approot":
 			writeJSON(t, w, http.StatusOK, `{"id":"root-1","folder":{}}`)
@@ -118,7 +118,7 @@ func TestEnsureAlbumResolvesCreateConflict(t *testing.T) {
 func TestEnsureAlbumRejectsUnresolvedCreateConflict(t *testing.T) {
 	for _, response := range []string{"", `{"id":"file-1"}`} {
 		var lookups atomic.Int32
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case r.URL.Path == "/me/drive/special/approot":
 				writeJSON(t, w, http.StatusOK, `{"id":"root-1","folder":{}}`)
@@ -145,7 +145,7 @@ func TestEnsureAlbumRejectsUnresolvedCreateConflict(t *testing.T) {
 
 func TestEnsureAlbumRejectsInvalidNames(t *testing.T) {
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests.Add(1) }))
+	server := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests.Add(1) }))
 	t.Cleanup(server.Close)
 	client := mustClient(t, server.Client(), server.URL, testToken)
 	for _, name := range []string{"", " \t ", ".", "..", "~folder", "bad/name", `bad\name`, "bad*name", "bad<name", "bad>name", "bad?name", "bad:name", "bad|name", `bad"name`, "bad\nname", "trailing."} {
@@ -177,7 +177,7 @@ func TestEnsureAlbumMapsErrors(t *testing.T) {
 		{name: "oversized JSON", stage: "root", status: http.StatusOK, response: `{"id":"` + strings.Repeat("x", 64*1024) + `","folder":{}}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/me/drive/special/approot" {
 					if test.stage == "root" {
 						respond(t, w, test.status, test.response)
@@ -213,7 +213,7 @@ func TestEnsureAlbumMapsErrors(t *testing.T) {
 
 func TestEnsureAlbumHonorsCancellation(t *testing.T) {
 	started := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		close(started)
 		<-r.Context().Done()
 	}))
@@ -276,6 +276,7 @@ func TestNewRejectsInvalidDependencies(t *testing.T) {
 		{client: nil, baseURL: "https://graph.microsoft.com/v1.0", token: testToken},
 		{client: http.DefaultClient, baseURL: "not a URL", token: testToken},
 		{client: http.DefaultClient, baseURL: "ftp://graph.microsoft.com", token: testToken},
+		{client: http.DefaultClient, baseURL: "http://graph.microsoft.com/v1.0", token: testToken},
 		{client: http.DefaultClient, baseURL: "https://graph.microsoft.com?query=1", token: testToken},
 		{client: http.DefaultClient, baseURL: "https://user@graph.microsoft.com", token: testToken},
 		{client: http.DefaultClient, baseURL: "https://graph.microsoft.com", token: " "},
@@ -288,7 +289,7 @@ func TestNewRejectsInvalidDependencies(t *testing.T) {
 
 func TestEnsureAlbumDoesNotFollowRedirects(t *testing.T) {
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requests.Add(1)
 		http.Redirect(w, nil, "/redirect-target", http.StatusFound)
 	}))
@@ -341,5 +342,39 @@ func respond(t *testing.T, w http.ResponseWriter, status int, body string) {
 	w.WriteHeader(status)
 	if _, err := w.Write([]byte(body)); err != nil {
 		t.Errorf("write response: %v", err)
+	}
+}
+
+func TestNewRefusesPlainHTTPWithoutAnyRequest(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests.Add(1) }))
+	defer server.Close()
+
+	if _, err := New(server.Client(), server.URL, testToken); err == nil {
+		t.Fatal("New() accepted a plain http base URL; the bearer token would travel unencrypted")
+	}
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("a rejected http base URL made %d requests, want 0", got)
+	}
+}
+
+func TestEnsureAlbumNeverSendsTheTokenToAnHTTPRedirectTarget(t *testing.T) {
+	var plainRequests atomic.Int32
+	plain := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { plainRequests.Add(1) }))
+	defer plain.Close()
+	secure := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, plain.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	defer secure.Close()
+
+	client, err := New(secure.Client(), secure.URL, testToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.EnsureAlbum(t.Context(), "Album"); err == nil {
+		t.Fatal("EnsureAlbum() succeeded through a redirect to http")
+	}
+	if got := plainRequests.Load(); got != 0 {
+		t.Fatalf("the redirect target received %d requests (and the bearer token), want 0", got)
 	}
 }
