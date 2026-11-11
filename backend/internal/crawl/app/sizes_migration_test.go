@@ -25,11 +25,16 @@ func TestAccountScopedSizesMigrationBuildsIndexesWithoutLongTableLocks(t *testin
 	for _, index := range []string{
 		"CREATE UNIQUE INDEX CONCURRENTLY entity_facet_restrictions_key_scope_idx",
 		"CREATE UNIQUE INDEX CONCURRENTLY entity_facet_restrictions_account_scope_idx",
-		"CREATE INDEX CONCURRENTLY photos_p00_sizes_restricted_idx",
-		"CREATE INDEX CONCURRENTLY photos_p15_sizes_restricted_idx",
 	} {
 		if !strings.Contains(up, index) {
 			t.Errorf("migration does not build index concurrently: %s", index)
+		}
+	}
+	for _, line := range strings.Split(strings.ToLower(up), "\n") {
+		statement := strings.TrimSpace(line)
+		if strings.HasPrefix(statement, "create index") &&
+			(strings.Contains(statement, " on photos") || strings.Contains(statement, " on only photos")) {
+			t.Errorf("account-scoped sizes migration must not create an index on photos: %s", statement)
 		}
 	}
 	for _, statement := range []string{
