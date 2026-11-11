@@ -22,25 +22,16 @@ func TestContactSummaryMigrationBackfillsExistingData(t *testing.T) {
 	}
 	seedContactSummaryMigrationData(t, ctx, pool)
 
-	contactMigration := fstest.MapFS{}
-	sql, err := migrations.Files.ReadFile("20261111170000_contact_screen_summaries.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	contactMigration["20261111170000_contact_screen_summaries.sql"] = &fstest.MapFile{
-		Data: sql,
-		Mode: 0o644,
-	}
+	contactMigration := contactSummaryMigrationFiles(t)
 	if err := db.MigrateFiles(ctx, cfg, db.MigrateUp, io.Discard, contactMigration); err != nil {
 		t.Fatalf("migrate contact summaries: %v", err)
 	}
 
 	var photosCrawled, favoritesCount, sizesCompleted, tombstonesCount int64
-	err = pool.QueryRow(ctx, `SELECT photos_crawled, favorites_count, sizes_completed, tombstones_count
+	if err := pool.QueryRow(ctx, `SELECT photos_crawled, favorites_count, sizes_completed, tombstones_count
 		FROM crawl_interests WHERE user_id=42 AND person_nsid='contact-nsid'`).Scan(
 		&photosCrawled, &favoritesCount, &sizesCompleted, &tombstonesCount,
-	)
-	if err != nil {
+	); err != nil {
 		t.Fatalf("read backfilled contact summaries: %v", err)
 	}
 	if photosCrawled != 3 || favoritesCount != 1 || sizesCompleted != 1 || tombstonesCount != 1 {
@@ -49,17 +40,63 @@ func TestContactSummaryMigrationBackfillsExistingData(t *testing.T) {
 	}
 
 	var attachedIndexes, validIndexes int
-	err = pool.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE child.indisvalid)
+	if err := pool.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE child.indisvalid)
 		FROM pg_inherits inherited
 		JOIN pg_index parent ON parent.indexrelid=inherited.inhparent
 		JOIN pg_index child ON child.indexrelid=inherited.inhrelid
-		WHERE parent.indexrelid IN ('photos_owner_recent_idx'::regclass, 'photos_owner_contact_id_idx'::regclass)`).Scan(&attachedIndexes, &validIndexes)
-	if err != nil {
+		WHERE parent.indexrelid IN ('photos_owner_recent_idx'::regclass, 'photos_owner_contact_id_idx'::regclass)`).Scan(&attachedIndexes, &validIndexes); err != nil {
 		t.Fatalf("read attached contact photo indexes: %v", err)
 	}
 	if attachedIndexes != 32 || validIndexes != 32 {
 		t.Fatalf("attached photo indexes = %d (%d valid); want 32 attached and valid", attachedIndexes, validIndexes)
 	}
+}
+
+func TestContactSummaryRollbackRefusesFavoritesWithoutChangingSchema(t *testing.T) {
+	ctx, cfg, pool := prepareMigrationTest(t)
+	if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err != nil {
+		t.Fatalf("roll back migration after contact summaries: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, email, password_hash, role)
+		VALUES (42, 'contact-rollback@example.invalid', 'hash', 'user')`); err != nil {
+		t.Fatalf("seed rollback user: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO downloads(user_id, kind, subject, expires_at)
+		VALUES (42, 'favorites', 'contact-nsid', now() + interval '1 day')`); err != nil {
+		t.Fatalf("seed favorites download: %v", err)
+	}
+
+	if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err == nil || !strings.Contains(err.Error(), "cannot roll back contact summaries") {
+		t.Fatalf("contact summary rollback = %v, want a favorites download refusal", err)
+	}
+	for _, relation := range []string{"contact_group_crawl_preferences", "photos_owner_contact_id_idx"} {
+		if !relationExists(t, cfg, "public."+relation) {
+			t.Errorf("%s was removed before rollback refusal", relation)
+		}
+	}
+	for _, column := range []string{"photos_crawled", "favorites_count", "sizes_completed", "tombstones_count"} {
+		var exists bool
+		if err := pool.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1 FROM pg_attribute WHERE attrelid='crawl_interests'::regclass
+			AND attname=$1 AND NOT attisdropped)`, column).Scan(&exists); err != nil || !exists {
+			t.Errorf("crawl_interests.%s after refused rollback exists=%t, error=%v", column, exists, err)
+		}
+	}
+	var favoriteKindExists bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM pg_enum WHERE enumtypid='download_kind'::regtype AND enumlabel='favorites')`).Scan(&favoriteKindExists); err != nil || !favoriteKindExists {
+		t.Errorf("favorites download enum after refused rollback exists=%t, error=%v", favoriteKindExists, err)
+	}
+}
+
+func contactSummaryMigrationFiles(t *testing.T) fstest.MapFS {
+	t.Helper()
+	const migration = "20261111170000_contact_screen_summaries.sql"
+	sql, err := migrations.Files.ReadFile(migration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fstest.MapFS{migration: &fstest.MapFile{Data: sql, Mode: 0o644}}
 }
 
 func migrationsBeforeContactSummary(t *testing.T) fstest.MapFS {
