@@ -88,24 +88,34 @@ describe('LibraryPage', () => {
     expect(screen.getByTestId('user-library-photo-3')).toBeInTheDocument();
   });
 
-  it('selects visible photos and clears the selection', async () => {
+  it('selects remaining visible photos when one is already selected', async () => {
+    let favoritesRequests = 0;
+    let downloadRequests = 0;
     server.use(
-      http.get('*/favorites', () => json({ items: [favorite(21), favorite(22), favorite(23)] })),
+      http.get('*/favorites', () => {
+        favoritesRequests += 1;
+        return json({ items: [favorite(21), favorite(22), favorite(23)] });
+      }),
+      http.post('*/downloads', () => {
+        downloadRequests += 1;
+        return json({}, 201);
+      }),
     );
     open();
     await screen.findByTestId('user-library-photo-21');
     fireEvent.click(screen.getByTestId('user-library-select-mode'));
+    fireEvent.click(screen.getByTestId('user-library-photo-select-21'));
     fireEvent.click(screen.getByTestId('user-library-select-visible'));
 
     expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('3');
     expect(screen.getByTestId('user-library-photo-select-21')).toBeChecked();
     expect(screen.getByTestId('user-library-photo-select-22')).toBeChecked();
     expect(screen.getByTestId('user-library-photo-select-23')).toBeChecked();
-    fireEvent.click(screen.getByTestId('user-library-clear-selection'));
-    expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('0');
+    expect(favoritesRequests).toBe(1);
+    expect(downloadRequests).toBe(0);
   });
 
-  it('limits the selection to 500 and disables adding another photo', async () => {
+  it('fills the last tray slot with the first new photo', async () => {
     const total = 501;
     server.use(
       http.get('*/favorites', ({ request }) => {
@@ -113,7 +123,9 @@ describe('LibraryPage', () => {
         const end = Math.min(start + 100, total);
         const items = Array.from({ length: end - start }, (_, index) => {
           const offset = start + index;
-          return favorite(offset + 100, offset === 500 ? 'unselected@N00' : undefined);
+          const owner = offset < 497 ? 'bulk@N00' : offset < 499 ? 'pair@N00' : 'new@N00';
+          const sizesStatus = offset < 497 ? 'none' : 'confirmed';
+          return favorite(offset + 1, owner, { sizes_status: sizesStatus });
         });
         return json({ items, ...(end < total ? { next_cursor: String(end) } : {}) });
       }),
@@ -133,16 +145,60 @@ describe('LibraryPage', () => {
       );
     }
     fireEvent.click(screen.getByTestId('user-library-select-mode'));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'bulk@N00' }));
+    fireEvent.click(screen.getByTestId('user-library-select-visible'));
+    expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('497');
+
+    fireEvent.click(screen.getByTestId('user-library-filter-clear'));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'pair@N00' }));
+    fireEvent.click(screen.getByTestId('user-library-select-visible'));
+    expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('499');
+
+    fireEvent.click(screen.getByTestId('user-library-filter-clear'));
+    fireEvent.click(screen.getByTestId('user-library-filter-sizes'));
     fireEvent.click(screen.getByTestId('user-library-select-visible'));
 
     expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('500');
     expect(screen.getByText('The tray holds up to 500 photos.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'unselected@N00' }));
-
-    expect(await screen.findByTestId('user-library-photo-600')).toBeInTheDocument();
-    expect(screen.getByTestId('user-library-photo-select-600')).toBeDisabled();
-    expect(screen.getByTestId('user-library-photo-tray-600')).toBeDisabled();
+    expect(screen.getByTestId('user-library-photo-select-500')).toBeChecked();
+    expect(screen.getByTestId('user-library-photo-select-501')).not.toBeChecked();
+    expect(screen.getByTestId('user-library-photo-tray-501')).toBeDisabled();
   }, 15_000);
+
+  it('preserves selection across filters and Escape, then clears the entire tray', async () => {
+    let favoritesRequests = 0;
+    server.use(
+      http.get('*/favorites', () => {
+        favoritesRequests += 1;
+        return json({ items: [favorite(1), favorite(2, 'morgan@N00'), favorite(3, 'morgan@N00')] });
+      }),
+    );
+    open();
+    await screen.findByTestId('user-library-photo-1');
+    fireEvent.click(screen.getByTestId('user-library-select-mode'));
+    fireEvent.click(screen.getByTestId('user-library-photo-select-1'));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'morgan@N00' }));
+    fireEvent.click(screen.getByTestId('user-library-select-visible'));
+
+    expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('3');
+    expect(screen.getByTestId('user-library-photo-select-2')).toBeChecked();
+    expect(screen.getByTestId('user-library-photo-select-3')).toBeChecked();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByTestId('user-library-select-mode')).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(screen.getByTestId('user-library-select-mode'));
+    expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('3');
+    expect(screen.getByTestId('user-library-photo-select-2')).toBeChecked();
+    fireEvent.click(screen.getByTestId('user-library-photo-tray-2'));
+    expect(screen.getByTestId('user-library-photo-select-2')).not.toBeChecked();
+    expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('2');
+
+    fireEvent.click(screen.getByTestId('user-library-clear-selection'));
+    expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('0');
+    fireEvent.click(screen.getByTestId('user-library-filter-clear'));
+    expect(screen.getByTestId('user-library-photo-select-1')).not.toBeChecked();
+    expect(favoritesRequests).toBe(1);
+  });
 
   it('shows a recoverable initial error and retries the first page', async () => {
     let requests = 0;
@@ -263,36 +319,32 @@ describe('LibraryPage', () => {
     expect(disconnect).toHaveBeenCalled();
   });
 
-  it('submits selected photos to the download tray and navigates on success', async () => {
-    let submitted: unknown;
+  it('hides download navigation and does not request downloads for a selection', async () => {
+    let downloadRequests = 0;
     server.use(
-      http.get('*/favorites', () => json({ items: [favorite(7), favorite(8)] })),
-      http.post('*/downloads', async ({ request }) => {
-        submitted = await request.json();
-        return json(
-          {
-            id: 44,
-            kind: 'tray',
-            subject: 'tray',
-            status: 'queued',
-            created_at: '2026-11-09T00:00:00Z',
-            expires_at: '2026-11-09T01:00:00Z',
-            item_count: 1,
-            skipped: 0,
-          },
-          201,
-        );
+      http.get('*/favorites', () => json({ items: [favorite(7)] })),
+      http.post('*/downloads', () => {
+        downloadRequests += 1;
+        return json({}, 201);
       }),
     );
     const { router } = open();
     await screen.findByTestId('user-library-photo-7');
     fireEvent.click(screen.getByTestId('user-library-select-mode'));
     fireEvent.click(screen.getByTestId('user-library-photo-select-7'));
-    fireEvent.click(screen.getByTestId('user-library-download-tray'));
 
-    await waitFor(() => expect(submitted).toEqual({ kind: 'tray', photo_ids: [7] }));
-    await waitFor(() => expect(router.state.location.pathname).toBe('/downloads'));
-    expect(router.state.location.search).toBe('?id=44');
+    expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('1');
+    expect(screen.queryByTestId('user-library-download-tray')).not.toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/library');
+    expect(downloadRequests).toBe(0);
+  });
+
+  it('does not link to the accounts placeholder from the empty state', async () => {
+    server.use(http.get('*/favorites', () => json({ items: [] })));
+    open();
+
+    expect(await screen.findByTestId('user-library-empty')).toBeInTheDocument();
+    expect(document.querySelector('a[href="/accounts"]')).toBeNull();
   });
 
   it('renders localized copy and the required loading state', async () => {
@@ -320,41 +372,5 @@ describe('LibraryPage', () => {
 
     expect(await screen.findByTestId('user-library-forbidden')).toBeInTheDocument();
     expect(screen.queryByTestId('user-library-retry')).not.toBeInTheDocument();
-  });
-
-  it('keeps the grid and selection when a tray request fails', async () => {
-    let submissions = 0;
-    server.use(
-      http.get('*/favorites', () => json({ items: [favorite(9)] })),
-      http.post('*/downloads', () => {
-        submissions += 1;
-        return submissions === 1
-          ? json({ code: 'temp_storage_full' }, 500)
-          : json({ code: 'flickr_key_required' }, 500);
-      }),
-    );
-    open();
-    await screen.findByTestId('user-library-photo-9');
-    fireEvent.click(screen.getByTestId('user-library-select-mode'));
-    fireEvent.click(screen.getByTestId('user-library-photo-select-9'));
-    fireEvent.click(screen.getByTestId('user-library-download-tray'));
-
-    expect(await screen.findByTestId('user-library-action-error')).toHaveTextContent(
-      'Temporary download storage is full.',
-    );
-    expect(screen.getByTestId('user-library-photo-select-9')).toBeChecked();
-    expect(screen.getByTestId('user-library-photo-9')).toBeInTheDocument();
-    expect(screen.getByTestId('user-library-action-error')).toHaveTextContent(
-      'Temporary download storage is full.',
-    );
-
-    fireEvent.click(screen.getByTestId('user-library-download-tray'));
-    expect(await screen.findByTestId('user-library-action-error')).toHaveTextContent(
-      'Add or check a valid Flickr API key to download.',
-    );
-    expect(screen.getByTestId('user-library-action-error').querySelector('a')).toHaveAttribute(
-      'href',
-      '/keys',
-    );
   });
 });

@@ -30,11 +30,14 @@ async function setup(page: Page) {
   await mockApi(page, 'user');
 }
 
-test('filters loaded favorites, keeps its selection through paging and sends the tray', async ({
+test('filters loaded favorites and keeps selection without download navigation', async ({
   page,
 }) => {
   await setup(page);
-  let downloadBody: unknown;
+  let downloadRequests = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/downloads') downloadRequests += 1;
+  });
   await page.route('**/favorites*', (route) => {
     const cursor = new URL(route.request().url()).searchParams.get('cursor');
     return cursor === null
@@ -48,23 +51,6 @@ test('filters loaded favorites, keeps its selection through paging and sends the
           next_cursor: 'cursor-2',
         })
       : json(route, { items: [favorite(5)] });
-  });
-  await page.route('**/downloads', async (route) => {
-    downloadBody = route.request().postDataJSON();
-    return json(
-      route,
-      {
-        id: 14,
-        kind: 'tray',
-        subject: 'tray',
-        status: 'queued',
-        created_at: '2026-11-09T00:00:00Z',
-        expires_at: '2026-11-09T01:00:00Z',
-        item_count: 1,
-        skipped: 0,
-      },
-      201,
-    );
   });
   await page.goto('/library');
 
@@ -82,15 +68,24 @@ test('filters loaded favorites, keeps its selection through paging and sends the
 
   await page.getByTestId('user-library-select-mode').click();
   await page.getByTestId('user-library-select-visible').click();
-  await expect(page.getByTestId('user-library-download-tray')).toBeEnabled();
+  await expect(page.getByTestId('user-library-selection-status')).toContainText('1');
+  await expect(page.getByTestId('user-library-photo-select-4')).toBeChecked();
   await page.getByTestId('user-library-filter-clear').click();
   await page.getByTestId('user-library-load-more').click();
   await expect(page.getByTestId('user-library-photo-5')).toBeVisible();
   await expect(page.getByTestId('user-library-photo-select-4')).toBeChecked();
-  await page.getByTestId('user-library-download-tray').click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('user-library-select-mode')).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
+  await page.getByTestId('user-library-select-mode').click();
+  await expect(page.getByTestId('user-library-selection-status')).toContainText('1');
+  await expect(page.getByTestId('user-library-photo-select-4')).toBeChecked();
 
-  await expect.poll(() => downloadBody).toEqual({ kind: 'tray', photo_ids: [4] });
-  await expect(page).toHaveURL(/\/downloads\?id=14$/);
+  await expect(page.getByTestId('user-library-download-tray')).toHaveCount(0);
+  expect(downloadRequests).toBe(0);
+  await expect(page).toHaveURL(/\/library$/);
 });
 
 test('keeps a 5,000-photo cursor result virtualized while scrolling', async ({ page }) => {
