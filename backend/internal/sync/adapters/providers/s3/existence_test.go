@@ -156,9 +156,21 @@ func TestExistsWithETagMapsProviderErrors(t *testing.T) {
 
 func TestExistsWithETagUsesS3Head(t *testing.T) {
 	var requests atomic.Int32
+	var regionLookups atomic.Int32
+	var retriedRequest atomic.Bool
 	var responseCode atomic.Value
 	responseCode.Store("ok")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Query().Has("location") {
+			regionLookups.Add(1)
+			if r.URL.Path != "/my-bucket/" {
+				t.Errorf("region lookup path = %q; want /my-bucket/", r.URL.Path)
+			}
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = fmt.Fprint(w, "<LocationConstraint>us-east-1</LocationConstraint>")
+			return
+		}
+
 		requests.Add(1)
 		if r.Method != http.MethodHead {
 			t.Errorf("request method = %q; want HEAD", r.Method)
@@ -171,15 +183,22 @@ func TestExistsWithETagUsesS3Head(t *testing.T) {
 			w.Header().Set("ETag", `"remote-etag"`)
 			w.Header().Set("Last-Modified", time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC).Format(http.TimeFormat))
 			w.WriteHeader(http.StatusOK)
+		case "retry once":
+			if retriedRequest.CompareAndSwap(false, true) {
+				w.Header().Set("Content-Type", "application/xml")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = fmt.Fprint(w, "<Error><Code>SlowDown</Code><Message>retry</Message></Error>")
+				return
+			}
+			w.Header().Set("ETag", `"remote-etag"`)
+			w.Header().Set("Last-Modified", time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC).Format(http.TimeFormat))
+			w.WriteHeader(http.StatusOK)
 		case "missing":
 			w.WriteHeader(http.StatusNotFound)
 		case "unauthorized":
 			w.WriteHeader(http.StatusUnauthorized)
 		case "forbidden":
 			w.WriteHeader(http.StatusForbidden)
-		case "throttled":
-			w.Header().Set("x-minio-error-code", "SlowDown")
-			w.WriteHeader(http.StatusServiceUnavailable)
 		}
 	}))
 	t.Cleanup(server.Close)
@@ -190,9 +209,7 @@ func TestExistsWithETagUsesS3Head(t *testing.T) {
 	}
 	client, err := minio.New(endpoint.Host, &minio.Options{
 		Creds:        credentials.NewStaticV4("fake-access", "fake-secret", ""),
-		Region:       "us-east-1",
 		BucketLookup: minio.BucketLookupPath,
-		MaxRetries:   1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -206,26 +223,31 @@ func TestExistsWithETagUsesS3Head(t *testing.T) {
 	}
 
 	for _, test := range []struct {
-		name string
-		code string
-		want bool
-		err  error
+		name             string
+		code             string
+		want              bool
+		wantError         error
+		wantRequests      int32
+		wantRegionLookups int32
 	}{
-		{name: "matching etag", code: "ok", want: true},
-		{name: "missing object", code: "missing"},
-		{name: "authentication", code: "unauthorized", err: app.ErrAuthentication},
-		{name: "forbidden", code: "forbidden", err: app.ErrAuthentication},
-		{name: "throttled", code: "throttled", err: app.ErrRateLimited},
+		{name: "default client discovers region and retries", code: "retry once", want: true, wantRequests: 2, wantRegionLookups: 1},
+		{name: "missing object", code: "missing", wantRequests: 1},
+		{name: "authentication", code: "unauthorized", wantError: app.ErrAuthentication, wantRequests: 1},
+		{name: "forbidden", code: "forbidden", wantError: app.ErrAuthentication, wantRequests: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			responseCode.Store(test.code)
 			before := requests.Load()
+			beforeRegionLookups := regionLookups.Load()
 			found, err := checker.ExistsWithETag(t.Context(), "my-bucket", "folder/a photo.jpg", `"remote-etag"`)
-			if found != test.want || (test.err == nil && err != nil) || (test.err != nil && !errors.Is(err, test.err)) {
-				t.Fatalf("ExistsWithETag() = %t, %v; want %t, %v", found, err, test.want, test.err)
+			if found != test.want || (test.wantError == nil && err != nil) || (test.wantError != nil && !errors.Is(err, test.wantError)) {
+				t.Fatalf("ExistsWithETag() = %t, %v; want %t, %v (object requests %d, region lookups %d)", found, err, test.want, test.wantError, requests.Load()-before, regionLookups.Load()-beforeRegionLookups)
 			}
-			if got := requests.Load() - before; got != 1 {
-				t.Fatalf("request count = %d; want 1", got)
+			if got := requests.Load() - before; got != test.wantRequests {
+				t.Fatalf("object request count = %d; want %d", got, test.wantRequests)
+			}
+			if got := regionLookups.Load() - beforeRegionLookups; got != test.wantRegionLookups {
+				t.Fatalf("bucket region lookup count = %d; want %d", got, test.wantRegionLookups)
 			}
 		})
 	}
