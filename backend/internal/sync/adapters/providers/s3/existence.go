@@ -32,7 +32,8 @@ func NewObjectChecker(client *minio.Client) (*ObjectChecker, error) {
 	return &ObjectChecker{client: client}, nil
 }
 
-// ExistsWithETag checks one object and compares its S3 ETag with the expected value.
+// ExistsWithETag compares an object's S3 ETag through MinIO's StatObject operation.
+// The configured client may make extra HTTP requests for region discovery or retries.
 func (c *ObjectChecker) ExistsWithETag(ctx context.Context, bucket, key, etag string) (bool, error) {
 	if ctx == nil {
 		return false, errors.New("sync s3: context is required")

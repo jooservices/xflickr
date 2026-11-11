@@ -223,8 +223,8 @@ func TestExistsWithETagUsesS3Head(t *testing.T) {
 	}
 
 	for _, test := range []struct {
-		name             string
-		code             string
+		name              string
+		code              string
 		want              bool
 		wantError         error
 		wantRequests      int32
