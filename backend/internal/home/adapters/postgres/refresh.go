@@ -34,8 +34,15 @@ FROM user_home_stats_versions source
 CROSS JOIN user_home_shared_version shared
 WHERE source.user_id = $1 AND shared.id = TRUE
 ON CONFLICT (user_id) DO NOTHING`
-	lockRefreshSQL = `SELECT cursor_record_id, photos_total, sizes_ready, captioned, source_revision, shared_revision
+	lockRefreshSQL = `SELECT cursor_record_id, photos_total, sizes_ready, captioned, source_revision, shared_revision, restart_required
 FROM user_home_stats_refreshes WHERE user_id = $1 FOR UPDATE`
+	resetRefreshSQL = `UPDATE user_home_stats_refreshes refresh
+SET cursor_record_id = '', photos_total = 0, sizes_ready = 0, captioned = 0,
+    source_revision = source.revision, shared_revision = shared.revision,
+    restart_required = FALSE
+FROM user_home_stats_versions source
+CROSS JOIN user_home_shared_version shared
+WHERE refresh.user_id = $1 AND source.user_id = $1 AND shared.id = TRUE`
 	advanceRefreshSQL = `UPDATE user_home_stats_refreshes
 SET cursor_record_id = $2,
     photos_total = photos_total + $3,
@@ -52,11 +59,15 @@ ON CONFLICT (user_id, person_nsid) DO UPDATE SET
 photos_total = user_home_contact_stats_refreshes.photos_total + EXCLUDED.photos_total,
 sizes_ready = user_home_contact_stats_refreshes.sizes_ready + EXCLUDED.sizes_ready`
 	publishRefreshSQL = `INSERT INTO user_home_stats
-(user_id, photos_total, sizes_ready, captioned, computed_at, source_revision, shared_revision)
+(user_id, photos_total, sizes_ready, captioned, computed_at, source_revision, shared_revision, estimated)
 SELECT refresh.user_id, refresh.photos_total, refresh.sizes_ready, refresh.captioned,
-       statement_timestamp(), refresh.source_revision, refresh.shared_revision
+       statement_timestamp(), source.revision, shared.revision,
+       refresh.source_revision <> source.revision OR refresh.shared_revision <> shared.revision
 FROM user_home_stats_refreshes refresh
-WHERE refresh.user_id = $1
+CROSS JOIN user_home_stats_versions source
+CROSS JOIN user_home_shared_version shared
+WHERE refresh.user_id = $1 AND source.user_id = $1 AND shared.id = TRUE
+  AND NOT refresh.restart_required
 ON CONFLICT (user_id) DO UPDATE SET
 photos_total = EXCLUDED.photos_total,
 sizes_ready = EXCLUDED.sizes_ready,
@@ -64,6 +75,7 @@ captioned = EXCLUDED.captioned,
 computed_at = EXCLUDED.computed_at,
 source_revision = EXCLUDED.source_revision,
 shared_revision = EXCLUDED.shared_revision,
+estimated = EXCLUDED.estimated,
 invalidated_at = NULL`
 	copyContactRefreshSQL = `INSERT INTO user_home_contact_stats
 (user_id, person_nsid, photos_total, sizes_ready)
@@ -146,11 +158,23 @@ func refreshBatch(ctx context.Context, tx refreshTx, userID int64, batchSize int
 	if err := execRefresh(ctx, tx, startRefreshSQL, "start stats refresh", userID); err != nil {
 		return err
 	}
-	cursor, err := lockRefresh(ctx, tx, userID)
+	state, err := lockRefresh(ctx, tx, userID)
 	if err != nil {
 		return err
 	}
-	page, err := readRefreshPage(ctx, tx, userID, cursor, batchSize)
+	if state.restart {
+		if err := execRefresh(ctx, tx, resetRefreshSQL, "restart invalidated stats refresh", userID); err != nil {
+			return err
+		}
+		if err := execRefresh(ctx, tx, `DELETE FROM user_home_contact_stats_refreshes WHERE user_id=$1`, "clear invalidated contact stats refresh", userID); err != nil {
+			return err
+		}
+		state, err = lockRefresh(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+	}
+	page, err := readRefreshPage(ctx, tx, userID, state.cursor, batchSize)
 	if err != nil {
 		return err
 	}
@@ -163,14 +187,19 @@ func refreshBatch(ctx context.Context, tx refreshTx, userID int64, batchSize int
 	return publishRefresh(ctx, tx, userID)
 }
 
-func lockRefresh(ctx context.Context, tx refreshTx, userID int64) (string, error) {
-	var cursor string
+type refreshState struct {
+	cursor  string
+	restart bool
+}
+
+func lockRefresh(ctx context.Context, tx refreshTx, userID int64) (refreshState, error) {
+	var state refreshState
 	if err := tx.QueryRow(ctx, lockRefreshSQL, userID).Scan(
-		&cursor, new(int64), new(int64), new(int64), new(int64), new(int64),
+		&state.cursor, new(int64), new(int64), new(int64), new(int64), new(int64), &state.restart,
 	); err != nil {
-		return "", fmt.Errorf("home: lock stats refresh: %w", err)
+		return refreshState{}, fmt.Errorf("home: lock stats refresh: %w", err)
 	}
-	return cursor, nil
+	return state, nil
 }
 
 type refreshPage struct {

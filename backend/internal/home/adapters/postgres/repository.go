@@ -56,6 +56,7 @@ func (r *Repository) Load(ctx context.Context, userID int64) (app.Snapshot, erro
 	var snapshot app.Snapshot
 	var newPhotos, starredContacts, activity []byte
 	var photosTotal, sizesReady, captioned *int64
+	var refreshNeeded bool
 	err := r.db.QueryRow(ctx, homeSnapshotSQL, userID).Scan(
 		&snapshot.GeneratedAt,
 		&snapshot.Contacts.Total,
@@ -67,6 +68,7 @@ func (r *Repository) Load(ctx context.Context, userID int64) (app.Snapshot, erro
 		&snapshot.CountsComputedAt,
 		&snapshot.Estimated,
 		&snapshot.CountsStale,
+		&refreshNeeded,
 		&newPhotos,
 		&starredContacts,
 		&activity,
@@ -88,7 +90,7 @@ func (r *Repository) Load(ctx context.Context, userID int64) (app.Snapshot, erro
 	if err := json.Unmarshal(activity, &snapshot.Activity); err != nil {
 		return app.Snapshot{}, fmt.Errorf("home: decode activity: %w", err)
 	}
-	if snapshot.Estimated && r.refreshQueue != nil {
+	if refreshNeeded && r.refreshQueue != nil {
 		args, err := json.Marshal(app.RefreshJob{UserID: userID})
 		if err != nil {
 			return app.Snapshot{}, fmt.Errorf("home: encode stats refresh job: %w", err)
@@ -119,15 +121,17 @@ home_versions AS (
 ),
 current_stats AS (
     SELECT stats.*,
-           stats.source_revision = versions.source_revision
-             AND stats.shared_revision = versions.shared_revision
-             AND stats.invalidated_at IS NULL AS is_current
+           stats.invalidated_at IS NULL AS is_valid,
+           stats.estimated
+             OR stats.source_revision <> versions.source_revision
+             OR stats.shared_revision <> versions.shared_revision AS is_estimated
     FROM user_home_stats stats
     CROSS JOIN home_versions versions
     WHERE stats.user_id = $1
 ),
 current_counts_valid AS (
-    SELECT COALESCE(bool_or(is_current), FALSE) AS is_valid
+    SELECT COALESCE(bool_or(is_valid), FALSE) AS is_valid,
+           COALESCE(bool_or(is_estimated), TRUE) AS is_estimated
     FROM current_stats
 ),
 contact_counts AS MATERIALIZED (
@@ -180,110 +184,37 @@ starred_data AS (
     LEFT JOIN user_home_contact_stats counts
       ON counts.user_id = $1 AND counts.person_nsid = contact.person_nsid AND valid.is_valid
 ),
-shared_photo_pages (batch_number, cursor_uploaded_at, cursor_photo_id, photo_ids, photo_uploads) AS (
-    SELECT 1,
-           (array_agg(candidate.uploaded_at ORDER BY candidate.uploaded_at DESC NULLS LAST, candidate.photo_id DESC))[50],
-           (array_agg(candidate.photo_id ORDER BY candidate.uploaded_at DESC NULLS LAST, candidate.photo_id DESC))[50],
-           COALESCE(
-               array_agg(candidate.photo_id ORDER BY candidate.uploaded_at DESC NULLS LAST, candidate.photo_id DESC)
-                   FILTER (WHERE candidate.is_visible),
-               ARRAY[]::bigint[]
-           ),
-           COALESCE(
-               array_agg(candidate.uploaded_at ORDER BY candidate.uploaded_at DESC NULLS LAST, candidate.photo_id DESC)
-                   FILTER (WHERE candidate.is_visible),
-               ARRAY[]::timestamptz[]
-           )
-    FROM (
-        SELECT shared_candidate.photo_id,
-               shared_candidate.uploaded_at,
-               photo.visibility = 'public'
-                 AND photo.tombstoned_at IS NULL
-                 AND EXISTS (
-                     SELECT 1
-                     FROM observations observation
-                     JOIN sharing_settings setting
-                       ON setting.user_id = observation.user_id AND setting.enabled
-                     WHERE observation.record_kind = 'photo'
-                       AND observation.record_id = shared_candidate.photo_id::text
-                 ) AS is_visible
-        FROM user_home_shared_photo_candidates shared_candidate
-        LEFT JOIN photos photo ON photo.id = shared_candidate.photo_id
-        ORDER BY shared_candidate.uploaded_at DESC NULLS LAST, shared_candidate.photo_id DESC
-        LIMIT 50
-    ) candidate
-    UNION ALL
-    SELECT previous.batch_number + 1,
-           batch.cursor_uploaded_at,
-           batch.cursor_photo_id,
-           previous.photo_ids || batch.photo_ids,
-           previous.photo_uploads || batch.photo_uploads
-    FROM shared_photo_pages previous
-    CROSS JOIN LATERAL (
-        SELECT count(*) AS candidate_count,
-               (array_agg(candidate.uploaded_at ORDER BY candidate.uploaded_at DESC NULLS LAST, candidate.photo_id DESC))[50] AS cursor_uploaded_at,
-               (array_agg(candidate.photo_id ORDER BY candidate.uploaded_at DESC NULLS LAST, candidate.photo_id DESC))[50] AS cursor_photo_id,
-               COALESCE(
-                   array_agg(candidate.photo_id ORDER BY candidate.uploaded_at DESC NULLS LAST, candidate.photo_id DESC)
-                       FILTER (WHERE candidate.is_visible),
-                   ARRAY[]::bigint[]
-               ) AS photo_ids,
-               COALESCE(
-                   array_agg(candidate.uploaded_at ORDER BY candidate.uploaded_at DESC NULLS LAST, candidate.photo_id DESC)
-                       FILTER (WHERE candidate.is_visible),
-                   ARRAY[]::timestamptz[]
-               ) AS photo_uploads
-        FROM (
-            SELECT shared_candidate.photo_id,
-                   shared_candidate.uploaded_at,
-                   photo.visibility = 'public'
-                     AND photo.tombstoned_at IS NULL
-                     AND EXISTS (
-                         SELECT 1
-                         FROM observations observation
-                         JOIN sharing_settings setting
-                           ON setting.user_id = observation.user_id AND setting.enabled
-                         WHERE observation.record_kind = 'photo'
-                           AND observation.record_id = shared_candidate.photo_id::text
-                     ) AS is_visible
-            FROM user_home_shared_photo_candidates shared_candidate
-            LEFT JOIN photos photo ON photo.id = shared_candidate.photo_id
-            WHERE (
-                previous.cursor_uploaded_at IS NOT NULL
-                AND (shared_candidate.uploaded_at IS NULL
-                     OR shared_candidate.uploaded_at < previous.cursor_uploaded_at
-                     OR (shared_candidate.uploaded_at = previous.cursor_uploaded_at
-                         AND shared_candidate.photo_id < previous.cursor_photo_id))
-            ) OR (
-                previous.cursor_uploaded_at IS NULL
-                AND shared_candidate.uploaded_at IS NULL
-                AND shared_candidate.photo_id < previous.cursor_photo_id
-            )
-            ORDER BY shared_candidate.uploaded_at DESC NULLS LAST, shared_candidate.photo_id DESC
-            LIMIT 50
-        ) candidate
-    ) batch
-    WHERE previous.batch_number < 4
-      AND cardinality(previous.photo_ids) < 12
-      AND previous.cursor_photo_id IS NOT NULL
-      AND batch.candidate_count > 0
+shared_photo_candidates AS MATERIALIZED (
+    SELECT shared_candidate.photo_id, shared_candidate.uploaded_at
+    FROM user_home_shared_photo_candidates shared_candidate
+    JOIN photos photo ON photo.id = shared_candidate.photo_id
+    WHERE photo.visibility = 'public'
+      AND photo.tombstoned_at IS NULL
+      AND EXISTS (
+          SELECT 1
+          FROM observations observation
+          JOIN sharing_settings setting
+            ON setting.user_id = observation.user_id AND setting.enabled
+          WHERE observation.record_kind = 'photo'
+            AND observation.record_id = shared_candidate.photo_id::text
+      )
+    ORDER BY shared_candidate.uploaded_at DESC NULLS LAST, shared_candidate.photo_id DESC
+    LIMIT 12
 ),
 own_photo_candidates AS MATERIALIZED (
     SELECT candidate.photo_id, candidate.uploaded_at
     FROM user_home_photo_candidates candidate
+    JOIN photos photo ON photo.id = candidate.photo_id
     WHERE candidate.user_id = $1
-    ORDER BY candidate.uploaded_at DESC NULLS LAST, candidate.photo_id DESC
-    LIMIT 12
-),
-shared_photo_candidates AS MATERIALIZED (
-    SELECT candidate.photo_id, candidate.uploaded_at
-    FROM (
-        SELECT photo_ids, photo_uploads
-        FROM shared_photo_pages
-        ORDER BY batch_number DESC
-        LIMIT 1
-    ) page
-    CROSS JOIN LATERAL unnest(page.photo_ids, page.photo_uploads) AS candidate(photo_id, uploaded_at)
+      AND photo.visibility = 'public'
+      AND photo.tombstoned_at IS NULL
+      AND EXISTS (
+          SELECT 1
+          FROM observations observation
+          WHERE observation.user_id = $1
+            AND observation.record_kind = 'photo'
+            AND observation.record_id = candidate.photo_id::text
+      )
     ORDER BY candidate.uploaded_at DESC NULLS LAST, candidate.photo_id DESC
     LIMIT 12
 ),
@@ -311,8 +242,6 @@ newest_photos AS (
     FROM newest_photo_candidates candidate
     JOIN photos photo ON photo.id = candidate.photo_id
     LEFT JOIN people owner ON owner.nsid = photo.owner_nsid
-    WHERE photo.visibility = 'public'
-      AND photo.tombstoned_at IS NULL
 ),
 newest_json AS (
     SELECT COALESCE(
@@ -443,10 +372,16 @@ SELECT statement_timestamp(),
        CASE WHEN counts_valid.is_valid THEN stats.computed_at END,
        COALESCE(
            stats.computed_at < statement_timestamp() - make_interval(secs => refresh_interval.seconds::double precision)
-           OR NOT counts_valid.is_valid,
+           OR NOT counts_valid.is_valid
+           OR counts_valid.is_estimated,
            TRUE
        ),
        NOT counts_valid.is_valid,
+       COALESCE(
+           stats.computed_at < statement_timestamp() - make_interval(secs => refresh_interval.seconds::double precision)
+           OR NOT counts_valid.is_valid,
+           TRUE
+       ),
        newest_json.items,
        starred_json.items,
        activity_json.items

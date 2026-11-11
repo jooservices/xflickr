@@ -11,18 +11,19 @@ Photo totals, confirmed sizes, and captions come from `user_home_stats`; they
 are never counted in the request path. `counts_computed_at` is null until the
 first refresh. `estimated` is true when counts are absent, older than the
 administrator setting `home.stats_refresh_interval` (900 seconds by default),
-or their source or sharing revision has changed.
-An absent or stale snapshot enqueues one unique `home.stats.refresh` job.
-Expired counts remain available as estimates while a refresh is pending;
-missing or revision-invalid counts remain unavailable until recomputed.
+or the source or shared catalog revision changes. Catalog changes can keep the
+cached values available as estimates without queuing a full refresh on every
+request; the next refresh is scheduled when the interval expires. Counts are
+unavailable when the first refresh has not completed or a permission change
+invalidated them.
 
 A sharing-policy change invalidates every cached Home count row in the same
 transaction as the setting update and queues one deduplicated refresh job. Until
 the row is recomputed, the API returns `photos: null`, null photo totals for
 starred contacts, and `counts_stale: true`; it does not expose counts from the
 previous sharing policy. A missing or revision-stale row is treated the same
-way. Expired counts remain available as estimates while their source revision
-is current.
+way. Ordinary catalog revision changes do not invalidate counts; their cached
+values remain estimates while a refresh is pending.
 
 The sync worker refreshes counts in keyset pages capped by the administrator
 setting `home.stats_refresh_batch_size` (250 rows by default; maximum 1,000).
@@ -30,20 +31,24 @@ Public, non-tombstoned photo candidates are indexed by observer and updated
 when observations or photo visibility change. A global indexed candidate set
 contains photos shared by at least one enabled account. Changing sharing
 permission queues a bounded, keyset-paginated candidate sync in the same
-transaction as the setting update. Home checks the current enabled setting
-before returning shared photos, so disabling sharing revokes access immediately
-while candidate cleanup continues. Refreshes retain their cursor across source
-revision changes, publish the completed counts as estimated when revisions
-changed during the pass, and then reconcile on the next pass.
+transaction as the setting update. Home checks the current observation,
+sharing permission, and Flickr visibility before applying each 12-photo limit,
+so stale revoked candidates cannot consume the result limit or expose a photo.
+Permission changes invalidate cached counts and restart an active refresh from
+the first page. Ordinary catalog revisions keep keyset progress and staged
+totals; refresh publishes them as estimates against the latest revision and
+waits for the next interval before another full pass.
 
 The candidate migration installs change triggers before its initial backfill.
-It processes at most 500 photo IDs per transaction and commits a persistent
-keyset checkpoint after each page so an interrupted migration can resume.
+It processes at most 500 photo IDs per transaction, locks observation rows
+through each page commit, and saves a keyset checkpoint so an interrupted
+migration can resume without inserting candidates for observations changed in
+the meantime.
 
-The request reads at most 12 newest photos from the user's candidate index.
-Shared photo candidates are read newest-first in keyset batches of 50, with a
-maximum of four batches; current sharing permission is checked within each
-bounded batch, and scanning stops after 12 visible photos are found.
+The request returns at most 12 newest photos from each candidate source, then
+unions them before returning at most 12. Current observation, sharing, and
+Flickr visibility permissions are checked before each source limit, so revoked
+candidates cannot hide an allowed photo behind a fixed scan cap.
 Starred contacts are capped at five before joining their cached per-contact
 totals; active crawl state uses indexed work-item lookups. No request query
 counts the `photos`, `favorites`, or `observations` tables.

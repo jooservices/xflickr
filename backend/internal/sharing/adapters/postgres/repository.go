@@ -68,9 +68,6 @@ func (r *Repository) Set(ctx context.Context, setting domain.Setting) (domain.Se
 			}
 			return nil
 		}
-		if _, err := tx.Exec(ctx, `UPDATE user_home_stats SET invalidated_at = statement_timestamp()`); err != nil {
-			return fmt.Errorf("sharing: invalidate Home counts: %w", err)
-		}
 		payload, err := json.Marshal(domain.Changed(result))
 		if err != nil {
 			return fmt.Errorf("sharing: encode changed event: %w", err)

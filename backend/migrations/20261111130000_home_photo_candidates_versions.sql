@@ -359,14 +359,18 @@ BEGIN
         FROM pg_temp.home_photo_candidate_page;
 
         INSERT INTO user_home_photo_candidates (user_id, photo_id, uploaded_at)
-        SELECT DISTINCT observation.user_id, photo.id, photo.uploaded_at
-        FROM pg_temp.home_photo_candidate_page page
-        JOIN photos photo ON photo.id = page.photo_id
-        JOIN observations observation
-          ON observation.record_kind = 'photo'
-         AND observation.record_id = photo.id::text
-        WHERE photo.visibility = 'public'
-          AND photo.tombstoned_at IS NULL
+        SELECT DISTINCT observed.user_id, observed.photo_id, observed.uploaded_at
+        FROM (
+            SELECT observation.user_id, photo.id AS photo_id, photo.uploaded_at
+            FROM pg_temp.home_photo_candidate_page page
+            JOIN photos photo ON photo.id = page.photo_id
+            JOIN observations observation
+              ON observation.record_kind = 'photo'
+             AND observation.record_id = photo.id::text
+            WHERE photo.visibility = 'public'
+              AND photo.tombstoned_at IS NULL
+            FOR UPDATE OF observation
+        ) observed
         ON CONFLICT (user_id, photo_id) DO UPDATE
         SET uploaded_at = EXCLUDED.uploaded_at;
 
