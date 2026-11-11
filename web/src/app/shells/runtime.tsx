@@ -8,7 +8,7 @@ import {
   useState,
 } from 'react';
 import type { ReactNode } from 'react';
-import { useI18n } from '../../shared';
+import { LiveOffProvider, useI18n } from '../../shared';
 import styles from './shells.module.css';
 
 type Toast = { id: number; text: string; actionLabel?: string; onAction?: () => void };
@@ -92,27 +92,29 @@ export function ShellRuntimeProvider({ children }: { children: ReactNode }) {
 
   return (
     <RuntimeContext.Provider value={value}>
-      {children}
-      <div className={styles.toasts} aria-live="polite" data-testid="shell-toast-region">
-        {toasts.map((item) => (
-          <div key={item.id} className={styles.toast} data-testid="shell-toast">
-            <span>{item.text}</span>
-            {item.onAction === undefined ? null : (
-              <button
-                type="button"
-                className={styles.toastAction}
-                onClick={item.onAction}
-                data-testid="shell-tray-undo"
-              >
-                {item.actionLabel}
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-      <div className={styles.srOnly} role="status" aria-live="polite">
-        {announcement}
-      </div>
+      <LiveOffProvider liveOff={value.liveOff}>
+        {children}
+        <div className={styles.toasts} aria-live="polite" data-testid="shell-toast-region">
+          {toasts.map((item) => (
+            <div key={item.id} className={styles.toast} data-testid="shell-toast">
+              <span>{item.text}</span>
+              {item.onAction === undefined ? null : (
+                <button
+                  type="button"
+                  className={styles.toastAction}
+                  onClick={item.onAction}
+                  data-testid="shell-tray-undo"
+                >
+                  {item.actionLabel}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className={styles.srOnly} role="status" aria-live="polite">
+          {announcement}
+        </div>
+      </LiveOffProvider>
     </RuntimeContext.Provider>
   );
 }

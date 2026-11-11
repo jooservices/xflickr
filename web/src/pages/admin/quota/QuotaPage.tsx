@@ -71,14 +71,14 @@ function QuotaRow({
   const owner =
     keyData.user_id === undefined
       ? t('admin.quota.unassociated')
-      : t('admin.quota.user-id', { id: formatNumber(keyData.user_id, locale) });
+      : t('admin.quota.user-id', { id: String(keyData.user_id) });
   const reset = formatReset(keyData.reset_at, now, locale);
 
   return (
     <tr data-testid="admin-quota-key-row">
       <td data-label={t('admin.quota.key')} className={styles.keyCell}>
         <span>{keyData.label}</span>
-        <code>#{formatNumber(keyData.key_id, locale)}</code>
+        <code>#{keyData.key_id}</code>
       </td>
       <td data-label={t('admin.quota.owner')}>{owner}</td>
       <td data-label={t('admin.quota.node')}>

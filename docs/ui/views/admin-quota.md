@@ -109,9 +109,10 @@ does not replace content.
 
 ### Empty
 
-If both keys and nodes are empty, show key icon, “No API keys yet”, and
-“Quota data appears when a Flickr API key is added. Ask an administrator to
-configure one.” Include an “Open my API keys” link to the existing `/keys`
+If the quota response contains no valid keys, show key icon, “No valid API
+keys available”, and “Quota data appears when a valid Flickr API key is
+available. Ask an administrator to configure one.” Include an “Open my API
+keys” link to the existing `/keys`
 route. ADMINs see only their own keys there; fleet-wide management remains out
 of scope for this view. The link does not create a key or call a new endpoint.
 
@@ -143,14 +144,16 @@ Subscribe to ADMIN `quota.keys` on `GET /api/v1/events`. Apply snapshot
 events as replacement and upsert events by `key_id` or `node_id`; ignore
 unknown event types. Reconnect with `Last-Event-ID`, using shared backoff
 (1, 2, 4, 8, then 15 seconds with jitter). The shell Live toggle pauses
-applying updates and buffers up to 200 events; resume applies them and refetches.
+applying updates and polling and buffers up to 200 events; resume applies them
+and refetches.
 
 If SSE is unavailable after three failed reconnects, poll the existing
 `GET /admin/quota` every 10 seconds. Fetch requested `GET /admin/nodes` only
-after that route exists in the contract and backend. Use 10, 20, 40, then max
-60-second retry backoff. Stop polling while the tab is hidden; fetch once on
-return. Show Live/Paused and stale age as text. Update cooldown countdowns
-locally each second without a network request.
+after that route exists in the contract and backend. Back off to 20, 40, then
+at most 60 seconds after consecutive failures; reset to 10 seconds after
+success. Stop polling while the tab is hidden or Live is paused; fetch once on
+return or resume. Show Live/Paused and stale age as text. Update cooldown
+countdowns locally each second without a network request.
 
 ## Responsive
 
@@ -223,8 +226,8 @@ Use these keys for all visible text. Values are EN · VI.
 | `admin.quota.pauseHint` | Pausing stops new calls; in-flight calls finish. | Tạm dừng chặn lượt gọi mới; lượt đang chạy sẽ hoàn tất. |
 | `admin.quota.sharedHint` | Shared records are reused and skipped calls save quota. | Bản ghi dùng chung được tái sử dụng và lượt gọi bỏ qua giúp tiết kiệm hạn mức. |
 | `admin.quota.loading` | Loading API quota… | Đang tải hạn mức API… |
-| `admin.quota.emptyTitle` | No API keys yet | Chưa có khóa API |
-| `admin.quota.emptyBody` | Quota data appears when a Flickr API key is added. Ask an administrator to configure one. | Dữ liệu hạn mức sẽ xuất hiện khi thêm khóa API Flickr. Hãy nhờ quản trị viên thiết lập khóa. |
+| `admin.quota.emptyTitle` | No valid API keys available | Chưa có khóa API hợp lệ |
+| `admin.quota.emptyBody` | Quota data appears when a valid Flickr API key is available. Ask an administrator to configure one. | Dữ liệu hạn mức sẽ xuất hiện khi có khóa API Flickr hợp lệ. Hãy nhờ quản trị viên thiết lập khóa. |
 | `admin.quota.emptyCta` | Open my API keys | Mở khóa API của tôi |
 | `admin.quota.errorTitle` | Could not load API quota. | Không thể tải hạn mức API. |
 | `admin.quota.errorBody` | The control node did not return quota data. Try again. | Node điều khiển không trả về dữ liệu hạn mức. Hãy thử lại. |

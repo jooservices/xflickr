@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw/http';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadAdminQuota } from '../../../features/admin/quota';
 import { adminSession, renderApp } from '../../../test/render';
 import { server } from '../../../test/server';
@@ -56,6 +56,15 @@ describe('API quota page', () => {
     );
   });
 
+  it('renders key and user identifiers without locale grouping', async () => {
+    server.use(quota([{ ...key, key_id: 1000, user_id: 2000 }]));
+    renderApp({ session: adminSession, path: '/admin/quota' });
+
+    const row = await screen.findByTestId('admin-quota-key-row');
+    expect(within(row).getByText('#1000')).toBeInTheDocument();
+    expect(within(row).getByText('User #2000')).toBeInTheDocument();
+  });
+
   it('announces loading after the shared skeleton delay', async () => {
     let release: (() => void) | undefined;
     const pending = new Promise<void>((resolve) => {
@@ -74,6 +83,68 @@ describe('API quota page', () => {
     );
     release?.();
     expect(await screen.findByTestId('admin-quota-key-table')).toBeInTheDocument();
+  });
+
+  it('pauses shared quota polling and fetches a fresh snapshot when Live resumes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let used = 100;
+      let calls = 0;
+      server.use(
+        http.get('*/admin/quota', () => {
+          calls += 1;
+          return HttpResponse.json({ keys: [{ ...key, used }] });
+        }),
+      );
+      renderApp({ session: adminSession, path: '/admin/quota' });
+
+      const table = await screen.findByTestId('admin-quota-key-table');
+      expect(calls).toBe(1);
+      expect(within(table).getByText('100 / 3,600')).toBeInTheDocument();
+
+      const liveToggle = screen.getByTestId('admin-live-toggle');
+      fireEvent.click(liveToggle);
+      expect(liveToggle).toHaveAttribute('aria-pressed', 'false');
+
+      used = 250;
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(calls).toBe(1);
+      expect(within(table).getByText('100 / 3,600')).toBeInTheDocument();
+
+      fireEvent.click(liveToggle);
+      expect(liveToggle).toHaveAttribute('aria-pressed', 'true');
+      expect(await within(table).findByText('250 / 3,600')).toBeInTheDocument();
+      expect(calls).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('returns polling to ten seconds after a successful refresh', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let calls = 0;
+      server.use(
+        http.get('*/admin/quota', () => {
+          calls += 1;
+          return calls === 2
+            ? new HttpResponse(null, { status: 500 })
+            : HttpResponse.json({ keys: [{ ...key, used: calls * 100 }] });
+        }),
+      );
+      renderApp({ session: adminSession, path: '/admin/quota' });
+
+      await screen.findByTestId('admin-quota-key-table');
+      await vi.advanceTimersByTimeAsync(10_000);
+      await waitFor(() => expect(calls).toBe(2));
+      await vi.advanceTimersByTimeAsync(20_000);
+      await waitFor(() => expect(calls).toBe(3));
+      await vi.advanceTimersByTimeAsync(10_000);
+      await waitFor(() => expect(calls).toBe(4));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('refreshes the current quota data', async () => {
@@ -116,7 +187,16 @@ describe('API quota page', () => {
     server.use(quota([]));
     renderApp({ session: adminSession, path: '/admin/quota' });
 
-    expect(await screen.findByTestId('admin-quota-empty')).toHaveTextContent('No API keys yet');
+    const empty = await screen.findByTestId('admin-quota-empty');
+    expect(empty).toHaveTextContent('No valid API keys available');
+    expect(empty).toHaveTextContent('when a valid Flickr API key is available');
+    expect(screen.getByRole('link', { name: 'Open my API keys' })).toHaveAttribute('href', '/keys');
+
+    fireEvent.click(screen.getByTestId('admin-lang-toggle'));
+    await waitFor(() => {
+      expect(empty).toHaveTextContent('Chưa có khóa API hợp lệ');
+      expect(empty).toHaveTextContent('khi có khóa API Flickr hợp lệ');
+    });
     expect(screen.getByRole('link', { name: 'Open my API keys' })).toHaveAttribute('href', '/keys');
   });
 
