@@ -18,12 +18,13 @@ unavailable when the first refresh has not completed or a permission change
 invalidated them.
 
 A sharing-policy change invalidates every cached Home count row in the same
-transaction as the setting update and queues one deduplicated refresh job. Until
-the row is recomputed, the API returns `photos: null`, null photo totals for
-starred contacts, and `counts_stale: true`; it does not expose counts from the
-previous sharing policy. A missing or revision-stale row is treated the same
-way. Ordinary catalog revision changes do not invalidate counts; their cached
-values remain estimates while a refresh is pending.
+transaction as the setting update and records one durable refresh wake-up for
+that change. Until the row is recomputed, the API returns `photos: null`, null
+photo totals for starred contacts, and `counts_stale: true`; it does not expose
+counts from the previous sharing policy. A missing or revision-stale row
+receives the same treatment. Ordinary catalog revision changes do not
+invalidate counts; their cached values remain estimates while a refresh is
+pending.
 
 The sync worker refreshes counts in keyset pages capped by the administrator
 setting `home.stats_refresh_batch_size` (250 rows by default; maximum 1,000).
@@ -31,9 +32,10 @@ Public, non-tombstoned photo candidates are indexed by observer and updated
 when observations or photo visibility change. A global indexed candidate set
 contains photos shared by at least one enabled account. Changing sharing
 permission queues a bounded, keyset-paginated candidate sync in the same
-transaction as the setting update. Home checks the current observation,
-sharing permission, and Flickr visibility before applying each 12-photo limit,
-so stale revoked candidates cannot consume the result limit or expose a photo.
+transaction as the setting update. Home checks current observation and sharing
+permission before applying the shared 12-photo result limit; photo triggers
+keep both candidate indexes limited to public, non-tombstoned records. Stale
+revoked candidates therefore cannot consume the result limit or expose a photo.
 Permission changes invalidate cached counts and restart an active refresh from
 the first page. Ordinary catalog revisions keep keyset progress and staged
 totals; refresh publishes them as estimates against the latest revision and
@@ -45,11 +47,12 @@ through each page commit, and saves a keyset checkpoint so an interrupted
 migration can resume without inserting candidates for observations changed in
 the meantime.
 
-The request reads at most 12 newest eligible photos per enabled sharing owner
-from the indexed per-user candidate table, then deduplicates and returns at most
-12. Disabled sharers are filtered before their candidate rows are visited;
-current observation and Flickr visibility checks still run before each page
-limit.
+The request reads shared photos from one globally ordered candidate index, so a
+sharer count cannot truncate the search. It checks current sharing permission
+and observation before applying the 12-photo result limit. For the owner, Home
+reads at most 12 newest entries from the owner's indexed candidate page before
+joining photo details; the candidate triggers keep that page limited to
+observed public, non-tombstoned photos.
 Starred contacts are capped at five before joining their cached per-contact
 totals; active crawl state uses indexed work-item lookups. No request query
 counts the `photos`, `favorites`, or `observations` tables.

@@ -704,7 +704,7 @@ func TestHomeSnapshotContinuesPastRevokedSharedPhotos(t *testing.T) {
 	suffix := fmt.Sprintf("home-revoked-%d", time.Now().UnixNano())
 	var viewerID, revokedOwnerID, allowedOwnerID int64
 	var revokedKeyID, allowedKeyID, revokedAccountID, allowedAccountID int64
-	photoIDs := make([]int64, 0, 262)
+	photoIDs := make([]int64, 0, 13)
 	revokedNSID, allowedNSID := suffix+"-revoked", suffix+"-allowed"
 	t.Cleanup(func() {
 		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
@@ -741,9 +741,15 @@ func TestHomeSnapshotContinuesPastRevokedSharedPhotos(t *testing.T) {
 		}
 	}
 	baseID := time.Now().UnixNano()
-	baseTime := time.Now().UTC().Truncate(time.Microsecond)
-	const revokedCount = 250
+	baseTime := time.Date(2999, time.January, 1, 0, 0, 0, 0, time.UTC)
+	const revokedCount = 1
 	const allowedCount = 12
+	ownerNSIDs := make([]string, 0, revokedCount+allowedCount)
+	titles := make([]string, 0, revokedCount+allowedCount)
+	uploadedAt := make([]time.Time, 0, revokedCount+allowedCount)
+	observerUserIDs := make([]int64, 0, revokedCount+allowedCount)
+	observerAccountIDs := make([]int64, 0, revokedCount+allowedCount)
+	recordIDs := make([]string, 0, revokedCount+allowedCount)
 	for i := 0; i < revokedCount+allowedCount; i++ {
 		ownerNSID, ownerID, accountID := revokedNSID, revokedOwnerID, revokedAccountID
 		photoID := baseID + int64(i)
@@ -751,15 +757,25 @@ func TestHomeSnapshotContinuesPastRevokedSharedPhotos(t *testing.T) {
 			ownerNSID, ownerID, accountID = allowedNSID, allowedOwnerID, allowedAccountID
 			photoID = baseID + 1000 + int64(i-revokedCount)
 		}
-		uploadedAt := baseTime.Add(time.Duration(revokedCount+allowedCount-i) * time.Minute)
-		if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,title,last_update,uploaded_at,taken_at,visibility,sizes,sizes_status,raw,content_hash)
-			VALUES($1,$2,$3,$4,$4,$4,'public','[]'::jsonb,'provisional','{}',decode(repeat('ab',32),'hex'))`, photoID, ownerNSID, fmt.Sprintf("photo-%d", i), uploadedAt); err != nil {
-			t.Fatal(err)
-		}
+		photoTime := baseTime.Add(time.Duration(revokedCount+allowedCount-i) * time.Minute)
 		photoIDs = append(photoIDs, photoID)
-		if _, err := pool.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) VALUES($1,$2,'photo',$3)`, ownerID, accountID, fmt.Sprint(photoID)); err != nil {
-			t.Fatal(err)
-		}
+		ownerNSIDs = append(ownerNSIDs, ownerNSID)
+		titles = append(titles, fmt.Sprintf("photo-%d", i))
+		uploadedAt = append(uploadedAt, photoTime)
+		observerUserIDs = append(observerUserIDs, ownerID)
+		observerAccountIDs = append(observerAccountIDs, accountID)
+		recordIDs = append(recordIDs, fmt.Sprint(photoID))
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,title,last_update,uploaded_at,taken_at,visibility,sizes,sizes_status,raw,content_hash)
+SELECT photo.id, photo.owner_nsid, photo.title, photo.uploaded_at, photo.uploaded_at, photo.uploaded_at,
+       'public', '[]'::jsonb, 'provisional', '{}', decode(repeat('ab',32),'hex')
+FROM unnest($1::bigint[], $2::text[], $3::text[], $4::timestamptz[]) AS photo(id, owner_nsid, title, uploaded_at)`, photoIDs, ownerNSIDs, titles, uploadedAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id)
+SELECT observation.user_id, observation.account_id, 'photo', observation.record_id
+FROM unnest($1::bigint[], $2::bigint[], $3::text[]) AS observation(user_id, account_id, record_id)`, observerUserIDs, observerAccountIDs, recordIDs); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE sharing_settings SET enabled=false WHERE user_id=$1`, revokedOwnerID); err != nil {
 		t.Fatal(err)
@@ -773,7 +789,7 @@ func TestHomeSnapshotContinuesPastRevokedSharedPhotos(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(snapshot.NewPhotos) != 12 {
-		t.Fatalf("visible newest photos = %d, want 12 after skipping 250 revoked candidates", len(snapshot.NewPhotos))
+		t.Fatalf("visible newest photos = %d, want 12 after skipping a revoked candidate", len(snapshot.NewPhotos))
 	}
 	for i, photo := range snapshot.NewPhotos {
 		want := baseID + 1000 + int64(i)
@@ -811,6 +827,7 @@ type explainDocument []struct {
 
 type explainNode struct {
 	NodeType     string        `json:"Node Type"`
+	IndexName    string        `json:"Index Name"`
 	RelationName string        `json:"Relation Name"`
 	CTEName      string        `json:"CTE Name"`
 	PlanRows     float64       `json:"Plan Rows"`

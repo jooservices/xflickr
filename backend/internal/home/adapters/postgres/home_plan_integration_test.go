@@ -76,12 +76,13 @@ func assertHomePlans(t *testing.T, ctx context.Context, pool *pgxpool.Pool, stat
 		t.Fatalf("query plan fixture requires the default sequential scan setting, got %q", seqScanSetting)
 	}
 	requestPlan := explainHomePlan(t, ctx, tx, "Home request snapshot", statement, userID)
-	assertRequestCandidatePlan(t, requestPlan, 24)
+	assertRequestCandidatePlan(t, requestPlan, 12, 300)
 	assertWorkItemPlan(t, requestPlan)
 	refreshPlan := explainHomePlan(t, ctx, tx, "Home refresh photo page", refreshPhotoPageSQL, userID, "", batchSize)
 	assertCandidatePlan(t, refreshPlan, batchSize, batchSize)
+	assertHomeSnapshotAcrossSharers(t, ctx, tx, userID)
 	if !t.Failed() {
-		t.Log("request and refresh EXPLAIN ANALYZE passed with the default planner and 400,000 candidates")
+		t.Log("request and refresh EXPLAIN ANALYZE passed with the default planner and over 600,000 candidates")
 	}
 }
 
@@ -117,6 +118,36 @@ FROM generate_series(1, 200000) AS candidate(candidate_id)`, "200,000 disabled s
 		{`INSERT INTO user_home_shared_photo_candidates
 SELECT candidate_id::bigint, statement_timestamp() - candidate_id * interval '1 second'
 FROM generate_series(1, 200000) AS candidate(candidate_id)`, "200,000 shared candidates"},
+		{`INSERT INTO user_home_photo_candidates
+SELECT $1, 600000 + candidate_id, statement_timestamp() + interval '2 years' + candidate_id * interval '1 second'
+FROM generate_series(1, 200000) AS candidate(candidate_id)`, "200,000 invalid newest own candidates"},
+		{`INSERT INTO user_home_shared_photo_candidates
+SELECT 600000 + candidate_id, statement_timestamp() + interval '2 years' + candidate_id * interval '1 second'
+FROM generate_series(1, 250) AS candidate(candidate_id)`, "250 invalid newest shared candidates"},
+		{`INSERT INTO sharing_settings (user_id, enabled)
+SELECT $1 + 2000 + owner.number, FALSE
+FROM generate_series(1, 250) AS owner(number)`, "250 disabled sharing owners"},
+		{`INSERT INTO photos (id, title, owner_nsid, taken_at, uploaded_at, sizes, visibility)
+SELECT 600000 + owner.number, 'revoked plan photo', 'revoked-plan-owner', statement_timestamp(),
+       statement_timestamp() + interval '2 years' + owner.number * interval '1 second', '[]'::jsonb, 'public'
+FROM generate_series(1, 250) AS owner(number)`, "250 revoked public photos"},
+		{`INSERT INTO observations (user_id, record_kind, record_id)
+SELECT $1 + 2000 + owner.number, 'photo', (600000 + owner.number)::text
+FROM generate_series(1, 250) AS owner(number)`, "250 revoked photo observations"},
+		{`INSERT INTO sharing_settings (user_id, enabled)
+SELECT $1 + 1000 + owner.number, TRUE
+FROM generate_series(1, 201) AS owner(number)`, "201 enabled sharing owners"},
+		{`INSERT INTO photos (id, title, owner_nsid, taken_at, uploaded_at, sizes, visibility)
+SELECT 700000 + owner.number, 'shared plan photo', 'plan-sharer-' || owner.number,
+       statement_timestamp(), statement_timestamp() + interval '1 year' + owner.number * interval '1 second',
+       '[]'::jsonb, 'public'
+FROM generate_series(1, 201) AS owner(number)`, "201 shared photos"},
+		{`INSERT INTO observations (user_id, record_kind, record_id)
+SELECT $1 + 1000 + owner.number, 'photo', (700000 + owner.number)::text
+FROM generate_series(1, 201) AS owner(number)`, "201 permitted photo observations"},
+		{`INSERT INTO user_home_shared_photo_candidates (photo_id, uploaded_at)
+SELECT 700000 + owner.number, statement_timestamp() + interval '1 year' + owner.number * interval '1 second'
+FROM generate_series(1, 201) AS owner(number)`, "201 indexed shared candidates"},
 		{`INSERT INTO user_home_photo_candidates (user_id, photo_id, uploaded_at)
 SELECT $1, 400000 + candidate_id, statement_timestamp() + interval '1 year'
 FROM generate_series(1, 12) AS candidate(candidate_id)`, "12 visible own candidates"},
@@ -138,9 +169,9 @@ SELECT $1, 'photo', (400000 + candidate_id)::text FROM generate_series(1, 12) AS
 UNION ALL
 SELECT $1 + 1, 'photo', (500000 + candidate_id)::text FROM generate_series(1, 12) AS candidate(candidate_id)`, "visible photo observations"},
 		{`CREATE UNIQUE INDEX ON user_home_photo_candidates (user_id, photo_id)`, "own candidate primary key"},
-		{`CREATE INDEX ON user_home_photo_candidates (user_id, uploaded_at DESC NULLS LAST, photo_id DESC)`, "own candidate recent index"},
+		{`CREATE INDEX user_home_photo_candidates_recent_idx ON user_home_photo_candidates (user_id, uploaded_at DESC NULLS LAST, photo_id DESC)`, "own candidate recent index"},
 		{`CREATE UNIQUE INDEX ON user_home_shared_photo_candidates (photo_id)`, "shared candidate primary key"},
-		{`CREATE INDEX ON user_home_shared_photo_candidates (uploaded_at DESC NULLS LAST, photo_id DESC)`, "shared candidate recent index"},
+		{`CREATE INDEX user_home_shared_photo_candidates_recent_idx ON user_home_shared_photo_candidates (uploaded_at DESC NULLS LAST, photo_id DESC)`, "shared candidate recent index"},
 		{`CREATE INDEX ON observations (user_id, record_kind, record_id)`, "photo observation lookup"},
 		{`CREATE INDEX ON sharing_settings (user_id) WHERE enabled`, "enabled sharing lookup"},
 		{`CREATE TEMP TABLE work_items (id BIGINT, kind TEXT, subject_key TEXT, user_id BIGINT, state TEXT, updated_at TIMESTAMPTZ)`, "work item table"},
@@ -179,29 +210,71 @@ FROM generate_series(1, 5000) AS candidate(candidate_id)`, userID, contactNSID);
 	}
 }
 
-func assertRequestCandidatePlan(t *testing.T, root explainNode, candidateLimit int) {
+func assertHomeSnapshotAcrossSharers(t *testing.T, ctx context.Context, tx pgx.Tx, userID int64) {
 	t.Helper()
-	var seen bool
-	var rowsRead float64
+	repository, err := New(tx)
+	if err != nil {
+		t.Fatalf("create Home repository for candidate fixture: %v", err)
+	}
+	snapshot, err := repository.Load(ctx, userID)
+	if err != nil {
+		t.Fatalf("load Home snapshot from candidate fixture: %v", err)
+	}
+	if len(snapshot.NewPhotos) != 12 {
+		t.Fatalf("newest photos = %d, want 12 across all sharing owners", len(snapshot.NewPhotos))
+	}
+	for i, photo := range snapshot.NewPhotos {
+		want := int64(700201 - i)
+		if photo.ID != want {
+			t.Fatalf("new photo %d = %d, want globally newest photo %d", i, photo.ID, want)
+		}
+	}
+}
+
+func assertRequestCandidatePlan(t *testing.T, root explainNode, ownCandidateLimit, sharedCandidateLimit int) {
+	t.Helper()
+	seenOwn, seenShared := false, false
+	rowsRead := map[string]float64{}
 	var visit func(explainNode)
 	visit = func(node explainNode) {
-		if node.RelationName == "user_home_photo_candidates" {
-			seen = true
-			if node.NodeType == "Seq Scan" {
-				t.Error("Home request plan sequentially scans per-user photo candidates")
+		for _, relation := range []string{"user_home_photo_candidates", "user_home_shared_photo_candidates"} {
+			if node.RelationName != relation {
+				continue
 			}
-			rowsRead += node.ActualRows * node.ActualLoops
+			if relation == "user_home_photo_candidates" {
+				seenOwn = true
+			} else {
+				seenShared = true
+			}
+			if node.NodeType == "Seq Scan" {
+				t.Errorf("Home request plan sequentially scans %s", relation)
+			}
+			indexName := map[string]string{
+				"user_home_photo_candidates":        "user_home_photo_candidates_recent_idx",
+				"user_home_shared_photo_candidates": "user_home_shared_photo_candidates_recent_idx",
+			}[relation]
+			if node.IndexName != indexName {
+				t.Errorf("Home request scans %s with %q, want %q", relation, node.IndexName, indexName)
+				return
+			}
+			rowsRead[relation] += node.ActualRows * node.ActualLoops
 		}
 		for _, child := range node.Plans {
 			visit(child)
 		}
 	}
 	visit(root)
-	if !seen {
-		t.Fatal("Home request plan does not use per-user photo candidates")
+	if !seenOwn || !seenShared {
+		t.Fatalf("Home request plan candidate sources own=%t shared=%t", seenOwn, seenShared)
 	}
-	if rowsRead > float64(candidateLimit) {
-		t.Errorf("Home request reads %.0f per-user candidates, over bound %d", rowsRead, candidateLimit)
+	if rowsRead["user_home_photo_candidates"] == 0 || rowsRead["user_home_shared_photo_candidates"] == 0 {
+		t.Fatal("Home request does not use both recent candidate indexes")
+	}
+	if rowsRead["user_home_photo_candidates"] > float64(ownCandidateLimit) {
+		t.Errorf("Home request reads %.0f own candidates, over bound %d", rowsRead["user_home_photo_candidates"], ownCandidateLimit)
+	}
+	if rowsRead["user_home_shared_photo_candidates"] > float64(sharedCandidateLimit) {
+		t.Errorf("Home request reads %.0f shared candidates, over bound %d", rowsRead["user_home_shared_photo_candidates"], sharedCandidateLimit)
 	}
 }
 

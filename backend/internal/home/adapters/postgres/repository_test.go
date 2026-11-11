@@ -152,8 +152,8 @@ func TestLoadReturnsUserScopedSnapshot(t *testing.T) {
 	}
 	for _, fragment := range []string{
 		"user_home_photo_candidates candidate",
-		"FROM sharing_settings setting",
-		"enabled_sharers AS MATERIALIZED",
+		"user_home_shared_photo_candidates candidate",
+		"JOIN sharing_settings setting",
 		"setting.enabled",
 		"photo.visibility = 'public'",
 		"photo.tombstoned_at IS NULL",
@@ -170,16 +170,21 @@ func TestLoadReturnsUserScopedSnapshot(t *testing.T) {
 			t.Errorf("snapshot query is missing %q", fragment)
 		}
 	}
+	ownPage := strings.Index(reader.query, "own_photo_candidate_page AS MATERIALIZED")
 	ownCandidates := strings.Index(reader.query, "own_photo_candidates AS MATERIALIZED")
 	ownEnd := strings.Index(reader.query, "newest_photo_candidates AS MATERIALIZED")
-	if ownCandidates < 0 || ownEnd < 0 || ownCandidates >= ownEnd {
+	if ownPage < 0 || ownCandidates < 0 || ownEnd < 0 || ownPage >= ownCandidates || ownCandidates >= ownEnd {
 		t.Fatal("Home query is missing the indexed own-photo candidate source")
+	}
+	ownPageSQL := reader.query[ownPage:ownCandidates]
+	if !strings.Contains(ownPageSQL, "ORDER BY candidate.uploaded_at DESC NULLS LAST, candidate.photo_id DESC") ||
+		!strings.Contains(ownPageSQL, "LIMIT 12") {
+		t.Fatal("Home must fetch at most the newest 12 indexed own-photo candidates")
 	}
 	ownPhotoCandidates := reader.query[ownCandidates:ownEnd]
 	ownPermission := strings.Index(ownPhotoCandidates, "observation.user_id = $1")
-	ownLimit := strings.Index(ownPhotoCandidates, "LIMIT 12")
-	if ownPermission < 0 || ownLimit < 0 || ownPermission > ownLimit {
-		t.Fatal("Home must verify current own-photo permission before applying the result limit")
+	if ownPermission < 0 {
+		t.Fatal("Home must verify ownership after fetching the bounded candidate page")
 	}
 	if strings.Contains(reader.query, "visible_photo_counts") || strings.Contains(reader.query, "CROSS JOIN LATERAL (\n        SELECT stored") {
 		t.Fatal("request query still builds a photo-wide count or per-photo lateral lookup")
@@ -228,13 +233,9 @@ func TestLoadFiltersSharedCandidatesBeforeLimit(t *testing.T) {
 	for _, fragment := range []string{
 		"LIMIT 12",
 		"observations observation",
-		"enabled_sharers AS MATERIALIZED",
-		"FROM sharing_settings setting",
-		"CROSS JOIN LATERAL",
-		"recent.user_id = sharer.user_id",
+		"user_home_shared_photo_candidates candidate",
+		"JOIN sharing_settings setting",
 		"setting.enabled",
-		"LIMIT 200", // at most 200 enabled sharers are scanned per request
-		"LIMIT 100", // at most 100 newest candidates are read per sharer before the permission filter
 	} {
 		if !strings.Contains(reader.query, fragment) {
 			t.Errorf("shared photo scan is missing %q", fragment)
@@ -246,16 +247,13 @@ func TestLoadFiltersSharedCandidatesBeforeLimit(t *testing.T) {
 		t.Fatal("Home query is missing the shared and own candidate sources")
 	}
 	sharedCandidates := reader.query[sharedStart:ownStart]
-	permissionFilter := strings.Index(sharedCandidates, "recent.user_id = sharer.user_id")
+	permissionFilter := strings.Index(sharedCandidates, "setting.enabled")
 	pageLimit := strings.Index(sharedCandidates, "LIMIT 12")
 	if permissionFilter < 0 || pageLimit < 0 || permissionFilter > pageLimit {
-		t.Fatal("shared candidates must filter each sharer's permissions before its bounded page limit")
+		t.Fatal("shared candidates must filter current permissions before the result limit")
 	}
-	if !strings.Contains(sharedCandidates, "FROM enabled_sharers sharer") {
-		t.Fatal("shared candidates must read only from currently enabled sharers")
-	}
-	if !strings.Contains(reader.query[:sharedStart], "WHERE setting.enabled") {
-		t.Fatal("Home must filter disabled sharers before scanning their photo candidates")
+	if strings.Contains(sharedCandidates, "LIMIT 100") || strings.Contains(sharedCandidates, "LIMIT 200") || strings.Contains(sharedCandidates, "CROSS JOIN LATERAL") {
+		t.Fatal("shared candidates must not truncate sharers or pre-filter candidate pages")
 	}
 }
 
