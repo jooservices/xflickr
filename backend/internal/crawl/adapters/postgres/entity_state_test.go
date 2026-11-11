@@ -13,10 +13,10 @@ import (
 )
 
 type stateRow struct {
-	err     error
-	blocked bool
+	err       error
+	blocked   bool
 	accountID int64
-	missing bool
+	missing   bool
 }
 
 func (r stateRow) Scan(dest ...any) error {
@@ -39,10 +39,10 @@ func (r stateRow) Scan(dest ...any) error {
 }
 
 type stateDBFake struct {
-	row   stateRow
-	err   error
-	execs int
-	accessAccount int64
+	row            stateRow
+	err            error
+	execs          int
+	accessAccount  int64
 	accountBlocked bool
 }
 
@@ -97,9 +97,9 @@ func TestEntityStateStorageErrorsAndEligibility(t *testing.T) {
 
 func TestPhotoSizesEligibilitySeparatesAnonymousAndOwnerRestrictions(t *testing.T) {
 	for _, tc := range []struct {
-		name string
+		name       string
 		restricted bool
-	}{ {"transient OAuth failure can be scheduled again", false}, {"terminal owner restriction closes scheduling", true} } {
+	}{{"transient OAuth failure can be scheduled again", false}, {"terminal owner restriction closes scheduling", true}} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := &stateDBFake{row: stateRow{accountID: 91}, accountBlocked: tc.restricted}
 			allowed, err := (EntityStates{DB: db}).PhotoFacetAllowed(t.Context(), 42, 1, "sizes")

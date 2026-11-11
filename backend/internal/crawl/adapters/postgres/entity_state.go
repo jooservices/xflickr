@@ -69,18 +69,23 @@ func (s EntityStates) RecordFailure(ctx context.Context, a app.EntityAccess, sta
 }
 
 // PhotoFacetAllowed checks the current version before a scheduler queues work.
+// Sizes use the eligible owner account scope; other facets remain anonymous.
 func (s EntityStates) PhotoFacetAllowed(ctx context.Context, photoID, keyID int64, facet string) (bool, error) {
 	var id string
 	var version time.Time
-	var userID int64
-	err := s.DB.QueryRow(ctx, `SELECT p.id::text,p.last_update,k.user_id
-	FROM photos AS p JOIN api_keys AS k ON k.id=$2 WHERE p.id=$1`, photoID, keyID).Scan(&id, &version, &userID)
+	var userID, accountID int64
+	err := s.DB.QueryRow(ctx, `SELECT p.id::text,p.last_update,k.user_id,
+	COALESCE((SELECT a.id FROM flickr_accounts AS a
+	 WHERE $3='sizes' AND a.nsid=p.owner_nsid AND a.key_id=k.id
+	 AND a.user_id=k.user_id AND a.status='ok' AND k.status='valid'
+	 ORDER BY a.id LIMIT 1),0)
+	FROM photos AS p JOIN api_keys AS k ON k.id=$2 WHERE p.id=$1`, photoID, keyID, facet).Scan(&id, &version, &userID, &accountID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	blocked, err := s.Suppressed(ctx, app.EntityAccess{EntityRef: app.EntityRef{Kind: "photo", ID: id}, UserID: userID, KeyID: keyID, Facet: facet, Version: version}, time.Now())
+	blocked, err := s.Suppressed(ctx, app.EntityAccess{EntityRef: app.EntityRef{Kind: "photo", ID: id}, UserID: userID, KeyID: keyID, AccountID: accountID, Facet: facet, Version: version}, time.Now())
 	return !blocked, err
 }

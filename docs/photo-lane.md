@@ -89,6 +89,11 @@ retry and backoff policy. If those attempts are exhausted, the job is
 discarded and reported through the dead-job outbox; the photo itself remains
 unconfirmed in the catalog. The next ordinary photo-lane pump can select it
 again, and the new job still goes through key selection and the quota governor.
+Sizes enqueue eligibility checks the active photo-owner account restriction when
+that account uses the selected key. An anonymous restriction on the same key
+does not block this OAuth recovery; a current owner-account restriction still
+does. Other facets and sizes without an eligible owner account retain their
+anonymous restriction scope.
 This makes a discarded job visible and recoverable without a manual requeue or
 a quota bypass. Flickr error code 1 (`Photo not found`) and code 2
 (`Permission denied`) restrict only the requesting key or signed account for
