@@ -25,7 +25,7 @@ type Repository struct{ pool pool }
 const findDuplicateEgressSQL = `
 SELECT name FROM nodes
 WHERE egress_ip = $1::inet AND egress_ip IS NOT NULL AND name <> $2
-  AND state = 'online' AND roles @> ARRAY['crawl']::text[]
+  AND state <> 'disabled' AND roles @> ARRAY['crawl']::text[]
   AND last_heartbeat_at >= $3::timestamptz - $4::interval
   AND (cooling_until IS NULL OR cooling_until <= $3::timestamptz)
 ORDER BY name LIMIT 1`

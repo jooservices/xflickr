@@ -158,20 +158,22 @@ func TestDuplicateEgressEligibility(t *testing.T) {
 	pool := openDuplicateIntegrationDatabase(t)
 	repository := New(pool)
 	for index, test := range []struct {
-		name          string
-		currentIP     string
-		candidateIP   string
-		roles         []string
-		state         string
-		heartbeatAge  time.Duration
-		coolingUntil  bool
-		wantCandidate bool
+		name           string
+		currentIP      string
+		candidateIP    string
+		roles          []string
+		state          string
+		heartbeatAge   time.Duration
+		coolingUntil   bool
+		coolingExpired bool
+		wantCandidate  bool
 	}{
 		{name: "empty IP"},
 		{name: "different IP", currentIP: "198.18.2.1", candidateIP: "198.18.2.2", roles: []string{"crawl"}, state: "online"},
 		{name: "wrong role", currentIP: "198.18.3.1", candidateIP: "198.18.3.1", roles: []string{"media"}, state: "online"},
 		{name: "disabled", currentIP: "198.18.4.1", candidateIP: "198.18.4.1", roles: []string{"crawl"}, state: "disabled"},
-		{name: "cooling", currentIP: "198.18.5.1", candidateIP: "198.18.5.1", roles: []string{"crawl"}, state: "online", coolingUntil: true},
+		{name: "cooling", currentIP: "198.18.5.1", candidateIP: "198.18.5.1", roles: []string{"crawl"}, state: "cooling", coolingUntil: true},
+		{name: "cooling just expired", currentIP: "198.18.8.1", candidateIP: "198.18.8.1", roles: []string{"crawl"}, state: "cooling", coolingUntil: true, coolingExpired: true, wantCandidate: true},
 		{name: "exactly 60 seconds", currentIP: "198.18.6.1", candidateIP: "198.18.6.1", roles: []string{"crawl"}, state: "online", heartbeatAge: domain.WarningAfter, wantCandidate: true},
 		{name: "older than 60 seconds", currentIP: "198.18.7.1", candidateIP: "198.18.7.1", roles: []string{"crawl"}, state: "online", heartbeatAge: domain.WarningAfter + time.Second},
 	} {
@@ -183,7 +185,11 @@ func TestDuplicateEgressEligibility(t *testing.T) {
 			at := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
 			var coolingUntil *time.Time
 			if test.coolingUntil {
-				coolingUntil = timePointer(at.Add(time.Minute))
+				coolingAt := at.Add(time.Minute)
+				if test.coolingExpired {
+					coolingAt = at.Add(-time.Second)
+				}
+				coolingUntil = timePointer(coolingAt)
 			}
 			if test.currentIP != "" {
 				insertDuplicateNode(t, pool, ctx, prefix+"-candidate", test.roles, test.state, test.candidateIP, timePointer(at.Add(-test.heartbeatAge)), coolingUntil)
