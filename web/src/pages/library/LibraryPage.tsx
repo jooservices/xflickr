@@ -320,7 +320,6 @@ export function LibraryPage() {
                 selected={selected}
                 selectionMode={selectionMode}
                 selectionFull={selected.size >= 500}
-                onToggleTray={toggleSelection}
                 onToggleSelected={toggleSelection}
               />
             )}

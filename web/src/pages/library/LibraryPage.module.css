@@ -286,7 +286,6 @@
   gap: 6px;
 }
 
-.trayButton,
 .selectPhoto {
   display: grid;
   width: 44px;
@@ -297,16 +296,6 @@
   color: var(--ink);
   background: var(--surface);
   cursor: pointer;
-}
-
-.trayButton[aria-pressed='true'] {
-  color: var(--accent-ink);
-  background: var(--accent);
-}
-
-.trayButton:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 .selectPhoto input {

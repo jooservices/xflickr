@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { CatalogFavorite, CatalogPhoto } from '../../shared/api/gen/models';
-import { Icon } from '../../shared/ui';
 import { useI18n } from '../../shared/i18n';
 import { buildJustifiedRows } from './layout';
 import styles from './LibraryPage.module.css';
@@ -13,7 +12,6 @@ type PhotoGridProps = {
   selected: ReadonlySet<number>;
   selectionMode: boolean;
   selectionFull: boolean;
-  onToggleTray: (photoId: number) => void;
   onToggleSelected: (photoId: number) => void;
 };
 
@@ -42,7 +40,6 @@ export function PhotoGrid({
   selected,
   selectionMode,
   selectionFull,
-  onToggleTray,
   onToggleSelected,
 }: PhotoGridProps) {
   const { locale, t } = useI18n();
@@ -113,7 +110,7 @@ export function PhotoGrid({
               >
                 {row.tiles.map(({ item }) => {
                   const photo = item.photo;
-                  const inTray = selected.has(photo.id);
+                  const isSelected = selected.has(photo.id);
                   const sizesReady = photo.sizes_status === 'confirmed';
                   const captioned = photo.ai_status === 'ready';
                   const title = photo.title.trim() || t('user.library.photo.untitled');
@@ -161,34 +158,20 @@ export function PhotoGrid({
                         <span>{title}</span>
                         <small>{photo.owner_nsid}</small>
                       </div>
-                      <div className={styles.photoActions}>
-                        {selectionMode ? (
+                      {selectionMode ? (
+                        <div className={styles.photoActions}>
                           <label className={styles.selectPhoto}>
                             <input
                               type="checkbox"
-                              checked={inTray}
-                              disabled={selectionFull && !inTray}
+                              checked={isSelected}
+                              disabled={selectionFull && !isSelected}
                               aria-label={t('user.library.photo.select', { title })}
                               data-testid={`user-library-photo-select-${String(photo.id)}`}
                               onChange={() => onToggleSelected(photo.id)}
                             />
                           </label>
-                        ) : null}
-                        <button
-                          className={styles.trayButton}
-                          type="button"
-                          aria-pressed={inTray}
-                          aria-label={t(
-                            inTray ? 'user.library.tray.remove' : 'user.library.tray.add',
-                            { title },
-                          )}
-                          data-testid={`user-library-photo-tray-${String(photo.id)}`}
-                          disabled={selectionFull && !inTray}
-                          onClick={() => onToggleTray(photo.id)}
-                        >
-                          <Icon name={inTray ? 'check' : 'plus'} size={17} />
-                        </button>
-                      </div>
+                        </div>
+                      ) : null}
                     </article>
                   );
                 })}

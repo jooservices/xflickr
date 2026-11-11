@@ -13,9 +13,9 @@ all loaded photos matching the current filters, including virtualized photos
 outside the viewport, and does not fetch another page. It preserves selection
 from other filters and pages, skips already selected IDs before applying the
 500-photo cap, and is safe to repeat. Selection stays in the page until cleared
-or the authenticated session ends. The download action is hidden until the
-downloads screen is implemented; the empty state does not link to the accounts
-placeholder.
+or the authenticated session ends. Per-photo download-tray controls and the
+download action remain hidden until tray submission is available; the empty
+state does not link to the accounts placeholder.
 
 The approved [Library view spec](ui/views/user-library.md) describes the full
 target. Completing it needs a bounded all-library cursor operation and server

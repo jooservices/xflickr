@@ -162,7 +162,7 @@ describe('LibraryPage', () => {
     expect(screen.getByText('The tray holds up to 500 photos.')).toBeInTheDocument();
     expect(screen.getByTestId('user-library-photo-select-500')).toBeChecked();
     expect(screen.getByTestId('user-library-photo-select-501')).not.toBeChecked();
-    expect(screen.getByTestId('user-library-photo-tray-501')).toBeDisabled();
+    expect(screen.queryByTestId('user-library-photo-tray-501')).not.toBeInTheDocument();
   }, 15_000);
 
   it('preserves selection across filters and Escape, then clears the entire tray', async () => {
@@ -189,7 +189,7 @@ describe('LibraryPage', () => {
     fireEvent.click(screen.getByTestId('user-library-select-mode'));
     expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('3');
     expect(screen.getByTestId('user-library-photo-select-2')).toBeChecked();
-    fireEvent.click(screen.getByTestId('user-library-photo-tray-2'));
+    fireEvent.click(screen.getByTestId('user-library-photo-select-2'));
     expect(screen.getByTestId('user-library-photo-select-2')).not.toBeChecked();
     expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('2');
 
@@ -272,16 +272,7 @@ describe('LibraryPage', () => {
       'src',
       'https://images.test/42',
     );
-    fireEvent.click(screen.getByTestId('user-library-photo-tray-41'));
-    expect(screen.getByTestId('user-library-photo-tray-41')).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    fireEvent.click(screen.getByTestId('user-library-photo-tray-41'));
-    expect(screen.getByTestId('user-library-photo-tray-41')).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
+    expect(screen.queryByTestId('user-library-photo-tray-41')).not.toBeInTheDocument();
   });
 
   it('observes grid width changes and disconnects after unmount', async () => {
@@ -334,6 +325,7 @@ describe('LibraryPage', () => {
     fireEvent.click(screen.getByTestId('user-library-photo-select-7'));
 
     expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('1');
+    expect(screen.queryByTestId('user-library-photo-tray-7')).not.toBeInTheDocument();
     expect(screen.queryByTestId('user-library-download-tray')).not.toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/library');
     expect(downloadRequests).toBe(0);
