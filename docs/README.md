@@ -44,6 +44,8 @@
 - [Admin user management](admin-users.md) — list, disable and promote users,
   last-administrator rule, and audit port.
 - [Node registry and heartbeat](nodes.md) — one-time node tokens, isolated internal listener, and heartbeat health.
+- [Node heartbeat client](node-heartbeat-client.md) — one-shot authenticated
+  heartbeat requests and client limits.
 - [Feature flags](feature-flags.md) — administrator-managed rollout flags,
   audience rules, API routes, and cache behavior.
 - [Plans](plans.md) — configurable entitlements, administrator updates, and user
