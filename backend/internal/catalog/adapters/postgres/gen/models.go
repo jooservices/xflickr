@@ -60,10 +60,9 @@ func (ns NullDownloadItemState) Value() (driver.Value, error) {
 type DownloadKind string
 
 const (
-	DownloadKindContact   DownloadKind = "contact"
-	DownloadKindAlbum     DownloadKind = "album"
-	DownloadKindTray      DownloadKind = "tray"
-	DownloadKindFavorites DownloadKind = "favorites"
+	DownloadKindContact DownloadKind = "contact"
+	DownloadKindAlbum   DownloadKind = "album"
+	DownloadKindTray    DownloadKind = "tray"
 )
 
 func (e *DownloadKind) Scan(src interface{}) error {
@@ -366,14 +365,6 @@ type Contact struct {
 	SeenAt      pgtype.Timestamptz
 }
 
-type ContactGroupCrawlPreference struct {
-	UserID     int64
-	PersonNsid string
-	GroupNsid  string
-	Enabled    bool
-	ChangedAt  pgtype.Timestamptz
-}
-
 type CrawlCycle struct {
 	UserID           int64
 	CursorPersonNsid string
@@ -394,10 +385,6 @@ type CrawlInterest struct {
 	LastSeenAt       pgtype.Timestamptz
 	LastFaveAt       pgtype.Timestamptz
 	LastReconciledAt pgtype.Timestamptz
-	PhotosCrawled    int64
-	FavoritesCount   int64
-	SizesCompleted   int64
-	TombstonesCount  int64
 }
 
 type CrawlObservation struct {
