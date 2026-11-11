@@ -11,11 +11,20 @@ export interface HomeStarredContact {
   nsid: string;
   name: string;
   icon_url: string;
-  /** @minimum 0 */
-  photos_count: number;
-  /** @minimum 0 */
-  sizes_ready: number;
-  /** @minimum 0 */
-  sizes_total: number;
+  /**
+   * @minimum 0
+   * @nullable
+   */
+  photos_count: number | null;
+  /**
+   * @minimum 0
+   * @nullable
+   */
+  sizes_ready: number | null;
+  /**
+   * @minimum 0
+   * @nullable
+   */
+  sizes_total: number | null;
   crawl_state: HomeStarredContactCrawlState;
 }

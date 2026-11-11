@@ -20,8 +20,10 @@ export interface HomeSnapshot {
   counts_computed_at: string | null;
   /** True when cached photo counts are missing or older than the administrator-configured refresh interval. */
   estimated: boolean;
+  /** True when cached photo counts are unavailable because their source or sharing policy changed. */
+  counts_stale?: boolean;
   contacts: HomeContactCounts;
-  photos: HomePhotoCounts;
+  photos: HomePhotoCounts | null;
   /** @maxItems 12 */
   new_photos: HomePhoto[];
   /** @maxItems 5 */

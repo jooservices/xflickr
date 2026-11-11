@@ -1497,6 +1497,111 @@ export const UpdateMeCrawlSettingsResponse = zod
   .describe("The current user's crawl depth and the administrator limits.");
 
 /**
+ * @summary Get the signed-in user's Home snapshot
+ */
+export const getMeHomeResponseContactsTotalMin = 0;
+
+export const getMeHomeResponseContactsDirectMin = 0;
+
+export const getMeHomeResponseContactsDiscoveredMin = 0;
+
+export const getMeHomeResponsePhotosOneTotalMin = 0;
+
+export const getMeHomeResponsePhotosOneSizesReadyMin = 0;
+
+export const getMeHomeResponsePhotosOneCaptionedMin = 0;
+
+export const getMeHomeResponseNewPhotosMax = 12;
+
+export const getMeHomeResponseStarredContactsItemPhotosCountMin = 0;
+
+export const getMeHomeResponseStarredContactsItemSizesReadyMin = 0;
+
+export const getMeHomeResponseStarredContactsItemSizesTotalMin = 0;
+
+export const getMeHomeResponseStarredContactsMax = 5;
+
+export const getMeHomeResponseActivityItemCountMin = 0;
+
+export const getMeHomeResponseActivityMax = 5;
+
+export const GetMeHomeResponse = zod.object({
+  generated_at: zod.iso.datetime({ offset: true }),
+  counts_computed_at: zod.iso
+    .datetime({ offset: true })
+    .nullable()
+    .describe('Time the cached photo counts were completed'),
+  estimated: zod
+    .boolean()
+    .describe(
+      'True when cached photo counts are missing or older than the administrator-configured refresh interval.',
+    ),
+  counts_stale: zod
+    .boolean()
+    .optional()
+    .describe(
+      'True when cached photo counts are unavailable because their source or sharing policy changed.',
+    ),
+  contacts: zod.object({
+    total: zod.int().min(getMeHomeResponseContactsTotalMin),
+    direct: zod.int().min(getMeHomeResponseContactsDirectMin),
+    discovered: zod.int().min(getMeHomeResponseContactsDiscoveredMin),
+  }),
+  photos: zod.union([
+    zod.object({
+      total: zod.int().min(getMeHomeResponsePhotosOneTotalMin),
+      sizes_ready: zod.int().min(getMeHomeResponsePhotosOneSizesReadyMin),
+      captioned: zod.int().min(getMeHomeResponsePhotosOneCaptionedMin),
+    }),
+    zod.null(),
+  ]),
+  new_photos: zod
+    .array(
+      zod.object({
+        id: zod.int().min(1),
+        title: zod.string(),
+        thumbnail_url: zod.url().nullable().describe('The best stored thumbnail URL'),
+        owner_nsid: zod.string(),
+        owner_name: zod.string(),
+        taken_at: zod.iso.datetime({ offset: true }).nullish(),
+        captioned: zod.boolean(),
+      }),
+    )
+    .max(getMeHomeResponseNewPhotosMax),
+  starred_contacts: zod
+    .array(
+      zod.object({
+        nsid: zod.string(),
+        name: zod.string(),
+        icon_url: zod.string(),
+        photos_count: zod.int().min(getMeHomeResponseStarredContactsItemPhotosCountMin).nullable(),
+        sizes_ready: zod.int().min(getMeHomeResponseStarredContactsItemSizesReadyMin).nullable(),
+        sizes_total: zod.int().min(getMeHomeResponseStarredContactsItemSizesTotalMin).nullable(),
+        crawl_state: zod.enum({
+          HomeCrawlStateIdle: 'idle',
+          HomeCrawlStateCrawling: 'crawling',
+          HomeCrawlStateWaiting: 'waiting',
+          HomeCrawlStateAttention: 'attention',
+        }),
+      }),
+    )
+    .max(getMeHomeResponseStarredContactsMax),
+  activity: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        kind: zod.enum(['crawl', 'download', 'quota']),
+        message_key: zod.enum(['new_photos', 'sizes_confirmed', 'quota_updated', 'unknown']),
+        count: zod.int().min(getMeHomeResponseActivityItemCountMin),
+        contact_name: zod.string(),
+        occurred_at: zod.iso.datetime({ offset: true }),
+        severity: zod.enum(['info', 'warning', 'error']),
+      }),
+    )
+    .max(getMeHomeResponseActivityMax),
+});
+
+/**
  * @summary Star or unstar a contact
  */
 export const starMyContactPathNsidMax = 255;

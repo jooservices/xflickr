@@ -1436,6 +1436,12 @@ type UserHomeSharedVersion struct {
 	Revision int64
 }
 
+type UserHomeSharingSync struct {
+	UserID        int64
+	Enabled       bool
+	CursorPhotoID int64
+}
+
 type UserHomeStat struct {
 	UserID         int64
 	PhotosTotal    int64
@@ -1444,6 +1450,7 @@ type UserHomeStat struct {
 	ComputedAt     pgtype.Timestamptz
 	SourceRevision int64
 	SharedRevision int64
+	InvalidatedAt  pgtype.Timestamptz
 }
 
 type UserHomeStatsRefresh struct {
