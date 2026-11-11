@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
+	metricsapp "github.com/jooservices/xflickr/internal/platform/metrics/app"
 	"github.com/jooservices/xflickr/internal/platform/ops"
 )
 
@@ -22,6 +23,8 @@ var _ StatusService = ops.Service{}
 // it is mounted without that middleware.
 type Handler struct {
 	Service StatusService
+	Metrics metricsapp.SeriesReader
+	Now     func() time.Time
 	ActorID func(context.Context) (int64, bool)
 }
 

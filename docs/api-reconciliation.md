@@ -8,6 +8,7 @@ that serve it, or `MISSING`.
 | --- | --- | --- |
 | `/admin/calls/stats` | `/admin/calls/stats` | `/admin/calls/stats` |
 | `/admin/flags` | `/admin/flags` | `/admin/flags` |
+| `/admin/metrics` | `/admin/metrics` | `/admin/metrics` |
 | `/admin/nodes` | `/admin/nodes` | `/admin/nodes` |
 | `/admin/ops/status` | `/admin/ops/status` | `/admin/ops/status` |
 | `/admin/plans` | `/admin/plans` | `/admin/plans` |

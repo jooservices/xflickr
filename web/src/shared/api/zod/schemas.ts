@@ -991,6 +991,43 @@ export const GetAdminCallStatsResponse = zod.object({
 });
 
 /**
+ * @summary Read stored metric samples for one queue, role, and node
+ */
+export const getAdminMetricsQueryQueueMax = 128;
+
+export const getAdminMetricsQueryRoleMax = 128;
+
+export const getAdminMetricsQueryNodeMax = 128;
+
+export const GetAdminMetricsQueryParams = zod.object({
+  series: zod.enum(['queue.jobs_available']),
+  queue: zod.string().min(1).max(getAdminMetricsQueryQueueMax),
+  role: zod.string().min(1).max(getAdminMetricsQueryRoleMax),
+  node: zod.string().min(1).max(getAdminMetricsQueryNodeMax),
+  from: zod.iso
+    .datetime({ offset: true })
+    .describe('RFC3339 timestamp with a timezone at an exact UTC-minute boundary.'),
+  to: zod.iso
+    .datetime({ offset: true })
+    .describe('RFC3339 timestamp with a timezone at an exact UTC-minute boundary.'),
+  step: zod.enum(['1m']),
+});
+
+export const GetAdminMetricsResponse = zod.object({
+  series: zod.literal('queue.jobs_available'),
+  queue: zod.string(),
+  role: zod.string(),
+  node: zod.string(),
+  step: zod.literal('1m'),
+  points: zod.array(
+    zod.object({
+      at: zod.iso.datetime({ offset: true }),
+      value: zod.number(),
+    }),
+  ),
+});
+
+/**
  * Same numbers as the periodic "crawl health" log line. Large catalog counts may be planner estimates.
  * @summary Get the crawl health report
  */

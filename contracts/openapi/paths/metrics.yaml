@@ -1,0 +1,62 @@
+series:
+  get:
+    operationId: GetAdminMetrics
+    tags: [admin]
+    summary: Read stored metric samples for one queue, role, and node
+    parameters:
+      - name: series
+        in: query
+        required: true
+        schema: { type: string, enum: [queue.jobs_available] }
+      - name: queue
+        in: query
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 128 }
+      - name: role
+        in: query
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 128 }
+      - name: node
+        in: query
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 128 }
+      - name: from
+        in: query
+        required: true
+        description: RFC3339 timestamp with a timezone at an exact UTC-minute boundary.
+        schema: { type: string, format: date-time }
+      - name: to
+        in: query
+        required: true
+        description: RFC3339 timestamp with a timezone at an exact UTC-minute boundary.
+        schema: { type: string, format: date-time }
+      - name: step
+        in: query
+        required: true
+        schema: { type: string, enum: [1m] }
+    responses:
+      '200':
+        description: Stored minute samples in the requested half-open range.
+        content:
+          application/json:
+            schema: { $ref: ../schemas/metrics.yaml#/MetricSeries }
+      '400':
+        description: Invalid metrics query.
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '401':
+        description: Authentication required.
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '403':
+        description: Administrator role required.
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '500':
+        description: Internal server error.
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }

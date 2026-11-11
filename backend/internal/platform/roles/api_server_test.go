@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
+	metricsapp "github.com/jooservices/xflickr/internal/platform/metrics/app"
 	"github.com/jooservices/xflickr/internal/platform/ops"
 	opshttp "github.com/jooservices/xflickr/internal/platform/ops/adapters/http"
 	sharinghttp "github.com/jooservices/xflickr/internal/sharing/adapters/http"
@@ -46,6 +47,28 @@ func TestAPIServerForwardsSharingAndOps(t *testing.T) {
 	}
 }
 
+func TestAPIServerForwardsAdminMetrics(t *testing.T) {
+	at := time.Date(2026, 11, 11, 8, 0, 0, 0, time.UTC)
+	server := apiServer{Ops: opshttp.Handler{
+		ActorID: func(context.Context) (int64, bool) { return 17, true },
+		Metrics: apiServerMetricsReader{points: []metricsapp.Point{{At: at, Value: 12}}},
+		Now:     func() time.Time { return time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC) },
+	}}
+	response, err := server.GetAdminMetrics(context.Background(), gen.GetAdminMetricsRequestObject{Params: gen.GetAdminMetricsParams{
+		Series: gen.GetAdminMetricsParamsSeriesQueueJobsAvailable,
+		Queue:  "default", Role: "scheduler", Node: "node-1",
+		From: time.Date(2026, 11, 11, 8, 0, 0, 0, time.UTC), To: time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC),
+		Step: gen.GetAdminMetricsParamsStepN1M,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, ok := response.(gen.GetAdminMetrics200JSONResponse)
+	if !ok || len(body.Points) != 1 || body.Points[0].At != at || body.Points[0].Value != 12 {
+		t.Fatalf("response=%T %+v", response, response)
+	}
+}
+
 type sharingRepositoryStub struct{ got sharingdomain.Setting }
 
 func (r *sharingRepositoryStub) Set(_ context.Context, setting sharingdomain.Setting) (sharingdomain.Setting, error) {
@@ -56,3 +79,9 @@ func (r *sharingRepositoryStub) Set(_ context.Context, setting sharingdomain.Set
 type opsStatusStub struct{ value ops.Status }
 
 func (s opsStatusStub) Status(context.Context) (ops.Status, error) { return s.value, nil }
+
+type apiServerMetricsReader struct{ points []metricsapp.Point }
+
+func (r apiServerMetricsReader) ReadSeries(context.Context, metricsapp.SeriesQuery) ([]metricsapp.Point, error) {
+	return r.points, nil
+}
