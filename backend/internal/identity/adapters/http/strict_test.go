@@ -94,6 +94,59 @@ func TestStrictHandlerLeavesCrawlControlsToCrawl(t *testing.T) {
 	}
 }
 
+func TestStrictHandlerLeavesCatalogReadsToCatalog(t *testing.T) {
+	handler := StrictHandler{}
+	if _, err := handler.ListPeople(t.Context(), gen.ListPeopleRequestObject{}); !errors.Is(err, errCatalogServedByCatalog) {
+		t.Fatalf("list people error = %v", err)
+	}
+	if _, err := handler.GetPerson(t.Context(), gen.GetPersonRequestObject{}); !errors.Is(err, errCatalogServedByCatalog) {
+		t.Fatalf("get person error = %v", err)
+	}
+	if _, err := handler.ListPersonPhotos(t.Context(), gen.ListPersonPhotosRequestObject{}); !errors.Is(err, errCatalogServedByCatalog) {
+		t.Fatalf("list person photos error = %v", err)
+	}
+	if _, err := handler.ListFavorites(t.Context(), gen.ListFavoritesRequestObject{}); !errors.Is(err, errCatalogServedByCatalog) {
+		t.Fatalf("list favorites error = %v", err)
+	}
+	if _, err := handler.ListAlbums(t.Context(), gen.ListAlbumsRequestObject{}); !errors.Is(err, errCatalogServedByCatalog) {
+		t.Fatalf("list albums error = %v", err)
+	}
+	if _, err := handler.ListAlbumPhotos(t.Context(), gen.ListAlbumPhotosRequestObject{}); !errors.Is(err, errCatalogServedByCatalog) {
+		t.Fatalf("list album photos error = %v", err)
+	}
+	if _, err := handler.GetPhoto(t.Context(), gen.GetPhotoRequestObject{}); !errors.Is(err, errCatalogServedByCatalog) {
+		t.Fatalf("get photo error = %v", err)
+	}
+}
+
+func TestStrictHandlerLeavesDownloadsToMedia(t *testing.T) {
+	handler := StrictHandler{}
+	if _, err := handler.CreateDownload(t.Context(), gen.CreateDownloadRequestObject{}); !errors.Is(err, errDownloadsServedByMedia) {
+		t.Fatalf("create download error = %v", err)
+	}
+	if _, err := handler.GetDownloadParts(t.Context(), gen.GetDownloadPartsRequestObject{}); !errors.Is(err, errDownloadsServedByMedia) {
+		t.Fatalf("get download parts error = %v", err)
+	}
+	if _, err := handler.MarkDownloadPartFetched(t.Context(), gen.MarkDownloadPartFetchedRequestObject{}); !errors.Is(err, errDownloadsServedByMedia) {
+		t.Fatalf("mark download part fetched error = %v", err)
+	}
+	if _, err := handler.RetryFailedDownload(t.Context(), gen.RetryFailedDownloadRequestObject{}); !errors.Is(err, errDownloadsServedByMedia) {
+		t.Fatalf("retry failed download error = %v", err)
+	}
+}
+
+func TestStrictHandlerLeavesEventStreamToPlatform(t *testing.T) {
+	if _, err := (StrictHandler{}).StreamEvents(t.Context(), gen.StreamEventsRequestObject{}); !errors.Is(err, errEventsServedByPlatform) {
+		t.Fatalf("stream events error = %v", err)
+	}
+}
+
+func TestStrictHandlerLeavesSharingToSharing(t *testing.T) {
+	if _, err := (StrictHandler{}).PutMeSharing(t.Context(), gen.PutMeSharingRequestObject{}); !errors.Is(err, errSharingServedBySharing) {
+		t.Fatalf("sharing error = %v", err)
+	}
+}
+
 func TestStrictHandlerLeavesQuotaToQuota(t *testing.T) {
 	handler := StrictHandler{}
 	if _, err := handler.GetKeyQuota(t.Context(), gen.GetKeyQuotaRequestObject{}); !errors.Is(err, errQuotaServedByQuota) {
@@ -119,6 +172,9 @@ func TestStrictHandlerLeavesOpsToOps(t *testing.T) {
 
 func TestStrictHandlerLeavesFeatureFlagsToSettings(t *testing.T) {
 	handler := StrictHandler{}
+	if _, err := handler.GetAdminFlag(t.Context(), gen.GetAdminFlagRequestObject{}); !errors.Is(err, errFeatureFlagsServedBySettings) {
+		t.Fatalf("get flag error = %v", err)
+	}
 	if _, err := handler.GetAdminFlags(t.Context(), gen.GetAdminFlagsRequestObject{}); !errors.Is(err, errFeatureFlagsServedBySettings) {
 		t.Fatalf("get flags error = %v", err)
 	}

@@ -1249,7 +1249,7 @@ export const GetAdminFlagsResponseItem = zod.object({
     )
     .optional()
     .describe(
-      'Relations: self, authentication-options, me, events, keys, flickr-accounts, people, albums, favorites, users, plans, flags. Only available relations are present. During additive migration these point to existing routes; later slices replace their targets.',
+      'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
     ),
 });
 export const GetAdminFlagsResponse = zod.array(GetAdminFlagsResponseItem);
@@ -1294,7 +1294,7 @@ export const UpdateAdminFlagsBody = zod.object({
           )
           .optional()
           .describe(
-            'Relations: self, authentication-options, me, events, keys, flickr-accounts, people, albums, favorites, users, plans, flags. Only available relations are present. During additive migration these point to existing routes; later slices replace their targets.',
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
           ),
       }),
     )
@@ -1354,7 +1354,7 @@ export const GetAdminFlagResponse = zod.object({
           }),
         )
         .describe(
-          'Relations: self, authentication-options, me, events, keys, flickr-accounts, people, albums, favorites, users, plans, flags. Only available relations are present. During additive migration these point to existing routes; later slices replace their targets.',
+          'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
         ),
     })
     .and(
@@ -1373,7 +1373,7 @@ export const GetAdminFlagResponse = zod.object({
             }),
           )
           .describe(
-            'Relations: self, authentication-options, me, events, keys, flickr-accounts, people, albums, favorites, users, plans, flags. Only available relations are present. During additive migration these point to existing routes; later slices replace their targets.',
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
           ),
       }),
     ),

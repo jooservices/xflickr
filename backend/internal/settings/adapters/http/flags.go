@@ -119,13 +119,8 @@ func (response flagReadResponse) VisitGetAdminFlagResponse(w http.ResponseWriter
 		Audience: response.flag.Audience,
 		UserIDs:  append([]int64{}, response.flag.UserIDs...),
 	}
-	representation, err := json.Marshal(public)
-	if err != nil {
-		return response.writeProblem(w, rest.NewProblem("internal-error", "Feature flag storage is unavailable", nil))
-	}
 	href := "/api/v1/admin/flags/" + url.PathEscape(response.name)
 	method := gen.LinkMethod("GET")
-	w.Header().Set("ETag", rest.ETag(representation))
 	data := gen.RESTFeatureFlag{
 		Name:     public.Name,
 		Enabled:  public.Enabled,
@@ -133,7 +128,27 @@ func (response flagReadResponse) VisitGetAdminFlagResponse(w http.ResponseWriter
 		UserIds:  public.UserIDs,
 		Links:    gen.Links{Self: gen.Link{Href: href, Method: &method}},
 	}
-	return rest.WriteSuccess(w, http.StatusOK, "Success", data, nil, response.traceID)
+	body := gen.RESTFeatureFlagEnvelope{
+		Code:    http.StatusOK,
+		Data:    data,
+		Errors:  nil,
+		Message: "Success",
+		Meta:    map[string]interface{}{},
+		Success: gen.RESTFeatureFlagEnvelopeSuccessTrue,
+		TraceID: response.traceID,
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return response.writeProblem(w, rest.NewProblem("internal-error", "Feature flag storage is unavailable", nil))
+	}
+	encoded = append(encoded, '\n')
+	return (gen.GetAdminFlag200JSONResponse{
+		Body: body,
+		Headers: gen.GetAdminFlag200ResponseHeaders{
+			CacheControl: "private, no-store",
+			ETag:         rest.ETag(encoded),
+		},
+	}).VisitGetAdminFlagResponse(w)
 }
 
 func (response flagReadResponse) writeProblem(w http.ResponseWriter, problem *rest.Problem) error {

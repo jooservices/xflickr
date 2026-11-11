@@ -116,24 +116,23 @@ func TestGetAdminFlag(t *testing.T) {
 	if first.Header().Get("ETag") == "" || first.Header().Get("ETag") != second.Header().Get("ETag") {
 		t.Fatalf("unchanged representation ETags = %q / %q", first.Header().Get("ETag"), second.Header().Get("ETag"))
 	}
-	public := struct {
-		Name     string              `json:"name"`
-		Enabled  bool                `json:"enabled"`
-		Audience domain.FlagAudience `json:"audience"`
-		UserIDs  []int64             `json:"user_ids"`
-	}{Name: base.Name, Enabled: base.Enabled, Audience: base.Audience, UserIDs: []int64{}}
-	encoded, err := json.Marshal(public)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := first.Header().Get("ETag"), rest.ETag(encoded); got != want {
-		t.Fatalf("ETag = %q, want public representation validator %q", got, want)
+	if got, want := first.Header().Get("ETag"), rest.ETag(first.Body.Bytes()); got != want {
+		t.Fatalf("ETag = %q, want full response validator %q", got, want)
 	}
 
 	traceContext := trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{1}}))
 	traced := mustVisitFlagResponse(t, handler, traceContext, base.Name)
-	if traced.Header().Get("ETag") != first.Header().Get("ETag") {
-		t.Fatalf("trace id changed representation ETag: %q / %q", first.Header().Get("ETag"), traced.Header().Get("ETag"))
+	var tracedBody struct {
+		TraceID string `json:"trace_id"`
+	}
+	if err := json.Unmarshal(traced.Body.Bytes(), &tracedBody); err != nil {
+		t.Fatal(err)
+	}
+	if tracedBody.TraceID == body.TraceID || traced.Header().Get("ETag") == first.Header().Get("ETag") {
+		t.Fatalf("trace changed body without changing ETag: first=%q/%q traced=%q/%q", body.TraceID, first.Header().Get("ETag"), tracedBody.TraceID, traced.Header().Get("ETag"))
+	}
+	if got, want := traced.Header().Get("ETag"), rest.ETag(traced.Body.Bytes()); got != want {
+		t.Fatalf("traced ETag = %q, want full response validator %q", got, want)
 	}
 
 	for _, changed := range []domain.FeatureFlag{

@@ -13,10 +13,10 @@ the normal CSRF token. There is no feature flag UI in this scope.
 Names are 1–128 characters and match `^[a-z][a-z0-9_.-]{0,127}$`. The read
 queries PostgreSQL by the flag primary key, so it reflects updates immediately
 without using the 30-second snapshot cache. It returns the standard success
-envelope, a `self` GET link, a strong ETag over `name`, `enabled`, `audience`
-and `user_ids` in that order, and `Cache-Control: private, no-store`. Empty
-`user_ids` values are represented as `[]`; the ETag excludes links and envelope
-metadata. Query parameters are not supported.
+envelope, a `self` GET link, a strong ETag over the complete response bytes, and
+`Cache-Control: private, no-store`. The validator includes the trace ID, links,
+and envelope metadata. Empty `user_ids` values are represented as `[]`. Query
+parameters are not supported.
 
 The `FeatureFlags` service caches flag definitions for up to 30 seconds. A
 successful update clears the cache in the current process immediately; other
