@@ -40,6 +40,9 @@ type photoTx struct {
 	queued                      bool
 	active                      int
 	sizeActive                  int
+	capacityReached             bool
+	sizeCapacityReached         bool
+	capacityQuery               string
 	committed                   bool
 }
 
@@ -48,7 +51,11 @@ func (t *photoTx) Exec(context.Context, string, ...any) (pgconn.CommandTag, erro
 }
 
 func (t *photoTx) QueryRow(_ context.Context, query string, _ ...any) pgx.Row {
-	return photoRow{tx: t, activeQuery: strings.Contains(query, "count(*)") && strings.Contains(query, "FROM river_job")}
+	activeQuery := strings.Contains(query, "FROM river_job") && !strings.Contains(query, "dedupe_key")
+	if activeQuery {
+		t.capacityQuery = query
+	}
+	return photoRow{tx: t, activeQuery: activeQuery}
 }
 func (t *photoTx) Commit(context.Context) error   { t.committed = true; return t.commitErr }
 func (t *photoTx) Rollback(context.Context) error { return nil }
@@ -60,8 +67,13 @@ type photoRow struct {
 
 func (r photoRow) Scan(dest ...any) error {
 	if r.activeQuery {
-		*dest[0].(*int) = r.tx.sizeActive
-		*dest[1].(*int) = r.tx.active
+		if strings.Contains(r.tx.capacityQuery, "count(*)") {
+			*dest[0].(*int) = r.tx.sizeActive
+			*dest[1].(*int) = r.tx.active
+		} else {
+			*dest[0].(*bool) = r.tx.sizeCapacityReached
+			*dest[1].(*bool) = r.tx.capacityReached
+		}
 		return r.tx.scanErr
 	}
 	*dest[0].(*bool) = r.tx.queued
@@ -97,9 +109,9 @@ func TestPhotoEnqueuerTransactionOutcomes(t *testing.T) {
 	}{
 		{name: "inserted", tx: &photoTx{}, wantOK: true, wantInserted: 1},
 		{name: "already queued", tx: &photoTx{queued: true}},
-		{name: "size ready cap", tx: &photoTx{active: 4, sizeActive: 4}, wantOK: false},
-		{name: "optional full cap", tx: &photoTx{active: 4}, wantOK: false, job: app.PhotoJob{PhotoID: 1, KeyID: 2, Facet: app.PhotoInfoFacet, DedupeKey: "photo:1:info"}},
-		{name: "sizes retain reservation", tx: &photoTx{active: 4}, wantOK: true, wantInserted: 1},
+		{name: "size ready cap", tx: &photoTx{capacityReached: true, sizeCapacityReached: true}, wantOK: false},
+		{name: "optional full cap", tx: &photoTx{capacityReached: true}, wantOK: false, job: app.PhotoJob{PhotoID: 1, KeyID: 2, Facet: app.PhotoInfoFacet, DedupeKey: "photo:1:info"}},
+		{name: "sizes retain reservation", tx: &photoTx{capacityReached: true}, wantOK: true, wantInserted: 1},
 		{name: "lock fails", tx: &photoTx{execErr: boom}, wantErr: boom},
 		{name: "check fails", tx: &photoTx{scanErr: boom}, wantErr: boom},
 		{name: "insert fails", tx: &photoTx{}, jobsErr: boom, wantErr: boom, wantInserted: 1},
@@ -119,6 +131,14 @@ func TestPhotoEnqueuerTransactionOutcomes(t *testing.T) {
 			ok, err := PhotoEnqueuer{Pool: txBegin{tt.tx}, Jobs: jobs, ReadyCap: cap}.EnqueuePhoto(t.Context(), currentJob)
 			if ok != tt.wantOK || !errors.Is(err, tt.wantErr) || jobs.inserted != tt.wantInserted {
 				t.Fatalf("EnqueuePhoto() = %v, %v with %d inserts", ok, err, jobs.inserted)
+			}
+			if cap > 0 && (strings.Contains(tt.tx.capacityQuery, "count(*)") ||
+				!strings.Contains(tt.tx.capacityQuery, "OFFSET") || !strings.Contains(tt.tx.capacityQuery, "LIMIT")) {
+				t.Fatalf("ready-cap query is not bounded: %s", tt.tx.capacityQuery)
+			}
+			if cap > 0 && (!strings.Contains(tt.tx.capacityQuery, "args->>'queue' IN ($3,$4)") ||
+				!strings.Contains(tt.tx.capacityQuery, "OFFSET $5::int")) {
+				t.Fatalf("ready-cap query does not preserve the photo queues: %s", tt.tx.capacityQuery)
 			}
 		})
 	}
