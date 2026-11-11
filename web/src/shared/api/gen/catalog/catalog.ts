@@ -29,8 +29,10 @@ import type {
   ListAlbumPhotosParams,
   ListAlbumsParams,
   ListFavoritesParams,
+  ListMyAlbumsParams,
   ListPeopleParams,
   ListPersonPhotosParams,
+  MyAlbumPage,
 } from '../models';
 
 import { customFetch } from '../../mutator';
@@ -669,6 +671,156 @@ export function useListFavorites<TData = Awaited<ReturnType<typeof listFavorites
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getListFavoritesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type listMyAlbumsResponse200 = {
+  data: MyAlbumPage;
+  status: 200;
+};
+
+export type listMyAlbumsResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type listMyAlbumsResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type listMyAlbumsResponse500 = {
+  data: Error;
+  status: 500;
+};
+
+export type listMyAlbumsResponseSuccess = listMyAlbumsResponse200 & {
+  headers: Headers;
+};
+export type listMyAlbumsResponseError = (
+  listMyAlbumsResponse400 | listMyAlbumsResponse401 | listMyAlbumsResponse500
+) & {
+  headers: Headers;
+};
+
+export type listMyAlbumsResponse = listMyAlbumsResponseSuccess | listMyAlbumsResponseError;
+
+export const getListMyAlbumsUrl = (params?: ListMyAlbumsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/me/albums?${stringifiedParams}` : `/me/albums`;
+};
+
+/**
+ * @summary List albums belonging to the signed-in user's contacts
+ */
+export const listMyAlbums = async (
+  params?: ListMyAlbumsParams,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<listMyAlbumsResponse> => {
+  return customFetch<listMyAlbumsResponse>(getListMyAlbumsUrl(params), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getListMyAlbumsQueryKey = (params?: ListMyAlbumsParams) => {
+  return [`/me/albums`, ...(params ? [params] : [])] as const;
+};
+
+export const getListMyAlbumsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listMyAlbums>>,
+  TError = Error,
+>(
+  params?: ListMyAlbumsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyAlbums>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListMyAlbumsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listMyAlbums>>> = ({ signal }) =>
+    listMyAlbums(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listMyAlbums>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListMyAlbumsQueryResult = NonNullable<Awaited<ReturnType<typeof listMyAlbums>>>;
+export type ListMyAlbumsQueryError = Error;
+
+export function useListMyAlbums<TData = Awaited<ReturnType<typeof listMyAlbums>>, TError = Error>(
+  params: undefined | ListMyAlbumsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyAlbums>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMyAlbums>>,
+          TError,
+          Awaited<ReturnType<typeof listMyAlbums>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListMyAlbums<TData = Awaited<ReturnType<typeof listMyAlbums>>, TError = Error>(
+  params?: ListMyAlbumsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyAlbums>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMyAlbums>>,
+          TError,
+          Awaited<ReturnType<typeof listMyAlbums>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListMyAlbums<TData = Awaited<ReturnType<typeof listMyAlbums>>, TError = Error>(
+  params?: ListMyAlbumsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyAlbums>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List albums belonging to the signed-in user's contacts
+ */
+
+export function useListMyAlbums<TData = Awaited<ReturnType<typeof listMyAlbums>>, TError = Error>(
+  params?: ListMyAlbumsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyAlbums>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListMyAlbumsQueryOptions(params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

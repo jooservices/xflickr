@@ -302,6 +302,63 @@ WHERE flickr_accounts.user_id=$1 AND flickr_accounts.status<>'revoked' AND ` + p
 	return page, nil
 }
 
+// ListContactAlbums reads bounded album metadata for the user's known contacts.
+func (r *Repository) ListContactAlbums(ctx context.Context, userID int64, cursor *app.AlbumCursor, limit int) (app.ContactAlbumsPage, error) {
+	if ctx == nil || r == nil || r.db == nil || userID <= 0 || limit < 1 || limit > app.MaxPageSize {
+		return app.ContactAlbumsPage{}, errors.New("catalog: invalid contact album read request")
+	}
+	query := `SELECT albums.id,albums.owner_nsid,albums.title,albums.photos_count,albums.updated_at
+FROM albums
+WHERE EXISTS (SELECT 1 FROM contacts
+JOIN flickr_accounts ON flickr_accounts.nsid=contacts.person_nsid
+WHERE contacts.contact_nsid=albums.owner_nsid AND flickr_accounts.user_id=$1
+AND flickr_accounts.status<>'revoked')`
+	args := []any{userID}
+	if cursor != nil {
+		if cursor.ID == "" {
+			return app.ContactAlbumsPage{}, app.ErrInvalidCursor
+		}
+		if cursor.UpdatedAt == nil {
+			query += ` AND albums.updated_at IS NULL AND albums.id<$2`
+			args = append(args, cursor.ID, limit+1)
+			query += ` ORDER BY albums.updated_at DESC NULLS LAST,albums.id DESC LIMIT $3`
+		} else {
+			query += ` AND ((albums.updated_at < $2) OR albums.updated_at IS NULL OR (albums.updated_at=$2 AND albums.id<$3))`
+			args = append(args, *cursor.UpdatedAt, cursor.ID, limit+1)
+			query += ` ORDER BY albums.updated_at DESC NULLS LAST,albums.id DESC LIMIT $4`
+		}
+	} else {
+		query += ` ORDER BY albums.updated_at DESC NULLS LAST,albums.id DESC LIMIT $2`
+		args = append(args, limit+1)
+	}
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return app.ContactAlbumsPage{}, fmt.Errorf("catalog: list contact albums: %w", err)
+	}
+	defer rows.Close()
+	page := app.ContactAlbumsPage{Items: make([]app.ContactAlbum, 0, limit)}
+	for rows.Next() {
+		var album app.ContactAlbum
+		var updated pgtype.Timestamptz
+		if err := rows.Scan(&album.ID, &album.OwnerNSID, &album.Title, &album.TotalCount, &updated); err != nil {
+			return app.ContactAlbumsPage{}, fmt.Errorf("catalog: scan contact album: %w", err)
+		}
+		if updated.Valid {
+			album.UpdatedAt = &updated.Time
+		}
+		page.Items = append(page.Items, album)
+	}
+	if err := rows.Err(); err != nil {
+		return app.ContactAlbumsPage{}, fmt.Errorf("catalog: list contact albums: %w", err)
+	}
+	if len(page.Items) > limit {
+		last := page.Items[limit-1]
+		page.Items = page.Items[:limit]
+		page.NextCursor = &app.AlbumCursor{UpdatedAt: last.UpdatedAt, ID: last.ID}
+	}
+	return page, nil
+}
+
 func (r *Repository) ListVisibleAlbumPhotos(ctx context.Context, userID int64, albumID string, predicate sharingapp.SQLPredicate, cursor *app.AlbumPhotoCursor, limit int) (app.AlbumPhotosPage, error) {
 	if err := validateRead(ctx, r, userID, predicate, limit); err != nil {
 		return app.AlbumPhotosPage{}, err

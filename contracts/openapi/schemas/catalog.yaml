@@ -96,3 +96,22 @@ CatalogAlbumPage:
     items: { type: array, items: { $ref: '#/CatalogAlbum' } }
     next_cursor: { type: string }
   required: [items]
+
+MyAlbum:
+  type: object
+  additionalProperties: false
+  properties:
+    id: { type: string }
+    owner_nsid: { type: string }
+    title: { type: string }
+    total_count: { type: integer, format: int64, minimum: 0, description: Flickr's public photoset count }
+    updated_at: { type: string, format: date-time }
+  required: [id, owner_nsid, title, total_count]
+
+MyAlbumPage:
+  type: object
+  additionalProperties: false
+  properties:
+    items: { type: array, items: { $ref: '#/MyAlbum' } }
+    next_cursor: { type: string }
+  required: [items]

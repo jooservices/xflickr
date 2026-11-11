@@ -878,6 +878,10 @@ func (s apiServer) ListAlbums(ctx context.Context, request gen.ListAlbumsRequest
 	return s.Catalog.ListAlbums(ctx, request)
 }
 
+func (s apiServer) ListMyAlbums(ctx context.Context, request gen.ListMyAlbumsRequestObject) (gen.ListMyAlbumsResponseObject, error) {
+	return s.Catalog.ListMyAlbums(ctx, request)
+}
+
 func (s apiServer) ListAlbumPhotos(ctx context.Context, request gen.ListAlbumPhotosRequestObject) (gen.ListAlbumPhotosResponseObject, error) {
 	return s.Catalog.ListAlbumPhotos(ctx, request)
 }

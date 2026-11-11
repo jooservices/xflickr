@@ -31,9 +31,11 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	personIDs := []string{user1NSID, user2NSID, hiddenNSID}
 	photoIDs := []int64{time.Now().UnixNano(), time.Now().UnixNano() + 1, time.Now().UnixNano() + 2}
 	albumID, hiddenAlbumID := suffix+"-album", suffix+"-hidden-album"
+	contactAlbumIDs := []string{suffix + "-contact-album-1", suffix + "-contact-album-2"}
 	var user1ID, user2ID, account1ID, account2ID int64
 	defer func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM albums WHERE id=ANY($1)`, []string{albumID, hiddenAlbumID})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=ANY($1) OR contact_nsid=ANY($1)`, personIDs)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM albums WHERE id=ANY($1)`, append([]string{albumID, hiddenAlbumID}, contactAlbumIDs...))
 		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=ANY($1)`, photoIDs)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, personIDs)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=ANY($1)`, []int64{user1ID, user2ID})
@@ -98,7 +100,12 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if err := repository.UpsertAlbumsBatch(ctx, []postgres.Album{
 		{ID: albumID, OwnerNSID: user1NSID, Title: "Mixed", PrimaryPhotoID: &photoIDs[2], PhotosCount: 2, UpdatedAt: now},
 		{ID: hiddenAlbumID, OwnerNSID: user1NSID, Title: "Hidden", PrimaryPhotoID: &photoIDs[2], PhotosCount: 1, UpdatedAt: now.Add(-time.Second)},
+		{ID: contactAlbumIDs[0], OwnerNSID: user2NSID, Title: "Contact with no stored photos", PhotosCount: 12, UpdatedAt: now},
+		{ID: contactAlbumIDs[1], OwnerNSID: user2NSID, Title: "Older contact album", PhotosCount: 0, UpdatedAt: now.Add(-time.Second)},
 	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid) VALUES($1,$2)`, user1NSID, user2NSID); err != nil {
 		t.Fatal(err)
 	}
 	if err := repository.UpsertAlbumPhotosBatch(ctx, []postgres.AlbumPhoto{
@@ -148,5 +155,13 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	}
 	if _, _, err := reads.ListAlbumPhotos(ctx, user1ID, hiddenAlbumID, "", 10); !errors.Is(err, app.ErrNotFound) {
 		t.Fatalf("hidden album error=%v", err)
+	}
+	contactPage, contactCursor, err := reads.ListContactAlbums(ctx, user1ID, "", 1)
+	if err != nil || len(contactPage.Items) != 1 || contactPage.Items[0].ID != contactAlbumIDs[0] || contactPage.Items[0].TotalCount != 12 || contactCursor == "" {
+		t.Fatalf("first contact album page=%+v cursor=%q err=%v", contactPage, contactCursor, err)
+	}
+	contactPage, _, err = reads.ListContactAlbums(ctx, user1ID, contactCursor, 10)
+	if err != nil || len(contactPage.Items) != 1 || contactPage.Items[0].ID != contactAlbumIDs[1] || contactPage.Items[0].TotalCount != 0 {
+		t.Fatalf("second contact album page=%+v err=%v", contactPage, err)
 	}
 }

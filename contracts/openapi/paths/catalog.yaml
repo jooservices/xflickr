@@ -74,6 +74,21 @@ albums:
       '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
       '500': { description: Catalog could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
 
+my_albums:
+  get:
+    operationId: listMyAlbums
+    tags: [catalog]
+    summary: List albums belonging to the signed-in user's contacts
+    security: [{ SessionCookie: [] }]
+    parameters:
+      - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
+      - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+    responses:
+      '200': { description: Contact album page, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/MyAlbumPage } } } }
+      '400': { description: Invalid page request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+      '500': { description: Catalog could not be read, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } } }
+
 album_photos:
   get:
     operationId: listAlbumPhotos
