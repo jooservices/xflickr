@@ -18,6 +18,8 @@
   closure, and critical incident notification events.
 - [Notifications panel](notifications-panel.md) — drawer dismissal, focus return,
   and deferred notification functionality.
+- [Notifications storage](notifications.md) — user ownership, schema, and
+  deferred notification behavior.
 - [Structured logging and telemetry](observability.md) — context fields, OTLP
   export, event helper, offline log spill behavior, and cheap crawl-health
   snapshot estimates / lock / timeout.
