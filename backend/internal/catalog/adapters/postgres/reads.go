@@ -72,37 +72,12 @@ func scanPhoto(row rowScanner) (app.Photo, error) {
 	return photo, nil
 }
 
-const maxVisiblePhotoCount = 1000
-
-func visiblePhotoCount(ownerNSID string, userID int64) string {
-	visibleObservation := sharingapp.VisiblePhotoObservation(userID)
-	return fmt.Sprintf(`(SELECT count(visible_photo.id)
-FROM (
-WITH candidate_photos AS MATERIALIZED (
-    SELECT photos.id, photos.visibility, photos.tombstoned_at
-    FROM photos
-    WHERE photos.owner_nsid=%s
-    ORDER BY photos.last_seen_at DESC
-    LIMIT %d
-)
-SELECT photos.id
-FROM candidate_photos AS photos
-WHERE photos.tombstoned_at IS NULL
-AND EXISTS (
-    SELECT 1 FROM observations o
-    WHERE o.record_kind='photo'
-    AND o.record_id=photos.id::text
-    AND %s
-)
-) AS visible_photo)`, ownerNSID, maxVisiblePhotoCount, visibleObservation.Expression)
-}
-
 func (r *Repository) ListPeople(ctx context.Context, userID int64, predicate sharingapp.SQLPredicate, cursor *app.PersonCursor, limit int) (app.PeoplePage, error) {
 	if err := validateRead(ctx, r, userID, predicate, limit); err != nil {
 		return app.PeoplePage{}, err
 	}
 	query := `SELECT people.nsid, people.username, people.realname, people.icon,
-` + visiblePhotoCount("people.nsid", userID) + `
+(SELECT count(*) FROM photos WHERE photos.owner_nsid=people.nsid AND photos.tombstoned_at IS NULL AND ` + predicate.Expression + `)
 FROM people
 WHERE ((EXISTS (SELECT 1 FROM observations o WHERE o.user_id=$1 AND o.record_kind='person' AND o.record_id=people.nsid))
 OR EXISTS (SELECT 1 FROM photos WHERE photos.owner_nsid=people.nsid AND photos.tombstoned_at IS NULL AND ` + predicate.Expression + `))`
@@ -149,7 +124,7 @@ func (r *Repository) GetPerson(ctx context.Context, userID int64, nsid string, p
 		return app.Person{}, false, err
 	}
 	query := `SELECT people.nsid, people.username, people.realname, people.icon,
-` + visiblePhotoCount("people.nsid", userID) + `
+(SELECT count(*) FROM photos WHERE photos.owner_nsid=people.nsid AND photos.tombstoned_at IS NULL AND ` + predicate.Expression + `)
 FROM people WHERE people.nsid=$2 AND (
 EXISTS (SELECT 1 FROM observations o WHERE o.user_id=$1 AND o.record_kind='person' AND o.record_id=people.nsid)
 OR EXISTS (SELECT 1 FROM photos WHERE photos.owner_nsid=people.nsid AND photos.tombstoned_at IS NULL AND ` + predicate.Expression + `))`
@@ -712,7 +687,6 @@ func (r *Repository) ListContacts(ctx context.Context, userID int64, cursor *app
 	LIMIT $3
 )
 SELECT p.nsid, p.username, p.realname, p.icon,
-` + visiblePhotoCount("contact_page.contact_nsid", userID) + `,
 	(SELECT c.person_nsid FROM contacts c
 	 WHERE c.contact_nsid=contact_page.contact_nsid AND EXISTS (
 		SELECT 1 FROM flickr_accounts fa
@@ -731,7 +705,7 @@ ORDER BY contact_page.contact_nsid ASC`
 	page := app.ContactsPage{Items: make([]app.Contact, 0, limit)}
 	for rows.Next() {
 		var item app.Contact
-		if err := rows.Scan(&item.NSID, &item.Username, &item.Realname, &item.Icon, &item.PhotosCount, &item.AccountNSID); err != nil {
+		if err := rows.Scan(&item.NSID, &item.Username, &item.Realname, &item.Icon, &item.AccountNSID); err != nil {
 			return app.ContactsPage{}, fmt.Errorf("catalog: scan contact: %w", err)
 		}
 		page.Items = append(page.Items, item)

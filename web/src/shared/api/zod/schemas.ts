@@ -2047,9 +2047,7 @@ export const ListPeopleResponse = zod.object({
       photos_count: zod
         .int()
         .min(listPeopleResponseItemsItemPhotosCountMin)
-        .describe(
-          'Count of photos visible to this user among at most 1,000 most recently seen photos',
-        ),
+        .describe('Count of photos visible to this user'),
     }),
   ),
   next_cursor: zod.string().optional(),
@@ -2068,8 +2066,6 @@ export const ListContactsQueryParams = zod.object({
   limit: zod.int().min(1).max(listContactsQueryLimitMax).default(listContactsQueryLimitDefault),
 });
 
-export const listContactsResponseItemsItemPhotosCountMin = 0;
-
 export const ListContactsResponse = zod.object({
   items: zod.array(
     zod.object({
@@ -2077,12 +2073,6 @@ export const ListContactsResponse = zod.object({
       username: zod.string(),
       realname: zod.string(),
       icon: zod.string(),
-      photos_count: zod
-        .int()
-        .min(listContactsResponseItemsItemPhotosCountMin)
-        .describe(
-          'Count of photos visible to this user among at most 1,000 most recently seen photos',
-        ),
       account_nsid: zod
         .string()
         .describe('Connected account through which this contact was discovered'),
@@ -2110,7 +2100,7 @@ export const GetPersonResponse = zod.object({
   photos_count: zod
     .int()
     .min(getPersonResponsePhotosCountMin)
-    .describe('Count of photos visible to this user among at most 1,000 most recently seen photos'),
+    .describe('Count of photos visible to this user'),
 });
 
 /**

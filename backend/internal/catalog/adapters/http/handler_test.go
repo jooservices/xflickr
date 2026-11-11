@@ -86,7 +86,7 @@ func (s *readRepoStub) ListContacts(_ context.Context, userID int64, cursor *app
 
 func TestListContactsRequiresAuthenticationAndReturnsPage(t *testing.T) {
 	repo := &readRepoStub{contacts: app.ContactsPage{
-		Items:      []app.Contact{{NSID: "friend@N00", Username: "friend", Realname: "Friend", Icon: "icon", PhotosCount: 9, AccountNSID: "account@N00"}},
+		Items:      []app.Contact{{NSID: "friend@N00", Username: "friend", Realname: "Friend", Icon: "icon", AccountNSID: "account@N00"}},
 		NextCursor: &app.ContactCursor{NSID: "friend@N00"},
 	}}
 	handler := Handler{
@@ -105,7 +105,7 @@ func TestListContactsRequiresAuthenticationAndReturnsPage(t *testing.T) {
 	if repo.contactUser != 71 || repo.lastLimit != limit || repo.contactCur != nil {
 		t.Fatalf("repository request = user:%d cursor:%+v limit:%d", repo.contactUser, repo.contactCur, repo.lastLimit)
 	}
-	if len(page.Items) != 1 || page.Items[0].Nsid != "friend@N00" || page.Items[0].Username != "friend" || page.Items[0].Realname != "Friend" || page.Items[0].Icon != "icon" || page.Items[0].PhotosCount != 9 || page.Items[0].AccountNsid != "account@N00" || page.NextCursor == nil || *page.NextCursor == "" {
+	if len(page.Items) != 1 || page.Items[0].Nsid != "friend@N00" || page.Items[0].Username != "friend" || page.Items[0].Realname != "Friend" || page.Items[0].Icon != "icon" || page.Items[0].AccountNsid != "account@N00" || page.NextCursor == nil || *page.NextCursor == "" {
 		t.Fatalf("contact page = %+v", page)
 	}
 	unauthenticated := Handler{Reads: app.ReadService{Repository: repo}}

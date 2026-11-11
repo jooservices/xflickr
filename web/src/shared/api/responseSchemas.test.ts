@@ -11,15 +11,12 @@ describe('ROUTES against the generated OpenAPI schemas', () => {
     expect(generated.length).toBeGreaterThan(20);
   });
 
-  it('describes bounded visible photo counts for contacts and people', () => {
-    const description =
-      'Count of photos visible to this user among at most 1,000 most recently seen photos';
-
-    expect(contract.ListContactsResponse.shape.items.element.shape.photos_count.description).toBe(
-      description,
+  it('keeps contact photo counts out of the response until cached stats are available', () => {
+    expect(contract.ListContactsResponse.shape.items.element.shape).not.toHaveProperty(
+      'photos_count',
     );
     expect(contract.ListPeopleResponse.shape.items.element.shape.photos_count.description).toBe(
-      description,
+      'Count of photos visible to this user',
     );
   });
 

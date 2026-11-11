@@ -36,14 +36,10 @@ relationship write,
 still commits without overwriting a real identity.
 
 The authenticated `GET /contacts` endpoint returns distinct contacts of the
-user's connected Flickr accounts with a keyset cursor. Person and contact photo
-counts inspect at most 1,000 most recently seen photos per owner before applying
-the shared visibility policy and excluding tombstones. A count can therefore be
-lower than the full visible total when an owner has more than 1,000 photos. This
-keeps permission checks bounded even when none of an owner's photos are visible.
-The query counts observed photo records instead of using the shared
-`people.photos_count` field. It uses the `contacts (contact_nsid, person_nsid)`
-index to select a bounded page before loading person details.
+user's connected Flickr accounts with a keyset cursor. It uses the
+`contacts (contact_nsid, person_nsid)` index to select a bounded page before
+loading person details. Per-contact photo counts are deferred until cached,
+user-scoped statistics are available in the JOOXF-327 follow-up.
 
 Size updates carry `none`, `provisional`, or `confirmed` status. A provisional
 response cannot replace confirmed sizes. Tombstone updates preserve the first

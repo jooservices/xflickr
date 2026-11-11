@@ -37,12 +37,7 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
 	}
-	planFixture := os.Getenv("XFLICKR_PLAN_FIXTURE") == "1"
-	timeout := 30 * time.Second
-	if planFixture {
-		timeout = 5 * time.Minute
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), timeout)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	pool := dbtest.Open(t, loadCatalogDatabase(t))
 	repository, err := postgres.New(pool)
@@ -136,31 +131,20 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	hiddenPhotoCount := 1200
-	if planFixture {
-		hiddenPhotoCount = 400_000
-	}
+	const hiddenPhotoCount = 1200
 	hiddenPhotoStart := time.Now().UnixNano() + 1_000_000
-	if planFixture {
-		if _, err := pool.Exec(ctx, `INSERT INTO photos (id, owner_nsid, last_update, visibility, raw, content_hash)
-			SELECT $1::bigint + n::bigint, $2, $3, 'private', '{}'::jsonb, decode(repeat('00', 32), 'hex')
-			FROM generate_series(0, $4::integer - 1) AS n`, hiddenPhotoStart, hiddenNSID, now, hiddenPhotoCount); err != nil {
-			t.Fatalf("insert plan fixture: %v", err)
+	hiddenPhotos := make([]domain.Photo, hiddenPhotoCount)
+	for i := range hiddenPhotos {
+		id := hiddenPhotoStart + int64(i)
+		hiddenPhotos[i] = domain.Photo{
+			ID: id, OwnerNSID: hiddenNSID, Title: "private", LastUpdate: now,
+			Visibility: domain.VisibilityPrivate, Raw: []byte(fmt.Sprintf(`{"id":%d}`, id)),
 		}
-	} else {
-		hiddenPhotos := make([]domain.Photo, hiddenPhotoCount)
-		for i := range hiddenPhotos {
-			id := hiddenPhotoStart + int64(i)
-			hiddenPhotos[i] = domain.Photo{
-				ID: id, OwnerNSID: hiddenNSID, Title: "private", LastUpdate: now,
-				Visibility: domain.VisibilityPrivate, Raw: []byte(fmt.Sprintf(`{"id":%d}`, id)),
-			}
-		}
-		for start := 0; start < len(hiddenPhotos); start += 500 {
-			end := min(start+500, len(hiddenPhotos))
-			if err := repository.UpsertPhotos(ctx, hiddenPhotos[start:end]); err != nil {
-				t.Fatal(err)
-			}
+	}
+	for start := 0; start < len(hiddenPhotos); start += 500 {
+		end := min(start+500, len(hiddenPhotos))
+		if err := repository.UpsertPhotos(ctx, hiddenPhotos[start:end]); err != nil {
+			t.Fatal(err)
 		}
 	}
 	photos := []domain.Photo{
@@ -191,62 +175,20 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	contacts, _, err := reads.ListContacts(ctx, user1ID, "", 10)
-	if err != nil {
-		t.Fatalf("list contacts: %v", err)
-	}
-	visibleContactCounts := make(map[string]int64, len(contacts.Items))
-	for _, contact := range contacts.Items {
-		visibleContactCounts[contact.NSID] = contact.PhotosCount
-	}
-	if visibleContactCounts[user2NSID] != 1 || visibleContactCounts[hiddenNSID] != 0 {
-		t.Fatalf("user one contact counts=%v; want one shared public photo and no private photos", visibleContactCounts)
-	}
-	capture := &contactsQueryCapture{DBTX: pool}
-	capturedRepository, err := postgres.New(capture)
+	contactsCapture := &contactsQueryCapture{DBTX: pool}
+	contactsRepository, err := postgres.New(contactsCapture)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := capturedRepository.ListContacts(ctx, user1ID, nil, 10); err != nil {
-		t.Fatalf("capture contacts query: %v", err)
-	}
-	planRows, err := pool.Query(ctx, "EXPLAIN (ANALYZE, BUFFERS) "+capture.query, capture.args...)
+	contacts, _, err := (app.ReadService{Repository: contactsRepository}).ListContacts(ctx, user1ID, "", 10)
 	if err != nil {
-		t.Fatalf("explain contacts query: %v", err)
+		t.Fatalf("list contacts: %v", err)
 	}
-	defer planRows.Close()
-	foundBoundedCandidates := false
-	for planRows.Next() {
-		var line string
-		if err := planRows.Scan(&line); err != nil {
-			t.Fatal(err)
-		}
-		if planFixture {
-			t.Log(line)
-			if strings.Contains(line, "Seq Scan on photos") {
-				t.Fatalf("photo count plan uses a sequential photo scan: %s", line)
-			}
-		}
-		if strings.Contains(line, "CTE Scan on candidate_photos") {
-			foundBoundedCandidates = true
-			rowCountAt := strings.Index(line, "rows=")
-			var actualRows int
-			if rowCountAt < 0 {
-				t.Fatalf("candidate plan lacks actual row count: %s", line)
-			}
-			if _, err := fmt.Sscanf(line[rowCountAt+len("rows="):], "%d", &actualRows); err != nil {
-				t.Fatalf("parse candidate plan row count from %q: %v", line, err)
-			}
-			if actualRows > 1000 {
-				t.Fatalf("candidate scan read %d rows, want at most 1000", actualRows)
-			}
-		}
+	if len(contacts.Items) != 2 {
+		t.Fatalf("contact count = %d, want 2 stored contacts", len(contacts.Items))
 	}
-	if err := planRows.Err(); err != nil {
-		t.Fatalf("read contacts query plan: %v", err)
-	}
-	if !foundBoundedCandidates {
-		t.Fatal("contacts query plan does not expose the bounded candidate scan")
+	if strings.Contains(contactsCapture.query, "photos") || strings.Contains(contactsCapture.query, "observations") {
+		t.Fatalf("contacts query must not count photos: %s", contactsCapture.query)
 	}
 	if err := repository.UpsertFavoritesBatch(ctx, []postgres.Favorite{
 		{PersonNSID: user1NSID, PhotoID: photoIDs[1], FaveDate: now},
@@ -661,69 +603,36 @@ func TestContactsKeysetPageUsesReverseIndexAndBoundedPlan(t *testing.T) {
 	}()
 	suffix := fmt.Sprintf("contacts-plan-%d", time.Now().UnixNano())
 	account := suffix + "-account"
-	const fixturePhotoCount = 400_000
-	const visiblePhotoCount = 1500
-	const sharedPhotoCount = 10
-	photoBase := time.Now().UnixNano()
-	contacts := make([]string, 5000)
-	for i := range contacts {
-		contacts[i] = fmt.Sprintf("%s-%05d", suffix, i)
+	contactPrefix := suffix + "-contact-"
+	const fixtureContactCount = 400_000
+	firstContacts := make([]string, 26)
+	for i := range firstContacts {
+		firstContacts[i] = fmt.Sprintf("%s%06d", contactPrefix, i)
 	}
-	unsharedAccount := suffix + "-unshared-account"
-	people := append([]string{account, unsharedAccount}, contacts...)
-	var userID, keyID, accountID, unsharedUserID, unsharedKeyID, unsharedAccountID int64
+	var userID, keyID int64
 	if err := tx.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration','user') RETURNING id`, suffix+"@example.invalid").Scan(&userID); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration','user') RETURNING id`, suffix+"-unshared@example.invalid").Scan(&unsharedUserID); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'test',$2,'{}',1000,10,20) RETURNING id`, userID, suffix+"-key").Scan(&keyID); err != nil {
 		t.Fatal(err)
 	}
-	if err := tx.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'account','{}','{}','ok') RETURNING id`, userID, keyID, account).Scan(&accountID); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'account','{}','{}','ok')`, userID, keyID, account); err != nil {
 		t.Fatal(err)
 	}
-	if err := tx.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'test',$2,'{}',1000,10,20) RETURNING id`, unsharedUserID, suffix+"-unshared-key").Scan(&unsharedKeyID); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, account); err != nil {
 		t.Fatal(err)
 	}
-	if err := tx.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'unshared-account','{}','{}','ok') RETURNING id`, unsharedUserID, unsharedKeyID, unsharedAccount).Scan(&unsharedAccountID); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO people(nsid,username)
+SELECT $1 || lpad(contact_number::text, 6, '0'), $1 || lpad(contact_number::text, 6, '0')
+FROM generate_series(0,$2::integer-1) AS fixture(contact_number)`, contactPrefix, fixtureContactCount); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO people(nsid,username) SELECT nsid,nsid FROM unnest($1::text[]) AS people(nsid)`, people); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid) SELECT $1, contact_nsid FROM unnest($2::text[]) AS contacts(contact_nsid)`, account, contacts); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(ctx, `INSERT INTO photos(id,owner_nsid,last_update,last_seen_at,visibility,raw,content_hash)
-SELECT $1::bigint + photo_number::bigint, $2,
-       now(),now() - photo_number::double precision * interval '1 microsecond',
-       CASE WHEN photo_number >= $3::bigint AND photo_number < $3::bigint + $4::bigint THEN 'public' ELSE 'private' END,
-       '{}'::jsonb,decode(repeat('00',32),'hex')
-FROM generate_series(0,$5::bigint-1) AS fixture(photo_number)`, photoBase, contacts[0], visiblePhotoCount, sharedPhotoCount, fixturePhotoCount); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id)
-	SELECT $1,$2,'photo',($3::bigint + photo_number::bigint)::text
-FROM generate_series(0,$4::bigint-1) AS fixture(photo_number)`, userID, accountID, photoBase, visiblePhotoCount); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id)
-	SELECT $1,$2,'photo',($3::bigint + photo_number::bigint)::text
-FROM generate_series(0,$4::bigint-1) AS fixture(photo_number)`, unsharedUserID, unsharedAccountID, photoBase, fixturePhotoCount); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(ctx, `UPDATE sharing_settings SET enabled=true WHERE user_id=$1`, unsharedUserID); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid)
+SELECT $1, $2 || lpad(contact_number::text, 6, '0')
+FROM generate_series(0,$3::integer-1) AS fixture(contact_number)`, account, contactPrefix, fixtureContactCount); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(ctx, `ANALYZE contacts`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(ctx, `ANALYZE photos`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(ctx, `ANALYZE observations`); err != nil {
 		t.Fatal(err)
 	}
 	captured := &contactsQueryCapture{DBTX: tx}
@@ -735,11 +644,11 @@ FROM generate_series(0,$4::bigint-1) AS fixture(photo_number)`, unsharedUserID, 
 	if err != nil || len(page.Items) != 25 || page.NextCursor == nil {
 		t.Fatalf("contacts page items=%d next=%v err=%v", len(page.Items), page.NextCursor, err)
 	}
-	if page.Items[0].NSID != contacts[0] || page.Items[0].PhotosCount != 1000 {
-		t.Fatalf("contact count = (%q,%d), want (%q,1000) capped visible photos", page.Items[0].NSID, page.Items[0].PhotosCount, contacts[0])
+	if page.Items[0].NSID != firstContacts[0] || page.Items[24].NSID != firstContacts[24] || page.NextCursor.NSID != firstContacts[24] {
+		t.Fatalf("contacts page first=%q last=%q cursor=%+v", page.Items[0].NSID, page.Items[24].NSID, page.NextCursor)
 	}
-	if page.Items[1].NSID != contacts[1] || page.Items[1].PhotosCount != 0 {
-		t.Fatalf("private shared-only contact count = (%q,%d), want (%q,0)", page.Items[1].NSID, page.Items[1].PhotosCount, contacts[1])
+	if strings.Contains(captured.query, "photos") || strings.Contains(captured.query, "observations") {
+		t.Fatalf("contacts page query must not count photos: %s", captured.query)
 	}
 	var plan []any
 	var raw []byte
@@ -767,77 +676,9 @@ FROM generate_series(0,$4::bigint-1) AS fixture(photo_number)`, unsharedUserID, 
 		t.Fatal(err)
 	}
 	planRows.Close()
-	t.Logf("contacts page and visible-photo count EXPLAIN (ANALYZE, BUFFERS):\n%s", strings.Join(explain, "\n"))
+	t.Logf("contacts keyset page EXPLAIN (ANALYZE, BUFFERS):\n%s", strings.Join(explain, "\n"))
 	if !contactsPagePlanBounded(plan) {
 		t.Fatal("contacts page plan did not stop after 26 indexed, distinct contact rows")
-	}
-	if scans := contactsPhotoPlanSeqScans(plan); len(scans) > 0 {
-		t.Fatalf("contacts visible-photo count plan uses sequential scans on large relations: %v", scans)
-	}
-	// Merge Append can prefetch one head row from each hash partition past the limit.
-	photoRowsExamined := contactsPlanRowsExamined(plan, "photos")
-	if photoRowsExamined > 1016 || photoRowsExamined == 0 {
-		t.Fatalf("contacts visible-photo count examined %.0f photo rows, want 1-1016 including partition heads", photoRowsExamined)
-	}
-	observationRowsExamined := contactsPlanRowsExamined(plan, "observations")
-	t.Logf("bounded contact count examined %.0f photo rows and %.0f observation rows", photoRowsExamined, observationRowsExamined)
-	if observationRowsExamined > 1000 || observationRowsExamined == 0 {
-		t.Fatalf("contacts visible-photo count examined %.0f observations, want 1-1000", observationRowsExamined)
-	}
-}
-
-func contactsPhotoPlanSeqScans(value any) []string {
-	switch node := value.(type) {
-	case []any:
-		var scans []string
-		for _, child := range node {
-			scans = append(scans, contactsPhotoPlanSeqScans(child)...)
-		}
-		return scans
-	case map[string]any:
-		relation, _ := node["Relation Name"].(string)
-		var scans []string
-		if node["Node Type"] == "Seq Scan" &&
-			(relation == "photos" || strings.HasPrefix(relation, "photos_p") ||
-				relation == "observations" || strings.HasPrefix(relation, "observations_p")) {
-			rows, _ := node["Actual Rows"].(float64)
-			loops, _ := node["Actual Loops"].(float64)
-			if loops > 0 {
-				scans = append(scans, fmt.Sprintf("%s rows=%.0f loops=%.0f", relation, rows, loops))
-			}
-		}
-		for _, child := range node {
-			scans = append(scans, contactsPhotoPlanSeqScans(child)...)
-		}
-		return scans
-	}
-	return nil
-}
-
-func contactsPlanRowsExamined(value any, relationPrefix string) float64 {
-	switch node := value.(type) {
-	case []any:
-		var rows float64
-		for _, child := range node {
-			rows += contactsPlanRowsExamined(child, relationPrefix)
-		}
-		return rows
-	case map[string]any:
-		relation, _ := node["Relation Name"].(string)
-		var rows float64
-		if relation == relationPrefix || strings.HasPrefix(relation, relationPrefix+"_p") {
-			actualRows, _ := node["Actual Rows"].(float64)
-			loops, _ := node["Actual Loops"].(float64)
-			removedByFilter, _ := node["Rows Removed by Filter"].(float64)
-			removedByRecheck, _ := node["Rows Removed by Index Recheck"].(float64)
-			rows += (actualRows + removedByFilter + removedByRecheck) * loops
-		}
-		for _, child := range node {
-			rows += contactsPlanRowsExamined(child, relationPrefix)
-		}
-		return rows
-	default:
-		return 0
 	}
 }
 

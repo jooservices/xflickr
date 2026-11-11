@@ -52,7 +52,7 @@ func (h Handler) ListContacts(ctx context.Context, request gen.ListContactsReque
 	for _, contact := range page.Items {
 		items = append(items, gen.CatalogContact{
 			Nsid: contact.NSID, Username: contact.Username, Realname: contact.Realname, Icon: contact.Icon,
-			PhotosCount: contact.PhotosCount, AccountNsid: contact.AccountNSID,
+			AccountNsid: contact.AccountNSID,
 		})
 	}
 	return gen.ListContacts200JSONResponse(gen.CatalogContactPage{Items: items, NextCursor: optionalString(next)}), nil

@@ -12,7 +12,7 @@ export interface CatalogPerson {
   realname: string;
   icon: string;
   /**
-   * Count of photos visible to this user among at most 1,000 most recently seen photos
+   * Count of photos visible to this user
    * @minimum 0
    */
   photos_count: number;

@@ -11,11 +11,6 @@ export interface CatalogContact {
   username: string;
   realname: string;
   icon: string;
-  /**
-   * Count of photos visible to this user among at most 1,000 most recently seen photos
-   * @minimum 0
-   */
-  photos_count: number;
   /** Connected account through which this contact was discovered */
   account_nsid: string;
 }

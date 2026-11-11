@@ -143,7 +143,6 @@ type Contact struct {
 	Username    string
 	Realname    string
 	Icon        string
-	PhotosCount int64
 	AccountNSID string
 }
 

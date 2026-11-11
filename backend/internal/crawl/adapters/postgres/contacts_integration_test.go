@@ -395,7 +395,7 @@ func TestListContactsFromStoredRelationships(t *testing.T) {
 	if err != nil || next != "" || len(page.Items) != 1 {
 		t.Fatalf("page=%+v next=%q err=%v", page, next, err)
 	}
-	if item := page.Items[0]; item.NSID != contact || item.Username != "friend" || item.Realname != "Friend" || item.PhotosCount != 0 || item.AccountNSID != account {
+	if item := page.Items[0]; item.NSID != contact || item.Username != "friend" || item.Realname != "Friend" || item.AccountNSID != account {
 		t.Fatalf("contact = %+v", item)
 	}
 }

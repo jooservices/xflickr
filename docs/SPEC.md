@@ -113,8 +113,8 @@ guide feature implementation; operational environment rules live in
 - Catalog read endpoints reuse the same visibility policy as other photo reads.
   Omit hidden photos from lists and answer hidden detail reads with 404, the
   same response as a missing row. Exclude tombstones and report only visible
-  photo counts where photo-backed counts are required. Person and contact counts
-  inspect at most the 1,000 most recently seen photos per owner before applying
+  photo counts for people and albums. Person counts inspect at most the 1,000
+  most recently seen photos per owner before applying
   visibility and tombstone filters. When an owner has more photos, counts can be
   lower than the full visible total; this bounds hidden-photo checks. Album-list
   counts include only visible photos. `/me/albums` requires
