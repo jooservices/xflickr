@@ -200,6 +200,22 @@ func TestListContactsPaginatesAndValidates(t *testing.T) {
 	}
 }
 
+func TestContactPhotoCountsBoundCandidatesBeforeVisibility(t *testing.T) {
+	db := &readsDB{rows: &readsRows{}}
+	repository, err := New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ListContacts(t.Context(), 88, nil, 10); err != nil {
+		t.Fatal(err)
+	}
+	limitAt := strings.Index(db.query, "LIMIT 1000")
+	visibilityAt := strings.Index(db.query, "WHERE photos.tombstoned_at IS NULL")
+	if !strings.Contains(db.query, "WITH candidate_photos AS MATERIALIZED") || limitAt < 0 || visibilityAt < 0 || limitAt > visibilityAt {
+		t.Fatalf("contact photo candidates must be limited before visibility filtering: %s", db.query)
+	}
+}
+
 func TestVisibleReadsValidatePolicyAndPaginatePeopleAndPhotos(t *testing.T) {
 	ctx := context.Background()
 	const userID int64 = 72

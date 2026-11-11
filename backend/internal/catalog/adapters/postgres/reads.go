@@ -78,18 +78,23 @@ func visiblePhotoCount(ownerNSID string, userID int64) string {
 	visibleObservation := sharingapp.VisiblePhotoObservation(userID)
 	return fmt.Sprintf(`(SELECT count(visible_photo.id)
 FROM (
+WITH candidate_photos AS MATERIALIZED (
+    SELECT photos.id, photos.visibility, photos.tombstoned_at
+    FROM photos
+    WHERE photos.owner_nsid=%s
+    ORDER BY photos.last_seen_at DESC
+    LIMIT %d
+)
 SELECT photos.id
-FROM photos
-WHERE photos.owner_nsid=%s
-AND photos.tombstoned_at IS NULL
+FROM candidate_photos AS photos
+WHERE photos.tombstoned_at IS NULL
 AND EXISTS (
     SELECT 1 FROM observations o
     WHERE o.record_kind='photo'
     AND o.record_id=photos.id::text
     AND %s
 )
-LIMIT %d
-) AS visible_photo)`, ownerNSID, visibleObservation.Expression, maxVisiblePhotoCount)
+) AS visible_photo)`, ownerNSID, maxVisiblePhotoCount, visibleObservation.Expression)
 }
 
 func (r *Repository) ListPeople(ctx context.Context, userID int64, predicate sharingapp.SQLPredicate, cursor *app.PersonCursor, limit int) (app.PeoplePage, error) {

@@ -37,7 +37,12 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	planFixture := os.Getenv("XFLICKR_PLAN_FIXTURE") == "1"
+	timeout := 30 * time.Second
+	if planFixture {
+		timeout = 5 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
 	pool := dbtest.Open(t, loadCatalogDatabase(t))
 	repository, err := postgres.New(pool)
@@ -68,13 +73,24 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 		suffix + "-contact-album-null-2",
 	}
 	var user1ID, user2ID, account1ID, account1SecondID, account1ThirdID, account2ID int64
-	defer func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=ANY($1) OR contact_nsid=ANY($1)`, personIDs)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM albums WHERE id=ANY($1)`, append([]string{albumID, hiddenAlbumID}, contactAlbumIDs...))
-		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=ANY($1)`, append(cleanupPhotoIDs, extraPhotoIDs...))
-		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, personIDs)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=ANY($1)`, []int64{user1ID, user2ID})
-	}()
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM contacts WHERE person_nsid=ANY($1) OR contact_nsid=ANY($1)`, personIDs); err != nil {
+			t.Errorf("delete contacts fixture: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM albums WHERE id=ANY($1)`, append([]string{albumID, hiddenAlbumID}, contactAlbumIDs...)); err != nil {
+			t.Errorf("delete albums fixture: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM photos WHERE owner_nsid=ANY($1) OR id=ANY($2)`, personIDs, append(cleanupPhotoIDs, extraPhotoIDs...)); err != nil {
+			t.Errorf("delete photos fixture: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM people WHERE nsid=ANY($1)`, personIDs); err != nil {
+			t.Errorf("delete people fixture: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM users WHERE id=ANY($1)`, []int64{user1ID, user2ID}); err != nil {
+			t.Errorf("delete users fixture: %v", err)
+		}
+	})
 	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration','user') RETURNING id`, suffix+"-u1@example.invalid").Scan(&user1ID); err != nil {
 		t.Fatal(err)
 	}
@@ -120,6 +136,33 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
+	hiddenPhotoCount := 1200
+	if planFixture {
+		hiddenPhotoCount = 400_000
+	}
+	hiddenPhotoStart := time.Now().UnixNano() + 1_000_000
+	if planFixture {
+		if _, err := pool.Exec(ctx, `INSERT INTO photos (id, owner_nsid, last_update, visibility, raw, content_hash)
+			SELECT $1::bigint + n::bigint, $2, $3, 'private', '{}'::jsonb, decode(repeat('00', 32), 'hex')
+			FROM generate_series(0, $4::integer - 1) AS n`, hiddenPhotoStart, hiddenNSID, now, hiddenPhotoCount); err != nil {
+			t.Fatalf("insert plan fixture: %v", err)
+		}
+	} else {
+		hiddenPhotos := make([]domain.Photo, hiddenPhotoCount)
+		for i := range hiddenPhotos {
+			id := hiddenPhotoStart + int64(i)
+			hiddenPhotos[i] = domain.Photo{
+				ID: id, OwnerNSID: hiddenNSID, Title: "private", LastUpdate: now,
+				Visibility: domain.VisibilityPrivate, Raw: []byte(fmt.Sprintf(`{"id":%d}`, id)),
+			}
+		}
+		for start := 0; start < len(hiddenPhotos); start += 500 {
+			end := min(start+500, len(hiddenPhotos))
+			if err := repository.UpsertPhotos(ctx, hiddenPhotos[start:end]); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	photos := []domain.Photo{
 		{ID: photoIDs[0], OwnerNSID: user1NSID, Title: "private to one", LastUpdate: now, Visibility: domain.VisibilityPrivate, Raw: []byte(`{"id":1}`)},
 		{ID: photoIDs[1], OwnerNSID: user2NSID, Title: "shared public", LastUpdate: now.Add(-time.Second), Visibility: domain.VisibilityPublic, Tags: []string{"shared"}, Sizes: []byte(`[{"label":"Large","width":1200,"height":800}]`), SizesStatus: domain.SizesConfirmed, Raw: []byte(`{"id":2}`)},
@@ -158,6 +201,52 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	}
 	if visibleContactCounts[user2NSID] != 1 || visibleContactCounts[hiddenNSID] != 0 {
 		t.Fatalf("user one contact counts=%v; want one shared public photo and no private photos", visibleContactCounts)
+	}
+	capture := &contactsQueryCapture{DBTX: pool}
+	capturedRepository, err := postgres.New(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := capturedRepository.ListContacts(ctx, user1ID, nil, 10); err != nil {
+		t.Fatalf("capture contacts query: %v", err)
+	}
+	planRows, err := pool.Query(ctx, "EXPLAIN (ANALYZE, BUFFERS) "+capture.query, capture.args...)
+	if err != nil {
+		t.Fatalf("explain contacts query: %v", err)
+	}
+	defer planRows.Close()
+	foundBoundedCandidates := false
+	for planRows.Next() {
+		var line string
+		if err := planRows.Scan(&line); err != nil {
+			t.Fatal(err)
+		}
+		if planFixture {
+			t.Log(line)
+			if strings.Contains(line, "Seq Scan on photos") {
+				t.Fatalf("photo count plan uses a sequential photo scan: %s", line)
+			}
+		}
+		if strings.Contains(line, "CTE Scan on candidate_photos") {
+			foundBoundedCandidates = true
+			rowCountAt := strings.Index(line, "rows=")
+			var actualRows int
+			if rowCountAt < 0 {
+				t.Fatalf("candidate plan lacks actual row count: %s", line)
+			}
+			if _, err := fmt.Sscanf(line[rowCountAt+len("rows="):], "%d", &actualRows); err != nil {
+				t.Fatalf("parse candidate plan row count from %q: %v", line, err)
+			}
+			if actualRows > 1000 {
+				t.Fatalf("candidate scan read %d rows, want at most 1000", actualRows)
+			}
+		}
+	}
+	if err := planRows.Err(); err != nil {
+		t.Fatalf("read contacts query plan: %v", err)
+	}
+	if !foundBoundedCandidates {
+		t.Fatal("contacts query plan does not expose the bounded candidate scan")
 	}
 	if err := repository.UpsertFavoritesBatch(ctx, []postgres.Favorite{
 		{PersonNSID: user1NSID, PhotoID: photoIDs[1], FaveDate: now},
