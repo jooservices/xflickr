@@ -57,7 +57,7 @@ func (f *sizesClientFake) GetSizesClass(ctx context.Context, keyID int64, photoI
 func sizesRig() (Sizes, *sizesStoreFake, *sizesClientFake) {
 	checked := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
 	store := &sizesStoreFake{exists: true, photo: catalog.Photo{
-		ID: 40, LastUpdate: checked.Add(-time.Hour), SizesStatus: catalog.SizesProvisional,
+		ID: 40, LastUpdate: checked.Add(-time.Hour), Visibility: catalog.VisibilityPublic, SizesStatus: catalog.SizesProvisional,
 	}}
 	client := &sizesClientFake{sizes: []flickr.PhotoSize{{Label: "Original", Width: 100, Height: 80, Source: "https://example.test/original"}}}
 	handler := Sizes{Store: store, Flickr: client, Now: func() time.Time { return checked }}

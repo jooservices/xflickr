@@ -138,7 +138,7 @@ func (s *restrictionStates) RecordFailure(_ context.Context, a EntityAccess, _, 
 func restrictedRig() (Sizes, *sizesStoreFake, *restrictedSizesClient, *sizesAuthFake, *restrictionStates) {
 	checked := time.Date(2026, 11, 6, 10, 0, 0, 0, time.UTC)
 	store := &sizesStoreFake{exists: true, photo: catalog.Photo{
-		ID: 40, OwnerNSID: "owner@N00", LastUpdate: checked.Add(-time.Hour), SizesStatus: catalog.SizesProvisional,
+		ID: 40, OwnerNSID: "owner@N00", LastUpdate: checked.Add(-time.Hour), Visibility: catalog.VisibilityPublic, SizesStatus: catalog.SizesProvisional,
 	}}
 	client := &restrictedSizesClient{
 		anonymousErr: &flickr.CallError{Kind: flickr.ErrNotFound, Code: 1},
