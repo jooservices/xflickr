@@ -9,8 +9,16 @@ describe('runScenario', () => {
     const order: string[] = [];
     let releaseFirst!: () => void;
     let releaseSecond!: () => void;
-    const first = new Promise<void>((resolve) => { releaseFirst = resolve; });
-    const second = new Promise<void>((resolve) => { releaseSecond = resolve; });
+    let markSecondStarted!: () => void;
+    const secondStarted = new Promise<void>((resolve) => {
+      markSecondStarted = resolve;
+    });
+    const first = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const second = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
     const steps: readonly Step[] = [
       async (currentPage) => {
         expect(currentPage).toBe(page);
@@ -21,19 +29,26 @@ describe('runScenario', () => {
       async (currentPage) => {
         expect(currentPage).toBe(page);
         order.push('second started');
+        markSecondStarted();
         await second;
         order.push('second finished');
       },
     ];
-    const result = runScenario(page, steps).then(() => { order.push('scenario finished'); });
+    const result = runScenario(page, steps).then(() => {
+      order.push('scenario finished');
+    });
     expect(order).toEqual(['first started']);
     releaseFirst();
-    await first;
+    await secondStarted;
     expect(order).toEqual(['first started', 'first finished', 'second started']);
     releaseSecond();
     await result;
     expect(order).toEqual([
-      'first started', 'first finished', 'second started', 'second finished', 'scenario finished',
+      'first started',
+      'first finished',
+      'second started',
+      'second finished',
+      'scenario finished',
     ]);
   });
 
@@ -41,9 +56,16 @@ describe('runScenario', () => {
     const error = new Error('step failed');
     const order: string[] = [];
     const steps: readonly Step[] = [
-      async () => { order.push('first'); },
-      async () => { order.push('failure'); throw error; },
-      async () => { order.push('unreachable'); },
+      async () => {
+        order.push('first');
+      },
+      async () => {
+        order.push('failure');
+        throw error;
+      },
+      async () => {
+        order.push('unreachable');
+      },
     ];
     await expect(runScenario({} as Page, steps)).rejects.toBe(error);
     expect(order).toEqual(['first', 'failure']);

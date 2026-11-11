@@ -1,5 +1,7 @@
 import { expect } from '@playwright/test';
 
+import { signIn } from '../e2e/support/auth';
+import { runScenario } from '../e2e/support/scenario';
 import { mockApi, test } from './support';
 
 test.describe('user authentication', () => {
@@ -68,10 +70,7 @@ test.describe('user authentication', () => {
     await page.route('**/api/v1/sessions/current', (route) =>
       route.request().method() === 'DELETE' ? route.fulfill({ status: 204 }) : route.fallback(),
     );
-    await page.goto('/login');
-    await page.getByTestId('auth-login-email').fill('anna@example.test');
-    await page.getByTestId('auth-login-password').fill('password123');
-    await page.getByTestId('auth-login-submit').click();
+    await runScenario(page, [(p) => signIn(p, 'anna@example.test', 'password123')]);
     await expect(page).toHaveURL(/\/$/);
     await page.getByTestId('shell-avatar-button').click();
     await page.getByTestId('shell-avatar-sign-out').click();

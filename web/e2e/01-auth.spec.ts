@@ -10,6 +10,7 @@ import {
   signIn,
 } from './support/auth';
 import { expectNoErrorPage, monitor } from './support/monitor';
+import { runScenario } from './support/scenario';
 
 // The first registered user becomes the admin. These journeys run first and leave that admin in the database.
 test.describe.serial('authentication on the real stack', () => {
@@ -33,7 +34,7 @@ test.describe.serial('authentication on the real stack', () => {
   test('signs out and in again', async ({ page }) => {
     const watch = monitor(page);
     const { email, password } = adminCredentials();
-    await signIn(page, email, password);
+    await runScenario(page, [(currentPage) => signIn(currentPage, email, password)]);
     // The admin shell has no account menu and `/` sends an admin to it; a deep link opens the member's shell.
     await page.goto('/profile');
     await page.getByTestId('shell-avatar-button').click();
