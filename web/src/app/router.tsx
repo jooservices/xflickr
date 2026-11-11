@@ -13,6 +13,7 @@ import { ProfilePage } from '../pages/profile/ProfilePage';
 import { KeysPage } from '../pages/keys';
 import { SetupPage } from '../pages/setup/SetupPage';
 import { CrawlPage } from '../pages/crawl';
+import { QuotaPage } from '../pages/admin/quota';
 import { RouteErrorPage } from './ErrorBoundary';
 
 function userPageElement(path: string, labelKey: MessageKey) {
@@ -63,14 +64,20 @@ const userPages: RouteObject[] = [
 ];
 
 const adminPages: RouteObject[] = [
-  ...ADMIN_NAV.map((item): RouteObject =>
-    item.path === '/admin'
-      ? { index: true, element: <PlaceholderPage scope="admin" titleKey={item.labelKey} /> }
-      : {
-          path: item.path.slice('/admin/'.length),
-          element: <PlaceholderPage scope="admin" titleKey={item.labelKey} />,
-        },
-  ),
+  ...ADMIN_NAV.map((item): RouteObject => {
+    if (item.path === '/admin') {
+      return { index: true, element: <PlaceholderPage scope="admin" titleKey={item.labelKey} /> };
+    }
+    return {
+      path: item.path.slice('/admin/'.length),
+      element:
+        item.id === 'quota' ? (
+          <QuotaPage />
+        ) : (
+          <PlaceholderPage scope="admin" titleKey={item.labelKey} />
+        ),
+    };
+  }),
   { path: 'nodes/:id', element: <PlaceholderPage scope="admin" titleKey="admin.nav.nodes" /> },
   { path: '*', element: <UserNotFound /> },
 ];

@@ -62,7 +62,7 @@ describe('admin shell', () => {
     expect(screen.getByTestId('admin-shell')).toHaveAttribute('data-theme', 'dark');
   });
 
-  it.each(ADMIN_NAV)('routes $id to a placeholder page and highlights it', async (item) => {
+  it.each(ADMIN_NAV)('routes $id to its page and highlights it', async (item) => {
     renderApp({ session: adminSession, path: item.path });
 
     expect(await screen.findByTestId('admin-page')).toBeInTheDocument();

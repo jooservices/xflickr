@@ -24,7 +24,7 @@ test.describe('admin shell', () => {
     await mockApi(page, 'admin');
   });
 
-  test('navigates every rail item to its placeholder page', async ({ page }) => {
+  test('navigates every rail item to its page', async ({ page }) => {
     await page.goto('/admin');
     await expect(page.getByTestId('admin-rail')).toBeVisible();
     await expect(page.getByTestId('admin-shell')).toHaveAttribute('data-theme', 'dark');

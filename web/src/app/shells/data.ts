@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
-import { getAdminQuota } from '../../shared/api/gen/admin/admin';
+import type { AdminQuota } from '../../shared/api/gen/models';
 import { loadAccounts, loadKeys } from '../../features/keys/api';
+import { useAdminQuota } from '../../features/admin/quota';
 import type { ApiKey, FlickrAccount } from '../../shared/api/gen/models';
 
 /** Chrome data (docs/ui/views/*-shell.md), built from the contract endpoints the backend serves. */
@@ -33,10 +34,6 @@ export type AdminShellData = {
   generated_at: string;
 };
 
-function unavailable(what: string, status: number): Error {
-  return Object.assign(new Error(`Could not load ${what}`), { status });
-}
-
 /**
  * Badges and banners, assembled from the contract data the pages already load: the person's keys
  * and Flickr accounts give the attention banners. Notifications and downloads have no endpoint
@@ -65,10 +62,8 @@ export function summarize(keys: ApiKey[] | undefined, accounts: FlickrAccount[] 
 }
 
 /** Cluster footer and badges of the administrator shell, derived from the quota overview. */
-export async function loadAdminShell(signal?: AbortSignal): Promise<AdminShellData> {
-  const response = await getAdminQuota({ signal });
-  if (response.status !== 200) throw unavailable('the cluster state', response.status);
-  const keys = response.data.keys;
+function summarizeAdminQuota(quota: AdminQuota): AdminShellData {
+  const keys = quota.keys;
   const nodes = new Map<string, boolean>();
   for (const key of keys) nodes.set(key.node, (nodes.get(key.node) ?? false) || key.state === 'ok');
   const healthy = [...nodes.values()].filter(Boolean).length;
@@ -94,12 +89,6 @@ export async function loadAdminShell(signal?: AbortSignal): Promise<AdminShellDa
   };
 }
 
-export const REQUEST_TIMEOUT_MS = 10_000;
-
-function withTimeout(signal: AbortSignal): AbortSignal {
-  return AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]);
-}
-
 /** The query keys are the ones the keys and wizard pages use, so the shell adds no requests. */
 export function useShellSummary(enabled: boolean) {
   const keys = useQuery({
@@ -119,11 +108,10 @@ export function useShellSummary(enabled: boolean) {
 }
 
 export function useAdminShell(enabled: boolean) {
-  return useQuery({
-    queryKey: ['admin', 'shell'],
-    queryFn: ({ signal }) => loadAdminShell(withTimeout(signal)),
-    enabled,
-    retry: false,
-    refetchInterval: 10_000,
-  });
+  const query = useAdminQuota(enabled);
+  const data = useMemo(
+    () => (query.data === undefined ? undefined : summarizeAdminQuota(query.data)),
+    [query.data],
+  );
+  return { ...query, data };
 }

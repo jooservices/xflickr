@@ -34,5 +34,6 @@ export {
 export type { Locale, MessageKey, MessageParams, Translate } from './i18n';
 export { useTheme } from './theme';
 export type { Theme, ThemeRole } from './theme';
+export { LiveOffProvider, useLiveOff } from './live-mode';
 
 export const sharedLayer = 'shared';
