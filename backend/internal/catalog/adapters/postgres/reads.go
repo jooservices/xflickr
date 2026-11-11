@@ -164,14 +164,15 @@ func (r *Repository) ListVisibleFavorites(ctx context.Context, userID int64, pre
 	if err := validateRead(ctx, r, userID, predicate, limit); err != nil {
 		return app.FavoritesPage{}, err
 	}
-	query := `WITH visible_account_favorites AS MATERIALIZED (
-SELECT account_favorites.photo_id, account_favorites.fave_date
+	scanLimit := limit + 1
+	fetchLimit := scanLimit + 1
+	query := `WITH account_favorites AS MATERIALIZED (
+SELECT account_favorites.photo_id, account_favorites.fave_date, account_favorites.removed_at
 FROM (SELECT nsid FROM flickr_accounts WHERE user_id=$1 AND status<>'revoked') accounts
 CROSS JOIN LATERAL (
-SELECT favorites.photo_id, favorites.fave_date
-FROM favorites JOIN photos ON photos.id=favorites.photo_id
-WHERE favorites.person_nsid=accounts.nsid AND favorites.removed_at IS NULL
-AND photos.tombstoned_at IS NULL AND ` + predicate.Expression
+SELECT favorites.photo_id, favorites.fave_date, favorites.removed_at
+FROM favorites
+WHERE favorites.person_nsid=accounts.nsid`
 	args := append([]any(nil), predicate.Args...)
 	pageLimit := "$2"
 	if cursor != nil {
@@ -182,72 +183,110 @@ AND photos.tombstoned_at IS NULL AND ` + predicate.Expression
 		args = append(args, cursor.FaveDate, cursor.PhotoID)
 		pageLimit = "$4"
 	}
-	args = append(args, limit+1)
+	args = append(args, fetchLimit)
 	query += ` ORDER BY favorites.fave_date DESC,favorites.photo_id DESC LIMIT ` + pageLimit + `
-) account_favorites
-), favorites_page AS MATERIALIZED (
-SELECT photo_id, fave_date FROM visible_account_favorites
+ ) account_favorites
+), scan_page AS MATERIALIZED (
+SELECT photo_id, fave_date, removed_at FROM account_favorites
 ORDER BY fave_date DESC,photo_id DESC LIMIT ` + pageLimit + `
 )
-SELECT ` + photoReadColumns + `, favorites_page.fave_date
-FROM favorites_page JOIN photos ON photos.id=favorites_page.photo_id
-ORDER BY favorites_page.fave_date DESC,photos.id DESC`
+
+SELECT photo_id, fave_date, removed_at FROM scan_page
+ORDER BY fave_date DESC,photo_id DESC`
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
-		return app.FavoritesPage{}, fmt.Errorf("catalog: list visible favorites: %w", err)
+		return app.FavoritesPage{}, fmt.Errorf("catalog: scan favorite batch: %w", err)
 	}
-	defer rows.Close()
-	page := app.FavoritesPage{Items: make([]app.Favorite, 0, limit)}
+	scanned := make([]favoriteCandidate, 0, fetchLimit)
 	for rows.Next() {
-		var favorite app.Favorite
-		var faveDate pgtype.Timestamptz
-		photo, err := scanPhotoWithFavorite(rows, &faveDate)
-		if err != nil {
-			return app.FavoritesPage{}, fmt.Errorf("catalog: scan visible favorite: %w", err)
+		var candidate favoriteCandidate
+		if err := rows.Scan(&candidate.PhotoID, &candidate.FaveDate, &candidate.RemovedAt); err != nil {
+			rows.Close()
+			return app.FavoritesPage{}, fmt.Errorf("catalog: scan favorite batch: %w", err)
 		}
-		favorite.Photo = photo
-		favorite.FaveDate = faveDate.Time
-		page.Items = append(page.Items, favorite)
+		scanned = append(scanned, candidate)
 	}
-	if err := rows.Err(); err != nil {
-		return app.FavoritesPage{}, fmt.Errorf("catalog: list visible favorites: %w", err)
+	rowsErr := rows.Err()
+	rows.Close()
+	if rowsErr != nil {
+		return app.FavoritesPage{}, fmt.Errorf("catalog: scan favorite batch: %w", rowsErr)
+	}
+	more := len(scanned) > scanLimit
+	if more {
+		scanned = scanned[:scanLimit]
+	}
+	page := app.FavoritesPage{Items: make([]app.Favorite, 0, limit)}
+	if len(scanned) == 0 {
+		return page, nil
+	}
+
+	photoIDs := make([]int64, 0, len(scanned))
+	seenPhotoIDs := make(map[int64]struct{}, len(scanned))
+	for _, candidate := range scanned {
+		if candidate.RemovedAt.Valid {
+			continue
+		}
+		if _, ok := seenPhotoIDs[candidate.PhotoID]; ok {
+			continue
+		}
+		seenPhotoIDs[candidate.PhotoID] = struct{}{}
+		photoIDs = append(photoIDs, candidate.PhotoID)
+	}
+	photos, err := r.visibleFavoritePhotos(ctx, predicate, photoIDs)
+	if err != nil {
+		return app.FavoritesPage{}, err
+	}
+	for _, candidate := range scanned {
+		if candidate.RemovedAt.Valid {
+			continue
+		}
+		photo, ok := photos[candidate.PhotoID]
+		if !ok {
+			continue
+		}
+		page.Items = append(page.Items, app.Favorite{Photo: photo, FaveDate: candidate.FaveDate.Time})
 	}
 	if len(page.Items) > limit {
 		last := page.Items[limit-1]
 		page.Items = page.Items[:limit]
 		page.NextCursor = &app.FavoriteCursor{FaveDate: last.FaveDate, PhotoID: last.Photo.ID}
+	} else if more {
+		last := scanned[len(scanned)-1]
+		page.NextCursor = &app.FavoriteCursor{FaveDate: last.FaveDate.Time, PhotoID: last.PhotoID}
 	}
 	return page, nil
 }
 
-func scanPhotoWithFavorite(row rowScanner, faveDate *pgtype.Timestamptz) (app.Photo, error) {
-	var photo app.Photo
-	var takenAt, uploadedAt pgtype.Timestamptz
-	var tags []string
-	var sizes []byte
-	err := row.Scan(&photo.ID, &photo.OwnerNSID, &photo.Title, &photo.Description,
-		&tags, &takenAt, &uploadedAt, &photo.LastUpdate, &photo.Visibility,
-		&photo.SizesStatus, &sizes, &photo.AIStatus, faveDate)
+type favoriteCandidate struct {
+	PhotoID   int64
+	FaveDate  pgtype.Timestamptz
+	RemovedAt pgtype.Timestamptz
+}
+
+func (r *Repository) visibleFavoritePhotos(ctx context.Context, predicate sharingapp.SQLPredicate, photoIDs []int64) (map[int64]app.Photo, error) {
+	if len(photoIDs) == 0 {
+		return map[int64]app.Photo{}, nil
+	}
+	query := `SELECT ` + photoReadColumns + ` FROM photos
+WHERE photos.id=ANY($2) AND photos.tombstoned_at IS NULL AND ` + predicate.Expression
+	args := append(append([]any(nil), predicate.Args...), photoIDs)
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
-		return app.Photo{}, err
+		return nil, fmt.Errorf("catalog: load favorite photos: %w", err)
 	}
-	photo.Labels = tags
-	if err := json.Unmarshal(sizes, &photo.Sizes); err != nil {
-		return app.Photo{}, err
+	defer rows.Close()
+	photos := make(map[int64]app.Photo, len(photoIDs))
+	for rows.Next() {
+		photo, err := scanPhoto(rows)
+		if err != nil {
+			return nil, fmt.Errorf("catalog: scan favorite photo: %w", err)
+		}
+		photos[photo.ID] = photo
 	}
-	if photo.Labels == nil {
-		photo.Labels = []string{}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("catalog: load favorite photos: %w", err)
 	}
-	if photo.Sizes == nil {
-		photo.Sizes = []app.Size{}
-	}
-	if takenAt.Valid {
-		photo.TakenAt = &takenAt.Time
-	}
-	if uploadedAt.Valid {
-		photo.UploadedAt = &uploadedAt.Time
-	}
-	return photo, nil
+	return photos, nil
 }
 
 func (r *Repository) ListVisibleAlbums(ctx context.Context, userID int64, predicate sharingapp.SQLPredicate, cursor *app.AlbumCursor, limit int) (app.AlbumsPage, error) {

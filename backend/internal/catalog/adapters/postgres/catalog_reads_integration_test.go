@@ -12,6 +12,8 @@ import (
 	"github.com/jooservices/xflickr/internal/catalog/app"
 	"github.com/jooservices/xflickr/internal/catalog/domain"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
+	sharingapp "github.com/jooservices/xflickr/internal/sharing/app"
+	sharingdomain "github.com/jooservices/xflickr/internal/sharing/domain"
 )
 
 func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
@@ -34,11 +36,15 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 		time.Now().UnixNano(), time.Now().UnixNano() + 1, time.Now().UnixNano() + 2,
 		time.Now().UnixNano() + 3, time.Now().UnixNano() + 4,
 	}
+	extraPhotoIDs := make([]int64, 7)
+	for i := range extraPhotoIDs {
+		extraPhotoIDs[i] = time.Now().UnixNano() + int64(i) + 10
+	}
 	albumID, hiddenAlbumID := suffix+"-album", suffix+"-hidden-album"
 	var user1ID, user2ID, account1ID, account2ID int64
 	defer func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM albums WHERE id=ANY($1)`, []string{albumID, hiddenAlbumID})
-		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=ANY($1)`, photoIDs)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=ANY($1)`, append(photoIDs, extraPhotoIDs...))
 		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, personIDs)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=ANY($1)`, []int64{user1ID, user2ID})
 	}()
@@ -157,6 +163,59 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	favorites, _, err = reads.ListFavorites(ctx, user1ID, favoritesCursor, 2)
 	if err != nil || len(favorites.Items) != 1 || favorites.Items[0].Photo.ID != photoIDs[4] {
 		t.Fatalf("second visible favorites page=%+v err=%v", favorites, err)
+	}
+
+	filteredPhotos := make([]domain.Photo, len(extraPhotoIDs))
+	for i, id := range extraPhotoIDs {
+		owner := hiddenNSID
+		visibility := domain.VisibilityPrivate
+		if i >= 5 {
+			owner = user1NSID
+		}
+		filteredPhotos[i] = domain.Photo{
+			ID: id, OwnerNSID: owner, Title: fmt.Sprintf("filtered favorite %d", i),
+			LastUpdate: now.Add(-time.Duration(i+10) * time.Second), Visibility: visibility, Raw: []byte(`{"id":1}`),
+		}
+	}
+	if err := repository.UpsertPhotos(ctx, filteredPhotos); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.UpsertFavoritesBatch(ctx, []postgres.Favorite{
+		{PersonNSID: user1NSID, PhotoID: extraPhotoIDs[0], FaveDate: now.Add(-4 * time.Second)},
+		{PersonNSID: user1NSID, PhotoID: extraPhotoIDs[1], FaveDate: now.Add(-5 * time.Second)},
+		{PersonNSID: user1NSID, PhotoID: extraPhotoIDs[2], FaveDate: now.Add(-6 * time.Second)},
+		{PersonNSID: user1NSID, PhotoID: extraPhotoIDs[3], FaveDate: now.Add(-7 * time.Second)},
+		{PersonNSID: user1NSID, PhotoID: extraPhotoIDs[4], FaveDate: now.Add(-8 * time.Second)},
+		{PersonNSID: user1NSID, PhotoID: extraPhotoIDs[5], FaveDate: now.Add(-9 * time.Second)},
+		{PersonNSID: user1NSID, PhotoID: extraPhotoIDs[6], FaveDate: now.Add(-10 * time.Second)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE favorites SET removed_at=now() WHERE person_nsid=$1 AND photo_id=ANY($2)`, user1NSID, extraPhotoIDs[:2]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE photos SET tombstoned_at=now() WHERE id=ANY($1)`, extraPhotoIDs[2:4]); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range extraPhotoIDs[5:] {
+		if _, err := pool.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) VALUES($1,$2,'photo',$3)`, user1ID, account1ID, fmt.Sprint(id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	visibility := sharingapp.Filter(sharingdomain.User{ID: user1ID}).SQL
+	filteredCursor := &app.FavoriteCursor{FaveDate: now.Add(-3 * time.Second), PhotoID: photoIDs[4]}
+	filteredPage, err := repository.ListVisibleFavorites(ctx, user1ID, visibility, filteredCursor, 2)
+	if err != nil || len(filteredPage.Items) != 0 || filteredPage.NextCursor == nil ||
+		!filteredPage.NextCursor.FaveDate.Equal(now.Add(-6*time.Second)) || filteredPage.NextCursor.PhotoID != extraPhotoIDs[2] {
+		t.Fatalf("mostly filtered first batch=%+v err=%v", filteredPage, err)
+	}
+	filteredPage, err = repository.ListVisibleFavorites(ctx, user1ID, visibility, filteredPage.NextCursor, 2)
+	if err != nil || len(filteredPage.Items) != 1 || filteredPage.Items[0].Photo.ID != extraPhotoIDs[5] || filteredPage.NextCursor == nil {
+		t.Fatalf("mostly filtered second batch=%+v err=%v", filteredPage, err)
+	}
+	filteredPage, err = repository.ListVisibleFavorites(ctx, user1ID, visibility, filteredPage.NextCursor, 2)
+	if err != nil || len(filteredPage.Items) != 1 || filteredPage.Items[0].Photo.ID != extraPhotoIDs[6] || filteredPage.NextCursor != nil {
+		t.Fatalf("mostly filtered final batch=%+v err=%v", filteredPage, err)
 	}
 	albums, _, err := reads.ListAlbums(ctx, user1ID, "", 10)
 	if err != nil || len(albums.Items) != 1 || albums.Items[0].ID != albumID || albums.Items[0].VisiblePhotosCount != 1 || albums.Items[0].PrimaryPhotoID != nil {

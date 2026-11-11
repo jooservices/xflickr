@@ -36,7 +36,7 @@ def database_settings() -> dict[str, str]:
 
 
 def plan_sql(rows: int, cursor: bool) -> str:
-    """Create session-only tables and explain one production favorites page query."""
+    """Create session-only tables and explain both production favorites queries."""
     cursor_clause = ""
     if cursor:
         cursor_clause = """
@@ -97,49 +97,51 @@ ANALYZE sharing_settings;
 ANALYZE photo_enrichments;
 
 EXPLAIN (ANALYZE, BUFFERS)
-WITH visible_account_favorites AS MATERIALIZED (
-    SELECT account_favorites.*
+WITH account_favorites AS MATERIALIZED (
+    SELECT account_favorites.photo_id, account_favorites.fave_date,
+           account_favorites.removed_at
     FROM (SELECT nsid FROM flickr_accounts WHERE user_id={USER_ID} AND status<>'revoked') accounts
     CROSS JOIN LATERAL (
-        SELECT favorites.photo_id, favorites.fave_date
-        FROM favorites JOIN photos ON photos.id=favorites.photo_id
+        SELECT favorites.photo_id, favorites.fave_date, favorites.removed_at
+        FROM favorites
         WHERE favorites.person_nsid=accounts.nsid
-          AND favorites.removed_at IS NULL
-          AND photos.tombstoned_at IS NULL
           {cursor_clause}
-          AND (
-              EXISTS (
-                  SELECT 1 FROM observations o
-                  WHERE o.user_id={USER_ID} AND o.record_kind='photo'
-                    AND o.record_id=photos.id::text
-              ) OR (
-                  photos.visibility='public' AND EXISTS (
-                      SELECT 1 FROM observations o
-                      JOIN sharing_settings ss ON ss.user_id=o.user_id
-                      WHERE o.record_kind='photo' AND o.record_id=photos.id::text
-                        AND ss.enabled
-                  )
-              )
-          )
         ORDER BY favorites.fave_date DESC, favorites.photo_id DESC
-        LIMIT 101
+        LIMIT 102
     ) account_favorites
-), favorites_page AS MATERIALIZED (
-    SELECT photo_id, fave_date
-    FROM visible_account_favorites
+), scan_page AS MATERIALIZED (
+    SELECT photo_id, fave_date, removed_at FROM account_favorites
     ORDER BY fave_date DESC, photo_id DESC
-    LIMIT 101
+    LIMIT 102
 )
+SELECT photo_id, fave_date, removed_at FROM scan_page
+ORDER BY fave_date DESC, photo_id DESC;
+
+EXPLAIN (ANALYZE, BUFFERS)
 SELECT photos.id, photos.owner_nsid, photos.title, photos.description,
        photos.tags, photos.taken_at, photos.uploaded_at, photos.last_update,
        photos.visibility, photos.sizes_status, photos.sizes,
        CASE WHEN EXISTS (
            SELECT 1 FROM photo_enrichments e
            WHERE e.photo_id=photos.id AND e.kind='caption'
-       ) THEN 'ready' ELSE 'none' END,
-       favorites_page.fave_date
-FROM favorites_page JOIN photos ON photos.id=favorites_page.photo_id
-ORDER BY favorites_page.fave_date DESC, photos.id DESC;
+       ) THEN 'ready' ELSE 'none' END
+FROM photos
+WHERE photos.id = ANY(ARRAY(SELECT generate_series(1, 101)::bigint))
+  AND photos.tombstoned_at IS NULL
+  AND (
+      EXISTS (
+          SELECT 1 FROM observations o
+          WHERE o.user_id={USER_ID} AND o.record_kind='photo'
+            AND o.record_id=photos.id::text
+      ) OR (
+          photos.visibility='public' AND EXISTS (
+              SELECT 1 FROM observations o
+              JOIN sharing_settings ss ON ss.user_id=o.user_id
+              WHERE o.record_kind='photo' AND o.record_id=photos.id::text
+                AND ss.enabled
+          )
+      )
+  );
 ROLLBACK;
 """
 
@@ -183,7 +185,7 @@ def run_plan(rows: int, cursor: bool) -> str:
 
 
 def check_plan(output: str, cursor: bool) -> None:
-    """Fail if the per-account page scans all favorites or lacks an index plan."""
+    """Fail if the bounded per-account keyset scan lacks an index plan."""
     page = "cursor" if cursor else "first-page"
     if re.search(r"Seq Scan\s+on\s+favorites_p\d+\b", output):
         raise RuntimeError(f"favorites {page} query plan contains a sequential scan")
@@ -197,13 +199,24 @@ def check_plan(output: str, cursor: bool) -> None:
             continue
         metrics = dict(part.split("=", 1) for part in line.split() if "=" in part)
         try:
-            bounded_limit = float(metrics["rows"]) == 101 and metrics["loops"].rstrip(")") == "2"
+            bounded_limit = float(metrics["rows"]) == 102 and metrics["loops"].rstrip(")") == "2"
         except (KeyError, ValueError):
             continue
         if bounded_limit:
             break
     if not bounded_limit:
         raise RuntimeError(f"favorites {page} query plan did not return a bounded page per account")
+    if cursor and "ROW(fave_date, photo_id) < ROW" not in output:
+        raise RuntimeError("favorites cursor plan does not constrain the keyset range")
+
+
+def check_photo_plan(output: str, cursor: bool) -> None:
+    """Fail if favorite photo hydration scans the full photo table."""
+    page = "cursor" if cursor else "first-page"
+    if re.search(r"Seq Scan\s+on photos\b", output):
+        raise RuntimeError(f"favorite photo {page} plan contains a sequential scan")
+    if not re.search(r"(Index Scan using \S+|Bitmap Heap Scan) on photos\b", output):
+        raise RuntimeError(f"favorite photo {page} plan does not use the photo ID index")
 
 
 def main() -> int:
@@ -221,6 +234,7 @@ def main() -> int:
             output = run_plan(args.rows, cursor)
             print(output, end="")
             check_plan(output, cursor)
+            check_photo_plan(output, cursor)
     except (OSError, RuntimeError, ValueError) as error:
         print(f"favorites plan check failed: {error}", file=sys.stderr)
         return 1

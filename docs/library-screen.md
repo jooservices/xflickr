@@ -2,9 +2,12 @@
 
 The Library route currently uses the generated catalog favorites endpoint and
 its opaque cursor. It requests up to 100 favorites at a time, merges duplicate
-photo IDs, and virtualizes justified rows with TanStack Virtual. The row layout
-uses dimensions from an available catalog size; photos without a size URL use
-a neutral placeholder.
+photo IDs, and virtualizes justified rows with TanStack Virtual. The backend
+scans a bounded keyset batch before checking removed, tombstoned, and invisible
+records. Its cursor advances past every scanned favorite, so a page can contain
+fewer than requested items, including an empty page with a continuation cursor,
+when many favorites are excluded. The row layout uses dimensions from an
+available catalog size; photos without a size URL use a neutral placeholder.
 
 The screen supports filtering the favorites already loaded by contact, sizes
 readiness, and AI caption readiness. Its count is the number of unique favorites
