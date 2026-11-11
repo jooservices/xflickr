@@ -43,8 +43,9 @@ type Engine struct {
 }
 
 var (
-	_ app.Store      = (*Engine)(nil)
-	_ app.UnitOfWork = (*Engine)(nil)
+	_ app.Store         = (*Engine)(nil)
+	_ app.UnitOfWork    = (*Engine)(nil)
+	_ app.GroupPoolGate = (*Engine)(nil)
 )
 
 // NewEngine creates the engine adapter over pool.
@@ -86,6 +87,19 @@ func scanItem(row itemRow) (domain.Item, error) {
 // Load reads a work item.
 func (e *Engine) Load(ctx context.Context, id int64) (domain.Item, error) {
 	return scanItem(e.conn.QueryRow(ctx, `SELECT `+itemColumns+` FROM work_items WHERE id = $1`, id))
+}
+
+// Enabled reports whether a user explicitly enabled crawling this contact's group pool.
+func (e *Engine) Enabled(ctx context.Context, userID int64, personNSID, groupNSID string) (bool, error) {
+	var enabled bool
+	err := e.conn.QueryRow(ctx, `SELECT enabled FROM contact_group_crawl_preferences WHERE user_id=$1 AND person_nsid=$2 AND group_nsid=$3`, userID, personNSID, groupNSID).Scan(&enabled)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("crawl: read group pool preference: %w", err)
+	}
+	return enabled, nil
 }
 
 // Start marks a ready item running. A running item stays running, so a rerun
@@ -253,25 +267,29 @@ func (r reconcileTx) Complete(ctx context.Context, userID int64, person string, 
 	if err != nil {
 		return fmt.Errorf("crawl: lock reconciliation interest: %w", err)
 	}
-	if _, err := r.tx.Exec(ctx, `
+	tombstoned, err := r.tx.Exec(ctx, `
 		UPDATE photos p SET tombstoned_at=$3
 		WHERE p.owner_nsid=$1 AND p.tombstoned_at IS NULL AND p.last_seen_at<$2
 		  AND (p.visibility='public' OR EXISTS (
 			SELECT 1 FROM flickr_accounts fa
 			WHERE fa.user_id=$4 AND fa.nsid=$1 AND fa.status='ok'
-		  ))`, person, scannedAt, completedAt, userID); err != nil {
+			))`, person, scannedAt, completedAt, userID)
+	if err != nil {
 		return fmt.Errorf("crawl: tombstone photos missing from full list: %w", err)
 	}
-	if _, err := r.tx.Exec(ctx, `
+	removedFavorites, err := r.tx.Exec(ctx, `
 		UPDATE favorites f SET removed_at=$3
 		WHERE f.person_nsid=$1 AND f.removed_at IS NULL AND f.seen_at<$2
 		  AND EXISTS (
 			SELECT 1 FROM flickr_accounts fa
 			WHERE fa.user_id=$4 AND fa.nsid=$1 AND fa.status='ok'
-		  )`, person, scannedAt, completedAt, userID); err != nil {
+			)`, person, scannedAt, completedAt, userID)
+	if err != nil {
 		return fmt.Errorf("crawl: mark favorites missing from full list: %w", err)
 	}
-	if _, err := r.tx.Exec(ctx, `UPDATE crawl_interests SET last_reconciled_at=$3 WHERE user_id=$1 AND person_nsid=$2`, userID, person, completedAt); err != nil {
+	if _, err := r.tx.Exec(ctx, `UPDATE crawl_interests SET tombstones_count=tombstones_count+$3,
+		favorites_count=GREATEST(0,favorites_count-$4),last_reconciled_at=$5
+		WHERE user_id=$1 AND person_nsid=$2`, userID, person, tombstoned.RowsAffected(), removedFavorites.RowsAffected(), completedAt); err != nil {
 		return fmt.Errorf("crawl: record completed reconciliation: %w", err)
 	}
 	return nil

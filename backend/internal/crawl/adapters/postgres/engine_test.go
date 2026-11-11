@@ -557,7 +557,7 @@ func TestReconcileTxCompleteAppliesDiffAndWrapsWriteFailures(t *testing.T) {
 			t.Fatalf("write %d = %+v; want %q and reconciliation arguments", i, conn.execs[i], want)
 		}
 	}
-	if !strings.Contains(conn.execs[2].sql, "UPDATE crawl_interests") || conn.execs[2].args[0] != int64(7) || conn.execs[2].args[1] != "person" || conn.execs[2].args[2] != completed {
+	if !strings.Contains(conn.execs[2].sql, "UPDATE crawl_interests") || conn.execs[2].args[0] != int64(7) || conn.execs[2].args[1] != "person" || conn.execs[2].args[4] != completed {
 		t.Fatalf("completion write = %+v; want user, person, and completion time", conn.execs[2])
 	}
 	if !strings.Contains(conn.execs[0].sql, "p.visibility='public'") || !strings.Contains(conn.execs[1].sql, "flickr_accounts") {

@@ -181,6 +181,25 @@ func TestGroupsRejectsEmptyPageWhenMorePagesRemain(t *testing.T) {
 	}
 }
 
+func TestGroupPoolFacetStoresPhotosOnlyForExplicitWork(t *testing.T) {
+	facet := GroupPool{}
+	if facet.Lane() != domain.LanePerson || len(facet.Plan(t.Context(), domain.Person{NSID: "group@N00", UserID: 7})) != 0 {
+		t.Fatal("group pool crawl must require an explicit per-group work item")
+	}
+	page := domain.Page{
+		Number:  1,
+		Item:    domain.Item{Kind: "group_pool", Subject: "group@N00"},
+		Payload: []byte(`{"photos":{"pages":2,"photo":[{"id":"123","owner":"owner@N00","ownername":"Owner","date_upload":"1700000000","lastupdate":"1700000100","ispublic":1}]}}`),
+	}
+	result, err := facet.Handle(t.Context(), page)
+	if err != nil || !result.HasMore || len(result.Photos) != 1 || len(result.People) != 1 || len(result.GroupPoolPhotos) != 1 {
+		t.Fatalf("group pool page = %+v err=%v", result, err)
+	}
+	if result.Photos[0].ID != 123 || result.Photos[0].OwnerNSID != "owner@N00" || result.GroupPoolPhotos[0].GroupNSID != "group@N00" || result.GroupPoolPhotos[0].PhotoID != 123 {
+		t.Fatalf("group pool records = photos:%+v pool:%+v", result.Photos, result.GroupPoolPhotos)
+	}
+}
+
 func TestCatalogFacetsHandleEmptyAndMalformedReplies(t *testing.T) {
 	cases := []struct {
 		facet domain.Facet
@@ -188,6 +207,8 @@ func TestCatalogFacetsHandleEmptyAndMalformedReplies(t *testing.T) {
 	}{
 		{Albums{}, `{"photosets":{"pages":1,"photoset":[]}}`},
 		{Galleries{}, `{"galleries":{"pages":1,"gallery":[]}}`},
+		{Groups{}, `{"groups":{"pages":1,"group":[]}}`},
+		{GroupPool{}, `{"photos":{"pages":1,"photo":[]}}`},
 	}
 	for _, tc := range cases {
 		result, err := tc.facet.Handle(t.Context(), catalogPage("p@N01", tc.empty, 1))

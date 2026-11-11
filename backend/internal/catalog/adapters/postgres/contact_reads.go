@@ -22,6 +22,12 @@ type contactCursor struct {
 	Value string    `json:"value,omitempty"`
 }
 
+const contactPriorityBatchSize = 500
+
+func contactPhotoVisibility(photoAlias string) string {
+	return `(EXISTS(SELECT 1 FROM flickr_accounts fa CROSS JOIN LATERAL (SELECT 1 FROM observations o WHERE o.user_id=fa.user_id AND o.flickr_account_id=fa.id AND o.record_kind='photo' AND o.record_id=` + photoAlias + `.id::text LIMIT 1) seen WHERE fa.user_id=$1) OR (` + photoAlias + `.visibility='public' AND EXISTS(SELECT 1 FROM sharing_settings ss JOIN flickr_accounts fa ON fa.user_id=ss.user_id CROSS JOIN LATERAL (SELECT 1 FROM observations o WHERE o.user_id=ss.user_id AND o.flickr_account_id=fa.id AND o.record_kind='photo' AND o.record_id=` + photoAlias + `.id::text LIMIT 1) seen WHERE ss.enabled)))`
+}
+
 func encodeContactCursor(value contactCursor) (*string, error) {
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -316,7 +322,7 @@ func (r *Repository) ListContactPhotos(ctx context.Context, userID int64, nsid, 
 		condition += " AND " + cursorCondition
 	}
 	args = append(args, limit+1)
-	filter := `(EXISTS(SELECT 1 FROM observations o WHERE o.user_id=$1 AND o.record_kind='photo' AND o.record_id=ph.id::text) OR (ph.visibility='public' AND EXISTS(SELECT 1 FROM observations o JOIN sharing_settings ss ON ss.user_id=o.user_id WHERE o.record_kind='photo' AND o.record_id=ph.id::text AND ss.enabled)))`
+	filter := contactPhotoVisibility("ph")
 	query := `SELECT ph.id,ph.title,NULLIF(ph.sizes->0->>'url',''),NULLIF(NULLIF(ph.sizes->0->>'width','')::int,0),NULLIF(NULLIF(ph.sizes->0->>'height','')::int,0),ph.taken_at,ph.sizes_status='confirmed' AND ph.sizes_checked_at>=ph.last_update,ph.last_update FROM photos ph WHERE ph.owner_nsid=$2 AND ph.tombstoned_at IS NULL AND ` + condition + ` AND ` + filter + ` ORDER BY ph.last_update DESC,ph.id DESC LIMIT $` + strconv.Itoa(len(args))
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
@@ -339,8 +345,10 @@ func (r *Repository) ListContactPhotos(ctx context.Context, userID int64, nsid, 
 		item.ThumbnailURL = thumb
 		item.Width = width
 		item.Height = height
+		if len(items) < limit {
+			lastTime, lastID = updated, id
+		}
 		items = append(items, item)
-		lastTime, lastID = updated, id
 	}
 	if err := rows.Err(); err != nil {
 		return app.ContactPhotoPage{}, fmt.Errorf("catalog: read contact photos: %w", err)
@@ -385,7 +393,7 @@ func (r *Repository) ListContactFavorites(ctx context.Context, userID int64, nsi
 		condition += " AND " + cursorCondition
 	}
 	args = append(args, limit+1)
-	filter := `(EXISTS(SELECT 1 FROM observations o WHERE o.user_id=$1 AND o.record_kind='photo' AND o.record_id=ph.id::text) OR (ph.visibility='public' AND EXISTS(SELECT 1 FROM observations o JOIN sharing_settings ss ON ss.user_id=o.user_id WHERE o.record_kind='photo' AND o.record_id=ph.id::text AND ss.enabled)))`
+	filter := contactPhotoVisibility("ph")
 	query := `SELECT ph.id,ph.title,NULLIF(ph.sizes->0->>'url',''),NULLIF(NULLIF(ph.sizes->0->>'width','')::int,0),NULLIF(NULLIF(ph.sizes->0->>'height','')::int,0),ph.taken_at,ph.sizes_status='confirmed' AND ph.sizes_checked_at>=ph.last_update,ph.owner_nsid,p.realname,NULLIF(p.icon,''),f.fave_date FROM favorites f JOIN photos ph ON ph.id=f.photo_id JOIN people p ON p.nsid=ph.owner_nsid WHERE f.person_nsid=$2 AND f.removed_at IS NULL AND ph.tombstoned_at IS NULL AND ` + condition + ` AND ` + filter + ` ORDER BY f.fave_date DESC,ph.id DESC LIMIT $` + strconv.Itoa(len(args))
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
@@ -410,8 +418,10 @@ func (r *Repository) ListContactFavorites(ctx context.Context, userID int64, nsi
 		item.Height = height
 		item.OwnerName = ownerName
 		item.OwnerAvatarURL = ownerIcon
+		if len(items) < limit {
+			lastTime, lastID = updated, id
+		}
 		items = append(items, item)
-		lastTime, lastID = updated, id
 	}
 	if err := rows.Err(); err != nil {
 		return app.ContactFavoritePage{}, fmt.Errorf("catalog: read contact favorites: %w", err)
@@ -442,7 +452,7 @@ func (r *Repository) ListContactAlbums(ctx context.Context, userID int64, nsid s
 	if err := r.requireContact(ctx, userID, nsid); err != nil {
 		return app.ContactAlbumPage{}, err
 	}
-	rows, err := r.db.Query(ctx, `SELECT a.id,a.title,p.username,a.photos_count,COALESCE((SELECT jsonb_agg(NULLIF(ph.sizes->0->>'url','')) FROM photos ph WHERE ph.id=a.primary_photo_id AND ph.sizes->0->>'url' IS NOT NULL),'[]'::jsonb),a.updated_at FROM albums a JOIN people p ON p.nsid=a.owner_nsid WHERE a.owner_nsid=$2 AND EXISTS(SELECT 1 FROM crawl_interests ci WHERE ci.user_id=$1 AND ci.person_nsid=$2) ORDER BY a.updated_at DESC NULLS LAST,a.id LIMIT 101`, userID, nsid)
+	rows, err := r.db.Query(ctx, `SELECT a.id,a.title,p.username,a.photos_count,COALESCE((SELECT jsonb_agg(NULLIF(cover.sizes->0->>'url','')) FROM photos cover WHERE cover.id=a.primary_photo_id AND cover.tombstoned_at IS NULL AND cover.sizes->0->>'url' IS NOT NULL AND `+contactPhotoVisibility("cover")+`),'[]'::jsonb),a.updated_at FROM albums a JOIN people p ON p.nsid=a.owner_nsid WHERE a.owner_nsid=$2 AND EXISTS(SELECT 1 FROM crawl_interests ci WHERE ci.user_id=$1 AND ci.person_nsid=$2) ORDER BY a.updated_at DESC NULLS LAST,a.id LIMIT 101`, userID, nsid)
 	if err != nil {
 		return app.ContactAlbumPage{}, fmt.Errorf("catalog: list contact albums: %w", err)
 	}
@@ -566,7 +576,38 @@ func (r *Repository) SetContactGroupPoolCrawl(ctx context.Context, userID int64,
 		return app.ContactPoolCrawl{}, false, app.ErrReadUnavailable
 	}
 	var result app.ContactPoolCrawl
-	err := r.db.QueryRow(ctx, `INSERT INTO contact_group_crawl_preferences(user_id,person_nsid,group_nsid,enabled,changed_at) SELECT $1,$2,$3,$4,now() WHERE EXISTS(SELECT 1 FROM person_groups WHERE person_nsid=$2 AND group_nsid=$3) AND EXISTS(SELECT 1 FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2) ON CONFLICT(user_id,person_nsid,group_nsid) DO UPDATE SET enabled=EXCLUDED.enabled,changed_at=EXCLUDED.changed_at RETURNING enabled,changed_at`, userID, nsid, group, enabled).Scan(&result.Enabled, &result.ChangedAt)
+	err := r.db.QueryRow(ctx, `WITH preference AS (
+		INSERT INTO contact_group_crawl_preferences(user_id,person_nsid,group_nsid,enabled,changed_at)
+		SELECT $1,$2,$3,$4,now()
+		WHERE EXISTS(SELECT 1 FROM person_groups WHERE person_nsid=$2 AND group_nsid=$3)
+		  AND EXISTS(SELECT 1 FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2)
+		ON CONFLICT(user_id,person_nsid,group_nsid) DO UPDATE
+		SET enabled=EXCLUDED.enabled,changed_at=EXCLUDED.changed_at
+		RETURNING enabled,changed_at
+	), queued AS (
+		INSERT INTO work_items(kind,subject_key,user_id,key_id,depth,cursor,starred,score)
+		SELECT 'group_pool',$3,$1,
+			(SELECT fa.key_id FROM flickr_accounts fa WHERE fa.user_id=$1 AND fa.status='ok' ORDER BY fa.id LIMIT 1),
+			ci.depth,
+			jsonb_build_object('page',1,'method','flickr.groups.pools.getPhotos','params',jsonb_build_object('group_id',$3,'user_id',$2,'per_page','500','extras','url_sq,url_t,url_s,url_q,url_m,url_n,url_z,url_c,url_l,url_o,date_upload,last_update,owner_name,media,tags,description,license,o_dims,views')),
+			ci.starred,
+			work_items_static_score(COALESCE((SELECT p.weight FROM users u LEFT JOIN plans p ON p.id=u.plan_id WHERE u.id=$1),1),FALSE,ci.starred,ci.depth,now())
+		FROM preference pref JOIN crawl_interests ci ON ci.user_id=$1 AND ci.person_nsid=$2
+		WHERE pref.enabled
+		ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO UPDATE
+		SET key_id=COALESCE(EXCLUDED.key_id,work_items.key_id),state='pending',cursor=EXCLUDED.cursor,attempts=0,last_error=NULL,
+			not_before=now(),lease_expires_at=NULL,starred=EXCLUDED.starred,score=EXCLUDED.score,created_at=now(),updated_at=now()
+		WHERE work_items.state IN ('done','failed')
+		RETURNING id
+	), canceled AS (
+		UPDATE work_items wi SET state='done',last_error=NULL,lease_expires_at=NULL,updated_at=now()
+		FROM preference pref
+		WHERE NOT pref.enabled AND wi.kind='group_pool' AND wi.user_id=$1 AND wi.subject_key=$3
+		  AND wi.state IN ('pending','ready','waiting')
+		  AND NOT EXISTS(SELECT 1 FROM contact_group_crawl_preferences active WHERE active.user_id=$1 AND active.group_nsid=$3 AND active.enabled)
+		RETURNING wi.id
+	)
+	SELECT enabled,changed_at FROM preference`, userID, nsid, group, enabled).Scan(&result.Enabled, &result.ChangedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return app.ContactPoolCrawl{}, false, nil
 	}
@@ -583,12 +624,31 @@ func (r *Repository) PrioritiseContactSizes(ctx context.Context, userID int64, n
 	if err := r.requireContact(ctx, userID, nsid); err != nil {
 		return 0, err
 	}
-	var count int64
-	err := r.db.QueryRow(ctx, `WITH updated AS (UPDATE work_items wi SET direct_action=TRUE,score_updated_at=NULL,updated_at=now() FROM photos ph WHERE wi.user_id=$1 AND wi.kind='photo_sizes' AND wi.state IN ('pending','ready','running','waiting') AND wi.subject_key=ph.id::text AND ph.owner_nsid=$2 AND ph.tombstoned_at IS NULL AND ph.sizes_status<>'confirmed' RETURNING wi.id) SELECT count(*) FROM updated`, userID, nsid).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("catalog: prioritise contact sizes: %w", err)
+	var total int64
+	for {
+		var count int64
+		err := r.db.QueryRow(ctx, `WITH batch AS (
+			SELECT wi.id FROM work_items wi
+			WHERE wi.user_id=$1 AND wi.kind='photo_sizes' AND wi.state IN ('pending','ready','running','waiting')
+			  AND wi.direct_action=FALSE AND EXISTS (
+				SELECT 1 FROM photos ph
+				WHERE ph.id=CASE WHEN wi.subject_key ~ '^[0-9]+$' THEN wi.subject_key::bigint END
+				  AND ph.owner_nsid=$2 AND ph.tombstoned_at IS NULL AND ph.sizes_status<>'confirmed'
+			  )
+			ORDER BY wi.id LIMIT $3 FOR UPDATE OF wi
+		), updated AS (
+			UPDATE work_items wi SET direct_action=TRUE,score_updated_at=NULL,updated_at=now()
+			FROM batch WHERE wi.id=batch.id RETURNING wi.id
+		)
+		SELECT count(*) FROM updated`, userID, nsid, contactPriorityBatchSize).Scan(&count)
+		if err != nil {
+			return 0, fmt.Errorf("catalog: prioritise contact sizes: %w", err)
+		}
+		total += count
+		if count < contactPriorityBatchSize {
+			return total, nil
+		}
 	}
-	return count, nil
 }
 
 func (r *Repository) requireContact(ctx context.Context, userID int64, nsid string) error {

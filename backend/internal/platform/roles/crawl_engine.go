@@ -73,7 +73,7 @@ func newCrawlEngine(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg
 		return nil, err
 	}
 	registry := crawlapp.NewRegistry()
-	for _, facet := range []crawldomain.Facet{crawlapp.ChangeCheck{}, crawlapp.ContactsPhotos{}, facets.Photos{}, facets.Favorites{}, facets.Reconcile{}, facets.Albums{}, facets.Galleries{}, facets.Groups{}} {
+	for _, facet := range []crawldomain.Facet{crawlapp.ChangeCheck{}, crawlapp.ContactsPhotos{}, facets.Photos{}, facets.Favorites{}, facets.Reconcile{}, facets.Albums{}, facets.Galleries{}, facets.Groups{}, facets.GroupPool{}} {
 		if err := registry.Register(facet); err != nil {
 			return nil, err
 		}
@@ -83,15 +83,16 @@ func newCrawlEngine(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg
 		return nil, err
 	}
 	return &crawlapp.Engine{
-		States:   crawlpostgres.EntityStates{DB: pool},
-		Registry: registry,
-		Store:    store,
-		Units:    store,
-		Keys:     crawlKeys{pool: quotaapp.KeyPool{Interests: personInterests{pool: pool}, Keys: usableKeys{pool: pool}, Quota: governor}},
-		Governor: crawlGovernor{governor: governor},
-		Flickr:   &crawlFlickr{pool: pool, client: flickr, ring: ring, nodeID: nodeID(cfg)},
-		Settings: settingsapp.New(settingsRepository),
-		Logger:   slog.Default(),
+		States:     crawlpostgres.EntityStates{DB: pool},
+		Registry:   registry,
+		Store:      store,
+		GroupPools: store,
+		Units:      store,
+		Keys:       crawlKeys{pool: quotaapp.KeyPool{Interests: personInterests{pool: pool}, Keys: usableKeys{pool: pool}, Quota: governor}},
+		Governor:   crawlGovernor{governor: governor},
+		Flickr:     &crawlFlickr{pool: pool, client: flickr, ring: ring, nodeID: nodeID(cfg)},
+		Settings:   settingsapp.New(settingsRepository),
+		Logger:     slog.Default(),
 	}, nil
 }
 

@@ -35,6 +35,12 @@ type Group struct {
 // PersonGroup is a discovered group membership.
 type PersonGroup struct{ PersonNSID, GroupNSID string }
 
+// GroupPoolPhoto links a discovered group-pool photo to its group.
+type GroupPoolPhoto struct {
+	GroupNSID string
+	PhotoID   int64
+}
+
 // Person is a Flickr person record stored in the catalog.
 type Person struct {
 	NSID        string

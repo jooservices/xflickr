@@ -24,16 +24,17 @@ type Discovery struct {
 // Result is what a facet extracted from one page. Everything in it is
 // committed together with the cursor advance.
 type Result struct {
-	People       []catalog.Person
-	Photos       []catalog.Photo
-	Favorites    []catalog.Favorite
-	Albums       []catalog.Album
-	Galleries    []catalog.Gallery
-	Groups       []catalog.Group
-	PersonGroups []catalog.PersonGroup
-	Observations []Observation
-	Discoveries  []Discovery
-	Work         []WorkSpec
+	People          []catalog.Person
+	Photos          []catalog.Photo
+	Favorites       []catalog.Favorite
+	Albums          []catalog.Album
+	Galleries       []catalog.Gallery
+	Groups          []catalog.Group
+	PersonGroups    []catalog.PersonGroup
+	GroupPoolPhotos []catalog.GroupPoolPhoto
+	Observations    []Observation
+	Discoveries     []Discovery
+	Work            []WorkSpec
 	// NextWorkCursor changes the Flickr method without finishing the work item.
 	NextWorkCursor *Cursor
 	// NextCursor is the opaque continuation returned for the next request.

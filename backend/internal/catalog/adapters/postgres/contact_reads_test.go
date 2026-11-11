@@ -232,6 +232,10 @@ func TestContactPhotoAndFavoritePagesValidateCursorsAndRetainSummaries(t *testin
 	if err != nil || page.NextCursor == nil || len(page.Items) != 1 {
 		t.Fatalf("photo cursor page=%+v err=%v", page, err)
 	}
+	photoNext, err := decodeContactCursor(*page.NextCursor, "photos:one@N00")
+	if err != nil || photoNext.ID != "7" {
+		t.Fatalf("photo next cursor=%+v err=%v, want last returned photo 7", photoNext, err)
+	}
 	badCursor, _ := encodeContactCursor(contactCursor{Kind: "photos:one@N00", ID: "invalid", At: updated})
 	if _, err := contactTestRepository(t, &contactTestDB{}).ListContactPhotos(ctx, 7, "one@N00", *badCursor, 10); !errors.Is(err, app.ErrInvalidCursor) {
 		t.Fatalf("invalid photo cursor=%v", err)
@@ -243,10 +247,15 @@ func TestContactPhotoAndFavoritePagesValidateCursorsAndRetainSummaries(t *testin
 
 	favoriteCursor, _ := encodeContactCursor(contactCursor{Kind: "favorites:one@N00", ID: "7", At: updated})
 	favoriteRow := []any{int64(7), "Favorite", (*string)(nil), (*int)(nil), (*int)(nil), &updated, true, "owner@N00", stringPointerForTest("Owner"), (*string)(nil), updated}
-	db = &contactTestDB{resultRows: []*readsRows{contactTestRows(favoriteRow)}, rowResults: []readsRow{contactTestRow(int64(2), &updated)}}
-	favorites, err := contactTestRepository(t, db).ListContactFavorites(ctx, 7, "one@N00", *favoriteCursor, 10)
+	favoriteExtra := []any{int64(8), "Favorite 2", (*string)(nil), (*int)(nil), (*int)(nil), &updated, true, "owner@N00", stringPointerForTest("Owner"), (*string)(nil), updated.Add(-time.Second)}
+	db = &contactTestDB{resultRows: []*readsRows{contactTestRows(favoriteRow, favoriteExtra)}, rowResults: []readsRow{contactTestRow(int64(2), &updated)}}
+	favorites, err := contactTestRepository(t, db).ListContactFavorites(ctx, 7, "one@N00", *favoriteCursor, 1)
 	if err != nil || len(favorites.Items) != 1 || favorites.Items[0].OwnerName == nil || *favorites.Items[0].OwnerName != "Owner" {
 		t.Fatalf("favorites=%+v err=%v", favorites, err)
+	}
+	favoriteNext, err := decodeContactCursor(*favorites.NextCursor, "favorites:one@N00")
+	if err != nil || favoriteNext.ID != "7" {
+		t.Fatalf("favorite next cursor=%+v err=%v, want last returned favorite 7", favoriteNext, err)
 	}
 	if !strings.Contains(db.queries[0], "fave_date") || !strings.Contains(db.queries[0], "observations") {
 		t.Fatalf("favorite query missing ordering or visibility: %s", db.queries[0])
@@ -343,16 +352,19 @@ func TestContactGroupPreferenceAndSizePriorityRemainActorScoped(t *testing.T) {
 	if err != nil || !found || !value.Enabled || !value.ChangedAt.Equal(now) {
 		t.Fatalf("pool=%+v found=%v err=%v", value, found, err)
 	}
+	if !strings.Contains(db.queries[0], "INSERT INTO work_items") || !strings.Contains(db.queries[0], "group_pool") {
+		t.Fatalf("enabling group pool did not enqueue crawl work: %s", db.queries[0])
+	}
 	db = &contactTestDB{rowResults: []readsRow{{err: pgx.ErrNoRows}}}
 	if _, found, err := contactTestRepository(t, db).SetContactGroupPoolCrawl(ctx, 7, "one@N00", "group", true); err != nil || found {
 		t.Fatalf("missing group preference found=%v err=%v", found, err)
 	}
-	db = &contactTestDB{rowResults: []readsRow{contactTestRow(true), contactTestRow(int64(4))}}
+	db = &contactTestDB{rowResults: []readsRow{contactTestRow(true), contactTestRow(int64(500)), contactTestRow(int64(3))}}
 	count, err := contactTestRepository(t, db).PrioritiseContactSizes(ctx, 7, "one@N00")
-	if err != nil || count != 4 {
+	if err != nil || count != 503 {
 		t.Fatalf("prioritised=%d err=%v", count, err)
 	}
-	if !strings.Contains(db.queries[1], "UPDATE work_items") || !strings.Contains(db.queries[1], "wi.user_id=$1") {
+	if len(db.queries) != 3 || !strings.Contains(db.queries[1], "UPDATE work_items") || !strings.Contains(db.queries[1], "wi.user_id=$1") || !strings.Contains(db.queries[1], "LIMIT") || !strings.Contains(db.queries[1], "direct_action=FALSE") {
 		t.Fatalf("size priority query is not actor scoped: %s", db.queries[1])
 	}
 	db = &contactTestDB{rowResults: []readsRow{contactTestRow(false)}}

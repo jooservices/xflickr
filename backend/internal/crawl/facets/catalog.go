@@ -166,6 +166,25 @@ func (Groups) Handle(_ context.Context, p domain.Page) (domain.Result, error) {
 	return out, nil
 }
 
+// GroupPool reads a group pool only for a work item created by explicit opt-in.
+type GroupPool struct{}
+
+func (GroupPool) Name() string                                          { return "group_pool" }
+func (GroupPool) Lane() domain.Lane                                     { return domain.LanePerson }
+func (GroupPool) Plan(context.Context, domain.Person) []domain.WorkSpec { return nil }
+
+func (GroupPool) Handle(ctx context.Context, page domain.Page) (domain.Result, error) {
+	result, err := parsePhotoPage(page, false)
+	if err != nil {
+		return domain.Result{}, err
+	}
+	result.GroupPoolPhotos = make([]catalog.GroupPoolPhoto, 0, len(result.Photos))
+	for _, photo := range result.Photos {
+		result.GroupPoolPhotos = append(result.GroupPoolPhotos, catalog.GroupPoolPhoto{GroupNSID: page.Item.Subject, PhotoID: photo.ID})
+	}
+	return result, nil
+}
+
 type content struct {
 	Content string `json:"_content"`
 	Text    string `json:"content"`

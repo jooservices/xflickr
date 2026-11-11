@@ -110,6 +110,11 @@ type Store interface {
 	Stop(ctx context.Context, request StopRequest) error
 }
 
+// GroupPoolGate checks the explicit per-contact preference before a pool call.
+type GroupPoolGate interface {
+	Enabled(ctx context.Context, userID int64, personNSID, groupNSID string) (bool, error)
+}
+
 // NewWork is a work item created while committing a page.
 type NewWork struct {
 	Kind    string
@@ -138,6 +143,7 @@ type CatalogWriter interface {
 	UpsertGalleries(ctx context.Context, galleries []catalog.Gallery) error
 	UpsertGroups(ctx context.Context, groups []catalog.Group) error
 	UpsertPersonGroups(ctx context.Context, groups []catalog.PersonGroup) error
+	UpsertGroupPoolPhotos(ctx context.Context, photos []catalog.GroupPoolPhoto) error
 }
 
 type peoplePageWriter interface {
@@ -164,6 +170,7 @@ type ReconcileWriter interface {
 
 // ContactProgressWriter updates contact-scoped summaries in the page transaction.
 type ContactProgressWriter interface {
+	BeginPage(ctx context.Context, item domain.Item, result domain.Result) error
 	Record(ctx context.Context, item domain.Item, result domain.Result) error
 }
 
@@ -190,19 +197,20 @@ type ProgressNotifier interface {
 
 // Engine runs work items for every registered facet: one task is one API page.
 type Engine struct {
-	States   EntityStates
-	Registry *Registry
-	Store    Store
-	Units    UnitOfWork
-	Keys     KeyChooser
-	Governor Governor
-	Flickr   Flickr
-	Health   NodeHealth
-	Progress ProgressNotifier
-	Settings EffectiveSettings
-	Timing   Timing
-	Logger   *slog.Logger
-	Now      func() time.Time
+	States     EntityStates
+	Registry   *Registry
+	Store      Store
+	GroupPools GroupPoolGate
+	Units      UnitOfWork
+	Keys       KeyChooser
+	Governor   Governor
+	Flickr     Flickr
+	Health     NodeHealth
+	Progress   ProgressNotifier
+	Settings   EffectiveSettings
+	Timing     Timing
+	Logger     *slog.Logger
+	Now        func() time.Time
 }
 
 // ParseJobArgs reads the work item id from the scheduler's job arguments.
@@ -287,7 +295,22 @@ func (e *Engine) run(ctx context.Context, item domain.Item, facet domain.Facet) 
 	if handled, err := e.suppressGlobal(ctx, item); handled || err != nil {
 		return err
 	}
-	keyID, err := e.Keys.Choose(ctx, item.Subject, facet.Lane())
+	keySubject := item.Subject
+	if item.Kind == "group_pool" {
+		personNSID := item.Cursor.Params["user_id"]
+		if e.GroupPools == nil || personNSID == "" || item.Subject == "" {
+			return ErrEngineIncomplete
+		}
+		enabled, err := e.GroupPools.Enabled(ctx, item.UserID, personNSID, item.Subject)
+		if err != nil {
+			return fmt.Errorf("crawl: check group pool preference: %w", err)
+		}
+		if !enabled {
+			return e.Store.Finish(ctx, item.ID)
+		}
+		keySubject = personNSID
+	}
+	keyID, err := e.Keys.Choose(ctx, keySubject, facet.Lane())
 	if errors.Is(err, ErrNoKey) {
 		return e.hold(ctx, item, e.Timing.withDefaults().QuotaWait, "no eligible key")
 	}
@@ -463,6 +486,11 @@ func (e *Engine) write(ctx context.Context, w Writers, item domain.Item, result 
 	if err != nil {
 		return err
 	}
+	if w.Progress != nil {
+		if err := w.Progress.BeginPage(ctx, item, result); err != nil {
+			return err
+		}
+	}
 	if err := writeCatalog(ctx, w.Catalog, pageWriter, result); err != nil {
 		return err
 	}
@@ -555,6 +583,11 @@ func writeCatalog(ctx context.Context, writer CatalogWriter, pageWriter peoplePa
 	}
 	if len(result.PersonGroups) > 0 {
 		if err := writer.UpsertPersonGroups(ctx, result.PersonGroups); err != nil {
+			return err
+		}
+	}
+	if len(result.GroupPoolPhotos) > 0 {
+		if err := writer.UpsertGroupPoolPhotos(ctx, result.GroupPoolPhotos); err != nil {
 			return err
 		}
 	}

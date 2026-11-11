@@ -50,6 +50,15 @@ type fakeStore struct {
 	stampHook func(domain.Cursor, domain.Cursor)
 }
 
+type fakeGroupPoolGate struct {
+	enabled bool
+	err     error
+}
+
+func (g fakeGroupPoolGate) Enabled(context.Context, int64, string, string) (bool, error) {
+	return g.enabled, g.err
+}
+
 func (s *fakeStore) Load(context.Context, int64) (domain.Item, error) { return s.item, s.loadErr }
 func (s *fakeStore) Start(context.Context, int64) (bool, error) {
 	s.calls = append(s.calls, "start")
@@ -97,17 +106,18 @@ func (s *fakeStore) Stop(_ context.Context, r StopRequest) error {
 
 // fakeTx records writes and can hold a current item for the lock check.
 type fakeTx struct {
-	current      domain.Item
-	lockErr      error
-	failOn       string
-	log          []string
-	enqueued     []NewWork
-	interests    []domain.Interest
-	observations []domain.Observation
-	groups       []catalog.Group
-	personGroups []catalog.PersonGroup
-	advanced     *domain.Cursor
-	finished     bool
+	current         domain.Item
+	lockErr         error
+	failOn          string
+	log             []string
+	enqueued        []NewWork
+	interests       []domain.Interest
+	observations    []domain.Observation
+	groups          []catalog.Group
+	personGroups    []catalog.PersonGroup
+	groupPoolPhotos []catalog.GroupPoolPhoto
+	advanced        *domain.Cursor
+	finished        bool
 }
 
 type legacyCatalogWriter struct{ CatalogWriter }
@@ -166,6 +176,11 @@ func (t *fakeTx) UpsertPersonGroups(_ context.Context, groups []catalog.PersonGr
 	return t.fail("person_groups")
 }
 
+func (t *fakeTx) UpsertGroupPoolPhotos(_ context.Context, photos []catalog.GroupPoolPhoto) error {
+	t.groupPoolPhotos = append(t.groupPoolPhotos, photos...)
+	return t.fail("group_pool_photos")
+}
+
 func (t *fakeTx) Add(_ context.Context, i domain.Interest) error {
 	t.interests = append(t.interests, i)
 	return t.fail("interest")
@@ -181,11 +196,17 @@ func (t *fakeTx) Do(_ context.Context, fn func(Writers) error) error {
 }
 
 type fakeKeys struct {
-	id  int64
-	err error
+	id       int64
+	err      error
+	selected *string
 }
 
-func (k fakeKeys) Choose(context.Context, string, domain.Lane) (int64, error) { return k.id, k.err }
+func (k fakeKeys) Choose(_ context.Context, subject string, _ domain.Lane) (int64, error) {
+	if k.selected != nil {
+		*k.selected = subject
+	}
+	return k.id, k.err
+}
 
 type fakePermit struct{ done []error }
 
@@ -245,14 +266,15 @@ func (s fakeSettings) Effective(context.Context, int64) (settingsdomain.Effectiv
 }
 
 type rig struct {
-	engine  *Engine
-	store   *fakeStore
-	tx      *fakeTx
-	facet   *fakeFacet
-	flickr  *fakeFlickr
-	permit  *fakePermit
-	health  *fakeHealth
-	favFace *fakeFacet
+	engine     *Engine
+	store      *fakeStore
+	tx         *fakeTx
+	facet      *fakeFacet
+	flickr     *fakeFlickr
+	permit     *fakePermit
+	health     *fakeHealth
+	favFace    *fakeFacet
+	keySubject *string
 }
 
 func newRig(t *testing.T) *rig {
@@ -279,11 +301,54 @@ func newRig(t *testing.T) *rig {
 			tx.current.Cursor = next
 		}
 	}
+	keySubject := new(string)
 	engine := &Engine{
-		Registry: registry, Store: store, Units: tx, Keys: fakeKeys{id: 9}, Governor: fakeGovernor{permit: permit},
+		Registry: registry, Store: store, Units: tx, Keys: fakeKeys{id: 9, selected: keySubject}, Governor: fakeGovernor{permit: permit},
 		Flickr: flk, Health: health, Settings: fakeSettings{max: 3}, Now: func() time.Time { return epoch },
 	}
-	return &rig{engine: engine, store: store, tx: tx, facet: facet, flickr: flk, permit: permit, health: health, favFace: other}
+	return &rig{engine: engine, store: store, tx: tx, facet: facet, flickr: flk, permit: permit, health: health, favFace: other, keySubject: keySubject}
+}
+
+func TestGroupPoolCrawlRequiresPreferenceAndUsesContactKey(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		enabled    bool
+		wantCalls  int
+		wantFinish bool
+	}{
+		{name: "disabled preference finishes without Flickr", wantFinish: true},
+		{name: "enabled preference crawls and stores pool photos", enabled: true, wantCalls: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			r := newRig(t)
+			facet := &fakeFacet{name: "group_pool", lane: domain.LanePerson, result: domain.Result{Photos: []catalog.Photo{{ID: 31}}, GroupPoolPhotos: []catalog.GroupPoolPhoto{{GroupNSID: "group@N00", PhotoID: 31}}}}
+			if err := r.engine.Registry.Register(facet); err != nil {
+				t.Fatal(err)
+			}
+			cursor := domain.Cursor{Page: 1, Method: "flickr.groups.pools.getPhotos", Params: map[string]string{"group_id": "group@N00", "user_id": "contact@N00", "per_page": "500"}}
+			r.store.item = domain.Item{ID: 7, Kind: "group_pool", Subject: "group@N00", UserID: 3, State: domain.StateReady, Cursor: cursor}
+			r.tx.current = domain.Item{State: domain.StateRunning, Cursor: cursor}
+			r.engine.GroupPools = fakeGroupPoolGate{enabled: test.enabled}
+			if err := r.engine.Handle(t.Context(), 7); err != nil {
+				t.Fatal(err)
+			}
+			if got := len(r.flickr.requests); got != test.wantCalls {
+				t.Fatalf("Flickr calls=%d, want %d", got, test.wantCalls)
+			}
+			if test.wantFinish {
+				if len(r.store.calls) != 2 || r.store.calls[1] != "finish" || len(r.tx.log) != 0 {
+					t.Fatalf("disabled pool was not finished cleanly: store=%v tx=%v", r.store.calls, r.tx.log)
+				}
+				return
+			}
+			if *r.keySubject != "contact@N00" || r.flickr.requests[0].Params["group_id"] != "group@N00" {
+				t.Fatalf("key subject=%q request=%+v", *r.keySubject, r.flickr.requests[0])
+			}
+			if len(r.tx.groupPoolPhotos) != 1 || r.tx.groupPoolPhotos[0].PhotoID != 31 || r.tx.groupPoolPhotos[0].GroupNSID != "group@N00" {
+				t.Fatalf("group pool photos=%+v", r.tx.groupPoolPhotos)
+			}
+		})
+	}
 }
 
 func TestEnsureScanStartStampsPhotosBeforeFirstPage(t *testing.T) {

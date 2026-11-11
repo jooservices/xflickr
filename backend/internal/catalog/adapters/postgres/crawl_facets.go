@@ -46,3 +46,12 @@ func (r *Repository) UpsertPersonGroups(ctx context.Context, items []catalog.Per
 	}
 	return r.UpsertPersonGroupsBatch(ctx, values)
 }
+
+// UpsertGroupPoolPhotos writes only the group/photo relationships in the crawl page.
+func (r *Repository) UpsertGroupPoolPhotos(ctx context.Context, items []catalog.GroupPoolPhoto) error {
+	values := make([]GroupPoolPhoto, 0, len(items))
+	for _, item := range items {
+		values = append(values, GroupPoolPhoto{GroupNSID: item.GroupNSID, PhotoID: item.PhotoID})
+	}
+	return r.UpsertGroupPoolPhotosBatch(ctx, values)
+}

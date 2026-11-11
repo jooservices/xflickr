@@ -193,7 +193,7 @@ func TestCheckIntervalDue(t *testing.T) {
 
 func TestCatalogKindsArePlannedExactlyOncePerCycle(t *testing.T) {
 	registry := NewRegistry()
-	for _, facet := range []domain.Facet{facets.Photos{}, facets.Favorites{}, facets.Albums{}, facets.Galleries{}, facets.Groups{}} {
+	for _, facet := range []domain.Facet{facets.Photos{}, facets.Favorites{}, facets.Albums{}, facets.Galleries{}, facets.Groups{}, facets.GroupPool{}} {
 		if err := registry.Register(facet); err != nil {
 			t.Fatal(err)
 		}
