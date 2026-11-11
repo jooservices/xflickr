@@ -16,10 +16,13 @@ guide feature implementation; operational environment rules live in
   the first 6 characters and mask the rest. The secret is sealed with
   associated data `api_keys:<id>`. No endpoint returns the secret, and logs
   do not record it.
-- A key stores an hourly limit, a per-second limit, and a burst. Those limits
-  stay within the administrator settings: `per_second_rate`, `burst`, and an
-  hourly ceiling of 3,600. A positive `daily_call_limit` below 3,600 tightens
-  the hourly ceiling to that budget.
+- A key stores an hourly limit, a per-second limit, and a burst. The key's hard
+  hourly limit is at most 3,600. The governor's effective hourly grant ceiling
+  is the smallest of that key limit, the global `usable_hourly_quota` (default
+  3,400, minimum 1), and a positive `daily_call_limit`. The usable quota applies
+  independently to each key and cannot be overridden by a user.
+  `per_second_rate` is the sustained token refill rate; `burst` caps grants in
+  one clock second.
 - Changing a key secret marks that key's connected accounts
   `reconnect_required`.
 - Deleting a key publishes `key.deleted` so queued work for that key stops.
@@ -152,7 +155,7 @@ guide feature implementation; operational environment rules live in
   unchanged. Restrict only the caller's sizes facet after Flickr reports not
   found or permission denied, and reopen it when the photo version or
   visibility changes.
-- Enforce each key's configured hourly allowance over the preceding rolling
+- Enforce each key's effective hourly grant ceiling over the preceding rolling
   60 minutes, across all lanes; a fixed-hour boundary never releases recent
   grants. Report reset as the oldest counted grant's expiry and rebuild exact
   grant timestamps and classes from the durable call log after Redis loss.

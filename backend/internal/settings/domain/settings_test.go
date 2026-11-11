@@ -34,6 +34,7 @@ func TestMergeSeededDefaults(t *testing.T) {
 		RestrictedRecheckInterval: 30 * 24 * time.Hour,
 		ReconcileInterval:         30 * 24 * time.Hour,
 		DailyCallLimit:            0,
+		UsableHourlyQuota:         3400,
 		QuotaReserve:              100,
 		PerSecondRate:             4,
 		Burst:                     5,
@@ -70,6 +71,36 @@ func TestMergeSeededDefaults(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("effective defaults = %+v, want %+v", got, want)
+	}
+}
+
+func TestUsableHourlyQuotaDefaultsAndValidation(t *testing.T) {
+	key := Key("usable_hourly_quota")
+	setting := definition(t, key)
+	if string(setting.Value) != "3400" || setting.UserOverridable || !floatEqual(setting.Min, 1) {
+		t.Fatalf("usable hourly quota default = %+v", setting)
+	}
+	schema, ok := SchemaFor(key)
+	if !ok || schema.Type != "integer" || !floatEqual(schema.Minimum, 1) {
+		t.Fatalf("usable hourly quota schema = %+v", schema)
+	}
+	if err := CheckUserOverride(key, setting, true, json.RawMessage("1200")); err == nil {
+		t.Fatal("user override was accepted")
+	}
+
+	snapshot := DefaultSnapshot()
+	snapshot.Overrides = map[Key]json.RawMessage{key: json.RawMessage("1200")}
+	effective, dropped, err := Merge(snapshot)
+	if err != nil || effective.UsableHourlyQuota != 3400 || len(dropped) != 1 || dropped[0].Key != key {
+		t.Fatalf("user override merge = %+v, dropped %+v, err %v", effective, dropped, err)
+	}
+
+	for _, raw := range []string{"0", "-1", "1.5"} {
+		candidate := setting
+		candidate.Value = json.RawMessage(raw)
+		if err := ValidateDefinition(candidate); err == nil {
+			t.Errorf("accepted invalid usable hourly quota %s", raw)
+		}
 	}
 }
 
@@ -138,6 +169,7 @@ func TestJSONSchemaPerKey(t *testing.T) {
 	documents := map[Key]string{
 		MaxDepth:              `{"type":"integer","minimum":1}`,
 		DailyCallLimit:        `{"type":"integer","minimum":0}`,
+		UsableHourlyQuota:     `{"type":"integer","minimum":1}`,
 		QuotaReserve:          `{"type":"integer","minimum":0}`,
 		PerSecondRate:         `{"type":"integer","minimum":1}`,
 		Burst:                 `{"type":"integer","minimum":1}`,

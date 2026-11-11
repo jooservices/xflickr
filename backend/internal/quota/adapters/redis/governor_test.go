@@ -69,6 +69,63 @@ func TestAcquireAtomicallyEnforcesHourlyLimitUnderConcurrency(t *testing.T) {
 	}
 }
 
+func TestGovernorUsableQuotaRollingWindow(t *testing.T) {
+	budget := domain.Budget{HourlyLimit: 4, PerSecondRate: 100, Burst: 100, Reserve: 1, PersonLaneShare: 0.75, PhotoLaneFloorShare: 0.1}
+	governor, server, client := setupGovernor(t, budget)
+	start := time.Unix(1_800_000_000, 0)
+	server.SetTime(start)
+
+	for _, class := range []domain.Class{domain.Photo, domain.Person, domain.Person, domain.Interactive} {
+		permit, _, err := governor.Acquire(t.Context(), 1, class)
+		if err != nil || permit == nil {
+			t.Fatalf("grant %s lane = %v, %v", class, permit, err)
+		}
+	}
+	if permit, wait, err := governor.Acquire(t.Context(), 1, domain.Person); err != nil || permit != nil || wait <= 0 {
+		t.Fatalf("grant above effective quota = %v, wait %s, err %v", permit, wait, err)
+	}
+
+	keys := governor.keys(1)
+	used := int64(0)
+	for _, index := range []int{1, 2, 4} {
+		count, err := client.ZCard(t.Context(), keys[index]).Result()
+		if err != nil {
+			t.Fatal(err)
+		}
+		used += count
+	}
+	if used != 4 {
+		t.Fatalf("rolling grants = %d, want the effective quota of 4", used)
+	}
+
+	lowered := budget
+	lowered.HourlyLimit = 3
+	governor.Budgets = StaticBudgets{1: lowered}
+	if permit, _, err := governor.Acquire(t.Context(), 1, domain.Interactive); err != nil || permit != nil {
+		t.Fatalf("lowered quota grant = %v, %v", permit, err)
+	}
+	remaining := int64(0)
+	for _, index := range []int{1, 2, 4} {
+		count, err := client.ZCard(t.Context(), keys[index]).Result()
+		if err != nil {
+			t.Fatal(err)
+		}
+		remaining += count
+	}
+	if remaining != used {
+		t.Fatalf("lowering quota removed grants: before %d, after %d", used, remaining)
+	}
+
+	server.SetTime(start.Add(time.Hour))
+	if permit, _, err := governor.Acquire(t.Context(), 1, domain.Interactive); err != nil || permit == nil {
+		t.Fatalf("grant after rolling expiry = %v, %v", permit, err)
+	}
+	newCount, err := client.ZCard(t.Context(), keys[1]).Result()
+	if err != nil || newCount != 1 {
+		t.Fatalf("interactive grants after expiry = %d, %v; want 1", newCount, err)
+	}
+}
+
 func TestReserveAndPersonLaneShare(t *testing.T) {
 	budget := domain.Budget{HourlyLimit: 100, PerSecondRate: 1000, Burst: 1000, Reserve: 10, PersonLaneShare: 0.3}
 	governor, _, _ := setupGovernor(t, budget)

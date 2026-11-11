@@ -17,6 +17,24 @@ type rowQuerier interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
+const budgetSQL = `SELECT LEAST(k.per_hour_limit,
+             CASE WHEN (daily.value #>> '{}')::bigint > 0
+                  THEN (daily.value #>> '{}')::bigint ELSE k.per_hour_limit END),
+       k.per_second_limit, k.burst, reserve.value, share.value, floor.value,
+       usable.value
+FROM api_keys k
+CROSS JOIN app_settings reserve
+CROSS JOIN app_settings share
+CROSS JOIN app_settings daily
+CROSS JOIN app_settings floor
+CROSS JOIN app_settings usable
+WHERE k.id = $1 AND k.status = 'valid'
+  AND reserve.key = 'quota_reserve'
+  AND share.key = 'person_lane_share'
+  AND daily.key = 'daily_call_limit'
+  AND floor.key = 'photo_lane_floor_share'
+  AND usable.key = 'usable_hourly_quota'`
+
 type Budgets struct{ Pool rowQuerier }
 
 func (b Budgets) Budget(ctx context.Context, keyID int64) (domain.Budget, error) {
@@ -24,13 +42,23 @@ func (b Budgets) Budget(ctx context.Context, keyID int64) (domain.Budget, error)
 		return domain.Budget{}, errors.New("quota: budget database, context, and key are required")
 	}
 	var hourly, rate, burst int64
-	var reserveRaw, shareRaw, floorRaw []byte
-	err := b.Pool.QueryRow(ctx, `SELECT LEAST(k.per_hour_limit, CASE WHEN (daily.value #>> '{}')::bigint > 0 THEN (daily.value #>> '{}')::bigint ELSE k.per_hour_limit END), k.per_second_limit, k.burst, reserve.value, share.value, floor.value FROM api_keys k CROSS JOIN app_settings reserve CROSS JOIN app_settings share CROSS JOIN app_settings daily CROSS JOIN app_settings floor WHERE k.id=$1 AND k.status='valid' AND reserve.key='quota_reserve' AND share.key='person_lane_share' AND daily.key='daily_call_limit' AND floor.key='photo_lane_floor_share'`, keyID).Scan(&hourly, &rate, &burst, &reserveRaw, &shareRaw, &floorRaw)
+	var reserveRaw, shareRaw, floorRaw, usableRaw []byte
+	err := b.Pool.QueryRow(ctx, budgetSQL, keyID).Scan(&hourly, &rate, &burst, &reserveRaw, &shareRaw, &floorRaw, &usableRaw)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Budget{}, fmt.Errorf("%w: %d", app.ErrKeyUnavailable, keyID)
 		}
 		return domain.Budget{}, fmt.Errorf("quota: load key budget: %w", err)
+	}
+	var usable int64
+	if err := json.Unmarshal(usableRaw, &usable); err != nil {
+		return domain.Budget{}, fmt.Errorf("quota: decode usable hourly quota setting: %w", err)
+	}
+	if usable <= 0 {
+		return domain.Budget{}, errors.New("quota: usable hourly quota setting must be positive")
+	}
+	if usable < hourly {
+		hourly = usable
 	}
 	var reserve int64
 	var personShare, photoFloor float64

@@ -494,6 +494,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		"restricted_recheck_interval":             {value: "2592000"},
 		"reconcile_interval":                      {value: "2592000"},
 		"daily_call_limit":                        {value: "0"},
+		"usable_hourly_quota":                     {value: "3400", min: &minimum},
 		"quota_reserve":                           {value: "100"},
 		"per_second_rate":                         {value: "4"},
 		"burst":                                   {value: "5"},
@@ -535,7 +536,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 	}
 	for key, expected := range want {
 		item, ok := got[key]
-		wantOverridable := key != "photo_lane_floor_share" && key != "restricted_recheck_interval" && key != "registration_open" && key != "photo_info_enabled" && key != "photo_exif_enabled" && key != "photo_contexts_enabled" && key != "photo_comments_enabled" && key != "photo_favorites_enabled" && key != "per_key_ready_cap" && key != "node_ready_cap" && key != "media_ready_cap" && key != "ai_ready_cap" && key != "sync_ready_cap" && key != "lease_timeout" && key != "metrics.retention_days" && key != "queue.completed_retention" && key != "queue.discarded_retention" && !strings.HasPrefix(key, "ops.") && !strings.HasPrefix(key, "score_") && !strings.HasPrefix(key, "maintenance.")
+		wantOverridable := key != "photo_lane_floor_share" && key != "usable_hourly_quota" && key != "restricted_recheck_interval" && key != "registration_open" && key != "photo_info_enabled" && key != "photo_exif_enabled" && key != "photo_contexts_enabled" && key != "photo_comments_enabled" && key != "photo_favorites_enabled" && key != "per_key_ready_cap" && key != "node_ready_cap" && key != "media_ready_cap" && key != "ai_ready_cap" && key != "sync_ready_cap" && key != "lease_timeout" && key != "metrics.retention_days" && key != "queue.completed_retention" && key != "queue.discarded_retention" && !strings.HasPrefix(key, "ops.") && !strings.HasPrefix(key, "score_") && !strings.HasPrefix(key, "maintenance.")
 		if !ok || item.overridable != wantOverridable || !jsonEqual(item.value, expected.value) || !floatPtrEqual(item.minimum, expected.min) || !floatPtrEqual(item.maximum, expected.max) {
 			t.Fatalf("seed %s = value %s overridable %v min %v max %v", key, item.value, item.overridable, item.minimum, item.maximum)
 		}
@@ -552,6 +553,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		RestrictedRecheckInterval: 30 * 24 * time.Hour,
 		ReconcileInterval:         30 * 24 * time.Hour,
 		DailyCallLimit:            0,
+		UsableHourlyQuota:         3400,
 		QuotaReserve:              100,
 		PerSecondRate:             4,
 		Burst:                     5,
