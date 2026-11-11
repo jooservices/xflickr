@@ -67,6 +67,9 @@ func (c *Client) UploadBytes(ctx context.Context, asset app.Asset) (string, erro
 		if contextErr := ctx.Err(); contextErr != nil {
 			return "", fmt.Errorf("gphotos: upload request canceled: %w", contextErr)
 		}
+		if stream.reachedEOF && stream.count != asset.Size {
+			return "", fmt.Errorf("%w: uploaded byte count does not match metadata", app.ErrInvalidAsset)
+		}
 		return "", errors.New("gphotos: send upload request")
 	}
 	if response == nil || response.Body == nil {
@@ -118,12 +121,16 @@ func readUploadToken(body io.Reader, ctx context.Context) (string, error) {
 }
 
 type countingReader struct {
-	reader io.Reader
-	count  int64
+	reader     io.Reader
+	count      int64
+	reachedEOF bool
 }
 
 func (r *countingReader) Read(p []byte) (int, error) {
 	n, err := r.reader.Read(p)
 	r.count += int64(n)
+	if err == io.EOF {
+		r.reachedEOF = true
+	}
 	return n, err
 }

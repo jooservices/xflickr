@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -112,6 +113,33 @@ func TestUploadBytesRejectsSizeAndDigestMismatch(t *testing.T) {
 			}
 			if requests != 1 {
 				t.Fatalf("requests = %d, want 1", requests)
+			}
+		})
+	}
+}
+
+func TestUploadBytesMapsRealTransportSizeMismatch(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func(*app.Asset)
+	}{
+		{name: "short body", change: func(asset *app.Asset) { asset.Size++ }},
+		{name: "long body", change: func(asset *app.Asset) { asset.Size-- }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+			t.Cleanup(server.Close)
+
+			client, err := NewClient(server.Client(), server.URL)
+			if err != nil {
+				t.Fatalf("NewClient() error = %v", err)
+			}
+
+			asset := testAsset("photo bytes")
+			test.change(&asset)
+			token, err := client.UploadBytes(t.Context(), asset)
+			if token != "" || !errors.Is(err, app.ErrInvalidAsset) {
+				t.Fatalf("UploadBytes() = %q, %v; want ErrInvalidAsset", token, err)
 			}
 		})
 	}
