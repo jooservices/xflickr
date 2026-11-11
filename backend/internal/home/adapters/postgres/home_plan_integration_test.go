@@ -76,7 +76,7 @@ func assertHomePlans(t *testing.T, ctx context.Context, pool *pgxpool.Pool, stat
 		t.Fatalf("query plan fixture requires the default sequential scan setting, got %q", seqScanSetting)
 	}
 	requestPlan := explainHomePlan(t, ctx, tx, "Home request snapshot", statement, userID)
-	assertCandidatePlan(t, requestPlan, 12, 4*50)
+	assertRequestCandidatePlan(t, requestPlan, 24)
 	assertWorkItemPlan(t, requestPlan)
 	refreshPlan := explainHomePlan(t, ctx, tx, "Home refresh photo page", refreshPhotoPageSQL, userID, "", batchSize)
 	assertCandidatePlan(t, refreshPlan, batchSize, batchSize)
@@ -93,6 +93,8 @@ func createPlanFixtures(t *testing.T, ctx context.Context, tx pgx.Tx, userID int
 	}{
 		{`CREATE TEMP TABLE user_home_photo_candidates (user_id BIGINT NOT NULL, photo_id BIGINT NOT NULL, uploaded_at TIMESTAMPTZ)`, "own candidate table"},
 		{`CREATE TEMP TABLE user_home_shared_photo_candidates (photo_id BIGINT NOT NULL, uploaded_at TIMESTAMPTZ)`, "shared candidate table"},
+		{`CREATE TEMP TABLE sharing_settings (user_id BIGINT NOT NULL, enabled BOOLEAN NOT NULL)`, "sharing settings"},
+		{`CREATE TEMP TABLE observations (user_id BIGINT NOT NULL, record_kind TEXT NOT NULL, record_id TEXT NOT NULL)`, "photo observations"},
 		{`CREATE TEMP TABLE photos (
     id BIGINT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -109,22 +111,38 @@ func createPlanFixtures(t *testing.T, ctx context.Context, tx pgx.Tx, userID int
 		{`INSERT INTO user_home_photo_candidates
 SELECT $1, candidate_id::bigint, statement_timestamp() - candidate_id * interval '1 second'
 FROM generate_series(1, 200000) AS candidate(candidate_id)`, "200,000 own candidates"},
+		{`INSERT INTO user_home_photo_candidates
+SELECT $1 + 2, candidate_id::bigint, statement_timestamp() + interval '2 years' - candidate_id * interval '1 second'
+FROM generate_series(1, 200000) AS candidate(candidate_id)`, "200,000 disabled sharer candidates"},
 		{`INSERT INTO user_home_shared_photo_candidates
 SELECT candidate_id::bigint, statement_timestamp() - candidate_id * interval '1 second'
 FROM generate_series(1, 200000) AS candidate(candidate_id)`, "200,000 shared candidates"},
 		{`INSERT INTO user_home_photo_candidates (user_id, photo_id, uploaded_at)
 SELECT $1, 400000 + candidate_id, statement_timestamp() + interval '1 year'
 FROM generate_series(1, 12) AS candidate(candidate_id)`, "12 visible own candidates"},
+		{`INSERT INTO user_home_photo_candidates (user_id, photo_id, uploaded_at)
+SELECT $1 + 1, 500000 + candidate_id, statement_timestamp() + interval '1 year' + candidate_id * interval '1 second'
+FROM generate_series(1, 12) AS candidate(candidate_id)`, "12 visible shared candidates"},
 		{`INSERT INTO user_home_shared_photo_candidates (photo_id, uploaded_at)
 SELECT 400000 + candidate_id, statement_timestamp() + interval '1 year'
 FROM generate_series(1, 12) AS candidate(candidate_id)`, "12 revoked shared candidates"},
+		{`INSERT INTO sharing_settings (user_id, enabled) VALUES ($1 + 1, TRUE), ($1 + 2, FALSE)`, "enabled and disabled sharers"},
 		{`INSERT INTO photos (id, title, owner_nsid, taken_at, uploaded_at, sizes, visibility)
 SELECT 400000 + candidate_id, 'plan photo', 'plan-owner', statement_timestamp(), statement_timestamp(), '[]'::jsonb, 'public'
 FROM generate_series(1, 12) AS candidate(candidate_id)`, "candidate photos"},
+		{`INSERT INTO photos (id, title, owner_nsid, taken_at, uploaded_at, sizes, visibility)
+SELECT 500000 + candidate_id, 'shared plan photo', 'shared-plan-owner', statement_timestamp(), statement_timestamp(), '[]'::jsonb, 'public'
+FROM generate_series(1, 12) AS candidate(candidate_id)`, "shared candidate photos"},
+		{`INSERT INTO observations (user_id, record_kind, record_id)
+SELECT $1, 'photo', (400000 + candidate_id)::text FROM generate_series(1, 12) AS candidate(candidate_id)
+UNION ALL
+SELECT $1 + 1, 'photo', (500000 + candidate_id)::text FROM generate_series(1, 12) AS candidate(candidate_id)`, "visible photo observations"},
 		{`CREATE UNIQUE INDEX ON user_home_photo_candidates (user_id, photo_id)`, "own candidate primary key"},
 		{`CREATE INDEX ON user_home_photo_candidates (user_id, uploaded_at DESC NULLS LAST, photo_id DESC)`, "own candidate recent index"},
 		{`CREATE UNIQUE INDEX ON user_home_shared_photo_candidates (photo_id)`, "shared candidate primary key"},
 		{`CREATE INDEX ON user_home_shared_photo_candidates (uploaded_at DESC NULLS LAST, photo_id DESC)`, "shared candidate recent index"},
+		{`CREATE INDEX ON observations (user_id, record_kind, record_id)`, "photo observation lookup"},
+		{`CREATE INDEX ON sharing_settings (user_id) WHERE enabled`, "enabled sharing lookup"},
 		{`CREATE TEMP TABLE work_items (id BIGINT, kind TEXT, subject_key TEXT, user_id BIGINT, state TEXT, updated_at TIMESTAMPTZ)`, "work item table"},
 		{`CREATE INDEX ON work_items (user_id, subject_key, state)
 WHERE state IN ('pending', 'ready', 'running', 'waiting', 'failed')`, "contact state index"},
@@ -154,10 +172,36 @@ SELECT candidate_id, 'photos',
 FROM generate_series(1, 5000) AS candidate(candidate_id)`, userID, contactNSID); err != nil {
 		t.Fatalf("seed 5,000 active work items: %v", err)
 	}
-	for _, table := range []string{"user_home_photo_candidates", "user_home_shared_photo_candidates", "work_items"} {
+	for _, table := range []string{"user_home_photo_candidates", "user_home_shared_photo_candidates", "sharing_settings", "observations", "work_items"} {
 		if _, err := tx.Exec(ctx, `ANALYZE `+table); err != nil {
 			t.Fatalf("analyze synthetic %s: %v", table, err)
 		}
+	}
+}
+
+func assertRequestCandidatePlan(t *testing.T, root explainNode, candidateLimit int) {
+	t.Helper()
+	var seen bool
+	var rowsRead float64
+	var visit func(explainNode)
+	visit = func(node explainNode) {
+		if node.RelationName == "user_home_photo_candidates" {
+			seen = true
+			if node.NodeType == "Seq Scan" {
+				t.Error("Home request plan sequentially scans per-user photo candidates")
+			}
+			rowsRead += node.ActualRows * node.ActualLoops
+		}
+		for _, child := range node.Plans {
+			visit(child)
+		}
+	}
+	visit(root)
+	if !seen {
+		t.Fatal("Home request plan does not use per-user photo candidates")
+	}
+	if rowsRead > float64(candidateLimit) {
+		t.Errorf("Home request reads %.0f per-user candidates, over bound %d", rowsRead, candidateLimit)
 	}
 }
 

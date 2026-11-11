@@ -152,8 +152,9 @@ func TestLoadReturnsUserScopedSnapshot(t *testing.T) {
 	}
 	for _, fragment := range []string{
 		"user_home_photo_candidates candidate",
-		"user_home_shared_photo_candidates shared_candidate",
-		"shared_candidate.uploaded_at DESC NULLS LAST",
+		"FROM sharing_settings setting",
+		"enabled_sharers AS MATERIALIZED",
+		"setting.enabled",
 		"photo.visibility = 'public'",
 		"photo.tombstoned_at IS NULL",
 		"LIMIT 12",
@@ -227,6 +228,10 @@ func TestLoadFiltersSharedCandidatesBeforeLimit(t *testing.T) {
 	for _, fragment := range []string{
 		"LIMIT 12",
 		"observations observation",
+		"enabled_sharers AS MATERIALIZED",
+		"FROM sharing_settings setting",
+		"CROSS JOIN LATERAL",
+		"shared_candidate.user_id = sharer.user_id",
 		"setting.enabled",
 	} {
 		if !strings.Contains(reader.query, fragment) {
@@ -239,10 +244,16 @@ func TestLoadFiltersSharedCandidatesBeforeLimit(t *testing.T) {
 		t.Fatal("Home query is missing the shared and own candidate sources")
 	}
 	sharedCandidates := reader.query[sharedStart:ownStart]
-	permissionFilter := strings.Index(sharedCandidates, "WHERE photo.visibility = 'public'")
+	permissionFilter := strings.Index(sharedCandidates, "shared_candidate.user_id = sharer.user_id")
 	pageLimit := strings.Index(sharedCandidates, "LIMIT 12")
 	if permissionFilter < 0 || pageLimit < 0 || permissionFilter > pageLimit {
-		t.Fatal("shared candidates must be permission-filtered before the bounded page limit")
+		t.Fatal("shared candidates must filter each sharer's permissions before its bounded page limit")
+	}
+	if !strings.Contains(sharedCandidates, "FROM enabled_sharers sharer") {
+		t.Fatal("shared candidates must read only from currently enabled sharers")
+	}
+	if !strings.Contains(reader.query[:sharedStart], "WHERE setting.enabled") {
+		t.Fatal("Home must filter disabled sharers before scanning their photo candidates")
 	}
 }
 

@@ -45,10 +45,11 @@ through each page commit, and saves a keyset checkpoint so an interrupted
 migration can resume without inserting candidates for observations changed in
 the meantime.
 
-The request returns at most 12 newest photos from each candidate source, then
-unions them before returning at most 12. Current observation, sharing, and
-Flickr visibility permissions are checked before each source limit, so revoked
-candidates cannot hide an allowed photo behind a fixed scan cap.
+The request reads at most 12 newest eligible photos per enabled sharing owner
+from the indexed per-user candidate table, then deduplicates and returns at most
+12. Disabled sharers are filtered before their candidate rows are visited;
+current observation and Flickr visibility checks still run before each page
+limit.
 Starred contacts are capped at five before joining their cached per-contact
 totals; active crawl state uses indexed work-item lookups. No request query
 counts the `photos`, `favorites`, or `observations` tables.

@@ -184,21 +184,35 @@ starred_data AS (
     LEFT JOIN user_home_contact_stats counts
       ON counts.user_id = $1 AND counts.person_nsid = contact.person_nsid AND valid.is_valid
 ),
+enabled_sharers AS MATERIALIZED (
+    SELECT setting.user_id
+    FROM sharing_settings setting
+    WHERE setting.enabled
+),
 shared_photo_candidates AS MATERIALIZED (
-    SELECT shared_candidate.photo_id, shared_candidate.uploaded_at
-    FROM user_home_shared_photo_candidates shared_candidate
-    JOIN photos photo ON photo.id = shared_candidate.photo_id
-    WHERE photo.visibility = 'public'
-      AND photo.tombstoned_at IS NULL
-      AND EXISTS (
-          SELECT 1
-          FROM observations observation
-          JOIN sharing_settings setting
-            ON setting.user_id = observation.user_id AND setting.enabled
-          WHERE observation.record_kind = 'photo'
-            AND observation.record_id = shared_candidate.photo_id::text
-      )
-    ORDER BY shared_candidate.uploaded_at DESC NULLS LAST, shared_candidate.photo_id DESC
+    SELECT permitted.photo_id, permitted.uploaded_at
+    FROM (
+        SELECT DISTINCT candidate.photo_id, candidate.uploaded_at
+        FROM enabled_sharers sharer
+        CROSS JOIN LATERAL (
+            SELECT shared_candidate.photo_id, shared_candidate.uploaded_at
+            FROM user_home_photo_candidates shared_candidate
+            JOIN photos photo ON photo.id = shared_candidate.photo_id
+            WHERE shared_candidate.user_id = sharer.user_id
+              AND photo.visibility = 'public'
+              AND photo.tombstoned_at IS NULL
+              AND EXISTS (
+                  SELECT 1
+                  FROM observations observation
+                  WHERE observation.user_id = sharer.user_id
+                    AND observation.record_kind = 'photo'
+                    AND observation.record_id = shared_candidate.photo_id::text
+              )
+            ORDER BY shared_candidate.uploaded_at DESC NULLS LAST, shared_candidate.photo_id DESC
+            LIMIT 12
+        ) candidate
+    ) permitted
+    ORDER BY permitted.uploaded_at DESC NULLS LAST, permitted.photo_id DESC
     LIMIT 12
 ),
 own_photo_candidates AS MATERIALIZED (

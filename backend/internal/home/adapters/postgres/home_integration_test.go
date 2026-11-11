@@ -704,7 +704,7 @@ func TestHomeSnapshotContinuesPastRevokedSharedPhotos(t *testing.T) {
 	suffix := fmt.Sprintf("home-revoked-%d", time.Now().UnixNano())
 	var viewerID, revokedOwnerID, allowedOwnerID int64
 	var revokedKeyID, allowedKeyID, revokedAccountID, allowedAccountID int64
-	photoIDs := make([]int64, 0, 212)
+	photoIDs := make([]int64, 0, 262)
 	revokedNSID, allowedNSID := suffix+"-revoked", suffix+"-allowed"
 	t.Cleanup(func() {
 		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
@@ -742,7 +742,7 @@ func TestHomeSnapshotContinuesPastRevokedSharedPhotos(t *testing.T) {
 	}
 	baseID := time.Now().UnixNano()
 	baseTime := time.Now().UTC().Truncate(time.Microsecond)
-	const revokedCount = 200
+	const revokedCount = 250
 	const allowedCount = 12
 	for i := 0; i < revokedCount+allowedCount; i++ {
 		ownerNSID, ownerID, accountID := revokedNSID, revokedOwnerID, revokedAccountID
@@ -773,7 +773,7 @@ func TestHomeSnapshotContinuesPastRevokedSharedPhotos(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(snapshot.NewPhotos) != 12 {
-		t.Fatalf("visible newest photos = %d, want 12 after skipping 200 revoked candidates", len(snapshot.NewPhotos))
+		t.Fatalf("visible newest photos = %d, want 12 after skipping 250 revoked candidates", len(snapshot.NewPhotos))
 	}
 	for i, photo := range snapshot.NewPhotos {
 		want := baseID + 1000 + int64(i)
