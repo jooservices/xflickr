@@ -50,21 +50,22 @@ func (r cycleRowFake) Scan(dest ...any) error {
 }
 
 type cycleTxFake struct {
-	cursor          string
-	startedAt       *time.Time
-	due             [][6]any
-	execRecords     []cycleExecRecord
-	queries         int
-	execs           int
-	queryErrAt      int
-	execErrAt       int
-	commitErr       error
-	rollbackErr     error
-	lastQuery       string
-	lastArgs        []any
-	lastExec        string
-	execArgs        []any
-	zeroEnqueueRows bool
+	cursor           string
+	startedAt        *time.Time
+	due              [][6]any
+	execRecords      []cycleExecRecord
+	queries          int
+	execs            int
+	queryErrAt       int
+	execErrAt        int
+	commitErr        error
+	rollbackErr      error
+	lastQuery        string
+	lastArgs         []any
+	lastExec         string
+	execArgs         []any
+	zeroEnqueueRows  bool
+	zeroTransferRows bool
 }
 
 type cycleExecRecord struct {
@@ -101,6 +102,9 @@ func (tx *cycleTxFake) Exec(_ context.Context, query string, args ...any) (pgcon
 	}
 	if strings.Contains(query, "INSERT INTO work_items") && tx.zeroEnqueueRows {
 		return pgconn.NewCommandTag("INSERT 0 0"), nil
+	}
+	if strings.Contains(query, "UPDATE work_items") && tx.zeroTransferRows {
+		return pgconn.NewCommandTag("UPDATE 0"), nil
 	}
 	return pgconn.NewCommandTag("UPDATE 1"), nil
 }
@@ -219,16 +223,21 @@ func TestScheduleContactsEnqueuesAndRejectsInvalidCalls(t *testing.T) {
 	tx := &cycleTxFake{}
 	repository := &CycleRepository{begin: func(context.Context) (cycleTx, error) { return tx, nil }}
 	queued, err := repository.ScheduleContacts(context.Background(), 9, now, time.Hour)
-	if err != nil || !queued || tx.execs != 2 || !strings.Contains(tx.lastExec, "contacts") {
+	if err != nil || !queued || tx.execs != 3 || !strings.Contains(tx.lastExec, "contacts") {
 		t.Fatalf("ScheduleContacts() = %v, %v; execs=%d last=%q", queued, err, tx.execs, tx.lastExec)
 	}
-	if !strings.Contains(tx.execRecords[0].query, "pg_advisory_xact_lock") || !strings.Contains(tx.lastExec, "previous.subject_key=account.nsid") {
+	if !strings.Contains(tx.execRecords[0].query, "pg_advisory_xact_lock") ||
+		!strings.Contains(tx.execRecords[1].query, "UPDATE work_items") ||
+		!strings.Contains(tx.execRecords[1].query, "api_key.status='valid'") ||
+		!strings.Contains(tx.lastExec, "previous.subject_key=account.nsid") ||
+		!strings.Contains(tx.lastExec, "api_key.status='valid'") {
 		t.Fatalf("contacts scheduling is not serialized and deduplicated by NSID: %#v", tx.execRecords)
 	}
 	if len(tx.execArgs) < 4 || tx.execArgs[0] != int64(9) {
 		t.Fatalf("exec args = %#v", tx.execArgs)
 	}
 	tx.zeroEnqueueRows = true
+	tx.zeroTransferRows = true
 	queued, err = repository.ScheduleContacts(context.Background(), 9, now, time.Hour)
 	if err != nil || queued {
 		t.Fatalf("empty enqueue = %v, %v", queued, err)
@@ -260,7 +269,12 @@ func TestScheduleContactsEnqueuesAndRejectsInvalidCalls(t *testing.T) {
 	if _, err := repository.ScheduleContacts(context.Background(), 1, now, time.Hour); err == nil || !strings.Contains(err.Error(), "lock contacts scheduling") {
 		t.Fatalf("lock failure = %v", err)
 	}
-	insertFail := &cycleTxFake{execErrAt: 2}
+	reassignFail := &cycleTxFake{execErrAt: 2}
+	repository.begin = func(context.Context) (cycleTx, error) { return reassignFail, nil }
+	if _, err := repository.ScheduleContacts(context.Background(), 1, now, time.Hour); err == nil || !strings.Contains(err.Error(), "reassign contacts refresh") {
+		t.Fatalf("reassignment failure = %v", err)
+	}
+	insertFail := &cycleTxFake{execErrAt: 3}
 	repository.begin = func(context.Context) (cycleTx, error) { return insertFail, nil }
 	if _, err := repository.ScheduleContacts(context.Background(), 1, now, time.Hour); err == nil || !strings.Contains(err.Error(), "enqueue contacts refresh") {
 		t.Fatalf("enqueue failure = %v", err)

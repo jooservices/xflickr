@@ -183,6 +183,11 @@ using each user's own maximum depth. `crawl_interests` stores per-person photo,
 favorite, and check checkpoints. The settings interval is enforced by the
 scheduler, not a cron job.
 
+Contacts work is assigned only to an account with an `ok` connection and a
+`valid` API key. If a pending contacts item no longer matches usable
+credentials, the scheduler can move it to another eligible account for the
+same Flickr NSID while preserving its cursor.
+
 ## Scoring
 
 Work-item priority uses the static sort key described in

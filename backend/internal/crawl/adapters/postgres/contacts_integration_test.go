@@ -15,6 +15,7 @@ import (
 	catalogapp "github.com/jooservices/xflickr/internal/catalog/app"
 	catalogdomain "github.com/jooservices/xflickr/internal/catalog/domain"
 	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
+	crawldomain "github.com/jooservices/xflickr/internal/crawl/domain"
 	"github.com/jooservices/xflickr/internal/crawl/facets"
 )
 
@@ -567,6 +568,68 @@ func TestContactsCalledOncePerIntervalPerAccount(t *testing.T) {
 	}
 	if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE user_id=$1 AND kind='contacts' AND subject_key=$2`, userID, account).Scan(&state); err != nil || state != "pending" {
 		t.Fatalf("reopened state = %q err=%v", state, err)
+	}
+}
+
+func TestContactsScheduleRequiresUsableCredentialsAndReassignsWork(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	firstUserID := insertInterestTestUser(t, ctx, pool)
+	secondUserID := insertInterestTestUser(t, ctx, pool)
+	firstKeyID := seedOwnerKey(t, ctx, pool, firstUserID, "")
+	secondKeyID := seedOwnerKey(t, ctx, pool, secondUserID, "")
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	account := "credential-refresh-acct-" + suffix
+	if _, err := pool.Exec(ctx, `UPDATE api_keys SET status='invalid' WHERE id=$1`, firstKeyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status)
+		VALUES($1,$2,$3,'first account','{}','{}','ok'),($4,$5,$3,'second account','{}','{}','ok')`,
+		firstUserID, firstKeyID, account, secondUserID, secondKeyID); err != nil {
+		t.Fatal(err)
+	}
+	repository, err := NewCycleRepository(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	queued, err := repository.ScheduleContacts(ctx, firstUserID, now, time.Hour)
+	if err != nil || queued {
+		t.Fatalf("schedule with invalid credentials = %v, %v; want no work", queued, err)
+	}
+	if got := count(t, ctx, pool, `SELECT count(*) FROM work_items WHERE kind='contacts' AND subject_key=$1`, account); got != 0 {
+		t.Fatalf("contacts work items with only invalid credentials = %d, want 0", got)
+	}
+
+	cursor := []byte(`{"page":3,"method":"flickr.contacts.getList","params":{"user_id":"` + account + `","per_page":"500"}}`)
+	var itemID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO work_items(kind,subject_key,user_id,key_id,state,cursor,last_error)
+		VALUES('contacts',$1,$2,$3,'pending',$4,'no eligible key') RETURNING id`, account, firstUserID, firstKeyID, cursor).Scan(&itemID); err != nil {
+		t.Fatal(err)
+	}
+	queued, err = repository.ScheduleContacts(ctx, secondUserID, now.Add(time.Minute), time.Hour)
+	if err != nil || !queued {
+		t.Fatalf("reassign to valid credentials = %v, %v; want reassignment", queued, err)
+	}
+	if got := count(t, ctx, pool, `SELECT count(*) FROM work_items WHERE kind='contacts' AND subject_key=$1`, account); got != 1 {
+		t.Fatalf("contacts work items after reassignment = %d, want 1", got)
+	}
+	var gotUserID, gotKeyID int64
+	var state, lastError string
+	var cursorBytes []byte
+	if err := pool.QueryRow(ctx, `SELECT user_id,key_id,state,cursor,last_error FROM work_items WHERE id=$1`, itemID).
+		Scan(&gotUserID, &gotKeyID, &state, &cursorBytes, &lastError); err != nil {
+		t.Fatal(err)
+	}
+	gotCursor, err := crawldomain.ParseCursor(cursorBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotUserID != secondUserID || gotKeyID != secondKeyID || state != "pending" || gotCursor.Page != 3 ||
+		gotCursor.Method != "flickr.contacts.getList" || gotCursor.Params["user_id"] != account ||
+		gotCursor.Params["per_page"] != "500" || lastError != "no eligible key" {
+		t.Fatalf("reassigned item user=%d key=%d state=%q cursor=%+v error=%q", gotUserID, gotKeyID, state, gotCursor, lastError)
 	}
 }
 
