@@ -15,11 +15,13 @@ import (
 
 const maxIdentityBodyBytes = 16 * 1024
 
-// RequestBodyLimit caps JSON request bodies before generated decoders allocate
-// them, keeping oversized credentials away from password hashing.
+// RequestBodyLimit caps identity request bodies before generated decoders
+// allocate them, keeping oversized credentials away from password hashing.
 func RequestBodyLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxIdentityBodyBytes)
+		if _, ok := identityBodyPolicy(r.Method, r.URL.Path); ok {
+			r.Body = http.MaxBytesReader(w, r.Body, maxIdentityBodyBytes)
+		}
 		next.ServeHTTP(w, r)
 	})
 }
