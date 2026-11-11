@@ -11,7 +11,26 @@ import { USER_NAV } from './nav';
 
 beforeEach(() => {
   window.localStorage.clear();
-  server.use(http.get('*/favorites', () => HttpResponse.json({ items: [] })));
+  server.use(
+    http.get('*/favorites', () => HttpResponse.json({ items: [] })),
+    http.get('*/api/v1/me/home', () =>
+      HttpResponse.json({
+        success: true,
+        code: 200,
+        message: 'OK',
+        data: {
+          generated_at: '2026-11-12T00:00:00Z',
+          contacts: { total: 0, direct: 0, discovered: 0 },
+          photos: { total: null, sizes_ready: null, captioned: null },
+          unavailable_sections: ['photos', 'starred_contacts', 'activity'],
+          links: { self: { href: '/api/v1/me/home', method: 'GET' } },
+        },
+        meta: {},
+        errors: null,
+        trace_id: 'test-trace',
+      }),
+    ),
+  );
 });
 
 describe('user shell', () => {
@@ -53,6 +72,8 @@ describe('user shell', () => {
         expect(screen.getByTestId('user-library-page')).toBeInTheDocument();
       } else if (item.id === 'albums') {
         expect(screen.getByTestId('albums-page')).toBeInTheDocument();
+      } else if (item.id === 'contacts') {
+        expect(screen.getByTestId('user-contacts-page')).toBeInTheDocument();
       } else {
         expect(screen.getByTestId('shell-page')).toBeInTheDocument();
       }
@@ -101,12 +122,12 @@ describe('user shell', () => {
 
     expect(await screen.findByTestId('shell-notfound')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('shell-notfound-home'));
-    expect(await screen.findByTestId('shell-page')).toBeInTheDocument();
+    expect(await screen.findByTestId('user-home-page')).toBeInTheDocument();
   });
 
   it('returns from an unknown route to the previous page', async () => {
     const { router } = renderApp({ session: userSession });
-    await screen.findByTestId('shell-page');
+    await screen.findByTestId('user-home-page');
     await router.navigate('/nope');
 
     fireEvent.click(await screen.findByTestId('shell-notfound-back'));
@@ -408,7 +429,7 @@ describe('user shell access to /admin', () => {
     expect(screen.queryByTestId('admin-rail')).toBeNull();
     expect(screen.queryByTestId('admin-nav-users')).toBeNull();
     fireEvent.click(screen.getByTestId('admin-forbidden-cta'));
-    expect(await screen.findByTestId('shell-page')).toBeInTheDocument();
+    expect(await screen.findByTestId('user-home-page')).toBeInTheDocument();
   });
 
   it('lands an admin on /admin from / and remembers the User switch', async () => {
@@ -420,7 +441,7 @@ describe('user shell access to /admin', () => {
     fireEvent.click(
       within(screen.getByTestId('admin-role-switch')).getByRole('button', { name: /user/i }),
     );
-    expect(await screen.findByTestId('shell-page')).toBeInTheDocument();
+    expect(await screen.findByTestId('user-home-page')).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/');
     expect(window.localStorage.getItem('xf_role_view')).toBe('user');
   });
@@ -429,7 +450,7 @@ describe('user shell access to /admin', () => {
     window.localStorage.setItem('xf_role_view', 'user');
     const { router } = renderApp({ session: adminSession, path: '/' });
 
-    expect(await screen.findByTestId('shell-page')).toBeInTheDocument();
+    expect(await screen.findByTestId('user-home-page')).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/');
   });
 

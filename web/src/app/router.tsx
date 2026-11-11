@@ -17,6 +17,7 @@ import { ContactsPage } from '../pages/contacts/ContactsPage';
 import { QuotaPage } from '../pages/admin/quota';
 import { AlbumsPage } from '../pages/albums';
 import { LibraryPage } from '../pages/library';
+import { HomePage } from '../pages/home/HomePage';
 import { NodesPage } from '../pages/admin/nodes/NodesPage';
 import { RouteErrorPage } from './ErrorBoundary';
 
@@ -33,15 +34,7 @@ function userPageElement(path: string, labelKey: MessageKey) {
 const userPages: RouteObject[] = [
   {
     index: true,
-    element: (
-      <PlaceholderPage
-        scope="shell"
-        titleKey="shell.nav.home"
-        emptyIcon="image"
-        emptyTitleKey="shell.home.empty.title"
-        emptyTextKey="shell.home.empty.text"
-      />
-    ),
+    element: <HomePage />,
   },
   ...USER_NAV.filter((item) => item.path !== '/').map((item): RouteObject => ({
     path: item.path.slice(1),
