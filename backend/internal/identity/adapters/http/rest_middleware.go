@@ -19,7 +19,7 @@ const maxIdentityBodyBytes = 16 * 1024
 // allocate them, keeping oversized credentials away from password hashing.
 func RequestBodyLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := identityBodyPolicy(r.Method, r.URL.Path); ok {
+		if isIdentityResourcePath(r.URL.Path) {
 			r.Body = http.MaxBytesReader(w, r.Body, maxIdentityBodyBytes)
 		}
 		next.ServeHTTP(w, r)
