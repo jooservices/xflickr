@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-#!/usr/bin/env python3
 """Capture contact-screen query plans against rollback-only 400k-row fixtures."""
 
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -40,15 +40,19 @@ BEGIN
 END;
 $$;
 INSERT INTO photos
-SELECT g, 'owner-42', 'photo ' || g,
+SELECT g,
+       CASE WHEN g <= 800 THEN 'owner-42' ELSE 'other-' || (g % 100)::text END,
+       'photo ' || g,
        TIMESTAMPTZ '2025-01-01 00:00:00+00' + g * INTERVAL '1 second',
-       NULL, 'public', '[{"url":"https://example.invalid/photo"}]'::jsonb,
+       CASE WHEN g <= 800 AND g % 100 = 0 THEN TIMESTAMPTZ '2026-01-01 00:00:00+00' END,
+       'public', '[{"url":"https://example.invalid/photo"}]'::jsonb,
        CASE WHEN g <= 800 OR g % 20 = 0 THEN 'none' ELSE 'confirmed' END,
        TIMESTAMPTZ '2026-01-01 00:00:00+00'
 FROM generate_series(1, 400000) AS g;
 CREATE INDEX photos_owner_recent_idx
     ON photos (owner_nsid, last_update DESC, id DESC)
     WHERE tombstoned_at IS NULL;
+CREATE INDEX photos_owner_contact_id_idx ON photos (owner_nsid, id);
 
 CREATE TEMP TABLE observations (
     user_id BIGINT NOT NULL,
@@ -69,7 +73,7 @@ BEGIN
 END;
 $$;
 INSERT INTO observations
-SELECT 42, 42, 'photo', id::text FROM photos;
+SELECT 42, 42, 'photo', id::text FROM photos WHERE owner_nsid = 'owner-42';
 CREATE TEMP TABLE sharing_settings (user_id BIGINT PRIMARY KEY, enabled BOOLEAN NOT NULL) ON COMMIT DROP;
 INSERT INTO sharing_settings VALUES (42, TRUE);
 
@@ -92,7 +96,7 @@ BEGIN
 END;
 $$;
 INSERT INTO favorites
-SELECT 'owner-42', id, last_update, NULL FROM photos;
+SELECT 'owner-42', id, last_update, NULL FROM photos WHERE owner_nsid = 'owner-42';
 CREATE INDEX favorites_page_idx ON favorites (person_nsid, fave_date DESC, photo_id DESC)
     WHERE removed_at IS NULL;
 CREATE TEMP TABLE people (nsid TEXT PRIMARY KEY, username TEXT, realname TEXT, icon TEXT) ON COMMIT DROP;
@@ -169,6 +173,48 @@ ANALYZE photos;
 ANALYZE observations;
 ANALYZE favorites;
 ANALYZE work_items;
+
+\echo 'Contact summary backfill photo ID page'
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+WITH photo_page AS MATERIALIZED (
+    SELECT id, last_update, sizes_status, sizes_checked_at, tombstoned_at
+    FROM photos WHERE owner_nsid = 'owner-42' AND id > 0
+    ORDER BY id LIMIT 500
+), attributed AS MATERIALIZED (
+    SELECT page.*,
+           EXISTS (
+               SELECT 1 FROM flickr_accounts fa
+               JOIN observations o ON o.user_id = fa.user_id AND o.flickr_account_id = fa.id
+               WHERE fa.user_id = 42 AND o.record_kind = 'photo'
+                 AND o.record_id = page.id::text
+           ) AS observed
+    FROM photo_page page
+)
+SELECT max(id), count(*) FILTER (WHERE observed)::bigint,
+       count(*) FILTER (WHERE observed AND sizes_status = 'confirmed'
+          AND sizes_checked_at >= last_update)::bigint,
+       count(*) FILTER (WHERE tombstoned_at IS NOT NULL)::bigint
+FROM attributed;
+
+\echo 'Contact summary backfill favorite ID page'
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+WITH favorite_page AS MATERIALIZED (
+    SELECT photo_id, removed_at FROM favorites
+    WHERE person_nsid = 'owner-42' AND photo_id > 0
+    ORDER BY photo_id LIMIT 500
+), attributed AS MATERIALIZED (
+    SELECT page.photo_id, page.removed_at, ph.tombstoned_at,
+           EXISTS (
+               SELECT 1 FROM flickr_accounts fa
+               JOIN observations o ON o.user_id = fa.user_id AND o.flickr_account_id = fa.id
+               WHERE fa.user_id = 42 AND o.record_kind = 'photo'
+                 AND o.record_id = page.photo_id::text
+           ) AS observed
+    FROM favorite_page page JOIN photos ph ON ph.id = page.photo_id
+)
+SELECT max(photo_id), count(*) FILTER (WHERE removed_at IS NULL
+    AND tombstoned_at IS NULL AND observed)::bigint
+FROM attributed;
 
 \echo 'Contact photo keyset page'
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
@@ -266,7 +312,7 @@ FROM photos p
 LEFT JOIN observations o ON o.record_kind = 'photo' AND o.record_id = p.id::text
 LEFT JOIN sharing_settings ss ON ss.user_id = o.user_id
 WHERE p.owner_nsid = 'owner-42' AND p.tombstoned_at IS NULL
-  AND p.id = ANY(ARRAY(SELECT generate_series(250001, 250500))::bigint[])
+  AND p.id = ANY(ARRAY(SELECT generate_series(1, 500))::bigint[])
   AND EXISTS (SELECT 1 FROM crawl_interests ci
               WHERE ci.user_id = 42 AND ci.person_nsid = 'owner-42')
 ORDER BY p.id;
@@ -280,7 +326,7 @@ LEFT JOIN observations o ON o.record_kind = 'photo' AND o.record_id = p.id::text
 LEFT JOIN sharing_settings ss ON ss.user_id = o.user_id
 WHERE f.person_nsid = 'owner-42' AND f.removed_at IS NULL
   AND p.tombstoned_at IS NULL
-  AND p.id = ANY(ARRAY(SELECT generate_series(250001, 250500))::bigint[])
+  AND p.id = ANY(ARRAY(SELECT generate_series(1, 500))::bigint[])
   AND EXISTS (SELECT 1 FROM crawl_interests ci
               WHERE ci.user_id = 42 AND ci.person_nsid = 'owner-42')
 ORDER BY f.fave_date DESC, p.id DESC;
@@ -372,8 +418,28 @@ def main() -> int:
         "-f",
         "-",
     ]
-    result = subprocess.run(command, input=SQL, text=True, env=child_env, check=False)
-    return result.returncode
+    result = subprocess.run(
+        command,
+        input=SQL,
+        text=True,
+        env=child_env,
+        capture_output=True,
+        check=False,
+    )
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    if result.returncode:
+        return result.returncode
+
+    full_scans = sorted(set(re.findall(r"Seq Scan on ((?:photos|work_items)(?:_p\d+)?)\b", result.stdout)))
+    if full_scans:
+        print(f"contact-query-plans: unexpected full scans: {', '.join(full_scans)}", file=sys.stderr)
+        return 1
+    for index in ("owner_nsid_id_idx", "work_items_contact_photo_sizes_idx"):
+        if index not in result.stdout:
+            print(f"contact-query-plans: expected index missing from plans: {index}", file=sys.stderr)
+            return 1
+    return 0
 
 
 if __name__ == "__main__":

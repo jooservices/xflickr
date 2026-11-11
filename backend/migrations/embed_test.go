@@ -72,13 +72,21 @@ func TestContactSummaryIndexesCanBeRetriedAfterPartialMigration(t *testing.T) {
 			t.Errorf("%s must be created concurrently and skipped when a previous run succeeded", name)
 		}
 	}
-	for partition := 0; partition < 16; partition++ {
-		name := fmt.Sprintf("photos_p%02d_owner_recent_idx", partition)
-		if !strings.Contains(statement, "CREATE INDEX CONCURRENTLY IF NOT EXISTS "+name) {
-			t.Errorf("%s must be created concurrently and skipped when a previous run succeeded", name)
+	if !strings.Contains(statement, "CREATE INDEX IF NOT EXISTS photos_owner_contact_id_idx ON ONLY photos") {
+		t.Error("the contact ID parent index must be available to attach its partition indexes")
+	}
+	for _, suffix := range []string{"recent", "contact_id"} {
+		for partition := 0; partition < 16; partition++ {
+			name := fmt.Sprintf("photos_p%02d_owner_%s_idx", partition, suffix)
+			if !strings.Contains(statement, "CREATE INDEX CONCURRENTLY IF NOT EXISTS "+name) {
+				t.Errorf("%s must be created concurrently and skipped when a previous run succeeded", name)
+			}
 		}
 	}
 	if !strings.Contains(statement, "pg_inherits") || !strings.Contains(statement, "ATTACH PARTITION") {
 		t.Fatal("partition indexes must be attached only when not already attached")
+	}
+	if !strings.Contains(statement, "ORDER BY id LIMIT 500") || !strings.Contains(statement, "ORDER BY photo_id LIMIT 500") {
+		t.Error("contact summary backfill must process bounded photo and favorite ID pages")
 	}
 }
