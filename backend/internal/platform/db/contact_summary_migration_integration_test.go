@@ -81,7 +81,7 @@ func TestContactSizePriorityIndexMigrationAttachesEveryPartition(t *testing.T) {
 	files := fstest.MapFS{}
 	for _, name := range []string{
 		"20261111190000_observations_record_lookup_index.sql",
-		"20261111200000_contact_size_priority_index.sql",
+		"20261111210000_contact_size_priority_index.sql",
 	} {
 		sql, err := migrations.Files.ReadFile(name)
 		if err != nil {
