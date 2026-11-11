@@ -1,4 +1,4 @@
-ARG GO_VERSION=1.27.3
+ARG GO_VERSION=1.27.4
 FROM golang:${GO_VERSION}-alpine AS go-build
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./backend/
