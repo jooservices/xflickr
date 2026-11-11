@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLiveOff } from '../../shared';
 import { getAdminQuota } from '../../shared/api/gen/admin/admin';
@@ -31,6 +32,7 @@ export async function loadAdminQuota(signal?: AbortSignal): Promise<AdminQuota> 
 export function useAdminQuota(enabled: boolean) {
   const queryClient = useQueryClient();
   const liveOff = useLiveOff();
+  const previousLiveOff = useRef(liveOff);
   const query = useQuery({
     queryKey: ADMIN_QUOTA_QUERY_KEY,
     queryFn: async ({ signal }) => {
@@ -60,6 +62,28 @@ export function useAdminQuota(enabled: boolean) {
     },
     refetchIntervalInBackground: false,
   });
+
+  useEffect(() => {
+    if (previousLiveOff.current === liveOff) return;
+    previousLiveOff.current = liveOff;
+
+    if (liveOff) {
+      if (queryClient.getQueryState(ADMIN_QUOTA_QUERY_KEY)?.fetchStatus === 'fetching') {
+        void queryClient.cancelQueries(
+          { queryKey: ADMIN_QUOTA_QUERY_KEY, exact: true },
+          { revert: true },
+        );
+      }
+      return;
+    }
+
+    if (queryClient.getQueryState(ADMIN_QUOTA_QUERY_KEY)?.isInvalidated) return;
+    void queryClient.invalidateQueries({
+      queryKey: ADMIN_QUOTA_QUERY_KEY,
+      exact: true,
+      refetchType: 'none',
+    });
+  }, [liveOff, queryClient]);
 
   return query;
 }

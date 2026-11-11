@@ -118,7 +118,11 @@ export function QuotaPage() {
   const navigate = useNavigate();
   const query = useAdminQuota(true);
   const [now, setNow] = useState(() => Date.now());
-  const loading = useLoadingTiming(query.isPending);
+  const hasNoSnapshot = query.data === undefined;
+  const fetching = query.fetchStatus === 'fetching';
+  const loading = useLoadingTiming(hasNoSnapshot && fetching);
+  const waitingForLive =
+    hasNoSnapshot && (query.fetchStatus === 'paused' || query.fetchStatus === 'idle');
   const forbidden = (query.error as { status?: number } | null)?.status === 403;
   const stale = query.data !== undefined && (query.isError || now - query.dataUpdatedAt >= 20_000);
 
@@ -212,6 +216,23 @@ export function QuotaPage() {
               </button>
             </div>
             <div className={styles.skeleton} aria-hidden="true" />
+          </div>
+        ) : waitingForLive ? (
+          <div className={styles.waiting} role="status" data-testid="admin-quota-waiting">
+            <div>
+              <strong>{t('admin.quota.waiting-title')}</strong>
+              <p>{t('admin.quota.waiting-body')}</p>
+            </div>
+            <button
+              className={styles.refresh}
+              type="button"
+              onClick={() => void query.refetch()}
+              disabled={query.isFetching}
+              aria-busy={query.isFetching}
+              data-testid="admin-quota-waiting-load-once"
+            >
+              {t('admin.quota.load-once')}
+            </button>
           </div>
         ) : loading ? (
           <div className={styles.loading} aria-busy="true" data-testid="admin-quota-loading">

@@ -10,9 +10,13 @@ The page shares the quota query with the administrator shell. While visible and
 Live is enabled, it polls starting at 10 seconds and backs off to 20, 40, then
 at most 60 seconds after consecutive failures. A successful refresh resets the
 interval to 10 seconds. Pausing Live stops polling; resuming fetches a fresh
-snapshot. Failed refreshes retain the last snapshot, mark it stale, and offer
-retry. Initial loading, empty, request failure, forbidden, and stale states do
-not expose key material or user email addresses.
+snapshot and cancels any in-flight quota request while retaining the last
+completed snapshot. If Live is off or the browser is offline before the first
+snapshot, the page offers a one-shot manual load instead of an indefinite
+loading state. A manual load does not resume polling while Live is off. Failed
+refreshes retain the last snapshot, mark it stale, and offer retry. Initial
+loading, empty, waiting, request failure, forbidden, and stale states do not
+expose key material or user email addresses.
 
 The current contract does not return node summaries, lane totals, burst values,
 history points, cooldowns, or key pause/move controls. The view identifies those

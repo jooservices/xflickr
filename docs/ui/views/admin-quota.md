@@ -107,6 +107,16 @@ threshold. Set `aria-busy=true` and announce “Loading API quota…”. Keep it
 least 400ms once shown. Refresh with existing data uses a small indicator and
 does not replace content.
 
+### Waiting while Live is off
+
+Before the first snapshot, if Live is paused or the browser is offline, replace
+the loading skeleton with a status message that no quota snapshot is available.
+Include a Load once button that makes one manual request. Use
+`admin-quota-waiting` and `admin-quota-waiting-load-once`. A manual load does
+not resume polling while Live is off. Cancelling an in-flight request retains
+the last completed snapshot; resuming Live invalidates once and fetches a fresh
+one.
+
 ### Empty
 
 If the quota response contains no valid keys, show key icon, “No valid API
@@ -226,6 +236,9 @@ Use these keys for all visible text. Values are EN · VI.
 | `admin.quota.pauseHint` | Pausing stops new calls; in-flight calls finish. | Tạm dừng chặn lượt gọi mới; lượt đang chạy sẽ hoàn tất. |
 | `admin.quota.sharedHint` | Shared records are reused and skipped calls save quota. | Bản ghi dùng chung được tái sử dụng và lượt gọi bỏ qua giúp tiết kiệm hạn mức. |
 | `admin.quota.loading` | Loading API quota… | Đang tải hạn mức API… |
+| `admin.quota.waiting-title` | No API quota snapshot yet. | Chưa có bản chụp hạn mức API. |
+| `admin.quota.waiting-body` | Live is off or the browser is offline. Select Load once to fetch one snapshot, or reconnect and resume Live. | Live đang tắt hoặc trình duyệt ngoại tuyến. Chọn Tải một lần để lấy dữ liệu, hoặc kết nối mạng và bật lại Live. |
+| `admin.quota.load-once` | Load once | Tải một lần |
 | `admin.quota.emptyTitle` | No valid API keys available | Chưa có khóa API hợp lệ |
 | `admin.quota.emptyBody` | Quota data appears when a valid Flickr API key is available. Ask an administrator to configure one. | Dữ liệu hạn mức sẽ xuất hiện khi có khóa API Flickr hợp lệ. Hãy nhờ quản trị viên thiết lập khóa. |
 | `admin.quota.emptyCta` | Open my API keys | Mở khóa API của tôi |

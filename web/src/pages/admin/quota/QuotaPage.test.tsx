@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { onlineManager } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw/http';
 import { describe, expect, it, vi } from 'vitest';
 import { loadAdminQuota } from '../../../features/admin/quota';
@@ -120,6 +121,155 @@ describe('API quota page', () => {
       vi.useRealTimers();
     }
   });
+
+  it('cancels an in-flight quota refresh when Live pauses', async () => {
+    let calls = 0;
+    let requestSignal: AbortSignal | undefined;
+    let releaseLateResponse: (() => void) | undefined;
+    let lateResponseReturned = false;
+    const lateResponseGate = new Promise<void>((resolve) => {
+      releaseLateResponse = resolve;
+    });
+    server.use(
+      http.get('*/admin/quota', async ({ request }) => {
+        calls += 1;
+        if (calls === 1) return HttpResponse.json({ keys: [{ ...key, used: 100 }] });
+        if (calls === 2) {
+          requestSignal = request.signal;
+          await lateResponseGate;
+          lateResponseReturned = true;
+          return HttpResponse.json({ keys: [{ ...key, used: 250 }] });
+        }
+        return HttpResponse.json({ keys: [{ ...key, used: 400 }] });
+      }),
+    );
+    renderApp({ session: adminSession, path: '/admin/quota' });
+
+    const table = await screen.findByTestId('admin-quota-key-table');
+    fireEvent.click(screen.getByTestId('admin-quota-refresh'));
+    await waitFor(() => expect(calls).toBe(2));
+    fireEvent.click(screen.getByTestId('admin-live-toggle'));
+
+    await waitFor(() => expect(requestSignal?.aborted).toBe(true));
+    expect(within(table).getByText('100 / 3,600')).toBeInTheDocument();
+    releaseLateResponse?.();
+    await waitFor(() => expect(lateResponseReturned).toBe(true));
+    expect(within(table).getByText('100 / 3,600')).toBeInTheDocument();
+    expect(within(table).queryByText('250 / 3,600')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('admin-live-toggle'));
+    expect(await within(table).findByText('400 / 3,600')).toBeInTheDocument();
+    expect(calls).toBe(3);
+  });
+
+  it.each([
+    {
+      locale: 'en' as const,
+      title: 'No API quota snapshot yet.',
+      body: 'Live is off or the browser is offline. Select Load once to fetch one snapshot, or reconnect and resume Live.',
+      button: 'Load once',
+      usage: '200 / 3,600',
+    },
+    {
+      locale: 'vi' as const,
+      title: 'Chưa có bản chụp hạn mức API.',
+      body: 'Live đang tắt hoặc trình duyệt ngoại tuyến. Chọn Tải một lần để lấy dữ liệu, hoặc kết nối mạng và bật lại Live.',
+      button: 'Tải một lần',
+      usage: '200 / 3.600',
+    },
+  ])(
+    'shows a localized one-shot action when Live pauses before the first snapshot ($locale)',
+    async ({ locale, title, body, button, usage }) => {
+      let calls = 0;
+      let releaseInitialRequest: (() => void) | undefined;
+      let requestSignal: AbortSignal | undefined;
+      let initialResponseReturned = false;
+      const initialRequestGate = new Promise<void>((resolve) => {
+        releaseInitialRequest = resolve;
+      });
+      server.use(
+        http.get('*/admin/quota', async ({ request }) => {
+          calls += 1;
+          if (calls === 1) {
+            requestSignal = request.signal;
+            await initialRequestGate;
+            initialResponseReturned = true;
+            return HttpResponse.json({ keys: [{ ...key, used: 100 }] });
+          }
+          return HttpResponse.json({ keys: [{ ...key, used: 200 }] });
+        }),
+      );
+      renderApp({ session: adminSession, path: '/admin/quota', locale });
+
+      await waitFor(() => expect(calls).toBe(1));
+      fireEvent.click(screen.getByTestId('admin-live-toggle'));
+
+      const waiting = await screen.findByTestId('admin-quota-waiting');
+      await waitFor(() => expect(requestSignal?.aborted).toBe(true));
+      expect(waiting).toHaveTextContent(title);
+      expect(waiting).toHaveTextContent(body);
+      expect(waiting).toHaveTextContent('API');
+      expect(waiting).toHaveTextContent('Live');
+
+      releaseInitialRequest?.();
+      await waitFor(() => expect(initialResponseReturned).toBe(true));
+      const loadButton = screen.getByTestId('admin-quota-waiting-load-once');
+      expect(loadButton).toHaveTextContent(button);
+      fireEvent.click(loadButton);
+      expect(await screen.findByTestId('admin-quota-key-table')).toBeInTheDocument();
+      expect(screen.getByTestId('admin-quota-key-table')).toHaveTextContent(usage);
+      expect(calls).toBe(2);
+    },
+  );
+
+  it.each([
+    {
+      locale: 'en' as const,
+      title: 'No API quota snapshot yet.',
+      button: 'Load once',
+      usage: '300 / 3,600',
+    },
+    {
+      locale: 'vi' as const,
+      title: 'Chưa có bản chụp hạn mức API.',
+      button: 'Tải một lần',
+      usage: '300 / 3.600',
+    },
+  ])(
+    'offers a one-shot load while offline before the first snapshot ($locale)',
+    async ({ locale, title, button, usage }) => {
+      let calls = 0;
+      let unmount: () => void = () => undefined;
+      onlineManager.setOnline(false);
+      server.use(
+        http.get('*/admin/quota', () => {
+          calls += 1;
+          return HttpResponse.json({ keys: [{ ...key, used: 300 }] });
+        }),
+      );
+
+      try {
+        const app = renderApp({ session: adminSession, path: '/admin/quota', locale });
+        unmount = app.unmount;
+        const waiting = await screen.findByTestId('admin-quota-waiting');
+        expect(waiting).toHaveTextContent(title);
+        expect(waiting).toHaveTextContent('Live');
+        expect(calls).toBe(0);
+
+        const loadButton = screen.getByTestId('admin-quota-waiting-load-once');
+        expect(loadButton).toHaveTextContent(button);
+        fireEvent.click(loadButton);
+        expect(calls).toBe(0);
+        onlineManager.setOnline(true);
+
+        expect(await screen.findByTestId('admin-quota-key-table')).toHaveTextContent(usage);
+        expect(calls).toBe(1);
+      } finally {
+        unmount();
+        onlineManager.setOnline(true);
+      }
+    },
+  );
 
   it('returns polling to ten seconds after a successful refresh', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
