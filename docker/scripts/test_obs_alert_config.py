@@ -8,10 +8,13 @@ import subprocess
 import tempfile
 import textwrap
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime, timezone
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
-from obs_alert_config import FRESHNESS_SECONDS, freshness_alert_needed, render_alert
+from obs_alert_config import FRESHNESS_SECONDS, _main, freshness_alert_needed, render_alert
 
 ROOT = Path(__file__).resolve().parents[2]
 ALERT_TEMPLATE = ROOT / "deploy/openobserve/alerts/xflickr-crawl-health-stale.json"
@@ -55,7 +58,12 @@ class OpenObserveAlertConfigTests(unittest.TestCase):
     def test_scheduler_freshness_boundaries(self) -> None:
         self.assertEqual(FRESHNESS_SECONDS, 90)
         self.assertTrue(freshness_alert_needed([], NOW))
-        self.assertTrue(freshness_alert_needed([{"event": "crawl.health", "_timestamp": "invalid"}], NOW))
+        self.assertTrue(
+            freshness_alert_needed([{"event": "crawl.health", "_timestamp": "invalid"}], NOW)
+        )
+        self.assertTrue(
+            freshness_alert_needed([{"event": "crawl.health", "_timestamp": None}], NOW)
+        )
         self.assertTrue(freshness_alert_needed([event("crawl.health", 91)], NOW))
         self.assertTrue(
             freshness_alert_needed(
@@ -86,6 +94,28 @@ class OpenObserveAlertConfigTests(unittest.TestCase):
                         [{"event": "crawl.health", "_timestamp": value}], NOW
                     )
                 )
+
+    def test_cli_renders_alert_and_reads_stream(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "alert.json"
+            with patch(
+                "sys.argv",
+                [
+                    "obs_alert_config.py",
+                    "render",
+                    str(ALERT_TEMPLATE),
+                    str(output),
+                    "custom",
+                    "notices",
+                ],
+            ):
+                self.assertEqual(_main(), 0)
+
+            captured = StringIO()
+            with patch("sys.argv", ["obs_alert_config.py", "stream", str(output)]):
+                with redirect_stdout(captured):
+                    self.assertEqual(_main(), 0)
+            self.assertEqual(captured.getvalue().strip(), "custom")
 
     def test_granted_call_alerts_ignore_waits_and_keep_configured_delivery(self) -> None:
         cases = [
