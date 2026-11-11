@@ -83,7 +83,7 @@ func TestRequestBodyLimitAllowsLargeAdminFlagsPayload(t *testing.T) {
 		Flags: []gen.FeatureFlag{{
 			Name:     "targeted",
 			Enabled:  true,
-			Audience: gen.UserIds,
+			Audience: gen.FeatureFlagAudienceUserIds,
 			UserIds:  userIDs,
 		}},
 	})
