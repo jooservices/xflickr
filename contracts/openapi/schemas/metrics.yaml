@@ -1,0 +1,21 @@
+MetricPoint:
+  type: object
+  additionalProperties: false
+  required: [at, value]
+  properties:
+    at: { type: string, format: date-time }
+    value: { type: number, format: double }
+
+MetricSeries:
+  type: object
+  additionalProperties: false
+  required: [series, queue, role, node, step, points]
+  properties:
+    series: { type: string, const: queue.jobs_available }
+    queue: { type: string }
+    role: { type: string }
+    node: { type: string }
+    step: { type: string, const: 1m }
+    points:
+      type: array
+      items: { $ref: '#/MetricPoint' }

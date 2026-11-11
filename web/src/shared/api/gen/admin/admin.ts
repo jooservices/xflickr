@@ -32,7 +32,9 @@ import type {
   Error,
   FeatureFlag,
   GetAdminCallStatsParams,
+  GetAdminMetricsParams,
   ListAdminUsersParams,
+  MetricSeries,
   OpsStatus,
   Plan,
   UpdateAdminFlagsRequest,
@@ -1585,6 +1587,176 @@ export function useGetAdminCallStats<
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetAdminCallStatsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type getAdminMetricsResponse200 = {
+  data: MetricSeries;
+  status: 200;
+};
+
+export type getAdminMetricsResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type getAdminMetricsResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type getAdminMetricsResponse403 = {
+  data: Error;
+  status: 403;
+};
+
+export type getAdminMetricsResponse500 = {
+  data: Error;
+  status: 500;
+};
+
+export type getAdminMetricsResponseSuccess = getAdminMetricsResponse200 & {
+  headers: Headers;
+};
+export type getAdminMetricsResponseError = (
+  | getAdminMetricsResponse400
+  | getAdminMetricsResponse401
+  | getAdminMetricsResponse403
+  | getAdminMetricsResponse500
+) & {
+  headers: Headers;
+};
+
+export type getAdminMetricsResponse = getAdminMetricsResponseSuccess | getAdminMetricsResponseError;
+
+export const getGetAdminMetricsUrl = (params: GetAdminMetricsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/admin/metrics?${stringifiedParams}` : `/admin/metrics`;
+};
+
+/**
+ * @summary Read stored metric samples for one queue, role, and node
+ */
+export const getAdminMetrics = async (
+  params: GetAdminMetricsParams,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getAdminMetricsResponse> => {
+  return customFetch<getAdminMetricsResponse>(getGetAdminMetricsUrl(params), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getGetAdminMetricsQueryKey = (params?: GetAdminMetricsParams) => {
+  return [`/admin/metrics`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetAdminMetricsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminMetrics>>,
+  TError = Error,
+>(
+  params: GetAdminMetricsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminMetrics>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminMetricsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminMetrics>>> = ({ signal }) =>
+    getAdminMetrics(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAdminMetrics>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetAdminMetricsQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminMetrics>>>;
+export type GetAdminMetricsQueryError = Error;
+
+export function useGetAdminMetrics<
+  TData = Awaited<ReturnType<typeof getAdminMetrics>>,
+  TError = Error,
+>(
+  params: GetAdminMetricsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminMetrics>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminMetrics>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminMetrics>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAdminMetrics<
+  TData = Awaited<ReturnType<typeof getAdminMetrics>>,
+  TError = Error,
+>(
+  params: GetAdminMetricsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminMetrics>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminMetrics>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminMetrics>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAdminMetrics<
+  TData = Awaited<ReturnType<typeof getAdminMetrics>>,
+  TError = Error,
+>(
+  params: GetAdminMetricsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminMetrics>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Read stored metric samples for one queue, role, and node
+ */
+
+export function useGetAdminMetrics<
+  TData = Awaited<ReturnType<typeof getAdminMetrics>>,
+  TError = Error,
+>(
+  params: GetAdminMetricsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminMetrics>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminMetricsQueryOptions(params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

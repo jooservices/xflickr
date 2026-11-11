@@ -146,7 +146,7 @@ type recoveringRows struct {
 func (r *recoveringRows) Next() bool {
 	ok := r.Rows.Next()
 	if !ok {
-		r.finish(r.Rows.Err())
+		r.finish(r.Err())
 	}
 	return ok
 }
@@ -161,7 +161,7 @@ func (r *recoveringRows) Scan(dest ...any) error {
 
 func (r *recoveringRows) Close() {
 	r.Rows.Close()
-	r.finish(r.Rows.Err())
+	r.finish(r.Err())
 }
 
 func (r *recoveringRows) finish(err error) {

@@ -3,6 +3,7 @@ package roles
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 
@@ -71,6 +72,7 @@ var routeAccess = map[string]identityhttp.Access{
 	"GET /admin/queue":           identityhttp.AccessAdmin,
 	"GET /admin/quota":           identityhttp.AccessAdmin,
 	"GET /admin/calls/stats":     identityhttp.AccessAdmin,
+	"GET /admin/metrics":         identityhttp.AccessAdmin,
 	"GET /admin/ops/status":      identityhttp.AccessAdmin,
 	"POST /admin/nodes":          identityhttp.AccessAdmin,
 
@@ -104,8 +106,34 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string) {
 	_ = json.NewEncoder(w).Encode(gen.Error{Code: code, Message: message})
 }
 
-func badRequest(w http.ResponseWriter, _ *http.Request, err error) {
+func badRequest(w http.ResponseWriter, r *http.Request, err error) {
+	if r.URL.Path == "/admin/metrics" {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request", "Invalid metrics query")
+		return
+	}
 	writeAPIError(w, http.StatusBadRequest, "invalid_request", err.Error())
+}
+
+func metricsQueryMultiplicity(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/admin/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		query, err := url.ParseQuery(r.URL.RawQuery)
+		if err == nil {
+			for _, name := range []string{"series", "queue", "role", "node", "from", "to", "step"} {
+				if len(query[name]) > 1 {
+					writeAPIError(w, http.StatusBadRequest, "invalid_request", "Invalid metrics query")
+					return
+				}
+			}
+		} else {
+			writeAPIError(w, http.StatusBadRequest, "invalid_request", "Invalid metrics query")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func internalError(w http.ResponseWriter, _ *http.Request, _ error) {

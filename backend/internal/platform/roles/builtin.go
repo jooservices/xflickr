@@ -53,6 +53,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/crypto"
 	"github.com/jooservices/xflickr/internal/platform/db"
 	"github.com/jooservices/xflickr/internal/platform/httpx"
+	metricspostgres "github.com/jooservices/xflickr/internal/platform/metrics/adapters/postgres"
 	"github.com/jooservices/xflickr/internal/platform/obs"
 	"github.com/jooservices/xflickr/internal/platform/ops"
 	opshttp "github.com/jooservices/xflickr/internal/platform/ops/adapters/http"
@@ -765,7 +766,12 @@ func buildConfiguredAPIHandlerSetWithObserver(pool *pgxpool.Pool, redisClient re
 	if err != nil {
 		return apiHandlerSet{}, err
 	}
-	opsHandler := opshttp.Handler{Service: ops.Service{Store: opspostgres.Store{Pool: pool, DB: pool}}, ActorID: userIDFromPrincipal}
+	opsHandler := opshttp.Handler{
+		Service: ops.Service{Store: opspostgres.Store{Pool: pool, DB: pool}},
+		Metrics: metricspostgres.SeriesStore{Pool: pool},
+		Now:     time.Now,
+		ActorID: userIDFromPrincipal,
+	}
 	nodeRepository := clusterpostgres.New(pool)
 	nodeService := clusterapp.Nodes{Repository: nodeRepository}
 	nodesHandler := clusterhttp.Handler{Service: nodeService}
@@ -911,6 +917,10 @@ func (s apiServer) GetAdminOpsStatus(ctx context.Context, request gen.GetAdminOp
 	return s.Ops.GetAdminOpsStatus(ctx, request)
 }
 
+func (s apiServer) GetAdminMetrics(ctx context.Context, request gen.GetAdminMetricsRequestObject) (gen.GetAdminMetricsResponseObject, error) {
+	return s.Ops.GetAdminMetrics(ctx, request)
+}
+
 func (s apiServer) CreateDownload(ctx context.Context, request gen.CreateDownloadRequestObject) (gen.CreateDownloadResponseObject, error) {
 	return s.Downloads.CreateDownload(ctx, request)
 }
@@ -1011,6 +1021,7 @@ func newAPIRoutersWithServices(identity identityhttp.Handler, keys accountshttp.
 	publicRouter.Use(identityhttp.RequestBodyLimit)
 	publicRouter.Use(identityhttp.CSRF)
 	publicRouter.Use(identityhttp.ProtectRoutes(identity.Sessions, accessResolver(publicRouter)))
+	publicRouter.Use(metricsQueryMultiplicity)
 	strict := gen.NewStrictHandlerWithOptions(server, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		discoveryAuthentication(identity.Sessions),

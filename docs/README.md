@@ -9,6 +9,8 @@
   endpoint, granted-call and quota-wait counters, OpenObserve stream and alerts.
 - [Operations metrics collection](metrics.md) — minute samples, catalogue,
   retention and rollups for the admin operations dashboard (JOOXF-368 phase 1).
+- [Reading queue metric samples](metrics-series-read.md) — bounded admin reads
+  of one stored queue, role, and node series (JOOXF-163 slice 1).
 - [Incident management](incident-management.md) — deduplication, acknowledgement,
   closure, and critical incident notification events.
 - [Structured logging and telemetry](observability.md) — context fields, OTLP

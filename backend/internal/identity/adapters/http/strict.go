@@ -193,6 +193,10 @@ func (StrictHandler) GetAdminOpsStatus(context.Context, gen.GetAdminOpsStatusReq
 	return nil, errOpsServedByOps
 }
 
+func (StrictHandler) GetAdminMetrics(context.Context, gen.GetAdminMetricsRequestObject) (gen.GetAdminMetricsResponseObject, error) {
+	return nil, errOpsServedByOps
+}
+
 func (StrictHandler) GetAdminFlags(context.Context, gen.GetAdminFlagsRequestObject) (gen.GetAdminFlagsResponseObject, error) {
 	return nil, errFeatureFlagsServedBySettings
 }

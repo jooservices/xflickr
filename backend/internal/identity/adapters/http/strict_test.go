@@ -108,8 +108,12 @@ func TestStrictHandlerLeavesQuotaToQuota(t *testing.T) {
 }
 
 func TestStrictHandlerLeavesOpsToOps(t *testing.T) {
-	if _, err := (StrictHandler{}).GetAdminOpsStatus(t.Context(), gen.GetAdminOpsStatusRequestObject{}); !errors.Is(err, errOpsServedByOps) {
+	handler := StrictHandler{}
+	if _, err := handler.GetAdminOpsStatus(t.Context(), gen.GetAdminOpsStatusRequestObject{}); !errors.Is(err, errOpsServedByOps) {
 		t.Fatalf("ops status error=%v", err)
+	}
+	if _, err := handler.GetAdminMetrics(t.Context(), gen.GetAdminMetricsRequestObject{}); !errors.Is(err, errOpsServedByOps) {
+		t.Fatalf("admin metrics error=%v", err)
 	}
 }
 

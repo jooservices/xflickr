@@ -3,6 +3,7 @@ package roles
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -23,6 +24,8 @@ import (
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	identitydomain "github.com/jooservices/xflickr/internal/identity/domain"
 	mediahttp "github.com/jooservices/xflickr/internal/media/adapters/http"
+	metricsapp "github.com/jooservices/xflickr/internal/platform/metrics/app"
+	opshttp "github.com/jooservices/xflickr/internal/platform/ops/adapters/http"
 	quotahttp "github.com/jooservices/xflickr/internal/quota/adapters/http"
 	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
 	sharinghttp "github.com/jooservices/xflickr/internal/sharing/adapters/http"
@@ -128,6 +131,93 @@ func TestRoutesEnforceDeclaredAccess(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestAdminMetricsAuthorization(t *testing.T) {
+	reader := adminMetricsReader{}
+	makeRouter := func(reader adminMetricsReader) http.Handler {
+		opsHandler := opshttp.Handler{
+			ActorID: userIDFromPrincipal,
+			Metrics: reader,
+			Now: func() time.Time {
+				return time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC)
+			},
+		}
+		return newAPIRouterWithServices(
+			identityhttp.Handler{Sessions: roleSessions{stubSessions: stubSessions{}, role: identitydomain.RoleAdmin}}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{},
+			crawlhttp.CrawlHandler{}, quotahttp.QuotaHandler{}, sharinghttp.Handler{}, mediahttp.DownloadHandler{}, opsHandler,
+		)
+	}
+	path := "/admin/metrics?series=queue.jobs_available&queue=default&role=scheduler&node=node-1&from=2026-11-11T08:00:00Z&to=2026-11-11T09:00:00Z&step=1m"
+	send := func(router http.Handler, target string, role identitydomain.Role) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		if role != "" {
+			req.AddCookie(&http.Cookie{Name: identityhttp.SessionCookieName, Value: "valid"})
+		}
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, req)
+		return recorder
+	}
+	if got := send(makeRouter(reader), path, "").Code; got != http.StatusUnauthorized {
+		t.Fatalf("anonymous request status=%d, want 401", got)
+	}
+	userRouter := newAPIRouterWithServices(
+		identityhttp.Handler{Sessions: roleSessions{stubSessions: stubSessions{}, role: identitydomain.RoleUser}},
+		accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{}, crawlhttp.CrawlHandler{}, quotahttp.QuotaHandler{},
+		sharinghttp.Handler{}, mediahttp.DownloadHandler{}, opshttp.Handler{ActorID: userIDFromPrincipal, Metrics: reader, Now: func() time.Time { return time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC) }},
+	)
+	if got := send(userRouter, path, identitydomain.RoleUser).Code; got != http.StatusForbidden {
+		t.Fatalf("user request status=%d, want 403", got)
+	}
+	adminRouter := newAPIRouterWithServices(
+		identityhttp.Handler{Sessions: roleSessions{stubSessions: stubSessions{}, role: identitydomain.RoleAdmin}},
+		accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{}, crawlhttp.CrawlHandler{}, quotahttp.QuotaHandler{},
+		sharinghttp.Handler{}, mediahttp.DownloadHandler{}, opshttp.Handler{ActorID: userIDFromPrincipal, Metrics: reader, Now: func() time.Time { return time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC) }},
+	)
+	if response := send(adminRouter, path, identitydomain.RoleAdmin); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"value":12`) {
+		t.Fatalf("admin request status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	missing := send(adminRouter, "/admin/metrics?series=queue.jobs_available", identitydomain.RoleAdmin)
+	if missing.Code != http.StatusBadRequest || missing.Body.String() != "{\"code\":\"invalid_request\",\"message\":\"Invalid metrics query\"}\n" {
+		t.Fatalf("missing query status=%d body=%s", missing.Code, missing.Body.String())
+	}
+	query := strings.TrimPrefix(path, "/admin/metrics?")
+	for _, parameter := range []string{
+		"series=queue.jobs_available&", "&queue=default", "&role=scheduler", "&node=node-1",
+		"&from=2026-11-11T08:00:00Z", "&to=2026-11-11T09:00:00Z", "&step=1m",
+	} {
+		without := strings.Replace(query, parameter, "", 1)
+		response := send(adminRouter, "/admin/metrics?"+without, identitydomain.RoleAdmin)
+		if response.Code != http.StatusBadRequest || response.Body.String() != "{\"code\":\"invalid_request\",\"message\":\"Invalid metrics query\"}\n" {
+			t.Errorf("missing %s status=%d body=%s", parameter, response.Code, response.Body.String())
+		}
+	}
+	for _, name := range []string{"series", "queue", "role", "node", "from", "to", "step"} {
+		duplicate := send(adminRouter, path+"&"+name+"=duplicate", identitydomain.RoleAdmin)
+		if duplicate.Code != http.StatusBadRequest || duplicate.Body.String() != "{\"code\":\"invalid_request\",\"message\":\"Invalid metrics query\"}\n" {
+			t.Errorf("duplicate %s status=%d body=%s", name, duplicate.Code, duplicate.Body.String())
+		}
+	}
+	malformed := send(adminRouter, strings.Replace(path, "from=2026-11-11T08:00:00Z", "from=not-a-time", 1), identitydomain.RoleAdmin)
+	if malformed.Code != http.StatusBadRequest || malformed.Body.String() != "{\"code\":\"invalid_request\",\"message\":\"Invalid metrics query\"}\n" {
+		t.Fatalf("malformed query status=%d body=%s", malformed.Code, malformed.Body.String())
+	}
+
+	storeFailure := adminMetricsReader{err: errors.New("private database failure")}
+	failed := send(makeRouter(storeFailure), path, identitydomain.RoleAdmin)
+	if failed.Code != http.StatusInternalServerError || failed.Body.String() != "{\"code\":\"internal_error\",\"message\":\"Internal server error\"}\n" {
+		t.Fatalf("storage failure status=%d body=%s", failed.Code, failed.Body.String())
+	}
+}
+
+type adminMetricsReader struct{ err error }
+
+func (r adminMetricsReader) ReadSeries(context.Context, metricsapp.SeriesQuery) ([]metricsapp.Point, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return []metricsapp.Point{{At: time.Date(2026, 11, 11, 8, 0, 0, 0, time.UTC), Value: 12}}, nil
 }
 
 func TestUndeclaredMatchedRouteRequiresAdmin(t *testing.T) {
