@@ -30,12 +30,12 @@ The sync worker refreshes counts in keyset pages capped by the administrator
 setting `home.stats_refresh_batch_size` (250 rows by default; maximum 1,000).
 Public, non-tombstoned photo candidates are indexed by observer and updated
 when observations or photo visibility change. A global indexed candidate set
-contains photos shared by at least one enabled account. Changing sharing
-permission queues a bounded, keyset-paginated candidate sync in the same
-transaction as the setting update. Home checks current observation and sharing
-permission before applying the shared 12-photo result limit; photo triggers
-keep both candidate indexes limited to public, non-tombstoned records. Stale
-revoked candidates therefore cannot consume the result limit or expose a photo.
+contains photos shared by at least one enabled account. Sharing changes update
+that set in the same transaction as the permission change; the bounded,
+keyset-paginated sync remains as recovery for interrupted work. Home checks
+current observation, sharing permission, visibility, and tombstone state before
+applying the shared 12-photo result limit. Stale candidates cannot consume the
+result limit or expose a private or deleted photo.
 Permission changes invalidate cached counts and restart an active refresh from
 the first page. Ordinary catalog revisions keep keyset progress and staged
 totals; refresh publishes them as estimates against the latest revision and

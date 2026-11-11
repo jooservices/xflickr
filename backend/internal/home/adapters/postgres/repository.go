@@ -187,6 +187,7 @@ starred_data AS (
 shared_photo_candidates AS MATERIALIZED (
     SELECT candidate.photo_id, candidate.uploaded_at
     FROM user_home_shared_photo_candidates candidate
+    JOIN photos photo ON photo.id = candidate.photo_id
     WHERE EXISTS (
         SELECT 1
         FROM observations observation
@@ -195,6 +196,8 @@ shared_photo_candidates AS MATERIALIZED (
           AND observation.record_id = candidate.photo_id::text
           AND setting.enabled
     )
+      AND photo.visibility = 'public'
+      AND photo.tombstoned_at IS NULL
     ORDER BY candidate.uploaded_at DESC NULLS LAST, candidate.photo_id DESC
     LIMIT 12
 ),
