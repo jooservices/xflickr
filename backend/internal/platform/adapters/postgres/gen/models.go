@@ -1359,6 +1359,13 @@ type RiverQueue struct {
 	UpdatedAt pgtype.Timestamptz
 }
 
+type SavedSearch struct {
+	ID        int64
+	UserID    int64
+	Query     string
+	CreatedAt pgtype.Timestamptz
+}
+
 type ScheduleMetum struct {
 	Key   string
 	Value string
