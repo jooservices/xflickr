@@ -83,7 +83,8 @@ func classifyStatError(err error) error {
 		// the object was never checked and must not be reported as missing.
 		return errObjectAbsent
 	case response.StatusCode == http.StatusNotFound:
-		return fmt.Errorf("sync s3: stat object: not found without a missing-key code (%s)", response.Code)
+		// The provider controls response.Code, so it is never copied into the error text.
+		return errors.New("sync s3: stat object: not found without a missing-key code")
 	case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:
 		return fmt.Errorf("sync s3: stat object: %w", app.ErrAuthentication)
 	case response.StatusCode == http.StatusTooManyRequests || response.StatusCode == http.StatusServiceUnavailable:

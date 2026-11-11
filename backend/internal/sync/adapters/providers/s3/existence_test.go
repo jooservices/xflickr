@@ -128,6 +128,7 @@ func TestExistsWithETagMapsProviderErrors(t *testing.T) {
 	}{
 		{name: "not found", err: minio.ErrorResponse{StatusCode: http.StatusNotFound, Code: "NoSuchKey"}},
 		{name: "bucket not found", err: minio.ErrorResponse{StatusCode: http.StatusNotFound, Code: "NoSuchBucket"}, want: errNotChecked},
+		{name: "not found with a provider-controlled code", err: minio.ErrorResponse{StatusCode: http.StatusNotFound, Code: "secret-provider-code"}, want: errNotChecked},
 		{name: "not found without a code", err: minio.ErrorResponse{StatusCode: http.StatusNotFound}, want: errNotChecked},
 		{name: "unauthorized", err: minio.ErrorResponse{StatusCode: http.StatusUnauthorized}, want: app.ErrAuthentication},
 		{name: "forbidden", err: minio.ErrorResponse{StatusCode: http.StatusForbidden}, want: app.ErrAuthentication},
@@ -150,6 +151,9 @@ func TestExistsWithETagMapsProviderErrors(t *testing.T) {
 				t.Fatal("expected provider error")
 			}
 			if test.want == errNotChecked {
+				if strings.Contains(err.Error(), "secret-provider-code") {
+					t.Fatalf("error text copies the provider-controlled code: %v", err)
+				}
 				if found || !strings.Contains(err.Error(), "stat object") {
 					t.Fatalf("ExistsWithETag() = %t, %v; want false and a stat object error", found, err)
 				}
