@@ -154,6 +154,8 @@ type peoplePageWriter interface {
 
 // InterestWriter records interests inside the commit transaction.
 type InterestWriter interface {
+	// ConnectedUsersForAccount lists active users connected to this Flickr NSID.
+	ConnectedUsersForAccount(ctx context.Context, accountNSID string) ([]int64, error)
 	Add(ctx context.Context, interest domain.Interest) error
 }
 
@@ -414,7 +416,7 @@ func (e *Engine) fail(ctx context.Context, item domain.Item, keyID int64, cause 
 // skipped, so running a page twice changes nothing.
 func (e *Engine) commit(ctx context.Context, item domain.Item, result domain.Result) error {
 	maxDepth := 0
-	if len(result.Discoveries) > 0 && item.UserID > 0 {
+	if len(result.Discoveries) > 0 && item.UserID > 0 && item.Kind != domain.FacetContacts {
 		effective, err := e.Settings.Effective(ctx, item.UserID)
 		if err != nil {
 			return fmt.Errorf("crawl: load max depth for user %d: %w", item.UserID, err)
@@ -514,7 +516,11 @@ func (e *Engine) write(ctx context.Context, w Writers, item domain.Item, result 
 			return err
 		}
 	}
-	if err := e.discover(ctx, w, item, result.Discoveries, maxDepth); err != nil {
+	if item.Kind == domain.FacetContacts {
+		if err := e.discoverContacts(ctx, w, item, result.Discoveries); err != nil {
+			return err
+		}
+	} else if err := e.discover(ctx, w, item, result.Discoveries, maxDepth); err != nil {
 		return err
 	}
 	if err := e.enqueuePageWork(ctx, w, item, result.Work); err != nil {
@@ -639,6 +645,25 @@ func (e *Engine) discover(ctx context.Context, w Writers, item domain.Item, foun
 			if err := e.enqueue(ctx, w, item, spec, depth); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func (e *Engine) discoverContacts(ctx context.Context, w Writers, item domain.Item, found []domain.Discovery) error {
+	users, err := w.Interests.ConnectedUsersForAccount(ctx, item.Subject)
+	if err != nil {
+		return fmt.Errorf("crawl: list users for contacts account %q: %w", item.Subject, err)
+	}
+	for _, userID := range users {
+		effective, err := e.Settings.Effective(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("crawl: load max depth for user %d: %w", userID, err)
+		}
+		userItem := item
+		userItem.UserID = userID
+		if err := e.discover(ctx, w, userItem, found, effective.MaxDepth); err != nil {
+			return err
 		}
 	}
 	return nil

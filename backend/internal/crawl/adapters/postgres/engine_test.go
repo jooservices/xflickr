@@ -34,6 +34,8 @@ func (r engRow) Scan(dest ...any) error {
 		switch p := d.(type) {
 		case *int64:
 			*p = r.values[i].(int64)
+		case *[]int64:
+			*p = r.values[i].([]int64)
 		case *int:
 			*p = r.values[i].(int)
 		case *bool:
@@ -680,6 +682,37 @@ func TestNewEngineValidatesArguments(t *testing.T) {
 	if engine, err := NewEngine(&pgxpool.Pool{}, func(Conn) app.CatalogWriter { return engCatalog{} }); err != nil || engine == nil {
 		t.Fatalf("NewEngine() = %v, %v; want initialized engine", engine, err)
 	}
+}
+
+func TestConnectedUsersForAccount(t *testing.T) {
+	t.Run("active connected users", func(t *testing.T) {
+		conn := &engConn{row: engRow{values: []any{[]int64{3, 4}}}}
+		users, err := (interestTx{tx: conn}).ConnectedUsersForAccount(t.Context(), "account@N00")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(users) != 2 || users[0] != 3 || users[1] != 4 {
+			t.Fatalf("connected users = %v, want [3 4]", users)
+		}
+		if len(conn.queries) != 1 || !strings.Contains(conn.queries[0].sql, "array_agg(user_id ORDER BY user_id)") || !strings.Contains(conn.queries[0].sql, "status='ok'") || conn.queries[0].args[0] != "account@N00" {
+			t.Fatalf("connected users query = %#v", conn.queries)
+		}
+	})
+	t.Run("database error", func(t *testing.T) {
+		conn := &engConn{row: engRow{err: errors.New("database unavailable")}}
+		if _, err := (interestTx{tx: conn}).ConnectedUsersForAccount(t.Context(), "account@N00"); err == nil || !strings.Contains(err.Error(), "crawl: list users for contacts account") {
+			t.Fatalf("ConnectedUsersForAccount() error = %v", err)
+		}
+	})
+	t.Run("invalid account", func(t *testing.T) {
+		conn := &engConn{}
+		if _, err := (interestTx{tx: conn}).ConnectedUsersForAccount(t.Context(), ""); err == nil {
+			t.Fatal("ConnectedUsersForAccount() accepted an empty account NSID")
+		}
+		if len(conn.queries) != 0 {
+			t.Fatal("invalid account issued a query")
+		}
+	})
 }
 
 func TestLockCurrentContactsScan(t *testing.T) {

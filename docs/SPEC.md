@@ -93,6 +93,8 @@ guide feature implementation; operational environment rules live in
   that XFlickr user.
 - Depth 1 follows contacts of that user's connected Flickr accounts. Further
   levels discover owners of photos favorited by contacts at the prior level.
+- A contacts scan for an NSID connected by multiple users registers discoveries
+  for each active connected user, applying each user's own maximum depth.
 - A user's depth setting bounds that user's discovery. Do not crawl deeper on
   their behalf because another user selected a greater depth.
 

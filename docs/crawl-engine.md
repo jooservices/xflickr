@@ -177,7 +177,9 @@ is selected by its start checkpoint and work-item ID. Older scans stop before
 another Flickr call, and page commits lock and verify the selected scan before
 writing relationships or reconciling the list. This prevents an interleaved
 older page from lowering `seen_at` and causing a newer complete scan to delete
-a contact that remains present. `crawl_interests` stores per-person photo,
+a contact that remains present. Each selected page also registers its contact
+discoveries for every user with an active connected account for that NSID,
+using each user's own maximum depth. `crawl_interests` stores per-person photo,
 favorite, and check checkpoints. The settings interval is enforced by the
 scheduler, not a cron job.
 

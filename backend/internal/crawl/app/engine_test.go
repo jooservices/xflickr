@@ -19,12 +19,13 @@ import (
 var epoch = time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 
 type fakeFacet struct {
-	name   string
-	lane   domain.Lane
-	plan   []domain.WorkSpec
-	result domain.Result
-	err    error
-	pages  []domain.Page
+	name    string
+	lane    domain.Lane
+	plan    []domain.WorkSpec
+	result  domain.Result
+	results []domain.Result
+	err     error
+	pages   []domain.Page
 }
 
 func (f *fakeFacet) Name() string      { return f.name }
@@ -35,6 +36,9 @@ func (f *fakeFacet) Plan(context.Context, domain.Person) []domain.WorkSpec {
 
 func (f *fakeFacet) Handle(_ context.Context, page domain.Page) (domain.Result, error) {
 	f.pages = append(f.pages, page)
+	if index := len(f.pages) - 1; index < len(f.results) {
+		return f.results[index], f.err
+	}
 	return f.result, f.err
 }
 
@@ -119,6 +123,7 @@ type fakeTx struct {
 	contactsUser      int64
 	contactsNSID      string
 	contactsAt        time.Time
+	contactUsers      []int64
 	staleContactsScan bool
 	contactsGuardErr  error
 	groups            []catalog.Group
@@ -208,6 +213,10 @@ func (t *fakeTx) CompleteContacts(_ context.Context, userID int64, accountNSID s
 
 func (t *fakeTx) LockCurrentContactsScan(context.Context, int64, string, int64) (bool, error) {
 	return !t.staleContactsScan, t.contactsGuardErr
+}
+
+func (t *fakeTx) ConnectedUsersForAccount(context.Context, string) ([]int64, error) {
+	return append([]int64(nil), t.contactUsers...), nil
 }
 
 func (t *fakeTx) Do(_ context.Context, fn func(Writers) error) error {
@@ -483,6 +492,60 @@ func TestContactsReconciliationRunsOnlyOnFinalPage(t *testing.T) {
 				t.Fatalf("contacts reconciliation = user:%d account:%q at:%s", r.tx.contactsUser, r.tx.contactsNSID, r.tx.contactsAt)
 			}
 		})
+	}
+}
+
+func TestContactsScanAddsEveryPageForEachConnectedUser(t *testing.T) {
+	r := newRig(t)
+	r.store.item.Kind = domain.FacetContacts
+	r.store.item.Subject = "account@N00"
+	r.store.item.Depth = 0
+	r.store.item.Cursor = domain.Cursor{Page: 1, Method: "flickr.contacts.getList", CheckpointAt: epoch.Unix()}
+	r.tx.current = domain.Item{State: domain.StateRunning, Cursor: r.store.item.Cursor}
+	r.tx.contactUsers = []int64{3, 4}
+	r.favFace.plan = nil
+	r.favFace.results = []domain.Result{
+		{Discoveries: []domain.Discovery{{NSID: "first@N00", Via: "contact"}}, HasMore: true},
+		{Discoveries: []domain.Discovery{{NSID: "second@N00", Via: "contact"}}},
+	}
+
+	if err := r.engine.Handle(t.Context(), r.store.item.ID); err != nil {
+		t.Fatalf("first contacts page: %v", err)
+	}
+	if r.tx.advanced == nil || r.tx.advanced.Page != 2 || r.tx.finished {
+		t.Fatalf("first page progress = %+v, finished=%v", r.tx.advanced, r.tx.finished)
+	}
+	r.store.item.Cursor = *r.tx.advanced
+	r.tx.current = domain.Item{State: domain.StateRunning, Cursor: *r.tx.advanced}
+	r.tx.advanced = nil
+
+	if err := r.engine.Handle(t.Context(), r.store.item.ID); err != nil {
+		t.Fatalf("second contacts page: %v", err)
+	}
+	if len(r.flickr.requests) != 2 {
+		t.Fatalf("Flickr calls = %d, want one per page", len(r.flickr.requests))
+	}
+	if len(r.tx.interests) != 4 {
+		t.Fatalf("contact interests = %+v, want both discoveries for both connected users", r.tx.interests)
+	}
+	want := map[int64]map[string]bool{
+		3: {"first@N00": false, "second@N00": false},
+		4: {"first@N00": false, "second@N00": false},
+	}
+	for _, interest := range r.tx.interests {
+		if interest.Depth != 1 || interest.Via != "contact" {
+			t.Fatalf("interest = %+v, want depth 1 via contact", interest)
+		}
+		if users, ok := want[interest.UserID]; ok {
+			users[interest.PersonNSID] = true
+		}
+	}
+	for userID, people := range want {
+		for person, found := range people {
+			if !found {
+				t.Errorf("user %d has no interest for %s", userID, person)
+			}
+		}
 	}
 }
 

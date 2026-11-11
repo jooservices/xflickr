@@ -447,6 +447,22 @@ func (w workTx) Finish(ctx context.Context, id int64) error {
 
 type interestTx struct{ tx Conn }
 
+// ConnectedUsersForAccount lists active users connected to the account NSID.
+func (i interestTx) ConnectedUsersForAccount(ctx context.Context, accountNSID string) ([]int64, error) {
+	if accountNSID == "" {
+		return nil, errors.New("crawl: invalid contacts account")
+	}
+	var users []int64
+	err := i.tx.QueryRow(ctx, `
+		SELECT COALESCE(array_agg(user_id ORDER BY user_id), '{}'::bigint[])
+		FROM flickr_accounts
+		WHERE nsid=$1 AND status='ok'`, accountNSID).Scan(&users)
+	if err != nil {
+		return nil, fmt.Errorf("crawl: list users for contacts account: %w", err)
+	}
+	return users, nil
+}
+
 func (i interestTx) Add(ctx context.Context, interest domain.Interest) error {
 	if err := interest.Validate(); err != nil {
 		return err

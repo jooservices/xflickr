@@ -256,6 +256,15 @@ func TestInterleavedContactsScansKeepTheNewestRelationship(t *testing.T) {
 	if got := count(t, ctx, pool, `SELECT count(*) FROM contacts WHERE person_nsid=$1 AND contact_nsid=$2 AND seen_at=$3`, account, contact, newerCheckpoint); got != 1 {
 		t.Fatalf("contact seen_at was not kept at newest checkpoint: count=%d", got)
 	}
+	for _, userID := range []int64{firstUserID, secondUserID} {
+		var depth int
+		if err := pool.QueryRow(ctx, `SELECT depth FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, userID, contact).Scan(&depth); err != nil {
+			t.Fatalf("read contact interest for user %d: %v", userID, err)
+		}
+		if depth != 1 {
+			t.Errorf("contact interest for user %d has depth %d, want 1", userID, depth)
+		}
+	}
 	if flickr.calls != 3 || flickr.userCalls[firstUserID] != 1 || flickr.userCalls[secondUserID] != 2 {
 		t.Fatalf("Flickr calls = total:%d older:%d newer:%d; want only one older and two newer pages", flickr.calls, flickr.userCalls[firstUserID], flickr.userCalls[secondUserID])
 	}
