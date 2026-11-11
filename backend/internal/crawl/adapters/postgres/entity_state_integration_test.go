@@ -134,6 +134,51 @@ func TestPhotoRestrictionReopensOnVisibilityAndSkipsTombstones(t *testing.T) {
 	}
 }
 
+func TestPhotoFacetEligibilityUsesTheSelectedKeyOwner(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx := t.Context()
+	userID := insertInterestTestUser(t, ctx, pool)
+	suffix := fmt.Sprintf("state-photo-key-%d", time.Now().UnixNano())
+	owner := suffix + "-owner"
+	var keyID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys
+		(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst,status)
+		VALUES($1,'restriction',$2,'{}',3600,4,5,'valid') RETURNING id`, userID, "key-"+suffix).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	photoID := now.UnixNano()%1_000_000_000 + 900_000_000_000
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,last_update,visibility,raw,content_hash)
+		VALUES($1,$2,$3,'public','{}',decode(repeat('ab',32),'hex'))`, photoID, owner, now); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM entity_facet_restrictions WHERE entity_type='photo' AND entity_id=$1`, fmt.Sprint(photoID))
+		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE id=$1`, photoID)
+		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid=$1`, owner)
+		_, _ = pool.Exec(bg, `DELETE FROM api_keys WHERE id=$1`, keyID)
+		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id=$1`, userID)
+	})
+	access := app.EntityAccess{
+		EntityRef: app.EntityRef{Kind: "photo", ID: fmt.Sprint(photoID)},
+		Facet:     "sizes",
+		UserID:    userID,
+		KeyID:     keyID,
+		Version:   now,
+	}
+	states := EntityStates{DB: pool}
+	if err := states.RecordFailure(ctx, access, "restricted", "permission_denied", now, now); err != nil {
+		t.Fatal(err)
+	}
+	if allowed, err := states.PhotoFacetAllowed(ctx, photoID, keyID, "sizes"); err != nil || allowed {
+		t.Fatalf("PhotoFacetAllowed() = %v, %v; want the selected key's restriction to block scheduling", allowed, err)
+	}
+}
+
 func TestPhotoSizeRestrictionDistinguishesAccountsSharingAKey(t *testing.T) {
 	pool := openEngineTestPool(t)
 	ctx := t.Context()

@@ -499,6 +499,78 @@ func TestPhotoLaneSkipsRestrictedPhotosWithoutAnOwnerAccount(t *testing.T) {
 	}
 }
 
+func TestPhotoLaneAdvancesPastKeyRestrictedPhotoWithoutOwnerAccount(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	suffix := fmt.Sprintf("lane-key-restricted-%d", time.Now().UnixNano())
+	owner := suffix + "-owner"
+	base := time.Now().UnixNano() % 1_000_000_000 * 100
+	var userID, keyID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role)
+		VALUES($1,'integration-hash','user') RETURNING id`, suffix+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys
+		(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst,status)
+		VALUES($1,'lane-restricted',$2,'{}',3600,4,5,'valid') RETURNING id`, userID, "key-"+suffix).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred)
+		VALUES($1,$2,0,'test',true)`, userID, owner); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM entity_facet_restrictions WHERE entity_id = ANY($1)`, []string{fmt.Sprint(base + 1)})
+		_, _ = pool.Exec(bg, `DELETE FROM schedule_meta WHERE key=$1`, "photo_lane_cursor:"+owner)
+		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE owner_nsid=$1`, owner)
+		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid=$1`, owner)
+		_, _ = pool.Exec(bg, `DELETE FROM api_keys WHERE id=$1`, keyID)
+		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id=$1`, userID)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO photos
+		(id,owner_nsid,server,last_update,visibility,sizes,sizes_status,sizes_checked_at,uploaded_at,raw,content_hash)
+		SELECT $1::bigint+n::bigint,$2,'1234',now(),'public','[]'::jsonb,
+			CASE WHEN n IN (1,51) THEN 'provisional' ELSE 'confirmed' END,now(),
+			now()-n*interval '1 second','{}',decode(repeat('ab',32),'hex')
+		FROM generate_series(1,51) AS n`, base, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO entity_facet_restrictions
+		(entity_type,entity_id,facet,user_id,key_id,first_seen_at,reason,recheck_at,photo_updated_at)
+		SELECT 'photo',id::text,'sizes',$2,$3,now(),'permission_denied',now(),last_update
+		FROM photos WHERE id=$1`, base+1, userID, keyID); err != nil {
+		t.Fatal(err)
+	}
+	lane := postgres.PhotoLane{Pool: pool}
+	refs, err := lane.Select(ctx, 1, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range refs {
+		if ref.ID == base+1 {
+			t.Fatalf("selected photo %d after its current user/key restriction", ref.ID)
+		}
+	}
+	refs, err = lane.Select(ctx, 1, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range refs {
+		if ref.ID == base+51 && ref.Facet == "sizes" {
+			return
+		}
+	}
+	t.Fatalf("photo lane did not advance past the restricted page to photo %d: %+v", base+51, refs)
+}
+
 func TestPhotoLaneAdvancesPastRestrictedFacet(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")

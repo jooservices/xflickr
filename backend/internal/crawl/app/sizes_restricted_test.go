@@ -183,6 +183,56 @@ func TestRestrictedPhotoRetriesOnceWithOwnerToken(t *testing.T) {
 	}
 }
 
+func TestSizesJobReusesOnlyAnEligibleAccountResult(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		class        quotadomain.Class
+		wantCall     bool
+		wantSigned   bool
+		wantAccount  int64
+		wantResolved bool
+	}{
+		{
+			name:        "background ignores another account result and tries owner",
+			class:       quotadomain.Photo,
+			wantCall:    true,
+			wantSigned:  true,
+			wantAccount: 11,
+		},
+		{
+			name:         "interactive reuses another requesting account result",
+			class:        quotadomain.Interactive,
+			wantResolved: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			handler, store, client, _, _ := restrictedRig()
+			store.photo.Server = catalog.RestrictedPlaceholderServer
+			accounts := handler.Accounts.(*accountSizesFake)
+			accounts.statuses = make(map[int64]catalog.SizesStatus)
+			accounts.statuses[22] = catalog.SizesConfirmed
+			job := SizesJob{PhotoID: 40, KeyID: 12, Class: string(test.class)}
+			if err := handler.Handle(t.Context(), job); err != nil {
+				t.Fatal(err)
+			}
+			if test.wantCall {
+				if len(client.calls) != 1 || client.calls[0].Signed != test.wantSigned || client.calls[0].AccountID != test.wantAccount {
+					t.Fatalf("Flickr calls = %+v; want one signed call for account %d", client.calls, test.wantAccount)
+				}
+			} else if len(client.calls) != 0 {
+				t.Fatalf("Flickr calls = %+v; want stored eligible result", client.calls)
+			}
+			if test.wantResolved {
+				if len(accounts.resolved) != 1 || accounts.resolved[0].UserID != 7 || accounts.resolved[0].Status != catalog.SizesConfirmed {
+					t.Fatalf("user results = %+v; want confirmed result for requesting user", accounts.resolved)
+				}
+			} else if len(accounts.resolved) != 0 {
+				t.Fatalf("user results = %+v; background job must not reuse another account", accounts.resolved)
+			}
+		})
+	}
+}
+
 func TestFailedOwnerAccountDoesNotSuppressRequestingAccountOnNextRequest(t *testing.T) {
 	handler, store, client, _, _ := restrictedRig()
 	store.photo.Server = catalog.RestrictedPlaceholderServer
