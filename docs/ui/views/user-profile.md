@@ -83,6 +83,10 @@ independently).
    items: device icon, browser and OS ("Firefox on Linux"), masked IP,
    "Last active {relative}", "Signed in {date}", a `This device` pill on the
    current one (no revoke button there), `Revoke` (sm ghost) on the others.
+   When `meta.pagination.has_more` is true, show `Load more sessions` and use
+   `meta.pagination.next_cursor` to append the next page without removing
+   loaded rows. Disable the action while loading. A page error keeps loaded
+   rows and offers Retry. Every loaded row keeps its individual Revoke action.
 6. **Flickr accounts**: header row with `Connect another` (sm primary, goes to
    `/accounts/connect`). List items: status dot (ok green check, warning for
    `reconnect_required`, bad for `revoked`), username, mono NSID, line
@@ -151,6 +155,7 @@ everywhere stays).
 | Unlink provider | `Unlink` | Confirm modal `profile.signin-methods.unlink.title`; `DELETE /me/sign-in-methods/{provider}`; on 204 remove the link and toast; a 409 keeps the row and shows `profile.signin-methods.last` |
 | Set a password | `Set a password` in a blocked row | Move focus to the Password card and its current-password field; no navigation |
 | Revoke session | `Revoke` | Confirm modal `profile.sessions.revoke.title`; `DELETE /me/sessions/{id}`; item removed, toast |
+| Load more sessions | `profile.sessions.load-more` | Request the session collection using `meta.pagination.next_cursor` and append the returned rows; keep loaded rows and offer Retry if the request fails |
 | Sign out other sessions | button | Confirm modal; `DELETE /auth/sessions`; list reloads with only the current one; disabled when no other session exists |
 | Connect another | button | Client route `/accounts/connect` |
 | Disconnect account | `Disconnect` | Confirm modal listing consequences (photos stay, crawling for this account stops); `DELETE`; on 409 the modal shows `profile.accounts.error.running` and stays |
@@ -398,6 +403,9 @@ than truncate. Dates and numbers use the active locale.
 | `profile.sessions.revoke` | Revoke | Thu hồi |
 | `profile.sessions.revoke.title` | Sign out this device? | Đăng xuất thiết bị này? |
 | `profile.sessions.revoke.text` | {device} will need to sign in again. | {device} sẽ cần đăng nhập lại. |
+| `profile.sessions.load-more` | Load more sessions | Tải thêm phiên đăng nhập |
+| `profile.sessions.loading-more` | Loading more sessions… | Đang tải thêm phiên đăng nhập… |
+| `profile.sessions.more-error` | Could not load more sessions. | Không thể tải thêm phiên đăng nhập. |
 | `profile.sessions.revoke-others` | Sign out other sessions | Đăng xuất các phiên khác |
 | `profile.sessions.revoke-others.text` | Every device except this one will be signed out. | Mọi thiết bị trừ thiết bị này sẽ bị đăng xuất. |
 | `profile.accounts.title` | Flickr accounts | Tài khoản Flickr |

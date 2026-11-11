@@ -300,6 +300,60 @@ describe('ProfilePage', () => {
     );
   });
 
+  it('loads and can revoke sessions after the first page', async () => {
+    const allSessions = Array.from({ length: 60 }, (_, index) => ({
+      id: String(index + 1),
+      current: index === 0,
+      user_agent_label: `Browser ${index + 1}`,
+      ip_masked: '203.0.113.x',
+      last_seen_at: '2026-10-25T10:00:00Z',
+      created_at: '2026-10-20T10:00:00Z',
+    }));
+    let requestedCursor: string | null = null;
+    let pageLoads = 0;
+    let revokedSession: string | undefined;
+    server.use(
+      http.get('*/api/v1/me/sessions', ({ request }) => {
+        const cursor = new URL(request.url).searchParams.get('cursor');
+        if (cursor) {
+          requestedCursor = cursor;
+          pageLoads += 1;
+          if (pageLoads === 1) return new HttpResponse(null, { status: 500 });
+          return HttpResponse.json({
+            ...sessionCollectionEnvelope(allSessions.slice(50)),
+            meta: { pagination: { limit: 50, has_more: false, next_cursor: '' } },
+          });
+        }
+        return HttpResponse.json({
+          ...sessionCollectionEnvelope(allSessions.slice(0, 50)),
+          meta: { pagination: { limit: 50, has_more: true, next_cursor: 'cursor-50' } },
+        });
+      }),
+      http.delete('*/api/v1/me/sessions/60', () => {
+        revokedSession = '60';
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderApp({ session: userSession, path: '/profile' });
+
+    expect(await screen.findByTestId('profile-session-row-50')).toBeInTheDocument();
+    expect(screen.queryByTestId('profile-session-row-60')).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByTestId('profile-sessions-load-more'));
+    expect(await screen.findByTestId('profile-error-more-sessions')).toBeInTheDocument();
+    expect(screen.getByTestId('profile-session-row-50')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('profile-error-retry-more-sessions'));
+    expect(await screen.findByTestId('profile-session-row-60')).toBeInTheDocument();
+    expect(screen.queryByTestId('profile-sessions-load-more')).not.toBeInTheDocument();
+    expect(requestedCursor).toBe('cursor-50');
+
+    fireEvent.click(screen.getByTestId('profile-session-revoke-60'));
+    fireEvent.click(await screen.findByTestId('profile-confirm-ok'));
+    await waitFor(() =>
+      expect(screen.queryByTestId('profile-session-row-60')).not.toBeInTheDocument(),
+    );
+    expect(revokedSession).toBe('60');
+  });
+
   it('revokes all other sessions after confirmation', async () => {
     let revokeOthers = false;
     server.use(

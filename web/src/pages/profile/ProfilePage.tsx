@@ -15,8 +15,15 @@ import {
   revokeOtherSessions,
   updateMe,
 } from '../../shared/api/gen/default/default';
+import type { RESTEnvelopeMeta } from '../../shared/api/gen/models/rESTEnvelopeMeta';
+import type { RESTPagination } from '../../shared/api/gen/models/rESTPagination';
 import type { SessionSummary } from '../../shared/api/gen/models/sessionSummary';
 import styles from './ProfilePage.module.css';
+
+function nextSessionsCursor(meta: RESTEnvelopeMeta): string | undefined {
+  const pagination = meta.pagination as RESTPagination | undefined;
+  return pagination?.has_more && pagination.next_cursor ? pagination.next_cursor : undefined;
+}
 
 export function ProfilePage() {
   const { session } = useSession();
@@ -26,7 +33,10 @@ export function ProfilePage() {
   const user = session.status === 'authenticated' ? session.user : undefined;
   const [language, setLanguage] = useState<Locale>(locale);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessionsNextCursor, setSessionsNextCursor] = useState<string | undefined>();
   const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsMoreLoading, setSessionsMoreLoading] = useState(false);
+  const [sessionsMoreError, setSessionsMoreError] = useState(false);
   const [sessionsError, setSessionsError] = useState(false);
   const [sessionsHasLoaded, setSessionsHasLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -99,6 +109,8 @@ export function ProfilePage() {
       signalSessionExpired(result.status);
       if (result.status !== 200) throw new Error('Could not load sessions');
       setSessions(result.data.data ?? []);
+      setSessionsNextCursor(nextSessionsCursor(result.data.meta));
+      setSessionsMoreError(false);
       setSessionsUpdatedAt(Date.now());
       setSessionsHasLoaded(true);
       setSessionsError(false);
@@ -108,6 +120,29 @@ export function ProfilePage() {
       setSessionsLoading(false);
     }
   }, []);
+
+  const loadMoreSessions = useCallback(async () => {
+    if (!sessionsNextCursor || sessionsMoreLoading) return;
+    setSessionsMoreLoading(true);
+    setSessionsMoreError(false);
+    try {
+      const result = await listMySessions(
+        { cursor: sessionsNextCursor },
+        { credentials: 'same-origin' },
+      );
+      signalSessionExpired(result.status);
+      if (result.status !== 200) throw new Error('Could not load more sessions');
+      setSessions((current) => [...current, ...(result.data.data ?? [])]);
+      setSessionsNextCursor(nextSessionsCursor(result.data.meta));
+      setSessionsUpdatedAt(Date.now());
+      setSessionsHasLoaded(true);
+      setSessionsError(false);
+    } catch {
+      setSessionsMoreError(true);
+    } finally {
+      setSessionsMoreLoading(false);
+    }
+  }, [sessionsMoreLoading, sessionsNextCursor]);
 
   useEffect(() => {
     let active = true;
@@ -120,6 +155,8 @@ export function ProfilePage() {
           return;
         }
         setSessions(result.data.data ?? []);
+        setSessionsNextCursor(nextSessionsCursor(result.data.meta));
+        setSessionsMoreError(false);
         setSessionsUpdatedAt(Date.now());
         setSessionsHasLoaded(true);
         setSessionsError(false);
@@ -492,6 +529,33 @@ export function ProfilePage() {
                     </li>
                   ))}
                 </ul>
+              )}
+              {sessionsMoreError ? (
+                <p className={styles.error} role="alert" data-testid="profile-error-more-sessions">
+                  {t('profile.sessions.more-error')}{' '}
+                  <button
+                    className={styles.secondary}
+                    type="button"
+                    onClick={() => void loadMoreSessions()}
+                    data-testid="profile-error-retry-more-sessions"
+                  >
+                    {t('common.retry')}
+                  </button>
+                </p>
+              ) : (
+                sessionsNextCursor && (
+                  <button
+                    className={styles.secondary}
+                    type="button"
+                    disabled={sessionsMoreLoading}
+                    onClick={() => void loadMoreSessions()}
+                    data-testid="profile-sessions-load-more"
+                  >
+                    {sessionsMoreLoading
+                      ? t('profile.sessions.loading-more')
+                      : t('profile.sessions.load-more')}
+                  </button>
+                )
               )}
             </>
           )}
