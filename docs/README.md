@@ -71,6 +71,8 @@
   capabilities, upload verification, and reusable adapter contract tests.
 - [Dropbox metadata check](dropbox-provider.md) — known-path metadata checks,
   App-folder paths, content hash semantics, and current slice limits.
+- [S3 sync provider existence check](s3-sync-provider.md) — object HEAD checks
+  by key and ETag, with the first adapter slice's limits.
 - [Cloud sync engine](cloud-sync-engine.md) — temporary blob ownership, upload
   verification order, cleanup, and retry boundaries.
 - [Google Drive provider slice](google-drive-provider.md) — My Drive root
