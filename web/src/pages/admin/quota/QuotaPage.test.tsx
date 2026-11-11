@@ -42,7 +42,10 @@ describe('API quota page', () => {
       '900',
     );
     expect(within(table).getByText('900 / 3,600')).toBeInTheDocument();
-    expect(within(table).getByTestId('admin-quota-cooldown')).toHaveTextContent('Resets in');
+    expect(
+      within(table).getByRole('columnheader', { name: 'Next call expires at' }),
+    ).toBeInTheDocument();
+    expect(within(table).getByTestId('admin-quota-cooldown').textContent).toMatch(/^in /);
     expect(
       screen.getByText(
         'Lane totals, burst values and key controls are not included in the available API response.',
@@ -117,6 +120,28 @@ describe('API quota page', () => {
     expect(screen.getByRole('link', { name: 'Open my API keys' })).toHaveAttribute('href', '/keys');
   });
 
+  it('shows stale state and retry for an empty snapshot after refresh fails', async () => {
+    let calls = 0;
+    server.use(
+      http.get('*/admin/quota', () => {
+        calls += 1;
+        if (calls === 1 || calls > 2) return HttpResponse.json({ keys: [] });
+        return new HttpResponse(null, { status: 500 });
+      }),
+    );
+    renderApp({ session: adminSession, path: '/admin/quota' });
+
+    const empty = await screen.findByTestId('admin-quota-empty');
+    fireEvent.click(screen.getByTestId('admin-quota-refresh'));
+    expect(await screen.findByTestId('admin-quota-stale')).toBeInTheDocument();
+    expect(screen.getByTestId('admin-quota-stale-retry')).toBeInTheDocument();
+    expect(empty).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('admin-quota-stale-retry'));
+    await waitFor(() => expect(screen.queryByTestId('admin-quota-stale')).not.toBeInTheDocument());
+    expect(empty).toBeInTheDocument();
+  });
+
   it('retries an initial load failure', async () => {
     let calls = 0;
     server.use(
@@ -174,8 +199,14 @@ describe('API quota page', () => {
     await screen.findByTestId('admin-quota-key-table');
     fireEvent.click(screen.getByTestId('admin-lang-toggle'));
 
+    const table = await screen.findByTestId('admin-quota-key-table');
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Hạn mức API' })).toBeInTheDocument();
+      expect(
+        within(table).getByRole('columnheader', {
+          name: 'Thời điểm lượt gọi tiếp theo hết hạn',
+        }),
+      ).toBeInTheDocument();
     });
   });
 });

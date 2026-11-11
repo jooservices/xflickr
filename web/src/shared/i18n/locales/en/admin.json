@@ -34,7 +34,7 @@
   "quota.node": "Node",
   "quota.used": "Used this hour",
   "quota.state": "State",
-  "quota.resets-in": "Resets in {{time}}",
+  "quota.reset-time": "Next call expires at",
   "quota.status-ok": "OK",
   "quota.status-cooling": "Cooling",
   "quota.status-exhausted": "Exhausted",

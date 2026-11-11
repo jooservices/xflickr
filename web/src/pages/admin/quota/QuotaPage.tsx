@@ -106,10 +106,8 @@ function QuotaRow({
           {stateCopy(keyData, t)}
         </span>
       </td>
-      <td data-label={t('admin.quota.resets-in')}>
-        <span data-testid="admin-quota-cooldown">
-          {reset === '—' ? reset : t('admin.quota.resets-in', { time: reset })}
-        </span>
+      <td data-label={t('admin.quota.reset-time')}>
+        <span data-testid="admin-quota-cooldown">{reset}</span>
       </td>
     </tr>
   );
@@ -181,6 +179,22 @@ export function QuotaPage() {
     <div data-testid="admin-page">
       <div className={styles.page} data-testid="admin-quota-page">
         {heading}
+        {stale ? (
+          <div className={styles.stale} role="status" data-testid="admin-quota-stale">
+            {t('admin.quota.stale', {
+              age: formatAge(Math.max(0, now - query.dataUpdatedAt), locale),
+            })}
+            {query.isError ? (
+              <button
+                type="button"
+                onClick={() => void query.refetch()}
+                data-testid="admin-quota-stale-retry"
+              >
+                {t('admin.quota.retry')}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {query.data === undefined && query.isError ? (
           <div data-testid="admin-quota-error">
             <div className={styles.error} role="alert">
@@ -220,22 +234,6 @@ export function QuotaPage() {
           />
         ) : (
           <>
-            {stale ? (
-              <div className={styles.stale} role="status" data-testid="admin-quota-stale">
-                {t('admin.quota.stale', {
-                  age: formatAge(Math.max(0, now - query.dataUpdatedAt), locale),
-                })}
-                {query.isError ? (
-                  <button
-                    type="button"
-                    onClick={() => void query.refetch()}
-                    data-testid="admin-quota-stale-retry"
-                  >
-                    {t('admin.quota.retry')}
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
             {query.isFetching && query.data !== undefined ? (
               <p className={styles.refreshing} role="status">
                 {t('admin.quota.refreshing')}
@@ -256,7 +254,7 @@ export function QuotaPage() {
                       <th scope="col">{t('admin.quota.node')}</th>
                       <th scope="col">{t('admin.quota.used')}</th>
                       <th scope="col">{t('admin.quota.state')}</th>
-                      <th scope="col">{t('admin.quota.resets-in')}</th>
+                      <th scope="col">{t('admin.quota.reset-time')}</th>
                     </tr>
                   </thead>
                   <tbody>

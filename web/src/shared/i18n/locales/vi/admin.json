@@ -34,7 +34,7 @@
   "quota.node": "Node",
   "quota.used": "Đã dùng trong giờ này",
   "quota.state": "Trạng thái",
-  "quota.resets-in": "Đặt lại sau {{time}}",
+  "quota.reset-time": "Thời điểm lượt gọi tiếp theo hết hạn",
   "quota.status-ok": "Bình thường",
   "quota.status-cooling": "Đang chờ",
   "quota.status-exhausted": "Đã hết hạn mức",
