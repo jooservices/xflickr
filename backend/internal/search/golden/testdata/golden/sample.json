@@ -1,0 +1,4 @@
+{"cases":[
+  {"query":"first","expected":["a","b","c"],"actual":["a","b","c"]},
+  {"query":"second","expected":["d","e","f"],"actual":["d","e","x"]}
+]}
