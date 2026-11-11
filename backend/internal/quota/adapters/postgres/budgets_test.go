@@ -12,7 +12,7 @@ import (
 )
 
 func TestBudgetLoadsAndValidatesLimits(t *testing.T) {
-	query := &fakeQueryer{row: fakeRow{values: []any{int64(1800), int64(4), int64(5), []byte("100"), []byte("0.3"), []byte("0.1")}}}
+	query := &fakeQueryer{row: fakeRow{values: []any{int64(1800), int64(4), int64(5), []byte("100"), []byte("0.3"), []byte("0.1"), []byte("3400")}}}
 	budget, err := (Budgets{Pool: query}).Budget(context.Background(), 7)
 	if err != nil {
 		t.Fatal(err)
@@ -20,32 +20,49 @@ func TestBudgetLoadsAndValidatesLimits(t *testing.T) {
 	if budget.HourlyLimit != 1800 || budget.PerSecondRate != 4 || budget.Burst != 5 || budget.Reserve != 100 || budget.PersonLaneShare != .3 || budget.PhotoLaneFloorShare != .1 {
 		t.Fatalf("budget = %+v", budget)
 	}
-	if !strings.Contains(query.query, "(usable.value #>> '{}')::bigint") || !strings.Contains(query.query, "usable.key = 'usable_hourly_quota'") {
+	if !strings.Contains(query.query, "usable.value") || !strings.Contains(query.query, "usable.key = 'usable_hourly_quota'") {
 		t.Fatalf("budget query omits the usable hourly quota: %s", query.query)
 	}
 }
 
 func TestBudgetUnitUsesSmallestHourlyCeiling(t *testing.T) {
 	tests := []struct {
-		name   string
-		limit  int64
-		daily  string
-		usable string
-		want   int64
+		name       string
+		baseHourly int64
+		daily      string
+		usable     string
+		want       int64
 	}{
-		{name: "usable quota caps key", limit: 3600, daily: "0", usable: "3400", want: 3400},
-		{name: "key limit stays lower", limit: 1800, daily: "0", usable: "3400", want: 1800},
-		{name: "daily limit caps both", limit: 3600, daily: "2500", usable: "3400", want: 2500},
-		{name: "usable quota beats daily limit", limit: 3600, daily: "3600", usable: "3400", want: 3400},
+		{name: "usable quota caps key", baseHourly: 3600, daily: "0", usable: "3400", want: 3400},
+		{name: "key limit stays lower", baseHourly: 1800, daily: "0", usable: "3400", want: 1800},
+		{name: "daily limit caps both", baseHourly: 2500, daily: "2500", usable: "3400", want: 2500},
+		{name: "usable quota beats daily limit", baseHourly: 3600, daily: "3600", usable: "3400", want: 3400},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			query := &fakeQueryer{row: fakeRow{values: []any{test.want, int64(4), int64(5), []byte("100"), []byte("0.3"), []byte("0.1")}}}
-			if _, err := (Budgets{Pool: query}).Budget(context.Background(), 7); err != nil {
+			query := &fakeQueryer{row: fakeRow{values: []any{test.baseHourly, int64(4), int64(5), []byte("100"), []byte("0.3"), []byte("0.1"), []byte(test.usable)}}}
+			budget, err := (Budgets{Pool: query}).Budget(context.Background(), 7)
+			if err != nil {
 				t.Fatal(err)
+			}
+			if budget.HourlyLimit != test.want {
+				t.Fatalf("hourly limit = %d, want %d", budget.HourlyLimit, test.want)
 			}
 			if !strings.Contains(query.query, "LEAST(k.per_hour_limit") || !strings.Contains(query.query, "daily.key = 'daily_call_limit'") {
 				t.Fatalf("budget query does not apply all hourly ceilings: %s", query.query)
+			}
+		})
+	}
+}
+
+func TestBudgetRejectsInvalidUsableHourlyQuota(t *testing.T) {
+	for _, raw := range []string{"null", `"3400"`, "true", "3400.5", "0", "-1"} {
+		t.Run(raw, func(t *testing.T) {
+			query := &fakeQueryer{row: fakeRow{values: []any{
+				int64(3600), int64(4), int64(5), []byte("100"), []byte("0.3"), []byte("0.1"), []byte(raw),
+			}}}
+			if budget, err := (Budgets{Pool: query}).Budget(context.Background(), 7); err == nil {
+				t.Fatalf("Budget() = %+v, nil; want invalid usable quota rejected", budget)
 			}
 		})
 	}
@@ -73,12 +90,12 @@ func TestBudgetRejectsMissingDependenciesAndQueryFailures(t *testing.T) {
 
 func TestBudgetRejectsInvalidStoredSettings(t *testing.T) {
 	for _, values := range [][]any{
-		{int64(100), int64(1), int64(1), []byte("bad"), []byte("0.2"), []byte("0.1")},
-		{int64(100), int64(1), int64(1), []byte("0"), []byte("2"), []byte("0.1")},
-		{int64(100), int64(1), int64(1), []byte("0"), []byte("bad"), []byte("0.1")},
-		{int64(100), int64(1), int64(1), []byte("0"), []byte("0.3"), []byte("bad")},
-		{int64(100), int64(1), int64(1), []byte("0"), []byte("0.3"), []byte("0.51")},
-		{int64(0), int64(1), int64(1), []byte("0"), []byte("0.3"), []byte("0.1")},
+		{int64(100), int64(1), int64(1), []byte("bad"), []byte("0.2"), []byte("0.1"), []byte("3400")},
+		{int64(100), int64(1), int64(1), []byte("0"), []byte("2"), []byte("0.1"), []byte("3400")},
+		{int64(100), int64(1), int64(1), []byte("0"), []byte("bad"), []byte("0.1"), []byte("3400")},
+		{int64(100), int64(1), int64(1), []byte("0"), []byte("0.3"), []byte("bad"), []byte("3400")},
+		{int64(100), int64(1), int64(1), []byte("0"), []byte("0.3"), []byte("0.51"), []byte("3400")},
+		{int64(0), int64(1), int64(1), []byte("0"), []byte("0.3"), []byte("0.1"), []byte("3400")},
 	} {
 		query := &fakeQueryer{row: fakeRow{values: values}}
 		if _, err := (Budgets{Pool: query}).Budget(context.Background(), 1); err == nil {

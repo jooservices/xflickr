@@ -75,10 +75,13 @@ func TestBudgetFailsClosedOnInvalidUsableQuota(t *testing.T) {
 	defer cancel()
 	pool := budgetIntegrationPool(t)
 	keyID := insertBudgetAPIKey(ctx, t, pool, 3600)
-	setBudgetSetting(ctx, t, pool, "usable_hourly_quota", `"invalid"`)
-
-	if budget, err := (Budgets{Pool: pool}).Budget(ctx, keyID); err == nil {
-		t.Fatalf("invalid setting returned budget %+v", budget)
+	for _, raw := range []string{"null", `"invalid"`, "true"} {
+		t.Run(raw, func(t *testing.T) {
+			setBudgetSetting(ctx, t, pool, "usable_hourly_quota", raw)
+			if budget, err := (Budgets{Pool: pool}).Budget(ctx, keyID); err == nil {
+				t.Fatalf("setting %s returned budget %+v", raw, budget)
+			}
+		})
 	}
 }
 
