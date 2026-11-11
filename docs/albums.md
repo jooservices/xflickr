@@ -9,15 +9,20 @@ to the signed-in user under the shared photo-visibility policy. It returns no
 photo count. Each card shows its cover placeholder, title, owner NSID, and
 update date. The API returns the update time and next cursor.
 
-The response also includes the complete `contact_owners` choices, independent
-of its album page. The optional `owner_nsid` query parameter filters results on
+The response also includes the `contact_owners` choices, independent of its
+album page: the user's own contacts, the first 20,000 in NSID order (Flickr
+allows at most 5,000 contacts per account, so this covers four accounts in
+full) plus the contact selected through `owner_nsid` when it is one of the
+user's contacts, so a deep link is never lost whatever its position. The list is
+built from the contacts relationship, not from albums, so it does not reveal
+which contacts have visible albums. The optional `owner_nsid` query parameter filters results on
 the server. The visibility query checks at most 128 album photo memberships
 per album in one request. If it reaches that bound without finding a visible
 photo, the cursor resumes that album's photo probe on the next page.
 
 The page supports loading, empty, error, forbidden, and partial-page states in
-English and Vietnamese. Its contact selector uses the complete server-provided
-owner choices and asks the server for filtered pages. Pagination loads
+English and Vietnamese. Its contact selector uses the server-provided owner
+choices (see the bound above) and asks the server for filtered pages. Pagination loads
 additional albums without hiding cards already shown. An empty page with a
 cursor means visibility scanning can continue; the page shows its final empty
 state only after the cursor is exhausted. Album cards remain static because the
