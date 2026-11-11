@@ -50,7 +50,9 @@ describe('AlbumsPage', () => {
     expect(screen.getAllByTestId('album-card')[0]).toHaveTextContent('Vietnam 2024');
     expect(screen.getAllByTestId('album-card')[0]).toHaveTextContent('owner-1');
     expect(screen.getAllByTestId('album-card')[0]).toHaveTextContent('Nov 8, 2026');
-    expect(screen.getAllByTestId('album-card')[0]).not.toHaveTextContent(/visible photo|stored of/i);
+    expect(screen.getAllByTestId('album-card')[0]).not.toHaveTextContent(
+      /visible photo|stored of/i,
+    );
     expect(screen.getAllByTestId('album-card')[0]).not.toHaveAttribute('href');
     expect(screen.getByTestId('albums-filter')).toHaveValue('');
     expect(requestedCursor).toBeNull();

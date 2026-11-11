@@ -28,16 +28,13 @@ async function loadAlbums(cursor?: string): Promise<MyAlbumPage> {
 
 function AlbumCard({ album, locale }: { album: MyAlbumPage['items'][number]; locale: string }) {
   const updatedAt = album.updated_at ? new Date(album.updated_at) : null;
-  const updatedAtLabel = updatedAt && !Number.isNaN(updatedAt.getTime())
-    ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(updatedAt)
-    : null;
+  const updatedAtLabel =
+    updatedAt && !Number.isNaN(updatedAt.getTime())
+      ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(updatedAt)
+      : null;
 
   return (
-    <article
-      className={styles.albumCard}
-      data-testid="album-card"
-      data-album-id={album.id}
-    >
+    <article className={styles.albumCard} data-testid="album-card" data-album-id={album.id}>
       <span className={styles.stack} aria-hidden="true">
         <span className={styles.coverBack} />
         <span className={styles.coverMiddle} />
