@@ -84,10 +84,10 @@ func (r *Repository) Set(ctx context.Context, setting domain.Setting) (domain.Se
 			if err != nil {
 				return fmt.Errorf("sharing: encode Home refresh job: %w", err)
 			}
-			// Each setting change needs its own wake-up; a unique running job
-			// could finish just before this transaction commits.
+			// Persist one wake-up per change so an already-finishing unique job
+			// cannot consume this change before its sync row commits.
 			if err := r.queue.Enqueue(ctx, transaction, queue.Job{Kind: homeapp.RefreshJobKind, Args: jobArgs}, queue.Options{
-				Queue: "home", MaxAttempts: 5, LeaseTimeout: time.Minute, UniqueByArgs: true, UniqueByQueue: true,
+				Queue: "home", MaxAttempts: 5, LeaseTimeout: time.Minute,
 			}); err != nil {
 				return fmt.Errorf("sharing: enqueue Home refresh: %w", err)
 			}

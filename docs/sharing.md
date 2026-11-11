@@ -9,8 +9,11 @@ transaction.
 Sharing defaults to off for every user. `GET /api/v1/me/sharing` returns the
 current choice in the standard REST envelope. `PUT /api/v1/me/sharing` replaces
 that choice and publishes `sharing.changed` only when the value changes. The
-outbox event and setting update commit together. Both responses are private and
-not stored by caches; errors use `application/problem+json`.
+outbox event, setting update, and one durable Home refresh wake-up per change
+commit together. Wake-ups are not deduplicated, so a job finishing during the
+setting transaction cannot consume the next candidate sync before it commits.
+Both responses are private and not stored by caches; errors use
+`application/problem+json`.
 
 See [the sharing and privacy rules](SPEC.md#sharing-and-privacy).
 

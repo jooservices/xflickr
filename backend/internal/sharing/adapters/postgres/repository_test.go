@@ -181,7 +181,7 @@ func TestSetEnqueuesHomeRefreshInChangeTransaction(t *testing.T) {
 			if (err != nil) != test.wantErr || test.wantErr && !errors.Is(err, queueErr) {
 				t.Fatalf("Set() error = %v, wantErr %t", err, test.wantErr)
 			}
-			if jobs.calls != 1 || jobs.job.Kind != homeapp.RefreshJobKind || jobs.options.Queue != "home" || !jobs.options.UniqueByArgs || !jobs.options.UniqueByQueue {
+			if jobs.calls != 1 || jobs.job.Kind != homeapp.RefreshJobKind || jobs.options.Queue != "home" || jobs.options.UniqueByArgs || jobs.options.UniqueByQueue {
 				t.Fatalf("queued Home refresh = %+v, options=%+v", jobs.job, jobs.options)
 			}
 			if len(queries) != 1 || !strings.Contains(queries[0], "INSERT INTO outbox_events") {
