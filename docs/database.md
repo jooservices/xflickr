@@ -38,7 +38,7 @@ Sizes are approximate per partition × 16 partitions unless noted.
 | `crawl_interests_person_nsid_idx` | crawl_interests | | used | `interests.go` by `person_nsid` | keep |
 | `crawl_interests_paused_idx` | crawl_interests | partial | used | pause checks / enqueue filters | keep |
 | `crawl_interests_selected_idx` / `_starred_idx` / `_depth_idx` | crawl_interests | | used | `photolane.sql` ranking streams | keep |
-| `work_items_failed_updated_idx` | work_items | partial | not in audit window | Reclaim self-heal by failed state and `updated_at` | keep (JOOXF-386) |
+| `work_items_failed_lease_expired_idx` | work_items | partial | not in audit window | Reclaim self-heal for lease-expired failures ordered by `updated_at, id` | keep (JOOXF-386) |
 | `river_job_active_work_item_idx` | river_job | partial expression | not in audit window | Reclaim's live-job lookup by work item ID | keep (JOOXF-386) |
 | `work_items_active_key_count_idx` | work_items | partial | not in audit window | bounded active count by key | keep (JOOXF-386) |
 | `work_items_active_worker_count_idx` | work_items | partial | not in audit window | bounded active count by worker queue | keep (JOOXF-386) |
