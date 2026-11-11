@@ -75,6 +75,8 @@
   verification order, cleanup, and retry boundaries.
 - [Google Drive provider slice](google-drive-provider.md) — My Drive root
   folder lookup and creation, error mapping, and deferred provider work.
+- [Google Photos raw upload slice](sync-gphotos.md) — standalone upload-token
+  client and its current scope limits.
 - [AI captioning](ai-captioning.md) — caption port, Ollama vision requests,
   timeout, concurrency, response validation, and circuit breaker behaviour.
 - [Fake AI Captioner](fake-ai-captioner.md)
