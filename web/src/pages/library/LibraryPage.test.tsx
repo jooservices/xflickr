@@ -12,7 +12,9 @@ const photo = (id: number, owner = 'linh@N00', patch: Record<string, unknown> = 
   labels: [],
   visibility: 'public',
   sizes_status: 'confirmed',
-  sizes: [{ label: 'Medium', width: 320, height: 240, url: `https://images.test/${String(id)}` }],
+  sizes: [
+    { label: 'Medium', width: 320, height: 240, source: `https://images.test/${String(id)}` },
+  ],
   ai_status: 'ready',
   ...patch,
 });
@@ -335,7 +337,9 @@ describe('LibraryPage', () => {
               ai_status: 'none',
             }),
             favorite(42, 'small@N00', {
-              sizes: [{ label: 'Small', width: 160, height: 120, url: 'https://images.test/42' }],
+              sizes: [
+                { label: 'Small', width: 160, height: 120, source: 'https://images.test/42' },
+              ],
             }),
           ],
         }),
@@ -355,6 +359,74 @@ describe('LibraryPage', () => {
       'https://images.test/42',
     );
     expect(screen.queryByTestId('user-library-photo-tray-41')).not.toBeInTheDocument();
+  });
+
+  it('reads the image link from source when confirmed and from url when provisional', async () => {
+    server.use(
+      http.get('*/favorites', () =>
+        json({
+          items: [
+            favorite(51, 'confirmed@N00', {
+              sizes: [
+                {
+                  label: 'Medium',
+                  width: 320,
+                  height: 240,
+                  source: 'https://images.test/source-51',
+                  url: 'https://flickr.test/page-51',
+                },
+              ],
+            }),
+            favorite(52, 'provisional@N00', {
+              sizes_status: 'provisional',
+              sizes: [
+                {
+                  label: 'Medium',
+                  width: 320,
+                  height: 240,
+                  source: 'https://images.test/ignored-52',
+                  url: 'https://images.test/url-52',
+                },
+              ],
+            }),
+          ],
+        }),
+      ),
+    );
+    open();
+
+    expect(await screen.findByRole('img', { name: 'Photo 51 by confirmed@N00' })).toHaveAttribute(
+      'src',
+      'https://images.test/source-51',
+    );
+    expect(screen.getByRole('img', { name: 'Photo 52 by provisional@N00' })).toHaveAttribute(
+      'src',
+      'https://images.test/url-52',
+    );
+  });
+
+  it('locks load more and retry while a background refetch is running', async () => {
+    let release: (() => void) | undefined;
+    let firstPageRequests = 0;
+    server.use(
+      http.get('*/favorites', async ({ request }) => {
+        if (new URL(request.url).searchParams.has('cursor')) return json({ items: [favorite(62)] });
+        firstPageRequests += 1;
+        if (firstPageRequests > 1) {
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        }
+        return json({ items: [favorite(61)], next_cursor: 'second' });
+      }),
+    );
+    const app = open();
+    await screen.findByTestId('user-library-photo-61');
+    void app.client.refetchQueries({ queryKey: ['library', 'favorites'] });
+    await waitFor(() => expect(firstPageRequests).toBeGreaterThan(1));
+    expect(screen.getByTestId('user-library-load-more')).toBeDisabled();
+    release?.();
+    await waitFor(() => expect(screen.getByTestId('user-library-load-more')).toBeEnabled());
   });
 
   it('observes grid width changes and disconnects after unmount', async () => {

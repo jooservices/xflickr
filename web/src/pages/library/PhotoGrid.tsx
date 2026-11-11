@@ -17,15 +17,19 @@ type PhotoGridProps = {
 };
 
 function visualFor(photo: CatalogPhoto): PhotoVisual {
-  const candidates = photo.sizes.flatMap((size) =>
-    size.url !== undefined &&
-    size.width !== undefined &&
-    size.height !== undefined &&
-    size.width > 0 &&
-    size.height > 0
-      ? [{ url: size.url, width: size.width, height: size.height }]
-      : [],
-  );
+  // Confirmed sizes carry their image link in `source`; provisional ones in `url`.
+  const confirmed = photo.sizes_status === 'confirmed';
+  const candidates = photo.sizes.flatMap((size) => {
+    const link = confirmed ? size.source : size.url;
+    return link !== undefined &&
+      link !== '' &&
+      size.width !== undefined &&
+      size.height !== undefined &&
+      size.width > 0 &&
+      size.height > 0
+      ? [{ url: link, width: size.width, height: size.height }]
+      : [];
+  });
   candidates.sort((left, right) => left.width * left.height - right.width * right.height);
   const size = candidates.find((candidate) => candidate.width >= 320) ?? candidates[0];
   return {

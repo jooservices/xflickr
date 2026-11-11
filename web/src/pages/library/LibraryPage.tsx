@@ -255,6 +255,7 @@ export function LibraryPage() {
                   className={styles.clearButton}
                   type="button"
                   data-testid="user-library-stale-retry"
+                  disabled={favorites.isFetching}
                   onClick={() => void favorites.refetch()}
                 >
                   {t('user.common.retry')}
@@ -358,6 +359,7 @@ export function LibraryPage() {
                   className={styles.clearButton}
                   type="button"
                   data-testid="user-library-load-more-retry"
+                  disabled={favorites.isFetching}
                   onClick={() => void favorites.fetchNextPage()}
                 >
                   {t('user.common.retry')}
@@ -370,7 +372,7 @@ export function LibraryPage() {
                   className={styles.secondaryButton}
                   type="button"
                   data-testid="user-library-load-more"
-                  disabled={favorites.isFetchingNextPage}
+                  disabled={favorites.isFetching}
                   aria-busy={favorites.isFetchingNextPage}
                   onClick={() => void favorites.fetchNextPage()}
                 >
