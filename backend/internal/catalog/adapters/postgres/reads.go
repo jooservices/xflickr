@@ -164,8 +164,14 @@ func (r *Repository) ListVisibleFavorites(ctx context.Context, userID int64, pre
 	if err := validateRead(ctx, r, userID, predicate, limit); err != nil {
 		return app.FavoritesPage{}, err
 	}
-	scanLimit := limit + 1
-	fetchLimit := scanLimit + 1
+	scanned, err := r.scanFavoriteCandidates(ctx, predicate, cursor, limit+2)
+	if err != nil {
+		return app.FavoritesPage{}, err
+	}
+	return r.visibleFavoritePage(ctx, predicate, scanned, limit)
+}
+
+func (r *Repository) scanFavoriteCandidates(ctx context.Context, predicate sharingapp.SQLPredicate, cursor *app.FavoriteCursor, fetchLimit int) ([]favoriteCandidate, error) {
 	query := `WITH account_favorites AS MATERIALIZED (
 SELECT account_favorites.flickr_account_id, account_favorites.photo_id, account_favorites.fave_date, account_favorites.removed_at
 FROM (SELECT id, nsid FROM flickr_accounts WHERE user_id=$1 AND status<>'revoked') accounts
@@ -179,7 +185,7 @@ WHERE favorites.person_nsid=accounts.nsid`
 	scanRows := "account_favorites"
 	if cursor != nil {
 		if cursor.FaveDate.IsZero() || cursor.PhotoID <= 0 || cursor.FlickrAccountID <= 0 {
-			return app.FavoritesPage{}, app.ErrInvalidCursor
+			return nil, app.ErrInvalidCursor
 		}
 		query += ` AND (favorites.fave_date,favorites.photo_id)<=($2,$3)`
 		args = append(args, cursor.FaveDate, cursor.PhotoID, cursor.FlickrAccountID)
@@ -208,22 +214,25 @@ SELECT flickr_account_id, photo_id, fave_date, removed_at FROM scan_page
 ORDER BY fave_date DESC,photo_id DESC,flickr_account_id DESC`
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
-		return app.FavoritesPage{}, fmt.Errorf("catalog: scan favorite batch: %w", err)
+		return nil, fmt.Errorf("catalog: scan favorite batch: %w", err)
 	}
+	defer rows.Close()
 	scanned := make([]favoriteCandidate, 0, fetchLimit)
 	for rows.Next() {
 		var candidate favoriteCandidate
 		if err := rows.Scan(&candidate.FlickrAccountID, &candidate.PhotoID, &candidate.FaveDate, &candidate.RemovedAt); err != nil {
-			rows.Close()
-			return app.FavoritesPage{}, fmt.Errorf("catalog: scan favorite batch: %w", err)
+			return nil, fmt.Errorf("catalog: scan favorite batch: %w", err)
 		}
 		scanned = append(scanned, candidate)
 	}
-	rowsErr := rows.Err()
-	rows.Close()
-	if rowsErr != nil {
-		return app.FavoritesPage{}, fmt.Errorf("catalog: scan favorite batch: %w", rowsErr)
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("catalog: scan favorite batch: %w", err)
 	}
+	return scanned, nil
+}
+
+func (r *Repository) visibleFavoritePage(ctx context.Context, predicate sharingapp.SQLPredicate, scanned []favoriteCandidate, limit int) (app.FavoritesPage, error) {
+	scanLimit := limit + 1
 	more := len(scanned) > scanLimit
 	if more {
 		scanned = scanned[:scanLimit]
@@ -234,19 +243,7 @@ ORDER BY fave_date DESC,photo_id DESC,flickr_account_id DESC`
 		return page, nil
 	}
 
-	photoIDs := make([]int64, 0, len(scanned))
-	seenPhotoIDs := make(map[int64]struct{}, len(scanned))
-	for _, candidate := range scanned {
-		if candidate.RemovedAt.Valid {
-			continue
-		}
-		if _, ok := seenPhotoIDs[candidate.PhotoID]; ok {
-			continue
-		}
-		seenPhotoIDs[candidate.PhotoID] = struct{}{}
-		photoIDs = append(photoIDs, candidate.PhotoID)
-	}
-	photos, err := r.visibleFavoritePhotos(ctx, predicate, photoIDs)
+	photos, err := r.visibleFavoritePhotos(ctx, predicate, favoritePhotoIDs(scanned))
 	if err != nil {
 		return app.FavoritesPage{}, err
 	}
@@ -270,6 +267,22 @@ ORDER BY fave_date DESC,photo_id DESC,flickr_account_id DESC`
 		page.NextCursor = &app.FavoriteCursor{FaveDate: last.FaveDate.Time, PhotoID: last.PhotoID, FlickrAccountID: last.FlickrAccountID}
 	}
 	return page, nil
+}
+
+func favoritePhotoIDs(candidates []favoriteCandidate) []int64 {
+	photoIDs := make([]int64, 0, len(candidates))
+	seenPhotoIDs := make(map[int64]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.RemovedAt.Valid {
+			continue
+		}
+		if _, ok := seenPhotoIDs[candidate.PhotoID]; ok {
+			continue
+		}
+		seenPhotoIDs[candidate.PhotoID] = struct{}{}
+		photoIDs = append(photoIDs, candidate.PhotoID)
+	}
+	return photoIDs
 }
 
 type favoriteCandidate struct {

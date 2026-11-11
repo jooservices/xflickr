@@ -82,9 +82,11 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	people := []domain.Person{
-		{NSID: user1NSID, Username: "one"}, {NSID: user1SecondNSID, Username: "one-second"},
+		{NSID: user1NSID, Username: "one"},
+		{NSID: user1SecondNSID, Username: "one-second"},
 		{NSID: user1ThirdNSID, Username: "one-third"},
-		{NSID: user2NSID, Username: "two"}, {NSID: hiddenNSID, Username: "hidden"},
+		{NSID: user2NSID, Username: "two"},
+		{NSID: hiddenNSID, Username: "hidden"},
 	}
 	if err := repository.UpsertPeople(ctx, people); err != nil {
 		t.Fatal(err)
