@@ -131,6 +131,10 @@ BEGIN
         favorites_total := 0;
         photo_after_id := 0;
         LOOP
+            PERFORM 1 FROM crawl_interests
+            WHERE user_id=contact_user_id AND person_nsid=contact_person_nsid
+            FOR UPDATE;
+
             WITH photo_page AS MATERIALIZED (
                 SELECT id, last_update, sizes_status, sizes_checked_at, tombstoned_at
                 FROM photos
@@ -169,6 +173,10 @@ BEGIN
 
         favorite_after_id := 0;
         LOOP
+            PERFORM 1 FROM crawl_interests
+            WHERE user_id=contact_user_id AND person_nsid=contact_person_nsid
+            FOR UPDATE;
+
             WITH favorite_page AS MATERIALIZED (
                 SELECT photo_id, removed_at
                 FROM favorites

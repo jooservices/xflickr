@@ -28,7 +28,7 @@ func (w contactProgressTx) BeginPage(ctx context.Context, item domain.Item, resu
 			count = pageOffset(item.Cursor, len(ids))
 		}
 		if _, err := w.tx.Exec(ctx, `UPDATE crawl_interests SET
-			photos_crawled=CASE WHEN $3 THEN photos_crawled+$4 ELSE $4 END,
+			photos_crawled=CASE WHEN $3 THEN photos_crawled+$4 ELSE GREATEST(photos_crawled,$4) END,
 			tombstones_count=GREATEST(0,tombstones_count-$5)
 			WHERE user_id=$1 AND person_nsid=$2`, item.UserID, item.Subject, incremental, count, revivedCount); err != nil {
 			return fmt.Errorf("crawl: update contact photo progress: %w", err)

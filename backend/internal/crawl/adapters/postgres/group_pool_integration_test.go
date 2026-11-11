@@ -30,6 +30,7 @@ func TestGroupPoolPreferenceRunsAndStopsScheduledCrawl(t *testing.T) {
 	userID := insertInterestTestUser(t, ctx, pool)
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	person := "pool-contact-" + suffix + "@N01"
+	secondPerson := "pool-contact-second-" + suffix + "@N01"
 	groupNSID := "pool-group-" + suffix
 	owner := "pool-owner-" + suffix + "@N01"
 	photoID := int64(710000000000007001)
@@ -39,23 +40,27 @@ func TestGroupPoolPreferenceRunsAndStopsScheduledCrawl(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=$1`, photoID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM person_groups WHERE group_nsid=$1`, groupNSID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM groups WHERE nsid=$1`, groupNSID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{person, owner})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{person, secondPerson, owner})
 		_, _ = pool.Exec(context.Background(), `DELETE FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, userID, person)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, userID, secondPerson)
 	})
 	repository, err := catalogpg.New(pool)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.UpsertPeople(ctx, []catalog.Person{{NSID: person, Username: person}, {NSID: owner, Username: owner}}); err != nil {
+	if err := repository.UpsertPeople(ctx, []catalog.Person{{NSID: person, Username: person}, {NSID: secondPerson, Username: secondPerson}, {NSID: owner, Username: owner}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via) VALUES($1,$2,0,'integration')`, userID, person); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via) VALUES($1,$2,0,'integration')`, userID, secondPerson); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.Exec(ctx, `INSERT INTO groups(nsid,name) VALUES($1,'Pool group')`, groupNSID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO person_groups(person_nsid,group_nsid) VALUES($1,$2)`, person, groupNSID); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO person_groups(person_nsid,group_nsid) VALUES($1,$2),($3,$2)`, person, groupNSID, secondPerson); err != nil {
 		t.Fatal(err)
 	}
 	preference, found, err := repository.SetContactGroupPoolCrawl(ctx, userID, person, groupNSID, true)
@@ -65,6 +70,15 @@ func TestGroupPoolPreferenceRunsAndStopsScheduledCrawl(t *testing.T) {
 	var itemID int64
 	if err := pool.QueryRow(ctx, `SELECT id FROM work_items WHERE user_id=$1 AND kind='group_pool' AND subject_key=$2`, userID, groupNSID).Scan(&itemID); err != nil {
 		t.Fatal(err)
+	}
+	if _, found, err := repository.SetContactGroupPoolCrawl(ctx, userID, secondPerson, groupNSID, true); err != nil || !found {
+		t.Fatalf("enable second contact group pool preference found=%t err=%v", found, err)
+	}
+	if got := count(t, ctx, pool, `SELECT count(*) FROM work_items WHERE user_id=$1 AND kind='group_pool' AND subject_key=$2`, userID, groupNSID); got != 1 {
+		t.Fatalf("group pool work items=%d, want one shared group job", got)
+	}
+	if _, found, err := repository.SetContactGroupPoolCrawl(ctx, userID, person, groupNSID, false); err != nil || !found {
+		t.Fatalf("disable first group pool preference found=%t err=%v", found, err)
 	}
 	store, err := NewEngine(pool, func(conn Conn) crawlapp.CatalogWriter {
 		repo, repoErr := catalogpg.New(conn)
@@ -94,8 +108,15 @@ func TestGroupPoolPreferenceRunsAndStopsScheduledCrawl(t *testing.T) {
 	if got := count(t, ctx, pool, `SELECT count(*) FROM group_pool_photos WHERE group_nsid=$1 AND photo_id=$2`, groupNSID, photoID); got != 1 {
 		t.Fatalf("stored group pool photos=%d, want one", got)
 	}
-	if _, found, err := repository.SetContactGroupPoolCrawl(ctx, userID, person, groupNSID, false); err != nil || !found {
-		t.Fatalf("disable group pool preference found=%t err=%v", found, err)
+	var state string
+	if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE id=$1`, itemID).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != domain.StateDone || len(flickr.requests) != 1 {
+		t.Fatalf("remaining preference state=%q Flickr calls=%d, want one completed call", state, len(flickr.requests))
+	}
+	if _, found, err := repository.SetContactGroupPoolCrawl(ctx, userID, secondPerson, groupNSID, false); err != nil || !found {
+		t.Fatalf("disable second group pool preference found=%t err=%v", found, err)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready' WHERE id=$1`, itemID); err != nil {
 		t.Fatal(err)
@@ -103,11 +124,10 @@ func TestGroupPoolPreferenceRunsAndStopsScheduledCrawl(t *testing.T) {
 	if err := engine.Handle(ctx, itemID); err != nil {
 		t.Fatal(err)
 	}
-	var state string
 	if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE id=$1`, itemID).Scan(&state); err != nil {
 		t.Fatal(err)
 	}
 	if state != domain.StateDone || len(flickr.requests) != 1 {
-		t.Fatalf("disabled preference state=%q Flickr calls=%d, want done and no extra call", state, len(flickr.requests))
+		t.Fatalf("all preferences disabled state=%q Flickr calls=%d, want done and no extra call", state, len(flickr.requests))
 	}
 }

@@ -104,6 +104,11 @@ func TestContactProgressStaysAccurateAcrossRecrawlsAndReconciliation(t *testing.
 	if got := summaryValue(t, ctx, tx, `sizes_completed`, userID, person); got != 4 {
 		t.Fatalf("sizes_completed=%d, want stable count 4", got)
 	}
+	photoPage(1, ids[:2], false)
+	photoPage(2, ids[2:3], false)
+	if got := summaryValue(t, ctx, tx, `photos_crawled`, userID, person); got != 4 {
+		t.Fatalf("photos_crawled=%d after multi-page recrawl, want preserved count 4", got)
+	}
 
 	if err := repository.UpsertFavoritesBatch(ctx, []catalogpg.Favorite{{PersonNSID: person, PhotoID: ids[0], FaveDate: checkedAt}, {PersonNSID: person, PhotoID: ids[1], FaveDate: checkedAt.Add(-time.Minute)}, {PersonNSID: person, PhotoID: ids[2], FaveDate: checkedAt.Add(-2 * time.Minute)}}); err != nil {
 		t.Fatal(err)
@@ -189,41 +194,41 @@ func TestContactSummaryBackfillKeepsConcurrentWorkerProgress(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
 	})
 
-	workerTx, err := pool.Begin(ctx)
+	backfillTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backfillTx.Rollback(ctx)
+	if _, err := backfillTx.Exec(ctx, `SELECT 1 FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2 FOR UPDATE`, userID, person); err != nil {
+		t.Fatal(err)
+	}
+
+	workerConn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer workerConn.Release()
+	applicationName := fmt.Sprintf("contact-worker-test-%d", time.Now().UnixNano())
+	if _, err := workerConn.Exec(ctx, `SELECT set_config('application_name',$1,false)`, applicationName); err != nil {
+		t.Fatal(err)
+	}
+	workerTx, err := workerConn.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer workerTx.Rollback(ctx)
-	workerPage := make([]catalog.Photo, 10)
-	for i := range workerPage {
-		workerPage[i].ID = int64(i + 1)
-	}
+	workerPage := []catalog.Photo{{ID: 1}}
 	item := domain.Item{
 		Kind: "photos", UserID: userID, Subject: person,
 		Cursor: domain.Cursor{Page: 1, Params: map[string]string{"min_upload_date": "1"}},
 	}
-	if err := (contactProgressTx{tx: workerTx}).BeginPage(ctx, item, domain.Result{Photos: workerPage}); err != nil {
-		t.Fatal(err)
-	}
-
-	backfillConn, err := pool.Acquire(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer backfillConn.Release()
-	applicationName := fmt.Sprintf("contact-backfill-test-%d", time.Now().UnixNano())
-	if _, err := backfillConn.Exec(ctx, `SELECT set_config('application_name',$1,false)`, applicationName); err != nil {
-		t.Fatal(err)
-	}
-	backfillDone := make(chan error, 1)
+	workerDone := make(chan error, 1)
 	go func() {
-		_, updateErr := backfillConn.Exec(ctx, `UPDATE crawl_interests SET
-			photos_crawled=GREATEST(photos_crawled,4),
-			sizes_completed=GREATEST(sizes_completed,1),
-			tombstones_count=GREATEST(tombstones_count,1),
-			favorites_count=GREATEST(favorites_count,1)
-			WHERE user_id=$1 AND person_nsid=$2`, userID, person)
-		backfillDone <- updateErr
+		if err := (contactProgressTx{tx: workerTx}).BeginPage(ctx, item, domain.Result{Photos: workerPage}); err != nil {
+			workerDone <- err
+			return
+		}
+		workerDone <- workerTx.Commit(ctx)
 	}()
 
 	deadline := time.NewTimer(5 * time.Second)
@@ -247,18 +252,26 @@ func TestContactSummaryBackfillKeepsConcurrentWorkerProgress(t *testing.T) {
 			t.Fatalf("wait for concurrent backfill update: %v", ctx.Err())
 		}
 	}
-	if err := workerTx.Commit(ctx); err != nil {
+	if _, err := backfillTx.Exec(ctx, `UPDATE crawl_interests SET
+		photos_crawled=GREATEST(photos_crawled,100),
+		sizes_completed=GREATEST(sizes_completed,0),
+		tombstones_count=GREATEST(tombstones_count,0),
+		favorites_count=GREATEST(favorites_count,0)
+		WHERE user_id=$1 AND person_nsid=$2`, userID, person); err != nil {
 		t.Fatal(err)
 	}
-	if err := <-backfillDone; err != nil {
-		t.Fatalf("apply summary backfill update: %v", err)
+	if err := backfillTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-workerDone; err != nil {
+		t.Fatalf("apply concurrent contact progress: %v", err)
 	}
 	var photosCrawled int64
 	if err := pool.QueryRow(ctx, `SELECT photos_crawled FROM crawl_interests WHERE user_id=$1 AND person_nsid=$2`, userID, person).Scan(&photosCrawled); err != nil {
 		t.Fatal(err)
 	}
-	if photosCrawled != 10 {
-		t.Fatalf("photos_crawled=%d after concurrent backfill, want worker progress 10", photosCrawled)
+	if photosCrawled != 101 {
+		t.Fatalf("photos_crawled=%d after concurrent backfill, want backfill count plus worker delta 101", photosCrawled)
 	}
 }
 

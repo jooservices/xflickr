@@ -89,13 +89,10 @@ func (e *Engine) Load(ctx context.Context, id int64) (domain.Item, error) {
 	return scanItem(e.conn.QueryRow(ctx, `SELECT `+itemColumns+` FROM work_items WHERE id = $1`, id))
 }
 
-// Enabled reports whether a user explicitly enabled crawling this contact's group pool.
-func (e *Engine) Enabled(ctx context.Context, userID int64, personNSID, groupNSID string) (bool, error) {
+// Enabled reports whether the user has any enabled contact preference for this group pool.
+func (e *Engine) Enabled(ctx context.Context, userID int64, _ string, groupNSID string) (bool, error) {
 	var enabled bool
-	err := e.conn.QueryRow(ctx, `SELECT enabled FROM contact_group_crawl_preferences WHERE user_id=$1 AND person_nsid=$2 AND group_nsid=$3`, userID, personNSID, groupNSID).Scan(&enabled)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	}
+	err := e.conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM contact_group_crawl_preferences WHERE user_id=$1 AND group_nsid=$2 AND enabled)`, userID, groupNSID).Scan(&enabled)
 	if err != nil {
 		return false, fmt.Errorf("crawl: read group pool preference: %w", err)
 	}

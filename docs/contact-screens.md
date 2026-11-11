@@ -9,13 +9,13 @@ numeric contact ID.
 Contact list and detail reads use `crawl_interests` for ownership and summary
 progress. Photo totals come from `people.photos_count`; the migration backfills
 photo, favorite, and size summaries from each user's observations, plus
-contact-wide tombstone counts, in keyset batches. Full photo and
-favorite scans store the absolute page position, while incremental pages count
-only records not already observed or active. Reconciliation updates removed
-favorite and tombstone totals, and a photo that reappears reduces its tombstone
-count. Size readiness is updated from confirmed photos in the current bounded
-page. These screens do not count the large `photos` or `work_items` tables to
-render a request.
+contact-wide tombstone counts, in keyset batches. Each backfill page locks its
+contact summary row while reading and writing totals so concurrent crawl
+progress is applied after the backfill page. Full photo and favorite scans store
+the absolute page position, while incremental pages count only records not
+already observed or active. Reconciliation updates removed favorite and
+tombstone totals, and a photo that reappears reduces its tombstone count. Size
+readiness is updated from confirmed photos in the current bounded page.
 
 Recently updated thumbnails are limited to three per contact and follow the
 same observation and sharing predicate as catalog photo reads. Contact photo
@@ -24,15 +24,19 @@ every item. Their cursors point to the last returned item; the extra row is
 used only to determine whether another page exists. Album cover URLs use the
 same observation, sharing, and tombstone checks. Albums, galleries, and groups
 use keyset pagination with a maximum page size of 100 and report the full
-collection total. Album `stored_count` reflects visible stored membership
-photos; `total_count` remains Flickr's album count. About data is a fixed
+collection total. Visible album membership counts are aggregated once for the
+bounded album page, using membership indexes and photo ID lookups. Album
+`stored_count` reflects visible stored membership photos; `total_count` remains
+Flickr's album count. About data is a fixed
 summary. All contact routes require USER access and verify that the contact is
 in the actor's interests.
 
 The detail view provides Photos, Favorites, Albums, Galleries, Groups, and
 About sections. Actions include star/unstar, select the contact for seven days,
-prioritise pending photo-size work in indexed batches, pause/resume contact
-crawl, per-group pool-crawl preferences, download all contact photos, and
+prioritise pending photo-size work from indexed batches of at most 500
+unconfirmed contact photos per request, continued with an opaque cursor,
+pause/resume contact crawl, per-group pool-crawl preferences, download all
+contact photos, and
 download the contact's favorites.
 Contact and favorite downloads page through the visible photo IDs and submit
 requests in batches of at most 500 IDs. Each batch is a separate download entry
