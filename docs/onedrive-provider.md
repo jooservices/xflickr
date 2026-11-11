@@ -16,6 +16,8 @@ HTTP 401 and 429 map to `app.ErrAuthentication` and `app.ErrRateLimited`.
 Other Graph failures and malformed folder responses return contextual errors
 with status codes, without response bodies or credentials. Responses are limited
 to 64 KiB, requests do not follow redirects, and request contexts reach HTTP.
+Cancellation and deadline errors remain discoverable when response-body reads
+fail.
 
 This adapter is not registered as a `StorageProvider`. Upload, existence,
 deletion, capabilities, OAuth, token persistence, and the shared provider

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -162,7 +163,20 @@ func (c *Client) request(ctx context.Context, method, path string, body []byte) 
 func readFolder(resp *http.Response, operation string) (graphFolder, error) {
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxGraphResponseBytes+1))
 	if err != nil {
-		return graphFolder{}, fmt.Errorf("onedrive: %s: could not read Graph response (status %d)", operation, resp.StatusCode)
+		readErr := err
+		if resp.Request != nil {
+			if contextErr := resp.Request.Context().Err(); contextErr != nil {
+				readErr = contextErr
+			}
+		}
+		if errors.Is(readErr, context.Canceled) {
+			readErr = context.Canceled
+		} else if errors.Is(readErr, context.DeadlineExceeded) {
+			readErr = context.DeadlineExceeded
+		} else {
+			return graphFolder{}, fmt.Errorf("onedrive: %s: could not read Graph response (status %d)", operation, resp.StatusCode)
+		}
+		return graphFolder{}, fmt.Errorf("onedrive: %s: could not read Graph response (status %d): %w", operation, resp.StatusCode, readErr)
 	}
 	if len(data) > maxGraphResponseBytes {
 		return graphFolder{}, fmt.Errorf("onedrive: %s: Graph response exceeds 64 KiB (status %d)", operation, resp.StatusCode)

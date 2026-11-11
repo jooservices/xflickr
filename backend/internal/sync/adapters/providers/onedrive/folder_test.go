@@ -229,6 +229,45 @@ func TestEnsureAlbumHonorsCancellation(t *testing.T) {
 	}
 }
 
+func TestEnsureAlbumPreservesCancellationWhileReadingResponse(t *testing.T) {
+	bodyRead := make(chan struct{})
+	var calls atomic.Int32
+	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		header := make(http.Header)
+		header.Set("Content-Type", "application/json")
+		if calls.Add(1) == 1 {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     header,
+				Body:       io.NopCloser(strings.NewReader(`{"id":"root-1","folder":{}}`)),
+				Request:    request,
+			}, nil
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     header,
+			Body: &blockingResponseBody{
+				ctx:     request.Context(),
+				started: bodyRead,
+			},
+			Request: request,
+		}, nil
+	})
+	client, err := New(&http.Client{Transport: transport}, "https://graph.microsoft.com/v1.0", testToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { _, err := client.EnsureAlbum(ctx, "album"); result <- err }()
+	<-bodyRead
+	cancel()
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("EnsureAlbum() error = %v, want context.Canceled", err)
+	}
+}
+
 func TestNewRejectsInvalidDependencies(t *testing.T) {
 	for _, test := range []struct {
 		client         *http.Client
@@ -259,6 +298,25 @@ func TestEnsureAlbumDoesNotFollowRedirects(t *testing.T) {
 		t.Fatalf("EnsureAlbum() error = %v, request count = %d", err, requests.Load())
 	}
 }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+type blockingResponseBody struct {
+	ctx     context.Context
+	started chan struct{}
+}
+
+func (b *blockingResponseBody) Read([]byte) (int, error) {
+	close(b.started)
+	<-b.ctx.Done()
+	return 0, io.ErrUnexpectedEOF
+}
+
+func (*blockingResponseBody) Close() error { return nil }
 
 func mustClient(t *testing.T, client *http.Client, baseURL, token string) *Client {
 	t.Helper()
