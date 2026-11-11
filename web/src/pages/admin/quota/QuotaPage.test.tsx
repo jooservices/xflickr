@@ -236,7 +236,7 @@ describe('API quota page', () => {
       error: 'Không thể tải hạn mức API.',
     },
   ])(
-    'attempts a one-shot load and shows its error while offline ($locale)',
+    'attempts and retries a one-shot quota load immediately while offline ($locale)',
     async ({ locale, title, button, error }) => {
       let calls = 0;
       let unmount: () => void = () => undefined;
@@ -244,7 +244,9 @@ describe('API quota page', () => {
       server.use(
         http.get('*/admin/quota', () => {
           calls += 1;
-          return new HttpResponse(null, { status: 503 });
+          return calls === 1
+            ? new HttpResponse(null, { status: 503 })
+            : HttpResponse.json({ keys: [key] });
         }),
       );
 
@@ -264,6 +266,10 @@ describe('API quota page', () => {
         fireEvent.click(loadButton);
         expect(await screen.findByTestId('admin-quota-error')).toHaveTextContent(error);
         expect(calls).toBe(1);
+        fireEvent.click(screen.getByTestId('admin-quota-retry'));
+        const table = await screen.findByTestId('admin-quota-key-table');
+        expect(table).toHaveTextContent(key.label);
+        expect(calls).toBe(2);
         expect(liveToggle).toHaveAttribute('aria-pressed', 'false');
       } finally {
         unmount();

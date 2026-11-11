@@ -209,7 +209,7 @@ export function QuotaPage() {
               <button
                 className={styles.refresh}
                 type="button"
-                onClick={() => void query.refetch()}
+                onClick={() => void query.loadOnce().catch(() => undefined)}
                 data-testid="admin-quota-retry"
               >
                 {t('admin.quota.retry')}
