@@ -1406,6 +1406,11 @@ type User struct {
 	PlanID       int64
 }
 
+type UserHomeCandidatesBackfillProgress struct {
+	ID            bool
+	CursorPhotoID int64
+}
+
 type UserHomeContactStat struct {
 	UserID      int64
 	PersonNsid  string
@@ -1451,17 +1456,19 @@ type UserHomeStat struct {
 	SourceRevision int64
 	SharedRevision int64
 	InvalidatedAt  pgtype.Timestamptz
+	Estimated      bool
 }
 
 type UserHomeStatsRefresh struct {
-	UserID         int64
-	CursorRecordID string
-	PhotosTotal    int64
-	SizesReady     int64
-	Captioned      int64
-	RequestedAt    pgtype.Timestamptz
-	SourceRevision int64
-	SharedRevision int64
+	UserID          int64
+	CursorRecordID  string
+	PhotosTotal     int64
+	SizesReady      int64
+	Captioned       int64
+	RequestedAt     pgtype.Timestamptz
+	SourceRevision  int64
+	SharedRevision  int64
+	RestartRequired bool
 }
 
 type UserHomeStatsVersion struct {
