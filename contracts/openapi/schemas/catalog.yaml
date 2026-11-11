@@ -18,7 +18,7 @@ CatalogPerson:
     username: { type: string }
     realname: { type: string }
     icon: { type: string }
-    photos_count: { type: integer, format: int64, minimum: 0, description: Count of photos visible to this user, capped at 1000 }
+    photos_count: { type: integer, format: int64, minimum: 0, description: "Count of photos visible to this user among at most 1,000 most recently seen photos" }
   required: [nsid, username, realname, icon, photos_count]
 
 CatalogContact:
@@ -29,7 +29,7 @@ CatalogContact:
     username: { type: string }
     realname: { type: string }
     icon: { type: string }
-    photos_count: { type: integer, format: int64, minimum: 0, description: Count of photos visible to this user, capped at 1000 }
+    photos_count: { type: integer, format: int64, minimum: 0, description: "Count of photos visible to this user among at most 1,000 most recently seen photos" }
     account_nsid: { type: string, description: Connected account through which this contact was discovered }
   required: [nsid, username, realname, icon, photos_count, account_nsid]
 

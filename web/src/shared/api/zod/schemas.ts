@@ -2047,7 +2047,9 @@ export const ListPeopleResponse = zod.object({
       photos_count: zod
         .int()
         .min(listPeopleResponseItemsItemPhotosCountMin)
-        .describe('Count of photos visible to this user'),
+        .describe(
+          'Count of photos visible to this user among at most 1,000 most recently seen photos',
+        ),
     }),
   ),
   next_cursor: zod.string().optional(),
@@ -2078,7 +2080,9 @@ export const ListContactsResponse = zod.object({
       photos_count: zod
         .int()
         .min(listContactsResponseItemsItemPhotosCountMin)
-        .describe('Count of photos visible to this user'),
+        .describe(
+          'Count of photos visible to this user among at most 1,000 most recently seen photos',
+        ),
       account_nsid: zod
         .string()
         .describe('Connected account through which this contact was discovered'),
@@ -2106,7 +2110,7 @@ export const GetPersonResponse = zod.object({
   photos_count: zod
     .int()
     .min(getPersonResponsePhotosCountMin)
-    .describe('Count of photos visible to this user'),
+    .describe('Count of photos visible to this user among at most 1,000 most recently seen photos'),
 });
 
 /**
