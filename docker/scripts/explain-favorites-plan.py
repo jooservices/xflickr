@@ -35,8 +35,13 @@ def database_settings() -> dict[str, str]:
     return values
 
 
-def plan_sql(rows: int) -> str:
-    """Create session-only tables and explain the production favorites query."""
+def plan_sql(rows: int, cursor: bool) -> str:
+    """Create session-only tables and explain one production favorites page query."""
+    cursor_clause = ""
+    if cursor:
+        cursor_clause = """
+          AND (favorites.fave_date,favorites.photo_id)
+              < (timestamptz '2020-01-03 00:00:00+00',300000)"""
     return f"""
 BEGIN;
 CREATE TEMP TABLE flickr_accounts (nsid text, user_id bigint, status text);
@@ -101,6 +106,7 @@ WITH visible_account_favorites AS MATERIALIZED (
         WHERE favorites.person_nsid=accounts.nsid
           AND favorites.removed_at IS NULL
           AND photos.tombstoned_at IS NULL
+          {cursor_clause}
           AND (
               EXISTS (
                   SELECT 1 FROM observations o
@@ -115,7 +121,7 @@ WITH visible_account_favorites AS MATERIALIZED (
                   )
               )
           )
-        ORDER BY favorites.fave_date DESC, photos.id DESC
+        ORDER BY favorites.fave_date DESC, favorites.photo_id DESC
         LIMIT 101
     ) account_favorites
 ), favorites_page AS MATERIALIZED (
@@ -138,7 +144,7 @@ ROLLBACK;
 """
 
 
-def run_plan(rows: int) -> str:
+def run_plan(rows: int, cursor: bool) -> str:
     """Run psql without putting the worktree password in its arguments."""
     values = database_settings()
     environment = {
@@ -163,7 +169,7 @@ def run_plan(rows: int) -> str:
             "-d",
             values["DB_NAME"],
         ],
-        input=plan_sql(rows),
+        input=plan_sql(rows, cursor),
         text=True,
         capture_output=True,
         env=environment,
@@ -176,16 +182,17 @@ def run_plan(rows: int) -> str:
     return result.stdout
 
 
-def check_plan(output: str) -> None:
+def check_plan(output: str, cursor: bool) -> None:
     """Fail if the per-account page scans all favorites or lacks an index plan."""
+    page = "cursor" if cursor else "first-page"
     if re.search(r"Seq Scan\s+on\s+favorites_p\d+\b", output):
-        raise RuntimeError("favorites query plan contains a sequential scan")
+        raise RuntimeError(f"favorites {page} query plan contains a sequential scan")
     if not re.search(r"Index Scan using \S+ on favorites_p\d+\b", output):
-        raise RuntimeError("favorites query plan does not use favorites_page_idx")
-    if "Index Cond: (person_nsid = flickr_accounts.nsid)" not in output:
+        raise RuntimeError(f"favorites {page} query plan does not use favorites_page_idx")
+    if not re.search(r"Index Cond: .*person_nsid = flickr_accounts\.nsid", output):
         raise RuntimeError("favorites index scan is not bounded by the account")
     if not re.search(r"Limit\s+\(.*actual time=.*rows=101(?:\.0+)? loops=2\)", output):
-        raise RuntimeError("favorites query plan did not return a bounded page per account")
+        raise RuntimeError(f"favorites {page} query plan did not return a bounded page per account")
 
 
 def main() -> int:
@@ -197,9 +204,12 @@ def main() -> int:
 
     try:
         print(f"Favorites plan fixture rows: {args.rows}")
-        output = run_plan(args.rows)
-        print(output, end="")
-        check_plan(output)
+        for cursor in (False, True):
+            label = "cursor page" if cursor else "first page"
+            print(f"Favorites {label} plan:")
+            output = run_plan(args.rows, cursor)
+            print(output, end="")
+            check_plan(output, cursor)
     except (OSError, RuntimeError, ValueError) as error:
         print(f"favorites plan check failed: {error}", file=sys.stderr)
         return 1
