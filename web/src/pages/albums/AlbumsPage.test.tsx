@@ -181,6 +181,37 @@ describe('AlbumsPage', () => {
     await waitFor(() => expect(requestedOwner).toBe('owner-2'));
   });
 
+  it('does not judge a newly selected contact from the previous (placeholder) data', async () => {
+    let finish: (() => void) | undefined;
+    server.use(
+      http.get('*/me/albums', async ({ request }) => {
+        const owner = new URL(request.url).searchParams.get('owner_nsid') ?? '';
+        if (owner === 'owner-9') {
+          await new Promise<void>((resolve) => {
+            finish = resolve;
+          });
+          return json({ items: [albums.items[1]], contact_owners: ['owner-1', 'owner-9'] });
+        }
+        return json({ items: albums.items, contact_owners: ['owner-1', 'owner-2'] });
+      }),
+    );
+    const { router } = open('/albums');
+    expect(await screen.findAllByTestId('album-card')).toHaveLength(2);
+
+    await router.navigate('/albums?contact=owner-9');
+    await waitFor(() => expect(finish).toBeDefined());
+    // The previous page is still shown as placeholder data; its owner list does not contain owner-9,
+    // yet the filter must not be cleared before the response for owner-9 arrives.
+    expect(router.state.location.search).toBe('?contact=owner-9');
+    expect(
+      screen.queryByText('This contact is unavailable. Showing all contacts.'),
+    ).not.toBeInTheDocument();
+
+    finish?.();
+    expect(await screen.findByTestId('album-card')).toHaveAttribute('data-album-id', 'album-2');
+    expect(router.state.location.search).toBe('?contact=owner-9');
+  });
+
   it('shows the delayed skeleton during the initial request', async () => {
     let finish: (() => void) | undefined;
     server.use(

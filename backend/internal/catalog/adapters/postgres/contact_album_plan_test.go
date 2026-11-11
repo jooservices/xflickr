@@ -33,7 +33,7 @@ func (db *planDB) Exec(ctx context.Context, sql string, args ...any) (pgconn.Com
 }
 
 func (db *planDB) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-	if strings.HasPrefix(strings.TrimSpace(sql), "SELECT DISTINCT contacts.contact_nsid") {
+	if strings.Contains(sql, "first_contacts AS") && strings.Contains(sql, "selected_contact AS") {
 		if err := savePlan(ctx, db.tx, sql, args, &db.ownerPlan); err != nil {
 			return nil, fmt.Errorf("explain contact album owners: %w", err)
 		}

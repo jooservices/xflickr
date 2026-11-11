@@ -89,7 +89,7 @@ func createBoundedContactAlbumFixture(t *testing.T, ctx context.Context, tx pgx.
 }
 
 // TestContactAlbumOwnerFilterAlwaysIncludesTheSelectedContact proves the selected contact is listed even
-// when it sorts past the 5000-contact cut-off, so a deep link to it is never reset to "All", and that a
+// when it sorts past the 20000-contact cut-off, so a deep link to it is never reset to "All", and that a
 // non-contact is never added.
 func TestContactAlbumOwnerFilterAlwaysIncludesTheSelectedContact(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
@@ -104,7 +104,7 @@ func TestContactAlbumOwnerFilterAlwaysIncludesTheSelectedContact(t *testing.T) {
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	createBoundedContactAlbumFixture(t, ctx, tx)
-	if _, err := tx.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid) SELECT 'account-owner','many-'||lpad(g::text,5,'0') FROM generate_series(1,5200) AS g`); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid) SELECT 'account-owner','many-'||lpad(g::text,6,'0') FROM generate_series(1,20200) AS g`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -118,10 +118,10 @@ func TestContactAlbumOwnerFilterAlwaysIncludesTheSelectedContact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.ContactOwners) != 5000 {
-		t.Fatalf("contact owners without a selection = %d, want the first 5000", len(page.ContactOwners))
+	if len(page.ContactOwners) != 20000 {
+		t.Fatalf("contact owners without a selection = %d, want the first 20000", len(page.ContactOwners))
 	}
-	past := "many-05200"
+	past := "many-020200"
 	page, err = repository.ListContactAlbums(ctx, userID, past, predicate, nil, 10)
 	if err != nil {
 		t.Fatal(err)
@@ -132,8 +132,8 @@ func TestContactAlbumOwnerFilterAlwaysIncludesTheSelectedContact(t *testing.T) {
 			found = true
 		}
 	}
-	if !found || len(page.ContactOwners) != 5001 {
-		t.Fatalf("selected contact past the cut-off: present=%t, owners=%d; want present and 5001 owners", found, len(page.ContactOwners))
+	if !found || len(page.ContactOwners) != 20001 {
+		t.Fatalf("selected contact past the cut-off: present=%t, owners=%d; want present and 20001 owners", found, len(page.ContactOwners))
 	}
 	page, err = repository.ListContactAlbums(ctx, userID, "not-a-contact", predicate, nil, 10)
 	if err != nil {

@@ -434,8 +434,8 @@ ORDER BY candidates.updated_at DESC NULLS LAST,candidates.id DESC`
 	return page, nil
 }
 
-// listContactAlbumOwners returns the user's own contacts for the album owner filter: the first 5000 in
-// NSID order plus the contact that is currently selected, if it is one of the user's contacts (a point
+// listContactAlbumOwners returns the user's own contacts for the album owner filter: the first 20000 in
+// NSID order (Flickr allows at most 5000 contacts per account, so this covers four accounts in full) plus the contact that is currently selected, if it is one of the user's contacts (a point
 // lookup on the contacts primary key). The selected contact is therefore never missing from the list,
 // whatever its position, so a deep link from the Contacts screen is not reset to "All". The list is
 // deliberately NOT derived from albums: whether a contact has albums at all would otherwise be visible
@@ -448,7 +448,7 @@ SELECT DISTINCT contacts.contact_nsid
 FROM my_accounts
 JOIN contacts ON contacts.person_nsid=my_accounts.nsid
 ORDER BY contacts.contact_nsid
-LIMIT 5000
+LIMIT 20000
 ), selected_contact AS (
 SELECT contacts.contact_nsid
 FROM my_accounts

@@ -94,7 +94,14 @@ export function AlbumsPage() {
   }, [t]);
 
   useEffect(() => {
-    if (!contact || albums.isPending || albums.isError || owners.includes(contact)) return;
+    if (
+      !contact ||
+      albums.isPending ||
+      albums.isPlaceholderData ||
+      albums.isError ||
+      owners.includes(contact)
+    )
+      return;
     const next = new URLSearchParams(location.search);
     next.delete('contact');
     const currentState =
@@ -109,6 +116,7 @@ export function AlbumsPage() {
   }, [
     albums.isError,
     albums.isPending,
+    albums.isPlaceholderData,
     contact,
     location.pathname,
     location.search,
