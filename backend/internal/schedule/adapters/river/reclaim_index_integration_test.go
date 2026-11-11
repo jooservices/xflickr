@@ -120,8 +120,8 @@ WHERE w.id = batch.id`
 			maxBuffers:    2000,
 		},
 		{
-			name:          "pump node inflight count",
-			sql:           inflightNodeCountSQL,
+			name:          "pump node inflight IDs",
+			sql:           inflightNodeIDsSQL,
 			args:          []any{500},
 			indexRelation: "work_items",
 			indexNames:    []string{"work_items_active_worker_count_idx", "work_items_active_node_count_idx"},
@@ -129,13 +129,13 @@ WHERE w.id = batch.id`
 			maxBuffers:    500,
 		},
 		{
-			name: "pump key inflight count",
-			sql:  inflightKeyCountSQL,
+			name: "pump key inflight IDs",
+			sql:  inflightKeyIDsSQL,
 			args: []any{keyID, 100},
 		},
 		{
-			name: "pump worker inflight count",
-			sql:  inflightWorkerCountSQL,
+			name: "pump worker inflight IDs",
+			sql:  inflightWorkerIDsSQL,
 			args: []any{"sync", 100},
 		},
 		{

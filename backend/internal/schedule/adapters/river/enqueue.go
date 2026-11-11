@@ -723,32 +723,43 @@ ORDER BY k.id`)
 }
 
 const (
-	inflightNodeCountSQL      = `SELECT count(*) FROM (SELECT 1 FROM work_items WHERE state IN ('ready','running') LIMIT $1) AS inflight`
-	inflightKeyCountSQL       = `SELECT count(*) FROM (SELECT 1 FROM work_items WHERE state IN ('ready','running') AND key_id=$1 LIMIT $2) AS inflight`
-	inflightWorkerCountSQL    = `SELECT count(*) FROM (SELECT 1 FROM work_items WHERE state IN ('ready','running') AND worker_type=$1 LIMIT $2) AS inflight`
-	inflightKeyWorkerCountSQL = `SELECT count(*) FROM (SELECT 1 FROM work_items WHERE state IN ('ready','running') AND key_id=$1 AND worker_type=$2 LIMIT $3) AS inflight`
+	inflightNodeIDsSQL      = `SELECT id FROM work_items WHERE state IN ('ready','running') LIMIT $1`
+	inflightKeyIDsSQL       = `SELECT id FROM work_items WHERE state IN ('ready','running') AND key_id=$1 LIMIT $2`
+	inflightWorkerIDsSQL    = `SELECT id FROM work_items WHERE state IN ('ready','running') AND worker_type=$1 LIMIT $2`
+	inflightKeyWorkerIDsSQL = `SELECT id FROM work_items WHERE state IN ('ready','running') AND key_id=$1 AND worker_type=$2 LIMIT $3`
 )
 
 func countInflight(ctx context.Context, tx pgx.Tx, keyID int64, worker string, limit int) (int, error) {
 	if limit <= 0 {
 		return 0, nil
 	}
-	query := inflightNodeCountSQL
+	query := inflightNodeIDsSQL
 	args := []any{limit}
 	switch {
 	case keyID != 0 && worker != "":
-		query = inflightKeyWorkerCountSQL
+		query = inflightKeyWorkerIDsSQL
 		args = []any{keyID, worker, limit}
 	case keyID != 0:
-		query = inflightKeyCountSQL
+		query = inflightKeyIDsSQL
 		args = []any{keyID, limit}
 	case worker != "":
-		query = inflightWorkerCountSQL
+		query = inflightWorkerIDsSQL
 		args = []any{worker, limit}
 	}
-	var count int
-	err := tx.QueryRow(ctx, query, args...).Scan(&count)
+	rows, err := tx.Query(ctx, query, args...)
 	if err != nil {
+		return 0, fmt.Errorf("schedule: count inflight work: %w", err)
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return 0, fmt.Errorf("schedule: count inflight work: %w", err)
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
 		return 0, fmt.Errorf("schedule: count inflight work: %w", err)
 	}
 	return count, nil
