@@ -178,12 +178,12 @@ AND photos.tombstoned_at IS NULL AND ` + predicate.Expression
 		if cursor.FaveDate.IsZero() || cursor.PhotoID <= 0 {
 			return app.FavoritesPage{}, app.ErrInvalidCursor
 		}
-		query += ` AND (favorites.fave_date,photos.id)<($2,$3)`
+		query += ` AND (favorites.fave_date,favorites.photo_id)<($2,$3)`
 		args = append(args, cursor.FaveDate, cursor.PhotoID)
 		pageLimit = "$4"
 	}
 	args = append(args, limit+1)
-	query += ` ORDER BY favorites.fave_date DESC,photos.id DESC LIMIT ` + pageLimit + `
+	query += ` ORDER BY favorites.fave_date DESC,favorites.photo_id DESC LIMIT ` + pageLimit + `
 ) account_favorites
 ), favorites_page AS MATERIALIZED (
 SELECT photo_id, fave_date FROM visible_account_favorites

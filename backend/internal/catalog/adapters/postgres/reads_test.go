@@ -234,6 +234,9 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 	if _, err := repository.ListVisibleFavorites(ctx, userID, predicate, &app.FavoriteCursor{FaveDate: now, PhotoID: 11}, 1); err != nil {
 		t.Fatalf("favorite cursor=%v", err)
 	}
+	if !strings.Contains(db.query, "(favorites.fave_date,favorites.photo_id)<($2,$3)") {
+		t.Fatalf("favorite cursor must constrain the account index before joining photos: %s", db.query)
+	}
 	if _, err := repository.ListVisibleFavorites(ctx, userID, predicate, &app.FavoriteCursor{PhotoID: 1}, 1); !errors.Is(err, app.ErrInvalidCursor) {
 		t.Fatalf("invalid favorite cursor=%v", err)
 	}
