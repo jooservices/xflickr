@@ -246,7 +246,12 @@ func verifyObservationPartitionPlans(t *testing.T, ctx context.Context, tx pgx.T
 			t.Fatalf("explain lookup on %s: %v", partition, err)
 		}
 		root := decodePlan(t, raw, partition)
-		index := partition + "_kind_record_idx"
+		// JOOXF-398 owns the observations lookup indexes: p00 was built first as _kind_record_idx
+		// (record_kind, record_id), the other partitions as _record_lookup_idx (record_id, record_kind, user_id).
+		index := partition + "_record_lookup_idx"
+		if remainder == 0 {
+			index = partition + "_kind_record_idx"
+		}
 		if relation, nodeType, ok := findSequentialScan(root); ok {
 			t.Fatalf("lookup plan for %s uses %s on %s: %s", partition, nodeType, relation, raw)
 		}
