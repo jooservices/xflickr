@@ -87,4 +87,3 @@ ALTER INDEX photos_owner_download_id_idx
 
 -- +goose Down
 DROP INDEX photos_owner_download_id_idx;
-
