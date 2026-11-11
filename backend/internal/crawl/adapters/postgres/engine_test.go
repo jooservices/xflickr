@@ -38,6 +38,8 @@ func (r engRow) Scan(dest ...any) error {
 			*p = r.values[i].(int)
 		case *string:
 			*p = r.values[i].(string)
+		case *bool:
+			*p = r.values[i].(bool)
 		case *[]byte:
 			*p = r.values[i].([]byte)
 		}
@@ -52,6 +54,7 @@ type engConn struct {
 	affected int64
 	row      engRow
 	rows     []engRow
+	rowErr   error
 }
 
 func (c *engConn) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
@@ -68,6 +71,9 @@ func (c *engConn) Query(context.Context, string, ...any) (pgx.Rows, error) {
 
 func (c *engConn) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
 	c.queries = append(c.queries, engExec{sql, args})
+	if c.rowErr != nil {
+		return engRow{err: c.rowErr}
+	}
 	if c.failExec != "" && strings.Contains(sql, c.failExec) {
 		return engRow{err: errors.New("query failed")}
 	}
@@ -211,15 +217,15 @@ func TestWorkFinishStoresNextCheckpoint(t *testing.T) {
 }
 
 func TestStoreTransitions(t *testing.T) {
-	conn := &engConn{affected: 1}
+	conn := &engConn{row: engRow{values: []any{true}}}
 	e := newTestEngine(conn)
 	started, err := e.Start(t.Context(), 1)
 	if err != nil || !started {
 		t.Fatalf("started=%v err=%v", started, err)
 	}
-	conn.affected = 0
+	conn.row = engRow{values: []any{false}}
 	if started, _ = e.Start(t.Context(), 1); started {
-		t.Fatal("zero rows must not start")
+		t.Fatal("false result must not start")
 	}
 	when := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	if err := e.Defer(t.Context(), 1, app.Deferral{NotBefore: when, ConsumeAttempt: true, Reason: "r"}); err != nil {
@@ -243,7 +249,7 @@ func TestStoreTransitions(t *testing.T) {
 }
 
 func TestStoreErrorsAreWrapped(t *testing.T) {
-	conn := &engConn{failExec: "UPDATE"}
+	conn := &engConn{failExec: "work_items"}
 	e := newTestEngine(conn)
 	if _, err := e.Start(t.Context(), 1); err == nil {
 		t.Fatal("start")
@@ -259,6 +265,36 @@ func TestStoreErrorsAreWrapped(t *testing.T) {
 	}
 	if err := e.Stop(t.Context(), app.StopRequest{ItemID: 1, UserID: 2, Reason: app.StopTokenRevoked}); err == nil {
 		t.Fatal("stop")
+	}
+}
+
+func TestStartReturnsRunnableAndWrapsError(t *testing.T) {
+	conn := &engConn{rows: []engRow{
+		{values: []any{true}},
+		{values: []any{false}},
+	}}
+	e := newTestEngine(conn)
+
+	for index, test := range []struct {
+		id      int64
+		started bool
+	}{
+		{id: 42, started: true},
+		{id: 43, started: false},
+	} {
+		started, err := e.Start(t.Context(), test.id)
+		if err != nil || started != test.started {
+			t.Fatalf("Start(%d) = %v, %v; want %v, nil", test.id, started, err, test.started)
+		}
+		if got := conn.queries[index].args; len(got) != 1 || got[0] != test.id {
+			t.Fatalf("Start(%d) query args = %v", test.id, got)
+		}
+	}
+
+	databaseErr := errors.New("database unavailable")
+	conn.rowErr = databaseErr
+	if _, err := e.Start(t.Context(), 44); !errors.Is(err, databaseErr) || !strings.Contains(err.Error(), "crawl: start work item") {
+		t.Fatalf("Start error = %v, want wrapped database error", err)
 	}
 }
 
