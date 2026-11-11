@@ -251,7 +251,14 @@ func TestTargetsPostgresRoundTrip(t *testing.T) {
 		t.Fatal("target row exists after seal failure")
 	}
 
-	rollbackTargetMigration(t, ctx, cfg, pool)
+	rollbackTargetMigration(t, ctx, cfg)
+	var targetSurvivedRollback bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM sync_targets WHERE id = $1 AND user_id = $2)`, created.ID, userID).Scan(&targetSurvivedRollback); err != nil {
+		t.Fatalf("check worktree target after isolated rollback: %v", err)
+	}
+	if !targetSurvivedRollback {
+		t.Fatal("worktree target was removed by the migration rollback check")
+	}
 }
 
 func TestTargetsGetPlanUsesPrimaryKey(t *testing.T) {
@@ -470,29 +477,35 @@ func targetTestKeyring(t *testing.T) *crypto.Keyring {
 	return ring
 }
 
-func rollbackTargetMigration(t *testing.T, ctx context.Context, cfg config.DBConfig, pool *pgxpool.Pool) {
+func rollbackTargetMigration(t *testing.T, ctx context.Context, cfg config.DBConfig) {
 	t.Helper()
-	restored := false
-	t.Cleanup(func() {
-		if restored {
-			return
-		}
-		if err := db.Migrate(context.Background(), cfg, db.MigrateUp, nil); err != nil {
-			t.Errorf("restore sync target migration: %v", err)
-		}
-	})
-	if err := db.Migrate(ctx, cfg, db.MigrateDown, nil); err != nil {
+	isolatedCfg := dbtest.EmptyDatabase(t, cfg)
+	if isolatedCfg.Name == cfg.Name {
+		t.Fatal("migration rollback database reused the worktree database")
+	}
+	if err := db.Migrate(ctx, isolatedCfg, db.MigrateUp, nil); err != nil {
+		t.Fatalf("prepare isolated migration rollback database: %v", err)
+	}
+	isolatedPool, err := db.NewPool(ctx, isolatedCfg)
+	if err != nil {
+		t.Fatalf("open isolated migration rollback database: %v", err)
+	}
+	defer isolatedPool.Close()
+	var currentDatabase string
+	if err := isolatedPool.QueryRow(ctx, "SELECT current_database()").Scan(&currentDatabase); err != nil {
+		t.Fatalf("read isolated migration rollback database: %v", err)
+	}
+	if currentDatabase != isolatedCfg.Name {
+		t.Fatalf("migration rollback connected to %q, want isolated database %q", currentDatabase, isolatedCfg.Name)
+	}
+	if err := db.Migrate(ctx, isolatedCfg, db.MigrateDown, nil); err != nil {
 		t.Fatalf("roll back sync target migration: %v", err)
 	}
 	var table *string
-	if err := pool.QueryRow(ctx, `SELECT to_regclass('public.sync_targets')::text`).Scan(&table); err != nil {
+	if err := isolatedPool.QueryRow(ctx, `SELECT to_regclass('public.sync_targets')::text`).Scan(&table); err != nil {
 		t.Fatalf("read rolled back table: %v", err)
 	}
 	if table != nil {
 		t.Fatalf("sync_targets still exists after rollback: %s", *table)
 	}
-	if err := db.Migrate(ctx, cfg, db.MigrateUp, nil); err != nil {
-		t.Fatalf("reapply sync target migration: %v", err)
-	}
-	restored = true
 }
