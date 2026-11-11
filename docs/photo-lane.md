@@ -108,16 +108,24 @@ tracks the Flickr photo version completed for each facet. Updates replace the
 stored facet and status in one database transaction. Flickr response secrets
 are removed before info or EXIF data is persisted.
 
+The current size-confirmation rule lives in the shared SQL fragment
+`catalog/adapters/postgres/photo_sizes_confirmed.sql`. Both optional-facet
+selection and the worker's source check use it, so an eligible owner-account
+result can unlock a facet while global sizes remain provisional.
+
 ## Query and indexes
 
 `catalog/adapters/postgres/photolane.sql` ranks persons from two indexed,
 `LIMIT`ed streams (selected, starred) and probes only the top-ranked persons.
-The partial index `photos_sizes_pending_idx` covers pending sizes and stale
-global confirmations; `photos_sizes_restricted_idx` covers legacy `unavailable`
-rows and placeholder-server photos, including old global confirmations. Its
-partition indexes are built concurrently. Tombstoned photos remain excluded.
-The caller starts with 128 persons and doubles the probe only while it finds too
-few photos and a stream was cut by its limit.
+Each owner contributes at most 50 photos to one selection, with size work
+ranked before optional facets. Pending sizes use
+`photos_sizes_pending_idx`; legacy `unavailable` rows and placeholder-server
+photos use `photos_sizes_restricted_idx`; optional facets use
+`photos_owner_live_idx`. The account-scoped result primary key
+`(photo_id, account_id)` supports skipping an existing result for the selected
+owner account. Partition indexes are built concurrently. Tombstoned photos
+remain excluded. The caller starts with 128 persons and doubles the probe only
+while it finds too few photos and a stream was cut by its limit.
 
 Limit: when the best-ranked persons have no pending photos left, the probe
 widens until it reaches persons with work, which costs more per call. The query
