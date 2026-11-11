@@ -32,6 +32,11 @@ describe('user shell', () => {
       if (item.id === 'library') {
         server.use(http.get('*/favorites', () => HttpResponse.json({ items: [] })));
       }
+      if (item.id === 'albums') {
+        server.use(
+          http.get('*/me/albums', () => HttpResponse.json({ items: [], contact_owners: [] })),
+        );
+      }
       renderApp({ session: userSession, path: item.path });
 
       expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
@@ -44,6 +49,8 @@ describe('user shell', () => {
         expect(screen.getByTestId('keys-page')).toBeInTheDocument();
       } else if (item.id === 'library') {
         expect(screen.getByTestId('user-library-page')).toBeInTheDocument();
+      } else if (item.id === 'albums') {
+        expect(screen.getByTestId('albums-page')).toBeInTheDocument();
       } else {
         expect(screen.getByTestId('shell-page')).toBeInTheDocument();
       }
