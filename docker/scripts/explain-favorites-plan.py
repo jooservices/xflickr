@@ -191,7 +191,7 @@ def check_plan(output: str, cursor: bool) -> None:
         raise RuntimeError(f"favorites {page} query plan does not use favorites_page_idx")
     if not re.search(r"Index Cond: .*person_nsid = flickr_accounts\.nsid", output):
         raise RuntimeError("favorites index scan is not bounded by the account")
-    if not re.search(r"Limit\s+\(.*actual time=.*rows=101(?:\.0+)? loops=2\)", output):
+    if not re.search(r"Limit[^\n]*actual time=[^\n]*rows=101(?:\.0+)? loops=2", output):
         raise RuntimeError(f"favorites {page} query plan did not return a bounded page per account")
 
 
