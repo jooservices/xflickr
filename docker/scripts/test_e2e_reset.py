@@ -18,6 +18,7 @@ class E2EResetTests(unittest.TestCase):
             )
 
         command = runner.call_args.args[0]
+        self.assertIn("-X", command)
         self.assertIn("127.0.0.1", command)
         self.assertIn("15435", command)
         self.assertIn("xflickr_wtjooxf337", command)

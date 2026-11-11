@@ -31,6 +31,7 @@ def reset_database(
     runner(
         [
             "psql",
+            "-X",
             "-h",
             host,
             "-p",

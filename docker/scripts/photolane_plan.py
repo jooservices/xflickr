@@ -16,43 +16,55 @@ from worktree_env import parse_env_text
 
 FIXTURE_ROWS = 400_000
 SELECTOR_PATH = Path("backend/internal/catalog/adapters/postgres/photolane.sql")
+CONFIRMED_FRAGMENT_PATH = Path(
+    "backend/internal/catalog/adapters/postgres/photo_sizes_confirmed.sql"
+)
+PHOTO_LANE_ORDER_INDEX_SUFFIX = "_photo_lane_order_idx"
 
 
-def query_sql(root: Path, base_id: int, person: str, owner_prefix: str, email: str) -> str:
+def query_sql(root: Path, base_id: int, person: str, email: str) -> str:
     """Return a transaction that seeds, analyzes, explains, and rolls back fixtures."""
     selector = (root / SELECTOR_PATH).read_text(encoding="utf-8")
+    confirmed_fragment = (root / CONFIRMED_FRAGMENT_PATH).read_text(encoding="utf-8")
+    marker = "__PHOTO_SIZES_CONFIRMED__"
+    if marker not in selector:
+        raise RuntimeError("photo-lane selector has no sizes-confirmation marker")
+    selector = selector.replace(marker, confirmed_fragment.strip().rstrip(";"))
     return f"""BEGIN;
 INSERT INTO people (nsid, username) VALUES ('{person}', '{person}');
-INSERT INTO people (nsid, username)
-SELECT '{owner_prefix}' || n || '@N00', 'plan'
-FROM generate_series(1, {FIXTURE_ROWS // 10}) AS owners(n);
-INSERT INTO users (email, password_hash, role) VALUES ('{email}', 'plan', 'user') RETURNING id \\gset
+INSERT INTO users (email, password_hash, role)
+VALUES ('{email}', 'plan', 'user') RETURNING id \\gset
 INSERT INTO crawl_interests (user_id, person_nsid, depth, via, starred, selected_until)
 VALUES (:'id'::bigint, '{person}', 0, 'plan', true, now() + interval '1 day');
-INSERT INTO photos (id, owner_nsid, last_update, visibility, sizes, sizes_status, raw, content_hash)
-SELECT {base_id} + n,
-       CASE WHEN n <= 20 THEN '{person}'
-            ELSE '{owner_prefix}' || (((n - 21) / 10) + 1) || '@N00' END,
-       now(), 'public', '[]'::jsonb, 'provisional',
+INSERT INTO photos (
+    id, owner_nsid, uploaded_at, last_update, visibility, sizes, sizes_status,
+    raw, content_hash)
+SELECT {base_id} + n, '{person}', now() - n * interval '1 second', now(),
+       'public', '[]'::jsonb, 'provisional',
        '{{}}'::jsonb, decode(repeat('ab', 32), 'hex')
 FROM generate_series(1, {FIXTURE_ROWS}) AS fixture(n);
 COMMIT;
+INSERT INTO schedule_meta (key, value)
+SELECT 'photo_lane_cursor:{person}',
+       jsonb_build_object('uploaded_at', uploaded_at, 'photo_id', id)::text
+FROM photos WHERE owner_nsid = '{person}' AND id = {base_id + FIXTURE_ROWS // 2};
 ANALYZE photos;
 ANALYZE photo_account_sizes;
 ANALYZE crawl_interests;
-PREPARE photolane_plan (integer, integer, text[]) AS
+PREPARE photolane_plan (integer, integer, text[], integer) AS
 {selector.rstrip().rstrip(';')};
 EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
-EXECUTE photolane_plan(100000, 20, ARRAY[]::text[]);
+EXECUTE photolane_plan(1, 20, ARRAY[]::text[], 50);
 """
 
 
 def cleanup_sql(person: str, email: str) -> str:
     """Delete only the synthetic owners and rows created for this measurement."""
     return f"""BEGIN;
-DELETE FROM photos WHERE owner_nsid LIKE '{person.rsplit('-', 1)[0]}-%';
+DELETE FROM schedule_meta WHERE key = 'photo_lane_cursor:{person}';
+DELETE FROM photos WHERE owner_nsid = '{person}';
 DELETE FROM crawl_interests WHERE person_nsid = '{person}';
-DELETE FROM people WHERE nsid LIKE '{person.rsplit('-', 1)[0]}-%';
+DELETE FROM people WHERE nsid = '{person}';
 DELETE FROM users WHERE email = '{email}';
 COMMIT;
 """
@@ -75,9 +87,25 @@ def inspect_plan(plan: list[dict[str, Any]]) -> list[str]:
     photo_sequential_scans: list[str] = []
     for node in nodes:
         relation = str(node.get("Relation Name", ""))
-        if relation.startswith("photos") and node.get("Node Type") in {"Seq Scan", "Parallel Seq Scan"}:
+        if (
+            relation.startswith("photos")
+            and node.get("Node Type") in {"Seq Scan", "Parallel Seq Scan"}
+        ):
             photo_sequential_scans.append(relation)
     return photo_sequential_scans
+
+
+def photo_lane_order_indexes(plan: list[dict[str, Any]]) -> list[str]:
+    """Return the partition indexes used for the owner's ordered photo page."""
+    nodes = (node for item in plan for node in plan_nodes(item.get("Plan")))
+    return sorted(
+        {
+            str(node["Index Name"])
+            for node in nodes
+            if str(node.get("Relation Name", "")).startswith("photos")
+            and str(node.get("Index Name", "")).endswith(PHOTO_LANE_ORDER_INDEX_SUFFIX)
+        }
+    )
 
 
 def worktree_env(root: Path) -> dict[str, str]:
@@ -131,13 +159,12 @@ def measure(root: Path) -> dict[str, Any]:
         values["DB_NAME"],
     ]
     child_env = {"PATH": os.environ.get("PATH", ""), "PGPASSWORD": values["DB_PASSWORD"]}
-    owner_prefix = f"photo-plan-{nonce}-"
-    person = f"{owner_prefix}target@N00"
+    person = f"photo-plan-{nonce}-target@N00"
     email = f"photo-plan-{nonce}@invalid"
     try:
         result = subprocess.run(
             args,
-            input=query_sql(root, base_id, person, owner_prefix, email),
+            input=query_sql(root, base_id, person, email),
             capture_output=True,
             text=True,
             timeout=600,
@@ -145,8 +172,15 @@ def measure(root: Path) -> dict[str, Any]:
             check=False,
         )
         if result.returncode != 0:
-            reason = " ".join(result.stderr.strip().splitlines()[:2])[:500] if result.stderr.strip() else "no details"
-            raise RuntimeError(f"psql plan measurement failed with exit code {result.returncode}: {reason}")
+            reason = (
+                " ".join(result.stderr.strip().splitlines()[:2])[:500]
+                if result.stderr.strip()
+                else "no details"
+            )
+            raise RuntimeError(
+                "psql plan measurement failed with exit code "
+                f"{result.returncode}: {reason}"
+            )
         plan = json.loads(result.stdout)
         if not isinstance(plan, list):
             raise RuntimeError("psql returned an unexpected query plan")
@@ -155,6 +189,11 @@ def measure(root: Path) -> dict[str, Any]:
             raise RuntimeError(
                 "photo-lane plan check failed: "
                 f"photo_sequential_scans={photo_sequential_scans}"
+            )
+        order_indexes = photo_lane_order_indexes(plan)
+        if not order_indexes:
+            raise RuntimeError(
+                "photo-lane plan check failed: owner/upload/id index was not used"
             )
         nodes = [node for item in plan for node in plan_nodes(item.get("Plan"))]
         plan_summary = [
@@ -177,6 +216,7 @@ def measure(root: Path) -> dict[str, Any]:
             "fixture_rows": FIXTURE_ROWS,
             "execution_ms": plan[0].get("Execution Time"),
             "planning_ms": plan[0].get("Planning Time"),
+            "photo_lane_order_indexes": order_indexes,
             "plan": plan_summary,
         }
     finally:
