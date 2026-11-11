@@ -313,6 +313,9 @@ func TestContactCollectionReadsRequireAccessAndReturnSectionData(t *testing.T) {
 	if err != nil || albums.Total != 1 || albums.Items[0].StoredCount != 2 || albums.Items[0].TotalCount != 5 {
 		t.Fatalf("albums=%+v err=%v", albums, err)
 	}
+	if !strings.Contains(db.queries[2], "album_page AS MATERIALIZED") || !strings.Contains(db.queries[2], "GROUP BY ap.album_id") || strings.Contains(db.queries[2], "WHERE ap.album_id=a.id") {
+		t.Fatalf("album counts are not aggregated for the bounded page: %s", db.queries[2])
+	}
 	galleries, err := repository.ListContactGalleries(ctx, 7, "one@N00", "", 30)
 	if err != nil || galleries.Items[0].PhotoCount != 5 {
 		t.Fatalf("galleries=%+v err=%v", galleries, err)
@@ -412,24 +415,34 @@ func TestContactGroupPreferenceAndSizePriorityRemainActorScoped(t *testing.T) {
 	if _, found, err := contactTestRepository(t, db).SetContactGroupPoolCrawl(ctx, 7, "one@N00", "group", true); err != nil || found {
 		t.Fatalf("missing group preference found=%v err=%v", found, err)
 	}
-	db = &contactTestDB{rowResults: []readsRow{contactTestRow(true), contactTestRow(int64(500), int64(500)), contactTestRow(int64(3), int64(503))}}
-	count, err := contactTestRepository(t, db).PrioritiseContactSizes(ctx, 7, "one@N00")
-	if err != nil || count != 503 {
-		t.Fatalf("prioritised=%d err=%v", count, err)
+	db = &contactTestDB{rowResults: []readsRow{contactTestRow(true), contactTestRow(int64(500), int64(500), true)}}
+	page, err := contactTestRepository(t, db).PrioritiseContactSizes(ctx, 7, "one@N00", "")
+	if err != nil || page.Prioritised != 500 || page.NextCursor == nil {
+		t.Fatalf("prioritised page=%+v err=%v", page, err)
 	}
-	if len(db.queries) != 3 || !strings.Contains(db.queries[1], "UPDATE work_items") || !strings.Contains(db.queries[1], "wi.user_id=$1") || !strings.Contains(db.queries[1], "ph.owner_nsid=$2") || !strings.Contains(db.queries[1], "ph.id>$3") || !strings.Contains(db.queries[1], "ORDER BY ph.id") || !strings.Contains(db.queries[1], "LIMIT") || !strings.Contains(db.queries[1], "direct_action=FALSE") {
+	if len(db.queries) != 2 || !strings.Contains(db.queries[1], "UPDATE work_items") || !strings.Contains(db.queries[1], "wi.user_id=$1") || !strings.Contains(db.queries[1], "ph.owner_nsid=$2") || !strings.Contains(db.queries[1], "ph.id>$3") || !strings.Contains(db.queries[1], "ORDER BY ph.id") || !strings.Contains(db.queries[1], "LIMIT $5") || !strings.Contains(db.queries[1], "direct_action=FALSE") {
 		t.Fatalf("size priority query is not actor scoped: %s", db.queries[1])
 	}
+	db = &contactTestDB{rowResults: []readsRow{contactTestRow(true), contactTestRow(int64(0), int64(999), true)}}
+	page, err = contactTestRepository(t, db).PrioritiseContactSizes(ctx, 7, "one@N00", *page.NextCursor)
+	if err != nil || page.Prioritised != 0 || page.NextCursor == nil {
+		t.Fatalf("empty priority page did not continue its bounded scan: page=%+v err=%v", page, err)
+	}
+	badCursor, _ := encodeContactCursor(contactCursor{Kind: "sizes:one@N00", ID: "invalid"})
+	db = &contactTestDB{rowResults: []readsRow{contactTestRow(true)}}
+	if _, err := contactTestRepository(t, db).PrioritiseContactSizes(ctx, 7, "one@N00", *badCursor); !errors.Is(err, app.ErrInvalidCursor) {
+		t.Fatalf("invalid size priority cursor=%v", err)
+	}
 	db = &contactTestDB{rowResults: []readsRow{contactTestRow(false)}}
-	if _, err := contactTestRepository(t, db).PrioritiseContactSizes(ctx, 7, "one@N00"); !errors.Is(err, app.ErrNotFound) {
+	if _, err := contactTestRepository(t, db).PrioritiseContactSizes(ctx, 7, "one@N00", ""); !errors.Is(err, app.ErrNotFound) {
 		t.Fatalf("unowned size priority error=%v", err)
 	}
-	db = &contactTestDB{rowResults: []readsRow{{err: errors.New("priority query failed")}}}
-	if _, err := contactTestRepository(t, db).PrioritiseContactSizes(ctx, 7, "one@N00"); err == nil {
+	db = &contactTestDB{rowResults: []readsRow{contactTestRow(true), {err: errors.New("priority query failed")}}}
+	if _, err := contactTestRepository(t, db).PrioritiseContactSizes(ctx, 7, "one@N00", ""); err == nil {
 		t.Fatal("priority existence query error swallowed")
 	}
 	db = &contactTestDB{rowResults: []readsRow{contactTestRow(true), {err: errors.New("priority write failed")}}}
-	if _, err := contactTestRepository(t, db).PrioritiseContactSizes(ctx, 7, "one@N00"); err == nil {
+	if _, err := contactTestRepository(t, db).PrioritiseContactSizes(ctx, 7, "one@N00", ""); err == nil {
 		t.Fatal("priority write error swallowed")
 	}
 	if _, found, err := contactTestRepository(t, &contactTestDB{}).SetContactGroupPoolCrawl(ctx, 7, "one@N00", "group", true); err != nil || found {

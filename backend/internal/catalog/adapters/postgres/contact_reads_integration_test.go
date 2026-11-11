@@ -199,14 +199,20 @@ func TestContactReadsUseScopedSummaryAndBoundedFacets(t *testing.T) {
 		FROM generate_series($1::bigint,$2::bigint) AS photo_id`, priorityBase, priorityBase+500, userID); err != nil {
 		t.Fatal(err)
 	}
-	prioritised, err := repository.PrioritiseContactSizes(ctx, userID, firstNSID)
-	if err != nil || prioritised != 501 {
-		t.Fatalf("prioritised size work=%d err=%v, want 501", prioritised, err)
+	priorityPage, err := repository.PrioritiseContactSizes(ctx, userID, firstNSID, "")
+	if err != nil || priorityPage.Prioritised > 500 || priorityPage.NextCursor == nil {
+		t.Fatalf("prioritised size page=%+v err=%v, want a bounded batch and cursor", priorityPage, err)
+	}
+	prioritisedTotal := priorityPage.Prioritised
+	priorityPage, err = repository.PrioritiseContactSizes(ctx, userID, firstNSID, *priorityPage.NextCursor)
+	prioritisedTotal += priorityPage.Prioritised
+	if err != nil || priorityPage.Prioritised > 500 || priorityPage.NextCursor != nil || prioritisedTotal != 501 {
+		t.Fatalf("second prioritised size page=%+v total=%d err=%v, want all 501 rows across bounded pages", priorityPage, prioritisedTotal, err)
 	}
 	var prioritisedRows int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM work_items wi JOIN photos ph ON ph.id::text=wi.subject_key
 		WHERE wi.user_id=$1 AND wi.kind='photo_sizes' AND ph.id BETWEEN $2 AND $3 AND wi.direct_action`, userID, priorityBase, priorityBase+500).Scan(&prioritisedRows); err != nil || prioritisedRows != 501 {
-		t.Fatalf("direct size work=%d err=%v, want all 501 rows", prioritisedRows, err)
+		t.Fatalf("direct size work=%d err=%v, want all 501 rows across bounded pages", prioritisedRows, err)
 	}
 	about, found, err := repository.GetContactAbout(ctx, userID, firstNSID)
 	if err != nil || !found || about.TombstoneCount != 1 || len(about.Facets) != 5 {

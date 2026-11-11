@@ -471,14 +471,22 @@ func (r *Repository) ListContactAlbums(ctx context.Context, userID int64, nsid, 
 		condition = ` AND (($3 AND a.updated_at IS NULL AND a.id<$5) OR (NOT $3 AND (a.updated_at<$4 OR a.updated_at IS NULL OR (a.updated_at=$4 AND a.id<$5))))`
 	}
 	args = append(args, limit+1)
-	query := `SELECT a.id,a.title,p.username,
-	 (SELECT count(*) FROM album_photos ap JOIN photos stored ON stored.id=ap.photo_id
-	  WHERE ap.album_id=a.id AND stored.tombstoned_at IS NULL AND ` + contactPhotoVisibility("stored") + `),
-	 a.photos_count,
-	 COALESCE((SELECT jsonb_agg(NULLIF(cover.sizes->0->>'url','')) FROM photos cover WHERE cover.id=a.primary_photo_id AND cover.tombstoned_at IS NULL AND cover.sizes->0->>'url' IS NOT NULL AND ` + contactPhotoVisibility("cover") + `),'[]'::jsonb),
-	 a.updated_at FROM albums a JOIN people p ON p.nsid=a.owner_nsid
-	 WHERE a.owner_nsid=$2 AND EXISTS(SELECT 1 FROM crawl_interests ci WHERE ci.user_id=$1 AND ci.person_nsid=$2)` + condition + `
-	 ORDER BY a.updated_at DESC NULLS LAST,a.id DESC LIMIT $` + strconv.Itoa(len(args))
+	query := `WITH album_page AS MATERIALIZED (
+		SELECT a.id,a.title,p.username AS owner_name,a.primary_photo_id,a.photos_count,a.updated_at
+		FROM albums a JOIN people p ON p.nsid=a.owner_nsid
+		WHERE a.owner_nsid=$2 AND EXISTS(SELECT 1 FROM crawl_interests ci WHERE ci.user_id=$1 AND ci.person_nsid=$2)` + condition + `
+		ORDER BY a.updated_at DESC NULLS LAST,a.id DESC LIMIT $` + strconv.Itoa(len(args)) + `
+	), stored_counts AS (
+		SELECT ap.album_id,count(*)::bigint AS stored_count
+		FROM album_page page
+		JOIN album_photos ap ON ap.album_id=page.id
+		JOIN photos stored ON stored.id=ap.photo_id
+		WHERE stored.tombstoned_at IS NULL AND ` + contactPhotoVisibility("stored") + `
+		GROUP BY ap.album_id
+	)
+	SELECT page.id,page.title,page.owner_name,COALESCE(stored_counts.stored_count,0),page.photos_count,
+	 COALESCE((SELECT jsonb_agg(NULLIF(cover.sizes->0->>'url','')) FROM photos cover WHERE cover.id=page.primary_photo_id AND cover.tombstoned_at IS NULL AND cover.sizes->0->>'url' IS NOT NULL AND ` + contactPhotoVisibility("cover") + `),'[]'::jsonb),
+	 page.updated_at FROM album_page page LEFT JOIN stored_counts ON stored_counts.album_id=page.id`
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return app.ContactAlbumPage{}, fmt.Errorf("catalog: list contact albums: %w", err)
@@ -716,37 +724,53 @@ func (r *Repository) SetContactGroupPoolCrawl(ctx context.Context, userID int64,
 	return result, true, nil
 }
 
-func (r *Repository) PrioritiseContactSizes(ctx context.Context, userID int64, nsid string) (int64, error) {
+func (r *Repository) PrioritiseContactSizes(ctx context.Context, userID int64, nsid, rawCursor string) (app.ContactSizesPriorityPage, error) {
 	if !contactReadAvailable(ctx, r, userID) {
-		return 0, app.ErrReadUnavailable
+		return app.ContactSizesPriorityPage{}, app.ErrReadUnavailable
 	}
 	if err := r.requireContact(ctx, userID, nsid); err != nil {
-		return 0, err
+		return app.ContactSizesPriorityPage{}, err
 	}
-	var total int64
+	cursor, err := decodeContactCursor(rawCursor, "sizes:"+nsid)
+	if err != nil {
+		return app.ContactSizesPriorityPage{}, err
+	}
+	var afterID int64
+	if cursor != nil {
+		parsedID, parseErr := strconv.ParseInt(cursor.ID, 10, 64)
+		if parseErr != nil || parsedID <= 0 {
+			return app.ContactSizesPriorityPage{}, app.ErrInvalidCursor
+		}
+		afterID = parsedID
+	}
+	var page app.ContactSizesPriorityPage
 	var lastPhotoID int64
-	for {
-		var count, pageLastPhotoID int64
-		err := r.db.QueryRow(ctx, `WITH batch AS MATERIALIZED (
-			SELECT wi.id,ph.id AS photo_id FROM photos ph
-			JOIN work_items wi ON wi.user_id=$1 AND wi.subject_key=ph.id::text
-			WHERE ph.owner_nsid=$2 AND ph.id>$3 AND ph.tombstoned_at IS NULL AND ph.sizes_status<>'confirmed'
-			  AND wi.kind='photo_sizes' AND wi.state IN ('pending','ready','running','waiting') AND wi.direct_action=FALSE
-			ORDER BY ph.id,wi.id LIMIT $4 FOR UPDATE OF wi
-		), updated AS (
-			UPDATE work_items wi SET direct_action=TRUE,score_updated_at=NULL,updated_at=now()
-			FROM batch WHERE wi.id=batch.id RETURNING batch.photo_id
-		)
-		SELECT count(*),COALESCE(max(photo_id),$3) FROM updated`, userID, nsid, lastPhotoID, contactPriorityBatchSize).Scan(&count, &pageLastPhotoID)
-		if err != nil {
-			return 0, fmt.Errorf("catalog: prioritise contact sizes: %w", err)
-		}
-		total += count
-		if count < contactPriorityBatchSize {
-			return total, nil
-		}
-		lastPhotoID = pageLastPhotoID
+	var hasMore bool
+	err = r.db.QueryRow(ctx, `WITH photo_page AS MATERIALIZED (
+		SELECT ph.id FROM photos ph
+		WHERE ph.owner_nsid=$2 AND ph.id>$3 AND ph.tombstoned_at IS NULL AND ph.sizes_status<>'confirmed'
+		ORDER BY ph.id LIMIT $5
+	), batch AS MATERIALIZED (
+		SELECT id FROM photo_page ORDER BY id LIMIT $4
+	), updated AS (
+		UPDATE work_items wi SET direct_action=TRUE,score_updated_at=NULL,updated_at=now()
+		FROM batch WHERE wi.user_id=$1 AND wi.subject_key=batch.id::text AND wi.kind='photo_sizes'
+		  AND wi.state IN ('pending','ready','running','waiting') AND wi.direct_action=FALSE
+		RETURNING wi.id
+	)
+	SELECT (SELECT count(*) FROM updated),
+		COALESCE((SELECT max(id) FROM batch),$3),
+		(SELECT count(*)>$4 FROM photo_page)`, userID, nsid, afterID, contactPriorityBatchSize, contactPriorityBatchSize+1).Scan(&page.Prioritised, &lastPhotoID, &hasMore)
+	if err != nil {
+		return app.ContactSizesPriorityPage{}, fmt.Errorf("catalog: prioritise contact sizes: %w", err)
 	}
+	if hasMore {
+		page.NextCursor, err = encodeContactCursor(contactCursor{Kind: "sizes:" + nsid, ID: strconv.FormatInt(lastPhotoID, 10)})
+		if err != nil {
+			return app.ContactSizesPriorityPage{}, err
+		}
+	}
+	return page, nil
 }
 
 func (r *Repository) requireContact(ctx context.Context, userID int64, nsid string) error {

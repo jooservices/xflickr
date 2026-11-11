@@ -52,6 +52,46 @@ func TestContactSummaryMigrationBackfillsExistingData(t *testing.T) {
 	}
 }
 
+func TestContactSizePriorityIndexMigrationAttachesEveryPartition(t *testing.T) {
+	ctx, cfg, pool := prepareEmptyMigrationTest(t)
+	if err := db.MigrateFiles(ctx, cfg, db.MigrateUp, io.Discard, migrationsBeforeContactSummary(t)); err != nil {
+		t.Fatalf("migrate predecessors: %v", err)
+	}
+	if err := db.MigrateFiles(ctx, cfg, db.MigrateUp, io.Discard, contactSummaryMigrationFiles(t)); err != nil {
+		t.Fatalf("migrate contact summaries: %v", err)
+	}
+	files := fstest.MapFS{}
+	for _, name := range []string{
+		"20261111190000_observations_record_lookup_index.sql",
+		"20261111200000_contact_size_priority_index.sql",
+	} {
+		sql, err := migrations.Files.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read migration %s: %v", name, err)
+		}
+		files[name] = &fstest.MapFile{Data: sql, Mode: 0o644}
+	}
+	if err := db.MigrateFiles(ctx, cfg, db.MigrateUp, io.Discard, files); err != nil {
+		t.Fatalf("migrate contact size priority index: %v", err)
+	}
+
+	var attachedIndexes, validIndexes, partialIndexes int
+	if err := pool.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE child.indisvalid),
+		count(*) FILTER (WHERE child.indpred IS NOT NULL)
+		FROM pg_inherits inherited
+		JOIN pg_index parent ON parent.indexrelid=inherited.inhparent
+		JOIN pg_index child ON child.indexrelid=inherited.inhrelid
+		WHERE parent.indexrelid='photos_owner_pending_sizes_idx'::regclass`).Scan(
+		&attachedIndexes, &validIndexes, &partialIndexes,
+	); err != nil {
+		t.Fatalf("read attached pending-size photo indexes: %v", err)
+	}
+	if attachedIndexes != 16 || validIndexes != 16 || partialIndexes != 16 {
+		t.Fatalf("pending-size photo indexes = %d attached, %d valid, %d partial; want 16 of each",
+			attachedIndexes, validIndexes, partialIndexes)
+	}
+}
+
 func TestContactSummaryRollbackRefusesFavoritesWithoutChangingSchema(t *testing.T) {
 	ctx, cfg, pool := prepareMigrationTest(t)
 	if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err != nil {
