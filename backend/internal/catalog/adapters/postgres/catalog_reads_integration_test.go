@@ -2,9 +2,12 @@ package postgres_test
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,22 +32,24 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	}
 	reads := app.ReadService{Repository: repository}
 	suffix := fmt.Sprintf("catalog-read-%d", time.Now().UnixNano())
-	user1NSID, user1SecondNSID := suffix+"-u1", suffix+"-u1-second"
+	user1NSID, user1SecondNSID, user1ThirdNSID := suffix+"-u1", suffix+"-u1-second", suffix+"-u1-third"
 	user2NSID, hiddenNSID := suffix+"-u2", suffix+"-hidden"
-	personIDs := []string{user1NSID, user1SecondNSID, user2NSID, hiddenNSID}
+	personIDs := []string{user1NSID, user1SecondNSID, user1ThirdNSID, user2NSID, hiddenNSID}
 	photoIDs := []int64{
 		time.Now().UnixNano(), time.Now().UnixNano() + 1, time.Now().UnixNano() + 2,
 		time.Now().UnixNano() + 3, time.Now().UnixNano() + 4,
 	}
+	favoriteTiePhotoID := time.Now().UnixNano() + 100
+	cleanupPhotoIDs := append(append([]int64{}, photoIDs...), favoriteTiePhotoID)
 	extraPhotoIDs := make([]int64, 7)
 	for i := range extraPhotoIDs {
 		extraPhotoIDs[i] = time.Now().UnixNano() + int64(i) + 10
 	}
 	albumID, hiddenAlbumID := suffix+"-album", suffix+"-hidden-album"
-	var user1ID, user2ID, account1ID, account2ID int64
+	var user1ID, user2ID, account1ID, account1SecondID, account1ThirdID, account2ID int64
 	defer func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM albums WHERE id=ANY($1)`, []string{albumID, hiddenAlbumID})
-		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=ANY($1)`, append(photoIDs, extraPhotoIDs...))
+		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=ANY($1)`, append(cleanupPhotoIDs, extraPhotoIDs...))
 		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, personIDs)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=ANY($1)`, []int64{user1ID, user2ID})
 	}()
@@ -64,7 +69,10 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'user-one','{}','{}','ok') RETURNING id`, user1ID, key1ID, user1NSID).Scan(&account1ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'user-one-second','{}','{}','ok')`, user1ID, key1ID, user1SecondNSID); err != nil {
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'user-one-second','{}','{}','ok') RETURNING id`, user1ID, key1ID, user1SecondNSID).Scan(&account1SecondID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'user-one-third','{}','{}','ok') RETURNING id`, user1ID, key1ID, user1ThirdNSID).Scan(&account1ThirdID); err != nil {
 		t.Fatal(err)
 	}
 	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'user-two','{}','{}','ok') RETURNING id`, user2ID, key2ID, user2NSID).Scan(&account2ID); err != nil {
@@ -75,6 +83,7 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	}
 	people := []domain.Person{
 		{NSID: user1NSID, Username: "one"}, {NSID: user1SecondNSID, Username: "one-second"},
+		{NSID: user1ThirdNSID, Username: "one-third"},
 		{NSID: user2NSID, Username: "two"}, {NSID: hiddenNSID, Username: "hidden"},
 	}
 	if err := repository.UpsertPeople(ctx, people); err != nil {
@@ -217,6 +226,49 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if err != nil || len(filteredPage.Items) != 1 || filteredPage.Items[0].Photo.ID != extraPhotoIDs[6] || filteredPage.NextCursor != nil {
 		t.Fatalf("mostly filtered final batch=%+v err=%v", filteredPage, err)
 	}
+	if err := repository.UpsertPhotos(ctx, []domain.Photo{{
+		ID: favoriteTiePhotoID, OwnerNSID: user1NSID, Title: "same-time favorite",
+		LastUpdate: now, Visibility: domain.VisibilityPrivate, Raw: []byte(`{"id":99}`),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) VALUES($1,$2,'photo',$3)`, user1ID, account1ID, fmt.Sprint(favoriteTiePhotoID)); err != nil {
+		t.Fatal(err)
+	}
+	tieDate := now.Add(time.Second)
+	if err := repository.UpsertFavoritesBatch(ctx, []postgres.Favorite{
+		{PersonNSID: user1NSID, PhotoID: favoriteTiePhotoID, FaveDate: tieDate},
+		{PersonNSID: user1SecondNSID, PhotoID: favoriteTiePhotoID, FaveDate: tieDate},
+		{PersonNSID: user1ThirdNSID, PhotoID: favoriteTiePhotoID, FaveDate: tieDate},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE favorites SET removed_at=now() WHERE person_nsid=$1 AND photo_id=$2`, user1ThirdNSID, favoriteTiePhotoID); err != nil {
+		t.Fatal(err)
+	}
+	tiedFavorites, tiedCursor, err := reads.ListFavorites(ctx, user1ID, "", 1)
+	if err != nil || len(tiedFavorites.Items) != 1 || tiedFavorites.Items[0].Photo.ID != favoriteTiePhotoID || tiedCursor == "" {
+		t.Fatalf("first equal-key favorites page=%+v cursor=%q err=%v", tiedFavorites, tiedCursor, err)
+	}
+	encodedCursor, err := base64.RawURLEncoding.DecodeString(tiedCursor)
+	if err != nil {
+		t.Fatalf("decode equal-key favorites cursor: %v", err)
+	}
+	var cursorEnvelope struct {
+		Value struct {
+			FlickrAccountID int64 `json:"flickr_account_id"`
+		} `json:"value"`
+	}
+	if err := json.Unmarshal(encodedCursor, &cursorEnvelope); err != nil {
+		t.Fatalf("unmarshal equal-key favorites cursor: %v", err)
+	}
+	if cursorEnvelope.Value.FlickrAccountID != account1SecondID {
+		t.Fatalf("cursor account id=%d, want boundary account %d", cursorEnvelope.Value.FlickrAccountID, account1SecondID)
+	}
+	tiedFavorites, _, err = reads.ListFavorites(ctx, user1ID, tiedCursor, 1)
+	if err != nil || len(tiedFavorites.Items) != 1 || tiedFavorites.Items[0].Photo.ID != favoriteTiePhotoID {
+		t.Fatalf("second equal-key favorites page=%+v err=%v", tiedFavorites, err)
+	}
 	albums, _, err := reads.ListAlbums(ctx, user1ID, "", 10)
 	if err != nil || len(albums.Items) != 1 || albums.Items[0].ID != albumID || albums.Items[0].VisiblePhotosCount != 1 || albums.Items[0].PrimaryPhotoID != nil {
 		t.Fatalf("visible albums=%+v err=%v", albums, err)
@@ -228,4 +280,100 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if _, _, err := reads.ListAlbumPhotos(ctx, user1ID, hiddenAlbumID, "", 10); !errors.Is(err, app.ErrNotFound) {
 		t.Fatalf("hidden album error=%v", err)
 	}
+}
+
+func TestCatalogReadVisibilityPlanAvoidsSequentialScans(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+
+	suffix := fmt.Sprintf("catalog-plan-%d", time.Now().UnixNano())
+	var userID, keyID, accountID int64
+	if err := tx.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration','user') RETURNING id`, suffix+"@example.invalid").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'plan',$2,'{}',1000,10,20) RETURNING id`, userID, suffix+"-key").Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'plan','{}','{}','ok') RETURNING id`, userID, keyID, suffix+"-owner").Scan(&accountID); err != nil {
+		t.Fatal(err)
+	}
+	ownerNSID := suffix + "-owner"
+	if _, err := tx.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,'plan')`, ownerNSID); err != nil {
+		t.Fatal(err)
+	}
+	const fixtureRows = 400000
+	basePhotoID := time.Now().UnixNano()
+	if _, err := tx.Exec(ctx, `INSERT INTO photos(id,owner_nsid,last_update,visibility,raw,content_hash)
+SELECT $1::bigint + item, $2, now(), 'private', '{}'::jsonb, decode(repeat('00',32),'hex')
+FROM generate_series(1,$3) AS item`, basePhotoID, ownerNSID, fixtureRows); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id)
+SELECT $1,$2,'photo',($3::bigint + item)::text FROM generate_series(1,$4) AS item`, userID, accountID, basePhotoID, fixtureRows); err != nil {
+		t.Fatal(err)
+	}
+	var targetPhotoID int64
+	if err := tx.QueryRow(ctx, `SELECT record_id::bigint FROM observations
+WHERE user_id=$1 AND flickr_account_id=$2 AND record_kind='photo'
+AND tableoid='public.observations_p00'::regclass LIMIT 1`, userID, accountID).Scan(&targetPhotoID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `ANALYZE photos`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `ANALYZE observations_p00`); err != nil {
+		t.Fatal(err)
+	}
+
+	visibility := sharingapp.Filter(sharingdomain.User{ID: userID}).SQL
+	query := `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+SELECT photos.id FROM photos
+WHERE photos.id=ANY($2) AND photos.tombstoned_at IS NULL AND ` + visibility.Expression
+	args := append(append([]any{}, visibility.Args...), []int64{targetPhotoID})
+	var rawPlan []byte
+	if err := tx.QueryRow(ctx, query, args...).Scan(&rawPlan); err != nil {
+		t.Fatalf("explain catalog photo visibility lookup: %v", err)
+	}
+	var explained []struct {
+		Plan catalogReadPlanNode `json:"Plan"`
+	}
+	if err := json.Unmarshal(rawPlan, &explained); err != nil {
+		t.Fatalf("decode catalog photo visibility plan: %v", err)
+	}
+	if len(explained) == 0 {
+		t.Fatalf("empty catalog photo visibility plan: %s", rawPlan)
+	}
+	seqScan, observationIndex := inspectCatalogReadPlan(explained[0].Plan)
+	if seqScan || !observationIndex {
+		t.Fatalf("catalog photo visibility plan must avoid Seq Scans on observations/photos and use the observations lookup index: %s", rawPlan)
+	}
+	t.Logf("EXPLAIN (ANALYZE, BUFFERS) catalog photo visibility on %d fixture rows: %s", fixtureRows, rawPlan)
+}
+
+type catalogReadPlanNode struct {
+	NodeType  string                `json:"Node Type"`
+	Relation  string                `json:"Relation Name"`
+	IndexName string                `json:"Index Name"`
+	Plans     []catalogReadPlanNode `json:"Plans"`
+}
+
+func inspectCatalogReadPlan(node catalogReadPlanNode) (seqScan, observationIndex bool) {
+	seqScan = (node.NodeType == "Seq Scan" || node.NodeType == "Parallel Seq Scan") &&
+		(strings.HasPrefix(node.Relation, "observations") || strings.HasPrefix(node.Relation, "photos"))
+	observationIndex = node.IndexName == "observations_p00_kind_record_idx"
+	for _, child := range node.Plans {
+		childSeqScan, childObservationIndex := inspectCatalogReadPlan(child)
+		seqScan = seqScan || childSeqScan
+		observationIndex = observationIndex || childObservationIndex
+	}
+	return seqScan, observationIndex
 }

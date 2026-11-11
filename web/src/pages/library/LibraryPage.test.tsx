@@ -339,6 +339,22 @@ describe('LibraryPage', () => {
     expect(document.querySelector('a[href="/accounts"]')).toBeNull();
   });
 
+  it('waits for the final cursor page before showing the library empty state', async () => {
+    server.use(
+      http.get('*/favorites', ({ request }) => {
+        const cursor = new URL(request.url).searchParams.get('cursor');
+        return cursor ? json({ items: [] }) : json({ items: [], next_cursor: 'page-two' });
+      }),
+    );
+    open();
+
+    expect(await screen.findByTestId('user-library-load-more')).toBeInTheDocument();
+    expect(screen.queryByTestId('user-library-empty')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('user-library-load-more'));
+    expect(await screen.findByTestId('user-library-empty')).toBeInTheDocument();
+  });
+
   it('renders localized copy and the required loading state', async () => {
     let release: () => void = () => undefined;
     const blocked = new Promise<void>((resolve) => {

@@ -225,9 +225,9 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 	now := time.Date(2026, 10, 28, 0, 0, 0, 0, time.UTC)
 	db.queryResponses = []*readsRows{
 		{rows: [][]any{
-			{int64(10), pgtype.Timestamptz{Time: now, Valid: true}, pgtype.Timestamptz{}},
-			{int64(11), pgtype.Timestamptz{Time: now.Add(-time.Second), Valid: true}, pgtype.Timestamptz{}},
-			{int64(12), pgtype.Timestamptz{Time: now.Add(-2 * time.Second), Valid: true}, pgtype.Timestamptz{}},
+			{int64(900), int64(10), pgtype.Timestamptz{Time: now, Valid: true}, pgtype.Timestamptz{}},
+			{int64(899), int64(11), pgtype.Timestamptz{Time: now.Add(-time.Second), Valid: true}, pgtype.Timestamptz{}},
+			{int64(898), int64(12), pgtype.Timestamptz{Time: now.Add(-2 * time.Second), Valid: true}, pgtype.Timestamptz{}},
 		}},
 		{rows: [][]any{readTestPhotoRow(10), readTestPhotoRow(11)}},
 	}
@@ -242,7 +242,7 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 	lateralIndex := strings.Index(scanQuery, "CROSS JOIN LATERAL")
 	innerLimitIndex := strings.Index(scanQuery, "LIMIT $2")
 	pageCTEIndex := strings.Index(scanQuery, "scan_page AS MATERIALIZED")
-	mergeOrderIndex := strings.Index(scanQuery, "ORDER BY fave_date DESC,photo_id DESC")
+	mergeOrderIndex := strings.Index(scanQuery, "ORDER BY fave_date DESC,photo_id DESC,flickr_account_id DESC")
 	globalLimitIndex := -1
 	if mergeOrderIndex >= 0 {
 		if offset := strings.Index(scanQuery[mergeOrderIndex:], "LIMIT $2"); offset >= 0 {
@@ -251,6 +251,7 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 	}
 	if lateralIndex < 0 || innerLimitIndex < lateralIndex || pageCTEIndex < innerLimitIndex ||
 		mergeOrderIndex < pageCTEIndex || globalLimitIndex < mergeOrderIndex ||
+		!strings.Contains(scanQuery, "accounts.id AS flickr_account_id") ||
 		strings.Contains(scanQuery, "removed_at IS NULL") || strings.Contains(scanQuery, "JOIN photos") {
 		t.Fatalf("favorite scan must bound raw rows before filtering photos: %s", scanQuery)
 	}
@@ -259,7 +260,7 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 		t.Fatalf("favorite photo load must enforce visibility and tombstones: %s", photoQuery)
 	}
 	db.queryResponses = []*readsRows{
-		{rows: [][]any{{int64(12), pgtype.Timestamptz{Time: now.Add(-2 * time.Second), Valid: true}, pgtype.Timestamptz{}}}},
+		{rows: [][]any{{int64(898), int64(12), pgtype.Timestamptz{Time: now.Add(-2 * time.Second), Valid: true}, pgtype.Timestamptz{}}}},
 		{rows: [][]any{readTestPhotoRow(12)}},
 	}
 	db.queryCount = 0
@@ -267,8 +268,9 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 	if _, err := repository.ListVisibleFavorites(ctx, userID, predicate, &app.FavoriteCursor{FaveDate: now, PhotoID: 11}, 1); err != nil {
 		t.Fatalf("favorite cursor=%v", err)
 	}
-	if !strings.Contains(db.queries[0], "(favorites.fave_date,favorites.photo_id)<($2,$3)") ||
-		db.queryArgs[0][3] != 3 {
+	if !strings.Contains(db.queries[0], "accounts.id<$4") ||
+		!strings.Contains(db.queries[0], "(favorites.fave_date,favorites.photo_id)<($2,$3)") ||
+		db.queryArgs[0][4] != 3 {
 		t.Fatalf("favorite cursor must constrain a bounded account scan: query=%s args=%v", db.queries[0], db.queryArgs[0])
 	}
 	if _, err := repository.ListVisibleFavorites(ctx, userID, predicate, &app.FavoriteCursor{PhotoID: 1}, 1); !errors.Is(err, app.ErrInvalidCursor) {
@@ -281,9 +283,9 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 		t.Fatalf("empty favorites=%+v err=%v", emptyFavorites, err)
 	}
 	db.queryResponses = []*readsRows{{rows: [][]any{
-		{int64(10), pgtype.Timestamptz{Time: now, Valid: true}, pgtype.Timestamptz{Valid: true, Time: now}},
-		{int64(11), pgtype.Timestamptz{Time: now.Add(-time.Second), Valid: true}, pgtype.Timestamptz{Valid: true, Time: now}},
-		{int64(12), pgtype.Timestamptz{Time: now.Add(-2 * time.Second), Valid: true}, pgtype.Timestamptz{Valid: true, Time: now}},
+		{int64(900), int64(10), pgtype.Timestamptz{Time: now, Valid: true}, pgtype.Timestamptz{Valid: true, Time: now}},
+		{int64(899), int64(11), pgtype.Timestamptz{Time: now.Add(-time.Second), Valid: true}, pgtype.Timestamptz{Valid: true, Time: now}},
+		{int64(898), int64(12), pgtype.Timestamptz{Time: now.Add(-2 * time.Second), Valid: true}, pgtype.Timestamptz{Valid: true, Time: now}},
 	}}}
 	db.queryCount = 0
 	db.queries, db.queryArgs = nil, nil
@@ -301,7 +303,7 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 	}
 	db.queryErr = nil
 	db.queryResponses = []*readsRows{
-		{rows: [][]any{{int64(10), pgtype.Timestamptz{Time: now, Valid: true}, pgtype.Timestamptz{}}}},
+		{rows: [][]any{{int64(900), int64(10), pgtype.Timestamptz{Time: now, Valid: true}, pgtype.Timestamptz{}}}},
 		{rows: nil},
 	}
 	db.queryErrors = []error{nil, boom}
@@ -310,7 +312,7 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 		t.Fatalf("favorite photo query error=%v", err)
 	}
 	db.queryErrors = nil
-	db.queryResponses = []*readsRows{{rows: [][]any{{int64(10), pgtype.Timestamptz{Time: now, Valid: true}, pgtype.Timestamptz{}}}, scanErr: boom}}
+	db.queryResponses = []*readsRows{{rows: [][]any{{int64(900), int64(10), pgtype.Timestamptz{Time: now, Valid: true}, pgtype.Timestamptz{}}}, scanErr: boom}}
 	db.queryCount = 0
 	if _, err := repository.ListVisibleFavorites(ctx, userID, predicate, nil, 1); !errors.Is(err, boom) {
 		t.Fatalf("favorite scan error=%v", err)
@@ -321,7 +323,7 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 		t.Fatalf("favorite rows error=%v", err)
 	}
 	db.queryResponses = []*readsRows{
-		{rows: [][]any{{int64(10), pgtype.Timestamptz{Time: now, Valid: true}, pgtype.Timestamptz{}}}},
+		{rows: [][]any{{int64(900), int64(10), pgtype.Timestamptz{Time: now, Valid: true}, pgtype.Timestamptz{}}}},
 		{rows: [][]any{readTestPhotoRow(10)}, scanErr: boom},
 	}
 	db.queryCount = 0
