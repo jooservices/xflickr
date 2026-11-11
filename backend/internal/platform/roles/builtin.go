@@ -830,7 +830,7 @@ func (checker duplicateEgressChecker) CheckDuplicate(ctx context.Context, node c
 	sort.Strings(names)
 	_, err = checker.incidents.Open(ctx, opsdomain.Incident{
 		Kind:     "duplicate_egress_ip",
-		Scope:    strings.Join(names, "|"),
+		Scope:    fmt.Sprintf("%d:%s|%d:%s", len(names[0]), names[0], len(names[1]), names[1]),
 		Severity: opsdomain.SeverityWarning,
 		Title:    "Duplicate egress IP",
 		Detail:   json.RawMessage("{}"),

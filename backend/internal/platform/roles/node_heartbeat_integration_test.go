@@ -170,13 +170,14 @@ func TestDuplicateEgressHeartbeat(t *testing.T) {
 	prefix := fmt.Sprintf("duplicate-heartbeat-%d", time.Now().UnixNano())
 	currentName := prefix + "-z-current"
 	duplicateName := prefix + "-a-duplicate"
+	wantScope := fmt.Sprintf("%d:%s|%d:%s", len(duplicateName), duplicateName, len(currentName), currentName)
 	const egressIP = "198.18.255.1"
 	at := time.Now().UTC().Truncate(time.Microsecond)
 	cleanupHeartbeatNodes(t, pool, []string{currentName, duplicateName})
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cleanupCancel()
-		if _, err := pool.Exec(cleanupCtx, `DELETE FROM incidents WHERE kind = 'duplicate_egress_ip' AND scope = $1`, duplicateName+"|"+currentName); err != nil {
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM incidents WHERE kind = 'duplicate_egress_ip' AND scope = $1`, wantScope); err != nil {
 			t.Errorf("delete duplicate egress incident: %v", err)
 		}
 	})
@@ -195,16 +196,16 @@ func TestDuplicateEgressHeartbeat(t *testing.T) {
 		}
 	}
 
-	var scope, severity, title, state, detail string
+	var gotScope, severity, title, state, detail string
 	var count int64
 	if err := pool.QueryRow(ctx, `
 SELECT scope, severity, title, state, detail::text, count
 FROM incidents
-WHERE kind = 'duplicate_egress_ip' AND scope = $1`, duplicateName+"|"+currentName).Scan(&scope, &severity, &title, &state, &detail, &count); err != nil {
+	WHERE kind = 'duplicate_egress_ip' AND scope = $1`, wantScope).Scan(&gotScope, &severity, &title, &state, &detail, &count); err != nil {
 		t.Fatalf("read duplicate egress incident: %v", err)
 	}
-	if scope != duplicateName+"|"+currentName || severity != string(opsdomain.SeverityWarning) || title != "Duplicate egress IP" || state != string(opsdomain.IncidentOpen) || detail != "{}" || count != 2 {
-		t.Fatalf("duplicate incident = scope %q, severity %q, title %q, state %q, detail %s, count %d", scope, severity, title, state, detail, count)
+	if gotScope != wantScope || severity != string(opsdomain.SeverityWarning) || title != "Duplicate egress IP" || state != string(opsdomain.IncidentOpen) || detail != "{}" || count != 2 {
+		t.Fatalf("duplicate incident = scope %q, severity %q, title %q, state %q, detail %s, count %d", gotScope, severity, title, state, detail, count)
 	}
 }
 
@@ -265,8 +266,49 @@ func TestDuplicateEgressCheckerOpensStableIncident(t *testing.T) {
 		t.Fatalf("duplicate lookup received node %+v at %s", finder.node, finder.at)
 	}
 	incident := opener.incident
-	if opener.calls != 1 || incident.Kind != "duplicate_egress_ip" || incident.Scope != "node-a|node-z" || incident.Severity != opsdomain.SeverityWarning || incident.Title != "Duplicate egress IP" || string(incident.Detail) != "{}" {
+	if opener.calls != 1 || incident.Kind != "duplicate_egress_ip" || incident.Scope != `6:node-a|6:node-z` || incident.Severity != opsdomain.SeverityWarning || incident.Title != "Duplicate egress IP" || string(incident.Detail) != "{}" {
 		t.Fatalf("opened incident = %+v", incident)
+	}
+}
+
+func TestDuplicateEgressCheckerScopesDoNotCollide(t *testing.T) {
+	at := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	fresh := at.Add(-time.Second)
+	pairs := []struct {
+		name      string
+		current   string
+		duplicate string
+		wantScope string
+	}{
+		{name: "pipe in duplicate name", current: "a", duplicate: "b|c", wantScope: `1:a|3:b|c`},
+		{name: "pipe in current name", current: "a|b", duplicate: "c", wantScope: `3:a|b|1:c`},
+	}
+	seen := make(map[string]struct{}, len(pairs))
+	for _, pair := range pairs {
+		t.Run(pair.name, func(t *testing.T) {
+			node := clusterdomain.Node{
+				Name:            pair.current,
+				Roles:           []string{"crawl"},
+				EgressIP:        "198.18.0.1",
+				State:           clusterdomain.StateOnline,
+				LastHeartbeatAt: &fresh,
+			}
+			opener := &duplicateIncidentOpenerFake{}
+			checker := duplicateEgressChecker{
+				nodes:     &duplicateEgressFinderFake{name: pair.duplicate},
+				incidents: opener,
+			}
+			if err := checker.CheckDuplicate(t.Context(), node, at); err != nil {
+				t.Fatalf("CheckDuplicate() error = %v", err)
+			}
+			if opener.calls != 1 || opener.incident.Scope != pair.wantScope {
+				t.Fatalf("incident scope = %q, calls = %d, want %q", opener.incident.Scope, opener.calls, pair.wantScope)
+			}
+			if _, exists := seen[opener.incident.Scope]; exists {
+				t.Fatalf("distinct node pair reused incident scope %q", opener.incident.Scope)
+			}
+			seen[opener.incident.Scope] = struct{}{}
+		})
 	}
 }
 
