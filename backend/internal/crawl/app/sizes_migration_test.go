@@ -49,6 +49,37 @@ func TestAccountScopedSizesMigrationBuildsIndexesWithoutLongTableLocks(t *testin
 	}
 }
 
+func TestMigrationVersionsAreUnique(t *testing.T) {
+	_, source, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate migration test source")
+	}
+	migrationDir := filepath.Join(filepath.Dir(source), "../../../migrations")
+	entries, err := os.ReadDir(migrationDir)
+	if err != nil {
+		t.Fatalf("read migration directory: %v", err)
+	}
+	versions := make(map[string]string)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		version, _, ok := strings.Cut(entry.Name(), "_")
+		if !ok || len(version) != 14 {
+			t.Errorf("migration %q does not start with a 14-digit version", entry.Name())
+			continue
+		}
+		if previous, exists := versions[version]; exists {
+			t.Errorf("migration version %s is shared by %s and %s", version, previous, entry.Name())
+			continue
+		}
+		versions[version] = entry.Name()
+	}
+	if len(versions) == 0 {
+		t.Fatal("no migrations found")
+	}
+}
+
 func accountScopedSizesMigration(t *testing.T) string {
 	t.Helper()
 	_, source, _, ok := runtime.Caller(0)

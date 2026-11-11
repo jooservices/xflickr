@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
+	catalogapp "github.com/jooservices/xflickr/internal/catalog/app"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 )
 
@@ -341,6 +342,112 @@ func TestPhotoLaneLimitsPendingPhotosPerOwner(t *testing.T) {
 	}
 	if found != 50 {
 		t.Fatalf("selected %d photos for one owner, want the per-owner cap of 50", found)
+	}
+}
+
+func TestPhotoLaneContinuesPastResolvedPhotoBatches(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	suffix := fmt.Sprintf("lane-cursor-%d", time.Now().UnixNano())
+	base := time.Now().UnixNano() % 1_000_000_000 * 100
+	owners := []string{suffix + "-sizes", suffix + "-facets"}
+	userEmail := suffix + "@example.test"
+	var userID, keyID, accountID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration-hash','user') RETURNING id`, userEmail).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys
+		(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst,status)
+		VALUES($1,'lane-cursor',$2,'{}',3600,4,5,'valid') RETURNING id`, userID, "lane-"+suffix).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts
+		(user_id,key_id,nsid,username,token_sealed,secret_sealed,status)
+		VALUES($1,$2,$3,'lane','{}','{}','ok') RETURNING id`, userID, keyID, owners[0]).Scan(&accountID); err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range owners {
+		if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred,selected_until)
+			VALUES($1,$2,0,'test',true,now()+interval '1 hour')`, userID, owner); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM schedule_meta WHERE key = ANY($1)`, []string{
+			"photo_lane_cursor:" + owners[0], "photo_lane_cursor:" + owners[1],
+		})
+		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE owner_nsid = ANY($1)`, owners)
+		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid = ANY($1)`, owners)
+		_, _ = pool.Exec(bg, `DELETE FROM flickr_accounts WHERE id=$1`, accountID)
+		_, _ = pool.Exec(bg, `DELETE FROM api_keys WHERE id=$1`, keyID)
+		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id=$1`, userID)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO photos
+		(id,owner_nsid,server,last_update,visibility,sizes,sizes_status,sizes_checked_at,uploaded_at,raw,content_hash)
+		SELECT $1::bigint+n::bigint,$2,'1234',now(),'public','[]'::jsonb,'provisional',NULL,
+			now()-n*interval '1 second','{}',decode(repeat('ab',32),'hex')
+		FROM generate_series(1,75) AS n`, base, owners[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO photo_account_sizes
+		(photo_id,account_id,photo_updated_at,photo_visibility,sizes,sizes_status,sizes_checked_at)
+		SELECT id,$2,last_update,visibility,'[]'::jsonb,'confirmed',last_update
+		FROM photos WHERE owner_nsid=$1 AND id<>$3`, owners[0], accountID, base+56); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO photos
+		(id,owner_nsid,server,last_update,visibility,sizes,sizes_status,sizes_checked_at,uploaded_at,raw,content_hash)
+		SELECT $1::bigint+n::bigint,$2,'1234',now(),'public','[]'::jsonb,'confirmed',now(),
+			now()-n*interval '1 second','{}',decode(repeat('cd',32),'hex')
+		FROM generate_series(101,175) AS n`, base, owners[1]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO photo_facet_status(photo_id,facet,photo_updated_at)
+		SELECT id,'info',last_update FROM photos WHERE owner_nsid=$1 AND id<>$2`, owners[1], base+156); err != nil {
+		t.Fatal(err)
+	}
+	lane := postgres.PhotoLane{Pool: pool}
+	selectOwners := func() map[string][]catalogapp.PhotoRef {
+		t.Helper()
+		refs, err := lane.Select(ctx, 1000, 0, []string{"info"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := make(map[string][]catalogapp.PhotoRef, len(owners))
+		for _, ref := range refs {
+			if ref.OwnerNSID == owners[0] || ref.OwnerNSID == owners[1] {
+				found[ref.OwnerNSID] = append(found[ref.OwnerNSID], ref)
+			}
+		}
+		return found
+	}
+	if first := selectOwners(); len(first[owners[0]]) != 0 || len(first[owners[1]]) != 0 {
+		t.Fatalf("first bounded photo batch = %v; want both owners to advance past 50 resolved photos", first)
+	}
+	second := selectOwners()
+	want := map[string]string{owners[0]: "sizes", owners[1]: "info"}
+	for index, owner := range owners {
+		photoID := base + 56
+		if index == 1 {
+			photoID = base + 156
+		}
+		found := false
+		for _, ref := range second[owner] {
+			if ref.ID == photoID && ref.Facet == want[owner] {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("second photo batch for %s = %v; want photo %d facet %s", owner, second[owner], photoID, want[owner])
+		}
 	}
 }
 
