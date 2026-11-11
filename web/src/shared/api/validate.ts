@@ -64,7 +64,7 @@ export const ROUTES: Route[] = [
   route('PUT', '/admin/flags', contract.UpdateAdminFlagsResponse),
   route('PUT', '/admin/users/{id}/plan', contract.UpdateAdminUserPlanResponse),
   route('GET', '/flickr-accounts', contract.ListFlickrAccountsResponse),
-  route('GET', '/me/home', contract.GetMeHomeResponse),
+  route('GET', '/api/v1/me/home', contract.GetMeHomeResponse),
   route('GET', '/me/crawl', contract.GetMeCrawlResponse),
   route('GET', '/me/crawl/queue', contract.GetMeCrawlQueueResponse),
   route('GET', '/me/crawl/settings', contract.GetMeCrawlSettingsResponse),
