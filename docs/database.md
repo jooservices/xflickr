@@ -9,13 +9,14 @@ already covered by a feature document.
 Live scan counts below come from the production audit of `pg_stat_user_indexes`
 on 2026-11-09, covering statistics accumulated since 2026-11-02 (about seven
 days). Index statistics reset on `pg_stat_reset` and after crash recovery; treat
-any count as relative to the window since the last reset. Partition child names
-follow the column list (`photos_pNN_…`); drop or create through the partitioned
-parent so every child follows.
+any count as relative to the window since the last reset. Attached partitioned
+index child names follow the column list (`photos_pNN_…`) and are managed
+through their parent. The observations index below is an independent child
+index for the first rollout slice.
 
 Sizes are approximate per partition × 16 partitions unless noted.
 
-| Index (parent) | Table | Size (approx.) | Scans (2026-11-02..09) | Queries that use it | Decision |
+| Index | Table | Size (approx.) | Scans (2026-11-02..09) | Queries that use it | Decision |
 | --- | --- | --- | --- | --- | --- |
 | `photos_pkey` | photos | PK | n/a | lookups by `id` (`photos.go`, downloads) | keep (primary key) |
 | `photos_last_update_idx` | photos | ~54 MB × 16 | 0 | none match a global `last_update` predicate; `reads.go` lists by `owner_nsid` then orders by `last_update` | **drop** (JOOXF-371) |
@@ -26,7 +27,8 @@ Sizes are approximate per partition × 16 partitions unless noted.
 | `favorites_pkey` | favorites | PK | n/a | upsert / delete by `(person_nsid, photo_id)` | keep (primary key) |
 | `favorites_page_idx` | favorites | ~150–240 MB × 16 | 0 | `favorites.go` page by `person_nsid, fave_date, photo_id`; JOOXF-345 `MAX(fave_date) WHERE person_nsid` | keep (needed by JOOXF-345 + catalog reads) |
 | `favorites_active_person_seen_idx` | favorites | partial | used by reconcile | periodic reconcile active rows by `person_nsid, seen_at` | keep |
-| `observations_pkey` | observations | ~2.1 GB of ~4.3 GB total | n/a | observation upserts / visibility joins by PK | keep (primary key only; no secondary indexes) |
+| `observations_pkey` | observations | ~2.1 GB of ~4.3 GB total | n/a | observation upserts / visibility joins by PK | keep (primary key) |
+| `observations_p00_kind_record_idx` | `observations_p00` only | not measured | not measured | sharing visibility lookup by `(record_kind, record_id)`, returning `user_id, flickr_account_id` | keep (JOOXF-398 first slice) |
 | `album_photos_pkey` | album_photos | PK | n/a | membership by `(album_id, photo_id)` | keep (primary key) |
 | `album_photos_order_idx` | album_photos | | used | `albums.go` / `reads.go` order by `position, photo_id` | keep |
 | `people_pkey` | people | PK | n/a | nsid lookups | keep (primary key) |
@@ -46,6 +48,62 @@ Sizes are approximate per partition × 16 partitions unless noted.
 
 Existing `work_items` and River indexes are owned by JOOXF-370 and are out of
 scope for the index-drop audit above.
+
+## Observation record lookup index (JOOXF-398 first slice)
+
+The first slice adds the independent btree index
+`observations_p00_kind_record_idx` on
+`observations_p00 (record_kind, record_id) INCLUDE (user_id,
+flickr_account_id)`. A lookup that supplies both `record_kind` and `record_id`
+can prune to the matching hash partition and use this covering index on `p00`.
+This improves only `observations_p00`; `p01` through `p15` have no matching
+secondary index, and there is no parent index. This slice does not complete
+JOOXF-398. Parent attachment, the other 15 child indexes, and plan evidence on
+a fixture with at least two million observations remain outstanding.
+
+The migration uses `CREATE INDEX CONCURRENTLY` and does not rewrite the table.
+The build reads the whole `p00` partition and performs additional validation
+work. Its production duration and read/write I/O have not been measured; do not
+estimate them from a worktree fixture. Before rollout, measure build duration,
+bytes read and written, and final index size on a representative copy, then
+update the rollout forecast. `lock_timeout = '2s'` limits time waiting to
+acquire a lock; it does not bound index-build duration or waits for older
+transactions.
+
+Before retrying an interrupted build, inspect only the named index:
+
+```sql
+SELECT c.oid::regclass, i.indisvalid, i.indisready, pg_get_indexdef(c.oid)
+FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid
+WHERE c.oid = to_regclass('public.observations_p00_kind_record_idx');
+```
+
+If the query returns `indisvalid = false`, remove that invalid child index
+concurrently and rerun the migration:
+
+```sql
+DROP INDEX CONCURRENTLY IF EXISTS public.observations_p00_kind_record_idx;
+```
+
+Do not drop a valid index. If the catalog definition differs from the intended
+index, stop and handle it as schema drift. `IF NOT EXISTS` does not repair an
+invalid concurrent-build remnant.
+
+The plan check for the visibility lookup is:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+SELECT user_id, flickr_account_id
+FROM observations
+WHERE record_kind = 'photo' AND record_id = $1;
+```
+
+The number of observers for one record has no schema-level cap. This is a
+selective key lookup, not a hard bound on returned rows. Do not add an
+unbounded `COUNT(*)` or scan to a request path, and do not report new row
+counts. Counts in the ticket context (29M observations/photos, 33M favorites,
+and 370k work items) are estimates, not verified measurements; no `river_job`
+count is available.
 
 ## Scheduler plan backlog count
 
