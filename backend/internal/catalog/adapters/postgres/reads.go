@@ -184,7 +184,7 @@ WHERE favorites.person_nsid=accounts.nsid`
 	accountPageLimit := pageLimit
 	scanRows := "account_favorites"
 	if cursor != nil {
-		if cursor.FaveDate.IsZero() || cursor.PhotoID <= 0 || cursor.FlickrAccountID <= 0 {
+		if cursor.FaveDate.IsZero() || cursor.PhotoID <= 0 || cursor.FlickrAccountID < 0 {
 			return nil, app.ErrInvalidCursor
 		}
 		query += ` AND (favorites.fave_date,favorites.photo_id)<=($2,$3)`

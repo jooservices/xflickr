@@ -6,6 +6,7 @@ import { Icon, useI18n } from '../../shared';
 import { LibraryApiError, loadFavorites } from '../../features/library/api';
 import { PhotoGrid } from './PhotoGrid';
 import { selectVisible } from './selection';
+import { loadSelection, saveSelection } from './selectionStorage';
 import styles from './LibraryPage.module.css';
 
 function errorStatus(error: unknown): number | undefined {
@@ -29,12 +30,16 @@ export function LibraryPage() {
     retry: false,
   });
   const [selectionMode, setSelectionMode] = useState(false);
-  const [selected, setSelected] = useState<Set<number>>(() => new Set());
+  const [selected, setSelected] = useState<Set<number>>(() => loadSelection());
   const [contacts, setContacts] = useState<Set<string>>(() => new Set());
   const [contactSearch, setContactSearch] = useState('');
   const [debouncedContactSearch, setDebouncedContactSearch] = useState('');
   const [sizesReady, setSizesReady] = useState(false);
   const [captioned, setCaptioned] = useState(false);
+
+  useEffect(() => {
+    saveSelection(selected);
+  }, [selected]);
 
   useEffect(() => {
     document.title = `${t('user.library.title')} · XFlickr`;

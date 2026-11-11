@@ -28,6 +28,7 @@ const open = (locale: 'en' | 'vi' = 'en') =>
   renderApp({ session: userSession, path: '/library', locale });
 
 afterEach(() => {
+  window.sessionStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -233,6 +234,28 @@ describe('LibraryPage', () => {
     fireEvent.click(screen.getByTestId('user-library-filter-clear'));
     expect(screen.getByTestId('user-library-photo-select-1')).not.toBeChecked();
     expect(favoritesRequests).toBe(1);
+  });
+
+  it('keeps the selection when the user leaves the Library and opens it again', async () => {
+    window.sessionStorage.clear();
+    server.use(
+      http.get('*/favorites', () => json({ items: [favorite(1), favorite(2, 'morgan@N00')] })),
+    );
+    const first = open();
+    await screen.findByTestId('user-library-photo-1');
+    fireEvent.click(screen.getByTestId('user-library-select-mode'));
+    fireEvent.click(screen.getByTestId('user-library-photo-select-1'));
+    fireEvent.click(screen.getByTestId('user-library-photo-select-2'));
+    expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('2');
+    first.unmount();
+
+    open();
+    await screen.findByTestId('user-library-photo-1');
+    fireEvent.click(screen.getByTestId('user-library-select-mode'));
+    expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('2');
+    expect(screen.getByTestId('user-library-photo-select-1')).toBeChecked();
+    fireEvent.click(screen.getByTestId('user-library-clear-selection'));
+    expect(window.sessionStorage.getItem('xflickr.library.selection')).toBeNull();
   });
 
   it('shows a recoverable initial error and retries the first page', async () => {
