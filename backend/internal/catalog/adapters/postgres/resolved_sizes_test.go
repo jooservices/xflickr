@@ -172,6 +172,25 @@ func TestSetAccountSizesStoresOnlyForCurrentOwnerAndPublishesAtomically(t *testi
 	}
 }
 
+func TestSetAccountSizesUnavailableDoesNotResolveDownloadsEarly(t *testing.T) {
+	version := time.Date(2026, 11, 9, 10, 0, 0, 0, time.UTC)
+	tx := &accountResolvedTx{rows: 1}
+	published := 0
+	store := ResolvedSizes{
+		Pool: accountResolvedPool{tx: tx},
+		Publish: func(ctx context.Context, tx pgx.Tx, event app.SizesResolved) error {
+			published++
+			return testPublishResolvedSizes(ctx, tx, event)
+		},
+	}
+	if err := store.SetAccountSizes(t.Context(), 8, 13, 5, []byte(`[]`), domain.SizesUnavailable, version, "private", version); err != nil {
+		t.Fatal(err)
+	}
+	if published != 0 || tx.calls != 1 || tx.commits != 1 {
+		t.Fatalf("published=%d transaction=%+v, want stored account result without a continuation event", published, tx)
+	}
+}
+
 func TestSetAccountSizesRejectsInvalidAndFailedWrites(t *testing.T) {
 	version := time.Date(2026, 11, 9, 10, 0, 0, 0, time.UTC)
 	valid := func() ResolvedSizes {

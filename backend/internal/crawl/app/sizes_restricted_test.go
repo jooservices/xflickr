@@ -206,6 +206,75 @@ func TestFailedOwnerAccountDoesNotSuppressRequestingAccountOnNextRequest(t *test
 	}
 }
 
+func TestRestrictedSizesFallsBackToNextEligibleAccount(t *testing.T) {
+	handler, store, client, _, _ := restrictedRig()
+	store.photo.Server = catalog.RestrictedPlaceholderServer
+	client.accountErr = map[int64]error{11: &flickr.CallError{Kind: flickr.ErrPermission, Code: 2}}
+	delete(client.accountSizes, 11)
+	client.accountSizes[22] = []flickr.PhotoSize{{Label: "Large", Width: 50, Height: 40}}
+
+	if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12, Class: string(quotadomain.Interactive)}); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.calls) != 2 || client.calls[0].AccountID != 11 || client.calls[1].AccountID != 22 || !client.calls[0].Signed || !client.calls[1].Signed {
+		t.Fatalf("authenticated calls = %+v, want owner then next eligible account", client.calls)
+	}
+	accounts := handler.Accounts.(*accountSizesFake)
+	if accounts.statuses[11] != catalog.SizesUnavailable || accounts.statuses[22] != catalog.SizesConfirmed {
+		t.Fatalf("account outcomes = %v, want owner unavailable and next account confirmed", accounts.statuses)
+	}
+	if len(accounts.resolved) != 0 {
+		t.Fatalf("user resolutions = %+v, want no unavailable outcome after a later account succeeds", accounts.resolved)
+	}
+}
+
+func TestRestrictedSizesResolvesUnavailableAfterAllEligibleAccountsFail(t *testing.T) {
+	handler, store, client, _, _ := restrictedRig()
+	store.photo.Server = catalog.RestrictedPlaceholderServer
+	denied := &flickr.CallError{Kind: flickr.ErrPermission, Code: 2}
+	client.accountErr = map[int64]error{11: denied, 22: denied}
+	delete(client.accountSizes, 11)
+
+	if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12, Class: string(quotadomain.Interactive)}); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.calls) != 2 || client.calls[0].AccountID != 11 || client.calls[1].AccountID != 22 {
+		t.Fatalf("authenticated calls = %+v, want all eligible accounts in order", client.calls)
+	}
+	accounts := handler.Accounts.(*accountSizesFake)
+	if len(accounts.resolved) != 1 || accounts.resolved[0].UserID != 7 || accounts.resolved[0].Status != catalog.SizesUnavailable {
+		t.Fatalf("user resolutions = %+v, want one unavailable result after exhausting accounts", accounts.resolved)
+	}
+}
+
+func TestConfirmedGlobalSizesRetryAfterServerOrVisibilityBecomesRestricted(t *testing.T) {
+	checked := time.Date(2026, 11, 6, 10, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name       string
+		server     string
+		visibility catalog.Visibility
+	}{
+		{name: "placeholder server", server: catalog.RestrictedPlaceholderServer, visibility: catalog.VisibilityPublic},
+		{name: "nonpublic visibility", server: "1", visibility: catalog.VisibilityPrivate},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			handler, store, client, _, _ := restrictedRig()
+			store.photo.Server = test.server
+			store.photo.Visibility = test.visibility
+			store.photo.SizesStatus = catalog.SizesConfirmed
+			store.photo.Sizes = []byte(`[{"label":"Large","source":"https://example.test/old"}]`)
+			store.photo.SizesCheckedAt = &checked
+
+			if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
+				t.Fatal(err)
+			}
+			if len(client.calls) != 1 || !client.calls[0].Signed || client.calls[0].AccountID != 11 {
+				t.Fatalf("calls = %+v, want one authenticated request for the owner", client.calls)
+			}
+		})
+	}
+}
+
 func TestFailureRecordsRestrictionForThatAccountOnly(t *testing.T) {
 	handler, store, client, _, states := restrictedRig()
 	client.accountErr = map[int64]error{11: &flickr.CallError{Kind: flickr.ErrNotFound, Code: 1}}

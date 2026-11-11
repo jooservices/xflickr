@@ -125,4 +125,37 @@ func TestPhotoLaneSelectsOnlyStarredOrActiveSelectedContacts(t *testing.T) {
 			t.Fatalf("optional facet at %d preceded size job at %d", selectedInfoIndex, index)
 		}
 	}
+
+	var keyID, accountID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys
+		(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst,status)
+		VALUES($1,'lane',$2,'{}',3600,4,5,'valid') RETURNING id`, userA, "lane-"+suffix).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts
+		(user_id,key_id,nsid,username,token_sealed,secret_sealed,status)
+		VALUES($1,$2,$3,'lane','{}','{}','ok') RETURNING id`, userA, keyID, people["selected"]).Scan(&accountID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM flickr_accounts WHERE id=$1`, accountID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM api_keys WHERE id=$1`, keyID)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO photo_account_sizes
+		(photo_id,account_id,photo_updated_at,photo_visibility,sizes,sizes_status,sizes_checked_at)
+		SELECT id,$2,last_update,visibility,'[]'::jsonb,'confirmed',now()
+		FROM photos WHERE id=$1`, base+2, accountID); err != nil {
+		t.Fatal(err)
+	}
+	for cycle := range 3 {
+		ids := mine(1000, 0)
+		for _, id := range ids {
+			if id == base+2 {
+				t.Fatalf("photo lane selected account-resolved photo %d on cycle %d", id, cycle+1)
+			}
+		}
+		if len(ids) < 2 {
+			t.Fatalf("photo lane stopped progressing on cycle %d: ids=%v", cycle+1, ids)
+		}
+	}
 }
