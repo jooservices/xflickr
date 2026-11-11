@@ -167,32 +167,45 @@ func (r *Repository) ListVisibleFavorites(ctx context.Context, userID int64, pre
 	scanLimit := limit + 1
 	fetchLimit := scanLimit + 1
 	query := `WITH account_favorites AS MATERIALIZED (
-SELECT account_favorites.photo_id, account_favorites.fave_date, account_favorites.removed_at
-FROM (SELECT nsid FROM flickr_accounts WHERE user_id=$1 AND status<>'revoked') accounts
+SELECT account_favorites.flickr_account_id, account_favorites.photo_id, account_favorites.fave_date, account_favorites.removed_at
+FROM (SELECT id, nsid FROM flickr_accounts WHERE user_id=$1 AND status<>'revoked') accounts
 CROSS JOIN LATERAL (
-SELECT favorites.photo_id, favorites.fave_date, favorites.removed_at
+SELECT accounts.id AS flickr_account_id, favorites.photo_id, favorites.fave_date, favorites.removed_at
 FROM favorites
 WHERE favorites.person_nsid=accounts.nsid`
 	args := append([]any(nil), predicate.Args...)
 	pageLimit := "$2"
+	accountPageLimit := pageLimit
+	scanRows := "account_favorites"
 	if cursor != nil {
-		if cursor.FaveDate.IsZero() || cursor.PhotoID <= 0 {
+		if cursor.FaveDate.IsZero() || cursor.PhotoID <= 0 || cursor.FlickrAccountID <= 0 {
 			return app.FavoritesPage{}, app.ErrInvalidCursor
 		}
-		query += ` AND (favorites.fave_date,favorites.photo_id)<($2,$3)`
-		args = append(args, cursor.FaveDate, cursor.PhotoID)
-		pageLimit = "$4"
+		query += ` AND (favorites.fave_date,favorites.photo_id)<=($2,$3)`
+		args = append(args, cursor.FaveDate, cursor.PhotoID, cursor.FlickrAccountID)
+		accountPageLimit = "$5"
+		pageLimit = "$6"
+		scanRows = "cursor_favorites"
 	}
-	args = append(args, fetchLimit)
-	query += ` ORDER BY favorites.fave_date DESC,favorites.photo_id DESC LIMIT ` + pageLimit + `
+	query += ` ORDER BY favorites.fave_date DESC,favorites.photo_id DESC,accounts.id DESC LIMIT ` + accountPageLimit + `
  ) account_favorites
-), scan_page AS MATERIALIZED (
-SELECT photo_id, fave_date, removed_at FROM account_favorites
-ORDER BY fave_date DESC,photo_id DESC LIMIT ` + pageLimit + `
+),`
+	if cursor != nil {
+		query += ` cursor_favorites AS MATERIALIZED (
+SELECT flickr_account_id, photo_id, fave_date, removed_at FROM account_favorites
+WHERE (fave_date,photo_id)<($2,$3) OR ((fave_date,photo_id)=($2,$3) AND flickr_account_id<$4)
+),`
+		args = append(args, fetchLimit+1, fetchLimit)
+	} else {
+		args = append(args, fetchLimit)
+	}
+	query += ` scan_page AS MATERIALIZED (
+SELECT flickr_account_id, photo_id, fave_date, removed_at FROM ` + scanRows + `
+ORDER BY fave_date DESC,photo_id DESC,flickr_account_id DESC LIMIT ` + pageLimit + `
 )
 
-SELECT photo_id, fave_date, removed_at FROM scan_page
-ORDER BY fave_date DESC,photo_id DESC`
+SELECT flickr_account_id, photo_id, fave_date, removed_at FROM scan_page
+ORDER BY fave_date DESC,photo_id DESC,flickr_account_id DESC`
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return app.FavoritesPage{}, fmt.Errorf("catalog: scan favorite batch: %w", err)
@@ -200,7 +213,7 @@ ORDER BY fave_date DESC,photo_id DESC`
 	scanned := make([]favoriteCandidate, 0, fetchLimit)
 	for rows.Next() {
 		var candidate favoriteCandidate
-		if err := rows.Scan(&candidate.PhotoID, &candidate.FaveDate, &candidate.RemovedAt); err != nil {
+		if err := rows.Scan(&candidate.FlickrAccountID, &candidate.PhotoID, &candidate.FaveDate, &candidate.RemovedAt); err != nil {
 			rows.Close()
 			return app.FavoritesPage{}, fmt.Errorf("catalog: scan favorite batch: %w", err)
 		}
@@ -216,6 +229,7 @@ ORDER BY fave_date DESC,photo_id DESC`
 		scanned = scanned[:scanLimit]
 	}
 	page := app.FavoritesPage{Items: make([]app.Favorite, 0, limit)}
+	visibleCandidates := make([]favoriteCandidate, 0, limit)
 	if len(scanned) == 0 {
 		return page, nil
 	}
@@ -245,22 +259,24 @@ ORDER BY fave_date DESC,photo_id DESC`
 			continue
 		}
 		page.Items = append(page.Items, app.Favorite{Photo: photo, FaveDate: candidate.FaveDate.Time})
+		visibleCandidates = append(visibleCandidates, candidate)
 	}
 	if len(page.Items) > limit {
-		last := page.Items[limit-1]
+		last := visibleCandidates[limit-1]
 		page.Items = page.Items[:limit]
-		page.NextCursor = &app.FavoriteCursor{FaveDate: last.FaveDate, PhotoID: last.Photo.ID}
+		page.NextCursor = &app.FavoriteCursor{FaveDate: last.FaveDate.Time, PhotoID: last.PhotoID, FlickrAccountID: last.FlickrAccountID}
 	} else if more {
 		last := scanned[len(scanned)-1]
-		page.NextCursor = &app.FavoriteCursor{FaveDate: last.FaveDate.Time, PhotoID: last.PhotoID}
+		page.NextCursor = &app.FavoriteCursor{FaveDate: last.FaveDate.Time, PhotoID: last.PhotoID, FlickrAccountID: last.FlickrAccountID}
 	}
 	return page, nil
 }
 
 type favoriteCandidate struct {
-	PhotoID   int64
-	FaveDate  pgtype.Timestamptz
-	RemovedAt pgtype.Timestamptz
+	FlickrAccountID int64
+	PhotoID         int64
+	FaveDate        pgtype.Timestamptz
+	RemovedAt       pgtype.Timestamptz
 }
 
 func (r *Repository) visibleFavoritePhotos(ctx context.Context, predicate sharingapp.SQLPredicate, photoIDs []int64) (map[int64]app.Photo, error) {

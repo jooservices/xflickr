@@ -97,10 +97,14 @@ func TestReadServiceAppliesPolicyAndEncodesKeysets(t *testing.T) {
 	if got, err := service.GetPerson(context.Background(), 42, "person"); err != nil || got.NSID != repo.person.NSID {
 		t.Fatalf("get person=%+v err=%v", got, err)
 	}
-	repo.favorites = FavoritesPage{Items: []Favorite{{Photo: Photo{ID: 9}, FaveDate: now}}, NextCursor: &FavoriteCursor{FaveDate: now, PhotoID: 9}}
+	repo.favorites = FavoritesPage{Items: []Favorite{{Photo: Photo{ID: 9}, FaveDate: now}}, NextCursor: &FavoriteCursor{FaveDate: now, PhotoID: 9, FlickrAccountID: 73}}
 	_, favoriteCursor, err := service.ListFavorites(context.Background(), 42, "", 10)
 	if err != nil || favoriteCursor == "" {
 		t.Fatalf("favorite cursor=%q err=%v", favoriteCursor, err)
+	}
+	decodedFavoriteCursor, err := decodeCursor[FavoriteCursor](favoriteCursor, "favorites")
+	if err != nil || decodedFavoriteCursor.FaveDate != now || decodedFavoriteCursor.PhotoID != 9 || decodedFavoriteCursor.FlickrAccountID != 73 {
+		t.Fatalf("decoded favorite cursor=%+v err=%v", decodedFavoriteCursor, err)
 	}
 	repo.photoOK = true
 	repo.photo = Photo{ID: 9}

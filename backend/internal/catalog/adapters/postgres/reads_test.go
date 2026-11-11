@@ -232,7 +232,7 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 		{rows: [][]any{readTestPhotoRow(10), readTestPhotoRow(11)}},
 	}
 	favorites, err := repository.ListVisibleFavorites(ctx, userID, predicate, nil, 1)
-	if err != nil || len(favorites.Items) != 1 || favorites.NextCursor == nil || favorites.Items[0].Photo.ID != 10 {
+	if err != nil || len(favorites.Items) != 1 || favorites.NextCursor == nil || favorites.NextCursor.FlickrAccountID != 900 || favorites.Items[0].Photo.ID != 10 {
 		t.Fatalf("favorites=%+v err=%v", favorites, err)
 	}
 	if len(db.queries) != 2 {
@@ -265,12 +265,13 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 	}
 	db.queryCount = 0
 	db.queries, db.queryArgs = nil, nil
-	if _, err := repository.ListVisibleFavorites(ctx, userID, predicate, &app.FavoriteCursor{FaveDate: now, PhotoID: 11}, 1); err != nil {
+	if _, err := repository.ListVisibleFavorites(ctx, userID, predicate, &app.FavoriteCursor{FaveDate: now, PhotoID: 11, FlickrAccountID: 900}, 1); err != nil {
 		t.Fatalf("favorite cursor=%v", err)
 	}
-	if !strings.Contains(db.queries[0], "accounts.id<$4") ||
-		!strings.Contains(db.queries[0], "(favorites.fave_date,favorites.photo_id)<($2,$3)") ||
-		db.queryArgs[0][4] != 3 {
+	if !strings.Contains(db.queries[0], "favorites.fave_date,favorites.photo_id)<=($2,$3)") ||
+		!strings.Contains(db.queries[0], "flickr_account_id<$4") ||
+		!strings.Contains(db.queries[0], "cursor_favorites AS MATERIALIZED") ||
+		db.queryArgs[0][4] != 4 || db.queryArgs[0][5] != 3 {
 		t.Fatalf("favorite cursor must constrain a bounded account scan: query=%s args=%v", db.queries[0], db.queryArgs[0])
 	}
 	if _, err := repository.ListVisibleFavorites(ctx, userID, predicate, &app.FavoriteCursor{PhotoID: 1}, 1); !errors.Is(err, app.ErrInvalidCursor) {
@@ -291,7 +292,7 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 	db.queries, db.queryArgs = nil, nil
 	removedFavorites, err := repository.ListVisibleFavorites(ctx, userID, predicate, nil, 1)
 	if err != nil || len(removedFavorites.Items) != 0 || removedFavorites.NextCursor == nil ||
-		removedFavorites.NextCursor.PhotoID != 11 || len(db.queries) != 1 {
+		removedFavorites.NextCursor.PhotoID != 11 || removedFavorites.NextCursor.FlickrAccountID != 899 || len(db.queries) != 1 {
 		t.Fatalf("removed favorite batch=%+v queries=%d err=%v", removedFavorites, len(db.queries), err)
 	}
 
@@ -331,7 +332,7 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 		t.Fatalf("favorite photo scan error=%v", err)
 	}
 	db.queryResponses = []*readsRows{
-		{rows: [][]any{{int64(10), pgtype.Timestamptz{Time: now, Valid: true}, pgtype.Timestamptz{}}}},
+		{rows: [][]any{{int64(900), int64(10), pgtype.Timestamptz{Time: now, Valid: true}, pgtype.Timestamptz{}}}},
 		{err: boom},
 	}
 	db.queryCount = 0

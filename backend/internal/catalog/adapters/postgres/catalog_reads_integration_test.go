@@ -212,7 +212,7 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 		}
 	}
 	visibility := sharingapp.Filter(sharingdomain.User{ID: user1ID}).SQL
-	filteredCursor := &app.FavoriteCursor{FaveDate: now.Add(-3 * time.Second), PhotoID: photoIDs[4]}
+	filteredCursor := &app.FavoriteCursor{FaveDate: now.Add(-3 * time.Second), PhotoID: photoIDs[4], FlickrAccountID: account1ID}
 	filteredPage, err := repository.ListVisibleFavorites(ctx, user1ID, visibility, filteredCursor, 2)
 	if err != nil || len(filteredPage.Items) != 0 || filteredPage.NextCursor == nil ||
 		!filteredPage.NextCursor.FaveDate.Equal(now.Add(-6*time.Second)) || filteredPage.NextCursor.PhotoID != extraPhotoIDs[2] {
@@ -257,7 +257,7 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	var cursorEnvelope struct {
 		Value struct {
 			FlickrAccountID int64 `json:"flickr_account_id"`
-		} `json:"value"`
+		} `json:"c"`
 	}
 	if err := json.Unmarshal(encodedCursor, &cursorEnvelope); err != nil {
 		t.Fatalf("unmarshal equal-key favorites cursor: %v", err)
@@ -310,7 +310,7 @@ func TestCatalogReadVisibilityPlanAvoidsSequentialScans(t *testing.T) {
 	if _, err := tx.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,'plan')`, ownerNSID); err != nil {
 		t.Fatal(err)
 	}
-	const fixtureRows = 400000
+	const fixtureRows = 20000
 	basePhotoID := time.Now().UnixNano()
 	if _, err := tx.Exec(ctx, `INSERT INTO photos(id,owner_nsid,last_update,visibility,raw,content_hash)
 SELECT $1::bigint + item, $2, now(), 'private', '{}'::jsonb, decode(repeat('00',32),'hex')

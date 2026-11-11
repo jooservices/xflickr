@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the bounded favorites query plan with a temporary 400k-row fixture."""
+"""Check bounded favorites and photo-key plans with a temporary 400k-row fixture."""
 
 from __future__ import annotations
 
@@ -36,17 +36,61 @@ def database_settings() -> dict[str, str]:
 
 
 def plan_sql(rows: int, cursor: bool) -> str:
-    """Create session-only tables and explain both production favorites queries."""
+    """Create session-only tables and explain the favorites and photo-key queries."""
     cursor_clause = ""
+    cursor_filter = ""
+    scan_rows = "account_favorites"
+    account_limit = 102
+    observation_plan = ""
     if cursor:
         cursor_clause = """
           AND (favorites.fave_date,favorites.photo_id)
-              < (timestamptz '2020-01-03 00:00:00+00',300000)"""
+              <= (timestamptz '2020-01-03 00:00:00+00',300000)"""
+        cursor_filter = """,
+cursor_favorites AS MATERIALIZED (
+    SELECT flickr_account_id, photo_id, fave_date, removed_at FROM account_favorites
+    WHERE (fave_date,photo_id)<(timestamptz '2020-01-03 00:00:00+00',300000)
+       OR ((fave_date,photo_id)=(timestamptz '2020-01-03 00:00:00+00',300000)
+           AND flickr_account_id<1)
+)"""
+        scan_rows = "cursor_favorites"
+        account_limit += 1
+    else:
+        observation_plan = f"""
+CREATE TEMP TABLE plan_fixture (user_id bigint, account_id bigint);
+WITH new_user AS (
+    INSERT INTO users(email,password_hash,role)
+    VALUES ('plan-' || txid_current()::text || '@example.invalid','plan','user')
+    RETURNING id
+), new_key AS (
+    INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst)
+    SELECT id,'plan','plan-' || id::text,'{{}}',100,10,10 FROM new_user
+    RETURNING id,user_id
+), new_account AS (
+    INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status)
+    SELECT user_id,id,'plan-' || id::text,'plan','{{}}','{{}}','ok' FROM new_key
+    RETURNING id,user_id
+)
+INSERT INTO plan_fixture SELECT user_id,id FROM new_account;
+
+INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id)
+SELECT fixture.user_id,fixture.account_id,'photo',item::text
+FROM plan_fixture fixture CROSS JOIN generate_series(1,{rows}) AS generated(item);
+ANALYZE observations_p00;
+CREATE TEMP TABLE plan_target AS
+SELECT record_id FROM observations
+WHERE record_kind='photo'
+  AND tableoid='public.observations_p00'::regclass
+  AND user_id=(SELECT user_id FROM plan_fixture)
+LIMIT 1;
+"""
     return f"""
 BEGIN;
-CREATE TEMP TABLE flickr_accounts (nsid text, user_id bigint, status text);
+{observation_plan}
+
+CREATE TEMP TABLE flickr_accounts (id bigint, nsid text, user_id bigint, status text);
 INSERT INTO flickr_accounts VALUES
-    ('account-a', {USER_ID}, 'ok'), ('account-b', {USER_ID}, 'ok');
+    (1, 'account-a', {USER_ID}, 'ok'), (2, 'account-b', {USER_ID}, 'ok');
 
 CREATE TEMP TABLE photos (
     id bigint PRIMARY KEY, owner_nsid text, title text, description text,
@@ -78,12 +122,6 @@ SELECT CASE WHEN id % 2 = 0 THEN 'account-a' ELSE 'account-b' END,
 FROM generate_series(1, {rows}) AS id;
 CREATE INDEX favorites_page_idx ON favorites (person_nsid, fave_date DESC, photo_id DESC);
 
-CREATE TEMP TABLE observations (user_id bigint, record_kind text, record_id text);
-INSERT INTO observations
-SELECT {USER_ID}, 'photo', id::text FROM generate_series(1, {rows}) AS id;
-CREATE INDEX observations_photo_idx ON observations (user_id, record_kind, record_id);
-CREATE TEMP TABLE sharing_settings (user_id bigint, enabled boolean);
-INSERT INTO sharing_settings VALUES ({USER_ID}, true);
 CREATE TEMP TABLE photo_enrichments (photo_id bigint, kind text);
 INSERT INTO photo_enrichments
 SELECT id, 'caption' FROM generate_series(1, {rows}) AS id;
@@ -92,30 +130,29 @@ CREATE INDEX photo_enrichments_lookup_idx ON photo_enrichments (photo_id, kind);
 ANALYZE flickr_accounts;
 ANALYZE photos;
 ANALYZE favorites;
-ANALYZE observations;
-ANALYZE sharing_settings;
 ANALYZE photo_enrichments;
 
 EXPLAIN (ANALYZE, BUFFERS)
 WITH account_favorites AS MATERIALIZED (
-    SELECT account_favorites.photo_id, account_favorites.fave_date,
-           account_favorites.removed_at
-    FROM (SELECT nsid FROM flickr_accounts WHERE user_id={USER_ID} AND status<>'revoked') accounts
+    SELECT account_favorites.flickr_account_id, account_favorites.photo_id,
+           account_favorites.fave_date, account_favorites.removed_at
+    FROM (SELECT id, nsid FROM flickr_accounts WHERE user_id={USER_ID} AND status<>'revoked') accounts
     CROSS JOIN LATERAL (
-        SELECT favorites.photo_id, favorites.fave_date, favorites.removed_at
+        SELECT accounts.id AS flickr_account_id, favorites.photo_id,
+               favorites.fave_date, favorites.removed_at
         FROM favorites
         WHERE favorites.person_nsid=accounts.nsid
           {cursor_clause}
-        ORDER BY favorites.fave_date DESC, favorites.photo_id DESC
-        LIMIT 102
+        ORDER BY favorites.fave_date DESC, favorites.photo_id DESC, accounts.id DESC
+        LIMIT {account_limit}
     ) account_favorites
-), scan_page AS MATERIALIZED (
-    SELECT photo_id, fave_date, removed_at FROM account_favorites
-    ORDER BY fave_date DESC, photo_id DESC
+){cursor_filter}, scan_page AS MATERIALIZED (
+    SELECT flickr_account_id, photo_id, fave_date, removed_at FROM {scan_rows}
+    ORDER BY fave_date DESC, photo_id DESC, flickr_account_id DESC
     LIMIT 102
 )
-SELECT photo_id, fave_date, removed_at FROM scan_page
-ORDER BY fave_date DESC, photo_id DESC;
+SELECT flickr_account_id, photo_id, fave_date, removed_at FROM scan_page
+ORDER BY fave_date DESC, photo_id DESC, flickr_account_id DESC;
 
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT photos.id, photos.owner_nsid, photos.title, photos.description,
@@ -127,21 +164,13 @@ SELECT photos.id, photos.owner_nsid, photos.title, photos.description,
        ) THEN 'ready' ELSE 'none' END
 FROM photos
 WHERE photos.id = ANY(ARRAY(SELECT generate_series(1, 101)::bigint))
-  AND photos.tombstoned_at IS NULL
-  AND (
-      EXISTS (
-          SELECT 1 FROM observations o
-          WHERE o.user_id={USER_ID} AND o.record_kind='photo'
-            AND o.record_id=photos.id::text
-      ) OR (
-          photos.visibility='public' AND EXISTS (
-              SELECT 1 FROM observations o
-              JOIN sharing_settings ss ON ss.user_id=o.user_id
-              WHERE o.record_kind='photo' AND o.record_id=photos.id::text
-                AND ss.enabled
-          )
-      )
-  );
+  AND photos.tombstoned_at IS NULL;
+{f'''EXPLAIN (ANALYZE, BUFFERS)
+SELECT user_id, flickr_account_id FROM observations
+WHERE record_kind='photo'
+  AND record_id=(SELECT record_id FROM plan_target)
+  AND user_id=(SELECT user_id FROM plan_fixture);
+''' if not cursor else ''}
 ROLLBACK;
 """
 
@@ -199,15 +228,18 @@ def check_plan(output: str, cursor: bool) -> None:
             continue
         metrics = dict(part.split("=", 1) for part in line.split() if "=" in part)
         try:
-            bounded_limit = float(metrics["rows"]) == 102 and metrics["loops"].rstrip(")") == "2"
+            expected_rows = 103 if cursor else 102
+            bounded_limit = float(metrics["rows"]) == expected_rows and metrics["loops"].rstrip(")") == "2"
         except (KeyError, ValueError):
             continue
         if bounded_limit:
             break
     if not bounded_limit:
         raise RuntimeError(f"favorites {page} query plan did not return a bounded page per account")
-    if cursor and "ROW(fave_date, photo_id) < ROW" not in output:
-        raise RuntimeError("favorites cursor plan does not constrain the keyset range")
+    if cursor and not re.search(
+        r"Index Cond: .*ROW\(fave_date, photo_id\) <= ROW", output
+    ):
+        raise RuntimeError("favorites cursor plan does not constrain the index range")
 
 
 def check_photo_plan(output: str, cursor: bool) -> None:
@@ -217,6 +249,17 @@ def check_photo_plan(output: str, cursor: bool) -> None:
         raise RuntimeError(f"favorite photo {page} plan contains a sequential scan")
     if not re.search(r"(Index Scan using \S+|Bitmap Heap Scan) on photos\b", output):
         raise RuntimeError(f"favorite photo {page} plan does not use the photo ID index")
+
+
+def check_observation_plan(output: str) -> None:
+    """Fail if the real p00 visibility lookup scans observations."""
+    if re.search(r"(?:Parallel )?Seq Scan\s+on observations_p\d+\b", output):
+        raise RuntimeError("catalog visibility plan contains a sequential scan on observations")
+    if not re.search(
+        r"Index Only Scan using observations_p00_kind_record_idx on observations_p00\b",
+        output,
+    ):
+        raise RuntimeError("catalog visibility plan does not use the merged p00 lookup index")
 
 
 def main() -> int:
@@ -235,6 +278,8 @@ def main() -> int:
             print(output, end="")
             check_plan(output, cursor)
             check_photo_plan(output, cursor)
+            if not cursor:
+                check_observation_plan(output)
     except (OSError, RuntimeError, ValueError) as error:
         print(f"favorites plan check failed: {error}", file=sys.stderr)
         return 1

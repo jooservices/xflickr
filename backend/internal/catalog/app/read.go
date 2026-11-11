@@ -32,8 +32,9 @@ type PhotoCursor struct {
 	ID         int64     `json:"id"`
 }
 type FavoriteCursor struct {
-	FaveDate time.Time `json:"fave_date"`
-	PhotoID  int64     `json:"photo_id"`
+	FaveDate        time.Time `json:"fave_date"`
+	PhotoID         int64     `json:"photo_id"`
+	FlickrAccountID int64     `json:"flickr_account_id"`
 }
 type AlbumCursor struct {
 	UpdatedAt *time.Time `json:"updated_at"`
@@ -331,7 +332,7 @@ func validateCursor(cursor any) error {
 			return ErrInvalidCursor
 		}
 	case FavoriteCursor:
-		if value.FaveDate.IsZero() || value.PhotoID <= 0 {
+		if value.FaveDate.IsZero() || value.PhotoID <= 0 || value.FlickrAccountID <= 0 {
 			return ErrInvalidCursor
 		}
 	case AlbumCursor:
