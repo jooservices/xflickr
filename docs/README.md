@@ -43,6 +43,8 @@
   authenticated user, password changes, and sharing routes.
 - [Home snapshot API](me-home.md) — user-scoped contact counts and the first
   slice's unavailable Home sections.
+- [Home screen](home-screen.md) — the first UI slice, real contact counts, and
+  the sections that remain unavailable.
 - [Saved searches](saved-searches.md) — user-owned query persistence and its
   internal application and PostgreSQL operations.
 - [Passkey credential storage](passkeys.md) — the WebAuthn credential table and

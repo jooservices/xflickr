@@ -101,5 +101,16 @@
   "tray.button_one": "Download tray, {{count}} photo",
   "tray.button_other": "Download tray, {{count}} photos",
   "tray.button_zero": "Download tray",
-  "tray.title": "Download tray"
+  "tray.title": "Download tray",
+  "user.home.error.retry": "Try again",
+  "user.home.error.text": "Check your connection and try again. Your data is safe.",
+  "user.home.error.title": "Home could not load",
+  "user.home.forbidden.cta": "Back to sign in",
+  "user.home.forbidden.text": "Your account does not have access.",
+  "user.home.forbidden.title": "You cannot view Home",
+  "user.home.stats.contacts": "Contacts",
+  "user.home.stats.direct": "{{count}} direct",
+  "user.home.stats.discovered": "{{count}} discovered",
+  "user.home.status.loading": "Loading Home",
+  "user.home.title": "Home"
 }

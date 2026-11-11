@@ -101,5 +101,16 @@
   "tray.button_one": "Khay tải xuống, {{count}} ảnh",
   "tray.button_other": "Khay tải xuống, {{count}} ảnh",
   "tray.button_zero": "Khay tải xuống",
-  "tray.title": "Khay tải xuống"
+  "tray.title": "Khay tải xuống",
+  "user.home.error.retry": "Thử lại",
+  "user.home.error.text": "Kiểm tra kết nối rồi thử lại. Dữ liệu của bạn vẫn an toàn.",
+  "user.home.error.title": "Không tải được Trang chủ",
+  "user.home.forbidden.cta": "Quay lại đăng nhập",
+  "user.home.forbidden.text": "Tài khoản của bạn không có quyền truy cập.",
+  "user.home.forbidden.title": "Bạn không thể xem Trang chủ",
+  "user.home.stats.contacts": "Liên hệ",
+  "user.home.stats.direct": "{{count}} trực tiếp",
+  "user.home.stats.discovered": "{{count}} được khám phá",
+  "user.home.status.loading": "Đang tải Trang chủ",
+  "user.home.title": "Trang chủ"
 }
