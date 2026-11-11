@@ -61,6 +61,8 @@
   photo index, mapping, alias, and this slice's limits.
 - [Golden relevance evaluator](golden-relevance.md) — the fixed recall@3
   threshold, sample fixture, and deferred real-search evaluation.
+- [Photo viewer](photo-viewer.md) — the testable lightbox slice, current API
+  limits, and deferred gallery integration.
 - [Temporary media storage](media.md) — blob storage port, local storage cap,
   and five-minute expiry cleanup.
 - [Cloud storage provider contract](cloud-sync-providers.md) — provider port,

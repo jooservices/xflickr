@@ -19,3 +19,13 @@ account used to sign the call. See [crawl observations and historical recovery](
 for the single inventory of observed record kinds, transaction/replay behavior,
 and the explicitly guarded historical backfill. Backfilled timestamps are
 approximate; sharing and photo visibility rules remain unchanged.
+
+Photo visibility reads use `observations` lookups by record ID and kind, then by
+user ID for direct access. The existing `observations_p00_kind_record_idx`
+supports p00. Migration
+`20261111190000_observations_record_lookup_index.sql` builds the matching
+`(record_id, record_kind, user_id)` B-tree index concurrently on p01 through p15.
+If the migration is interrupted, completed valid leaf indexes are retained on
+retry; an invalid concurrent build must be dropped concurrently before retrying.
+New observations partitions must receive a lookup index before photo reads
+depend on them.

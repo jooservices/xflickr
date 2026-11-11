@@ -1,8 +1,10 @@
 package migrations_test
 
 import (
+	"fmt"
 	"io/fs"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/jooservices/xflickr/migrations"
@@ -32,5 +34,30 @@ func TestVersionsAreUnique(t *testing.T) {
 	}
 	if len(seen) == 0 {
 		t.Fatal("no migrations found")
+	}
+}
+
+func TestObservationLookupMigrationBuildsPartitionIndexesConcurrently(t *testing.T) {
+	const migrationName = "20261111190000_observations_record_lookup_index.sql"
+	migration, err := fs.ReadFile(migrations.Files, migrationName)
+	if err != nil {
+		t.Fatalf("read observation lookup migration: %v", err)
+	}
+	if !strings.Contains(string(migration), "-- +goose NO TRANSACTION") {
+		t.Fatal("observation lookup migration must run outside a transaction")
+	}
+	for partition := 1; partition < 16; partition++ {
+		index := fmt.Sprintf("observations_p%02d_record_lookup_idx", partition)
+		create := fmt.Sprintf("CREATE INDEX CONCURRENTLY IF NOT EXISTS %s ON observations_p%02d (record_id, record_kind, user_id);", index, partition)
+		drop := fmt.Sprintf("DROP INDEX CONCURRENTLY IF EXISTS %s;", index)
+		if !strings.Contains(string(migration), create) {
+			t.Errorf("migration does not build partition lookup index %s concurrently", index)
+		}
+		if !strings.Contains(string(migration), drop) {
+			t.Errorf("migration does not drop partition lookup index %s concurrently", index)
+		}
+	}
+	if strings.Contains(string(migration), "observations_p00_record_lookup_idx") {
+		t.Fatal("migration must reuse the existing p00 lookup index instead of creating a duplicate")
 	}
 }

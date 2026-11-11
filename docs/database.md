@@ -9,12 +9,17 @@ already covered by a feature document.
 Live scan counts below come from the production audit of `pg_stat_user_indexes`
 on 2026-11-09, covering statistics accumulated since 2026-11-02 (about seven
 days). Index statistics reset on `pg_stat_reset` and after crash recovery; treat
-any count as relative to the window since the last reset. Attached partitioned
-index child names follow the column list (`photos_pNN_…`) and are managed
-through their parent. The observations index below is an independent child
-index for the first rollout slice.
+any count as relative to the window since the last reset. Partition child names
+follow the column list (`photos_pNN_…`); normally create or drop indexes through
+the partitioned parent so every child follows. The fixed observations hash
+partitions are an exception: PostgreSQL does not support concurrent index
+creation on a partitioned parent, so lookup indexes are built on the leaf
+partitions individually. The existing p00 index is from the first rollout
+slice; this ticket adds the remaining p01 through p15 indexes.
 
 Sizes are approximate per partition × 16 partitions unless noted.
+The observations lookup index is pending deployment and has no production size
+or scan data yet; measure it after rollout.
 
 | Index | Table | Size (approx.) | Scans (2026-11-02..09) | Queries that use it | Decision |
 | --- | --- | --- | --- | --- | --- |
@@ -29,6 +34,7 @@ Sizes are approximate per partition × 16 partitions unless noted.
 | `favorites_active_person_seen_idx` | favorites | partial | used by reconcile | periodic reconcile active rows by `person_nsid, seen_at` | keep |
 | `observations_pkey` | observations | ~2.1 GB of ~4.3 GB total | n/a | observation upserts / visibility joins by PK | keep (primary key) |
 | `observations_p00_kind_record_idx` | `observations_p00` only | not measured | not measured | sharing visibility lookup by `(record_kind, record_id)`, returning `user_id, flickr_account_id` | keep (JOOXF-398 first slice) |
+| `observations_pNN_record_lookup_idx` × 15 | `observations_p01` through `observations_p15` | not measured | pending deployment | `sharing/app/filter.go` direct and public photo visibility lookups | keep (JOOXF-171) |
 | `album_photos_pkey` | album_photos | PK | n/a | membership by `(album_id, photo_id)` | keep (primary key) |
 | `album_photos_order_idx` | album_photos | | used | `albums.go` / `reads.go` order by `position, photo_id` | keep |
 | `people_pkey` | people | PK | n/a | nsid lookups | keep (primary key) |
@@ -49,40 +55,39 @@ Sizes are approximate per partition × 16 partitions unless noted.
 Existing `work_items` and River indexes are owned by JOOXF-370 and are out of
 scope for the index-drop audit above.
 
-## Observation record lookup index (JOOXF-398 first slice)
+## Observation record lookup indexes (JOOXF-398 and JOOXF-171)
 
 The first slice adds the independent btree index
 `observations_p00_kind_record_idx` on
 `observations_p00 (record_kind, record_id) INCLUDE (user_id,
 flickr_account_id)`. A lookup that supplies both `record_kind` and `record_id`
-can prune to the matching hash partition and use this covering index on `p00`.
-This improves only `observations_p00`; `p01` through `p15` have no matching
-secondary index, and there is no parent index. This slice does not complete
-JOOXF-398. Parent attachment, the other 15 child indexes, and plan evidence on
-a fixture with at least two million observations remain outstanding.
+can prune to the matching hash partition and use a child index on each fixed
+partition. `observations_p00_kind_record_idx` covers `p00`; this ticket adds
+`observations_pNN_record_lookup_idx` to `p01` through `p15`. There is no parent
+index. Parent attachment and plan evidence on a fixture with at least two
+million observations remain outstanding follow-ups for JOOXF-398.
 
-The migration uses `CREATE INDEX CONCURRENTLY` and does not rewrite the table.
-The build reads the whole `p00` partition and performs additional validation
-work. Its production duration and read/write I/O have not been measured; do not
-estimate them from a worktree fixture. Before rollout, measure build duration,
-bytes read and written, and final index size on a representative copy, then
-update the rollout forecast. `lock_timeout = '2s'` limits time waiting to
-acquire a lock; it does not bound index-build duration or waits for older
-transactions.
+The migrations use `CREATE INDEX CONCURRENTLY` and do not rewrite the table.
+Build duration, read/write I/O and final sizes have not been measured on
+production; do not estimate them from a worktree fixture. Before rollout,
+measure these on a representative copy and update the rollout forecast.
+`lock_timeout = '2s'` on the p00 migration limits time waiting to acquire a
+lock; it does not bound index-build duration or waits for older transactions.
 
 Before retrying an interrupted build, inspect only the named index:
 
 ```sql
 SELECT c.oid::regclass, i.indisvalid, i.indisready, pg_get_indexdef(c.oid)
 FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid
-WHERE c.oid = to_regclass('public.observations_p00_kind_record_idx');
+WHERE c.oid = to_regclass('public.observations_p00_kind_record_idx')
+   OR c.relname ~ '^observations_p(0[1-9]|1[0-5])_record_lookup_idx$';
 ```
 
 If the query returns `indisvalid = false`, remove that invalid child index
-concurrently and rerun the migration:
+concurrently and rerun the migration. For example:
 
 ```sql
-DROP INDEX CONCURRENTLY IF EXISTS public.observations_p00_kind_record_idx;
+DROP INDEX CONCURRENTLY IF EXISTS public.observations_p01_record_lookup_idx;
 ```
 
 Do not drop a valid index. If the catalog definition differs from the intended

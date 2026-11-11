@@ -6,6 +6,7 @@ import commonEn from './locales/en/common.json';
 import crawlEn from './locales/en/crawl.json';
 import errorsEn from './locales/en/errors.json';
 import keysEn from './locales/en/keys.json';
+import lightboxEn from './locales/en/lightbox.json';
 import loginEn from './locales/en/login.json';
 import profileEn from './locales/en/profile.json';
 import setupEn from './locales/en/setup.json';
@@ -16,6 +17,7 @@ import commonVi from './locales/vi/common.json';
 import crawlVi from './locales/vi/crawl.json';
 import errorsVi from './locales/vi/errors.json';
 import keysVi from './locales/vi/keys.json';
+import lightboxVi from './locales/vi/lightbox.json';
 import loginVi from './locales/vi/login.json';
 import profileVi from './locales/vi/profile.json';
 import setupVi from './locales/vi/setup.json';
@@ -34,6 +36,7 @@ export const NAMESPACES = [
   'crawl',
   'errors',
   'keys',
+  'lightbox',
   'login',
   'profile',
   'setup',
@@ -48,6 +51,7 @@ const enResources = {
   crawl: crawlEn,
   errors: errorsEn,
   keys: keysEn,
+  lightbox: lightboxEn,
   login: loginEn,
   profile: profileEn,
   setup: setupEn,
@@ -61,6 +65,7 @@ const viResources = {
   crawl: crawlVi,
   errors: errorsVi,
   keys: keysVi,
+  lightbox: lightboxVi,
   login: loginVi,
   profile: profileVi,
   setup: setupVi,

@@ -1,0 +1,16 @@
+{
+  "title": "Photo viewer",
+  "position": "Photo {{position}} of {{count}}",
+  "close": "Close photo viewer",
+  "previous": "Previous photo",
+  "next": "Next photo",
+  "loading.label": "Loading photo",
+  "empty.title": "No photo to show",
+  "empty.body": "Return to the gallery and choose a photo.",
+  "empty.action": "Return to gallery",
+  "error.title": "Could not load this photo",
+  "error.body": "Check your connection, then try again.",
+  "error.preview": "Photo preview unavailable",
+  "error.not-found": "This photo is unavailable",
+  "retry": "Retry"
+}

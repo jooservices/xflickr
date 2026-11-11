@@ -1,0 +1,16 @@
+{
+  "title": "Trình xem ảnh",
+  "position": "Ảnh {{position}}/{{count}}",
+  "close": "Đóng trình xem ảnh",
+  "previous": "Ảnh trước",
+  "next": "Ảnh tiếp theo",
+  "loading.label": "Đang tải ảnh",
+  "empty.title": "Không có ảnh để hiển thị",
+  "empty.body": "Quay lại thư viện và chọn ảnh.",
+  "empty.action": "Quay lại thư viện",
+  "error.title": "Không thể tải ảnh này",
+  "error.body": "Kiểm tra kết nối rồi thử lại.",
+  "error.preview": "Không thể xem trước ảnh",
+  "error.not-found": "Ảnh này không khả dụng",
+  "retry": "Thử lại"
+}
