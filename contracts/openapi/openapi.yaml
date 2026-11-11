@@ -86,6 +86,8 @@ paths:
     $ref: ./paths/metrics.yaml#/series
   /admin/ops/status:
     $ref: ./paths/ops.yaml#/status
+  /admin/incidents:
+    $ref: ./paths/ops.yaml#/open_incidents
   /downloads:
     $ref: ./paths/downloads.yaml#/create
   /downloads/{id}/parts:
@@ -213,6 +215,10 @@ components:
       $ref: ./schemas/quota.yaml#/AdminQuota
     OpsStatus:
       $ref: ./schemas/ops.yaml#/OpsStatus
+    AdminOpenIncident:
+      $ref: ./schemas/ops.yaml#/AdminOpenIncident
+    AdminOpenIncidentPage:
+      $ref: ./schemas/ops.yaml#/AdminOpenIncidentPage
     CreateDownloadRequest:
       $ref: ./schemas/downloads.yaml#/CreateDownloadRequest
     Download:

@@ -44,7 +44,7 @@ const issues: QuotaKey[] = [5, 6, 7].map((key_id) => ({
 }));
 
 describe('admin shell', () => {
-  it('renders the 14 rail items in three groups, in order', async () => {
+  it('renders the 13 available rail items in three groups, in order', async () => {
     renderApp({ session: adminSession, path: '/admin' });
 
     const rail = await screen.findByTestId('admin-rail');
@@ -56,7 +56,8 @@ describe('admin shell', () => {
     expect(links.map((link) => link.getAttribute('href'))).toEqual(
       ADMIN_NAV.map((item) => item.path),
     );
-    expect(ADMIN_NAV).toHaveLength(14);
+    expect(ADMIN_NAV).toHaveLength(13);
+    expect(screen.queryByTestId('admin-nav-events')).toBeNull();
     expect(screen.getByTestId('admin-nav-overview')).toHaveAttribute('aria-current', 'page');
     expect(screen.getByTestId('admin-shell')).toHaveAttribute('data-role', 'admin');
     expect(screen.getByTestId('admin-shell')).toHaveAttribute('data-theme', 'dark');
@@ -65,7 +66,11 @@ describe('admin shell', () => {
   it.each(ADMIN_NAV)('routes $id to its page and highlights it', async (item) => {
     renderApp({ session: adminSession, path: item.path });
 
-    expect(await screen.findByTestId('admin-page')).toBeInTheDocument();
+    if (item.id === 'issues') {
+      expect(await screen.findByTestId('admin-issues-page')).toBeInTheDocument();
+    } else {
+      expect(await screen.findByTestId('admin-page')).toBeInTheDocument();
+    }
     expect(screen.getByTestId(`admin-nav-${item.id}`)).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
   });
@@ -82,12 +87,12 @@ describe('admin shell', () => {
     expect(await screen.findByTestId('shell-notfound')).toBeInTheDocument();
   });
 
-  it('shows the Issues badge in the link name from keys that are not ok', async () => {
+  it('does not present quota key states as an incident count', async () => {
     server.use(quota([...healthyNodes, ...issues]));
     renderApp({ session: adminSession, path: '/admin' });
 
-    expect(await screen.findByTestId('admin-nav-issues-badge')).toHaveTextContent('3');
-    expect(screen.getByTestId('admin-nav-issues')).toHaveAccessibleName('Issues, 3 open');
+    expect(await screen.findByTestId('admin-nav-issues')).toHaveAccessibleName('Issues');
+    expect(screen.queryByTestId('admin-nav-issues-badge')).toBeNull();
     expect(screen.queryByTestId('admin-bell-count')).toBeNull();
   });
 

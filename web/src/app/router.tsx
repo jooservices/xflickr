@@ -15,6 +15,7 @@ import { SetupPage } from '../pages/setup/SetupPage';
 import { CrawlPage } from '../pages/crawl';
 import { ContactsPage } from '../pages/contacts/ContactsPage';
 import { QuotaPage } from '../pages/admin/quota';
+import { IssuesPage } from '../pages/admin/issues';
 import { AlbumsPage } from '../pages/albums';
 import { LibraryPage } from '../pages/library';
 import { HomePage } from '../pages/home/HomePage';
@@ -75,6 +76,8 @@ const adminPages: RouteObject[] = [
           <NodesPage />
         ) : item.id === 'quota' ? (
           <QuotaPage />
+        ) : item.id === 'issues' ? (
+          <IssuesPage />
         ) : (
           <PlaceholderPage scope="admin" titleKey={item.labelKey} />
         ),

@@ -40,6 +40,13 @@ func (sessionsStrictHandler) ListMyAlbums(context.Context, gen.ListMyAlbumsReque
 	}), nil
 }
 
+func (handler sessionsStrictHandler) ListAdminOpenIncidents(
+	ctx context.Context,
+	request gen.ListAdminOpenIncidentsRequestObject,
+) (gen.ListAdminOpenIncidentsResponseObject, error) {
+	return handler.StrictHandler.ListAdminOpenIncidents(ctx, request)
+}
+
 func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use the shared worktree database")

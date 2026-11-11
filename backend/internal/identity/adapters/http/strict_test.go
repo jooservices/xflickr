@@ -179,6 +179,9 @@ func TestStrictHandlerLeavesOpsToOps(t *testing.T) {
 	if _, err := handler.GetAdminMetrics(t.Context(), gen.GetAdminMetricsRequestObject{}); !errors.Is(err, errOpsServedByOps) {
 		t.Fatalf("admin metrics error=%v", err)
 	}
+	if _, err := handler.ListAdminOpenIncidents(t.Context(), gen.ListAdminOpenIncidentsRequestObject{}); !errors.Is(err, errOpsServedByOps) {
+		t.Fatalf("admin incidents error=%v", err)
+	}
 }
 
 func TestStrictHandlerLeavesFeatureFlagsToSettings(t *testing.T) {

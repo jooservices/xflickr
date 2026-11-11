@@ -15,6 +15,14 @@ screen: where am I, is the cluster healthy, and does anything need a person
 (open issues). It adds no data screen of its own. Each destination is specified
 in its own view file and is out of scope here.
 
+## Current implementation status
+
+JOOXF-183 adds the Issues destination as a real read-only open-incident page.
+The current rail has 13 destinations: Events & audit is deferred until its
+ADMIN API and page are implemented. The Issues badge is omitted because no
+safe, maintained open-incident count exists. The 14-item rail and badge below
+describe the later shell target, not the current UI.
+
 ## Route and access
 
 - Layout route for every path under `/admin` (`/admin`, `/admin/nodes`,

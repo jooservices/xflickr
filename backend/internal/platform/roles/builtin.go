@@ -778,11 +778,20 @@ func buildConfiguredAPIHandlerSetWithObserver(pool *pgxpool.Pool, redisClient re
 	if err != nil {
 		return apiHandlerSet{}, err
 	}
+	incidentReader, err := opsstore.NewOpenIncidentRepository(pool)
+	if err != nil {
+		return apiHandlerSet{}, fmt.Errorf("api: create open incident reader: %w", err)
+	}
+	openIncidents, err := opsapp.NewOpenIncidents(incidentReader)
+	if err != nil {
+		return apiHandlerSet{}, fmt.Errorf("api: create open incident use case: %w", err)
+	}
 	opsHandler := opshttp.Handler{
-		Service: ops.Service{Store: opspostgres.Store{Pool: pool, DB: pool}},
-		Metrics: metricspostgres.SeriesStore{Pool: pool},
-		Now:     time.Now,
-		ActorID: userIDFromPrincipal,
+		Service:       ops.Service{Store: opspostgres.Store{Pool: pool, DB: pool}},
+		Metrics:       metricspostgres.SeriesStore{Pool: pool},
+		OpenIncidents: openIncidents,
+		Now:           time.Now,
+		ActorID:       userIDFromPrincipal,
 	}
 	nodeService, err := buildNodeService(pool)
 	if err != nil {
@@ -1003,6 +1012,10 @@ func (s apiServer) GetReadiness(ctx context.Context, _ gen.GetReadinessRequestOb
 
 func (s apiServer) GetAdminOpsStatus(ctx context.Context, request gen.GetAdminOpsStatusRequestObject) (gen.GetAdminOpsStatusResponseObject, error) {
 	return s.Ops.GetAdminOpsStatus(ctx, request)
+}
+
+func (s apiServer) ListAdminOpenIncidents(ctx context.Context, request gen.ListAdminOpenIncidentsRequestObject) (gen.ListAdminOpenIncidentsResponseObject, error) {
+	return s.Ops.ListAdminOpenIncidents(ctx, request)
 }
 
 func (s apiServer) GetAdminMetrics(ctx context.Context, request gen.GetAdminMetricsRequestObject) (gen.GetAdminMetricsResponseObject, error) {

@@ -1,7 +1,9 @@
 # Incident management
 
-The internal `ops/app.Incidents` manager owns incident lifecycle actions. It is
-not an HTTP endpoint; detectors call the application methods directly.
+The internal `ops/app.Incidents` manager owns incident lifecycle actions.
+Detectors call it directly. The first ADMIN read endpoint is
+`GET /api/v1/admin/incidents`; it lists open incidents without exposing
+detector-provided text or JSON detail.
 
 - `Open` validates input and deduplicates by `kind` and `scope`. Repeated
   opens of an active incident increment `count` and advance `last_seen`,
@@ -17,6 +19,19 @@ not an HTTP endpoint; detectors call the application methods directly.
 
 Incident details must be JSON objects. Notifications include the incident ID,
 severity and title, and do not copy detail payloads into the outbox.
+
+## First ADMIN read slice
+
+`GET /api/v1/admin/incidents` requires an ADMIN session and returns a bounded
+page ordered by `last_seen DESC, id DESC`. The default page size is 50 and the
+maximum is 100. Its response contains only `id`, `severity`, `first_seen`,
+`last_seen`, and `count`, plus an opaque `next_cursor` and `server_time`.
+The keyset cursor and `incidents_open_last_seen_id_idx` partial index provide
+stable pagination for open rows. There is no count query or total-count field.
+
+The stored `title`, `kind`, `scope`, and `detail` are omitted until detectors
+provide content verified safe for display. Acknowledge, close, detail, filter,
+search, event-stream, and audit endpoints are not part of this slice.
 
 ## Quota snapshot detector
 
