@@ -152,7 +152,11 @@ test('searches and stars a contact, then uses contact actions and its download d
     '/me/crawl/pause',
     '/downloads',
   ]);
-  expect(requests.at(-1)?.body).toEqual({ kind: 'contact', subject: contact.nsid });
+  expect(requests.at(-1)?.body).toEqual({
+    kind: 'contact',
+    subject: contact.nsid,
+    photo_ids: [Number(image.id)],
+  });
   await expectNoSeriousViolations(page);
 });
 
@@ -263,6 +267,8 @@ test('shows each contact section and downloads favorites with contact scope', as
   await expect(page.getByTestId('user-contact-groups-table')).toContainText('Street');
   await page.getByTestId('user-contact-tab-about').click();
   await expect(page.getByText('Flickr NSID')).toBeVisible();
-  expect(downloads).toEqual([{ kind: 'favorites', subject: contact.nsid }]);
+  expect(downloads).toEqual([
+    { kind: 'favorites', subject: contact.nsid, photo_ids: [Number(image.id)] },
+  ]);
   await expectNoSeriousViolations(page);
 });

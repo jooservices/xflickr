@@ -69,7 +69,7 @@ added to OpenAPI before the build. Use the authenticated session for scope.
 | Select contact for seven days | `PUT /me/contacts/{nsid}/select` **existing** | path `nsid`; this changes scheduler selection but does not guarantee sizes-first order |
 | Prioritise sizes | `PUT /me/contacts/{nsid}/sizes-priority` **contract request** | no body; prioritize this contact's pending size work using the user's reserved-call policy |
 | Pause / resume contact | `PUT /me/crawl/pause` and `PUT /me/crawl/resume` **existing** | request `nsid` |
-| New download | `POST /downloads` **existing** | request `kind: "contact"`, `subject: nsid`, plus `photo_ids` only for tray downloads |
+| New download | `POST /downloads` **existing** | request `kind: "contact"`, `subject: nsid`, and up to 500 `photo_ids` per batch |
 | Live refresh | `GET /events` **existing** | authenticated SSE with resumable event IDs; `crawl.progress` is user scoped. Contact refresh event `contact.updated` with `nsid`, `updated_at` is a **contract request** |
 
 `crawl_status` drives the contact status pill and is `pending`, `running`,
@@ -97,7 +97,7 @@ new endpoint is required for this view.
 | Prioritise sizes | Header button | Send contract-requested `PUT /me/contacts/{nsid}/sizes-priority`; show confirmation and refresh relevant progress. |
 | Pause crawl | Crawl button when running or queued | Send `PUT /me/crawl/pause` with `nsid`; retain work and stop dispatch for this user/contact. |
 | Resume crawl | Crawl button when paused | Send `PUT /me/crawl/resume` with `nsid`; work returns to normal scheduling. |
-| Download all | Header button | Open New download modal with contact scope and source preselected. Submission uses existing `POST /downloads` with `kind: "contact"` and `subject: nsid`; back-pressure errors are shown in the modal. |
+| Download all | Header button | Open New download modal with contact scope and source preselected. Page visible photo IDs and submit them in batches of at most 500; back-pressure errors are shown in the modal. |
 | Open photo | Photo tile, excluding any Library tray control | Open shared lightbox; closing returns focus to the tile. |
 | Change contact tab | Tab link | Navigate to that contact section and preserve `nsid`. |
 | Load more | Grid continuation control | Fetch `next_cursor`, append photos without moving focus; hide when no cursor remains. |

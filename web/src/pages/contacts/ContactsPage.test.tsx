@@ -315,6 +315,95 @@ describe('ContactPage', () => {
     expect(trigger).toHaveFocus();
   });
 
+  it('queues every visible contact photo in download-sized batches', async () => {
+    const batches: Array<{ kind: string; subject: string; photo_ids?: number[] }> = [];
+    const pages = Array.from({ length: 6 }, (_, pageIndex) => {
+      const start = pageIndex * 100 + 1;
+      const count = pageIndex === 5 ? 1 : 100;
+      const items = Array.from({ length: count }, (_, itemIndex) => ({
+        id: String(start + itemIndex),
+        title: `Photo ${start + itemIndex}`,
+        thumbnail_url: null,
+        width: null,
+        height: null,
+        taken_at: null,
+        sizes_available: true,
+      }));
+      return photoPage(items, pageIndex < 5 ? `page-${pageIndex + 1}` : null);
+    });
+    server.use(
+      http.get('*/me/contacts/:nsid', () => json(contact)),
+      http.get('*/me/contacts/:nsid/photos', ({ request }) => {
+        const url = new URL(request.url);
+        if (url.searchParams.get('limit') === '30') return json(photoPage([pages[0].items[0]]));
+        const cursor = url.searchParams.get('cursor');
+        const pageIndex = cursor ? Number(cursor.replace('page-', '')) : 0;
+        return json(pages[pageIndex]);
+      }),
+      http.post('*/downloads', async ({ request }) => {
+        batches.push((await request.json()) as (typeof batches)[number]);
+        const batch = batches.at(-1)!;
+        return json(
+          {
+            id: batches.length,
+            kind: batch.kind,
+            subject: batch.subject,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            expires_at: new Date().toISOString(),
+            item_count: batch.photo_ids?.length ?? 0,
+            skipped: 0,
+          },
+          201,
+        );
+      }),
+    );
+
+    renderApp({ session: userSession, path: '/contacts/one@N00' });
+    fireEvent.click(await screen.findByTestId('user-contact-photos-download-all'));
+    fireEvent.click(await screen.findByTestId('download-modal-submit'));
+
+    await waitFor(() => expect(batches).toHaveLength(2));
+    expect(batches.map((batch) => batch.photo_ids?.length)).toEqual([500, 1]);
+    expect(batches.every((batch) => batch.kind === 'contact' && batch.subject === 'one@N00')).toBe(
+      true,
+    );
+    expect(batches.flatMap((batch) => batch.photo_ids)).toEqual(
+      Array.from({ length: 501 }, (_, index) => index + 1),
+    );
+    expect(
+      await within(screen.getByTestId('contact-download-modal')).findByRole('status'),
+    ).toHaveTextContent('2 download batches have been queued');
+  });
+
+  it('keeps contact albums visible without linking to the inactive albums page', async () => {
+    server.use(
+      http.get('*/me/contacts/:nsid', () => json(contact)),
+      http.get('*/me/contacts/:nsid/albums', () =>
+        json({
+          items: [
+            {
+              id: 'album-1',
+              title: 'A trip',
+              owner_name: 'One Person',
+              total_count: 1,
+              stored_count: 1,
+              cover_photo_urls: [],
+              updated_at: null,
+            },
+          ],
+          total: 1,
+          updated_at: null,
+        }),
+      ),
+    );
+    renderApp({ session: userSession, path: '/contacts/one@N00?tab=albums' });
+
+    const album = await screen.findByTestId('user-contact-albums-album-album-1');
+    expect(album).toHaveTextContent('A trip');
+    expect(within(album).queryByRole('link')).not.toBeInTheDocument();
+  });
+
   it('renders Favorites, links to the favorite owner, and downloads that scope', async () => {
     const calls: string[] = [];
     server.use(

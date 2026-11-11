@@ -30,6 +30,9 @@ The detail view provides Photos, Favorites, Albums, Galleries, Groups, and
 About sections. Actions include star/unstar, prioritise pending photo-size
 work in indexed batches, pause/resume contact crawl, per-group pool-crawl
 preferences, download all contact photos, and download the contact's favorites.
+Contact and favorite downloads page through the visible photo IDs and submit
+requests in batches of at most 500 IDs. Each batch is a separate download entry
+and follows the existing observation and sharing checks.
 Enabling a group preference queues a `group_pool` work item; the crawl worker
 checks the preference before every Flickr request, and a disabled preference
 ends pending work. Download

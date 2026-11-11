@@ -34,6 +34,8 @@ import { useDialog } from '../../shared/ui/useDialog';
 import styles from './ContactPage.module.css';
 
 const PAGE_SIZE = 30;
+const DOWNLOAD_PAGE_SIZE = 100;
+const DOWNLOAD_BATCH_SIZE = 500;
 type Tab = 'photos' | 'favorites' | 'albums' | 'galleries' | 'groups' | 'about';
 const tabs: Tab[] = ['photos', 'favorites', 'albums', 'galleries', 'groups', 'about'];
 
@@ -106,6 +108,33 @@ async function apiContactPage<T>(
   }
 }
 
+async function contactDownloadPhotoIDs(
+  scope: DownloadScope,
+  nsid: string,
+  onAccessFailure: (failure: ContactAccessFailure) => void,
+): Promise<number[]> {
+  const ids: number[] = [];
+  let cursor: string | undefined;
+  do {
+    const response =
+      scope === 'favorites'
+        ? await listMeContactFavorites(nsid, { cursor, limit: DOWNLOAD_PAGE_SIZE })
+        : await listMeContactPhotos(nsid, { cursor, limit: DOWNLOAD_PAGE_SIZE });
+    const page = await apiContactPage<ContactPhotoPage | ContactFavoritePage>(
+      Promise.resolve(response),
+      nsid,
+      onAccessFailure,
+    );
+    for (const item of page.items) {
+      const id = Number(item.id);
+      if (!Number.isSafeInteger(id) || id <= 0) throw apiError(400);
+      ids.push(id);
+    }
+    cursor = page.next_cursor ?? undefined;
+  } while (cursor);
+  return [...new Set(ids)];
+}
+
 function ContactFacets({ contact, t }: { contact: ContactDetail; t: Translate }) {
   return (
     <ul className={styles.facets}>
@@ -154,19 +183,24 @@ function DownloadDialog({
   nsid,
   onClose,
   onDone,
+  onAccessFailure,
   returnFocus,
   t,
 }: {
   scope: DownloadScope;
   nsid: string;
   onClose: () => void;
-  onDone: () => void;
+  onDone: (batchCount: number) => void;
+  onAccessFailure: (failure: ContactAccessFailure) => void;
   returnFocus: () => HTMLElement | null;
   t: Translate;
 }) {
   const [error, setError] = useState(false);
   const [pending, setPending] = useState(false);
   const [complete, setComplete] = useState(false);
+  const [queuedBatchCount, setQueuedBatchCount] = useState(0);
+  const queuedPhotoIDs = useRef(new Set<number>());
+  const queuedBatches = useRef(0);
   const dialogRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -175,13 +209,25 @@ function DownloadDialog({
   const submit = async () => {
     setError(false);
     setPending(true);
-    const kind: CreateDownloadRequestKind = scope;
     try {
-      const response = await createDownload({ kind, subject: nsid });
-      if (response.status !== 201) throw apiError(response.status);
+      const photoIDs = await contactDownloadPhotoIDs(scope, nsid, onAccessFailure);
+      if (photoIDs.length === 0) throw apiError(404);
+      for (let start = 0; start < photoIDs.length; start += DOWNLOAD_BATCH_SIZE) {
+        const batch = photoIDs
+          .slice(start, start + DOWNLOAD_BATCH_SIZE)
+          .filter((photoID) => !queuedPhotoIDs.current.has(photoID));
+        if (batch.length === 0) continue;
+        const kind: CreateDownloadRequestKind = scope;
+        const response = await createDownload({ kind, subject: nsid, photo_ids: batch });
+        if (response.status !== 201) throw apiError(response.status);
+        for (const photoID of batch) queuedPhotoIDs.current.add(photoID);
+        queuedBatches.current += 1;
+      }
+      setQueuedBatchCount(queuedBatches.current);
       setComplete(true);
-      onDone();
+      onDone(queuedBatches.current);
     } catch {
+      setQueuedBatchCount(queuedBatches.current);
       setError(true);
     } finally {
       setPending(false);
@@ -212,10 +258,24 @@ function DownloadDialog({
           aria-label={t('contact.download.close')}
         />
         <h2 id="contact-download-title">
-          {complete ? t('contact.download.success.title') : t('contact.download.title')}
+          {complete
+            ? t(
+                queuedBatchCount === 1
+                  ? 'contact.download.success.title'
+                  : 'contact.download.success.batches.title',
+                { count: queuedBatchCount },
+              )
+            : t('contact.download.title')}
         </h2>
         {complete ? (
-          <p role="status">{t('contact.download.success.text')}</p>
+          <p role="status">
+            {t(
+              queuedBatchCount === 1
+                ? 'contact.download.success.text'
+                : 'contact.download.success.batches',
+              { count: queuedBatchCount },
+            )}
+          </p>
         ) : (
           <>
             <p>
@@ -848,7 +908,7 @@ export function ContactPage() {
                   className={styles.albumCard}
                   data-testid={`user-contact-albums-album-${album.id}`}
                 >
-                  <Link to={`/albums/${encodeURIComponent(album.id)}`}>
+                  <div>
                     {album.cover_photo_urls[0] && (
                       <img
                         src={album.cover_photo_urls[0]}
@@ -863,7 +923,7 @@ export function ContactPage() {
                         total: album.total_count,
                       })}
                     </span>
-                  </Link>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -1034,7 +1094,17 @@ export function ContactPage() {
           scope={downloadScope}
           nsid={id}
           onClose={() => setDownloadScope(null)}
-          onDone={() => setActionMessage(t('contact.download.success.toast'))}
+          onDone={(batchCount) =>
+            setActionMessage(
+              t(
+                batchCount === 1
+                  ? 'contact.download.success.toast'
+                  : 'contact.download.success.batches.toast',
+                { count: batchCount },
+              ),
+            )
+          }
+          onAccessFailure={setAccessFailure}
           returnFocus={() => downloadOpenerRef.current}
           t={t}
         />
