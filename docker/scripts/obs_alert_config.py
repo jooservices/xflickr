@@ -12,7 +12,6 @@ from typing import Any
 
 STREAM_PLACEHOLDER = "{{OPENOBSERVE_STREAM}}"
 FRESHNESS_SECONDS = 90
-HEALTH_EVENTS = ("crawl.health", "crawl.health.key")
 STREAM_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
@@ -61,17 +60,13 @@ def _timestamp_seconds(value: Any) -> float | None:
 
 
 def freshness_alert_needed(events: list[dict[str, Any]], now_seconds: float) -> bool:
-    """Mirror the alert's 90-second rule; a missing event type is stale."""
-    for event_name in HEALTH_EVENTS:
-        recent = any(
-            event.get("event") == event_name
-            and (timestamp := _timestamp_seconds(event.get("_timestamp"))) is not None
-            and timestamp >= now_seconds - FRESHNESS_SECONDS
-            for event in events
-        )
-        if not recent:
-            return True
-    return False
+    """Mirror the alert's 90-second scheduler crawl-health rule."""
+    return not any(
+        event.get("event") == "crawl.health"
+        and (timestamp := _timestamp_seconds(event.get("_timestamp"))) is not None
+        and timestamp >= now_seconds - FRESHNESS_SECONDS
+        for event in events
+    )
 
 
 def _main() -> int:
