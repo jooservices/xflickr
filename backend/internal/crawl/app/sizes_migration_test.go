@@ -9,6 +9,48 @@ import (
 )
 
 func TestAccountScopedSizesMigrationPreservesLegacyPhotoResults(t *testing.T) {
+	migration := accountScopedSizesMigration(t)
+	up := strings.SplitN(migration, "-- +goose Down", 2)[0]
+	if strings.Contains(strings.ToUpper(up), "UPDATE PHOTOS") {
+		t.Fatal("account-scoped sizes migration must not rewrite legacy photo rows")
+	}
+}
+
+func TestAccountScopedSizesMigrationBuildsIndexesWithoutLongTableLocks(t *testing.T) {
+	migration := accountScopedSizesMigration(t)
+	up := strings.SplitN(migration, "-- +goose Down", 2)[0]
+	if !strings.HasPrefix(up, "-- +goose NO TRANSACTION\n") {
+		t.Fatal("account-scoped sizes migration must run without a wrapping transaction")
+	}
+	for _, index := range []string{
+		"CREATE UNIQUE INDEX CONCURRENTLY entity_facet_restrictions_key_scope_idx",
+		"CREATE UNIQUE INDEX CONCURRENTLY entity_facet_restrictions_account_scope_idx",
+		"CREATE INDEX CONCURRENTLY photos_p00_sizes_restricted_idx",
+		"CREATE INDEX CONCURRENTLY photos_p15_sizes_restricted_idx",
+	} {
+		if !strings.Contains(up, index) {
+			t.Errorf("migration does not build index concurrently: %s", index)
+		}
+	}
+	for _, statement := range []string{
+		"ADD CONSTRAINT entity_facet_restrictions_account_id_fkey",
+		"REFERENCES flickr_accounts (id) ON DELETE CASCADE NOT VALID",
+		"VALIDATE CONSTRAINT entity_facet_restrictions_account_id_fkey",
+	} {
+		if !strings.Contains(up, statement) {
+			t.Errorf("migration omits staged foreign key validation: %s", statement)
+		}
+	}
+	keys := strings.Index(up, "CREATE UNIQUE INDEX CONCURRENTLY entity_facet_restrictions_key_scope_idx")
+	accounts := strings.Index(up, "CREATE UNIQUE INDEX CONCURRENTLY entity_facet_restrictions_account_scope_idx")
+	dropPrimary := strings.Index(up, "ALTER TABLE entity_facet_restrictions\n    DROP CONSTRAINT entity_facet_restrictions_pkey")
+	if keys < 0 || accounts < 0 || dropPrimary < 0 || dropPrimary < keys || dropPrimary < accounts {
+		t.Fatal("legacy primary key must remain until both replacement indexes are ready")
+	}
+}
+
+func accountScopedSizesMigration(t *testing.T) string {
+	t.Helper()
 	_, source, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("locate migration test source")
@@ -18,8 +60,5 @@ func TestAccountScopedSizesMigrationPreservesLegacyPhotoResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read account-scoped sizes migration: %v", err)
 	}
-	up := strings.SplitN(string(migration), "-- +goose Down", 2)[0]
-	if strings.Contains(strings.ToUpper(up), "UPDATE PHOTOS") {
-		t.Fatal("account-scoped sizes migration must not rewrite legacy photo rows")
-	}
+	return string(migration)
 }

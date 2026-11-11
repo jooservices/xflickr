@@ -126,6 +126,10 @@ func TestPhotoLaneSelectsOnlyStarredOrActiveSelectedContacts(t *testing.T) {
 		}
 	}
 
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests (user_id,person_nsid,depth,via)
+		VALUES($1,$2,0,'connected_account')`, userA, people["selected"]); err != nil {
+		t.Fatal(err)
+	}
 	var keyID, accountID int64
 	if err := pool.QueryRow(ctx, `INSERT INTO api_keys
 		(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst,status)
@@ -156,6 +160,121 @@ func TestPhotoLaneSelectsOnlyStarredOrActiveSelectedContacts(t *testing.T) {
 		}
 		if len(ids) < 2 {
 			t.Fatalf("photo lane stopped progressing on cycle %d: ids=%v", cycle+1, ids)
+		}
+	}
+}
+
+func TestPhotoLaneHandlesLegacyAndAccountScopedSizes(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	suffix := fmt.Sprintf("lane-sizes-%d", time.Now().UnixNano())
+	base := time.Now().UnixNano() % 1_000_000_000 * 100
+	owner := suffix + "-owner"
+	var ownerUser, otherUser, ownerKey, otherKey, ownerAccount, otherAccount int64
+	for _, entry := range []struct {
+		email string
+		id    *int64
+	}{{suffix + "-owner@example.test", &ownerUser}, {suffix + "-other@example.test", &otherUser}} {
+		if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration-hash','user') RETURNING id`, entry.email).Scan(entry.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred,selected_until)
+		VALUES($1,$2,0,'test',true,now()+interval '1 hour')`, ownerUser, owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst,status)
+		VALUES($1,'owner',$2,'{}',3600,4,5,'valid') RETURNING id`, ownerUser, suffix+"-owner-key").Scan(&ownerKey); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status)
+		VALUES($1,$2,$3,'owner','{}','{}','ok') RETURNING id`, ownerUser, ownerKey, owner).Scan(&ownerAccount); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst,status)
+		VALUES($1,'other',$2,'{}',3600,4,5,'valid') RETURNING id`, otherUser, suffix+"-other-key").Scan(&otherKey); err != nil {
+		t.Fatal(err)
+	}
+	// A second XFlickr user can connect the same Flickr identity, but their
+	// account-scoped result must not close the photo owner's lane.
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status)
+		VALUES($1,$2,$3,'other','{}','{}','ok') RETURNING id`, otherUser, otherKey, owner).Scan(&otherAccount); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM entity_facet_restrictions WHERE entity_id = ANY($1)`, []string{fmt.Sprint(base + 1), fmt.Sprint(base + 2), fmt.Sprint(base + 3), fmt.Sprint(base + 4), fmt.Sprint(base + 5)})
+		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE id >= $1 AND id <= $2`, base+1, base+5)
+		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid=$1`, owner)
+		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id = ANY($1)`, []int64{ownerUser, otherUser})
+	})
+	for _, photo := range []struct {
+		id     int64
+		server string
+		status string
+	}{
+		{base + 1, "1234", "unavailable"},
+		{base + 2, "65535", "confirmed"},
+		{base + 3, "1234", "confirmed"},
+		{base + 4, "1234", "provisional"},
+		{base + 5, "1234", "provisional"},
+	} {
+		if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,server,last_update,visibility,sizes_status,sizes_checked_at,uploaded_at,raw,content_hash)
+			VALUES($1,$2,$3,now(),'public',$4,now(),now(),'{}',decode(repeat('ab',32),'hex'))`, photo.id, owner, photo.server, photo.status); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insertAccountResult := func(photoID, accountID int64, status string) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, `INSERT INTO photo_account_sizes(photo_id,account_id,photo_updated_at,photo_visibility,sizes,sizes_status,sizes_checked_at)
+			SELECT id,$2,last_update,visibility,'[]'::jsonb,$3,now() FROM photos WHERE id=$1`, photoID, accountID, status); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insertAccountResult(base+1, otherAccount, "unavailable")
+	insertAccountResult(base+4, ownerAccount, "unavailable")
+	insertAccountResult(base+5, ownerAccount, "confirmed")
+	lane := postgres.PhotoLane{Pool: pool}
+	selectRefs := func() map[int64][]string {
+		t.Helper()
+		refs, err := lane.Select(ctx, 1000, 0, []string{"info"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := make(map[int64][]string)
+		for _, ref := range refs {
+			if ref.ID >= base+1 && ref.ID <= base+5 {
+				got[ref.ID] = append(got[ref.ID], ref.Facet)
+			}
+		}
+		return got
+	}
+	got := selectRefs()
+	for id, want := range map[int64][]string{
+		base + 1: {"sizes"},
+		base + 2: {"sizes"},
+		base + 3: {"info"},
+		base + 4: nil,
+		base + 5: {"info"},
+	} {
+		if !reflect.DeepEqual(got[id], want) {
+			t.Errorf("photo lane facets for %d = %v, want %v", id, got[id], want)
+		}
+	}
+	if _, err := pool.Exec(ctx, `UPDATE flickr_accounts SET status='reconnect_required' WHERE id=$1`, ownerAccount); err != nil {
+		t.Fatal(err)
+	}
+	got = selectRefs()
+	for _, id := range []int64{base + 4, base + 5} {
+		if !reflect.DeepEqual(got[id], []string{"sizes"}) {
+			t.Errorf("photo lane facets for inactive account result %d = %v, want sizes", id, got[id])
 		}
 	}
 }
