@@ -470,7 +470,8 @@ func TestHomeSnapshotContinuesPastRevokedSharedPhotos(t *testing.T) {
 		if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'home-test','{}','{}','ok') RETURNING id`, owner.userID, *owner.keyID, owner.name).Scan(owner.accountID); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := pool.Exec(ctx, `INSERT INTO sharing_settings(user_id,enabled,changed_at) VALUES($1,true,statement_timestamp())`, owner.userID); err != nil {
+		if _, err := pool.Exec(ctx, `INSERT INTO sharing_settings(user_id,enabled,changed_at) VALUES($1,true,statement_timestamp())
+			ON CONFLICT (user_id) DO UPDATE SET enabled=EXCLUDED.enabled, changed_at=EXCLUDED.changed_at`, owner.userID); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username,realname) VALUES($1,$2,$2)`, owner.name, owner.name); err != nil {
