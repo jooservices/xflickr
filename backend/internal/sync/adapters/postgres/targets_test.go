@@ -659,7 +659,7 @@ func rollbackTargetMigrations(t *testing.T, ctx context.Context, cfg config.DBCo
 	if err != nil {
 		t.Fatalf("read sync target table migration: %v", err)
 	}
-	const indexMigration = "20261112100000_sync_targets_owner_cursor_index.sql"
+	const indexMigration = "20261112100100_sync_targets_owner_cursor_index.sql"
 	indexSQL, err := fs.ReadFile(migrations.Files, indexMigration)
 	if err != nil {
 		t.Fatalf("read sync target index migration: %v", err)
