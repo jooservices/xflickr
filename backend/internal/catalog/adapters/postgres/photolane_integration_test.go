@@ -716,12 +716,16 @@ func TestPhotoLanePlanBoundsPhotoReads(t *testing.T) {
 	if relation := photoSeqScan(root); relation != "" {
 		t.Fatalf("photo lane plan uses a sequential scan on %s: %s", relation, photoScanNodes(root))
 	}
+	indexes := photoIndexNodes(root)
+	if !strings.Contains(indexes, "owner_last_seen_idx") {
+		t.Fatalf("photo lane plan did not use the existing owner index: %s", photoScanNodes(root))
+	}
 	buffers := planBuffers(root)
 	if buffers > 2000 {
 		t.Fatalf("photo lane plan touched %d buffers, want at most 2000: %s", buffers, photoScanNodes(root))
 	}
 	t.Logf("EXPLAIN (ANALYZE, BUFFERS): fixture=400000 photos, execution_ms=%.3f, shared_buffers=%d, photo_access=%s",
-		result[0]["Execution Time"], buffers, photoIndexNodes(root))
+		result[0]["Execution Time"], buffers, indexes)
 }
 
 type photoLanePlanPool struct {
