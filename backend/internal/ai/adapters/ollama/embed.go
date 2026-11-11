@@ -2,6 +2,7 @@ package ollama
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -52,7 +53,7 @@ func (c *Client) Embed(parent context.Context, texts []string) ([][]float32, aia
 
 	vectors, info, err := c.embed(ctx, texts)
 	if err != nil {
-		if parent.Err() != nil {
+		if parent.Err() != nil || errors.Is(err, aiapp.ErrInvalidTexts) {
 			c.breaker.RecordAbandoned()
 		} else {
 			c.breaker.RecordFailure()

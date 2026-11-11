@@ -114,6 +114,59 @@ func TestEmbedRejectsInputBeyondContextWindow(t *testing.T) {
 	}
 }
 
+func TestEmbedContextWindowErrorsDoNotOpenSharedBreaker(t *testing.T) {
+	const simulatedContextWindow = 8 * 1024
+	text := strings.Repeat("word ", 20_000)
+	server := testOllama(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/show":
+			writeJSON(t, w, map[string]string{"modified_at": "version-1"})
+		case "/api/embed":
+			var request embedRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Errorf("decode embed request: %v", err)
+				return
+			}
+			if len(request.Input) != 1 || request.Input[0] != text {
+				t.Errorf("embed input was not sent in full")
+				return
+			}
+			if len(request.Input[0]) > simulatedContextWindow {
+				http.Error(w, `{"error":"input exceeds the context window"}`, http.StatusBadRequest)
+				return
+			}
+			writeJSON(t, w, embedResponse{Embeddings: [][]float32{embedding(0.5)}})
+		case "/api/chat":
+			_, _ = fmt.Fprint(w, `{"message":{"content":"{\"text\":\"A cat\",\"objects\":[\"cat\"]}"}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	client := newClient(t, server, time.Second, 1)
+
+	errorsSeen := make([]error, 0, defaultFailureLimit)
+	for range defaultFailureLimit {
+		vectors, info, err := client.Embed(t.Context(), []string{text})
+		if vectors != nil || info != (aiapp.ModelInfo{}) || err == nil {
+			t.Fatalf("Embed() = %v, %#v, %v; want rejected input and no result", vectors, info, err)
+		}
+		errorsSeen = append(errorsSeen, err)
+	}
+	for _, err := range errorsSeen {
+		if !errors.Is(err, aiapp.ErrInvalidTexts) {
+			t.Errorf("Embed() error = %v, want ErrInvalidTexts", err)
+		}
+	}
+
+	caption, err := client.Describe(t.Context(), []byte("image"))
+	if err != nil {
+		t.Fatalf("Describe() after context-window errors = %v, want successful caption", err)
+	}
+	if caption.Text != "A cat" {
+		t.Fatalf("Describe() text = %q, want A cat", caption.Text)
+	}
+}
+
 func TestEmbedRejectsInvalidTexts(t *testing.T) {
 	var calls atomic.Int32
 	server := testOllama(t, func(w http.ResponseWriter, _ *http.Request) {
