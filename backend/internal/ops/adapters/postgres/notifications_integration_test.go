@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -129,10 +130,21 @@ func TestNotificationsCascade(t *testing.T) {
 }
 
 func TestNotificationsMigrationDownUp(t *testing.T) {
-	pool := integrationPool(t)
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	cfg := notificationTestDatabaseConfig(t)
+	cfg = dbtest.EmptyDatabase(t, cfg)
+	if err := db.Migrate(ctx, cfg, db.MigrateUp, io.Discard); err != nil {
+		t.Fatalf("prepare isolated migration database: %v", err)
+	}
+	pool, err := db.NewPool(ctx, cfg)
+	if err != nil {
+		t.Fatalf("open isolated migration database: %v", err)
+	}
+	t.Cleanup(pool.Close)
 
 	var currentDatabase string
 	if err := pool.QueryRow(ctx, `SELECT current_database()`).Scan(&currentDatabase); err != nil {
@@ -149,29 +161,15 @@ func TestNotificationsMigrationDownUp(t *testing.T) {
 		t.Fatalf("latest applied migration = %d, want notifications version %d", latestVersion, notificationsMigrationVersion)
 	}
 
-	rolledBack := false
-	t.Cleanup(func() {
-		if !rolledBack {
-			return
-		}
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cleanupCancel()
-		if err := db.Migrate(cleanupCtx, cfg, db.MigrateUp, io.Discard); err != nil {
-			t.Errorf("restore notifications migration after test: %v", err)
-		}
-	})
-
 	if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err != nil {
 		t.Fatalf("roll back notifications migration: %v", err)
 	}
-	rolledBack = true
 	assertNotificationRelation(t, ctx, pool, "public.notifications", false)
 	assertNotificationRelation(t, ctx, pool, "public.notifications_user_created_id_idx", false)
 
 	if err := db.Migrate(ctx, cfg, db.MigrateUp, io.Discard); err != nil {
 		t.Fatalf("reapply notifications migration: %v", err)
 	}
-	rolledBack = false
 	assertNotificationRelation(t, ctx, pool, "public.notifications", true)
 	assertNotificationRelation(t, ctx, pool, "public.notifications_user_created_id_idx", true)
 }
