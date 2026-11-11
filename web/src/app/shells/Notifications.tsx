@@ -41,7 +41,12 @@ export function Notifications({ count, buttonTestId, countTestId }: BellProps) {
         <CountBadge count={count} testId={countTestId} />
       </button>
       {open ? (
-        <div className={styles.scrimSide}>
+        <div
+          className={styles.scrimSide}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) close();
+          }}
+        >
           <div
             ref={ref}
             className={styles.drawer}

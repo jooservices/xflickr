@@ -101,6 +101,31 @@ test.describe('user shell', () => {
     await expect(page.getByTestId('shell-notifications-button')).toBeFocused();
   });
 
+  test('closes notifications from the scrim', async ({ page }) => {
+    const notificationRequests: string[] = [];
+    page.on('request', (request) => {
+      const { pathname } = new URL(request.url());
+      if (pathname.includes('/notifications') || pathname === '/api/v1/events') {
+        notificationRequests.push(pathname);
+      }
+    });
+
+    await page.goto('/');
+    const bell = page.getByTestId('shell-notifications-button');
+    await bell.click();
+    await expect(page.getByTestId('shell-notifications')).toBeVisible();
+    await expectNoSeriousViolations(page);
+
+    await page
+      .getByTestId('shell-notifications')
+      .locator('..')
+      .click({ position: { x: 10, y: 10 } });
+
+    await expect(page.getByTestId('shell-notifications')).toHaveCount(0);
+    await expect(bell).toBeFocused();
+    expect(notificationRequests).toEqual([]);
+  });
+
   test('shows the 404 page for an unknown route and the 403 page for /admin', async ({ page }) => {
     await page.goto('/no-such-page');
     await expect(page.getByTestId('shell-notfound')).toBeVisible();

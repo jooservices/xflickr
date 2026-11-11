@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderApp, userSession } from '../../test/render';
+import { adminSession, renderApp, userSession } from '../../test/render';
 import { server } from '../../test/server';
 
 beforeEach(() => {
@@ -98,6 +98,59 @@ describe('notifications drawer', () => {
     expect(screen.getByTestId('shell-notifications')).toHaveAttribute('aria-modal', 'true');
 
     fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByTestId('shell-notifications')).toBeNull();
+    });
+    expect(bell).toHaveFocus();
+  });
+
+  it('closes notifications on scrim click and restores focus', async () => {
+    renderApp({ session: userSession });
+    const bell = await screen.findByTestId('shell-notifications-button');
+    fireEvent.click(bell);
+
+    const scrim = screen.getByTestId('shell-notifications').parentElement;
+    expect(scrim).not.toBeNull();
+    fireEvent.click(scrim as HTMLElement);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('shell-notifications')).toBeNull();
+    });
+    expect(bell).toHaveFocus();
+  });
+
+  it('keeps notifications open on drawer click', async () => {
+    renderApp({ session: userSession });
+    fireEvent.click(await screen.findByTestId('shell-notifications-button'));
+    const drawer = screen.getByTestId('shell-notifications');
+
+    fireEvent.click(screen.getByRole('heading', { name: 'Notifications' }));
+    fireEvent.click(screen.getByTestId('shell-notifications-empty'));
+
+    expect(drawer).toBeInTheDocument();
+  });
+
+  it('closes notifications with the Close button and restores focus', async () => {
+    renderApp({ session: userSession });
+    const bell = await screen.findByTestId('shell-notifications-button');
+    fireEvent.click(bell);
+    fireEvent.click(screen.getByRole('button', { name: 'Close notifications' }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('shell-notifications')).toBeNull();
+    });
+    expect(bell).toHaveFocus();
+  });
+
+  it('closes admin notifications on scrim click and restores focus', async () => {
+    renderApp({ session: adminSession, path: '/admin' });
+    const bell = await screen.findByTestId('admin-bell');
+    fireEvent.click(bell);
+
+    const scrim = screen.getByTestId('shell-notifications').parentElement;
+    expect(scrim).not.toBeNull();
+    fireEvent.click(scrim as HTMLElement);
+
     await waitFor(() => {
       expect(screen.queryByTestId('shell-notifications')).toBeNull();
     });

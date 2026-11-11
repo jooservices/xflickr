@@ -16,6 +16,8 @@
   of one stored queue, role, and node series (JOOXF-163 slice 1).
 - [Incident management](incident-management.md) — deduplication, acknowledgement,
   closure, and critical incident notification events.
+- [Notifications panel](notifications-panel.md) — drawer dismissal, focus return,
+  and deferred notification functionality.
 - [Structured logging and telemetry](observability.md) — context fields, OTLP
   export, event helper, offline log spill behavior, and cheap crawl-health
   snapshot estimates / lock / timeout.
