@@ -37,6 +37,30 @@ func TestDownloadCandidatesReadsKindsAndDeduplicatesObservers(t *testing.T) {
 	}
 }
 
+func TestScopedDownloadCandidatesRestrictEachBatchToRequestedPhotos(t *testing.T) {
+	ctx := context.Background()
+	ids := []int64{11, 12}
+	for _, kind := range []string{"contact", "favorites"} {
+		db := &candidateDB{rows: &candidateRows{}}
+		if _, err := (Repository{Pool: db}).DownloadCandidates(ctx, 7, kind, "subject", ids); err != nil {
+			t.Fatalf("%s candidates: %v", kind, err)
+		}
+		if !strings.Contains(db.query, "p.id=ANY") {
+			t.Fatalf("%s query does not constrain the selected IDs: %q", kind, db.query)
+		}
+		foundIDs := false
+		for _, arg := range db.args {
+			if reflect.DeepEqual(arg, ids) {
+				foundIDs = true
+				break
+			}
+		}
+		if !foundIDs {
+			t.Fatalf("%s query arguments=%#v, want selected IDs %v", kind, db.args, ids)
+		}
+	}
+}
+
 func TestDownloadCandidatesValidatesAndReportsDatabaseErrors(t *testing.T) {
 	ctx := context.Background()
 	db := &candidateDB{rows: &candidateRows{}}

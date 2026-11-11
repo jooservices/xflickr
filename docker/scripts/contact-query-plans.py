@@ -259,6 +259,32 @@ WHERE NOT EXISTS (
     WHERE f.person_nsid = 'owner-42' AND f.photo_id = page.photo_id AND f.removed_at IS NULL
 );
 
+\echo 'Contact download photo-ID batch'
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+SELECT p.id, p.owner_nsid, p.visibility, o.user_id, COALESCE(ss.enabled, FALSE)
+FROM photos p
+LEFT JOIN observations o ON o.record_kind = 'photo' AND o.record_id = p.id::text
+LEFT JOIN sharing_settings ss ON ss.user_id = o.user_id
+WHERE p.owner_nsid = 'owner-42' AND p.tombstoned_at IS NULL
+  AND p.id = ANY(ARRAY(SELECT generate_series(250001, 250500))::bigint[])
+  AND EXISTS (SELECT 1 FROM crawl_interests ci
+              WHERE ci.user_id = 42 AND ci.person_nsid = 'owner-42')
+ORDER BY p.id;
+
+\echo 'Favorite download photo-ID batch'
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+SELECT p.id, p.owner_nsid, p.visibility, o.user_id, COALESCE(ss.enabled, FALSE)
+FROM favorites f
+JOIN photos p ON p.id = f.photo_id
+LEFT JOIN observations o ON o.record_kind = 'photo' AND o.record_id = p.id::text
+LEFT JOIN sharing_settings ss ON ss.user_id = o.user_id
+WHERE f.person_nsid = 'owner-42' AND f.removed_at IS NULL
+  AND p.tombstoned_at IS NULL
+  AND p.id = ANY(ARRAY(SELECT generate_series(250001, 250500))::bigint[])
+  AND EXISTS (SELECT 1 FROM crawl_interests ci
+              WHERE ci.user_id = 42 AND ci.person_nsid = 'owner-42')
+ORDER BY f.fave_date DESC, p.id DESC;
+
 \echo 'Contact size prioritization batch'
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
 WITH batch AS (

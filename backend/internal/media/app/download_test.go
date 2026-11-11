@@ -82,6 +82,7 @@ func TestDownloadsRejectInvalidSelection(t *testing.T) {
 		{},
 		{UserID: 1, Kind: mediadomain.DownloadContact, Subject: ""},
 		{UserID: 1, Kind: mediadomain.DownloadAlbum, Subject: "album", PhotoIDs: []int64{3}},
+		{UserID: 1, Kind: mediadomain.DownloadContact, Subject: "owner", PhotoIDs: []int64{3, 3}},
 		{UserID: 1, Kind: mediadomain.DownloadTray, PhotoIDs: []int64{3, 3}},
 		{UserID: 1, Kind: mediadomain.DownloadTray, PhotoIDs: []int64{0}},
 	} {
@@ -94,7 +95,7 @@ func TestDownloadsRejectInvalidSelection(t *testing.T) {
 	}
 }
 
-func TestDownloadsRejectSelectionsOverLimit(t *testing.T) {
+func TestDownloadsLimitTraySelectionAndAllowScopedPhotoBatches(t *testing.T) {
 	photos := make([]int64, MaxDownloadItems+1)
 	for i := range photos {
 		photos[i] = int64(i + 1)
@@ -102,8 +103,28 @@ func TestDownloadsRejectSelectionsOverLimit(t *testing.T) {
 	if _, err := (Downloads{Repository: &downloadsFake{}}).Create(context.Background(), CreateDownloadInput{UserID: 1, Kind: mediadomain.DownloadTray, PhotoIDs: photos}); !errors.Is(err, ErrInvalidDownloadRequest) {
 		t.Fatalf("oversized tray error = %v", err)
 	}
-	catalog := catalogapp.DownloadCatalog{Photos: &downloadsFake{candidates: make([]catalogapp.DownloadCandidate, MaxDownloadItems+1)}}
-	if _, err := (Downloads{Catalog: catalog, Repository: &downloadsFake{}}).Create(context.Background(), CreateDownloadInput{UserID: 1, Kind: mediadomain.DownloadAlbum, Subject: "large"}); !errors.Is(err, ErrInvalidDownloadRequest) {
-		t.Fatalf("oversized album error = %v", err)
+
+	for _, photoIDs := range [][]int64{photos[:MaxDownloadItems], photos[MaxDownloadItems:]} {
+		candidates := make([]catalogapp.DownloadCandidate, len(photoIDs))
+		for i, id := range photoIDs {
+			candidates[i] = catalogapp.DownloadCandidate{
+				PhotoID:        id,
+				OwnerNSID:      "owner",
+				Visibility:     "public",
+				Observers:      []catalogapp.DownloadObserver{{UserID: 1}},
+				SizesConfirmed: true,
+			}
+		}
+		repo := &downloadsFake{candidates: candidates}
+		service := Downloads{Catalog: catalogapp.DownloadCatalog{Photos: repo}, Repository: repo}
+		result, err := service.Create(context.Background(), CreateDownloadInput{
+			UserID:   1,
+			Kind:     mediadomain.DownloadContact,
+			Subject:  "owner",
+			PhotoIDs: photoIDs,
+		})
+		if err != nil || len(result.Items) != len(photoIDs) {
+			t.Fatalf("scoped batch size=%d items=%d err=%v", len(photoIDs), len(result.Items), err)
+		}
 	}
 }

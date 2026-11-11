@@ -105,12 +105,24 @@ func selectVisibleDownloadItems(userID int64, candidates []catalogapp.DownloadCa
 }
 
 func validDownloadSelection(input CreateDownloadInput) bool {
-	if strings.TrimSpace(input.Subject) != "" && len(input.PhotoIDs) == 0 {
-		return input.Kind == mediadomain.DownloadContact || input.Kind == mediadomain.DownloadAlbum || input.Kind == mediadomain.DownloadFavorites
-	}
-	if input.Kind != mediadomain.DownloadTray || strings.TrimSpace(input.Subject) != "" || len(input.PhotoIDs) == 0 || len(input.PhotoIDs) > MaxDownloadItems {
+	hasSubject := strings.TrimSpace(input.Subject) != ""
+	if hasSubject {
+		switch input.Kind {
+		case mediadomain.DownloadContact, mediadomain.DownloadFavorites:
+		case mediadomain.DownloadAlbum:
+			if len(input.PhotoIDs) > 0 {
+				return false
+			}
+		default:
+			return false
+		}
+		if len(input.PhotoIDs) > MaxDownloadItems {
+			return false
+		}
+	} else if input.Kind != mediadomain.DownloadTray || len(input.PhotoIDs) == 0 || len(input.PhotoIDs) > MaxDownloadItems {
 		return false
 	}
+
 	seen := make(map[int64]struct{}, len(input.PhotoIDs))
 	for _, id := range input.PhotoIDs {
 		if id <= 0 {

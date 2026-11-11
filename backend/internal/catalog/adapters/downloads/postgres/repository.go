@@ -24,10 +24,30 @@ func downloadCandidateRows(ctx context.Context, pool interface {
 ) (pgx.Rows, error) {
 	switch kind {
 	case "contact":
+		if len(ids) > 0 {
+			return pool.Query(ctx, `SELECT p.id,p.owner_nsid,p.visibility,p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update AS sizes_confirmed,o.user_id,COALESCE(ss.enabled,false)
+				FROM photos p
+				LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text
+				LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id
+				WHERE p.owner_nsid=$2 AND p.tombstoned_at IS NULL AND p.id=ANY($3::bigint[])
+				AND EXISTS(SELECT 1 FROM crawl_interests ci WHERE ci.user_id=$1 AND ci.person_nsid=$2)
+				ORDER BY p.id`, userID, subject, ids)
+		}
 		return pool.Query(ctx, `WITH selected AS (SELECT p.id,p.owner_nsid,p.visibility,p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update AS sizes_confirmed FROM photos p WHERE p.owner_nsid=$2 AND p.tombstoned_at IS NULL AND EXISTS(SELECT 1 FROM crawl_interests ci WHERE ci.user_id=$1 AND ci.person_nsid=$2) ORDER BY p.id LIMIT 501) SELECT p.id,p.owner_nsid,p.visibility,p.sizes_confirmed,o.user_id,COALESCE(ss.enabled,false) FROM selected p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id ORDER BY p.id`, userID, subject)
 	case "album":
 		return pool.Query(ctx, `WITH selected AS (SELECT p.id,p.owner_nsid,p.visibility,p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update AS sizes_confirmed,ap.position FROM album_photos ap JOIN photos p ON p.id=ap.photo_id WHERE ap.album_id=$1 AND p.tombstoned_at IS NULL ORDER BY ap.position,p.id LIMIT 501) SELECT p.id,p.owner_nsid,p.visibility,p.sizes_confirmed,o.user_id,COALESCE(ss.enabled,false) FROM selected p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id ORDER BY p.position,p.id`, subject)
 	case "favorites":
+		if len(ids) > 0 {
+			return pool.Query(ctx, `SELECT p.id,p.owner_nsid,p.visibility,p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update AS sizes_confirmed,o.user_id,COALESCE(ss.enabled,false)
+				FROM favorites f
+				JOIN photos p ON p.id=f.photo_id
+				LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text
+				LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id
+				WHERE f.person_nsid=$2 AND f.removed_at IS NULL AND p.tombstoned_at IS NULL
+				AND p.id=ANY($3::bigint[])
+				AND EXISTS(SELECT 1 FROM crawl_interests ci WHERE ci.user_id=$1 AND ci.person_nsid=$2)
+				ORDER BY f.fave_date DESC,p.id DESC`, userID, subject, ids)
+		}
 		return pool.Query(ctx, `WITH selected AS (SELECT p.id,p.owner_nsid,p.visibility,p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update AS sizes_confirmed,f.fave_date FROM favorites f JOIN photos p ON p.id=f.photo_id WHERE f.person_nsid=$2 AND f.removed_at IS NULL AND p.tombstoned_at IS NULL AND EXISTS(SELECT 1 FROM crawl_interests ci WHERE ci.user_id=$1 AND ci.person_nsid=$2) ORDER BY f.fave_date DESC,p.id DESC LIMIT 501) SELECT p.id,p.owner_nsid,p.visibility,p.sizes_confirmed,o.user_id,COALESCE(ss.enabled,false) FROM selected p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id ORDER BY p.fave_date DESC,p.id DESC`, userID, subject)
 	case "tray":
 		return pool.Query(ctx, `SELECT p.id,p.owner_nsid,p.visibility,p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update, o.user_id, COALESCE(ss.enabled,false) FROM photos p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id WHERE p.id=ANY($1::bigint[]) AND p.tombstoned_at IS NULL ORDER BY p.id`, ids)

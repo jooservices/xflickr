@@ -22,6 +22,7 @@ func TestDownloadCandidatesFromPostgres(t *testing.T) {
 	pool := dbtest.Open(t, downloadDatabase(t))
 	base := time.Now().UnixNano()
 	userID, keyID, accountID, photoID := base, base+1, base+2, base+3
+	secondPhotoID := base + 4
 	owner := fmt.Sprintf("catalog-download-%d@example.invalid", base)
 	album := fmt.Sprintf("album-%d", base)
 	if _, err := pool.Exec(ctx, `INSERT INTO users(id,email,password_hash,role) VALUES($1,$2,'unused','user')`, userID, owner); err != nil {
@@ -29,7 +30,7 @@ func TestDownloadCandidatesFromPostgres(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=$1`, photoID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=ANY($1::bigint[])`, []int64{photoID, secondPhotoID})
 		_, _ = pool.Exec(context.Background(), `DELETE FROM albums WHERE id=$1`, album)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=$1`, owner)
 	})
@@ -52,10 +53,13 @@ func TestDownloadCandidatesFromPostgres(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,last_update,visibility,sizes,sizes_status,sizes_checked_at,raw,content_hash) VALUES($1,$2,$3,'public','[]'::jsonb,'confirmed',$3,'{}',decode(repeat('ab',32),'hex'))`, photoID, owner, now); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,last_update,visibility,sizes,sizes_status,sizes_checked_at,raw,content_hash) VALUES($1,$2,$3,'public','[]'::jsonb,'confirmed',$3,'{}',decode(repeat('ab',32),'hex'))`, secondPhotoID, owner, now); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.Exec(ctx, `INSERT INTO album_photos(album_id,photo_id,position) VALUES($1,$2,0)`, album, photoID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) VALUES($1,$2,'photo',$3)`, userID, accountID, fmt.Sprint(photoID)); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) SELECT $1,$2,'photo',photo_id::text FROM unnest($3::bigint[]) AS photo_id`, userID, accountID, []int64{photoID, secondPhotoID}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO favorites(person_nsid,photo_id,fave_date) VALUES($1,$2,$3)`, owner, photoID, now); err != nil {
@@ -67,9 +71,17 @@ func TestDownloadCandidatesFromPostgres(t *testing.T) {
 		ids           []int64
 	}{{"contact", owner, nil}, {"album", album, nil}, {"favorites", owner, nil}, {"tray", "", []int64{photoID}}} {
 		got, err := repository.DownloadCandidates(ctx, userID, request.kind, request.subject, request.ids)
-		if err != nil || len(got) != 1 || got[0].PhotoID != photoID || !got[0].SizesConfirmed || len(got[0].Observers) != 1 {
+		wantCount := 1
+		if request.kind == "contact" {
+			wantCount = 2
+		}
+		if err != nil || len(got) != wantCount || got[0].PhotoID != photoID || !got[0].SizesConfirmed || len(got[0].Observers) != 1 {
 			t.Fatalf("%s candidates=%+v err=%v", request.kind, got, err)
 		}
+	}
+	selected, err := repository.DownloadCandidates(ctx, userID, "contact", owner, []int64{secondPhotoID})
+	if err != nil || len(selected) != 1 || selected[0].PhotoID != secondPhotoID {
+		t.Fatalf("selected contact candidates=%+v err=%v", selected, err)
 	}
 	if _, err := (Repository{}).DownloadCandidates(ctx, userID, "tray", "", nil); err == nil {
 		t.Fatal("accepted missing database")
