@@ -63,7 +63,8 @@ sizes_ready = EXCLUDED.sizes_ready,
 captioned = EXCLUDED.captioned,
 computed_at = EXCLUDED.computed_at,
 source_revision = EXCLUDED.source_revision,
-shared_revision = EXCLUDED.shared_revision`
+shared_revision = EXCLUDED.shared_revision,
+invalidated_at = NULL`
 	copyContactRefreshSQL = `INSERT INTO user_home_contact_stats
 (user_id, person_nsid, photos_total, sizes_ready)
 SELECT user_id, person_nsid, photos_total, sizes_ready

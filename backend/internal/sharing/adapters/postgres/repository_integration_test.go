@@ -120,6 +120,12 @@ func TestObservationUpsertAndSharingOutbox(t *testing.T) {
 	if observations != 1 {
 		t.Fatalf("same-value event count = %d, want 1", observations)
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO user_home_stats(user_id,photos_total,sizes_ready,captioned,computed_at) VALUES($1,1,1,0,statement_timestamp())`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO user_home_contact_stats(user_id,person_nsid,photos_total,sizes_ready) VALUES($1,$2,1,1)`, userID, suffix+"@flickr"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := settings.Set(ctx, sharingdomain.Setting{UserID: userID, Enabled: false}); err != nil {
 		t.Fatal(err)
 	}
@@ -128,6 +134,13 @@ func TestObservationUpsertAndSharingOutbox(t *testing.T) {
 	}
 	if observations != 2 {
 		t.Fatalf("toggle event count = %d, want 2", observations)
+	}
+	var invalidated bool
+	if err := pool.QueryRow(ctx, `SELECT invalidated_at IS NOT NULL FROM user_home_stats WHERE user_id=$1`, userID).Scan(&invalidated); err != nil || !invalidated {
+		t.Fatalf("sharing change invalidated cached Home counts = %t, err=%v", invalidated, err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE args->>'kind'=$1 AND args->'args'->>'user_id'=$2`, app.RefreshJobKind, fmt.Sprint(userID)).Scan(&refreshJobs); err != nil || refreshJobs != 1 {
+		t.Fatalf("sharing changes queued %d Home refresh jobs, err=%v; want one deduplicated job", refreshJobs, err)
 	}
 	if _, err := settings.Set(ctx, sharingdomain.Setting{UserID: userID + 999999999, Enabled: true}); err == nil {
 		t.Fatal("expected unknown user error")

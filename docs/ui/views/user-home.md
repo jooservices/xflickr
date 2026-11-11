@@ -78,9 +78,11 @@ endpoint is called before it exists in the OpenAPI contract and backend.
 
 `GET /me/home` returns one user-scoped snapshot, omits private Flickr content,
 limits `new_photos` to 12, `starred_contacts` to 5, and `activity` to 5, and
-returns counts as non-negative integers. `thumbnail_url` must be an authorized
-thumbnail URL. `counts_computed_at` and `estimated` identify cached photo count
-freshness. The first count refresh is enqueued in the background. The Home build depends on this requested contract; until it exists, render only
+returns available counts as non-negative integers. `thumbnail_url` must be an
+authorized thumbnail URL. `counts_computed_at`, `estimated`, and optional
+`counts_stale` identify cached photo count freshness. When `counts_stale` is
+true, `photos` is null and starred-contact photo totals are null until the
+background refresh completes. The Home build depends on this requested contract; until it exists, render only
 sections backed by existing endpoints and do not fabricate counts or records.
 If the list API is temporarily unavailable but a previous snapshot exists,
 retain it as stale content. No endpoint or OpenAPI change is made in this

@@ -44,12 +44,17 @@ func homeSnapshot(snapshot app.Snapshot) gen.HomeSnapshot {
 		Contacts: gen.HomeContactCounts{
 			Total: snapshot.Contacts.Total, Direct: snapshot.Contacts.Direct, Discovered: snapshot.Contacts.Discovered,
 		},
-		Photos: gen.HomePhotoCounts{
-			Total: snapshot.Photos.Total, SizesReady: snapshot.Photos.SizesReady, Captioned: snapshot.Photos.Captioned,
-		},
 		NewPhotos:       make([]gen.HomePhoto, 0, len(snapshot.NewPhotos)),
 		StarredContacts: make([]gen.HomeStarredContact, 0, len(snapshot.StarredContacts)),
 		Activity:        make([]gen.HomeActivity, 0, len(snapshot.Activity)),
+	}
+	if snapshot.CountsStale {
+		stale := true
+		out.CountsStale = &stale
+	} else {
+		out.Photos = &gen.HomePhotoCounts{
+			Total: snapshot.Photos.Total, SizesReady: snapshot.Photos.SizesReady, Captioned: snapshot.Photos.Captioned,
+		}
 	}
 	for _, photo := range snapshot.NewPhotos {
 		out.NewPhotos = append(out.NewPhotos, gen.HomePhoto{
@@ -59,11 +64,16 @@ func homeSnapshot(snapshot app.Snapshot) gen.HomeSnapshot {
 		})
 	}
 	for _, contact := range snapshot.StarredContacts {
-		out.StarredContacts = append(out.StarredContacts, gen.HomeStarredContact{
+		item := gen.HomeStarredContact{
 			Nsid: contact.NSID, Name: contact.Name, IconURL: contact.IconURL,
-			PhotosCount: contact.PhotosCount, SizesReady: contact.SizesReady, SizesTotal: contact.SizesTotal,
 			CrawlState: gen.HomeStarredContactCrawlState(contact.CrawlState),
-		})
+		}
+		if !snapshot.CountsStale {
+			item.PhotosCount = int64Pointer(contact.PhotosCount)
+			item.SizesReady = int64Pointer(contact.SizesReady)
+			item.SizesTotal = int64Pointer(contact.SizesTotal)
+		}
+		out.StarredContacts = append(out.StarredContacts, item)
 	}
 	for _, item := range snapshot.Activity {
 		out.Activity = append(out.Activity, gen.HomeActivity{
@@ -74,3 +84,5 @@ func homeSnapshot(snapshot app.Snapshot) gen.HomeSnapshot {
 	}
 	return out
 }
+
+func int64Pointer(value int64) *int64 { return &value }

@@ -59,14 +59,37 @@ func TestGetMeHomeMapsSnapshot(t *testing.T) {
 	if !ok {
 		t.Fatalf("response = %T, want 200", response)
 	}
-	if got.GeneratedAt != generatedAt || got.CountsComputedAt == nil || *got.CountsComputedAt != countsComputedAt || !got.Estimated || got.Contacts.Total != 3 || got.Photos.Captioned != 5 || len(got.NewPhotos) != 1 || got.NewPhotos[0].ThumbnailURL == nil || *got.NewPhotos[0].ThumbnailURL != thumbnail || got.NewPhotos[0].TakenAt == nil {
+	if got.GeneratedAt != generatedAt || got.CountsComputedAt == nil || *got.CountsComputedAt != countsComputedAt || !got.Estimated || got.Contacts.Total != 3 || got.Photos == nil || got.Photos.Captioned != 5 || len(got.NewPhotos) != 1 || got.NewPhotos[0].ThumbnailURL == nil || *got.NewPhotos[0].ThumbnailURL != thumbnail || got.NewPhotos[0].TakenAt == nil {
 		t.Fatalf("snapshot response = %+v", got)
 	}
-	if len(got.StarredContacts) != 1 || got.StarredContacts[0].CrawlState != gen.HomeCrawlStateCrawling || len(got.Activity) != 1 || got.Activity[0].MessageKey != gen.HomeActivityMessageKeyNewPhotos {
+	if len(got.StarredContacts) != 1 || got.StarredContacts[0].CrawlState != gen.HomeCrawlStateCrawling || got.StarredContacts[0].PhotosCount == nil || *got.StarredContacts[0].PhotosCount != 9 || len(got.Activity) != 1 || got.Activity[0].MessageKey != gen.HomeActivityMessageKeyNewPhotos {
 		t.Fatalf("contacts/activity response = %+v / %+v", got.StarredContacts, got.Activity)
 	}
 	if !service.called || service.userID != 17 {
 		t.Fatalf("service call user = %d, called = %t", service.userID, service.called)
+	}
+}
+
+func TestGetMeHomeHidesCountsWhenStale(t *testing.T) {
+	service := &serviceStub{snapshot: app.Snapshot{
+		CountsStale:     true,
+		Photos:          app.PhotoCounts{Total: 91, SizesReady: 70, Captioned: 55},
+		StarredContacts: []app.Contact{{NSID: "owner", Name: "Owner", PhotosCount: 91, SizesReady: 70, SizesTotal: 91, CrawlState: "idle"}},
+	}}
+	handler := Handler{ActorID: func(context.Context) (int64, bool) { return 17, true }, Snapshot: service}
+	response, err := handler.GetMeHome(t.Context(), gen.GetMeHomeRequestObject{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := response.(gen.GetMeHome200JSONResponse)
+	if !ok {
+		t.Fatalf("response = %T, want 200", response)
+	}
+	if got.Photos != nil || got.CountsStale == nil || !*got.CountsStale {
+		t.Fatalf("stale snapshot counts = photos %+v, counts_stale %v", got.Photos, got.CountsStale)
+	}
+	if len(got.StarredContacts) != 1 || got.StarredContacts[0].PhotosCount != nil || got.StarredContacts[0].SizesReady != nil || got.StarredContacts[0].SizesTotal != nil {
+		t.Fatalf("stale contact counts remain visible: %+v", got.StarredContacts)
 	}
 }
 

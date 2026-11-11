@@ -6,8 +6,12 @@ HomeSnapshot:
     generated_at: { type: string, format: date-time }
     counts_computed_at: { type: [string, 'null'], format: date-time, description: Time the cached photo counts were completed, or null before the first refresh. }
     estimated: { type: boolean, description: True when cached photo counts are missing or older than the administrator-configured refresh interval. }
+    counts_stale: { type: boolean, description: True when cached photo counts are unavailable because their source or sharing policy changed. }
     contacts: { $ref: '#/HomeContactCounts' }
-    photos: { $ref: '#/HomePhotoCounts' }
+    photos:
+      oneOf:
+        - { $ref: '#/HomePhotoCounts' }
+        - { type: 'null' }
     new_photos:
       type: array
       maxItems: 12
@@ -60,9 +64,9 @@ HomeStarredContact:
     nsid: { type: string }
     name: { type: string }
     icon_url: { type: string }
-    photos_count: { type: integer, format: int64, minimum: 0 }
-    sizes_ready: { type: integer, format: int64, minimum: 0 }
-    sizes_total: { type: integer, format: int64, minimum: 0 }
+    photos_count: { type: [integer, 'null'], format: int64, minimum: 0 }
+    sizes_ready: { type: [integer, 'null'], format: int64, minimum: 0 }
+    sizes_total: { type: [integer, 'null'], format: int64, minimum: 0 }
     crawl_state:
       type: string
       enum: [idle, crawling, waiting, attention]

@@ -68,6 +68,9 @@ func (r *Repository) Set(ctx context.Context, setting domain.Setting) (domain.Se
 			}
 			return nil
 		}
+		if _, err := tx.Exec(ctx, `UPDATE user_home_stats SET invalidated_at = statement_timestamp()`); err != nil {
+			return fmt.Errorf("sharing: invalidate Home counts: %w", err)
+		}
 		payload, err := json.Marshal(domain.Changed(result))
 		if err != nil {
 			return fmt.Errorf("sharing: encode changed event: %w", err)
@@ -87,7 +90,7 @@ func (r *Repository) Set(ctx context.Context, setting domain.Setting) (domain.Se
 			// Each setting change needs its own wake-up; a unique running job
 			// could finish just before this transaction commits.
 			if err := r.queue.Enqueue(ctx, transaction, queue.Job{Kind: homeapp.RefreshJobKind, Args: jobArgs}, queue.Options{
-				Queue: "home", MaxAttempts: 5, LeaseTimeout: time.Minute,
+				Queue: "home", MaxAttempts: 5, LeaseTimeout: time.Minute, UniqueByArgs: true, UniqueByQueue: true,
 			}); err != nil {
 				return fmt.Errorf("sharing: enqueue Home refresh: %w", err)
 			}

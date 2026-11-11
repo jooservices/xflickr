@@ -191,7 +191,7 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 	if snapshot.Contacts.Total != 7 || snapshot.Contacts.Direct != 1 || snapshot.Contacts.Discovered != 6 {
 		t.Fatalf("contacts = %+v", snapshot.Contacts)
 	}
-	if snapshot.Photos.Total != 0 || snapshot.CountsComputedAt != nil || !snapshot.Estimated {
+	if snapshot.Photos.Total != 0 || snapshot.CountsComputedAt != nil || !snapshot.Estimated || !snapshot.CountsStale {
 		t.Fatalf("missing cached photo counts = %+v, computed_at=%v, estimated=%t", snapshot.Photos, snapshot.CountsComputedAt, snapshot.Estimated)
 	}
 	if queueStub.calls != 1 || queueStub.job.Kind != app.RefreshJobKind {
@@ -254,7 +254,7 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !snapshot.Estimated || snapshot.Photos.Total != 14 || snapshot.StarredContacts[1].PhotosCount != 1 || queueStub.calls != 2 {
+	if !snapshot.Estimated || !snapshot.CountsStale || snapshot.Photos.Total != 0 || snapshot.StarredContacts[1].PhotosCount != 0 || queueStub.calls != 2 {
 		t.Fatalf("sharing change did not invalidate the cached snapshot: %+v, queued=%d", snapshot.Photos, queueStub.calls)
 	}
 	assertPhotoMissing(t, snapshot.NewPhotos, sharedPublicID)
@@ -346,7 +346,6 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 	if got := snapshot.StarredContacts[3]; got.NSID != personIDs[4] || got.CrawlState != "idle" {
 		t.Fatalf("fourth starred contact = %+v", got)
 	}
-	oldComputedAt := *snapshot.CountsComputedAt
 	if done, err := refresher.Refresh(ctx, userID); err != nil || done {
 		t.Fatalf("first refresh batch = done %t, err %v", done, err)
 	}
@@ -359,7 +358,7 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 		t.Fatal(err)
 	}
 	changedSnapshot, err := repository.Load(ctx, userID)
-	if err != nil || !changedSnapshot.Estimated || changedSnapshot.Photos.Total != 14 || changedSnapshot.StarredContacts[0].PhotosCount != 13 || !changedSnapshot.CountsComputedAt.Equal(oldComputedAt) {
+	if err != nil || !changedSnapshot.Estimated || !changedSnapshot.CountsStale || changedSnapshot.Photos.Total != 0 || changedSnapshot.StarredContacts[0].PhotosCount != 0 || changedSnapshot.CountsComputedAt != nil {
 		t.Fatalf("in-progress refresh published a changed source: %+v, err=%v", changedSnapshot, err)
 	}
 	if done, err := refresher.Refresh(ctx, userID); err != nil || done {
@@ -382,7 +381,7 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 		}
 	}
 	snapshot, err = repository.Load(ctx, userID)
-	if err != nil || !snapshot.Estimated || snapshot.Photos.Total != 14 {
+	if err != nil || !snapshot.Estimated || !snapshot.CountsStale || snapshot.Photos.Total != 0 {
 		t.Fatalf("refresh with a concurrent source change = %+v estimated=%t err=%v", snapshot.Photos, snapshot.Estimated, err)
 	}
 	for {
@@ -402,7 +401,7 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 		t.Fatal(err)
 	}
 	snapshot, err = repository.Load(ctx, userID)
-	if err != nil || !snapshot.Estimated || snapshot.Photos.Total != 13 {
+	if err != nil || !snapshot.Estimated || !snapshot.CountsStale || snapshot.Photos.Total != 0 {
 		t.Fatalf("post-refresh permission change did not invalidate snapshot: %+v estimated=%t err=%v", snapshot.Photos, snapshot.Estimated, err)
 	}
 	if len(snapshot.NewPhotos) != 12 {
@@ -428,8 +427,94 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 		}
 	}
 	snapshot, err = repository.Load(ctx, userID)
-	if err != nil || snapshot.Estimated || snapshot.Photos.Total != 12 {
+	if err != nil || snapshot.Estimated || snapshot.CountsStale || snapshot.Photos.Total != 12 {
 		t.Fatalf("post-revocation refresh = %+v estimated=%t err=%v", snapshot.Photos, snapshot.Estimated, err)
+	}
+}
+
+func TestHomeSnapshotContinuesPastRevokedSharedPhotos(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	pool := dbtest.Open(t, homeDatabase(t))
+	suffix := fmt.Sprintf("home-revoked-%d", time.Now().UnixNano())
+	var viewerID, revokedOwnerID, allowedOwnerID int64
+	var revokedKeyID, allowedKeyID, revokedAccountID, allowedAccountID int64
+	photoIDs := make([]int64, 0, 30)
+	revokedNSID, allowedNSID := suffix+"-revoked", suffix+"-allowed"
+	t.Cleanup(func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stop()
+		if len(photoIDs) > 0 {
+			_, _ = pool.Exec(cleanup, `DELETE FROM photos WHERE id=ANY($1::bigint[])`, photoIDs)
+		}
+		_, _ = pool.Exec(cleanup, `DELETE FROM people WHERE nsid=ANY($1::text[])`, []string{revokedNSID, allowedNSID})
+		_, _ = pool.Exec(cleanup, `DELETE FROM users WHERE id=ANY($1::bigint[])`, []int64{viewerID, revokedOwnerID, allowedOwnerID})
+	})
+	for i, target := range []*int64{&viewerID, &revokedOwnerID, &allowedOwnerID} {
+		if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration','user') RETURNING id`, fmt.Sprintf("%s-%d@example.invalid", suffix, i)).Scan(target); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, owner := range []struct {
+		userID    int64
+		name      string
+		keyID     *int64
+		accountID *int64
+	}{{revokedOwnerID, revokedNSID, &revokedKeyID, &revokedAccountID}, {allowedOwnerID, allowedNSID, &allowedKeyID, &allowedAccountID}} {
+		if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'home-test',$2,'{}',100,10,10) RETURNING id`, owner.userID, suffix+owner.name).Scan(owner.keyID); err != nil {
+			t.Fatal(err)
+		}
+		if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'home-test','{}','{}','ok') RETURNING id`, owner.userID, *owner.keyID, owner.name).Scan(owner.accountID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO sharing_settings(user_id,enabled,changed_at) VALUES($1,true,statement_timestamp())`, owner.userID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username,realname) VALUES($1,$2,$2)`, owner.name, owner.name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	baseID := time.Now().UnixNano()
+	baseTime := time.Now().UTC().Truncate(time.Microsecond)
+	for i := 0; i < 30; i++ {
+		ownerNSID, ownerID, accountID := revokedNSID, revokedOwnerID, revokedAccountID
+		photoID := baseID + int64(i)
+		if i >= 12 {
+			ownerNSID, ownerID, accountID = allowedNSID, allowedOwnerID, allowedAccountID
+			photoID += 100
+		}
+		uploadedAt := baseTime.Add(time.Duration(30-i) * time.Minute)
+		if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,title,last_update,uploaded_at,taken_at,visibility,sizes,sizes_status,raw,content_hash)
+			VALUES($1,$2,$3,$4,$4,$4,'public','[]'::jsonb,'provisional','{}',decode(repeat('ab',32),'hex'))`, photoID, ownerNSID, fmt.Sprintf("photo-%d", i), uploadedAt); err != nil {
+			t.Fatal(err)
+		}
+		photoIDs = append(photoIDs, photoID)
+		if _, err := pool.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) VALUES($1,$2,'photo',$3)`, ownerID, accountID, fmt.Sprint(photoID)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `UPDATE sharing_settings SET enabled=false WHERE user_id=$1`, revokedOwnerID); err != nil {
+		t.Fatal(err)
+	}
+	repository, err := New(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := repository.Load(ctx, viewerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.NewPhotos) != 12 {
+		t.Fatalf("visible newest photos = %d, want 12 after skipping revoked candidates", len(snapshot.NewPhotos))
+	}
+	for i, photo := range snapshot.NewPhotos {
+		want := baseID + 100 + 12 + int64(i)
+		if photo.ID != want {
+			t.Fatalf("new photo %d = %d, want allowed photo %d", i, photo.ID, want)
+		}
 	}
 }
 

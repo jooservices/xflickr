@@ -28,6 +28,7 @@ type Snapshot struct {
 	GeneratedAt      time.Time     `json:"generated_at"`
 	CountsComputedAt *time.Time    `json:"counts_computed_at"`
 	Estimated        bool          `json:"estimated"`
+	CountsStale      bool          `json:"counts_stale,omitempty"`
 	Contacts         ContactCounts `json:"contacts"`
 	Photos           PhotoCounts   `json:"photos"`
 	NewPhotos        []Photo       `json:"new_photos"`

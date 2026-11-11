@@ -43,6 +43,7 @@ type txStub struct {
 	selectRow rowStub
 	execErr   error
 	execs     *int
+	queries   *[]string
 }
 
 type beginnerStub struct{}
@@ -56,9 +57,12 @@ func (t txStub) QueryRow(_ context.Context, query string, _ ...any) pgx.Row {
 	return t.selectRow
 }
 
-func (t txStub) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+func (t txStub) Exec(_ context.Context, query string, _ ...any) (pgconn.CommandTag, error) {
 	if t.execs != nil {
 		*t.execs++
+	}
+	if t.queries != nil {
+		*t.queries = append(*t.queries, query)
 	}
 	return pgconn.NewCommandTag("INSERT 0 1"), t.execErr
 }
@@ -164,7 +168,8 @@ func TestSetEnqueuesHomeRefreshInChangeTransaction(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			now := time.Unix(20, 0).UTC()
-			transaction := queueTxStub{txStub: txStub{insert: rowStub{values: []any{int64(7), true, now}}}}
+			var queries []string
+			transaction := queueTxStub{txStub: txStub{insert: rowStub{values: []any{int64(7), true, now}}, queries: &queries}}
 			jobs := &refreshQueueStub{err: test.queueErr}
 			repository := &Repository{
 				run: func(_ context.Context, fn func(settingTx) error) error {
@@ -176,8 +181,11 @@ func TestSetEnqueuesHomeRefreshInChangeTransaction(t *testing.T) {
 			if (err != nil) != test.wantErr || test.wantErr && !errors.Is(err, queueErr) {
 				t.Fatalf("Set() error = %v, wantErr %t", err, test.wantErr)
 			}
-			if jobs.calls != 1 || jobs.job.Kind != homeapp.RefreshJobKind || jobs.options.Queue != "home" || jobs.options.UniqueByArgs || jobs.options.UniqueByQueue {
+			if jobs.calls != 1 || jobs.job.Kind != homeapp.RefreshJobKind || jobs.options.Queue != "home" || !jobs.options.UniqueByArgs || !jobs.options.UniqueByQueue {
 				t.Fatalf("queued Home refresh = %+v, options=%+v", jobs.job, jobs.options)
+			}
+			if len(queries) != 2 || !strings.Contains(queries[0], "UPDATE user_home_stats SET invalidated_at") {
+				t.Fatalf("Home stats invalidation was not in the setting transaction: %#v", queries)
 			}
 			var args homeapp.RefreshJob
 			if err := json.Unmarshal(jobs.job.Args, &args); err != nil || args.UserID != 7 {
