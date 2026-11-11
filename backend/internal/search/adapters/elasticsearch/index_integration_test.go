@@ -8,17 +8,20 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/jooservices/xflickr/internal/search/adapters/elasticsearch"
+	"github.com/jooservices/xflickr/internal/search/app"
 )
 
 func TestCreateIndexIntegration(t *testing.T) {
@@ -75,32 +78,29 @@ func TestCreateIndexIntegration(t *testing.T) {
 		}
 	})
 
-	var documentIDBytes [8]byte
-	if _, err := rand.Read(documentIDBytes[:]); err != nil {
+	documentIDRandom, err := rand.Int(rand.Reader, big.NewInt(1<<63-1))
+	if err != nil {
 		t.Fatal("generate document ID")
 	}
-	documentID := hex.EncodeToString(documentIDBytes[:])
-	sourceDocument := map[string]any{
-		"title":           "integration photo",
-		"visible_to":      []string{"123"},
-		"publicly_shared": false,
+	documentID := strconv.FormatInt(documentIDRandom.Int64()+1, 10)
+	first := app.Document{
+		ID: documentIDRandom.Int64() + 1, Title: "old integration photo",
+		VisibleTo: []string{"123"}, Visibility: "public", PubliclyShared: true,
 	}
-	encodedSource, err := json.Marshal(sourceDocument)
-	if err != nil {
-		t.Fatal("encode integration document")
+	second := first
+	second.Title = "replacement integration photo"
+	second.VisibleTo = []string{"456"}
+	second.Visibility = "private"
+	second.PubliclyShared = false
+	if err := index.Upsert(ctx, first); err != nil {
+		t.Fatalf("write first integration document through alias: %v", err)
 	}
 	writePath := alias + "/_doc/" + documentID
-	response, err := doSearchRequest(ctx, client, searchURL, username, password, http.MethodPut, writePath, "refresh=wait_for", encodedSource)
-	if err != nil {
-		t.Fatal("write integration document through alias: request failed")
+	if err := index.Upsert(ctx, second); err != nil {
+		t.Fatalf("replace integration document through alias: %v", err)
 	}
-	if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusOK {
-		response.Body.Close()
-		t.Fatalf("write integration document through alias: HTTP status %d", response.StatusCode)
-	}
-	response.Body.Close()
 
-	response, err = doSearchRequest(ctx, client, searchURL, username, password, http.MethodGet, writePath, "", nil)
+	response, err := doSearchRequest(ctx, client, searchURL, username, password, http.MethodGet, writePath, "", nil)
 	if err != nil {
 		t.Fatal("read integration document through alias: request failed")
 	}
@@ -113,6 +113,7 @@ func TestCreateIndexIntegration(t *testing.T) {
 		Source struct {
 			Title          string          `json:"title"`
 			VisibleTo      []string        `json:"visible_to"`
+			Visibility     string          `json:"visibility"`
 			PubliclyShared *bool           `json:"publicly_shared"`
 			ID             json.RawMessage `json:"id"`
 		} `json:"_source"`
@@ -120,8 +121,8 @@ func TestCreateIndexIntegration(t *testing.T) {
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&document); err != nil {
 		t.Fatal("decode integration document")
 	}
-	if !document.Found || document.Source.Title != "integration photo" || len(document.Source.VisibleTo) != 1 || document.Source.VisibleTo[0] != "123" || document.Source.PubliclyShared == nil || *document.Source.PubliclyShared || len(document.Source.ID) != 0 {
-		t.Fatalf("document read through alias = %+v, want the indexed fields", document)
+	if !document.Found || document.Source.Title != second.Title || len(document.Source.VisibleTo) != 1 || document.Source.VisibleTo[0] != "456" || document.Source.Visibility != "private" || document.Source.PubliclyShared == nil || *document.Source.PubliclyShared || len(document.Source.ID) != 0 {
+		t.Fatalf("document read through alias = %+v, want the replacement document", document)
 	}
 }
 

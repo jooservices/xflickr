@@ -9,8 +9,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+
+	"github.com/jooservices/xflickr/internal/search/app"
 )
+
+var _ app.Upserter = (*Index)(nil)
 
 // Index creates the versioned photo index and its write alias.
 type Index struct {
@@ -54,7 +59,7 @@ func (i *Index) Create(ctx context.Context) error {
 	target := i.baseURL + "/" + i.prefix + "photos-v1"
 	request, err := http.NewRequestWithContext(ctx, http.MethodPut, target, bytes.NewReader(body))
 	if err != nil {
-		return requestError{cause: err}
+		return requestError{operation: "create index", cause: err}
 	}
 	request.Header.Set("Content-Type", "application/json")
 	if i.username != "" {
@@ -63,11 +68,50 @@ func (i *Index) Create(ctx context.Context) error {
 
 	response, err := i.client.Do(request)
 	if err != nil {
-		return requestError{cause: err}
+		return requestError{operation: "create index", cause: err}
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("elasticsearch: create index returned HTTP status %d", response.StatusCode)
+	}
+	return nil
+}
+
+// Upsert writes or replaces one photo document through the configured write alias.
+func (i *Index) Upsert(ctx context.Context, doc app.Document) error {
+	if doc.ID <= 0 || (len(doc.Embedding) != 0 && len(doc.Embedding) != 1024) {
+		return fmt.Errorf("%w: ID must be positive and embedding must be empty or 1024-dimensional", app.ErrInvalidDocument)
+	}
+
+	body, err := json.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("elasticsearch: encode document: %w", err)
+	}
+
+	target := i.baseURL + "/" + i.prefix + "photos/_doc/" + strconv.FormatInt(doc.ID, 10)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPut, target, bytes.NewReader(body))
+	if err != nil {
+		return requestError{operation: "upsert document", cause: err}
+	}
+	request.Header.Set("Content-Type", "application/json")
+	if i.username != "" {
+		request.SetBasicAuth(i.username, i.password)
+	}
+
+	client := *i.client
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
+		return requestError{operation: "upsert document", cause: err}
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("elasticsearch: upsert document returned HTTP status %d", response.StatusCode)
 	}
 	return nil
 }
@@ -128,9 +172,10 @@ func containsFragmentDelimiter(value string) bool {
 }
 
 type requestError struct {
-	cause error
+	operation string
+	cause     error
 }
 
-func (e requestError) Error() string { return "elasticsearch: create index request failed" }
+func (e requestError) Error() string { return "elasticsearch: " + e.operation + " request failed" }
 
 func (e requestError) Unwrap() error { return e.cause }

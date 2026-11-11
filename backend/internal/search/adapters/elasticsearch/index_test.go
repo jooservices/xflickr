@@ -5,13 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jooservices/xflickr/internal/search/adapters/elasticsearch"
+	"github.com/jooservices/xflickr/internal/search/app"
 )
 
 func TestNewIndexValidation(t *testing.T) {
@@ -215,6 +219,233 @@ func TestCreateIndexErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpsertDocument(t *testing.T) {
+	const basePath = "/search-gateway/v1"
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Method != http.MethodPut || r.URL.Path != basePath+"/xflickr_wtjooxf134_photos/_doc/42" || r.URL.RawQuery != "" {
+			t.Errorf("request = %s %s?%s, want PUT to the write alias without a query", r.Method, r.URL.Path, r.URL.RawQuery)
+		}
+		if got := r.Header.Get("Content-Type"); got != "application/json" {
+			t.Errorf("Content-Type = %q, want application/json", got)
+		}
+		if user, password, ok := r.BasicAuth(); !ok || user != "indexer" || password != "password" {
+			t.Errorf("basic authentication = (%q, %q, %t), want configured credentials", user, password, ok)
+		}
+		var source map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&source); err != nil {
+			t.Errorf("decode source: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		embedding := make([]any, 1024)
+		for i := range embedding {
+			embedding[i] = float64(0)
+		}
+		embedding[0], embedding[1023] = float64(0.25), float64(1.25)
+		want := map[string]any{
+			"title": "Old title", "description": "A photo description", "tags": []any{"dog", "tree"},
+			"caption": "A generated caption", "embedding": embedding, "owner": "owner-7", "kind": "photo",
+			"sizes_status": "ready", "ai_status": "complete", "uploaded_at": "2026-11-11T12:13:14.123456789Z",
+			"visible_to": []any{"7", "11"}, "visibility": "private", "publicly_shared": true,
+		}
+		if !reflect.DeepEqual(source, want) {
+			t.Error("source does not match the complete mapped photo payload")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+	index := newTestIndex(t, server.URL+basePath, "indexer", "password", "xflickr_wtjooxf134_", server.Client())
+	if err := index.Upsert(t.Context(), testDocument()); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+	if requests != 1 {
+		t.Fatalf("HTTP requests = %d, want exactly one", requests)
+	}
+
+	for _, status := range []int{http.StatusNoContent, 299} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
+			})}
+			index := newTestIndex(t, "http://search.example", "", "", "xflickr_", client)
+			if err := index.Upsert(t.Context(), app.Document{ID: 42}); err != nil {
+				t.Fatalf("Upsert() error = %v", err)
+			}
+		})
+	}
+
+	t.Run("omits optional values and retains nil slices", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var source map[string]json.RawMessage
+			if err := json.NewDecoder(r.Body).Decode(&source); err != nil {
+				t.Errorf("decode source: %v", err)
+				return
+			}
+			if _, exists := source["embedding"]; exists {
+				t.Error("empty embedding is present in source")
+			}
+			if _, exists := source["uploaded_at"]; exists {
+				t.Error("nil uploaded_at is present in source")
+			}
+			if string(source["tags"]) != "null" || string(source["visible_to"]) != "null" {
+				t.Errorf("nil slices = tags %s, visible_to %s; want JSON null", source["tags"], source["visible_to"])
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(server.Close)
+		index := newTestIndex(t, server.URL, "", "", "xflickr_", server.Client())
+		if err := index.Upsert(t.Context(), app.Document{ID: 42}); err != nil {
+			t.Fatalf("Upsert() error = %v", err)
+		}
+	})
+}
+
+func TestUpsertInvalidDocument(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
+	t.Cleanup(server.Close)
+	index := newTestIndex(t, server.URL, "", "", "xflickr_", server.Client())
+
+	for _, test := range []struct {
+		name         string
+		document     app.Document
+		wantSentinel bool
+	}{
+		{name: "zero ID", document: app.Document{}, wantSentinel: true},
+		{name: "negative ID", document: app.Document{ID: -1}, wantSentinel: true},
+		{name: "short embedding", document: app.Document{ID: 1, Embedding: []float32{0.5}}, wantSentinel: true},
+		{name: "long embedding", document: app.Document{ID: 1, Embedding: make([]float32, 1025)}, wantSentinel: true},
+		{name: "NaN embedding", document: app.Document{ID: 1, Embedding: invalidEmbedding(float32(math.NaN()))}},
+		{name: "infinite embedding", document: app.Document{ID: 1, Embedding: invalidEmbedding(float32(math.Inf(1)))}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			before := requests
+			err := index.Upsert(t.Context(), test.document)
+			if err == nil {
+				t.Fatal("Upsert() error = nil, want an error")
+			}
+			if test.wantSentinel && !errors.Is(err, app.ErrInvalidDocument) {
+				t.Fatalf("Upsert() error = %v, want ErrInvalidDocument", err)
+			}
+			if requests != before {
+				t.Fatalf("HTTP requests = %d, want no request for invalid document", requests-before)
+			}
+		})
+	}
+}
+
+func TestUpsertFailures(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		status int
+	}{
+		{name: "redirect is not followed", status: http.StatusTemporaryRedirect},
+		{name: "gateway failure", status: http.StatusBadGateway},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var requests int
+			client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				requests++
+				header := make(http.Header)
+				if test.status == http.StatusTemporaryRedirect {
+					header.Set("Location", "/redirected")
+				}
+				return &http.Response{StatusCode: test.status, Header: header, Body: io.NopCloser(strings.NewReader("response-body-secret"))}, nil
+			})}
+			index := newTestIndex(t, "http://search.example", "indexer", "password-secret", "xflickr_", client)
+			err := index.Upsert(t.Context(), testDocument())
+			if err == nil || !strings.Contains(err.Error(), fmt.Sprint(test.status)) {
+				t.Fatalf("Upsert() error = %v, want status %d", err, test.status)
+			}
+			assertErrorOmits(t, err, "password-secret", "response-body-secret")
+			if requests != 1 {
+				t.Fatalf("HTTP requests = %d, want one", requests)
+			}
+		})
+	}
+
+	t.Run("transport error is sanitized and unwraps its cause", func(t *testing.T) {
+		cause := errors.New("transport-secret")
+		client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, cause })}
+		index := newTestIndex(t, "http://search.example", "indexer", "password-secret", "xflickr_", client)
+		err := index.Upsert(t.Context(), testDocument())
+		if !errors.Is(err, cause) {
+			t.Fatalf("Upsert() error = %v, want wrapped transport error", err)
+		}
+		assertErrorOmits(t, err, "password-secret", "transport-secret")
+	})
+
+	t.Run("canceled context is preserved without a request", func(t *testing.T) {
+		var requests int
+		server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
+		t.Cleanup(server.Close)
+		index := newTestIndex(t, server.URL, "indexer", "password-secret", "xflickr_", server.Client())
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		err := index.Upsert(ctx, testDocument())
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Upsert() error = %v, want context.Canceled", err)
+		}
+		if requests != 0 {
+			t.Fatalf("HTTP requests = %d, want 0 for canceled context", requests)
+		}
+	})
+
+	t.Run("closes response body", func(t *testing.T) {
+		body := &closeTrackingBody{Reader: strings.NewReader("")}
+		client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusNoContent, Header: make(http.Header), Body: body}, nil
+		})}
+		index := newTestIndex(t, "http://search.example", "", "", "xflickr_", client)
+		if err := index.Upsert(t.Context(), testDocument()); err != nil {
+			t.Fatalf("Upsert() error = %v", err)
+		}
+		if !body.closed {
+			t.Error("response body was not closed")
+		}
+	})
+}
+
+func testDocument() app.Document {
+	uploadedAt := time.Date(2026, time.November, 11, 12, 13, 14, 123456789, time.UTC)
+	embedding := make([]float32, 1024)
+	embedding[0] = 0.25
+	embedding[1023] = 1.25
+	return app.Document{
+		ID: 42, Title: "Old title", Description: "A photo description", Tags: []string{"dog", "tree"},
+		Caption: "A generated caption", Embedding: embedding, Owner: "owner-7", Kind: "photo",
+		SizesStatus: "ready", AIStatus: "complete", UploadedAt: &uploadedAt,
+		VisibleTo: []string{"7", "11"}, Visibility: "private", PubliclyShared: true,
+	}
+}
+
+func invalidEmbedding(first float32) []float32 {
+	embedding := make([]float32, 1024)
+	embedding[0] = first
+	return embedding
+}
+
+type closeTrackingBody struct {
+	io.Reader
+	closed bool
+}
+
+func (body *closeTrackingBody) Close() error {
+	body.closed = true
+	return nil
+}
+
+func newTestIndex(t *testing.T, baseURL, username, password, prefix string, client *http.Client) *elasticsearch.Index {
+	t.Helper()
+	index, err := elasticsearch.NewIndex(baseURL, username, password, prefix, client)
+	if err != nil {
+		t.Fatalf("NewIndex() error = %v", err)
+	}
+	return index
 }
 
 func expectedIndexDefinition(alias string) map[string]any {
