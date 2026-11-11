@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -232,6 +233,86 @@ func TestSizesRiverHandlerWithPostgresAndFakeFlickr(t *testing.T) {
 	mu.Unlock()
 	if placeholderCalls != 0 {
 		t.Fatalf("placeholder made %d HTTP requests", placeholderCalls)
+	}
+}
+
+func TestPhotoLaneRunsOptionalFacetForAccountConfirmedPhoto(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, sizesIntegrationDatabase(t))
+	repository, err := catalogpostgres.New(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now().UnixNano() % 1_000_000_000
+	suffix := fmt.Sprintf("facet-lane-%d", time.Now().UnixNano())
+	owner := suffix + "-owner"
+	var userID, keyID, accountID int64
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration-hash','user') RETURNING id`, suffix+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst,status)
+		VALUES($1,'facet-lane',$2,'{}',3600,4,5,'valid') RETURNING id`, userID, suffix+"-key").Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status)
+		VALUES($1,$2,$3,'facet-lane','{}','{}','ok') RETURNING id`, userID, keyID, owner).Scan(&accountID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred)
+		VALUES($1,$2,0,'connected_account',true)`, userID, owner); err != nil {
+		t.Fatal(err)
+	}
+	updatedAt := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,server,last_update,visibility,sizes,sizes_status,raw,content_hash)
+		VALUES($1,$2,'1234',$3,'public','[]'::jsonb,'provisional','{}',decode(repeat('ab',32),'hex'))`, base, owner, updatedAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO photo_account_sizes(photo_id,account_id,photo_updated_at,photo_visibility,sizes,sizes_status,sizes_checked_at)
+		VALUES($1,$2,$3,'public','[]'::jsonb,'confirmed',$3)`, base, accountID, updatedAt); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE id=$1`, base)
+		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id=$1`, userID)
+		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid=$1`, owner)
+	})
+
+	refs, err := (catalogpostgres.PhotoLane{Pool: pool}).Select(ctx, 1000, 0, []string{"info"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selected bool
+	for _, ref := range refs {
+		if ref.ID == base && ref.Facet == PhotoInfoFacet {
+			selected = true
+		}
+	}
+	if !selected {
+		t.Fatalf("photo lane did not select info for account-confirmed photo %d: %+v", base, refs)
+	}
+
+	client := &photoFacetClientFake{info: flickr.PhotoInfo{ID: fmt.Sprint(base), Title: flickr.Content("confirmed by account")}}
+	worker := PhotoFacets{Store: repository, Flickr: client, Now: func() time.Time { return updatedAt.Add(time.Minute) }}
+	if err := worker.Handle(ctx, PhotoFacetJob{PhotoID: base, KeyID: keyID, Facet: PhotoInfoFacet}); err != nil {
+		t.Fatalf("process account-confirmed photo facet: %v", err)
+	}
+	if client.infoCalls != 1 {
+		t.Fatalf("worker made %d info calls for account-confirmed photo, want 1", client.infoCalls)
+	}
+	var data []byte
+	if err := pool.QueryRow(ctx, `SELECT data FROM photo_info WHERE photo_id=$1`, base).Scan(&data); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "confirmed by account") {
+		t.Fatalf("stored photo info = %s, want the fetched account-confirmed facet", data)
 	}
 }
 

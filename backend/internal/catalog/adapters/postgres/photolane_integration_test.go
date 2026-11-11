@@ -2,11 +2,16 @@ package postgres_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
+	"sort"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
@@ -183,6 +188,10 @@ func TestPhotoLaneHandlesLegacyAndAccountScopedSizes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username)
+		SELECT $1 || '-owner-' || n, $1 || '-owner-' || n FROM generate_series(1,3999) AS n`, suffix); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
 		t.Fatal(err)
 	}
@@ -277,4 +286,208 @@ func TestPhotoLaneHandlesLegacyAndAccountScopedSizes(t *testing.T) {
 			t.Errorf("photo lane facets for inactive account result %d = %v, want sizes", id, got[id])
 		}
 	}
+}
+
+func TestPhotoLaneLimitsPendingPhotosPerOwner(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	suffix := fmt.Sprintf("lane-cap-%d", time.Now().UnixNano())
+	base := time.Now().UnixNano() % 1_000_000_000 * 100
+	owner := suffix + "-owner"
+	userEmail := suffix + "@example.test"
+	var userID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration-hash','user') RETURNING id`, userEmail).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred,selected_until)
+		VALUES($1,$2,0,'test',true,now()+interval '1 hour')`, userID, owner); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE owner_nsid=$1`, owner)
+		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid=$1`, owner)
+		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id=$1`, userID)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,server,last_update,visibility,sizes,sizes_status,sizes_checked_at,uploaded_at,raw,content_hash)
+		SELECT $1::bigint+n::bigint,$2,'1234',now(),'public','[]'::jsonb,'provisional',NULL,now()-n*interval '1 second','{}',decode(repeat('ab',32),'hex')
+		FROM generate_series(1,75) AS n`, base, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,server,last_update,visibility,sizes,sizes_status,sizes_checked_at,uploaded_at,raw,content_hash)
+		SELECT $1::bigint+n::bigint,$2,'1234',now(),'public','[]'::jsonb,'confirmed',now(),now()-n*interval '1 second','{}',decode(repeat('ab',32),'hex')
+		FROM generate_series(101,175) AS n`, base, owner); err != nil {
+		t.Fatal(err)
+	}
+	refs, err := (postgres.PhotoLane{Pool: pool}).Select(ctx, 150, 0, []string{"info"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found int
+	for _, ref := range refs {
+		if ref.OwnerNSID == owner {
+			found++
+			if ref.Facet != "sizes" {
+				t.Fatalf("per-owner photo cap admitted optional work before pending sizes: %+v", ref)
+			}
+		}
+	}
+	if found != 50 {
+		t.Fatalf("selected %d photos for one owner, want the per-owner cap of 50", found)
+	}
+}
+
+func TestPhotoLanePlanBoundsPhotoReads(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	suffix := fmt.Sprintf("lane-plan-%d", time.Now().UnixNano())
+	base := time.Now().UnixNano() % 1_000_000_000 * 1000
+	owner := suffix + "-owner"
+	userEmail := suffix + "@example.test"
+	var userID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration-hash','user') RETURNING id`, userEmail).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username)
+		SELECT $1 || '-owner-' || n, $1 || '-owner-' || n FROM generate_series(1,3999) AS n`, suffix); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred,selected_until)
+		VALUES($1,$2,0,'test',true,now()+interval '1 hour')`, userID, owner); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE owner_nsid LIKE $1 || '-owner%'`, suffix)
+		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid LIKE $1 || '-owner%'`, suffix)
+		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id=$1`, userID)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,last_update,visibility,sizes,sizes_status,uploaded_at,raw,content_hash)
+		SELECT $1::bigint+n::bigint,
+			CASE WHEN n <= 1000 THEN $2 ELSE $3 || '-owner-' || ((n % 3999)+1)::text END,
+			now(),'public','[]'::jsonb,'provisional',now()-n*interval '1 second','{}',decode(repeat('ab',32),'hex')
+		FROM generate_series(1,400000) AS n`, base, owner, suffix); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `ANALYZE photos`); err != nil {
+		t.Fatal(err)
+	}
+	queryPool := &photoLanePlanPool{pool: pool}
+	if _, err := (postgres.PhotoLane{Pool: queryPool}).Select(ctx, 50, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	var encoded []byte
+	if err := pool.QueryRow(ctx, `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) `+queryPool.query, queryPool.args...).Scan(&encoded); err != nil {
+		t.Fatal(err)
+	}
+	var result []map[string]any
+	if err := json.Unmarshal(encoded, &result); err != nil || len(result) != 1 {
+		t.Fatalf("decode photo lane plan: %v; plan=%s", err, encoded)
+	}
+	root, ok := result[0]["Plan"].(map[string]any)
+	if !ok {
+		t.Fatalf("photo lane plan has no root node: %s", encoded)
+	}
+	if relation := photoSeqScan(root); relation != "" {
+		t.Fatalf("photo lane plan uses a sequential scan on %s: %s", relation, photoScanNodes(root))
+	}
+	buffers := planBuffers(root)
+	if buffers > 2000 {
+		t.Fatalf("photo lane plan touched %d buffers, want at most 2000: %s", buffers, photoScanNodes(root))
+	}
+	t.Logf("EXPLAIN (ANALYZE, BUFFERS): fixture=400000 photos, execution_ms=%.3f, shared_buffers=%d, photo_access=%s",
+		result[0]["Execution Time"], buffers, photoIndexNodes(root))
+}
+
+type photoLanePlanPool struct {
+	pool interface {
+		Query(context.Context, string, ...any) (pgx.Rows, error)
+	}
+	query string
+	args  []any
+}
+
+func (p *photoLanePlanPool) Query(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
+	p.query = query
+	p.args = append([]any(nil), args...)
+	return p.pool.Query(ctx, query, args...)
+}
+
+func photoSeqScan(node map[string]any) string {
+	if node["Node Type"] == "Seq Scan" || node["Node Type"] == "Parallel Seq Scan" {
+		if relation, ok := node["Relation Name"].(string); ok && strings.HasPrefix(relation, "photos") {
+			return relation
+		}
+	}
+	children, _ := node["Plans"].([]any)
+	for _, child := range children {
+		if plan, ok := child.(map[string]any); ok {
+			if relation := photoSeqScan(plan); relation != "" {
+				return relation
+			}
+		}
+	}
+	return ""
+}
+
+func planBuffers(node map[string]any) int {
+	var total int
+	for _, key := range []string{"Shared Hit Blocks", "Shared Read Blocks", "Shared Dirtied Blocks", "Shared Written Blocks"} {
+		if count, ok := node[key].(float64); ok {
+			total += int(count)
+		}
+	}
+	return total
+}
+
+func photoIndexNodes(node map[string]any) string {
+	var found []string
+	if name, ok := node["Index Name"].(string); ok && strings.Contains(name, "photos_") {
+		found = append(found, name)
+	}
+	children, _ := node["Plans"].([]any)
+	for _, child := range children {
+		if plan, ok := child.(map[string]any); ok {
+			if names := photoIndexNodes(plan); names != "" {
+				found = append(found, strings.Split(names, ",")...)
+			}
+		}
+	}
+	sort.Strings(found)
+	unique := found[:0]
+	for _, name := range found {
+		if len(unique) == 0 || unique[len(unique)-1] != name {
+			unique = append(unique, name)
+		}
+	}
+	return strings.Join(unique, ",")
+}
+
+func photoScanNodes(node map[string]any) string {
+	var found []string
+	if relation, ok := node["Relation Name"].(string); ok && strings.HasPrefix(relation, "photos") {
+		found = append(found, fmt.Sprintf("%s %s index=%v rows=%v loops=%v filter=%v",
+			node["Node Type"], relation, node["Index Name"], node["Actual Rows"], node["Actual Loops"], node["Filter"]))
+	}
+	children, _ := node["Plans"].([]any)
+	for _, child := range children {
+		if plan, ok := child.(map[string]any); ok {
+			found = append(found, photoScanNodes(plan))
+		}
+	}
+	return strings.Join(found, "; ")
 }
