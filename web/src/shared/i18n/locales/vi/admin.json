@@ -28,7 +28,7 @@
   "nodes.retry": "Thử lại",
   "nodes.stale": "Dữ liệu có thể đã cũ",
   "nodes.state": "Trạng thái",
-  "nodes.subtitle": "Tình trạng, năng lực và vị trí khóa trong cụm máy chủ.",
+  "nodes.subtitle": "Nhãn khóa, mã khóa, người dùng và trạng thái quota hiện tại.",
   "nodes.title": "Các node",
   "nodes.user": "Người dùng",
   "quota.title": "Hạn mức API",

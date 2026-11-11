@@ -19,6 +19,22 @@ const key = (overrides: Partial<AdminKeyQuota> = {}): AdminKeyQuota => ({
 });
 
 describe('cluster nodes page', () => {
+  it.each([
+    {
+      locale: 'en' as const,
+      subtitle: 'Key labels, IDs, users, and current quota states.',
+    },
+    {
+      locale: 'vi' as const,
+      subtitle: 'Nhãn khóa, mã khóa, người dùng và trạng thái quota hiện tại.',
+    },
+  ])('describes the displayed quota data in $locale', async ({ locale, subtitle }) => {
+    server.use(http.get('*/admin/quota', () => HttpResponse.json({ keys: [] })));
+    renderApp({ session: adminSession, path: '/admin/nodes', locale });
+
+    expect(await screen.findByText(subtitle)).toBeInTheDocument();
+  });
+
   it('renders key quota states without exposing secrets or reporting node as placement', async () => {
     server.use(
       http.get('*/admin/quota', () =>
@@ -130,7 +146,10 @@ describe('cluster nodes page', () => {
 
     const admin = renderApp({ session: adminSession, path: '/admin/nodes' });
     await waitFor(() => expect(calls).toBe(1));
-    fireEvent.click(await screen.findByTestId('admin-nodes-refresh'));
+    expect(await screen.findByText('Private quota row')).toBeInTheDocument();
+    const refresh = screen.getByTestId('admin-nodes-refresh');
+    await waitFor(() => expect(refresh).toBeEnabled());
+    fireEvent.click(refresh);
 
     const forbidden = await screen.findByTestId('admin-nodes-forbidden');
     expect(forbidden).toBeInTheDocument();

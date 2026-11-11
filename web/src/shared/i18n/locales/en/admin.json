@@ -28,7 +28,7 @@
   "nodes.retry": "Retry",
   "nodes.stale": "Data may be out of date",
   "nodes.state": "State",
-  "nodes.subtitle": "Health, capacity and key placement across the cluster.",
+  "nodes.subtitle": "Key labels, IDs, users, and current quota states.",
   "nodes.title": "Cluster nodes",
   "nodes.user": "User",
   "quota.title": "API quota",
