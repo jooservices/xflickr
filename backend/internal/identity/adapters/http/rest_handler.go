@@ -162,6 +162,7 @@ func meLinks() rest.Links {
 		"password":              rest.NewLink("/api/v1/me/password", http.MethodPut),
 		"sharing":               rest.NewLink("/api/v1/me/sharing", http.MethodGet),
 		"update-sharing":        rest.NewLink("/api/v1/me/sharing", http.MethodPut),
+		"home":                  rest.NewLink("/api/v1/me/home", http.MethodGet),
 	}
 }
 

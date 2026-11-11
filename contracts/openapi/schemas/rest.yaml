@@ -11,7 +11,7 @@ Link:
       enum: [GET, POST, PUT, PATCH, DELETE]
 Links:
   type: object
-  description: 'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.'
+  description: 'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl, home. Each relation carries an href and method. Only available relations are present.'
   required: [self]
   properties:
     self:

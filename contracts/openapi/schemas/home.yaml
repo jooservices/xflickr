@@ -1,0 +1,47 @@
+HomeContactCounts:
+  type: object
+  additionalProperties: false
+  required: [total, direct, discovered]
+  properties:
+    total: { type: integer, format: int64, minimum: 0 }
+    direct: { type: integer, format: int64, minimum: 0 }
+    discovered: { type: integer, format: int64, minimum: 0 }
+
+HomePhotoCounts:
+  type: object
+  additionalProperties: false
+  description: Photo metrics are unavailable until JOOXF-391 supplies stored statistics.
+  required: [total, sizes_ready, captioned]
+  properties:
+    total: { type: [integer, 'null'], format: int64, minimum: 0 }
+    sizes_ready: { type: [integer, 'null'], format: int64, minimum: 0 }
+    captioned: { type: [integer, 'null'], format: int64, minimum: 0 }
+
+HomeSnapshot:
+  type: object
+  additionalProperties: false
+  description: >-
+    First Home API slice. Photo metrics are null, and photo, starred-contact,
+    and activity collections are not returned until their sources are available.
+  required: [generated_at, contacts, photos, unavailable_sections, links]
+  properties:
+    generated_at: { type: string, format: date-time }
+    contacts: { $ref: '#/HomeContactCounts' }
+    photos: { $ref: '#/HomePhotoCounts' }
+    unavailable_sections:
+      type: array
+      uniqueItems: true
+      minItems: 3
+      maxItems: 3
+      description: Home sections without complete data in this API slice.
+      items:
+        type: string
+        enum: [photos, starred_contacts, activity]
+    links: { $ref: ./rest.yaml#/Links }
+
+HomeSnapshotEnvelope:
+  allOf:
+    - $ref: ./rest.yaml#/RESTEnvelope
+    - type: object
+      properties:
+        data: { $ref: '#/HomeSnapshot' }

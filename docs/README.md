@@ -41,6 +41,8 @@
   CSRF, and role checks.
 - [Identity REST API](identity.md) — registration, browser sessions, the
   authenticated user, password changes, and sharing routes.
+- [Home snapshot API](me-home.md) — user-scoped contact counts and the first
+  slice's unavailable Home sections.
 - [Saved searches](saved-searches.md) — user-owned query persistence and its
   internal application and PostgreSQL operations.
 - [Passkey credential storage](passkeys.md) — the WebAuthn credential table and

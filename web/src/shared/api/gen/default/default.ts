@@ -29,6 +29,7 @@ import type {
   Download,
   DownloadPartLinks,
   Error,
+  HomeSnapshotEnvelope,
   ListMySessionsParams,
   PublicUserEnvelope,
   RESTProblem,
@@ -1999,6 +2000,132 @@ export const useChangeMyPassword = <TError = RESTProblem, TContext = unknown>(
 > => {
   return useMutation(getChangeMyPasswordMutationOptions(options), queryClient);
 };
+export type getMeHomeResponse200 = {
+  data: HomeSnapshotEnvelope;
+  status: 200;
+};
+
+export type getMeHomeResponse401 = {
+  data: RESTProblem;
+  status: 401;
+};
+
+export type getMeHomeResponseDefault = {
+  data: RESTProblem;
+  status: Exclude<HTTPStatusCodes, 200 | 401>;
+};
+
+export type getMeHomeResponseSuccess = getMeHomeResponse200 & {
+  headers: Headers;
+};
+export type getMeHomeResponseError = (getMeHomeResponse401 | getMeHomeResponseDefault) & {
+  headers: Headers;
+};
+
+export type getMeHomeResponse = getMeHomeResponseSuccess | getMeHomeResponseError;
+
+export const getGetMeHomeUrl = () => {
+  return `/api/v1/me/home`;
+};
+
+/**
+ * Returns generated_at and contact counts for the authenticated user. Photo totals, newest photos, starred contacts, and activity are not provided by this first slice and are named in unavailable_sections.
+ * @summary Get the current user's Home snapshot
+ */
+export const getMeHome = async (
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getMeHomeResponse> => {
+  return customFetch<getMeHomeResponse>(getGetMeHomeUrl(), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getGetMeHomeQueryKey = () => {
+  return [`/api/v1/me/home`] as const;
+};
+
+export const getGetMeHomeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMeHome>>,
+  TError = RESTProblem,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeHome>>, TError, TData>>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetMeHomeQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMeHome>>> = ({ signal }) =>
+    getMeHome({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMeHome>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetMeHomeQueryResult = NonNullable<Awaited<ReturnType<typeof getMeHome>>>;
+export type GetMeHomeQueryError = RESTProblem;
+
+export function useGetMeHome<TData = Awaited<ReturnType<typeof getMeHome>>, TError = RESTProblem>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeHome>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMeHome>>,
+          TError,
+          Awaited<ReturnType<typeof getMeHome>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetMeHome<TData = Awaited<ReturnType<typeof getMeHome>>, TError = RESTProblem>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeHome>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMeHome>>,
+          TError,
+          Awaited<ReturnType<typeof getMeHome>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetMeHome<TData = Awaited<ReturnType<typeof getMeHome>>, TError = RESTProblem>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeHome>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Get the current user's Home snapshot
+ */
+
+export function useGetMeHome<TData = Awaited<ReturnType<typeof getMeHome>>, TError = RESTProblem>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMeHome>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMeHomeQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 export type createDownloadResponse201 = {
   data: Download;
   status: 201;
