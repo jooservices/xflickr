@@ -106,6 +106,8 @@
   "user.home.error.text": "Kiểm tra kết nối rồi thử lại. Dữ liệu của bạn vẫn an toàn.",
   "user.home.error.title": "Không tải được Trang chủ",
   "user.home.forbidden.cta": "Quay lại đăng nhập",
+  "user.home.forbidden.logout-error": "Không thể đăng xuất. Hãy thử lại.",
+  "user.home.forbidden.signing-out": "Đang đăng xuất…",
   "user.home.forbidden.text": "Tài khoản của bạn không có quyền truy cập.",
   "user.home.forbidden.title": "Bạn không thể xem Trang chủ",
   "user.home.stats.contacts": "Liên hệ",

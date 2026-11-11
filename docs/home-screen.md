@@ -5,9 +5,11 @@ contact counts from `GET /api/v1/me/home`. It displays the total, direct, and
 discovered contacts and formats each value with the active locale.
 
 The page keeps the user shell visible while the counts load. A failed request
-shows a localized error and retry action; a 403 shows an access-denied state
-with a link to `/login`. A 401 is handled by the shared session flow. Server
-error details are never displayed.
+shows a localized error and retry action. A 403 shows an access-denied state;
+its sign-in action revokes the current session before navigating to `/login`.
+If logout fails, the page stays forbidden and shows a localized retry message.
+A 401 is handled by the shared session flow. Server error details are never
+displayed.
 
 The current API returns exact contact counts from the user's `crawl_interests`:
 depth one contributes to direct contacts, depths greater than one to discovered

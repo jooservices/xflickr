@@ -1,10 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import type { JSX } from 'react';
-import { Link } from 'react-router';
+import { useNavigate } from 'react-router';
 import type { HomeSnapshot } from '../../shared/api/gen/models';
-import { getGetMeHomeQueryKey, getMeHome } from '../../shared/api/gen/default/default';
+import { getGetMeHomeQueryKey, getMeHome, logout } from '../../shared/api/gen/default/default';
 import { EmptyState, ErrorState, LoadingState, useI18n } from '../../shared';
+import { SESSION_QUERY_KEY } from '../../entities';
 
 class HomeRequestError extends Error {
   constructor(readonly status: number) {
@@ -13,8 +14,9 @@ class HomeRequestError extends Error {
   }
 }
 
-async function loadHome(): Promise<HomeSnapshot> {
+async function loadHome(): Promise<HomeSnapshot | null> {
   const response = await getMeHome();
+  if (response.status === 403) return null;
   if (response.status !== 200) {
     throw new HomeRequestError(response.status);
   }
@@ -26,6 +28,10 @@ async function loadHome(): Promise<HomeSnapshot> {
 /** Shows the signed-in user's contact counts from the generated Home API. */
 export function HomePage(): JSX.Element {
   const { locale, t } = useI18n();
+  const client = useQueryClient();
+  const navigate = useNavigate();
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutFailed, setSignOutFailed] = useState(false);
   const home = useQuery({
     queryKey: getGetMeHomeQueryKey(),
     queryFn: loadHome,
@@ -39,9 +45,30 @@ export function HomePage(): JSX.Element {
   const status = home.error instanceof HomeRequestError ? home.error.status : undefined;
   if (status === 401) return <></>;
 
+  async function signOut() {
+    setSigningOut(true);
+    setSignOutFailed(false);
+    try {
+      const response = await logout();
+      if (response.status !== 204 && response.status !== 401) {
+        setSignOutFailed(true);
+        return;
+      }
+      client.setQueryData(SESSION_QUERY_KEY, { status: 'unauthenticated' });
+      client.removeQueries({
+        predicate: (query) => query.queryKey[0] !== SESSION_QUERY_KEY[0],
+      });
+      void navigate('/login', { replace: true });
+    } catch {
+      setSignOutFailed(true);
+    } finally {
+      setSigningOut(false);
+    }
+  }
+
   const number = new Intl.NumberFormat(locale);
-  const forbidden = status === 403;
-  const error = home.isError && !forbidden;
+  const forbidden = home.data === null;
+  const error = home.isError;
 
   return (
     <section data-testid="user-home-page">
@@ -76,14 +103,26 @@ export function HomePage(): JSX.Element {
               title={t('shell.user.home.forbidden.title')}
               text={t('shell.user.home.forbidden.text')}
               action={
-                <Link to="/login" data-testid="user-home-forbidden-login">
-                  {t('shell.user.home.forbidden.cta')}
-                </Link>
+                <button
+                  type="button"
+                  data-testid="user-home-forbidden-login"
+                  disabled={signingOut}
+                  onClick={() => void signOut()}
+                >
+                  {t(
+                    signingOut
+                      ? 'shell.user.home.forbidden.signing-out'
+                      : 'shell.user.home.forbidden.cta',
+                  )}
+                </button>
               }
             />
+            {signOutFailed ? (
+              <p role="alert">{t('shell.user.home.forbidden.logout-error')}</p>
+            ) : null}
           </div>
         ) : null}
-        {home.data ? (
+        {home.data?.contacts ? (
           <article data-testid="user-home-stat-contacts">
             <h2>{t('shell.user.home.stats.contacts')}</h2>
             <p>{number.format(home.data.contacts.total)}</p>

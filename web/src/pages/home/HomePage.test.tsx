@@ -1,6 +1,8 @@
-import { fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw/http';
 import { describe, expect, it } from 'vitest';
+import { getGetMeHomeQueryKey } from '../../shared/api/gen/default/default';
+import { userEnvelope } from '../../test/rest';
 import { server } from '../../test/server';
 import { renderApp, userSession } from '../../test/render';
 
@@ -24,6 +26,8 @@ const envelope = (data: unknown) => ({
 const json = (body: unknown, status = 200) => HttpResponse.json(body as never, { status });
 const homeEndpoint = '*/api/v1/me/home';
 const open = (locale: 'en' | 'vi' = 'en') => renderApp({ session: userSession, locale });
+const openWithLiveSession = (locale: 'en' | 'vi' = 'en') =>
+  renderApp({ session: userSession, locale, managedSession: true });
 
 describe('HomePage', () => {
   it.each([
@@ -131,19 +135,125 @@ describe('HomePage', () => {
     expect(screen.getByTestId('user-home-error-retry')).toBeEnabled();
   });
 
-  it('shows the forbidden state with only a sign-in link on 403', async () => {
+  it('shows the forbidden state with a sign-out action on 403', async () => {
     server.use(http.get(homeEndpoint, () => json({ message: 'PRIVATE_DETAIL' }, 403)));
     open();
 
     expect(await screen.findByTestId('user-home-forbidden')).toHaveTextContent(
       'You cannot view Home',
     );
-    expect(screen.getByTestId('user-home-forbidden').querySelector('a')).toHaveAttribute(
-      'href',
-      '/login',
-    );
+    expect(screen.getByTestId('user-home-forbidden-login')).toHaveTextContent('Back to sign in');
+    expect(screen.getByTestId('user-home-forbidden-login').tagName).toBe('BUTTON');
     expect(screen.queryByTestId('user-home-error-retry')).not.toBeInTheDocument();
     expect(screen.getByTestId('user-home-forbidden')).not.toHaveTextContent('PRIVATE_DETAIL');
+  });
+
+  it('clears previously loaded counts when a reload is forbidden', async () => {
+    let requests = 0;
+    server.use(
+      http.get('*/api/v1/me', () =>
+        json(
+          userEnvelope({
+            id: 2,
+            email: 'anna@example.test',
+            role: 'user',
+            locale: 'en',
+            created_at: '2026-11-12T00:00:00Z',
+          }),
+        ),
+      ),
+      http.get(homeEndpoint, () => {
+        requests += 1;
+        return requests === 1 ? json(envelope(snapshot)) : json({ message: 'PRIVATE_DETAIL' }, 403);
+      }),
+    );
+    const { client } = openWithLiveSession();
+
+    expect(await screen.findByTestId('user-home-stat-contacts')).toHaveTextContent('1,234');
+    await act(async () => {
+      await client.refetchQueries({ queryKey: getGetMeHomeQueryKey(), exact: true });
+    });
+
+    expect(await screen.findByTestId('user-home-forbidden')).toBeInTheDocument();
+    expect(screen.queryByTestId('user-home-stat-contacts')).not.toBeInTheDocument();
+    expect(client.getQueryData(getGetMeHomeQueryKey())).toBeNull();
+    expect(requests).toBe(2);
+  });
+
+  it('logs out before opening sign-in from the forbidden state', async () => {
+    let loggedOut = false;
+    let finishLogout!: () => void;
+    const logoutPending = new Promise<void>((resolve) => {
+      finishLogout = resolve;
+    });
+    server.use(
+      http.get('*/api/v1/me', () =>
+        json(
+          userEnvelope({
+            id: 2,
+            email: 'anna@example.test',
+            role: 'user',
+            locale: 'en',
+            created_at: '2026-11-12T00:00:00Z',
+          }),
+        ),
+      ),
+      http.get(homeEndpoint, () => json({ message: 'PRIVATE_DETAIL' }, 403)),
+      http.delete('*/api/v1/sessions/current', async () => {
+        loggedOut = true;
+        await logoutPending;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    const { router } = openWithLiveSession();
+
+    const signOut = await screen.findByTestId('user-home-forbidden-login');
+    fireEvent.click(signOut);
+    expect(signOut).toBeDisabled();
+    expect(signOut).toHaveTextContent('Signing out…');
+    finishLogout();
+
+    expect(await screen.findByTestId('auth-login-form')).toBeInTheDocument();
+    await waitFor(() => expect(router.state.location.pathname).toBe('/login'));
+    expect(loggedOut).toBe(true);
+  });
+
+  it.each([
+    ['en', 'Could not sign out. Try again.'],
+    ['vi', 'Không thể đăng xuất. Hãy thử lại.'],
+  ] as const)(
+    'keeps the forbidden state and reports a failed logout in %s',
+    async (locale, copy) => {
+      server.use(
+        http.get(homeEndpoint, () => json({ message: 'PRIVATE_DETAIL' }, 403)),
+        http.delete('*/api/v1/sessions/current', () => json({ message: 'PRIVATE_DETAIL' }, 500)),
+      );
+      const { router } = open(locale);
+
+      fireEvent.click(await screen.findByTestId('user-home-forbidden-login'));
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(copy);
+      expect(alert).not.toHaveTextContent('PRIVATE_DETAIL');
+      expect(screen.getByTestId('user-home-forbidden')).toBeInTheDocument();
+      expect(screen.getByTestId('user-home-forbidden-login')).toBeEnabled();
+      expect(router.state.location.pathname).toBe('/');
+    },
+  );
+
+  it('keeps the forbidden state when logout has a network error', async () => {
+    server.use(
+      http.get(homeEndpoint, () => json({ message: 'PRIVATE_DETAIL' }, 403)),
+      http.delete('*/api/v1/sessions/current', () => HttpResponse.error()),
+    );
+    const { router } = open();
+
+    fireEvent.click(await screen.findByTestId('user-home-forbidden-login'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not sign out. Try again.');
+    expect(screen.getByTestId('user-home-forbidden')).toBeInTheDocument();
+    expect(screen.getByTestId('user-home-forbidden-login')).toBeEnabled();
+    expect(router.state.location.pathname).toBe('/');
   });
 
   it('lets the shared shell handle a 401 response', async () => {

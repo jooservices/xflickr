@@ -166,9 +166,13 @@ them as outdated. Unknown quota reset time displays `--:--`; do not guess.
 ### Forbidden
 
 A 403 for the Home snapshot replaces the page content with a lock empty state:
-"You cannot view Home", a short access explanation, and a Back to sign-in link
-to `/login`. Do not show retry. A 403 `csrf_rejected` does not apply because
-Home actions are navigation or safe reads.
+"You cannot view Home", a short access explanation, and a Back to sign-in
+button. The button revokes the current session with
+`DELETE /api/v1/sessions/current` before navigating to `/login`; a 401 means
+the session is already ended. If logout fails, keep the forbidden state and
+show a localized error so the user can retry. Do not show a Home data retry.
+The generated logout client handles the required CSRF token and its single
+refresh retry.
 
 ## Live updates
 
@@ -271,6 +275,8 @@ the active locale and user time zone. Do not truncate Vietnamese labels.
 | `user.home.error.retry` | Try again | Thử lại |
 | `user.home.stale` | Data is out of date. Last updated {time}. | Dữ liệu chưa mới. Cập nhật lần cuối lúc {time}. |
 | `user.home.forbidden.{title,text,cta}` | You cannot view Home · Your account does not have access. · Back to sign in | Bạn không thể xem Trang chủ · Tài khoản của bạn không có quyền truy cập. · Quay lại đăng nhập |
+| `user.home.forbidden.logout-error` | Could not sign out. Try again. | Không thể đăng xuất. Hãy thử lại. |
+| `user.home.forbidden.signing-out` | Signing out… | Đang đăng xuất… |
 | `user.home.status.{loading,ready,partial}` | Loading Home · Updated · Some sections could not update | Đang tải Trang chủ · Đã cập nhật · Một số mục chưa thể cập nhật |
 | `user.home.loading.search` | Loading your photos… | Đang tải ảnh của bạn… |
 

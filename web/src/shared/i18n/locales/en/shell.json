@@ -106,6 +106,8 @@
   "user.home.error.text": "Check your connection and try again. Your data is safe.",
   "user.home.error.title": "Home could not load",
   "user.home.forbidden.cta": "Back to sign in",
+  "user.home.forbidden.logout-error": "Could not sign out. Try again.",
+  "user.home.forbidden.signing-out": "Signing out…",
   "user.home.forbidden.text": "Your account does not have access.",
   "user.home.forbidden.title": "You cannot view Home",
   "user.home.stats.contacts": "Contacts",
