@@ -1752,6 +1752,20 @@ export const ListMeContactAlbumsParams = zod.object({
   nsid: zod.string().min(1).max(listMeContactAlbumsPathNsidMax),
 });
 
+export const listMeContactAlbumsQueryCursorMax = 1024;
+
+export const listMeContactAlbumsQueryLimitDefault = 30;
+export const listMeContactAlbumsQueryLimitMax = 100;
+
+export const ListMeContactAlbumsQueryParams = zod.object({
+  cursor: zod.string().max(listMeContactAlbumsQueryCursorMax).optional(),
+  limit: zod
+    .int()
+    .min(1)
+    .max(listMeContactAlbumsQueryLimitMax)
+    .default(listMeContactAlbumsQueryLimitDefault),
+});
+
 export const listMeContactAlbumsResponseItemsItemStoredCountMin = 0;
 
 export const listMeContactAlbumsResponseItemsItemTotalCountMin = 0;
@@ -1759,6 +1773,8 @@ export const listMeContactAlbumsResponseItemsItemTotalCountMin = 0;
 export const listMeContactAlbumsResponseItemsItemCoverPhotoUrlsMax = 3;
 
 export const listMeContactAlbumsResponseTotalMin = 0;
+
+export const listMeContactAlbumsResponseNextCursorMax = 1024;
 
 export const ListMeContactAlbumsResponse = zod.object({
   items: zod.array(
@@ -1774,6 +1790,7 @@ export const ListMeContactAlbumsResponse = zod.object({
     }),
   ),
   total: zod.int().min(listMeContactAlbumsResponseTotalMin),
+  next_cursor: zod.string().max(listMeContactAlbumsResponseNextCursorMax).nullable(),
   updated_at: zod.iso.datetime({ offset: true }).nullable(),
 });
 
@@ -1786,9 +1803,25 @@ export const ListMeContactGalleriesParams = zod.object({
   nsid: zod.string().min(1).max(listMeContactGalleriesPathNsidMax),
 });
 
+export const listMeContactGalleriesQueryCursorMax = 1024;
+
+export const listMeContactGalleriesQueryLimitDefault = 30;
+export const listMeContactGalleriesQueryLimitMax = 100;
+
+export const ListMeContactGalleriesQueryParams = zod.object({
+  cursor: zod.string().max(listMeContactGalleriesQueryCursorMax).optional(),
+  limit: zod
+    .int()
+    .min(1)
+    .max(listMeContactGalleriesQueryLimitMax)
+    .default(listMeContactGalleriesQueryLimitDefault),
+});
+
 export const listMeContactGalleriesResponseItemsItemPhotoCountMin = 0;
 
 export const listMeContactGalleriesResponseTotalMin = 0;
+
+export const listMeContactGalleriesResponseNextCursorMax = 1024;
 
 export const ListMeContactGalleriesResponse = zod.object({
   items: zod.array(
@@ -1799,6 +1832,7 @@ export const ListMeContactGalleriesResponse = zod.object({
     }),
   ),
   total: zod.int().min(listMeContactGalleriesResponseTotalMin),
+  next_cursor: zod.string().max(listMeContactGalleriesResponseNextCursorMax).nullable(),
   updated_at: zod.iso.datetime({ offset: true }).nullable(),
 });
 
@@ -1811,9 +1845,25 @@ export const ListMeContactGroupsParams = zod.object({
   nsid: zod.string().min(1).max(listMeContactGroupsPathNsidMax),
 });
 
+export const listMeContactGroupsQueryCursorMax = 1024;
+
+export const listMeContactGroupsQueryLimitDefault = 30;
+export const listMeContactGroupsQueryLimitMax = 100;
+
+export const ListMeContactGroupsQueryParams = zod.object({
+  cursor: zod.string().max(listMeContactGroupsQueryCursorMax).optional(),
+  limit: zod
+    .int()
+    .min(1)
+    .max(listMeContactGroupsQueryLimitMax)
+    .default(listMeContactGroupsQueryLimitDefault),
+});
+
 export const listMeContactGroupsResponseItemsItemMembersCountMin = 0;
 
 export const listMeContactGroupsResponseTotalMin = 0;
+
+export const listMeContactGroupsResponseNextCursorMax = 1024;
 
 export const ListMeContactGroupsResponse = zod.object({
   items: zod.array(
@@ -1825,6 +1875,7 @@ export const ListMeContactGroupsResponse = zod.object({
     }),
   ),
   total: zod.int().min(listMeContactGroupsResponseTotalMin),
+  next_cursor: zod.string().max(listMeContactGroupsResponseNextCursorMax).nullable(),
   updated_at: zod.iso.datetime({ offset: true }).nullable(),
 });
 

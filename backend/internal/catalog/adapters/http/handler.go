@@ -308,9 +308,12 @@ func (h Handler) ListMeContactAlbums(ctx context.Context, request gen.ListMeCont
 	if !ok {
 		return gen.ListMeContactAlbums401JSONResponse(gen.Error{Code: "unauthenticated"}), nil
 	}
-	page, err := h.ContactReads.ListContactAlbums(ctx, userID, request.Nsid)
+	page, err := h.ContactReads.ListContactAlbums(ctx, userID, request.Nsid, stringParam(request.Params.Cursor), contactLimit(request.Params.Limit))
 	if errors.Is(err, app.ErrNotFound) {
 		return gen.ListMeContactAlbums404JSONResponse(notFoundError()), nil
+	}
+	if errors.Is(err, app.ErrInvalidPage) || errors.Is(err, app.ErrInvalidCursor) {
+		return gen.ListMeContactAlbums400JSONResponse(invalidPageError()), nil
 	}
 	if err != nil {
 		return nil, err
@@ -319,7 +322,7 @@ func (h Handler) ListMeContactAlbums(ctx context.Context, request gen.ListMeCont
 	for _, v := range page.Items {
 		items = append(items, gen.ContactAlbum{ID: v.ID, Title: v.Title, OwnerName: v.OwnerName, StoredCount: v.StoredCount, TotalCount: v.TotalCount, CoverPhotoUrls: v.CoverPhotoURLs})
 	}
-	return gen.ListMeContactAlbums200JSONResponse(gen.ContactAlbumPage{Items: items, Total: page.Total, UpdatedAt: page.UpdatedAt}), nil
+	return gen.ListMeContactAlbums200JSONResponse(gen.ContactAlbumPage{Items: items, Total: page.Total, NextCursor: page.NextCursor, UpdatedAt: page.UpdatedAt}), nil
 }
 
 func (h Handler) ListMeContactGalleries(ctx context.Context, request gen.ListMeContactGalleriesRequestObject) (gen.ListMeContactGalleriesResponseObject, error) {
@@ -327,9 +330,12 @@ func (h Handler) ListMeContactGalleries(ctx context.Context, request gen.ListMeC
 	if !ok {
 		return gen.ListMeContactGalleries401JSONResponse(gen.Error{Code: "unauthenticated"}), nil
 	}
-	page, err := h.ContactReads.ListContactGalleries(ctx, userID, request.Nsid)
+	page, err := h.ContactReads.ListContactGalleries(ctx, userID, request.Nsid, stringParam(request.Params.Cursor), contactLimit(request.Params.Limit))
 	if errors.Is(err, app.ErrNotFound) {
 		return gen.ListMeContactGalleries404JSONResponse(notFoundError()), nil
+	}
+	if errors.Is(err, app.ErrInvalidPage) || errors.Is(err, app.ErrInvalidCursor) {
+		return gen.ListMeContactGalleries400JSONResponse(invalidPageError()), nil
 	}
 	if err != nil {
 		return nil, err
@@ -338,7 +344,7 @@ func (h Handler) ListMeContactGalleries(ctx context.Context, request gen.ListMeC
 	for _, v := range page.Items {
 		items = append(items, gen.ContactGallery{ID: v.ID, Title: v.Title, PhotoCount: v.PhotoCount})
 	}
-	return gen.ListMeContactGalleries200JSONResponse(gen.ContactGalleryPage{Items: items, Total: page.Total, UpdatedAt: page.UpdatedAt}), nil
+	return gen.ListMeContactGalleries200JSONResponse(gen.ContactGalleryPage{Items: items, Total: page.Total, NextCursor: page.NextCursor, UpdatedAt: page.UpdatedAt}), nil
 }
 
 func (h Handler) ListMeContactGroups(ctx context.Context, request gen.ListMeContactGroupsRequestObject) (gen.ListMeContactGroupsResponseObject, error) {
@@ -346,9 +352,12 @@ func (h Handler) ListMeContactGroups(ctx context.Context, request gen.ListMeCont
 	if !ok {
 		return gen.ListMeContactGroups401JSONResponse(gen.Error{Code: "unauthenticated"}), nil
 	}
-	page, err := h.ContactReads.ListContactGroups(ctx, userID, request.Nsid)
+	page, err := h.ContactReads.ListContactGroups(ctx, userID, request.Nsid, stringParam(request.Params.Cursor), contactLimit(request.Params.Limit))
 	if errors.Is(err, app.ErrNotFound) {
 		return gen.ListMeContactGroups404JSONResponse(notFoundError()), nil
+	}
+	if errors.Is(err, app.ErrInvalidPage) || errors.Is(err, app.ErrInvalidCursor) {
+		return gen.ListMeContactGroups400JSONResponse(invalidPageError()), nil
 	}
 	if err != nil {
 		return nil, err
@@ -357,7 +366,7 @@ func (h Handler) ListMeContactGroups(ctx context.Context, request gen.ListMeCont
 	for _, v := range page.Items {
 		items = append(items, gen.ContactGroup{Nsid: v.NSID, Name: v.Name, MembersCount: v.MembersCount, PoolCrawlEnabled: v.PoolCrawlEnabled})
 	}
-	return gen.ListMeContactGroups200JSONResponse(gen.ContactGroupPage{Items: items, Total: page.Total, UpdatedAt: page.UpdatedAt}), nil
+	return gen.ListMeContactGroups200JSONResponse(gen.ContactGroupPage{Items: items, Total: page.Total, NextCursor: page.NextCursor, UpdatedAt: page.UpdatedAt}), nil
 }
 
 func (h Handler) GetMeContactAbout(ctx context.Context, request gen.GetMeContactAboutRequestObject) (gen.GetMeContactAboutResponseObject, error) {

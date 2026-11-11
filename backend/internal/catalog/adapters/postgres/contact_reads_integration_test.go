@@ -85,6 +85,9 @@ func TestContactReadsUseScopedSummaryAndBoundedFacets(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO albums(id,owner_nsid,title,primary_photo_id,photos_count) VALUES($1,$2,'Contact album',$3,5)`, albumID, firstNSID, privateCoverID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO album_photos(album_id,photo_id,position) VALUES($1,$2,0),($1,$3,1)`, albumID, photoIDs[0], privateCoverID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.Exec(ctx, `INSERT INTO galleries(id,owner_nsid,title,photos_count) VALUES($1,$2,'Contact gallery',7)`, galleryID, firstNSID); err != nil {
 		t.Fatal(err)
 	}
@@ -150,18 +153,18 @@ func TestContactReadsUseScopedSummaryAndBoundedFacets(t *testing.T) {
 	if fmt.Sprint(listedFavoriteIDs) != fmt.Sprint(wantPhotoIDs) {
 		t.Fatalf("contact favorites across pages = %v, want %v", listedFavoriteIDs, wantPhotoIDs)
 	}
-	albums, err := repository.ListContactAlbums(ctx, userID, firstNSID)
-	if err != nil || albums.Total != 1 || albums.Items[0].ID != albumID {
+	albums, err := repository.ListContactAlbums(ctx, userID, firstNSID, "", 30)
+	if err != nil || albums.Total != 1 || albums.Items[0].ID != albumID || albums.Items[0].StoredCount != 1 || albums.Items[0].TotalCount != 5 {
 		t.Fatalf("contact albums = %+v, error = %v", albums, err)
 	}
 	if len(albums.Items[0].CoverPhotoURLs) != 0 {
 		t.Fatalf("private album cover was exposed: %v", albums.Items[0].CoverPhotoURLs)
 	}
-	galleries, err := repository.ListContactGalleries(ctx, userID, firstNSID)
+	galleries, err := repository.ListContactGalleries(ctx, userID, firstNSID, "", 30)
 	if err != nil || galleries.Total != 1 || galleries.Items[0].ID != galleryID {
 		t.Fatalf("contact galleries = %+v, error = %v", galleries, err)
 	}
-	groups, err := repository.ListContactGroups(ctx, userID, firstNSID)
+	groups, err := repository.ListContactGroups(ctx, userID, firstNSID, "", 30)
 	if err != nil || groups.Total != 1 || groups.Items[0].NSID != groupNSID || groups.Items[0].PoolCrawlEnabled {
 		t.Fatalf("contact groups = %+v, error = %v", groups, err)
 	}
@@ -181,7 +184,7 @@ func TestContactReadsUseScopedSummaryAndBoundedFacets(t *testing.T) {
 	if err := json.Unmarshal(workCursor, &cursor); err != nil || workKind != "group_pool" || workSubject != groupNSID || cursor.Method != "flickr.groups.pools.getPhotos" || cursor.Params["group_id"] != groupNSID {
 		t.Fatalf("group pool work item = kind %q subject %q cursor %+v err=%v", workKind, workSubject, cursor, err)
 	}
-	groups, err = repository.ListContactGroups(ctx, userID, firstNSID)
+	groups, err = repository.ListContactGroups(ctx, userID, firstNSID, "", 30)
 	if err != nil || len(groups.Items) != 1 || !groups.Items[0].PoolCrawlEnabled {
 		t.Fatalf("updated contact groups = %+v, error = %v", groups, err)
 	}

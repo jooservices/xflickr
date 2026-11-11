@@ -214,10 +214,11 @@ ContactAlbum:
 ContactAlbumPage:
   type: object
   additionalProperties: false
-  required: [items, total, updated_at]
+  required: [items, total, next_cursor, updated_at]
   properties:
     items: { type: array, items: { $ref: '#/ContactAlbum' } }
     total: { type: integer, format: int64, minimum: 0 }
+    next_cursor: { type: [string, 'null'], maxLength: 1024 }
     updated_at: { type: [string, 'null'], format: date-time }
 
 ContactGallery:
@@ -232,10 +233,11 @@ ContactGallery:
 ContactGalleryPage:
   type: object
   additionalProperties: false
-  required: [items, total, updated_at]
+  required: [items, total, next_cursor, updated_at]
   properties:
     items: { type: array, items: { $ref: '#/ContactGallery' } }
     total: { type: integer, format: int64, minimum: 0 }
+    next_cursor: { type: [string, 'null'], maxLength: 1024 }
     updated_at: { type: [string, 'null'], format: date-time }
 
 ContactGroup:
@@ -251,10 +253,11 @@ ContactGroup:
 ContactGroupPage:
   type: object
   additionalProperties: false
-  required: [items, total, updated_at]
+  required: [items, total, next_cursor, updated_at]
   properties:
     items: { type: array, items: { $ref: '#/ContactGroup' } }
     total: { type: integer, format: int64, minimum: 0 }
+    next_cursor: { type: [string, 'null'], maxLength: 1024 }
     updated_at: { type: [string, 'null'], format: date-time }
 
 ContactAbout:

@@ -41,15 +41,15 @@ func (s *contactReadsStub) ListContactFavorites(context.Context, int64, string, 
 	return s.favorites, s.err
 }
 
-func (s *contactReadsStub) ListContactAlbums(context.Context, int64, string) (app.ContactAlbumPage, error) {
+func (s *contactReadsStub) ListContactAlbums(context.Context, int64, string, string, int) (app.ContactAlbumPage, error) {
 	return s.albums, s.err
 }
 
-func (s *contactReadsStub) ListContactGalleries(context.Context, int64, string) (app.ContactGalleryPage, error) {
+func (s *contactReadsStub) ListContactGalleries(context.Context, int64, string, string, int) (app.ContactGalleryPage, error) {
 	return s.galleries, s.err
 }
 
-func (s *contactReadsStub) ListContactGroups(context.Context, int64, string) (app.ContactGroupPage, error) {
+func (s *contactReadsStub) ListContactGroups(context.Context, int64, string, string, int) (app.ContactGroupPage, error) {
 	return s.groups, s.err
 }
 

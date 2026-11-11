@@ -1,4 +1,10 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+} from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import {
@@ -15,6 +21,7 @@ import {
   pauseCrawlContact,
   prioritiseMeContactSizes,
   resumeCrawlContact,
+  selectMyContact,
   starMyContact,
 } from '../../shared/api/gen/crawl/crawl';
 import { createDownload } from '../../shared/api/gen/default/default';
@@ -367,28 +374,42 @@ export function ContactPage() {
     getNextPageParam: (page) => page.next_cursor ?? undefined,
     retry: false,
   });
-  const albums = useQuery({
-    queryKey: ['contacts', 'albums', id],
-    queryFn: ({ signal }) =>
-      apiContactPage<ContactAlbumPage>(listMeContactAlbums(id, { signal }), id, setAccessFailure),
-    enabled: !contactBlocked && selectedTab === 'albums',
-    retry: false,
-  });
-  const galleries = useQuery({
+  const galleries = useInfiniteQuery({
     queryKey: ['contacts', 'galleries', id],
-    queryFn: ({ signal }) =>
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) =>
       apiContactPage<ContactGalleryPage>(
-        listMeContactGalleries(id, { signal }),
+        listMeContactGalleries(id, { cursor: pageParam, limit: PAGE_SIZE }, { signal }),
         id,
         setAccessFailure,
       ),
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
     enabled: !contactBlocked && selectedTab === 'galleries',
     retry: false,
   });
-  const groups = useQuery({
+  const albumsPaged = useInfiniteQuery({
+    queryKey: ['contacts', 'albums', id],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) =>
+      apiContactPage<ContactAlbumPage>(
+        listMeContactAlbums(id, { cursor: pageParam, limit: PAGE_SIZE }, { signal }),
+        id,
+        setAccessFailure,
+      ),
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    enabled: !contactBlocked && selectedTab === 'albums',
+    retry: false,
+  });
+  const groups = useInfiniteQuery({
     queryKey: ['contacts', 'groups', id],
-    queryFn: ({ signal }) =>
-      apiContactPage<ContactGroupPage>(listMeContactGroups(id, { signal }), id, setAccessFailure),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) =>
+      apiContactPage<ContactGroupPage>(
+        listMeContactGroups(id, { cursor: pageParam, limit: PAGE_SIZE }, { signal }),
+        id,
+        setAccessFailure,
+      ),
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
     enabled: !contactBlocked && selectedTab === 'groups',
     retry: false,
   });
@@ -456,14 +477,35 @@ export function ContactPage() {
         t(paused ? 'contact.action.resume.success' : 'contact.action.pause.success'),
       ),
   });
-  const prioritize = useMutation({
+  const prioritiseSizes = useMutation({
     mutationFn: async () => {
       const response = await prioritiseMeContactSizes(id);
       if (response.status !== 200) throw apiError(response.status);
+      return response.data.prioritised;
+    },
+    onMutate: () => {
+      setActionError(false);
+      setActionMessage('');
+    },
+    onSuccess: (count) => {
+      setActionError(false);
+      setActionMessage(t('contact.action.prioritise-sizes.success', { count }));
+      void queryClient.invalidateQueries({ queryKey: personKey });
+    },
+    onError: () => setActionError(true),
+  });
+  const prioritize = useMutation({
+    mutationFn: async () => {
+      const response = await selectMyContact(id);
+      if (response.status !== 204) throw apiError(response.status);
+    },
+    onMutate: () => {
+      setActionError(false);
+      setActionMessage('');
     },
     onSuccess: () => {
       setActionError(false);
-      setActionMessage(t('contact.action.prioritise.success'));
+      setActionMessage(t('contact.action.prioritise-contact.success'));
       void queryClient.invalidateQueries({ queryKey: personKey });
     },
     onError: () => setActionError(true),
@@ -477,15 +519,20 @@ export function ContactPage() {
     onMutate: ({ groupNSID, enabled }) => {
       setActionError(false);
       setActionMessage('');
-      queryClient.setQueryData<ContactGroupPage>(['contacts', 'groups', id], (current) =>
-        current
-          ? {
-              ...current,
-              items: current.items.map((item) =>
-                item.nsid === groupNSID ? { ...item, pool_crawl_enabled: enabled } : item,
-              ),
-            }
-          : current,
+      queryClient.setQueryData<InfiniteData<ContactGroupPage>>(
+        ['contacts', 'groups', id],
+        (current) =>
+          current
+            ? {
+                ...current,
+                pages: current.pages.map((page) => ({
+                  ...page,
+                  items: page.items.map((item) =>
+                    item.nsid === groupNSID ? { ...item, pool_crawl_enabled: enabled } : item,
+                  ),
+                })),
+              }
+            : current,
       );
     },
     onError: () => {
@@ -497,7 +544,7 @@ export function ContactPage() {
 
   const retryCurrent = () => {
     if (selectedTab === 'photos' || selectedTab === 'favorites') void dataQuery.refetch();
-    else if (selectedTab === 'albums') void albums.refetch();
+    else if (selectedTab === 'albums') void albumsPaged.refetch();
     else if (selectedTab === 'galleries') void galleries.refetch();
     else if (selectedTab === 'groups') void groups.refetch();
     else void about.refetch();
@@ -585,7 +632,7 @@ export function ContactPage() {
     selectedTab === 'photos' || selectedTab === 'favorites'
       ? dataQuery.isError && !dataQuery.data
       : selectedTab === 'albums'
-        ? albums.isError && !albums.data
+        ? albumsPaged.isError && !albumsPaged.data
         : selectedTab === 'galleries'
           ? galleries.isError && !galleries.data
           : selectedTab === 'groups'
@@ -595,7 +642,7 @@ export function ContactPage() {
     selectedTab === 'photos' || selectedTab === 'favorites'
       ? dataQuery.isError && Boolean(dataQuery.data) && !dataQuery.isFetchNextPageError
       : selectedTab === 'albums'
-        ? albums.isError && Boolean(albums.data)
+        ? albumsPaged.isError && Boolean(albumsPaged.data)
         : selectedTab === 'galleries'
           ? galleries.isError && Boolean(galleries.data)
           : selectedTab === 'groups'
@@ -605,7 +652,7 @@ export function ContactPage() {
     selectedTab === 'photos' || selectedTab === 'favorites'
       ? dataQuery.isPending
       : selectedTab === 'albums'
-        ? albums.isPending
+        ? albumsPaged.isPending
         : selectedTab === 'galleries'
           ? galleries.isPending
           : selectedTab === 'groups'
@@ -613,6 +660,9 @@ export function ContactPage() {
             : about.isPending;
   const contentItems = dataQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const pageTotal = dataQuery.data?.pages[0]?.total ?? 0;
+  const albumItems = albumsPaged.data?.pages.flatMap((page) => page.items) ?? [];
+  const galleryItems = galleries.data?.pages.flatMap((page) => page.items) ?? [];
+  const groupItems = groups.data?.pages.flatMap((page) => page.items) ?? [];
   const photosTab = selectedTab === 'photos';
 
   return (
@@ -674,11 +724,20 @@ export function ContactPage() {
           <button
             className={styles.button}
             type="button"
-            disabled={prioritize.isPending}
-            onClick={() => prioritize.mutate()}
+            disabled={prioritiseSizes.isPending}
+            onClick={() => prioritiseSizes.mutate()}
             data-testid="user-contact-photos-prioritise-sizes"
           >
             {t('contact.action.prioritise-sizes')}
+          </button>
+          <button
+            className={styles.button}
+            type="button"
+            disabled={prioritize.isPending}
+            onClick={() => prioritize.mutate()}
+            data-testid="user-contact-photos-prioritise-contact"
+          >
+            {t('contact.action.prioritise-contact')}
           </button>
           <button
             className={styles.button}
@@ -900,9 +959,9 @@ export function ContactPage() {
         </section>
       ) : selectedTab === 'albums' ? (
         <section className={styles.tabContent}>
-          {albums.data?.items.length ? (
+          {albumItems.length ? (
             <ul className={styles.contentGrid} data-testid="user-contact-albums-grid">
-              {albums.data.items.map((album) => (
+              {albumItems.map((album) => (
                 <li
                   key={album.id}
                   className={styles.albumCard}
@@ -936,12 +995,22 @@ export function ContactPage() {
               </Link>
             </div>
           )}
+          {albumsPaged.hasNextPage && (
+            <button
+              className={styles.button}
+              disabled={albumsPaged.isFetchingNextPage}
+              onClick={() => void albumsPaged.fetchNextPage()}
+              data-testid="user-contact-albums-load-more"
+            >
+              {t(albumsPaged.isFetchingNextPage ? 'contact.loading.more' : 'contact.load-more')}
+            </button>
+          )}
         </section>
       ) : selectedTab === 'galleries' ? (
         <section className={styles.tabContent}>
-          {galleries.data?.items.length ? (
+          {galleryItems.length ? (
             <ul className={styles.contentGrid} data-testid="user-contact-galleries-grid">
-              {galleries.data.items.map((gallery) => (
+              {galleryItems.map((gallery) => (
                 <li
                   key={gallery.id}
                   className={styles.galleryCard}
@@ -961,10 +1030,20 @@ export function ContactPage() {
               </Link>
             </div>
           )}
+          {galleries.hasNextPage && (
+            <button
+              className={styles.button}
+              disabled={galleries.isFetchingNextPage}
+              onClick={() => void galleries.fetchNextPage()}
+              data-testid="user-contact-galleries-load-more"
+            >
+              {t(galleries.isFetchingNextPage ? 'contact.loading.more' : 'contact.load-more')}
+            </button>
+          )}
         </section>
       ) : selectedTab === 'groups' ? (
         <section className={styles.tabContent}>
-          {groups.data?.items.length ? (
+          {groupItems.length ? (
             <div className={styles.tableWrap}>
               <table className={styles.groupTable} data-testid="user-contact-groups-table">
                 <thead>
@@ -975,7 +1054,7 @@ export function ContactPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {groups.data.items.map((group) => (
+                  {groupItems.map((group) => (
                     <tr key={group.nsid}>
                       <th scope="row">{group.name}</th>
                       <td>{new Intl.NumberFormat(locale).format(group.members_count)}</td>
@@ -1016,6 +1095,16 @@ export function ContactPage() {
                 {t('contact.empty.browse')}
               </Link>
             </div>
+          )}
+          {groups.hasNextPage && (
+            <button
+              className={styles.button}
+              disabled={groups.isFetchingNextPage}
+              onClick={() => void groups.fetchNextPage()}
+              data-testid="user-contact-groups-load-more"
+            >
+              {t(groups.isFetchingNextPage ? 'contact.loading.more' : 'contact.load-more')}
+            </button>
           )}
         </section>
       ) : (

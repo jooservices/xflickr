@@ -100,18 +100,20 @@ type ContactAlbum struct {
 	CoverPhotoURLs          []string
 }
 type ContactAlbumPage struct {
-	Items     []ContactAlbum
-	Total     int64
-	UpdatedAt *time.Time
+	Items      []ContactAlbum
+	Total      int64
+	NextCursor *string
+	UpdatedAt  *time.Time
 }
 type ContactGallery struct {
 	ID, Title  string
 	PhotoCount int64
 }
 type ContactGalleryPage struct {
-	Items     []ContactGallery
-	Total     int64
-	UpdatedAt *time.Time
+	Items      []ContactGallery
+	Total      int64
+	NextCursor *string
+	UpdatedAt  *time.Time
 }
 type ContactGroup struct {
 	NSID, Name       string
@@ -119,9 +121,10 @@ type ContactGroup struct {
 	PoolCrawlEnabled bool
 }
 type ContactGroupPage struct {
-	Items     []ContactGroup
-	Total     int64
-	UpdatedAt *time.Time
+	Items      []ContactGroup
+	Total      int64
+	NextCursor *string
+	UpdatedAt  *time.Time
 }
 type ContactAbout struct {
 	LastChangeCheckAt             *time.Time
@@ -139,9 +142,9 @@ type ContactReadRepository interface {
 	GetContact(context.Context, int64, string) (ContactDetail, bool, error)
 	ListContactPhotos(context.Context, int64, string, string, int) (ContactPhotoPage, error)
 	ListContactFavorites(context.Context, int64, string, string, int) (ContactFavoritePage, error)
-	ListContactAlbums(context.Context, int64, string) (ContactAlbumPage, error)
-	ListContactGalleries(context.Context, int64, string) (ContactGalleryPage, error)
-	ListContactGroups(context.Context, int64, string) (ContactGroupPage, error)
+	ListContactAlbums(context.Context, int64, string, string, int) (ContactAlbumPage, error)
+	ListContactGalleries(context.Context, int64, string, string, int) (ContactGalleryPage, error)
+	ListContactGroups(context.Context, int64, string, string, int) (ContactGroupPage, error)
 	GetContactAbout(context.Context, int64, string) (ContactAbout, bool, error)
 	SetContactGroupPoolCrawl(context.Context, int64, string, string, bool) (ContactPoolCrawl, bool, error)
 	PrioritiseContactSizes(context.Context, int64, string) (int64, error)
@@ -211,25 +214,37 @@ func (s ContactReads) ListContactFavorites(ctx context.Context, userID int64, ns
 	return s.Repository.ListContactFavorites(ctx, userID, nsid, cursor, limit)
 }
 
-func (s ContactReads) ListContactAlbums(ctx context.Context, userID int64, nsid string) (ContactAlbumPage, error) {
+func (s ContactReads) ListContactAlbums(ctx context.Context, userID int64, nsid, cursor string, limit int) (ContactAlbumPage, error) {
 	if err := s.readyContact(ctx, userID, nsid); err != nil {
 		return ContactAlbumPage{}, err
 	}
-	return s.Repository.ListContactAlbums(ctx, userID, nsid)
+	limit, err := normalizeLimit(limit)
+	if err != nil {
+		return ContactAlbumPage{}, err
+	}
+	return s.Repository.ListContactAlbums(ctx, userID, nsid, cursor, limit)
 }
 
-func (s ContactReads) ListContactGalleries(ctx context.Context, userID int64, nsid string) (ContactGalleryPage, error) {
+func (s ContactReads) ListContactGalleries(ctx context.Context, userID int64, nsid, cursor string, limit int) (ContactGalleryPage, error) {
 	if err := s.readyContact(ctx, userID, nsid); err != nil {
 		return ContactGalleryPage{}, err
 	}
-	return s.Repository.ListContactGalleries(ctx, userID, nsid)
+	limit, err := normalizeLimit(limit)
+	if err != nil {
+		return ContactGalleryPage{}, err
+	}
+	return s.Repository.ListContactGalleries(ctx, userID, nsid, cursor, limit)
 }
 
-func (s ContactReads) ListContactGroups(ctx context.Context, userID int64, nsid string) (ContactGroupPage, error) {
+func (s ContactReads) ListContactGroups(ctx context.Context, userID int64, nsid, cursor string, limit int) (ContactGroupPage, error) {
 	if err := s.readyContact(ctx, userID, nsid); err != nil {
 		return ContactGroupPage{}, err
 	}
-	return s.Repository.ListContactGroups(ctx, userID, nsid)
+	limit, err := normalizeLimit(limit)
+	if err != nil {
+		return ContactGroupPage{}, err
+	}
+	return s.Repository.ListContactGroups(ctx, userID, nsid, cursor, limit)
 }
 
 func (s ContactReads) GetContactAbout(ctx context.Context, userID int64, nsid string) (ContactAbout, error) {

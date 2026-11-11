@@ -49,9 +49,10 @@ Inside the USER shell main column (max width 1200px, 24px desktop padding,
    shows the gallery title and `{photo_count} photos curated from other
    members`. Galleries have no cover image in this view.
 
-The Albums/Galleries tab content does not add filters, sorting, pagination, or
-download controls. Header, shell navigation, and notifications belong to their
-own specs.
+The Albums/Galleries tab content does not add filters, sorting, or download
+controls. Results use the contact API's cursor pagination, with a Load more
+control when another page is available. Header, shell navigation, and
+notifications belong to their own specs.
 
 ## Data and API
 

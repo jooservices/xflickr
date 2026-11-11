@@ -11,6 +11,11 @@ export interface ContactGroupPage {
   items: ContactGroup[];
   /** @minimum 0 */
   total: number;
+  /**
+   * @maxLength 1024
+   * @nullable
+   */
+  next_cursor: string | null;
   /** @nullable */
   updated_at: string | null;
 }

@@ -37,17 +37,17 @@ func (f *contactReadFake) ListContactFavorites(_ context.Context, _ int64, nsid,
 	return ContactFavoritePage{}, f.err
 }
 
-func (f *contactReadFake) ListContactAlbums(_ context.Context, _ int64, nsid string) (ContactAlbumPage, error) {
+func (f *contactReadFake) ListContactAlbums(_ context.Context, _ int64, nsid, _ string, _ int) (ContactAlbumPage, error) {
 	f.called = "albums:" + nsid
 	return ContactAlbumPage{}, f.err
 }
 
-func (f *contactReadFake) ListContactGalleries(_ context.Context, _ int64, nsid string) (ContactGalleryPage, error) {
+func (f *contactReadFake) ListContactGalleries(_ context.Context, _ int64, nsid, _ string, _ int) (ContactGalleryPage, error) {
 	f.called = "galleries:" + nsid
 	return ContactGalleryPage{}, f.err
 }
 
-func (f *contactReadFake) ListContactGroups(_ context.Context, _ int64, nsid string) (ContactGroupPage, error) {
+func (f *contactReadFake) ListContactGroups(_ context.Context, _ int64, nsid, _ string, _ int) (ContactGroupPage, error) {
 	f.called = "groups:" + nsid
 	return ContactGroupPage{}, f.err
 }
@@ -118,9 +118,9 @@ func TestContactReadsRequireScopedContactAndForwardSections(t *testing.T) {
 	}{
 		{"photos", func() error { _, err := service.ListContactPhotos(ctx, 2, "one@N00", "next", 30); return err }, "photos:one@N00:next"},
 		{"favorites", func() error { _, err := service.ListContactFavorites(ctx, 2, "one@N00", "next", 30); return err }, "favorites:one@N00:next"},
-		{"albums", func() error { _, err := service.ListContactAlbums(ctx, 2, "one@N00"); return err }, "albums:one@N00"},
-		{"galleries", func() error { _, err := service.ListContactGalleries(ctx, 2, "one@N00"); return err }, "galleries:one@N00"},
-		{"groups", func() error { _, err := service.ListContactGroups(ctx, 2, "one@N00"); return err }, "groups:one@N00"},
+		{"albums", func() error { _, err := service.ListContactAlbums(ctx, 2, "one@N00", "next", 30); return err }, "albums:one@N00"},
+		{"galleries", func() error { _, err := service.ListContactGalleries(ctx, 2, "one@N00", "next", 30); return err }, "galleries:one@N00"},
+		{"groups", func() error { _, err := service.ListContactGroups(ctx, 2, "one@N00", "next", 30); return err }, "groups:one@N00"},
 		{"about", func() error { _, err := service.GetContactAbout(ctx, 2, "one@N00"); return err }, "about:one@N00"},
 		{"pool", func() error { _, err := service.SetContactGroupPoolCrawl(ctx, 2, "one@N00", "group", true); return err }, "pool:one@N00:group"},
 		{"sizes", func() error { _, err := service.PrioritiseContactSizes(ctx, 2, "one@N00"); return err }, "sizes:one@N00"},
@@ -180,9 +180,9 @@ func TestContactReadsMapMissingResourcesAndPropagateEachRepositoryError(t *testi
 		{"detail", func() error { _, err := service.GetContact(ctx, 1, "one@N00"); return err }},
 		{"photos", func() error { _, err := service.ListContactPhotos(ctx, 1, "one@N00", "", 30); return err }},
 		{"favorites", func() error { _, err := service.ListContactFavorites(ctx, 1, "one@N00", "", 30); return err }},
-		{"albums", func() error { _, err := service.ListContactAlbums(ctx, 1, "one@N00"); return err }},
-		{"galleries", func() error { _, err := service.ListContactGalleries(ctx, 1, "one@N00"); return err }},
-		{"groups", func() error { _, err := service.ListContactGroups(ctx, 1, "one@N00"); return err }},
+		{"albums", func() error { _, err := service.ListContactAlbums(ctx, 1, "one@N00", "", 30); return err }},
+		{"galleries", func() error { _, err := service.ListContactGalleries(ctx, 1, "one@N00", "", 30); return err }},
+		{"groups", func() error { _, err := service.ListContactGroups(ctx, 1, "one@N00", "", 30); return err }},
 		{"about", func() error { _, err := service.GetContactAbout(ctx, 1, "one@N00"); return err }},
 		{"pool", func() error { _, err := service.SetContactGroupPoolCrawl(ctx, 1, "one@N00", "group", true); return err }},
 		{"sizes", func() error { _, err := service.PrioritiseContactSizes(ctx, 1, "one@N00"); return err }},
@@ -199,6 +199,20 @@ func TestContactReadsMapMissingResourcesAndPropagateEachRepositoryError(t *testi
 	}
 	if _, err := service.ListContactFavorites(ctx, 1, "one@N00", "", 101); !errors.Is(err, ErrInvalidPage) {
 		t.Fatalf("invalid favorite limit error=%v", err)
+	}
+	for _, check := range []struct {
+		name string
+		run  func() error
+	}{
+		{"albums", func() error { _, err := service.ListContactAlbums(ctx, 1, "one@N00", "", 101); return err }},
+		{"galleries", func() error { _, err := service.ListContactGalleries(ctx, 1, "one@N00", "", 101); return err }},
+		{"groups", func() error { _, err := service.ListContactGroups(ctx, 1, "one@N00", "", 101); return err }},
+	} {
+		t.Run("invalid "+check.name+" limit", func(t *testing.T) {
+			if err := check.run(); !errors.Is(err, ErrInvalidPage) {
+				t.Fatalf("invalid %s limit error=%v", check.name, err)
+			}
+		})
 	}
 	if _, err := service.SetContactGroupPoolCrawl(ctx, 1, "one@N00", "group", true); !errors.Is(err, boom) {
 		t.Fatalf("preference error=%v", err)

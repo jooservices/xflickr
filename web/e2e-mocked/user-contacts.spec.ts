@@ -94,6 +94,13 @@ test('searches and stars a contact, then uses contact actions and its download d
     },
   );
   await page.route(
+    (url) => url.pathname.endsWith('/select'),
+    async (route) => {
+      requests.push({ path: new URL(route.request().url()).pathname });
+      await route.fulfill({ status: 204 });
+    },
+  );
+  await page.route(
     (url) => url.pathname === '/me/crawl/pause',
     async (route) => {
       requests.push({
@@ -137,7 +144,11 @@ test('searches and stars a contact, then uses contact actions and its download d
   await expect(page.getByTestId('user-contact-photos-grid')).toContainText('Rainy street');
   await page.getByTestId('user-contact-photos-prioritise-sizes').click();
   await expect(
-    page.getByRole('status').filter({ hasText: 'Photo sizes prioritised' }),
+    page.getByRole('status').filter({ hasText: 'Prioritised 12 photo sizes.' }),
+  ).toBeVisible();
+  await page.getByTestId('user-contact-photos-prioritise-contact').click();
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Contact prioritised for seven days.' }),
   ).toBeVisible();
   await page.getByTestId('user-contact-photos-crawl-toggle').click();
   await page.getByTestId('user-contact-photos-download-all').click();
@@ -149,6 +160,7 @@ test('searches and stars a contact, then uses contact actions and its download d
   expect(requests.map((request) => request.path)).toEqual([
     '/me/contacts/12345@N00/star',
     '/me/contacts/12345@N00/sizes-priority',
+    '/me/contacts/12345@N00/select',
     '/me/crawl/pause',
     '/downloads',
   ]);

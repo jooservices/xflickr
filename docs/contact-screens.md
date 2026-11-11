@@ -22,14 +22,18 @@ same observation and sharing predicate as catalog photo reads. Contact photo
 and favorite pages are cursor-paginated and apply that visibility predicate to
 every item. Their cursors point to the last returned item; the extra row is
 used only to determine whether another page exists. Album cover URLs use the
-same observation, sharing, and tombstone checks. Albums, galleries, groups,
-and About data are limited to 100 rows per section. All contact routes require
-USER access and verify that the contact is in the actor's interests.
+same observation, sharing, and tombstone checks. Albums, galleries, and groups
+use keyset pagination with a maximum page size of 100 and report the full
+collection total. Album `stored_count` reflects visible stored membership
+photos; `total_count` remains Flickr's album count. About data is a fixed
+summary. All contact routes require USER access and verify that the contact is
+in the actor's interests.
 
 The detail view provides Photos, Favorites, Albums, Galleries, Groups, and
-About sections. Actions include star/unstar, prioritise pending photo-size
-work in indexed batches, pause/resume contact crawl, per-group pool-crawl
-preferences, download all contact photos, and download the contact's favorites.
+About sections. Actions include star/unstar, select the contact for seven days,
+prioritise pending photo-size work in indexed batches, pause/resume contact
+crawl, per-group pool-crawl preferences, download all contact photos, and
+download the contact's favorites.
 Contact and favorite downloads page through the visible photo IDs and submit
 requests in batches of at most 500 IDs. Each batch is a separate download entry
 and follows the existing observation and sharing checks.

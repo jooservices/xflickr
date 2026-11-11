@@ -57,8 +57,11 @@ albums:
     security: [{ SessionCookie: [] }]
     parameters:
       - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
+      - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
     responses:
       '200': { description: Contact albums, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/ContactAlbumPage } } }}
+      '400': { description: Invalid page request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
       '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
       '403': { description: Contact is forbidden, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
       '404': { description: Contact not found or not visible, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
@@ -72,8 +75,11 @@ galleries:
     security: [{ SessionCookie: [] }]
     parameters:
       - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
+      - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
     responses:
       '200': { description: Contact galleries, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/ContactGalleryPage } } }}
+      '400': { description: Invalid page request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
       '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
       '403': { description: Contact is forbidden, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
       '404': { description: Contact not found or not visible, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
@@ -87,8 +93,11 @@ groups:
     security: [{ SessionCookie: [] }]
     parameters:
       - { name: nsid, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
+      - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
     responses:
       '200': { description: Contact groups, content: { application/json: { schema: { $ref: ../schemas/catalog.yaml#/ContactGroupPage } } }}
+      '400': { description: Invalid page request, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
       '401': { description: Authentication required, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
       '403': { description: Contact is forbidden, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}
       '404': { description: Contact not found or not visible, content: { application/json: { schema: { $ref: ../schemas/common.yaml#/Error } } }}

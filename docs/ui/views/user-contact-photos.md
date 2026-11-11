@@ -38,8 +38,9 @@ Inside the USER shell main column (max width 1200px, 24px desktop padding,
    Missing cover uses neutral decorative art; missing avatar uses deterministic
    initials. Missing location or discovery source uses localized “Not
    available.” If `real_name` is empty, use `username` as the display name.
-3. Header actions: Star, Prioritise sizes, Pause/Resume contact crawl, and
-   primary Download all. Show the confirmed star and pause states. Download all
+3. Header actions: Star, Select contact for seven days, Prioritise sizes,
+   Pause/Resume contact crawl, and primary Download all. Show the confirmed
+   star and pause states. Download all
    opens the shared New download modal preselected to this contact.
 4. Crawl block with a text-labelled status pill, photo records crawled/total,
    stored photo sizes percentage, and a progress row for each facet: Photos,
@@ -94,6 +95,7 @@ new endpoint is required for this view.
 | --- | --- | --- |
 | Browse contacts | Breadcrumb | Navigate to `/contacts`. |
 | Star / unstar | Star button | Send `PUT /me/contacts/{nsid}/star`; update only after confirmation, with a pending disabled state. |
+| Select contact | Prioritise contact button | Send `PUT /me/contacts/{nsid}/select`; select this contact for seven days and show confirmation. This changes general scheduler selection, not size-work priority. |
 | Prioritise sizes | Header button | Send contract-requested `PUT /me/contacts/{nsid}/sizes-priority`; show confirmation and refresh relevant progress. |
 | Pause crawl | Crawl button when running or queued | Send `PUT /me/crawl/pause` with `nsid`; retain work and stop dispatch for this user/contact. |
 | Resume crawl | Crawl button when paused | Send `PUT /me/crawl/resume` with `nsid`; work returns to normal scheduling. |
@@ -220,7 +222,9 @@ dates are source data and are not translated.
 | `user.contact-photos.action.starred` | Starred | Đã đánh dấu sao |
 | `user.contact-photos.action.unstar` | Unstar | Bỏ đánh dấu sao |
 | `user.contact-photos.action.prioritise-sizes` | Prioritise sizes | Ưu tiên tải kích thước ảnh |
-| `user.contact-photos.action.prioritise-sizes.success` | Photo sizes prioritised | Đã ưu tiên tải kích thước ảnh |
+| `user.contact-photos.action.prioritise-sizes.success` | Prioritised {{count}} photo sizes. | Đã ưu tiên {{count}} yêu cầu kích thước ảnh. |
+| `user.contact-photos.action.prioritise-contact` | Prioritise contact | Ưu tiên liên hệ |
+| `user.contact-photos.action.prioritise-contact.success` | Contact prioritised for seven days | Đã ưu tiên liên hệ trong bảy ngày |
 | `user.contact-photos.action.pause` | Pause crawl | Tạm dừng thu thập |
 | `user.contact-photos.action.resume` | Resume crawl | Tiếp tục thu thập |
 | `user.contact-photos.action.pause.success` | Contact crawl paused | Đã tạm dừng thu thập liên hệ |
@@ -270,6 +274,7 @@ Stable E2E selectors use `data-testid` and do not vary by locale or theme:
 - `data-testid="user-contact-photos-avatar"`
 - `data-testid="user-contact-photos-star"`
 - `data-testid="user-contact-photos-prioritise-sizes"`
+- `data-testid="user-contact-photos-prioritise-contact"`
 - `data-testid="user-contact-photos-crawl-toggle"`
 - `data-testid="user-contact-photos-download-all"`
 - `data-testid="user-contact-photos-crawl"`

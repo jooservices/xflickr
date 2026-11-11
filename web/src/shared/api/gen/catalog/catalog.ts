@@ -41,7 +41,10 @@ import type {
   ListAlbumPhotosParams,
   ListAlbumsParams,
   ListFavoritesParams,
+  ListMeContactAlbumsParams,
   ListMeContactFavoritesParams,
+  ListMeContactGalleriesParams,
+  ListMeContactGroupsParams,
   ListMeContactPhotosParams,
   ListPeopleParams,
   ListPersonPhotosParams,
@@ -631,6 +634,11 @@ export type listMeContactAlbumsResponse200 = {
   status: 200;
 };
 
+export type listMeContactAlbumsResponse400 = {
+  data: Error;
+  status: 400;
+};
+
 export type listMeContactAlbumsResponse401 = {
   data: Error;
   status: 401;
@@ -655,6 +663,7 @@ export type listMeContactAlbumsResponseSuccess = listMeContactAlbumsResponse200 
   headers: Headers;
 };
 export type listMeContactAlbumsResponseError = (
+  | listMeContactAlbumsResponse400
   | listMeContactAlbumsResponse401
   | listMeContactAlbumsResponse403
   | listMeContactAlbumsResponse404
@@ -666,8 +675,20 @@ export type listMeContactAlbumsResponseError = (
 export type listMeContactAlbumsResponse =
   listMeContactAlbumsResponseSuccess | listMeContactAlbumsResponseError;
 
-export const getListMeContactAlbumsUrl = (nsid: string) => {
-  return `/me/contacts/${nsid}/albums`;
+export const getListMeContactAlbumsUrl = (nsid: string, params?: ListMeContactAlbumsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/me/contacts/${nsid}/albums?${stringifiedParams}`
+    : `/me/contacts/${nsid}/albums`;
 };
 
 /**
@@ -675,16 +696,20 @@ export const getListMeContactAlbumsUrl = (nsid: string) => {
  */
 export const listMeContactAlbums = async (
   nsid: string,
+  params?: ListMeContactAlbumsParams,
   options?: Parameters<typeof customFetch>[1],
 ): Promise<listMeContactAlbumsResponse> => {
-  return customFetch<listMeContactAlbumsResponse>(getListMeContactAlbumsUrl(nsid), {
+  return customFetch<listMeContactAlbumsResponse>(getListMeContactAlbumsUrl(nsid, params), {
     ...options,
     method: 'GET',
   });
 };
 
-export const getListMeContactAlbumsQueryKey = (nsid: string) => {
-  return [`/me/contacts/${nsid}/albums`] as const;
+export const getListMeContactAlbumsQueryKey = (
+  nsid: string,
+  params?: ListMeContactAlbumsParams,
+) => {
+  return [`/me/contacts/${nsid}/albums`, ...(params ? [params] : [])] as const;
 };
 
 export const getListMeContactAlbumsQueryOptions = <
@@ -692,6 +717,7 @@ export const getListMeContactAlbumsQueryOptions = <
   TError = Error,
 >(
   nsid: string,
+  params?: ListMeContactAlbumsParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listMeContactAlbums>>, TError, TData>
@@ -701,10 +727,10 @@ export const getListMeContactAlbumsQueryOptions = <
 ) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListMeContactAlbumsQueryKey(nsid);
+  const queryKey = queryOptions?.queryKey ?? getListMeContactAlbumsQueryKey(nsid, params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof listMeContactAlbums>>> = ({ signal }) =>
-    listMeContactAlbums(nsid, { signal, ...requestOptions });
+    listMeContactAlbums(nsid, params, { signal, ...requestOptions });
 
   return {
     queryKey,
@@ -726,6 +752,7 @@ export function useListMeContactAlbums<
   TError = Error,
 >(
   nsid: string,
+  params: undefined | ListMeContactAlbumsParams,
   options: {
     query: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listMeContactAlbums>>, TError, TData>
@@ -747,6 +774,7 @@ export function useListMeContactAlbums<
   TError = Error,
 >(
   nsid: string,
+  params?: ListMeContactAlbumsParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listMeContactAlbums>>, TError, TData>
@@ -768,6 +796,7 @@ export function useListMeContactAlbums<
   TError = Error,
 >(
   nsid: string,
+  params?: ListMeContactAlbumsParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listMeContactAlbums>>, TError, TData>
@@ -785,6 +814,7 @@ export function useListMeContactAlbums<
   TError = Error,
 >(
   nsid: string,
+  params?: ListMeContactAlbumsParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listMeContactAlbums>>, TError, TData>
@@ -793,7 +823,7 @@ export function useListMeContactAlbums<
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListMeContactAlbumsQueryOptions(nsid, options);
+  const queryOptions = getListMeContactAlbumsQueryOptions(nsid, params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;
@@ -805,6 +835,11 @@ export function useListMeContactAlbums<
 export type listMeContactGalleriesResponse200 = {
   data: ContactGalleryPage;
   status: 200;
+};
+
+export type listMeContactGalleriesResponse400 = {
+  data: Error;
+  status: 400;
 };
 
 export type listMeContactGalleriesResponse401 = {
@@ -831,6 +866,7 @@ export type listMeContactGalleriesResponseSuccess = listMeContactGalleriesRespon
   headers: Headers;
 };
 export type listMeContactGalleriesResponseError = (
+  | listMeContactGalleriesResponse400
   | listMeContactGalleriesResponse401
   | listMeContactGalleriesResponse403
   | listMeContactGalleriesResponse404
@@ -842,8 +878,23 @@ export type listMeContactGalleriesResponseError = (
 export type listMeContactGalleriesResponse =
   listMeContactGalleriesResponseSuccess | listMeContactGalleriesResponseError;
 
-export const getListMeContactGalleriesUrl = (nsid: string) => {
-  return `/me/contacts/${nsid}/galleries`;
+export const getListMeContactGalleriesUrl = (
+  nsid: string,
+  params?: ListMeContactGalleriesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/me/contacts/${nsid}/galleries?${stringifiedParams}`
+    : `/me/contacts/${nsid}/galleries`;
 };
 
 /**
@@ -851,16 +902,20 @@ export const getListMeContactGalleriesUrl = (nsid: string) => {
  */
 export const listMeContactGalleries = async (
   nsid: string,
+  params?: ListMeContactGalleriesParams,
   options?: Parameters<typeof customFetch>[1],
 ): Promise<listMeContactGalleriesResponse> => {
-  return customFetch<listMeContactGalleriesResponse>(getListMeContactGalleriesUrl(nsid), {
+  return customFetch<listMeContactGalleriesResponse>(getListMeContactGalleriesUrl(nsid, params), {
     ...options,
     method: 'GET',
   });
 };
 
-export const getListMeContactGalleriesQueryKey = (nsid: string) => {
-  return [`/me/contacts/${nsid}/galleries`] as const;
+export const getListMeContactGalleriesQueryKey = (
+  nsid: string,
+  params?: ListMeContactGalleriesParams,
+) => {
+  return [`/me/contacts/${nsid}/galleries`, ...(params ? [params] : [])] as const;
 };
 
 export const getListMeContactGalleriesQueryOptions = <
@@ -868,6 +923,7 @@ export const getListMeContactGalleriesQueryOptions = <
   TError = Error,
 >(
   nsid: string,
+  params?: ListMeContactGalleriesParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listMeContactGalleries>>, TError, TData>
@@ -877,10 +933,10 @@ export const getListMeContactGalleriesQueryOptions = <
 ) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListMeContactGalleriesQueryKey(nsid);
+  const queryKey = queryOptions?.queryKey ?? getListMeContactGalleriesQueryKey(nsid, params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof listMeContactGalleries>>> = ({ signal }) =>
-    listMeContactGalleries(nsid, { signal, ...requestOptions });
+    listMeContactGalleries(nsid, params, { signal, ...requestOptions });
 
   return {
     queryKey,
@@ -902,6 +958,7 @@ export function useListMeContactGalleries<
   TError = Error,
 >(
   nsid: string,
+  params: undefined | ListMeContactGalleriesParams,
   options: {
     query: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listMeContactGalleries>>, TError, TData>
@@ -923,6 +980,7 @@ export function useListMeContactGalleries<
   TError = Error,
 >(
   nsid: string,
+  params?: ListMeContactGalleriesParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listMeContactGalleries>>, TError, TData>
@@ -944,6 +1002,7 @@ export function useListMeContactGalleries<
   TError = Error,
 >(
   nsid: string,
+  params?: ListMeContactGalleriesParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listMeContactGalleries>>, TError, TData>
@@ -961,6 +1020,7 @@ export function useListMeContactGalleries<
   TError = Error,
 >(
   nsid: string,
+  params?: ListMeContactGalleriesParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listMeContactGalleries>>, TError, TData>
@@ -969,7 +1029,7 @@ export function useListMeContactGalleries<
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListMeContactGalleriesQueryOptions(nsid, options);
+  const queryOptions = getListMeContactGalleriesQueryOptions(nsid, params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;
@@ -981,6 +1041,11 @@ export function useListMeContactGalleries<
 export type listMeContactGroupsResponse200 = {
   data: ContactGroupPage;
   status: 200;
+};
+
+export type listMeContactGroupsResponse400 = {
+  data: Error;
+  status: 400;
 };
 
 export type listMeContactGroupsResponse401 = {
@@ -1007,6 +1072,7 @@ export type listMeContactGroupsResponseSuccess = listMeContactGroupsResponse200 
   headers: Headers;
 };
 export type listMeContactGroupsResponseError = (
+  | listMeContactGroupsResponse400
   | listMeContactGroupsResponse401
   | listMeContactGroupsResponse403
   | listMeContactGroupsResponse404
@@ -1018,8 +1084,20 @@ export type listMeContactGroupsResponseError = (
 export type listMeContactGroupsResponse =
   listMeContactGroupsResponseSuccess | listMeContactGroupsResponseError;
 
-export const getListMeContactGroupsUrl = (nsid: string) => {
-  return `/me/contacts/${nsid}/groups`;
+export const getListMeContactGroupsUrl = (nsid: string, params?: ListMeContactGroupsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/me/contacts/${nsid}/groups?${stringifiedParams}`
+    : `/me/contacts/${nsid}/groups`;
 };
 
 /**
@@ -1027,16 +1105,20 @@ export const getListMeContactGroupsUrl = (nsid: string) => {
  */
 export const listMeContactGroups = async (
   nsid: string,
+  params?: ListMeContactGroupsParams,
   options?: Parameters<typeof customFetch>[1],
 ): Promise<listMeContactGroupsResponse> => {
-  return customFetch<listMeContactGroupsResponse>(getListMeContactGroupsUrl(nsid), {
+  return customFetch<listMeContactGroupsResponse>(getListMeContactGroupsUrl(nsid, params), {
     ...options,
     method: 'GET',
   });
 };
 
-export const getListMeContactGroupsQueryKey = (nsid: string) => {
-  return [`/me/contacts/${nsid}/groups`] as const;
+export const getListMeContactGroupsQueryKey = (
+  nsid: string,
+  params?: ListMeContactGroupsParams,
+) => {
+  return [`/me/contacts/${nsid}/groups`, ...(params ? [params] : [])] as const;
 };
 
 export const getListMeContactGroupsQueryOptions = <
@@ -1044,6 +1126,7 @@ export const getListMeContactGroupsQueryOptions = <
   TError = Error,
 >(
   nsid: string,
+  params?: ListMeContactGroupsParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listMeContactGroups>>, TError, TData>
@@ -1053,10 +1136,10 @@ export const getListMeContactGroupsQueryOptions = <
 ) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListMeContactGroupsQueryKey(nsid);
+  const queryKey = queryOptions?.queryKey ?? getListMeContactGroupsQueryKey(nsid, params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof listMeContactGroups>>> = ({ signal }) =>
-    listMeContactGroups(nsid, { signal, ...requestOptions });
+    listMeContactGroups(nsid, params, { signal, ...requestOptions });
 
   return {
     queryKey,
@@ -1078,6 +1161,7 @@ export function useListMeContactGroups<
   TError = Error,
 >(
   nsid: string,
+  params: undefined | ListMeContactGroupsParams,
   options: {
     query: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listMeContactGroups>>, TError, TData>
@@ -1099,6 +1183,7 @@ export function useListMeContactGroups<
   TError = Error,
 >(
   nsid: string,
+  params?: ListMeContactGroupsParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listMeContactGroups>>, TError, TData>
@@ -1120,6 +1205,7 @@ export function useListMeContactGroups<
   TError = Error,
 >(
   nsid: string,
+  params?: ListMeContactGroupsParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listMeContactGroups>>, TError, TData>
@@ -1137,6 +1223,7 @@ export function useListMeContactGroups<
   TError = Error,
 >(
   nsid: string,
+  params?: ListMeContactGroupsParams,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof listMeContactGroups>>, TError, TData>
@@ -1145,7 +1232,7 @@ export function useListMeContactGroups<
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListMeContactGroupsQueryOptions(nsid, options);
+  const queryOptions = getListMeContactGroupsQueryOptions(nsid, params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

@@ -16,10 +16,11 @@ import (
 )
 
 type contactCursor struct {
-	Kind  string    `json:"kind"`
-	ID    string    `json:"id"`
-	At    time.Time `json:"at,omitempty"`
-	Value string    `json:"value,omitempty"`
+	Kind   string    `json:"kind"`
+	ID     string    `json:"id"`
+	At     time.Time `json:"at,omitempty"`
+	Value  string    `json:"value,omitempty"`
+	NullAt bool      `json:"null_at,omitempty"`
 }
 
 const contactPriorityBatchSize = 500
@@ -445,59 +446,119 @@ func (r *Repository) ListContactFavorites(ctx context.Context, userID int64, nsi
 	return page, nil
 }
 
-func (r *Repository) ListContactAlbums(ctx context.Context, userID int64, nsid string) (app.ContactAlbumPage, error) {
+func (r *Repository) ListContactAlbums(ctx context.Context, userID int64, nsid, rawCursor string, limit int) (app.ContactAlbumPage, error) {
 	if !contactReadAvailable(ctx, r, userID) {
 		return app.ContactAlbumPage{}, app.ErrReadUnavailable
+	}
+	if _, err := contactPageLimit(limit); err != nil {
+		return app.ContactAlbumPage{}, err
+	}
+	cursor, err := decodeContactCursor(rawCursor, "albums:"+nsid)
+	if err != nil {
+		return app.ContactAlbumPage{}, err
 	}
 	if err := r.requireContact(ctx, userID, nsid); err != nil {
 		return app.ContactAlbumPage{}, err
 	}
-	rows, err := r.db.Query(ctx, `SELECT a.id,a.title,p.username,a.photos_count,COALESCE((SELECT jsonb_agg(NULLIF(cover.sizes->0->>'url','')) FROM photos cover WHERE cover.id=a.primary_photo_id AND cover.tombstoned_at IS NULL AND cover.sizes->0->>'url' IS NOT NULL AND `+contactPhotoVisibility("cover")+`),'[]'::jsonb),a.updated_at FROM albums a JOIN people p ON p.nsid=a.owner_nsid WHERE a.owner_nsid=$2 AND EXISTS(SELECT 1 FROM crawl_interests ci WHERE ci.user_id=$1 AND ci.person_nsid=$2) ORDER BY a.updated_at DESC NULLS LAST,a.id LIMIT 101`, userID, nsid)
+	var total int64
+	if err := r.db.QueryRow(ctx, `SELECT count(*) FROM albums WHERE owner_nsid=$1`, nsid).Scan(&total); err != nil {
+		return app.ContactAlbumPage{}, fmt.Errorf("catalog: count contact albums: %w", err)
+	}
+	args := []any{userID, nsid}
+	condition := ""
+	if cursor != nil {
+		args = append(args, cursor.NullAt, cursor.At, cursor.ID)
+		condition = ` AND (($3 AND a.updated_at IS NULL AND a.id<$5) OR (NOT $3 AND (a.updated_at<$4 OR a.updated_at IS NULL OR (a.updated_at=$4 AND a.id<$5))))`
+	}
+	args = append(args, limit+1)
+	query := `SELECT a.id,a.title,p.username,
+	 (SELECT count(*) FROM album_photos ap JOIN photos stored ON stored.id=ap.photo_id
+	  WHERE ap.album_id=a.id AND stored.tombstoned_at IS NULL AND ` + contactPhotoVisibility("stored") + `),
+	 a.photos_count,
+	 COALESCE((SELECT jsonb_agg(NULLIF(cover.sizes->0->>'url','')) FROM photos cover WHERE cover.id=a.primary_photo_id AND cover.tombstoned_at IS NULL AND cover.sizes->0->>'url' IS NOT NULL AND ` + contactPhotoVisibility("cover") + `),'[]'::jsonb),
+	 a.updated_at FROM albums a JOIN people p ON p.nsid=a.owner_nsid
+	 WHERE a.owner_nsid=$2 AND EXISTS(SELECT 1 FROM crawl_interests ci WHERE ci.user_id=$1 AND ci.person_nsid=$2)` + condition + `
+	 ORDER BY a.updated_at DESC NULLS LAST,a.id DESC LIMIT $` + strconv.Itoa(len(args))
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return app.ContactAlbumPage{}, fmt.Errorf("catalog: list contact albums: %w", err)
 	}
 	defer rows.Close()
-	items := make([]app.ContactAlbum, 0)
+	items := make([]app.ContactAlbum, 0, limit+1)
 	var updated *time.Time
+	var lastID string
+	var lastAt time.Time
+	var lastNullAt bool
 	for rows.Next() {
 		var item app.ContactAlbum
 		var photos []byte
 		var at *time.Time
-		if err := rows.Scan(&item.ID, &item.Title, &item.OwnerName, &item.TotalCount, &photos, &at); err != nil {
+		if err := rows.Scan(&item.ID, &item.Title, &item.OwnerName, &item.StoredCount, &item.TotalCount, &photos, &at); err != nil {
 			return app.ContactAlbumPage{}, fmt.Errorf("catalog: scan contact album: %w", err)
 		}
-		item.StoredCount = item.TotalCount
 		if err := json.Unmarshal(photos, &item.CoverPhotoURLs); err != nil {
 			return app.ContactAlbumPage{}, fmt.Errorf("catalog: decode contact album cover: %w", err)
 		}
 		if at != nil && (updated == nil || at.After(*updated)) {
 			updated = at
 		}
+		if len(items) < limit {
+			lastID, lastNullAt = item.ID, at == nil
+			if at != nil {
+				lastAt = *at
+			}
+		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return app.ContactAlbumPage{}, fmt.Errorf("catalog: read contact albums: %w", err)
 	}
-	if len(items) > 100 {
-		items = items[:100]
+	page := app.ContactAlbumPage{Items: items, Total: total, UpdatedAt: updated}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		page.NextCursor, err = encodeContactCursor(contactCursor{Kind: "albums:" + nsid, ID: lastID, At: lastAt, NullAt: lastNullAt})
+		if err != nil {
+			return app.ContactAlbumPage{}, err
+		}
 	}
-	return app.ContactAlbumPage{Items: items, Total: int64(len(items)), UpdatedAt: updated}, nil
+	return page, nil
 }
 
-func (r *Repository) ListContactGalleries(ctx context.Context, userID int64, nsid string) (app.ContactGalleryPage, error) {
+func (r *Repository) ListContactGalleries(ctx context.Context, userID int64, nsid, rawCursor string, limit int) (app.ContactGalleryPage, error) {
 	if !contactReadAvailable(ctx, r, userID) {
 		return app.ContactGalleryPage{}, app.ErrReadUnavailable
+	}
+	if _, err := contactPageLimit(limit); err != nil {
+		return app.ContactGalleryPage{}, err
+	}
+	cursor, err := decodeContactCursor(rawCursor, "galleries:"+nsid)
+	if err != nil {
+		return app.ContactGalleryPage{}, err
 	}
 	if err := r.requireContact(ctx, userID, nsid); err != nil {
 		return app.ContactGalleryPage{}, err
 	}
-	rows, err := r.db.Query(ctx, `SELECT id,title,photos_count,updated_at FROM galleries WHERE owner_nsid=$2 AND EXISTS(SELECT 1 FROM crawl_interests ci WHERE ci.user_id=$1 AND ci.person_nsid=$2) ORDER BY updated_at DESC NULLS LAST,id LIMIT 101`, userID, nsid)
+	var total int64
+	if err := r.db.QueryRow(ctx, `SELECT count(*) FROM galleries WHERE owner_nsid=$1`, nsid).Scan(&total); err != nil {
+		return app.ContactGalleryPage{}, fmt.Errorf("catalog: count contact galleries: %w", err)
+	}
+	args := []any{userID, nsid}
+	condition := ""
+	if cursor != nil {
+		args = append(args, cursor.NullAt, cursor.At, cursor.ID)
+		condition = ` AND (($3 AND updated_at IS NULL AND id<$5) OR (NOT $3 AND (updated_at<$4 OR updated_at IS NULL OR (updated_at=$4 AND id<$5))))`
+	}
+	args = append(args, limit+1)
+	rows, err := r.db.Query(ctx, `SELECT id,title,photos_count,updated_at FROM galleries WHERE owner_nsid=$2 AND EXISTS(SELECT 1 FROM crawl_interests ci WHERE ci.user_id=$1 AND ci.person_nsid=$2)`+condition+` ORDER BY updated_at DESC NULLS LAST,id DESC LIMIT $`+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return app.ContactGalleryPage{}, fmt.Errorf("catalog: list contact galleries: %w", err)
 	}
 	defer rows.Close()
-	items := make([]app.ContactGallery, 0)
+	items := make([]app.ContactGallery, 0, limit+1)
 	var updated *time.Time
+	var lastID string
+	var lastAt time.Time
+	var lastNullAt bool
 	for rows.Next() {
 		var item app.ContactGallery
 		var at *time.Time
@@ -507,31 +568,61 @@ func (r *Repository) ListContactGalleries(ctx context.Context, userID int64, nsi
 		if at != nil && (updated == nil || at.After(*updated)) {
 			updated = at
 		}
+		if len(items) < limit {
+			lastID, lastNullAt = item.ID, at == nil
+			if at != nil {
+				lastAt = *at
+			}
+		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return app.ContactGalleryPage{}, fmt.Errorf("catalog: read contact galleries: %w", err)
 	}
-	if len(items) > 100 {
-		items = items[:100]
+	page := app.ContactGalleryPage{Items: items, Total: total, UpdatedAt: updated}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		page.NextCursor, err = encodeContactCursor(contactCursor{Kind: "galleries:" + nsid, ID: lastID, At: lastAt, NullAt: lastNullAt})
+		if err != nil {
+			return app.ContactGalleryPage{}, err
+		}
 	}
-	return app.ContactGalleryPage{Items: items, Total: int64(len(items)), UpdatedAt: updated}, nil
+	return page, nil
 }
 
-func (r *Repository) ListContactGroups(ctx context.Context, userID int64, nsid string) (app.ContactGroupPage, error) {
+func (r *Repository) ListContactGroups(ctx context.Context, userID int64, nsid, rawCursor string, limit int) (app.ContactGroupPage, error) {
 	if !contactReadAvailable(ctx, r, userID) {
 		return app.ContactGroupPage{}, app.ErrReadUnavailable
+	}
+	if _, err := contactPageLimit(limit); err != nil {
+		return app.ContactGroupPage{}, err
+	}
+	cursor, err := decodeContactCursor(rawCursor, "groups:"+nsid)
+	if err != nil {
+		return app.ContactGroupPage{}, err
 	}
 	if err := r.requireContact(ctx, userID, nsid); err != nil {
 		return app.ContactGroupPage{}, err
 	}
-	rows, err := r.db.Query(ctx, `SELECT g.nsid,g.name,g.members_count,COALESCE(pref.enabled,false),g.seen_at FROM person_groups pg JOIN groups g ON g.nsid=pg.group_nsid LEFT JOIN contact_group_crawl_preferences pref ON pref.user_id=$1 AND pref.person_nsid=$2 AND pref.group_nsid=g.nsid WHERE pg.person_nsid=$2 AND EXISTS(SELECT 1 FROM crawl_interests ci WHERE ci.user_id=$1 AND ci.person_nsid=$2) ORDER BY g.name,g.nsid LIMIT 101`, userID, nsid)
+	var total int64
+	if err := r.db.QueryRow(ctx, `SELECT count(*) FROM person_groups WHERE person_nsid=$1`, nsid).Scan(&total); err != nil {
+		return app.ContactGroupPage{}, fmt.Errorf("catalog: count contact groups: %w", err)
+	}
+	args := []any{userID, nsid}
+	condition := ""
+	if cursor != nil {
+		args = append(args, cursor.Value, cursor.ID)
+		condition = ` AND (g.name>$3 OR (g.name=$3 AND g.nsid>$4))`
+	}
+	args = append(args, limit+1)
+	rows, err := r.db.Query(ctx, `SELECT g.nsid,g.name,g.members_count,COALESCE(pref.enabled,false),g.seen_at FROM person_groups pg JOIN groups g ON g.nsid=pg.group_nsid LEFT JOIN contact_group_crawl_preferences pref ON pref.user_id=$1 AND pref.person_nsid=$2 AND pref.group_nsid=g.nsid WHERE pg.person_nsid=$2 AND EXISTS(SELECT 1 FROM crawl_interests ci WHERE ci.user_id=$1 AND ci.person_nsid=$2)`+condition+` ORDER BY g.name,g.nsid LIMIT $`+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return app.ContactGroupPage{}, fmt.Errorf("catalog: list contact groups: %w", err)
 	}
 	defer rows.Close()
-	items := make([]app.ContactGroup, 0)
+	items := make([]app.ContactGroup, 0, limit+1)
 	var updated *time.Time
+	var lastID, lastName string
 	for rows.Next() {
 		var item app.ContactGroup
 		var at *time.Time
@@ -541,15 +632,23 @@ func (r *Repository) ListContactGroups(ctx context.Context, userID int64, nsid s
 		if at != nil && (updated == nil || at.After(*updated)) {
 			updated = at
 		}
+		if len(items) < limit {
+			lastID, lastName = item.NSID, item.Name
+		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return app.ContactGroupPage{}, fmt.Errorf("catalog: read contact groups: %w", err)
 	}
-	if len(items) > 100 {
-		items = items[:100]
+	page := app.ContactGroupPage{Items: items, Total: total, UpdatedAt: updated}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		page.NextCursor, err = encodeContactCursor(contactCursor{Kind: "groups:" + nsid, ID: lastID, Value: lastName})
+		if err != nil {
+			return app.ContactGroupPage{}, err
+		}
 	}
-	return app.ContactGroupPage{Items: items, Total: int64(len(items)), UpdatedAt: updated}, nil
+	return page, nil
 }
 
 func (r *Repository) GetContactAbout(ctx context.Context, userID int64, nsid string) (app.ContactAbout, bool, error) {
@@ -625,22 +724,20 @@ func (r *Repository) PrioritiseContactSizes(ctx context.Context, userID int64, n
 		return 0, err
 	}
 	var total int64
+	var lastPhotoID int64
 	for {
-		var count int64
-		err := r.db.QueryRow(ctx, `WITH batch AS (
-			SELECT wi.id FROM work_items wi
-			WHERE wi.user_id=$1 AND wi.kind='photo_sizes' AND wi.state IN ('pending','ready','running','waiting')
-			  AND wi.direct_action=FALSE AND EXISTS (
-				SELECT 1 FROM photos ph
-				WHERE ph.id=CASE WHEN wi.subject_key ~ '^[0-9]+$' THEN wi.subject_key::bigint END
-				  AND ph.owner_nsid=$2 AND ph.tombstoned_at IS NULL AND ph.sizes_status<>'confirmed'
-			  )
-			ORDER BY wi.id LIMIT $3 FOR UPDATE OF wi
+		var count, pageLastPhotoID int64
+		err := r.db.QueryRow(ctx, `WITH batch AS MATERIALIZED (
+			SELECT wi.id,ph.id AS photo_id FROM photos ph
+			JOIN work_items wi ON wi.user_id=$1 AND wi.subject_key=ph.id::text
+			WHERE ph.owner_nsid=$2 AND ph.id>$3 AND ph.tombstoned_at IS NULL AND ph.sizes_status<>'confirmed'
+			  AND wi.kind='photo_sizes' AND wi.state IN ('pending','ready','running','waiting') AND wi.direct_action=FALSE
+			ORDER BY ph.id,wi.id LIMIT $4 FOR UPDATE OF wi
 		), updated AS (
 			UPDATE work_items wi SET direct_action=TRUE,score_updated_at=NULL,updated_at=now()
-			FROM batch WHERE wi.id=batch.id RETURNING wi.id
+			FROM batch WHERE wi.id=batch.id RETURNING batch.photo_id
 		)
-		SELECT count(*) FROM updated`, userID, nsid, contactPriorityBatchSize).Scan(&count)
+		SELECT count(*),COALESCE(max(photo_id),$3) FROM updated`, userID, nsid, lastPhotoID, contactPriorityBatchSize).Scan(&count, &pageLastPhotoID)
 		if err != nil {
 			return 0, fmt.Errorf("catalog: prioritise contact sizes: %w", err)
 		}
@@ -648,6 +745,7 @@ func (r *Repository) PrioritiseContactSizes(ctx context.Context, userID int64, n
 		if count < contactPriorityBatchSize {
 			return total, nil
 		}
+		lastPhotoID = pageLastPhotoID
 	}
 }
 

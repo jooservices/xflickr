@@ -298,23 +298,26 @@ func TestContactCollectionReadsRequireAccessAndReturnSectionData(t *testing.T) {
 	updated := contactTestTime()
 	contactExists := contactTestRow(true)
 	db := &contactTestDB{
-		rowResults: []readsRow{contactExists, contactExists, contactExists},
+		rowResults: []readsRow{
+			contactExists, contactTestRow(int64(1)), contactExists, contactTestRow(int64(1)), contactExists, contactTestRow(int64(1)),
+			contactTestRow(contactDetailTestRow("one@N00")...), contactTestRow(&updated, int64(2), &updated),
+		},
 		resultRows: []*readsRows{
-			contactTestRows([]any{"album", "Trip", "user", int64(3), []byte(`[]`), &updated}),
+			contactTestRows([]any{"album", "Trip", "user", int64(2), int64(5), []byte(`[]`), &updated}),
 			contactTestRows([]any{"gallery", "Best", int64(5), &updated}),
 			contactTestRows([]any{"group", "Street", int64(20), true, &updated}),
 		},
 	}
 	repository := contactTestRepository(t, db)
-	albums, err := repository.ListContactAlbums(ctx, 7, "one@N00")
-	if err != nil || albums.Total != 1 || albums.Items[0].StoredCount != 3 {
+	albums, err := repository.ListContactAlbums(ctx, 7, "one@N00", "", 30)
+	if err != nil || albums.Total != 1 || albums.Items[0].StoredCount != 2 || albums.Items[0].TotalCount != 5 {
 		t.Fatalf("albums=%+v err=%v", albums, err)
 	}
-	galleries, err := repository.ListContactGalleries(ctx, 7, "one@N00")
+	galleries, err := repository.ListContactGalleries(ctx, 7, "one@N00", "", 30)
 	if err != nil || galleries.Items[0].PhotoCount != 5 {
 		t.Fatalf("galleries=%+v err=%v", galleries, err)
 	}
-	groups, err := repository.ListContactGroups(ctx, 7, "one@N00")
+	groups, err := repository.ListContactGroups(ctx, 7, "one@N00", "", 30)
 	if err != nil || groups.Items[0].NSID != "group" || !groups.Items[0].PoolCrawlEnabled {
 		t.Fatalf("groups=%+v err=%v", groups, err)
 	}
@@ -326,9 +329,9 @@ func TestContactCollectionReadsRequireAccessAndReturnSectionData(t *testing.T) {
 	}
 
 	for _, read := range []func(*Repository) error{
-		func(r *Repository) error { _, err := r.ListContactAlbums(ctx, 7, "one@N00"); return err },
-		func(r *Repository) error { _, err := r.ListContactGalleries(ctx, 7, "one@N00"); return err },
-		func(r *Repository) error { _, err := r.ListContactGroups(ctx, 7, "one@N00"); return err },
+		func(r *Repository) error { _, err := r.ListContactAlbums(ctx, 7, "one@N00", "", 30); return err },
+		func(r *Repository) error { _, err := r.ListContactGalleries(ctx, 7, "one@N00", "", 30); return err },
+		func(r *Repository) error { _, err := r.ListContactGroups(ctx, 7, "one@N00", "", 30); return err },
 	} {
 		db = &contactTestDB{rowResults: []readsRow{contactTestRow(false)}}
 		if err := read(contactTestRepository(t, db)); !errors.Is(err, app.ErrNotFound) {
@@ -339,8 +342,58 @@ func TestContactCollectionReadsRequireAccessAndReturnSectionData(t *testing.T) {
 	if _, _, err := contactTestRepository(t, db).GetContactAbout(ctx, 7, "one@N00"); err != nil {
 		t.Fatalf("missing detail about error=%v", err)
 	}
-	if _, err := contactTestRepository(t, &contactTestDB{rowResults: []readsRow{{err: errors.New("access check failed")}}}).ListContactAlbums(ctx, 7, "one@N00"); err == nil {
+	if _, err := contactTestRepository(t, &contactTestDB{rowResults: []readsRow{{err: errors.New("access check failed")}}}).ListContactAlbums(ctx, 7, "one@N00", "", 30); err == nil {
 		t.Fatal("access check error was swallowed")
+	}
+}
+
+func TestContactCollectionsReportAllResultsPastTheFirstPage(t *testing.T) {
+	ctx := context.Background()
+	updated := contactTestTime()
+	for _, test := range []struct {
+		name string
+		row  []any
+		read func(*Repository) (int, int64, *string, error)
+	}{
+		{
+			name: "albums",
+			row:  []any{"album", "Trip", "user", int64(2), int64(5), []byte(`[]`), &updated},
+			read: func(r *Repository) (int, int64, *string, error) {
+				page, err := r.ListContactAlbums(ctx, 7, "one@N00", "", 100)
+				return len(page.Items), page.Total, page.NextCursor, err
+			},
+		},
+		{
+			name: "galleries",
+			row:  []any{"gallery", "Best", int64(5), &updated},
+			read: func(r *Repository) (int, int64, *string, error) {
+				page, err := r.ListContactGalleries(ctx, 7, "one@N00", "", 100)
+				return len(page.Items), page.Total, page.NextCursor, err
+			},
+		},
+		{
+			name: "groups",
+			row:  []any{"group", "Street", int64(20), false, &updated},
+			read: func(r *Repository) (int, int64, *string, error) {
+				page, err := r.ListContactGroups(ctx, 7, "one@N00", "", 100)
+				return len(page.Items), page.Total, page.NextCursor, err
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rows := make([][]any, 101)
+			for i := range rows {
+				rows[i] = test.row
+			}
+			db := &contactTestDB{
+				rowResults: []readsRow{contactTestRow(true), contactTestRow(int64(101))},
+				resultRows: []*readsRows{contactTestRows(rows...)},
+			}
+			count, total, next, err := test.read(contactTestRepository(t, db))
+			if err != nil || count != 100 || total != 101 || next == nil {
+				t.Fatalf("collection page has %d items, total = %d, next cursor = %v, error = %v; want 100 of 101 and another page", count, total, next, err)
+			}
+		})
 	}
 }
 
@@ -359,12 +412,12 @@ func TestContactGroupPreferenceAndSizePriorityRemainActorScoped(t *testing.T) {
 	if _, found, err := contactTestRepository(t, db).SetContactGroupPoolCrawl(ctx, 7, "one@N00", "group", true); err != nil || found {
 		t.Fatalf("missing group preference found=%v err=%v", found, err)
 	}
-	db = &contactTestDB{rowResults: []readsRow{contactTestRow(true), contactTestRow(int64(500)), contactTestRow(int64(3))}}
+	db = &contactTestDB{rowResults: []readsRow{contactTestRow(true), contactTestRow(int64(500), int64(500)), contactTestRow(int64(3), int64(503))}}
 	count, err := contactTestRepository(t, db).PrioritiseContactSizes(ctx, 7, "one@N00")
 	if err != nil || count != 503 {
 		t.Fatalf("prioritised=%d err=%v", count, err)
 	}
-	if len(db.queries) != 3 || !strings.Contains(db.queries[1], "UPDATE work_items") || !strings.Contains(db.queries[1], "wi.user_id=$1") || !strings.Contains(db.queries[1], "LIMIT") || !strings.Contains(db.queries[1], "direct_action=FALSE") {
+	if len(db.queries) != 3 || !strings.Contains(db.queries[1], "UPDATE work_items") || !strings.Contains(db.queries[1], "wi.user_id=$1") || !strings.Contains(db.queries[1], "ph.owner_nsid=$2") || !strings.Contains(db.queries[1], "ph.id>$3") || !strings.Contains(db.queries[1], "ORDER BY ph.id") || !strings.Contains(db.queries[1], "LIMIT") || !strings.Contains(db.queries[1], "direct_action=FALSE") {
 		t.Fatalf("size priority query is not actor scoped: %s", db.queries[1])
 	}
 	db = &contactTestDB{rowResults: []readsRow{contactTestRow(false)}}
