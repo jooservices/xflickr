@@ -43,6 +43,6 @@ in effect. No live Flickr call is needed to verify this behavior: unit fakes and
 worktree PostgreSQL integration tests cover classification, caller isolation,
 first-write preservation, interval/version reopening and visibility changes.
 
-Legacy `sizes_status=unavailable` rows predate caller attribution and are reset
-to provisional by the account-scoped sizes migration. New failures use
+Legacy `sizes_status=unavailable` rows predate caller attribution and remain
+unchanged by the account-scoped sizes migration. New failures use
 caller-specific restriction rows; they do not complete global photo sizes.

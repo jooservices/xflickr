@@ -47,8 +47,9 @@ is safe to store globally. A not-found or permission response records a
 restriction for that XFlickr user and API key; another user or key can still
 make its own anonymous attempt.
 
-Restricted photos use at most one signed attempt per job. Candidate accounts
-must belong to the requesting XFlickr user, be active, and use a valid API key.
+Restricted photos use at most one signed attempt per eligible account in a job.
+Candidate accounts must belong to the requesting XFlickr user, be active, and
+use a valid API key.
 The matching photo-owner account is preferred; interactive requests may also
 use the requester's other connected accounts. A successful OAuth result is
 stored in `photo_account_sizes` with the exact photo version and visibility.
@@ -119,10 +120,11 @@ result can unlock a facet while global sizes remain provisional.
 `LIMIT`ed streams (selected, starred) and probes only the top-ranked persons.
 Each owner contributes at most 50 live photos to one selection. The query
 applies that limit before checking account-scoped size results and optional
-facet status. Owner lookups use the existing `photos_owner_last_seen_idx`; the
-selected owner's bounded page is ordered by upload time and photo ID after the
-owner filter. A current, valid owner account supplies its key for background
-size jobs, even when another user's interest ranks that contact first.
+facet status. Owner photo pages use `photos_photo_lane_order_idx`, ordered by
+owner, upload time, and photo ID with tombstones excluded. The existing
+`photos_owner_last_seen_idx` remains for reconciliation and checkpoint lookups.
+A current, valid owner account supplies its key for background size jobs, even
+when another user's interest ranks that contact first.
 Restricted placeholders without a valid owner account are excluded from the
 background lane. Other size jobs continue to use the key pool.
 
