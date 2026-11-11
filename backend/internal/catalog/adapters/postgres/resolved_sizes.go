@@ -46,8 +46,9 @@ func (s ResolvedSizes) SetSizes(ctx context.Context, id int64, sizes []byte, sta
 	return tx.Commit(ctx)
 }
 
-// SetAccountSizes stores OAuth-authorized URLs for one connected account and
-// publishes a user-scoped continuation in the same transaction.
+// SetAccountSizes stores one account's outcome. Confirmed results publish a
+// continuation immediately; unavailable is published only after all eligible
+// accounts have been tried.
 func (s ResolvedSizes) SetAccountSizes(ctx context.Context, photoID, accountID, userID int64, sizes []byte, status domain.SizesStatus, version time.Time, visibility string, at time.Time) error {
 	if s.Pool == nil || s.Publish == nil || ctx == nil || !validAccountSizesUpdate(photoID, accountID, userID, sizes, status, version, visibility, at) {
 		return errors.New("catalog: invalid account sizes update")
@@ -72,8 +73,10 @@ ON CONFLICT (photo_id,account_id) DO UPDATE SET
 	if tag.RowsAffected() != 1 {
 		return errors.New("catalog: account sizes photo version or account ownership changed")
 	}
-	if err := s.Publish(ctx, tx, app.SizesResolved{PhotoID: photoID, UserID: userID, Status: string(status)}); err != nil {
-		return err
+	if status == domain.SizesConfirmed {
+		if err := s.Publish(ctx, tx, app.SizesResolved{PhotoID: photoID, UserID: userID, Status: string(status)}); err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }

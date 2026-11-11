@@ -107,7 +107,8 @@ func (s Sizes) Handle(ctx context.Context, job SizesJob) error {
 	if err != nil {
 		return fmt.Errorf("crawl: load photo %d sizes state: %w", job.PhotoID, err)
 	}
-	if shouldSkipSizes(photo, exists) {
+	restricted := exists && (photo.HasRestrictedPlaceholder() || photo.Visibility != catalog.VisibilityPublic)
+	if shouldSkipSizes(photo, exists) && !restricted {
 		if !exists {
 			return nil
 		}
@@ -121,7 +122,7 @@ func (s Sizes) Handle(ctx context.Context, job SizesJob) error {
 		EntityRef: EntityRef{Kind: "photo", ID: fmt.Sprint(job.PhotoID)},
 		Facet:     "sizes", UserID: userID, KeyID: job.KeyID, Version: photo.LastUpdate,
 	}
-	if photo.HasRestrictedPlaceholder() {
+	if restricted {
 		return s.retryAuthenticated(ctx, job, photo, true, userID)
 	}
 	if s.States != nil && userID > 0 {
@@ -154,14 +155,21 @@ func (s Sizes) fetchAnonymous(ctx context.Context, job SizesJob) ([]flickr.Photo
 }
 
 func (s Sizes) retryAuthenticated(ctx context.Context, job SizesJob, photo catalog.Photo, restricted bool, userID int64) error {
-	decision, err := s.decideAuth(ctx, job, photo, restricted, userID)
-	if err != nil {
-		return err
-	}
-	switch decision.Kind {
-	case SizesAuthAccount:
-		return s.fetchAuthenticated(ctx, job, photo, decision.Candidate)
-	default:
+	for {
+		decision, err := s.decideAuth(ctx, job, photo, restricted, userID)
+		if err != nil {
+			return err
+		}
+		if decision.Kind == SizesAuthAccount {
+			restricted, err := s.fetchAuthenticated(ctx, job, photo, decision.Candidate)
+			if err != nil {
+				return err
+			}
+			if restricted {
+				continue
+			}
+			return nil
+		}
 		if decision.UserID <= 0 {
 			return nil
 		}
@@ -243,13 +251,13 @@ func (s Sizes) keyUserID(ctx context.Context, keyID int64) (int64, error) {
 	return userID, nil
 }
 
-func (s Sizes) fetchAuthenticated(ctx context.Context, job SizesJob, photo catalog.Photo, candidate crawldomain.SizesAuthCandidate) error {
+func (s Sizes) fetchAuthenticated(ctx context.Context, job SizesJob, photo catalog.Photo, candidate crawldomain.SizesAuthCandidate) (bool, error) {
 	authenticated, ok := s.Flickr.(AuthenticatedSizesClient)
 	if !ok {
-		return errors.New("crawl: authenticated sizes client is required for restricted photos")
+		return false, errors.New("crawl: authenticated sizes client is required for restricted photos")
 	}
 	if s.Accounts == nil {
-		return errors.New("crawl: account-scoped sizes store is required for restricted photos")
+		return false, errors.New("crawl: account-scoped sizes store is required for restricted photos")
 	}
 	class := quotadomain.Photo
 	if job.Class != "" {
@@ -267,7 +275,7 @@ func (s Sizes) fetchAuthenticated(ctx context.Context, job SizesJob, photo catal
 	if err != nil {
 		return s.resolveAccountFailure(ctx, job.PhotoID, candidate, access, photo, err)
 	}
-	return s.confirmAccount(ctx, job.PhotoID, candidate, photo, sizes)
+	return false, s.confirmAccount(ctx, job.PhotoID, candidate, photo, sizes)
 }
 
 func (s Sizes) confirmAccount(ctx context.Context, photoID int64, candidate crawldomain.SizesAuthCandidate, photo catalog.Photo, sizes []flickr.PhotoSize) error {
@@ -278,14 +286,17 @@ func (s Sizes) confirmAccount(ctx context.Context, photoID int64, candidate craw
 	return s.Accounts.SetAccountSizes(ctx, photoID, candidate.AccountID, candidate.UserID, encoded, catalog.SizesConfirmed, photo.LastUpdate, string(photo.Visibility), s.now())
 }
 
-func (s Sizes) resolveAccountFailure(ctx context.Context, photoID int64, candidate crawldomain.SizesAuthCandidate, access EntityAccess, photo catalog.Photo, cause error) error {
+func (s Sizes) resolveAccountFailure(ctx context.Context, photoID int64, candidate crawldomain.SizesAuthCandidate, access EntityAccess, photo catalog.Photo, cause error) (bool, error) {
 	if FailureState(access.EntityRef, cause) == "" {
-		return s.recordFlickrError(ctx, photoID, cause)
+		return false, s.recordFlickrError(ctx, photoID, cause)
 	}
 	if err := recordEntityFailure(ctx, s.States, access, cause, s.now(), 0); err != nil {
-		return err
+		return false, err
 	}
-	return s.Accounts.SetAccountSizes(ctx, photoID, candidate.AccountID, candidate.UserID, []byte("[]"), catalog.SizesUnavailable, photo.LastUpdate, string(photo.Visibility), s.now())
+	if err := s.Accounts.SetAccountSizes(ctx, photoID, candidate.AccountID, candidate.UserID, []byte("[]"), catalog.SizesUnavailable, photo.LastUpdate, string(photo.Visibility), s.now()); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s Sizes) confirm(ctx context.Context, photoID int64, sizes []flickr.PhotoSize) error {

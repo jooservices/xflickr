@@ -30,6 +30,13 @@ WITH rows AS (
     WHERE (p.sizes_status NOT IN ('confirmed', 'unavailable')
            OR (p.sizes_status IN ('confirmed','unavailable') AND p.sizes_checked_at < p.last_update))
       AND p.tombstoned_at IS NULL
+      AND NOT EXISTS (
+          SELECT 1
+          FROM photo_account_sizes AS account_sizes
+          WHERE account_sizes.photo_id = p.id
+            AND account_sizes.photo_updated_at = p.last_update
+            AND account_sizes.photo_visibility = p.visibility
+      )
 
     UNION ALL
 

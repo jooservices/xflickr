@@ -23,17 +23,8 @@ CREATE TABLE photo_account_sizes (
 CREATE INDEX photo_account_sizes_account_photo_idx
     ON photo_account_sizes (account_id, photo_id);
 
--- Existing global confirmed results cannot be attributed to an anonymous or
--- OAuth request, so require a fresh anonymous or account-scoped result.
-UPDATE photos
-SET sizes='[]'::jsonb, sizes_status='provisional', sizes_checked_at=NULL
-WHERE sizes_status='confirmed';
-
--- Legacy unavailable values do not identify which account failed. Re-evaluate them
--- against the requesting user's connected accounts and scoped restrictions.
-UPDATE photos
-SET sizes='[]'::jsonb, sizes_status='provisional', sizes_checked_at=NULL
-WHERE sizes_status='unavailable';
+-- Keep existing global photo outcomes intact. New OAuth outcomes and failures
+-- are written to photo_account_sizes and never replace globally reusable data.
 
 -- +goose Down
 DROP TABLE photo_account_sizes;
