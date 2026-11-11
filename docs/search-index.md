@@ -1,8 +1,9 @@
-# Search index bootstrap
+# Search index bootstrap and document writes
 
-The first search slice creates an Elasticsearch 9 photo index when explicitly
-called. It does not run during application startup and does not add a public
-HTTP route, a `SearchIndex` port, or indexing and query behavior.
+The search adapter creates an Elasticsearch 9 photo index when explicitly
+called. The application also exposes a single-document `Upserter` port for
+writing photos through the configured alias. Neither operation runs during
+application startup or adds a public HTTP route.
 
 ## Names and creation
 
@@ -70,9 +71,28 @@ apply. The adapter uses the configured `SEARCH_URL` and optional
 `SEARCH_USERNAME` / `SEARCH_PASSWORD`, with the defaults documented in
 `ENVIRONMENT.md`.
 
+## Single-photo upsert
+
+`search/app.Upserter` accepts one `Document`. A positive photo ID is sent as a
+decimal Elasticsearch `_id` in `PUT <base URL>/<prefix>photos/_doc/<id>`; the
+ID is not part of `_source`. The body contains the mapped photo fields:
+`title`, `description`, `tags`, `caption`, `embedding`, `owner`, `kind`,
+`sizes_status`, `ai_status`, `uploaded_at`, `visible_to`, `visibility`, and
+`publicly_shared`. Empty embeddings and nil `uploaded_at` values are omitted;
+nil `tags` and `visible_to` slices are JSON `null`.
+
+An empty embedding or a 1,024-value embedding is accepted. Other dimensions are
+rejected as an invalid document before the request. Non-finite embedding values
+fail JSON encoding before the request. Repeating the upsert with the same ID
+replaces the whole stored document. Any 2xx response succeeds; other statuses
+return an error containing the status only. Request errors hide transport
+details while preserving context cancellation for callers. The adapter does
+not retry, force a refresh, or create a missing index.
+
 ## Deferred work
 
-This bootstrap does not implement the `SearchIndex` port, upsert, delete,
-query, reindex, outbox synchronization, permission-change synchronization,
-hybrid retrieval, fallback behavior, REST endpoints, or UI. Those slices must
-add and test their own behavior before search is a complete feature.
+This slice does not implement the full `SearchIndex` port, batch upsert,
+delete, query, reindex, outbox synchronization, permission-change
+synchronization, hybrid retrieval, fallback behavior, REST endpoints, or UI.
+The primitive upserter is not wired to an indexer; search synchronization and
+visibility enforcement remain future work.
