@@ -120,7 +120,7 @@ func TestLoadReturnsUserScopedSnapshot(t *testing.T) {
 		generatedAt,
 		int64(4), int64(1), int64(3),
 		int64(12), int64(9), int64(7),
-		&computedAt, false, false,
+		&computedAt, false, false, false,
 		[]byte(`[{"id":1,"title":"A","thumbnail_url":null,"owner_nsid":"owner","owner_name":"Owner","taken_at":null,"captioned":false}]`),
 		[]byte(`[{"nsid":"owner","name":"Owner","icon_url":"","photos_count":12,"sizes_ready":9,"sizes_total":12,"crawl_state":"waiting"}]`),
 		[]byte(`[{"id":"crawl:1","kind":"crawl","message_key":"unknown","count":0,"contact_name":"Owner","occurred_at":"2026-11-09T09:59:00Z","severity":"info"}]`),
@@ -170,13 +170,15 @@ func TestLoadReturnsUserScopedSnapshot(t *testing.T) {
 		}
 	}
 	ownCandidates := strings.Index(reader.query, "own_photo_candidates AS MATERIALIZED")
-	if ownCandidates < 0 {
+	ownEnd := strings.Index(reader.query, "newest_photo_candidates AS MATERIALIZED")
+	if ownCandidates < 0 || ownEnd < 0 || ownCandidates >= ownEnd {
 		t.Fatal("Home query is missing the indexed own-photo candidate source")
 	}
-	candidateLimit := ownCandidates + strings.Index(reader.query[ownCandidates:], "LIMIT 12")
-	photoJoin := strings.Index(reader.query, "JOIN photos photo ON photo.id = candidate.photo_id")
-	if candidateLimit < 0 || photoJoin < candidateLimit {
-		t.Fatal("Home must cap the indexed candidate sources before joining photos")
+	ownPhotoCandidates := reader.query[ownCandidates:ownEnd]
+	ownPermission := strings.Index(ownPhotoCandidates, "observation.user_id = $1")
+	ownLimit := strings.Index(ownPhotoCandidates, "LIMIT 12")
+	if ownPermission < 0 || ownLimit < 0 || ownPermission > ownLimit {
+		t.Fatal("Home must verify current own-photo permission before applying the result limit")
 	}
 	if strings.Contains(reader.query, "visible_photo_counts") || strings.Contains(reader.query, "CROSS JOIN LATERAL (\n        SELECT stored") {
 		t.Fatal("request query still builds a photo-wide count or per-photo lateral lookup")
@@ -190,7 +192,7 @@ func TestLoadInvalidatesCountsWhenSharingPolicyChanges(t *testing.T) {
 		generatedAt,
 		int64(4), int64(1), int64(3),
 		int64(12), int64(9), int64(7),
-		&computedAt, false, false,
+		&computedAt, false, false, false,
 		[]byte(`[]`), []byte(`[]`), []byte(`[]`),
 	}}}
 	repository, err := New(reader)
@@ -205,14 +207,14 @@ func TestLoadInvalidatesCountsWhenSharingPolicyChanges(t *testing.T) {
 	}
 }
 
-func TestLoadScansSharedCandidatesInBoundedPermissionCheckedBatches(t *testing.T) {
+func TestLoadFiltersSharedCandidatesBeforeLimit(t *testing.T) {
 	generatedAt := time.Date(2026, time.November, 9, 10, 0, 0, 0, time.UTC)
 	computedAt := generatedAt.Add(-time.Minute)
 	reader := &queryerStub{row: stubRow{values: []any{
 		generatedAt,
 		int64(4), int64(1), int64(3),
 		int64(12), int64(9), int64(7),
-		&computedAt, false, false,
+		&computedAt, false, false, false,
 		[]byte(`[]`), []byte(`[]`), []byte(`[]`),
 	}}}
 	repository, err := New(reader)
@@ -223,8 +225,7 @@ func TestLoadScansSharedCandidatesInBoundedPermissionCheckedBatches(t *testing.T
 		t.Fatal(err)
 	}
 	for _, fragment := range []string{
-		"LIMIT 50",
-		"batch_number < 4",
+		"LIMIT 12",
 		"observations observation",
 		"setting.enabled",
 	} {
@@ -232,13 +233,24 @@ func TestLoadScansSharedCandidatesInBoundedPermissionCheckedBatches(t *testing.T
 			t.Errorf("shared photo scan is missing %q", fragment)
 		}
 	}
+	sharedStart := strings.Index(reader.query, "shared_photo_candidates AS MATERIALIZED")
+	ownStart := strings.Index(reader.query, "own_photo_candidates AS MATERIALIZED")
+	if sharedStart < 0 || ownStart < 0 || sharedStart >= ownStart {
+		t.Fatal("Home query is missing the shared and own candidate sources")
+	}
+	sharedCandidates := reader.query[sharedStart:ownStart]
+	permissionFilter := strings.Index(sharedCandidates, "WHERE photo.visibility = 'public'")
+	pageLimit := strings.Index(sharedCandidates, "LIMIT 12")
+	if permissionFilter < 0 || pageLimit < 0 || permissionFilter > pageLimit {
+		t.Fatal("shared candidates must be permission-filtered before the bounded page limit")
+	}
 }
 
 func TestLoadQueuesMissingSnapshotRefresh(t *testing.T) {
 	generatedAt := time.Date(2026, time.November, 9, 10, 0, 0, 0, time.UTC)
 	reader := &queryerStub{row: stubRow{values: []any{
 		generatedAt, int64(0), int64(0), int64(0),
-		(*int64)(nil), (*int64)(nil), (*int64)(nil), (*time.Time)(nil), true, true,
+		(*int64)(nil), (*int64)(nil), (*int64)(nil), (*time.Time)(nil), true, true, true,
 		[]byte(`[]`), []byte(`[]`), []byte(`[]`),
 	}}}
 	refreshQueue := &refreshQueueStub{}
@@ -259,11 +271,32 @@ func TestLoadQueuesMissingSnapshotRefresh(t *testing.T) {
 	}
 }
 
+func TestLoadKeepsEstimatedCountsUntilRefreshInterval(t *testing.T) {
+	computedAt := time.Now().UTC()
+	reader := &queryerStub{row: stubRow{values: []any{
+		time.Now().UTC(), int64(0), int64(0), int64(0),
+		int64(18), int64(11), int64(5), &computedAt, true, false, false,
+		[]byte(`[]`), []byte(`[]`), []byte(`[]`),
+	}}}
+	refreshQueue := &refreshQueueStub{}
+	repository, err := New(reader, refreshQueue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := repository.Load(t.Context(), 31)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Photos.Total != 18 || snapshot.CountsStale || !snapshot.Estimated || refreshQueue.calls != 0 {
+		t.Fatalf("estimated counts = %+v, stale=%t, queued=%d", snapshot.Photos, snapshot.CountsStale, refreshQueue.calls)
+	}
+}
+
 func TestLoadWrapsRefreshEnqueueErrors(t *testing.T) {
 	want := errors.New("queue unavailable")
 	reader := &queryerStub{row: stubRow{values: []any{
 		time.Now(), int64(0), int64(0), int64(0),
-		(*int64)(nil), (*int64)(nil), (*int64)(nil), (*time.Time)(nil), true, true,
+		(*int64)(nil), (*int64)(nil), (*int64)(nil), (*time.Time)(nil), true, true, true,
 		[]byte(`[]`), []byte(`[]`), []byte(`[]`),
 	}}}
 	refreshQueue := &refreshQueueStub{err: want}
@@ -303,7 +336,7 @@ func TestLoadReportsInvalidSnapshotJSON(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			values := []any{
 				time.Date(2026, time.November, 9, 10, 0, 0, 0, time.UTC), int64(0), int64(0), int64(0), int64(0), int64(0), int64(0), (*time.Time)(nil), false,
-				false,
+				false, false,
 				test.new, test.star, test.act,
 			}
 			repository, err := New(&queryerStub{row: stubRow{values: values}})

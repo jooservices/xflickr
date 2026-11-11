@@ -182,7 +182,7 @@ func TestRefreshBatchReportsDatabaseFailures(t *testing.T) {
 				tx = &refreshTxStub{}
 			}
 			if tx.lockRow == nil {
-				tx.lockRow = refreshRowStub{values: []any{"", int64(0), int64(0), int64(0), int64(0), int64(0)}}
+				tx.lockRow = refreshRowStub{values: []any{"", int64(0), int64(0), int64(0), int64(0), int64(0), false}}
 			}
 			if tx.rows == nil {
 				tx.rows = &refreshRowsStub{}

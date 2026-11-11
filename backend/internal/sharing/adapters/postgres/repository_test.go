@@ -184,8 +184,8 @@ func TestSetEnqueuesHomeRefreshInChangeTransaction(t *testing.T) {
 			if jobs.calls != 1 || jobs.job.Kind != homeapp.RefreshJobKind || jobs.options.Queue != "home" || !jobs.options.UniqueByArgs || !jobs.options.UniqueByQueue {
 				t.Fatalf("queued Home refresh = %+v, options=%+v", jobs.job, jobs.options)
 			}
-			if len(queries) != 2 || !strings.Contains(queries[0], "UPDATE user_home_stats SET invalidated_at") {
-				t.Fatalf("Home stats invalidation was not in the setting transaction: %#v", queries)
+			if len(queries) != 1 || !strings.Contains(queries[0], "INSERT INTO outbox_events") {
+				t.Fatalf("sharing event was not written in the setting transaction: %#v", queries)
 			}
 			var args homeapp.RefreshJob
 			if err := json.Unmarshal(jobs.job.Args, &args); err != nil || args.UserID != 7 {

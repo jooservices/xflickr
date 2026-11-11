@@ -368,8 +368,8 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 	if err := pool.QueryRow(ctx, `SELECT cursor_record_id FROM user_home_stats_refreshes WHERE user_id=$1`, userID).Scan(&nextCursor); err != nil {
 		t.Fatal(err)
 	}
-	if nextCursor <= priorCursor {
-		t.Fatalf("refresh cursor moved from %q to %q after source change", priorCursor, nextCursor)
+	if nextCursor != fmt.Sprint(changedPhotoID+3) {
+		t.Fatalf("refresh did not restart at the first current candidate after access revocation: cursor=%q, want %d (previous %q)", nextCursor, changedPhotoID+3, priorCursor)
 	}
 	for {
 		done, err := refresher.Refresh(ctx, userID)
@@ -381,21 +381,8 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 		}
 	}
 	snapshot, err = repository.Load(ctx, userID)
-	if err != nil || !snapshot.Estimated || !snapshot.CountsStale || snapshot.Photos.Total != 0 {
-		t.Fatalf("refresh with a concurrent source change = %+v estimated=%t err=%v", snapshot.Photos, snapshot.Estimated, err)
-	}
-	for {
-		done, err := refresher.Refresh(ctx, userID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if done {
-			break
-		}
-	}
-	snapshot, err = repository.Load(ctx, userID)
-	if err != nil || snapshot.Estimated || snapshot.Photos.Total != 13 {
-		t.Fatalf("refresh after source change = %+v estimated=%t err=%v", snapshot.Photos, snapshot.Estimated, err)
+	if err != nil || snapshot.Estimated || snapshot.CountsStale || snapshot.Photos.Total != 13 {
+		t.Fatalf("refresh after access revocation = %+v estimated=%t stale=%t err=%v", snapshot.Photos, snapshot.Estimated, snapshot.CountsStale, err)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE sharing_settings SET enabled=false WHERE user_id=$1`, otherUserID); err != nil {
 		t.Fatal(err)
@@ -432,6 +419,281 @@ VALUES(statement_timestamp(),$1,'integration',statement_timestamp(),$2,'test')`,
 	}
 }
 
+func TestHomeRefreshKeepsCountsAvailableAfterConcurrentCatalogChange(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	pool := dbtest.Open(t, homeDatabase(t))
+	suffix := fmt.Sprintf("home-refresh-change-%d", time.Now().UnixNano())
+	owner := suffix + "-owner"
+	var userID, keyID, accountID int64
+	photoIDs := []int64{}
+	t.Cleanup(func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stop()
+		if len(photoIDs) > 0 {
+			_, _ = pool.Exec(cleanup, `DELETE FROM photos WHERE id=ANY($1::bigint[])`, photoIDs)
+		}
+		_, _ = pool.Exec(cleanup, `DELETE FROM people WHERE nsid=$1`, owner)
+		_, _ = pool.Exec(cleanup, `DELETE FROM users WHERE id=$1`, userID)
+	})
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration','user') RETURNING id`, suffix+"@example.invalid").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'home-test',$2,'{}',100,10,10) RETURNING id`, userID, suffix).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,$3,'{}','{}','ok') RETURNING id`, userID, keyID, owner).Scan(&accountID); err != nil {
+		t.Fatal(err)
+	}
+	baseID := time.Now().UnixNano()
+	baseTime := time.Now().UTC().Truncate(time.Microsecond)
+	addPhoto := func(id int64) {
+		t.Helper()
+		photoIDs = append(photoIDs, id)
+		if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,last_update,uploaded_at,visibility,sizes,sizes_status,raw,content_hash)
+			VALUES($1,$2,$3,$3,'public','[]'::jsonb,'provisional','{}',decode(repeat('cd',32),'hex'))`, id, owner, baseTime); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) VALUES($1,$2,'photo',$3)`, userID, accountID, fmt.Sprint(id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	addPhoto(baseID)
+	addPhoto(baseID + 1)
+	queueStub := &homeRefreshQueueStub{}
+	repository, err := New(pool, queueStub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refresher := app.Refresher{Processor: repository, BatchSize: 1}
+	done, err := refresher.Refresh(ctx, userID)
+	if err != nil || done {
+		t.Fatalf("first refresh batch = done %t, err %v", done, err)
+	}
+	addPhoto(baseID - 1)
+	for {
+		done, err = refresher.Refresh(ctx, userID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if done {
+			break
+		}
+	}
+	snapshot, err := repository.Load(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.CountsStale || !snapshot.Estimated || snapshot.CountsComputedAt == nil || snapshot.Photos.Total != 2 || queueStub.calls != 0 {
+		t.Fatalf("concurrent catalog change snapshot = %+v computed_at=%v estimated=%t stale=%t queued=%d", snapshot.Photos, snapshot.CountsComputedAt, snapshot.Estimated, snapshot.CountsStale, queueStub.calls)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE user_home_stats SET computed_at=statement_timestamp()-interval '1 day' WHERE user_id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err = repository.Load(ctx, userID)
+	if err != nil || queueStub.calls != 1 {
+		t.Fatalf("expired estimated snapshot queued=%d, err=%v", queueStub.calls, err)
+	}
+	for {
+		done, err = refresher.Refresh(ctx, userID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if done {
+			break
+		}
+	}
+	snapshot, err = repository.Load(ctx, userID)
+	if err != nil || snapshot.CountsStale || snapshot.Estimated || snapshot.Photos.Total != 3 {
+		t.Fatalf("reconciled catalog snapshot = %+v estimated=%t stale=%t err=%v", snapshot.Photos, snapshot.Estimated, snapshot.CountsStale, err)
+	}
+}
+
+func TestHomeBackfillWaitsForObservationDelete(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	pool := dbtest.Open(t, homeDatabase(t))
+	suffix := fmt.Sprintf("home-backfill-race-%d", time.Now().UnixNano())
+	owner := suffix + "-owner"
+	var userID, keyID, accountID, photoID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration','user') RETURNING id`, suffix+"@example.invalid").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stop()
+		_, _ = pool.Exec(cleanup, `DELETE FROM photos WHERE id=$1`, photoID)
+		_, _ = pool.Exec(cleanup, `DELETE FROM people WHERE nsid=$1`, owner)
+		_, _ = pool.Exec(cleanup, `DELETE FROM users WHERE id=$1`, userID)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'home-test',$2,'{}',100,10,10) RETURNING id`, userID, suffix).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,$3,'{}','{}','ok') RETURNING id`, userID, keyID, owner).Scan(&accountID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(max(id),0)+1 FROM photos`).Scan(&photoID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,last_update,uploaded_at,visibility,sizes,sizes_status,raw,content_hash)
+		VALUES($1,$2,statement_timestamp(),statement_timestamp(),'public','[]'::jsonb,'provisional','{}',decode(repeat('ef',32),'hex'))`, photoID, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) VALUES($1,$2,'photo',$3)`, userID, accountID, fmt.Sprint(photoID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM user_home_photo_candidates WHERE user_id=$1 AND photo_id=$2`, userID, photoID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO user_home_candidates_backfill_progress(id,cursor_photo_id) VALUES(TRUE,$1)
+		ON CONFLICT(id) DO UPDATE SET cursor_photo_id=EXCLUDED.cursor_photo_id`, photoID-1); err != nil {
+		t.Fatal(err)
+	}
+	lockKey := photoID + 987654321
+	function := pgx.Identifier{fmt.Sprintf("home_backfill_pause_%d", userID)}.Sanitize()
+	trigger := pgx.Identifier{fmt.Sprintf("home_backfill_pause_trigger_%d", userID)}.Sanitize()
+	functionSQL := fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $body$
+BEGIN
+  IF NEW.photo_id = %d THEN PERFORM pg_advisory_xact_lock(%d); END IF;
+  RETURN NEW;
+END;
+$body$`, function, photoID, lockKey)
+	if _, err := pool.Exec(ctx, functionSQL); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `CREATE TRIGGER `+trigger+` BEFORE INSERT ON user_home_photo_candidates FOR EACH ROW EXECUTE FUNCTION `+function+`()`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stop()
+		_, _ = pool.Exec(cleanup, `DROP TRIGGER IF EXISTS `+trigger+` ON user_home_photo_candidates`)
+		_, _ = pool.Exec(cleanup, `DROP FUNCTION IF EXISTS `+function+`() `)
+	})
+	holder, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockHeld := true
+	var backfill, deletion *pgxpool.Conn
+	var backfillDone, deleteDone chan struct{}
+	var backfillErr, deleteErr error
+	defer func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stop()
+		if lockHeld {
+			_, _ = holder.Exec(cleanup, `SELECT pg_advisory_unlock($1)`, lockKey)
+		}
+		if backfillDone != nil {
+			select {
+			case <-backfillDone:
+			case <-cleanup.Done():
+			}
+		}
+		if deleteDone != nil {
+			select {
+			case <-deleteDone:
+			case <-cleanup.Done():
+			}
+		}
+		if deletion != nil {
+			deletion.Release()
+		}
+		if backfill != nil {
+			backfill.Release()
+		}
+		holder.Release()
+	}()
+	if _, err := holder.Exec(ctx, `SELECT pg_advisory_lock($1)`, lockKey); err != nil {
+		t.Fatal(err)
+	}
+	backfill, err = pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var backfillPID int32
+	if err := backfill.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&backfillPID); err != nil {
+		t.Fatal(err)
+	}
+	backfillDone = make(chan struct{})
+	go func() {
+		_, backfillErr = backfill.Exec(ctx, `CALL backfill_home_photo_candidates(1)`)
+		close(backfillDone)
+	}()
+	if !awaitBackendLock(ctx, pool, backfillPID, backfillDone) {
+		t.Fatal("candidate backfill did not pause at the controlled insert")
+	}
+	deletion, err = pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var deletionPID int32
+	if err := deletion.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&deletionPID); err != nil {
+		t.Fatal(err)
+	}
+	deleteDone = make(chan struct{})
+	go func() {
+		_, deleteErr = deletion.Exec(ctx, `DELETE FROM observations WHERE user_id=$1 AND record_kind='photo' AND record_id=$2`, userID, fmt.Sprint(photoID))
+		close(deleteDone)
+	}()
+	if !awaitBackendLock(ctx, pool, deletionPID, deleteDone) {
+		t.Fatal("observation deletion completed while backfill held its candidate snapshot")
+	}
+	if _, err := holder.Exec(ctx, `SELECT pg_advisory_unlock($1)`, lockKey); err != nil {
+		t.Fatal(err)
+	}
+	lockHeld = false
+	<-backfillDone
+	<-deleteDone
+	if backfillErr != nil || deleteErr != nil {
+		t.Fatalf("concurrent backfill/delete errors = %v / %v", backfillErr, deleteErr)
+	}
+	var exists bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM user_home_photo_candidates WHERE user_id=$1 AND photo_id=$2)`, userID, photoID).Scan(&exists); err != nil || exists {
+		t.Fatalf("candidate remains after concurrent observation deletion: exists=%t err=%v", exists, err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO user_home_photo_candidates(user_id,photo_id,uploaded_at)
+		SELECT $1,id,uploaded_at FROM photos WHERE id=$2`, userID, photoID); err != nil {
+		t.Fatal(err)
+	}
+	repository, err := New(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := repository.Load(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPhotoMissing(t, snapshot.NewPhotos, photoID)
+}
+
+func awaitBackendLock(ctx context.Context, pool *pgxpool.Pool, pid int32, done <-chan struct{}) bool {
+	for {
+		select {
+		case <-done:
+			return false
+		default:
+		}
+		var waiting bool
+		if err := pool.QueryRow(ctx, `SELECT COALESCE(wait_event_type='Lock',FALSE) FROM pg_stat_activity WHERE pid=$1`, pid).Scan(&waiting); err != nil || waiting {
+			return err == nil && waiting
+		}
+		runtime.Gosched()
+	}
+}
+
 func TestHomeSnapshotContinuesPastRevokedSharedPhotos(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
@@ -442,7 +704,7 @@ func TestHomeSnapshotContinuesPastRevokedSharedPhotos(t *testing.T) {
 	suffix := fmt.Sprintf("home-revoked-%d", time.Now().UnixNano())
 	var viewerID, revokedOwnerID, allowedOwnerID int64
 	var revokedKeyID, allowedKeyID, revokedAccountID, allowedAccountID int64
-	photoIDs := make([]int64, 0, 30)
+	photoIDs := make([]int64, 0, 212)
 	revokedNSID, allowedNSID := suffix+"-revoked", suffix+"-allowed"
 	t.Cleanup(func() {
 		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
@@ -480,14 +742,16 @@ func TestHomeSnapshotContinuesPastRevokedSharedPhotos(t *testing.T) {
 	}
 	baseID := time.Now().UnixNano()
 	baseTime := time.Now().UTC().Truncate(time.Microsecond)
-	for i := 0; i < 30; i++ {
+	const revokedCount = 200
+	const allowedCount = 12
+	for i := 0; i < revokedCount+allowedCount; i++ {
 		ownerNSID, ownerID, accountID := revokedNSID, revokedOwnerID, revokedAccountID
 		photoID := baseID + int64(i)
-		if i >= 12 {
+		if i >= revokedCount {
 			ownerNSID, ownerID, accountID = allowedNSID, allowedOwnerID, allowedAccountID
-			photoID += 100
+			photoID = baseID + 1000 + int64(i-revokedCount)
 		}
-		uploadedAt := baseTime.Add(time.Duration(30-i) * time.Minute)
+		uploadedAt := baseTime.Add(time.Duration(revokedCount+allowedCount-i) * time.Minute)
 		if _, err := pool.Exec(ctx, `INSERT INTO photos(id,owner_nsid,title,last_update,uploaded_at,taken_at,visibility,sizes,sizes_status,raw,content_hash)
 			VALUES($1,$2,$3,$4,$4,$4,'public','[]'::jsonb,'provisional','{}',decode(repeat('ab',32),'hex'))`, photoID, ownerNSID, fmt.Sprintf("photo-%d", i), uploadedAt); err != nil {
 			t.Fatal(err)
@@ -509,10 +773,10 @@ func TestHomeSnapshotContinuesPastRevokedSharedPhotos(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(snapshot.NewPhotos) != 12 {
-		t.Fatalf("visible newest photos = %d, want 12 after skipping revoked candidates", len(snapshot.NewPhotos))
+		t.Fatalf("visible newest photos = %d, want 12 after skipping 200 revoked candidates", len(snapshot.NewPhotos))
 	}
 	for i, photo := range snapshot.NewPhotos {
-		want := baseID + 100 + 12 + int64(i)
+		want := baseID + 1000 + int64(i)
 		if photo.ID != want {
 			t.Fatalf("new photo %d = %d, want allowed photo %d", i, photo.ID, want)
 		}
