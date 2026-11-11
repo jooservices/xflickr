@@ -33,6 +33,7 @@ func TestStartPlanUsesPrimaryKey(t *testing.T) {
 	if !strings.HasPrefix(databaseName, "xflickr_wt") {
 		t.Fatalf("plan fixture requires this worktree database, got %q", databaseName)
 	}
+	userID := insertInterestTestUser(t, ctx, pool)
 
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -40,17 +41,17 @@ func TestStartPlanUsesPrimaryKey(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
 	suffix := fmt.Sprintf("start-plan-%d", time.Now().UnixNano())
-	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind, subject_key, state)
+	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind, subject_key, state, user_id)
 		SELECT 'start_plan', $1 || '-' || g::text,
 			CASE WHEN g <= 350000 THEN 'pending'
 				WHEN g <= 375000 THEN 'done'
-				ELSE 'failed' END
-		FROM generate_series(1, 399997) AS g`, suffix); err != nil {
+				ELSE 'failed' END, $2
+		FROM generate_series(1, 399997) AS g`, suffix, userID); err != nil {
 		t.Fatalf("insert 399997 baseline work items: %v", err)
 	}
 	for _, state := range []string{"ready", "running", "waiting"} {
-		if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind, subject_key, state)
-			VALUES ('start_plan', $1, $2)`, suffix+"-"+state, state); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind, subject_key, state, user_id)
+			VALUES ('start_plan', $1, $2, $3)`, suffix+"-"+state, state, userID); err != nil {
 			t.Fatalf("insert %s plan target: %v", state, err)
 		}
 	}
@@ -62,7 +63,7 @@ func TestStartPlanUsesPrimaryKey(t *testing.T) {
 		t.Run(state, func(t *testing.T) {
 			var id int64
 			if err := tx.QueryRow(ctx, `SELECT id FROM work_items
-				WHERE kind = 'start_plan' AND subject_key = $1`, suffix+"-"+state).Scan(&id); err != nil {
+				WHERE kind = 'start_plan' AND subject_key = $1 AND user_id = $2`, suffix+"-"+state, userID).Scan(&id); err != nil {
 				t.Fatal(err)
 			}
 			var raw []byte
