@@ -39,15 +39,17 @@ func (f *fakeFacet) Handle(_ context.Context, page domain.Page) (domain.Result, 
 }
 
 type fakeStore struct {
-	item      domain.Item
-	loadErr   error
-	started   bool
-	startErr  error
-	calls     []string
-	deferral  Deferral
-	stop      StopRequest
-	reason    string
-	stampHook func(domain.Cursor, domain.Cursor)
+	item              domain.Item
+	loadErr           error
+	started           bool
+	startErr          error
+	calls             []string
+	deferral          Deferral
+	stop              StopRequest
+	reason            string
+	stampHook         func(domain.Cursor, domain.Cursor)
+	staleContactsScan bool
+	beginContactsErr  error
 }
 
 func (s *fakeStore) Load(context.Context, int64) (domain.Item, error) { return s.item, s.loadErr }
@@ -69,6 +71,16 @@ func (s *fakeStore) StampScanStart(_ context.Context, _ int64, at int64, expecte
 			s.stampHook(previous, s.item.Cursor)
 		}
 	}
+	return nil
+}
+
+func (s *fakeStore) BeginContactsScan(context.Context, int64, string, int64) (bool, error) {
+	s.calls = append(s.calls, "begin_contacts_scan")
+	return !s.staleContactsScan, s.beginContactsErr
+}
+
+func (s *fakeStore) FinishStaleContactsScan(context.Context, int64) error {
+	s.calls = append(s.calls, "finish_stale_contacts_scan")
 	return nil
 }
 
@@ -97,21 +109,23 @@ func (s *fakeStore) Stop(_ context.Context, r StopRequest) error {
 
 // fakeTx records writes and can hold a current item for the lock check.
 type fakeTx struct {
-	current      domain.Item
-	lockErr      error
-	failOn       string
-	log          []string
-	enqueued     []NewWork
-	interests    []domain.Interest
-	observations []domain.Observation
-	contactsUser int64
-	contactsNSID string
-	contactsAt   time.Time
-	groups       []catalog.Group
-	personGroups []catalog.PersonGroup
-	ensured      []string
-	advanced     *domain.Cursor
-	finished     bool
+	current           domain.Item
+	lockErr           error
+	failOn            string
+	log               []string
+	enqueued          []NewWork
+	interests         []domain.Interest
+	observations      []domain.Observation
+	contactsUser      int64
+	contactsNSID      string
+	contactsAt        time.Time
+	staleContactsScan bool
+	contactsGuardErr  error
+	groups            []catalog.Group
+	personGroups      []catalog.PersonGroup
+	ensured           []string
+	advanced          *domain.Cursor
+	finished          bool
 }
 
 type legacyCatalogWriter struct{ CatalogWriter }
@@ -190,6 +204,10 @@ func (t *fakeTx) Record(_ context.Context, _ int64, _ int, o []domain.Observatio
 func (t *fakeTx) CompleteContacts(_ context.Context, userID int64, accountNSID string, scannedAt time.Time) error {
 	t.contactsUser, t.contactsNSID, t.contactsAt = userID, accountNSID, scannedAt
 	return t.fail("contacts_complete")
+}
+
+func (t *fakeTx) LockCurrentContactsScan(context.Context, int64, string, int64) (bool, error) {
+	return !t.staleContactsScan, t.contactsGuardErr
 }
 
 func (t *fakeTx) Do(_ context.Context, fn func(Writers) error) error {
@@ -465,6 +483,76 @@ func TestContactsReconciliationRunsOnlyOnFinalPage(t *testing.T) {
 				t.Fatalf("contacts reconciliation = user:%d account:%q at:%s", r.tx.contactsUser, r.tx.contactsNSID, r.tx.contactsAt)
 			}
 		})
+	}
+}
+
+func TestSupersededContactsScanStopsBeforeFlickrCall(t *testing.T) {
+	r := newRig(t)
+	r.store.item.Kind = domain.FacetContacts
+	r.store.item.Subject = "account@N00"
+	r.store.staleContactsScan = true
+	r.tx.current.Cursor = r.store.item.Cursor
+
+	if err := r.engine.Handle(t.Context(), r.store.item.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.flickr.requests) != 0 {
+		t.Fatalf("superseded contacts scan made %d Flickr calls", len(r.flickr.requests))
+	}
+	if got := r.store.calls[len(r.store.calls)-1]; got != "finish_stale_contacts_scan" {
+		t.Fatalf("last store call = %q, want stale scan finish; calls=%v", got, r.store.calls)
+	}
+}
+
+func TestContactsScanRegistrationFailureStopsBeforeFlickrCall(t *testing.T) {
+	r := newRig(t)
+	r.store.item.Kind = domain.FacetContacts
+	r.store.item.Subject = "account@N00"
+	r.store.beginContactsErr = errors.New("database unavailable")
+	r.tx.current.Cursor = r.store.item.Cursor
+
+	if err := r.engine.Handle(t.Context(), r.store.item.ID); err == nil || !strings.Contains(err.Error(), "database unavailable") {
+		t.Fatalf("Handle() error = %v, want registration error", err)
+	}
+	if len(r.flickr.requests) != 0 {
+		t.Fatalf("contacts registration failure made %d Flickr calls", len(r.flickr.requests))
+	}
+}
+
+func TestContactsPageSupersededDuringFlickrCallDoesNotCommit(t *testing.T) {
+	r := newRig(t)
+	r.store.item.Kind = domain.FacetContacts
+	r.store.item.Subject = "account@N00"
+	r.tx.current.Cursor = r.store.item.Cursor
+	r.tx.staleContactsScan = true
+	r.favFace.result = domain.Result{Contacts: []catalog.Contact{{PersonNSID: "account@N00", ContactNSID: "contact@N00"}}}
+	r.flickr.payload = json.RawMessage(`{"contacts":{"pages":1,"contact":[{"nsid":"contact@N00"}]}}`)
+
+	if err := r.engine.Handle(t.Context(), r.store.item.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.tx.log) != 0 || r.tx.finished || r.tx.advanced != nil {
+		t.Fatalf("superseded contacts page committed: log=%v finished=%v cursor=%+v", r.tx.log, r.tx.finished, r.tx.advanced)
+	}
+	if got := r.store.calls[len(r.store.calls)-1]; got != "finish_stale_contacts_scan" {
+		t.Fatalf("last store call = %q, want stale scan finish; calls=%v", got, r.store.calls)
+	}
+}
+
+func TestContactsPageScanGuardFailureAbortsCommit(t *testing.T) {
+	r := newRig(t)
+	r.store.item.Kind = domain.FacetContacts
+	r.store.item.Subject = "account@N00"
+	r.tx.current.Cursor = r.store.item.Cursor
+	r.tx.contactsGuardErr = errors.New("database unavailable")
+	r.favFace.result = domain.Result{Contacts: []catalog.Contact{{PersonNSID: "account@N00", ContactNSID: "contact@N00"}}}
+	r.flickr.payload = json.RawMessage(`{"contacts":{"pages":1,"contact":[{"nsid":"contact@N00"}]}}`)
+
+	if err := r.engine.Handle(t.Context(), r.store.item.ID); err == nil || !strings.Contains(err.Error(), "database unavailable") {
+		t.Fatalf("Handle() error = %v, want scan guard error", err)
+	}
+	if len(r.tx.log) != 0 || r.tx.finished || r.tx.advanced != nil {
+		t.Fatalf("scan guard error allowed a page commit: log=%v finished=%v cursor=%+v", r.tx.log, r.tx.finished, r.tx.advanced)
 	}
 }
 

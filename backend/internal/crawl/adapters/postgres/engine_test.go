@@ -36,6 +36,8 @@ func (r engRow) Scan(dest ...any) error {
 			*p = r.values[i].(int64)
 		case *int:
 			*p = r.values[i].(int)
+		case *bool:
+			*p = r.values[i].(bool)
 		case *string:
 			*p = r.values[i].(string)
 		case *bool:
@@ -152,6 +154,71 @@ func TestStampScanStart(t *testing.T) {
 	if err := e.StampScanStart(t.Context(), 9, 1, expected); err == nil {
 		t.Fatal("stamp error must surface")
 	}
+}
+
+func TestBeginContactsScanKeepsTheNewestScan(t *testing.T) {
+	t.Run("current scan", func(t *testing.T) {
+		conn := &engConn{rowResults: []engRow{{values: []any{true}}}}
+		current, err := newTestEngine(conn).BeginContactsScan(t.Context(), 9, "account@N00", 100)
+		if err != nil || !current {
+			t.Fatalf("BeginContactsScan() = %v, %v; want current", current, err)
+		}
+		if len(conn.queries) != 1 || !strings.Contains(conn.queries[0].sql, "ON CONFLICT (account_nsid)") || !strings.Contains(conn.queries[0].sql, "<= (EXCLUDED.checkpoint_at, EXCLUDED.work_item_id)") {
+			t.Fatalf("contacts scan registration query = %#v", conn.queries)
+		}
+		if conn.queries[0].args[0] != "account@N00" || conn.queries[0].args[1] != int64(100) || conn.queries[0].args[2] != int64(9) {
+			t.Fatalf("contacts scan registration args = %#v", conn.queries[0].args)
+		}
+	})
+	t.Run("superseded scan", func(t *testing.T) {
+		conn := &engConn{rowResults: []engRow{{err: pgx.ErrNoRows}}}
+		current, err := newTestEngine(conn).BeginContactsScan(t.Context(), 9, "account@N00", 99)
+		if err != nil || current {
+			t.Fatalf("BeginContactsScan() = %v, %v; want superseded", current, err)
+		}
+	})
+	t.Run("database error", func(t *testing.T) {
+		conn := &engConn{rowResults: []engRow{{err: errors.New("database unavailable")}}}
+		if _, err := newTestEngine(conn).BeginContactsScan(t.Context(), 9, "account@N00", 100); err == nil || !strings.Contains(err.Error(), "crawl: register contacts scan") {
+			t.Fatalf("BeginContactsScan() error = %v", err)
+		}
+	})
+	t.Run("invalid scan", func(t *testing.T) {
+		conn := &engConn{}
+		if _, err := newTestEngine(conn).BeginContactsScan(t.Context(), 0, "account@N00", 100); err == nil {
+			t.Fatal("BeginContactsScan() accepted an invalid item")
+		}
+		if len(conn.queries) != 0 {
+			t.Fatal("invalid contacts scan queried the database")
+		}
+	})
+}
+
+func TestFinishStaleContactsScanDoesNotWriteACheckpoint(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		conn := &engConn{}
+		if err := newTestEngine(conn).FinishStaleContactsScan(t.Context(), 9); err != nil {
+			t.Fatal(err)
+		}
+		if len(conn.execs) != 1 || conn.execs[0].sql != finishSQL {
+			t.Fatalf("stale scan finish query = %#v, want the checkpoint-free finish", conn.execs)
+		}
+	})
+	t.Run("database error", func(t *testing.T) {
+		conn := &engConn{failExec: "UPDATE work_items"}
+		if err := newTestEngine(conn).FinishStaleContactsScan(t.Context(), 9); err == nil || !strings.Contains(err.Error(), "crawl: finish stale contacts scan") {
+			t.Fatalf("FinishStaleContactsScan() error = %v", err)
+		}
+	})
+	t.Run("invalid item", func(t *testing.T) {
+		conn := &engConn{}
+		if err := newTestEngine(conn).FinishStaleContactsScan(t.Context(), 0); err == nil {
+			t.Fatal("FinishStaleContactsScan() accepted an invalid item")
+		}
+		if len(conn.execs) != 0 {
+			t.Fatal("invalid stale contacts finish wrote to the database")
+		}
+	})
 }
 
 func TestWorkFinishStoresNextCheckpoint(t *testing.T) {
@@ -613,6 +680,44 @@ func TestNewEngineValidatesArguments(t *testing.T) {
 	if engine, err := NewEngine(&pgxpool.Pool{}, func(Conn) app.CatalogWriter { return engCatalog{} }); err != nil || engine == nil {
 		t.Fatalf("NewEngine() = %v, %v; want initialized engine", engine, err)
 	}
+}
+
+func TestLockCurrentContactsScan(t *testing.T) {
+	t.Run("current scan", func(t *testing.T) {
+		conn := &engConn{rowResults: []engRow{{values: []any{1}}}}
+		current, err := (contactsReconcileTx{tx: conn}).LockCurrentContactsScan(t.Context(), 9, "account@N00", 100)
+		if err != nil || !current {
+			t.Fatalf("LockCurrentContactsScan() = %v, %v; want current", current, err)
+		}
+		if len(conn.queries) != 1 || !strings.Contains(conn.queries[0].sql, "FOR UPDATE") {
+			t.Fatalf("contacts scan guard query = %#v", conn.queries)
+		}
+		if conn.queries[0].args[0] != "account@N00" || conn.queries[0].args[1] != int64(100) || conn.queries[0].args[2] != int64(9) {
+			t.Fatalf("contacts scan guard args = %#v", conn.queries[0].args)
+		}
+	})
+	t.Run("superseded scan", func(t *testing.T) {
+		conn := &engConn{rowResults: []engRow{{err: pgx.ErrNoRows}}}
+		current, err := (contactsReconcileTx{tx: conn}).LockCurrentContactsScan(t.Context(), 9, "account@N00", 99)
+		if err != nil || current {
+			t.Fatalf("LockCurrentContactsScan() = %v, %v; want superseded", current, err)
+		}
+	})
+	t.Run("database error", func(t *testing.T) {
+		conn := &engConn{rowResults: []engRow{{err: errors.New("database unavailable")}}}
+		if _, err := (contactsReconcileTx{tx: conn}).LockCurrentContactsScan(t.Context(), 9, "account@N00", 100); err == nil || !strings.Contains(err.Error(), "crawl: lock contacts scan") {
+			t.Fatalf("LockCurrentContactsScan() error = %v", err)
+		}
+	})
+	t.Run("invalid scan", func(t *testing.T) {
+		conn := &engConn{}
+		if _, err := (contactsReconcileTx{tx: conn}).LockCurrentContactsScan(t.Context(), 0, "account@N00", 100); err == nil {
+			t.Fatal("LockCurrentContactsScan() accepted an invalid item")
+		}
+		if len(conn.queries) != 0 {
+			t.Fatal("invalid contacts scan guard queried the database")
+		}
+	})
 }
 
 func TestCompleteContactsDeletesStaleRelationshipsInKeysetBatches(t *testing.T) {

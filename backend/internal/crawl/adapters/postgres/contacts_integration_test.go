@@ -29,18 +29,30 @@ type contactsResponse struct {
 }
 
 type scriptedContactsFlickr struct {
-	responses []contactsResponse
-	calls     int
+	responses      []contactsResponse
+	responseByUser map[int64][]contactsResponse
+	userCalls      map[int64]int
+	calls          int
 }
 
 func (f *scriptedContactsFlickr) Call(_ context.Context, request crawlapp.Request) (json.RawMessage, error) {
 	if request.Method != "flickr.contacts.getList" {
 		return nil, fmt.Errorf("unexpected method %s", request.Method)
 	}
-	if f.calls >= len(f.responses) {
-		return nil, errors.New("unexpected contacts request")
+	var response contactsResponse
+	if responses, ok := f.responseByUser[request.UserID]; ok {
+		index := f.userCalls[request.UserID]
+		if index >= len(responses) {
+			return nil, errors.New("unexpected contacts request")
+		}
+		response = responses[index]
+		f.userCalls[request.UserID] = index + 1
+	} else {
+		if f.calls >= len(f.responses) {
+			return nil, errors.New("unexpected contacts request")
+		}
+		response = f.responses[f.calls]
 	}
-	response := f.responses[f.calls]
 	f.calls++
 	return response.body, response.err
 }
@@ -81,6 +93,13 @@ func setContactsCheckpoint(t *testing.T, ctx context.Context, pool *pgxpool.Pool
 	}
 }
 
+func cleanupContactsScanState(t *testing.T, pool *pgxpool.Pool, accountNSID string) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(), `DELETE FROM contacts_scan_state WHERE account_nsid=$1`, accountNSID); err != nil {
+		t.Errorf("delete contacts scan state: %v", err)
+	}
+}
+
 func TestContactsRefreshRemovesMissingRowsOnlyAfterFinalPage(t *testing.T) {
 	pool := openEngineTestPool(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
@@ -94,6 +113,7 @@ func TestContactsRefreshRemovesMissingRowsOnlyAfterFinalPage(t *testing.T) {
 	lastContact := "refresh-last-" + suffix
 	emptyContact := "refresh-empty-" + suffix
 	t.Cleanup(func() {
+		cleanupContactsScanState(t, pool, account)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=$1 OR contact_nsid=ANY($2)`, account, []string{oldContact, firstContact, lastContact, emptyContact})
 		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{account, oldContact, firstContact, lastContact, emptyContact})
 		_, _ = pool.Exec(context.Background(), `DELETE FROM flickr_accounts WHERE user_id=$1`, userID)
@@ -152,6 +172,95 @@ func TestContactsRefreshRemovesMissingRowsOnlyAfterFinalPage(t *testing.T) {
 	}
 }
 
+func TestInterleavedContactsScansKeepTheNewestRelationship(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	firstUserID := insertInterestTestUser(t, ctx, pool)
+	secondUserID := insertInterestTestUser(t, ctx, pool)
+	firstKeyID := seedOwnerKey(t, ctx, pool, firstUserID, "")
+	secondKeyID := seedOwnerKey(t, ctx, pool, secondUserID, "")
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	account := "interleaved-acct-" + suffix
+	contact := "interleaved-contact-" + suffix
+	t.Cleanup(func() {
+		cleanupContactsScanState(t, pool, account)
+		if _, err := pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=$1 OR contact_nsid=$2`, account, contact); err != nil {
+			t.Errorf("delete contacts: %v", err)
+		}
+		if _, err := pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{account, contact}); err != nil {
+			t.Errorf("delete people: %v", err)
+		}
+		if _, err := pool.Exec(context.Background(), `DELETE FROM flickr_accounts WHERE user_id=ANY($1)`, []int64{firstUserID, secondUserID}); err != nil {
+			t.Errorf("delete Flickr accounts: %v", err)
+		}
+		if _, err := pool.Exec(context.Background(), `DELETE FROM api_keys WHERE id=ANY($1)`, []int64{firstKeyID, secondKeyID}); err != nil {
+			t.Errorf("delete API keys: %v", err)
+		}
+		if _, err := pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=ANY($1)`, []int64{firstUserID, secondUserID}); err != nil {
+			t.Errorf("delete work items: %v", err)
+		}
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status)
+		VALUES($1,$2,$3,'first account','{}','{}','ok'),($4,$5,$3,'second account','{}','{}','ok')`,
+		firstUserID, firstKeyID, account, secondUserID, secondKeyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,'account'),($2,'contact')`, account, contact); err != nil {
+		t.Fatal(err)
+	}
+
+	olderCheckpoint := time.Now().UTC().Truncate(time.Second)
+	newerCheckpoint := olderCheckpoint.Add(time.Second)
+	flickr := &scriptedContactsFlickr{
+		responseByUser: map[int64][]contactsResponse{
+			firstUserID: {
+				{body: json.RawMessage(fmt.Sprintf(`{"contacts":{"pages":2,"contact":[{"nsid":%q}]}}`, contact))},
+				{body: json.RawMessage(fmt.Sprintf(`{"contacts":{"pages":2,"contact":[{"nsid":%q}]}}`, contact))},
+			},
+			secondUserID: {
+				{body: json.RawMessage(fmt.Sprintf(`{"contacts":{"pages":2,"contact":[{"nsid":%q}]}}`, contact))},
+				{body: json.RawMessage(`{"contacts":{"pages":2,"contact":[]}}`)},
+			},
+		},
+		userCalls: make(map[int64]int),
+	}
+	engine := contactsRefreshEngine(t, pool, flickr)
+	olderItemID := insertPhotosFavoritesWork(t, ctx, pool, firstUserID, "contacts", account, 0, facets.Contacts{})
+	newerItemID := insertPhotosFavoritesWork(t, ctx, pool, secondUserID, "contacts", account, 0, facets.Contacts{})
+	setContactsCheckpoint(t, ctx, pool, olderItemID, olderCheckpoint)
+	setContactsCheckpoint(t, ctx, pool, newerItemID, newerCheckpoint)
+
+	if err := engine.Handle(ctx, olderItemID); err != nil {
+		t.Fatalf("older contacts page one: %v", err)
+	}
+	if err := engine.Handle(ctx, newerItemID); err != nil {
+		t.Fatalf("newer contacts page one: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready' WHERE id=$1`, olderItemID); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Handle(ctx, olderItemID); err != nil {
+		t.Fatalf("older contacts page after newer scan: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE work_items SET state='ready' WHERE id=$1`, newerItemID); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Handle(ctx, newerItemID); err != nil {
+		t.Fatalf("newer contacts final page: %v", err)
+	}
+
+	if got := count(t, ctx, pool, `SELECT count(*) FROM contacts WHERE person_nsid=$1 AND contact_nsid=$2`, account, contact); got != 1 {
+		t.Fatalf("contact still present in newest scan was reconciled away: count=%d", got)
+	}
+	if got := count(t, ctx, pool, `SELECT count(*) FROM contacts WHERE person_nsid=$1 AND contact_nsid=$2 AND seen_at=$3`, account, contact, newerCheckpoint); got != 1 {
+		t.Fatalf("contact seen_at was not kept at newest checkpoint: count=%d", got)
+	}
+	if flickr.calls != 3 || flickr.userCalls[firstUserID] != 1 || flickr.userCalls[secondUserID] != 2 {
+		t.Fatalf("Flickr calls = total:%d older:%d newer:%d; want only one older and two newer pages", flickr.calls, flickr.userCalls[firstUserID], flickr.userCalls[secondUserID])
+	}
+}
+
 func TestContactsRefreshFailureRetainsExistingRows(t *testing.T) {
 	pool := openEngineTestPool(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
@@ -163,6 +272,7 @@ func TestContactsRefreshFailureRetainsExistingRows(t *testing.T) {
 	oldContact := "failed-refresh-old-" + suffix
 	newContact := "failed-refresh-new-" + suffix
 	t.Cleanup(func() {
+		cleanupContactsScanState(t, pool, account)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=$1 OR contact_nsid=ANY($2)`, account, []string{oldContact, newContact})
 		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{account, oldContact, newContact})
 		_, _ = pool.Exec(context.Background(), `DELETE FROM flickr_accounts WHERE user_id=$1`, userID)
@@ -233,6 +343,7 @@ func TestContactsCrawlWithoutPreInsertedAccountPerson(t *testing.T) {
 	account := "ensure-acct-" + suffix
 	contact := "ensure-contact-" + suffix
 	t.Cleanup(func() {
+		cleanupContactsScanState(t, pool, account)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=$1 OR contact_nsid=$2`, account, contact)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{account, contact})
 		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1`, userID)
@@ -311,6 +422,7 @@ func TestContactsStoredIdempotent(t *testing.T) {
 	contactA := "contacts-a-" + suffix
 	contactB := "contacts-b-" + suffix
 	t.Cleanup(func() {
+		cleanupContactsScanState(t, pool, account)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=$1 OR contact_nsid=ANY($2)`, account, []string{contactA, contactB})
 		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, []string{account, contactA, contactB})
 		_, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE user_id=$1`, userID)

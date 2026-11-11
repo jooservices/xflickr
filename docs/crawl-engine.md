@@ -172,9 +172,14 @@ The `contacts_photos` facet queues a check for each distinct owner in the
 response. Independently, `ScheduleContacts` enqueues the `contacts` facet
 (`flickr.contacts.getList`) for each connected account when
 `contacts_refresh_interval` has elapsed since the previous completed or failed
-item. `crawl_interests` stores per-person photo, favorite, and check
-checkpoints. The settings interval is enforced by the scheduler, not a cron
-job.
+item. When users have connected the same Flickr NSID, the newest contacts scan
+is selected by its start checkpoint and work-item ID. Older scans stop before
+another Flickr call, and page commits lock and verify the selected scan before
+writing relationships or reconciling the list. This prevents an interleaved
+older page from lowering `seen_at` and causing a newer complete scan to delete
+a contact that remains present. `crawl_interests` stores per-person photo,
+favorite, and check checkpoints. The settings interval is enforced by the
+scheduler, not a cron job.
 
 ## Scoring
 

@@ -105,6 +105,11 @@ type Store interface {
 	// StampScanStart persists a photos/favorites scan-start checkpoint on the
 	// stored cursor when it is still missing, before the first Flickr page.
 	StampScanStart(ctx context.Context, id int64, at int64, expected domain.Cursor) error
+	// BeginContactsScan selects the newest contacts scan for an account NSID.
+	BeginContactsScan(ctx context.Context, id int64, accountNSID string, checkpointAt int64) (bool, error)
+	// FinishStaleContactsScan marks a superseded contacts work item done without
+	// changing a photos or favorites checkpoint.
+	FinishStaleContactsScan(ctx context.Context, id int64) error
 	Defer(ctx context.Context, id int64, deferral Deferral) error
 	Finish(ctx context.Context, id int64) error
 	Fail(ctx context.Context, id int64, reason string) error
@@ -167,6 +172,9 @@ type ReconcileWriter interface {
 // ContactsReconcileWriter removes contact relationships absent from a complete
 // contacts.getList refresh.
 type ContactsReconcileWriter interface {
+	// LockCurrentContactsScan checks and holds the current scan marker until the
+	// page transaction commits, so a newer scan cannot race the catalog writes.
+	LockCurrentContactsScan(ctx context.Context, itemID int64, accountNSID string, checkpointAt int64) (bool, error)
 	CompleteContacts(ctx context.Context, userID int64, accountNSID string, scannedAt time.Time) error
 }
 
@@ -309,6 +317,15 @@ func (e *Engine) run(ctx context.Context, item domain.Item, facet domain.Facet) 
 	if handled, err := e.suppressFacet(ctx, item, keyID, facet); handled || err != nil {
 		return err
 	}
+	if item.Kind == domain.FacetContacts {
+		current, err := e.Store.BeginContactsScan(ctx, item.ID, item.Subject, item.Cursor.CheckpointAt)
+		if err != nil {
+			return err
+		}
+		if !current {
+			return e.Store.FinishStaleContactsScan(ctx, item.ID)
+		}
+	}
 	permit, wait, err := e.Governor.Acquire(ctx, keyID, facet.Lane())
 	if err != nil {
 		return e.hold(ctx, item, e.Timing.withDefaults().QuotaWait, "quota governor: "+err.Error())
@@ -405,6 +422,7 @@ func (e *Engine) commit(ctx context.Context, item domain.Item, result domain.Res
 		maxDepth = effective.MaxDepth
 	}
 	committed := false
+	staleContactsScan := false
 	err := e.Units.Do(ctx, func(w Writers) error {
 		current, err := w.Work.Lock(ctx, item.ID)
 		if err != nil {
@@ -412,6 +430,19 @@ func (e *Engine) commit(ctx context.Context, item domain.Item, result domain.Res
 		}
 		if current.State != domain.StateRunning || !sameCursor(current.Cursor, item.Cursor) {
 			return nil
+		}
+		if item.Kind == domain.FacetContacts {
+			if w.Contacts == nil {
+				return errors.New("crawl: contacts scan guard is required")
+			}
+			currentScan, err := w.Contacts.LockCurrentContactsScan(ctx, item.ID, item.Subject, item.Cursor.CheckpointAt)
+			if err != nil {
+				return err
+			}
+			if !currentScan {
+				staleContactsScan = true
+				return nil
+			}
 		}
 		if err := e.write(ctx, w, item, result, maxDepth); err != nil {
 			return err
@@ -424,6 +455,9 @@ func (e *Engine) commit(ctx context.Context, item domain.Item, result domain.Res
 	})
 	if err != nil {
 		return err
+	}
+	if staleContactsScan {
+		return e.Store.FinishStaleContactsScan(ctx, item.ID)
 	}
 	if committed && result.CursorWarning != "" {
 		e.logger().WarnContext(ctx, "crawl continuation stopped", "work_item_id", item.ID, "facet", item.Kind, "reason", result.CursorWarning)
