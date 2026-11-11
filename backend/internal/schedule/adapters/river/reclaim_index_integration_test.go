@@ -2,6 +2,7 @@ package river
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -139,6 +140,11 @@ WHERE w.id = batch.id`
 			args: []any{"sync", 100},
 		},
 		{
+			name: "pump key and worker inflight IDs",
+			sql:  inflightKeyWorkerIDsSQL,
+			args: []any{keyID, "sync", 100},
+		},
+		{
 			name:          "pump keyless pending probe",
 			sql:           keylessPendingExistsSQL,
 			indexRelation: "work_items",
@@ -195,6 +201,13 @@ WHERE w.id = batch.id`
 			plan, err := explainStatement(ctx, tx, query.sql, query.args...)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if strings.Contains(query.name, "inflight IDs") {
+				encoded, err := json.Marshal(plan)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Logf("EXPLAIN (ANALYZE, BUFFERS) %s: %s", query.name, encoded)
 			}
 			seqScan := containsWorkItemsSeqScan(plan.Plan)
 			t.Logf("work_items_seq_scan=%t", seqScan)
