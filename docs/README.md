@@ -74,6 +74,8 @@
 - [Fake AI Captioner](fake-ai-captioner.md)
 - [AI enrichment freshness](ai-re-enrichment.md) — the model-version freshness
   predicate, retained previous results, and current slice limitations.
+- [AI worker caption persistence](ai-worker-caption.md) — the internal
+  single-photo caption path, catalog upsert, errors, and deferred worker wiring.
 - [Search ranking fusion](search-rrf.md) — BM25 and vector candidate ranking
   merged with Reciprocal Rank Fusion.
 - [AI embedding](ai-embedding.md) — embedding port, bounded Ollama batches,
