@@ -171,6 +171,22 @@ describe('PhotoViewer', () => {
     expect(await screen.findByRole('img', { name: 'Photo 101' })).toHaveAttribute('src', PHOTO_URL);
   });
 
+  it('uses the source URL returned for confirmed sizes', async () => {
+    server.use(
+      http.get('*/photos/:id', () =>
+        HttpResponse.json(
+          photo(101, {
+            sizes_status: 'confirmed',
+            sizes: [{ label: 'Original', source: PHOTO_URL, media: 'photo' }],
+          }),
+        ),
+      ),
+    );
+    openViewer([101]);
+
+    expect(await screen.findByRole('img', { name: 'Photo 101' })).toHaveAttribute('src', PHOTO_URL);
+  });
+
   it('uses the translated viewer name for an empty title and reports an unavailable preview', async () => {
     server.use(
       http.get('*/photos/:id', () =>

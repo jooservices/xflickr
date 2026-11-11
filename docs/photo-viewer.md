@@ -3,8 +3,9 @@
 JOOXF-171 adds a testable photo viewer component for later use by the gallery.
 The viewer accepts the gallery's ordered photo IDs and selected index, requests
 only the current photo through the generated `GET /photos/{id}` client, and
-shows its title and a recorded photo size URL. Previous and next controls wrap
-through the supplied IDs. The dialog traps focus, closes with Escape, and
+shows its title and a recorded photo size URL. Provisional listing URLs come
+from `url`; confirmed size URLs come from `source`. Previous and next controls
+wrap through the supplied IDs. The dialog traps focus, closes with Escape, and
 returns focus to its opener or the gallery heading.
 
 This slice is exercised through a test-only browser harness. It is not linked

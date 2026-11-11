@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { getPhoto } from '../../shared/api/gen/catalog/catalog';
+import type { CatalogPhoto } from '../../shared/api/gen/models';
 import { Icon, useI18n } from '../../shared';
 import styles from './PhotoViewer.module.css';
 
@@ -45,15 +46,21 @@ function isTypingTarget(target: EventTarget | null): boolean {
   );
 }
 
-function photoUrl(photo: { sizes: { url?: string; media?: string }[] } | null): string | null {
-  return (
-    photo?.sizes.find(
-      (size) =>
-        typeof size.url === 'string' &&
-        size.url.trim() !== '' &&
-        (size.media === undefined || size.media === 'photo'),
-    )?.url ?? null
-  );
+function photoUrl(photo: CatalogPhoto | null): string | null {
+  if (!photo) return null;
+
+  const confirmed = photo.sizes_status === 'confirmed';
+  const size = photo.sizes.find((candidate) => {
+    const url = confirmed ? candidate.source : candidate.url;
+    return (
+      typeof url === 'string' &&
+      url.trim() !== '' &&
+      (candidate.media === undefined || candidate.media === 'photo')
+    );
+  });
+
+  if (!size) return null;
+  return confirmed ? (size.source ?? null) : (size.url ?? null);
 }
 
 /** Shows one photo detail at a time over the invoking gallery. */
