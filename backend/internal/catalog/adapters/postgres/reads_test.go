@@ -139,6 +139,77 @@ func readTestPhotoRow(id int64, extra ...any) []any {
 	return append(values, extra...)
 }
 
+func TestListContactsPaginatesAndValidates(t *testing.T) {
+	ctx := context.Background()
+	const userID int64 = 88
+	db := &readsDB{}
+	repository, err := New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.rows = &readsRows{rows: [][]any{
+		{"c-a", "A", "Alpha", "icon", "acct"},
+		{"c-b", "B", "Beta", "icon", "acct"},
+	}}
+	page, err := repository.ListContacts(ctx, userID, nil, 1)
+	if err != nil || len(page.Items) != 1 || page.NextCursor == nil || page.NextCursor.NSID != "c-a" {
+		t.Fatalf("page=%+v err=%v", page, err)
+	}
+	if item := page.Items[0]; item.NSID != "c-a" || item.Username != "A" || item.Realname != "Alpha" || item.AccountNSID != "acct" {
+		t.Fatalf("item=%+v", item)
+	}
+	limitAt, detailsAt := strings.Index(db.query, "LIMIT $3"), strings.Index(db.query, "JOIN people")
+	if !strings.Contains(db.query, "flickr_accounts") || !strings.Contains(db.query, "WITH contact_page AS MATERIALIZED") || !strings.Contains(db.query, "SELECT DISTINCT c.contact_nsid") || !strings.Contains(db.query, "c.contact_nsid > $2") || limitAt < 0 || detailsAt < 0 || limitAt > detailsAt || strings.Contains(strings.ToUpper(db.query), "GROUP BY") || strings.Contains(strings.ToUpper(db.query), "MIN(") || db.args[0] != userID || db.args[1] != "" || db.args[2] != 2 {
+		t.Fatalf("query=%q args=%v", db.query, db.args)
+	}
+	if strings.Contains(db.query, "photos") || strings.Contains(db.query, "observations") {
+		t.Fatalf("contacts query must not calculate photo counts: %q", db.query)
+	}
+	db.rows = &readsRows{rows: [][]any{{"c-z", "Z", "", "", "acct"}}}
+	if _, err := repository.ListContacts(ctx, userID, &app.ContactCursor{NSID: "c-a"}, 1); err != nil {
+		t.Fatalf("cursor list: %v", err)
+	}
+	if db.args[1] != "c-a" || db.args[2] != 2 {
+		t.Fatalf("cursor query args=%v", db.args)
+	}
+	if _, err := repository.ListContacts(ctx, userID, &app.ContactCursor{}, 1); !errors.Is(err, app.ErrInvalidCursor) {
+		t.Fatalf("invalid cursor=%v", err)
+	}
+	if _, err := repository.ListContacts(ctx, 0, nil, 1); err == nil {
+		t.Fatal("invalid user accepted")
+	}
+	if _, err := repository.ListContacts(ctx, userID, nil, 0); err == nil {
+		t.Fatal("zero limit accepted")
+	}
+	db.queryErr = errors.New("query failed")
+	if _, err := repository.ListContacts(ctx, userID, nil, 1); !errors.Is(err, db.queryErr) {
+		t.Fatalf("query error=%v", err)
+	}
+	db.queryErr = nil
+	db.rows = &readsRows{rows: [][]any{{"c", "C", "", "", int64(1), "acct"}}, scanErr: errors.New("scan failed")}
+	if _, err := repository.ListContacts(ctx, userID, nil, 1); err == nil {
+		t.Fatal("scan failure ignored")
+	}
+	db.rows = &readsRows{err: errors.New("rows failed")}
+	if _, err := repository.ListContacts(ctx, userID, nil, 1); err == nil {
+		t.Fatal("rows failure ignored")
+	}
+}
+
+func TestContactQueryDoesNotCountPhotos(t *testing.T) {
+	db := &readsDB{rows: &readsRows{}}
+	repository, err := New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ListContacts(t.Context(), 88, nil, 10); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(db.query, "photos") || strings.Contains(db.query, "observations") {
+		t.Fatalf("contacts query must not look up photos or observations: %s", db.query)
+	}
+}
+
 func TestVisibleReadsValidatePolicyAndPaginatePeopleAndPhotos(t *testing.T) {
 	ctx := context.Background()
 	const userID int64 = 72
@@ -157,6 +228,9 @@ func TestVisibleReadsValidatePolicyAndPaginatePeopleAndPhotos(t *testing.T) {
 	}
 	if !strings.Contains(db.query, predicate.Expression) || db.args[0] != userID || db.args[1] != 2 {
 		t.Fatalf("people query scope=%q args=%v", db.query, db.args)
+	}
+	if !strings.Contains(db.query, "SELECT count(*) FROM photos") || strings.Contains(db.query, "LIMIT 1000") || strings.Contains(db.query, "observations o\n    WHERE o.record_kind='photo'") {
+		t.Fatalf("people query does not match develop photo-count behavior: %q", db.query)
 	}
 	db.rows = &readsRows{rows: [][]any{{"owner-z", "Z", "", "icon", int64(0)}}}
 	if _, err := repository.ListPeople(ctx, userID, predicate, &app.PersonCursor{NSID: "owner-a"}, 1); err != nil {
@@ -189,6 +263,9 @@ func TestVisibleReadsValidatePolicyAndPaginatePeopleAndPhotos(t *testing.T) {
 	person, ok, err := repository.GetPerson(ctx, userID, "owner", predicate)
 	if err != nil || !ok || person.NSID != "owner" || person.PhotosCount != 1 {
 		t.Fatalf("person=%+v ok=%v err=%v", person, ok, err)
+	}
+	if !strings.Contains(db.query, "SELECT count(*) FROM photos") || strings.Contains(db.query, "LIMIT 1000") || strings.Contains(db.query, "observations o\n    WHERE o.record_kind='photo'") {
+		t.Fatalf("person query does not match develop photo-count behavior: %q", db.query)
 	}
 	db.row = &readsRow{err: pgx.ErrNoRows}
 	if _, ok, err := repository.GetPerson(ctx, userID, "missing", predicate); err != nil || ok {

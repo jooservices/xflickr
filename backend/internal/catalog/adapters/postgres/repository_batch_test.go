@@ -132,14 +132,17 @@ func TestCrawlCatalogWritersMapDomainRecordsToBatchUpserts(t *testing.T) {
 	if err := repository.UpsertPersonGroups(ctx, []catalog.PersonGroup{{PersonNSID: "person", GroupNSID: "group"}}); err != nil {
 		t.Fatalf("upsert crawl person groups: %v", err)
 	}
+	if err := repository.UpsertContacts(ctx, []catalog.Contact{{PersonNSID: "person", ContactNSID: "contact"}}); err != nil {
+		t.Fatalf("upsert crawl contacts: %v", err)
+	}
 	if err := repository.UpsertAlbumsBatch(ctx, []Album{{ID: "batch-album", OwnerNSID: "person", PrimaryPhotoID: &photoID, PhotosCount: 1}}); err != nil {
 		t.Fatalf("upsert album batch: %v", err)
 	}
 	if err := repository.UpsertGalleriesBatch(ctx, []Gallery{{ID: "batch-gallery", OwnerNSID: "person", PrimaryPhotoID: &photoID, PhotosCount: 1}}); err != nil {
 		t.Fatalf("upsert gallery batch: %v", err)
 	}
-	if db.batch.index != 8 {
-		t.Fatalf("catalog batch statements = %d, want 8", db.batch.index)
+	if db.batch.index != 9 {
+		t.Fatalf("catalog batch statements = %d, want 9", db.batch.index)
 	}
 }
 

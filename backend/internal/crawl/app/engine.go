@@ -43,14 +43,15 @@ type Governor interface {
 
 // Request is one Flickr call on behalf of a work item.
 type Request struct {
-	AccountID int64
-	KeyID     int64
-	UserID    int64
-	Lane      domain.Lane
-	Facet     string
-	Attempt   int
-	Method    string
-	Params    map[string]string
+	AccountID   int64
+	KeyID       int64
+	UserID      int64
+	SubjectNSID string
+	Lane        domain.Lane
+	Facet       string
+	Attempt     int
+	Method      string
+	Params      map[string]string
 }
 
 // Flickr performs a call with the credentials of the key and user.
@@ -104,6 +105,11 @@ type Store interface {
 	// StampScanStart persists a photos/favorites scan-start checkpoint on the
 	// stored cursor when it is still missing, before the first Flickr page.
 	StampScanStart(ctx context.Context, id int64, at int64, expected domain.Cursor) error
+	// BeginContactsScan selects the newest contacts scan for an account NSID.
+	BeginContactsScan(ctx context.Context, id int64, accountNSID string, checkpointAt int64) (bool, error)
+	// FinishStaleContactsScan marks a superseded contacts work item done without
+	// changing a photos or favorites checkpoint.
+	FinishStaleContactsScan(ctx context.Context, id int64) error
 	Defer(ctx context.Context, id int64, deferral Deferral) error
 	Finish(ctx context.Context, id int64) error
 	Fail(ctx context.Context, id int64, reason string) error
@@ -138,6 +144,7 @@ type CatalogWriter interface {
 	UpsertGalleries(ctx context.Context, galleries []catalog.Gallery) error
 	UpsertGroups(ctx context.Context, groups []catalog.Group) error
 	UpsertPersonGroups(ctx context.Context, groups []catalog.PersonGroup) error
+	UpsertContacts(ctx context.Context, contacts []catalog.Contact) error
 }
 
 type peoplePageWriter interface {
@@ -147,6 +154,8 @@ type peoplePageWriter interface {
 
 // InterestWriter records interests inside the commit transaction.
 type InterestWriter interface {
+	// ConnectedUsersForAccount lists active users connected to this Flickr NSID.
+	ConnectedUsersForAccount(ctx context.Context, accountNSID string) ([]int64, error)
 	Add(ctx context.Context, interest domain.Interest) error
 }
 
@@ -162,6 +171,15 @@ type ReconcileWriter interface {
 	Complete(ctx context.Context, userID int64, person string, scannedAt, completedAt time.Time) error
 }
 
+// ContactsReconcileWriter removes contact relationships absent from a complete
+// contacts.getList refresh.
+type ContactsReconcileWriter interface {
+	// LockCurrentContactsScan checks and holds the current scan marker until the
+	// page transaction commits, so a newer scan cannot race the catalog writes.
+	LockCurrentContactsScan(ctx context.Context, itemID int64, accountNSID string, checkpointAt int64) (bool, error)
+	CompleteContacts(ctx context.Context, userID int64, accountNSID string, scannedAt time.Time) error
+}
+
 // Writers is everything the commit transaction writes through.
 type Writers struct {
 	Work         WorkWriter
@@ -169,6 +187,7 @@ type Writers struct {
 	Interests    InterestWriter
 	Observations ObservationWriter
 	Reconcile    ReconcileWriter
+	Contacts     ContactsReconcileWriter
 }
 
 // UnitOfWork runs fn in one atomic transaction.
@@ -288,7 +307,7 @@ func (e *Engine) run(ctx context.Context, item domain.Item, facet domain.Facet) 
 	if err != nil {
 		return err
 	}
-	request := Request{KeyID: keyID, UserID: item.UserID, Lane: facet.Lane(), Facet: item.Kind, Attempt: item.Attempts + 1, Method: item.Cursor.Method, Params: pageParams(item.Cursor)}
+	request := Request{KeyID: keyID, UserID: item.UserID, SubjectNSID: item.Subject, Lane: facet.Lane(), Facet: item.Kind, Attempt: item.Attempts + 1, Method: item.Cursor.Method, Params: pageParams(item.Cursor)}
 	if resolver, ok := e.Flickr.(RequestResolver); ok {
 		request, err = resolver.Resolve(ctx, request)
 		if err != nil {
@@ -299,6 +318,15 @@ func (e *Engine) run(ctx context.Context, item domain.Item, facet domain.Facet) 
 	}
 	if handled, err := e.suppressFacet(ctx, item, keyID, facet); handled || err != nil {
 		return err
+	}
+	if item.Kind == domain.FacetContacts {
+		current, err := e.Store.BeginContactsScan(ctx, item.ID, item.Subject, item.Cursor.CheckpointAt)
+		if err != nil {
+			return err
+		}
+		if !current {
+			return e.Store.FinishStaleContactsScan(ctx, item.ID)
+		}
 	}
 	permit, wait, err := e.Governor.Acquire(ctx, keyID, facet.Lane())
 	if err != nil {
@@ -388,7 +416,7 @@ func (e *Engine) fail(ctx context.Context, item domain.Item, keyID int64, cause 
 // skipped, so running a page twice changes nothing.
 func (e *Engine) commit(ctx context.Context, item domain.Item, result domain.Result) error {
 	maxDepth := 0
-	if len(result.Discoveries) > 0 && item.UserID > 0 {
+	if len(result.Discoveries) > 0 && item.UserID > 0 && item.Kind != domain.FacetContacts {
 		effective, err := e.Settings.Effective(ctx, item.UserID)
 		if err != nil {
 			return fmt.Errorf("crawl: load max depth for user %d: %w", item.UserID, err)
@@ -396,6 +424,7 @@ func (e *Engine) commit(ctx context.Context, item domain.Item, result domain.Res
 		maxDepth = effective.MaxDepth
 	}
 	committed := false
+	staleContactsScan := false
 	err := e.Units.Do(ctx, func(w Writers) error {
 		current, err := w.Work.Lock(ctx, item.ID)
 		if err != nil {
@@ -403,6 +432,19 @@ func (e *Engine) commit(ctx context.Context, item domain.Item, result domain.Res
 		}
 		if current.State != domain.StateRunning || !sameCursor(current.Cursor, item.Cursor) {
 			return nil
+		}
+		if item.Kind == domain.FacetContacts {
+			if w.Contacts == nil {
+				return errors.New("crawl: contacts scan guard is required")
+			}
+			currentScan, err := w.Contacts.LockCurrentContactsScan(ctx, item.ID, item.Subject, item.Cursor.CheckpointAt)
+			if err != nil {
+				return err
+			}
+			if !currentScan {
+				staleContactsScan = true
+				return nil
+			}
 		}
 		if err := e.write(ctx, w, item, result, maxDepth); err != nil {
 			return err
@@ -415,6 +457,9 @@ func (e *Engine) commit(ctx context.Context, item domain.Item, result domain.Res
 	})
 	if err != nil {
 		return err
+	}
+	if staleContactsScan {
+		return e.Store.FinishStaleContactsScan(ctx, item.ID)
 	}
 	if committed && result.CursorWarning != "" {
 		e.logger().WarnContext(ctx, "crawl continuation stopped", "work_item_id", item.ID, "facet", item.Kind, "reason", result.CursorWarning)
@@ -453,11 +498,14 @@ func (e *Engine) write(ctx context.Context, w Writers, item domain.Item, result 
 		}
 		w.Catalog = writer
 	}
-	pageWriter, err := peoplePageWriterFor(w.Catalog, result.People)
+	pageWriter, err := peoplePageWriterFor(w.Catalog, result.People, result.Contacts)
 	if err != nil {
 		return err
 	}
 	if err := writeCatalog(ctx, w.Catalog, pageWriter, result); err != nil {
+		return err
+	}
+	if err := e.completeContactsReconciliation(ctx, w, item, result); err != nil {
 		return err
 	}
 	if err := e.completeReconciliation(ctx, w, item, result); err != nil {
@@ -468,7 +516,11 @@ func (e *Engine) write(ctx context.Context, w Writers, item domain.Item, result 
 			return err
 		}
 	}
-	if err := e.discover(ctx, w, item, result.Discoveries, maxDepth); err != nil {
+	if item.Kind == domain.FacetContacts {
+		if err := e.discoverContacts(ctx, w, item, result.Discoveries); err != nil {
+			return err
+		}
+	} else if err := e.discover(ctx, w, item, result.Discoveries, maxDepth); err != nil {
 		return err
 	}
 	if err := e.enqueuePageWork(ctx, w, item, result.Work); err != nil {
@@ -491,6 +543,17 @@ func (e *Engine) completeReconciliation(ctx context.Context, writers Writers, it
 	return writers.Reconcile.Complete(ctx, item.UserID, item.Subject, scannedAt, e.now())
 }
 
+func (e *Engine) completeContactsReconciliation(ctx context.Context, writers Writers, item domain.Item, result domain.Result) error {
+	if item.Kind != "contacts" || result.HasMore {
+		return nil
+	}
+	if writers.Contacts == nil || item.UserID <= 0 || item.Subject == "" || item.Cursor.CheckpointAt <= 0 {
+		return errors.New("crawl: contacts reconciliation requires a valid work item and writer")
+	}
+	scannedAt := time.Unix(item.Cursor.CheckpointAt, 0).UTC()
+	return writers.Contacts.CompleteContacts(ctx, item.UserID, item.Subject, scannedAt)
+}
+
 func (e *Engine) enqueuePageWork(ctx context.Context, writers Writers, item domain.Item, work []domain.WorkSpec) error {
 	for _, spec := range work {
 		if err := e.enqueue(ctx, writers, item, spec, item.Depth); err != nil {
@@ -500,8 +563,8 @@ func (e *Engine) enqueuePageWork(ctx context.Context, writers Writers, item doma
 	return nil
 }
 
-func peoplePageWriterFor(writer CatalogWriter, people []catalog.Person) (peoplePageWriter, error) {
-	if len(people) == 0 {
+func peoplePageWriterFor(writer CatalogWriter, people []catalog.Person, contacts []catalog.Contact) (peoplePageWriter, error) {
+	if len(people) == 0 && len(contacts) == 0 {
 		return nil, nil
 	}
 	pageWriter, ok := writer.(peoplePageWriter)
@@ -512,42 +575,55 @@ func peoplePageWriterFor(writer CatalogWriter, people []catalog.Person) (peopleP
 }
 
 func writeCatalog(ctx context.Context, writer CatalogWriter, pageWriter peoplePageWriter, result domain.Result) error {
-	if len(result.People) > 0 {
-		if err := pageWriter.EnsurePeople(ctx, result.People); err != nil {
-			return err
-		}
+	people := append([]catalog.Person(nil), result.People...)
+	people = append(people, contactSubjectPeople(result.Contacts)...)
+	if err := writeIfNonEmpty(ctx, people, func(ctx context.Context, people []catalog.Person) error {
+		return pageWriter.EnsurePeople(ctx, people)
+	}); err != nil {
+		return err
 	}
-	if len(result.Photos) > 0 {
-		if err := writer.UpsertPhotos(ctx, result.Photos); err != nil {
-			return err
-		}
+	if err := writeIfNonEmpty(ctx, result.Photos, writer.UpsertPhotos); err != nil {
+		return err
 	}
-	if len(result.Favorites) > 0 {
-		if err := writer.UpsertFavorites(ctx, result.Favorites); err != nil {
-			return err
-		}
+	if err := writeIfNonEmpty(ctx, result.Favorites, writer.UpsertFavorites); err != nil {
+		return err
 	}
-	if len(result.Albums) > 0 {
-		if err := writer.UpsertAlbums(ctx, result.Albums); err != nil {
-			return err
-		}
+	if err := writeIfNonEmpty(ctx, result.Albums, writer.UpsertAlbums); err != nil {
+		return err
 	}
-	if len(result.Galleries) > 0 {
-		if err := writer.UpsertGalleries(ctx, result.Galleries); err != nil {
-			return err
-		}
+	if err := writeIfNonEmpty(ctx, result.Galleries, writer.UpsertGalleries); err != nil {
+		return err
 	}
-	if len(result.Groups) > 0 {
-		if err := writer.UpsertGroups(ctx, result.Groups); err != nil {
-			return err
-		}
+	if err := writeIfNonEmpty(ctx, result.Groups, writer.UpsertGroups); err != nil {
+		return err
 	}
-	if len(result.PersonGroups) > 0 {
-		if err := writer.UpsertPersonGroups(ctx, result.PersonGroups); err != nil {
-			return err
-		}
+	if err := writeIfNonEmpty(ctx, result.PersonGroups, writer.UpsertPersonGroups); err != nil {
+		return err
 	}
-	return nil
+	return writeIfNonEmpty(ctx, result.Contacts, writer.UpsertContacts)
+}
+
+func writeIfNonEmpty[T any](ctx context.Context, values []T, write func(context.Context, []T) error) error {
+	if len(values) == 0 {
+		return nil
+	}
+	return write(ctx, values)
+}
+
+func contactSubjectPeople(contacts []catalog.Contact) []catalog.Person {
+	seen := make(map[string]struct{}, len(contacts))
+	people := make([]catalog.Person, 0, len(contacts))
+	for _, contact := range contacts {
+		if contact.PersonNSID == "" {
+			continue
+		}
+		if _, ok := seen[contact.PersonNSID]; ok {
+			continue
+		}
+		seen[contact.PersonNSID] = struct{}{}
+		people = append(people, catalog.Person{NSID: contact.PersonNSID, Username: contact.PersonNSID})
+	}
+	return people
 }
 
 // discover records an interest one level deeper for each found person, unless
@@ -569,6 +645,25 @@ func (e *Engine) discover(ctx context.Context, w Writers, item domain.Item, foun
 			if err := e.enqueue(ctx, w, item, spec, depth); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func (e *Engine) discoverContacts(ctx context.Context, w Writers, item domain.Item, found []domain.Discovery) error {
+	users, err := w.Interests.ConnectedUsersForAccount(ctx, item.Subject)
+	if err != nil {
+		return fmt.Errorf("crawl: list users for contacts account %q: %w", item.Subject, err)
+	}
+	for _, userID := range users {
+		effective, err := e.Settings.Effective(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("crawl: load max depth for user %d: %w", userID, err)
+		}
+		userItem := item
+		userItem.UserID = userID
+		if err := e.discover(ctx, w, userItem, found, effective.MaxDepth); err != nil {
+			return err
 		}
 	}
 	return nil

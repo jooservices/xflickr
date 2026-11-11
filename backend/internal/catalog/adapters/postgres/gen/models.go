@@ -365,6 +365,13 @@ type Contact struct {
 	SeenAt      pgtype.Timestamptz
 }
 
+type ContactsScanState struct {
+	AccountNsid  string
+	CheckpointAt int64
+	WorkItemID   int64
+	UpdatedAt    pgtype.Timestamptz
+}
+
 type CrawlCycle struct {
 	UserID           int64
 	CursorPersonNsid string

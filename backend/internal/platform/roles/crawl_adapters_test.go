@@ -160,9 +160,13 @@ func TestCrawlInterestAndUsableKeyAdapters(t *testing.T) {
 type credentialPool struct {
 	rows  []pgx.Row
 	index int
+	query string
+	args  []any
 }
 
-func (pool *credentialPool) QueryRow(context.Context, string, ...any) pgx.Row {
+func (pool *credentialPool) QueryRow(_ context.Context, query string, args ...any) pgx.Row {
+	pool.query = query
+	pool.args = append([]any(nil), args...)
 	row := pool.rows[pool.index]
 	pool.index++
 	return row

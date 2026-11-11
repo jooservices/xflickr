@@ -484,6 +484,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 	healthTimeoutMin, healthTimeoutMax := 1.0, 60.0
 	retentionMin, retentionMax := 7.0, 365.0
 	completedMin, completedMax, discardedMin, discardedMax := 60.0, 604800.0, 3600.0, 2592000.0
+	contactsMin, contactsMax := 3600.0, 2592000.0
 	want := map[string]struct {
 		value string
 		min   *float64
@@ -493,6 +494,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		"change_check_interval":                   {value: "86400"},
 		"restricted_recheck_interval":             {value: "2592000"},
 		"reconcile_interval":                      {value: "2592000"},
+		"contacts_refresh_interval":               {value: "86400", min: &contactsMin, max: &contactsMax},
 		"daily_call_limit":                        {value: "0"},
 		"usable_hourly_quota":                     {value: "3400", min: &minimum},
 		"quota_reserve":                           {value: "100"},
@@ -553,6 +555,7 @@ func assertSeed(t *testing.T, pool *pgxpool.Pool) {
 		ChangeCheckInterval:       24 * time.Hour,
 		RestrictedRecheckInterval: 30 * 24 * time.Hour,
 		ReconcileInterval:         30 * 24 * time.Hour,
+		ContactsRefreshInterval:   24 * time.Hour,
 		DailyCallLimit:            0,
 		UsableHourlyQuota:         3400,
 		QuotaReserve:              100,

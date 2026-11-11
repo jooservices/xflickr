@@ -151,6 +151,42 @@ func (e *Engine) StampScanStart(ctx context.Context, id int64, at int64, expecte
 	return nil
 }
 
+// BeginContactsScan records a newer per-account scan before it spends quota.
+func (e *Engine) BeginContactsScan(ctx context.Context, id int64, accountNSID string, checkpointAt int64) (bool, error) {
+	if id <= 0 || accountNSID == "" || checkpointAt <= 0 {
+		return false, errors.New("crawl: invalid contacts scan")
+	}
+	var current bool
+	err := e.conn.QueryRow(ctx, `
+		INSERT INTO contacts_scan_state (account_nsid, checkpoint_at, work_item_id)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (account_nsid) DO UPDATE SET
+			checkpoint_at=EXCLUDED.checkpoint_at,
+			work_item_id=EXCLUDED.work_item_id,
+			updated_at=now()
+		WHERE (contacts_scan_state.checkpoint_at, contacts_scan_state.work_item_id)
+			<= (EXCLUDED.checkpoint_at, EXCLUDED.work_item_id)
+		RETURNING true`, accountNSID, checkpointAt, id).Scan(&current)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("crawl: register contacts scan: %w", err)
+	}
+	return current, nil
+}
+
+// FinishStaleContactsScan finishes superseded work without moving a crawl checkpoint.
+func (e *Engine) FinishStaleContactsScan(ctx context.Context, id int64) error {
+	if id <= 0 {
+		return errors.New("crawl: invalid stale contacts work item")
+	}
+	if _, err := e.conn.Exec(ctx, finishSQL, id); err != nil {
+		return fmt.Errorf("crawl: finish stale contacts scan: %w", err)
+	}
+	return nil
+}
+
 // Defer returns a running item to pending until deferral.NotBefore.
 func (e *Engine) Defer(ctx context.Context, id int64, deferral app.Deferral) error {
 	consumed := 0
@@ -232,7 +268,7 @@ func (e *Engine) Do(ctx context.Context, fn func(app.Writers) error) error {
 	return e.run(ctx, func(tx Conn) error {
 		return fn(app.Writers{
 			Work: workTx{tx}, Catalog: e.catalog(tx), Interests: interestTx{tx},
-			Observations: observationTx{tx}, Reconcile: reconcileTx{tx},
+			Observations: observationTx{tx}, Reconcile: reconcileTx{tx}, Contacts: contactsReconcileTx{tx},
 		})
 	})
 }
@@ -410,6 +446,22 @@ func (w workTx) Finish(ctx context.Context, id int64) error {
 }
 
 type interestTx struct{ tx Conn }
+
+// ConnectedUsersForAccount lists active users connected to the account NSID.
+func (i interestTx) ConnectedUsersForAccount(ctx context.Context, accountNSID string) ([]int64, error) {
+	if accountNSID == "" {
+		return nil, errors.New("crawl: invalid contacts account")
+	}
+	var users []int64
+	err := i.tx.QueryRow(ctx, `
+		SELECT COALESCE(array_agg(user_id ORDER BY user_id), '{}'::bigint[])
+		FROM flickr_accounts
+		WHERE nsid=$1 AND status='ok'`, accountNSID).Scan(&users)
+	if err != nil {
+		return nil, fmt.Errorf("crawl: list users for contacts account: %w", err)
+	}
+	return users, nil
+}
 
 func (i interestTx) Add(ctx context.Context, interest domain.Interest) error {
 	if err := interest.Validate(); err != nil {

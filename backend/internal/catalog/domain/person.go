@@ -35,6 +35,13 @@ type Group struct {
 // PersonGroup is a discovered group membership.
 type PersonGroup struct{ PersonNSID, GroupNSID string }
 
+// Contact is a directed contact relationship between two people.
+type Contact struct {
+	PersonNSID  string
+	ContactNSID string
+	SeenAt      time.Time
+}
+
 // Person is a Flickr person record stored in the catalog.
 type Person struct {
 	NSID        string

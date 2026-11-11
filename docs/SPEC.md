@@ -93,6 +93,8 @@ guide feature implementation; operational environment rules live in
   that XFlickr user.
 - Depth 1 follows contacts of that user's connected Flickr accounts. Further
   levels discover owners of photos favorited by contacts at the prior level.
+- A contacts scan for an NSID connected by multiple users registers discoveries
+  for each active connected user, applying each user's own maximum depth.
 - A user's depth setting bounds that user's discovery. Do not crawl deeper on
   their behalf because another user selected a greater depth.
 
@@ -113,7 +115,11 @@ guide feature implementation; operational environment rules live in
 - Catalog read endpoints reuse the same visibility policy as other photo reads.
   Omit hidden photos from lists and answer hidden detail reads with 404, the
   same response as a missing row. Exclude tombstones and report only visible
-  photo counts where photo-backed counts are required. `/me/albums` requires
+  photo counts for people and albums. Person counts inspect at most the 1,000
+  most recently seen photos per owner before applying
+  visibility and tombstone filters. When an owner has more photos, counts can be
+  lower than the full visible total; this bounds hidden-photo checks. Album-list
+  counts include only visible photos. `/me/albums` requires
   both the album owner's contact relationship and at least one non-tombstoned
   photo visible to the signed-in user under the shared policy. This check does
   not expose or return an album photo count. Album detail may show only the

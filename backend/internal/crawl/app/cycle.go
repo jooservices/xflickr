@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	defaultChangeCheckInterval = 24 * time.Hour
-	defaultReconcileInterval   = 30 * 24 * time.Hour
+	defaultChangeCheckInterval     = 24 * time.Hour
+	defaultReconcileInterval       = 30 * 24 * time.Hour
+	defaultContactsRefreshInterval = 24 * time.Hour
 )
 
 var errCycleIncomplete = errors.New("crawl: cycle dependencies are required")
@@ -28,9 +29,12 @@ type CycleSelection struct {
 }
 
 // CycleStore schedules one due person, reopens that person's completed check
-// item when needed, and advances the durable cursor atomically.
+// item when needed, and advances the durable cursor atomically. It also
+// schedules contacts.getList work for connected accounts on the contacts
+// refresh interval.
 type CycleStore interface {
 	ScheduleNext(context.Context, int64, time.Time, time.Duration, time.Duration) (bool, error)
+	ScheduleContacts(context.Context, int64, time.Time, time.Duration) (bool, error)
 }
 
 // CycleUserReader lists users with at least one person to check.
@@ -90,7 +94,15 @@ func (c Cycle) RunUser(ctx context.Context, userID int64) (bool, error) {
 	if c.Now != nil {
 		now = c.Now()
 	}
-	return c.Store.ScheduleNext(ctx, userID, now, EffectiveCheckInterval(effective), EffectiveReconcileInterval(effective))
+	queued, err := c.Store.ScheduleNext(ctx, userID, now, EffectiveCheckInterval(effective), EffectiveReconcileInterval(effective))
+	if err != nil {
+		return false, err
+	}
+	contactsQueued, err := c.Store.ScheduleContacts(ctx, userID, now, EffectiveContactsRefreshInterval(effective))
+	if err != nil {
+		return false, err
+	}
+	return queued || contactsQueued, nil
 }
 
 // SelectCyclePerson advances through all people in NSID order. A cursor only
@@ -126,6 +138,15 @@ func EffectiveReconcileInterval(settings settingsdomain.Effective) time.Duration
 		return defaultReconcileInterval
 	}
 	return settings.ReconcileInterval
+}
+
+// EffectiveContactsRefreshInterval applies the configured contacts list
+// refresh interval, retaining the 24-hour product default when unset.
+func EffectiveContactsRefreshInterval(settings settingsdomain.Effective) time.Duration {
+	if settings.ContactsRefreshInterval <= 0 {
+		return defaultContactsRefreshInterval
+	}
+	return settings.ContactsRefreshInterval
 }
 
 // CycleDue checks whether the user's next full cycle may start.

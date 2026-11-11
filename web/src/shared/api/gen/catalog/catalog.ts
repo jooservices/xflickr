@@ -20,6 +20,7 @@ import type {
 
 import type {
   CatalogAlbumPage,
+  CatalogContactPage,
   CatalogFavoritePage,
   CatalogPerson,
   CatalogPersonPage,
@@ -28,6 +29,7 @@ import type {
   Error,
   ListAlbumPhotosParams,
   ListAlbumsParams,
+  ListContactsParams,
   ListFavoritesParams,
   ListMyAlbumsParams,
   ListPeopleParams,
@@ -196,6 +198,156 @@ export function useListPeople<TData = Awaited<ReturnType<typeof listPeople>>, TE
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getListPeopleQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type listContactsResponse200 = {
+  data: CatalogContactPage;
+  status: 200;
+};
+
+export type listContactsResponse400 = {
+  data: Error;
+  status: 400;
+};
+
+export type listContactsResponse401 = {
+  data: Error;
+  status: 401;
+};
+
+export type listContactsResponse500 = {
+  data: Error;
+  status: 500;
+};
+
+export type listContactsResponseSuccess = listContactsResponse200 & {
+  headers: Headers;
+};
+export type listContactsResponseError = (
+  listContactsResponse400 | listContactsResponse401 | listContactsResponse500
+) & {
+  headers: Headers;
+};
+
+export type listContactsResponse = listContactsResponseSuccess | listContactsResponseError;
+
+export const getListContactsUrl = (params?: ListContactsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/contacts?${stringifiedParams}` : `/contacts`;
+};
+
+/**
+ * @summary List contacts of the user's connected Flickr accounts
+ */
+export const listContacts = async (
+  params?: ListContactsParams,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<listContactsResponse> => {
+  return customFetch<listContactsResponse>(getListContactsUrl(params), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getListContactsQueryKey = (params?: ListContactsParams) => {
+  return [`/contacts`, ...(params ? [params] : [])] as const;
+};
+
+export const getListContactsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listContacts>>,
+  TError = Error,
+>(
+  params?: ListContactsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listContacts>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListContactsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listContacts>>> = ({ signal }) =>
+    listContacts(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listContacts>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListContactsQueryResult = NonNullable<Awaited<ReturnType<typeof listContacts>>>;
+export type ListContactsQueryError = Error;
+
+export function useListContacts<TData = Awaited<ReturnType<typeof listContacts>>, TError = Error>(
+  params: undefined | ListContactsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listContacts>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listContacts>>,
+          TError,
+          Awaited<ReturnType<typeof listContacts>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListContacts<TData = Awaited<ReturnType<typeof listContacts>>, TError = Error>(
+  params?: ListContactsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listContacts>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listContacts>>,
+          TError,
+          Awaited<ReturnType<typeof listContacts>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListContacts<TData = Awaited<ReturnType<typeof listContacts>>, TError = Error>(
+  params?: ListContactsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listContacts>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List contacts of the user's connected Flickr accounts
+ */
+
+export function useListContacts<TData = Awaited<ReturnType<typeof listContacts>>, TError = Error>(
+  params?: ListContactsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listContacts>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListContactsQueryOptions(params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

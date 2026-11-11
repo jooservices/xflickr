@@ -13,7 +13,6 @@ import (
 
 	"github.com/jooservices/xflickr/internal/catalog/app"
 	sharingapp "github.com/jooservices/xflickr/internal/sharing/app"
-	sharingdomain "github.com/jooservices/xflickr/internal/sharing/domain"
 )
 
 var _ app.ReadRepository = (*Repository)(nil)
@@ -32,7 +31,7 @@ func validateRead(ctx context.Context, r *Repository, userID int64, predicate sh
 	if ctx == nil || r == nil || r.db == nil || userID <= 0 || limit < 1 || limit > app.MaxPageSize {
 		return errors.New("catalog: invalid read request")
 	}
-	expected := sharingapp.Filter(sharingdomain.User{ID: userID}).SQL
+	expected := sharingapp.PhotoVisibilityPredicate(userID)
 	if predicate.Expression != expected.Expression || len(predicate.Args) != 1 {
 		return errors.New("catalog: invalid visibility predicate")
 	}
@@ -660,6 +659,64 @@ func collectAlbumPhotoPage(ctx context.Context, r *Repository, query string, arg
 		position := positions[limit-1]
 		page.Items = page.Items[:limit]
 		page.NextCursor = &app.AlbumPhotoCursor{Position: position, PhotoID: last.ID}
+	}
+	return page, nil
+}
+
+// ListContacts returns distinct contacts of the caller's connected Flickr
+// accounts, ordered by contact NSID.
+func (r *Repository) ListContacts(ctx context.Context, userID int64, cursor *app.ContactCursor, limit int) (app.ContactsPage, error) {
+	if ctx == nil || r == nil || r.db == nil || userID <= 0 || limit < 1 || limit > app.MaxPageSize {
+		return app.ContactsPage{}, errors.New("catalog: invalid read request")
+	}
+	cursorNSID := ""
+	if cursor != nil {
+		if cursor.NSID == "" {
+			return app.ContactsPage{}, app.ErrInvalidCursor
+		}
+		cursorNSID = cursor.NSID
+	}
+	query := `WITH contact_page AS MATERIALIZED (
+	SELECT DISTINCT c.contact_nsid
+	FROM contacts c
+	WHERE c.contact_nsid > $2 AND EXISTS (
+		SELECT 1 FROM flickr_accounts fa
+		WHERE fa.user_id=$1 AND fa.status='ok' AND fa.nsid=c.person_nsid
+	)
+	ORDER BY c.contact_nsid ASC
+	LIMIT $3
+)
+SELECT p.nsid, p.username, p.realname, p.icon,
+	(SELECT c.person_nsid FROM contacts c
+	 WHERE c.contact_nsid=contact_page.contact_nsid AND EXISTS (
+		SELECT 1 FROM flickr_accounts fa
+		WHERE fa.user_id=$1 AND fa.status='ok' AND fa.nsid=c.person_nsid
+	 )
+	 ORDER BY c.person_nsid ASC LIMIT 1)
+FROM contact_page
+JOIN people p ON p.nsid=contact_page.contact_nsid
+ORDER BY contact_page.contact_nsid ASC`
+	args := []any{userID, cursorNSID, limit + 1}
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return app.ContactsPage{}, fmt.Errorf("catalog: list contacts: %w", err)
+	}
+	defer rows.Close()
+	page := app.ContactsPage{Items: make([]app.Contact, 0, limit)}
+	for rows.Next() {
+		var item app.Contact
+		if err := rows.Scan(&item.NSID, &item.Username, &item.Realname, &item.Icon, &item.AccountNSID); err != nil {
+			return app.ContactsPage{}, fmt.Errorf("catalog: scan contact: %w", err)
+		}
+		page.Items = append(page.Items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return app.ContactsPage{}, fmt.Errorf("catalog: list contacts: %w", err)
+	}
+	if len(page.Items) > limit {
+		last := page.Items[limit-1]
+		page.Items = page.Items[:limit]
+		page.NextCursor = &app.ContactCursor{NSID: last.NSID}
 	}
 	return page, nil
 }

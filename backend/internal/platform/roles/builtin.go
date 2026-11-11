@@ -943,6 +943,10 @@ func (s apiServer) GetMeHome(ctx context.Context, request gen.GetMeHomeRequestOb
 	return s.Home.GetMeHome(ctx, request)
 }
 
+func (s apiServer) ListContacts(ctx context.Context, request gen.ListContactsRequestObject) (gen.ListContactsResponseObject, error) {
+	return s.Catalog.ListContacts(ctx, request)
+}
+
 func (s apiServer) GetPerson(ctx context.Context, request gen.GetPersonRequestObject) (gen.GetPersonResponseObject, error) {
 	return s.Catalog.GetPerson(ctx, request)
 }

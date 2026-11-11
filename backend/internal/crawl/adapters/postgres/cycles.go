@@ -147,6 +147,110 @@ func validateCycleSchedule(ctx context.Context, repository *CycleRepository, use
 	return nil
 }
 
+// ScheduleContacts enqueues flickr.contacts.getList work for each connected
+// account NSID at most once per refresh interval across all XFlickr users.
+// Existing active items are left alone; completed or failed items reopen only
+// after the interval elapses.
+func (repository *CycleRepository) ScheduleContacts(ctx context.Context, userID int64, now time.Time, interval time.Duration) (bool, error) {
+	if repository == nil || repository.begin == nil {
+		return false, errDatabaseRequired
+	}
+	if ctx == nil {
+		return false, errContextRequired
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if userID <= 0 || interval <= 0 {
+		return false, errors.New("crawl: valid user and contacts refresh interval are required")
+	}
+	tx, err := repository.begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("crawl: begin contacts scheduling: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('crawl.contacts.schedule', 0))`); err != nil {
+		return false, fmt.Errorf("crawl: lock contacts scheduling: %w", err)
+	}
+	cursorJSON, err := json.Marshal(map[string]any{
+		"page": 1, "method": "flickr.contacts.getList", "checkpoint_at": now.Unix(),
+		"params": map[string]string{"user_id": "", "per_page": "500"},
+	})
+	if err != nil {
+		return false, fmt.Errorf("crawl: encode contacts cursor: %w", err)
+	}
+	cutoff := now.Add(-interval)
+	transferred, err := tx.Exec(ctx, `WITH eligible AS (
+		SELECT account.nsid, account.user_id, account.key_id
+		FROM flickr_accounts AS account
+		JOIN api_keys AS api_key ON api_key.id=account.key_id
+			AND api_key.user_id=account.user_id AND api_key.status='valid'
+		WHERE account.user_id=$1 AND account.status='ok'
+	), replaceable AS (
+		SELECT DISTINCT ON (previous.subject_key) previous.id, eligible.user_id, eligible.key_id
+		FROM work_items AS previous
+		JOIN eligible ON eligible.nsid=previous.subject_key
+		WHERE previous.kind='contacts' AND previous.state='pending'
+			AND NOT EXISTS (
+				SELECT 1 FROM work_items AS target
+				WHERE target.kind='contacts' AND target.subject_key=previous.subject_key
+					AND target.user_id=eligible.user_id AND target.id<>previous.id
+			)
+			AND NOT EXISTS (
+				SELECT 1 FROM flickr_accounts AS current_account
+				JOIN api_keys AS current_key ON current_key.id=current_account.key_id
+					AND current_key.user_id=current_account.user_id AND current_key.status='valid'
+				WHERE current_account.user_id=previous.user_id
+					AND current_account.nsid=previous.subject_key
+					AND current_account.status='ok'
+					AND current_account.key_id=previous.key_id
+			)
+		ORDER BY previous.subject_key, previous.id
+	)
+	UPDATE work_items AS previous SET user_id=replaceable.user_id, key_id=replaceable.key_id
+	FROM replaceable WHERE previous.id=replaceable.id`, userID)
+	if err != nil {
+		return false, fmt.Errorf("crawl: reassign contacts refresh: %w", err)
+	}
+	tag, err := tx.Exec(ctx, `INSERT INTO work_items (kind, subject_key, user_id, key_id, depth, cursor)
+		SELECT 'contacts', account.nsid, account.user_id, account.key_id, 0,
+			jsonb_set($2::jsonb, '{params,user_id}', to_jsonb(account.nsid))
+		FROM flickr_accounts AS account
+		JOIN api_keys AS api_key ON api_key.id=account.key_id
+			AND api_key.user_id=account.user_id AND api_key.status='valid'
+		WHERE account.user_id=$1 AND account.status='ok'
+			AND NOT EXISTS (
+				SELECT 1 FROM work_items AS previous
+				WHERE previous.kind='contacts' AND previous.subject_key=account.nsid
+					AND (
+						(previous.state='done' AND previous.updated_at > $4)
+						OR (
+							(previous.state NOT IN ('done','failed') OR previous.updated_at > $4)
+							AND EXISTS (
+								SELECT 1 FROM flickr_accounts AS current_account
+								JOIN api_keys AS current_key ON current_key.id=current_account.key_id
+									AND current_key.user_id=current_account.user_id AND current_key.status='valid'
+								WHERE current_account.user_id=previous.user_id
+									AND current_account.nsid=previous.subject_key
+									AND current_account.status='ok'
+									AND current_account.key_id=previous.key_id
+							)
+						)
+					)
+			)
+		ON CONFLICT ON CONSTRAINT work_items_dedupe_key DO UPDATE SET
+			key_id=EXCLUDED.key_id, state='pending', cursor=EXCLUDED.cursor, attempts=0, last_error=NULL,
+			not_before=$3, lease_expires_at=NULL, updated_at=$3
+		WHERE work_items.state IN ('done','failed') AND work_items.updated_at <= $4`, userID, cursorJSON, now, cutoff)
+	if err != nil {
+		return false, fmt.Errorf("crawl: enqueue contacts refresh: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("crawl: commit contacts scheduling: %w", err)
+	}
+	return transferred.RowsAffected() > 0 || tag.RowsAffected() > 0, nil
+}
+
 func commitCycleVisit(ctx context.Context, tx cycleTx, userID int64, now time.Time, candidate cycleCandidate) error {
 	if err := advanceCycle(ctx, tx, userID, now, candidate); err != nil {
 		return err

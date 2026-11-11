@@ -95,7 +95,7 @@ func TestRegisterCrawlJobsRegistersEveryFacetOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := crawlapp.NewRegistry()
-	for _, facet := range []crawldomain.Facet{crawlapp.ChangeCheck{}, crawlapp.ContactsPhotos{}, facets.Photos{}, facets.Favorites{}, facets.Albums{}, facets.Galleries{}, facets.Groups{}} {
+	for _, facet := range []crawldomain.Facet{crawlapp.ChangeCheck{}, crawlapp.ContactsPhotos{}, facets.Photos{}, facets.Favorites{}, facets.Albums{}, facets.Galleries{}, facets.Groups{}, facets.Contacts{}} {
 		if err := registry.Register(facet); err != nil {
 			t.Fatal(err)
 		}

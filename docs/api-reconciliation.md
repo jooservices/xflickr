@@ -31,6 +31,7 @@ that serve it, or `MISSING`.
 | `/api/v1/sessions/{}` | `/api/v1/sessions/{id}` | `/api/v1/sessions/{id}` |
 | `/api/v1/users` | `/api/v1/users` | `/api/v1/users` |
 | `/api/v1/users/{}` | `/api/v1/users/{id}` | `/api/v1/users/{id}` |
+| `/contacts` | `/contacts` | `/contacts` |
 | `/downloads` | `/downloads` | `/downloads` |
 | `/downloads/{}/parts` | `/downloads/{id}/parts` | `/downloads/{id}/parts` |
 | `/downloads/{}/parts/{}/fetched` | `/downloads/{id}/parts/{partNumber}/fetched` | `/downloads/{id}/parts/{partNumber}/fetched` |

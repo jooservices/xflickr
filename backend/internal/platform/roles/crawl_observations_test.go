@@ -3,6 +3,7 @@ package roles
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -42,6 +43,27 @@ func TestResolveObservationAccount(t *testing.T) {
 		}
 		if !tc.wantErr && (got.UserID != 1 || got.KeyID != 4 || got.AccountID != 9) {
 			t.Fatalf("scope=%+v", got)
+		}
+	}
+}
+
+func TestResolveContactsBindsTheWorkSubjectToItsAccount(t *testing.T) {
+	pool := &credentialPool{rows: []pgx.Row{credentialRow{values: []any{int64(12), int64(34)}}}}
+	request, err := (&crawlFlickr{pool: pool}).Resolve(t.Context(), crawlapp.Request{
+		UserID: 7, KeyID: 11, Method: "flickr.contacts.getList", SubjectNSID: "account@N00",
+		Params: map[string]string{"user_id": "account@N00"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.KeyID != 12 || request.AccountID != 34 || pool.args[0] != int64(7) || pool.args[1] != "account@N00" || !strings.Contains(pool.query, "a.nsid=$2") {
+		t.Fatalf("contacts account binding request=%+v query=%q args=%v", request, pool.query, pool.args)
+	}
+	for _, params := range []map[string]string{nil, {"user_id": "another@N00"}} {
+		if _, err := (&crawlFlickr{}).Resolve(t.Context(), crawlapp.Request{
+			UserID: 7, Method: "flickr.contacts.getList", SubjectNSID: "account@N00", Params: params,
+		}); err == nil {
+			t.Fatalf("mismatched contacts params accepted: %v", params)
 		}
 	}
 }

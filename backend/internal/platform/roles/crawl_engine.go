@@ -73,7 +73,7 @@ func newCrawlEngine(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg
 		return nil, err
 	}
 	registry := crawlapp.NewRegistry()
-	for _, facet := range []crawldomain.Facet{crawlapp.ChangeCheck{}, crawlapp.ContactsPhotos{}, facets.Photos{}, facets.Favorites{}, facets.Reconcile{}, facets.Albums{}, facets.Galleries{}, facets.Groups{}} {
+	for _, facet := range []crawldomain.Facet{crawlapp.ChangeCheck{}, crawlapp.ContactsPhotos{}, facets.Photos{}, facets.Favorites{}, facets.Reconcile{}, facets.Albums{}, facets.Galleries{}, facets.Groups{}, facets.Contacts{}} {
 		if err := registry.Register(facet); err != nil {
 			return nil, err
 		}
@@ -246,7 +246,13 @@ func (f *crawlFlickr) credentialsWithAttribution(ctx context.Context, request cr
 	var accountID int64
 	var accountNSID string
 	var sealedToken, sealedTokenSecret crypto.Sealed
-	if err := f.pool.QueryRow(ctx, `SELECT id, nsid, token_sealed, secret_sealed FROM flickr_accounts WHERE user_id=$1 AND key_id=$2 AND status='ok' AND ($3::bigint=0 OR id=$3) ORDER BY id LIMIT 1`, request.UserID, request.KeyID, request.AccountID).Scan(&accountID, &accountNSID, &sealedToken, &sealedTokenSecret); err != nil {
+	var subjectNSID any
+	if request.Method == "flickr.contacts.getList" {
+		subjectNSID = request.SubjectNSID
+	}
+	if err := f.pool.QueryRow(ctx, `SELECT id, nsid, token_sealed, secret_sealed FROM flickr_accounts
+		WHERE user_id=$1 AND key_id=$2 AND status='ok' AND ($3::bigint=0 OR id=$3)
+		AND ($4::text IS NULL OR nsid=$4) ORDER BY id LIMIT 1`, request.UserID, request.KeyID, request.AccountID, subjectNSID).Scan(&accountID, &accountNSID, &sealedToken, &sealedTokenSecret); err != nil {
 		return flickrclient.Credentials{}, flickrclient.CallContext{}, fmt.Errorf("crawl: load account of user %d for key %d: %w", request.UserID, request.KeyID, err)
 	}
 	token, err := f.ring.Open(sealedToken, accountsdomain.TokenAAD(accountID))

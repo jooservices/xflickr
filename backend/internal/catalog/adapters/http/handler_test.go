@@ -20,6 +20,9 @@ type readRepoStub struct {
 	albums        app.AlbumsPage
 	contactAlbums app.ContactAlbumsPage
 	albumPhotos   app.AlbumPhotosPage
+	contacts      app.ContactsPage
+	contactUser   int64
+	contactCur    *app.ContactCursor
 	photo         app.Photo
 	photoOK       bool
 	listErr       error
@@ -71,6 +74,51 @@ func (s *readRepoStub) ListVisibleAlbumPhotos(_ context.Context, _ int64, _ stri
 
 func (s *readRepoStub) GetPhoto(context.Context, int64, int64, sharingapp.SQLPredicate) (app.Photo, bool, error) {
 	return s.photo, s.photoOK, s.listErr
+}
+
+func (s *readRepoStub) ListContacts(_ context.Context, userID int64, cursor *app.ContactCursor, limit int) (app.ContactsPage, error) {
+	s.contactUser = userID
+	s.contactCur = cursor
+	s.lastLimit = limit
+	s.listCalls++
+	return s.contacts, s.listErr
+}
+
+func TestListContactsRequiresAuthenticationAndReturnsPage(t *testing.T) {
+	repo := &readRepoStub{contacts: app.ContactsPage{
+		Items:      []app.Contact{{NSID: "friend@N00", Username: "friend", Realname: "Friend", Icon: "icon", AccountNSID: "account@N00"}},
+		NextCursor: &app.ContactCursor{NSID: "friend@N00"},
+	}}
+	handler := Handler{
+		Reads:   app.ReadService{Repository: repo},
+		ActorID: func(context.Context) (int64, bool) { return 71, true },
+	}
+	limit := 7
+	response, err := handler.ListContacts(context.Background(), gen.ListContactsRequestObject{Params: gen.ListContactsParams{Limit: &limit}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, ok := response.(gen.ListContacts200JSONResponse)
+	if !ok {
+		t.Fatalf("response = %T, want 200", response)
+	}
+	if repo.contactUser != 71 || repo.lastLimit != limit || repo.contactCur != nil {
+		t.Fatalf("repository request = user:%d cursor:%+v limit:%d", repo.contactUser, repo.contactCur, repo.lastLimit)
+	}
+	if len(page.Items) != 1 || page.Items[0].Nsid != "friend@N00" || page.Items[0].Username != "friend" || page.Items[0].Realname != "Friend" || page.Items[0].Icon != "icon" || page.Items[0].AccountNsid != "account@N00" || page.NextCursor == nil || *page.NextCursor == "" {
+		t.Fatalf("contact page = %+v", page)
+	}
+	unauthenticated := Handler{Reads: app.ReadService{Repository: repo}}
+	response, err = unauthenticated.ListContacts(context.Background(), gen.ListContactsRequestObject{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := response.(gen.ListContacts401JSONResponse); !ok || got.Code != "unauthenticated" {
+		t.Fatalf("unauthenticated response = %#v", response)
+	}
+	if repo.listCalls != 1 {
+		t.Fatalf("unauthenticated request reached repository; list calls=%d", repo.listCalls)
+	}
 }
 
 func TestListHandlersDistinguishOmittedAndZeroLimits(t *testing.T) {
