@@ -60,8 +60,12 @@ func TestCatalogFacetBatchWritersValidateAndWrite(t *testing.T) {
 			if err := tc.write(); err != nil {
 				t.Fatalf("valid write: %v", err)
 			}
-			if db.batch.index != 1 {
-				t.Fatalf("executed %d batch statements", db.batch.index)
+			wantStatements := 1
+			if tc.name == "favorites" {
+				wantStatements = 2
+			}
+			if db.batch.index != wantStatements {
+				t.Fatalf("executed %d batch statements, want %d", db.batch.index, wantStatements)
 			}
 			if err := tc.bad(); err == nil {
 				t.Fatal("invalid record was accepted")

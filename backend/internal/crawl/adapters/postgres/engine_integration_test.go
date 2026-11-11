@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	catalogpg "github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
@@ -147,6 +148,190 @@ func count(t *testing.T, ctx context.Context, pool *pgxpool.Pool, query string, 
 		t.Fatalf("count: %v", err)
 	}
 	return n
+}
+
+type startSnapshot struct {
+	ctid      string
+	other     []byte
+	state     string
+	updatedAt time.Time
+}
+
+func readStartSnapshot(t *testing.T, ctx context.Context, tx pgx.Tx, id int64) startSnapshot {
+	t.Helper()
+	var snapshot startSnapshot
+	err := tx.QueryRow(ctx, `SELECT ctid::text, to_jsonb(w) - 'state' - 'updated_at', state, updated_at
+		FROM work_items AS w WHERE id = $1`, id).Scan(
+		&snapshot.ctid, &snapshot.other, &snapshot.state, &snapshot.updatedAt)
+	if err != nil {
+		t.Fatalf("read work item %d: %v", id, err)
+	}
+	return snapshot
+}
+
+func TestStartAvoidsRedundantRunningUpdate(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+
+	suffix := fmt.Sprintf("start-transition-%d", time.Now().UnixNano())
+	cases := []struct {
+		state   string
+		started bool
+	}{
+		{state: "ready", started: true},
+		{state: "running", started: true},
+		{state: "pending"},
+		{state: "waiting"},
+		{state: "done"},
+		{state: "failed"},
+	}
+	ids := make(map[string]int64, len(cases))
+	for _, test := range cases {
+		var id int64
+		err := tx.QueryRow(ctx, `INSERT INTO work_items
+			(kind, subject_key, state, updated_at, last_error, attempts, cursor, user_id)
+			VALUES ('start_transition', $1, $2, now() - interval '1 hour', 'preserved', 2, '{"page":7}', $3)
+			RETURNING id`, suffix+"-"+test.state, test.state, userID).Scan(&id)
+		if err != nil {
+			t.Fatalf("insert %s work item: %v", test.state, err)
+		}
+		ids[test.state] = id
+	}
+
+	engine := &Engine{conn: tx}
+	for _, test := range cases {
+		t.Run(test.state, func(t *testing.T) {
+			id := ids[test.state]
+			before := readStartSnapshot(t, ctx, tx, id)
+			started, err := engine.Start(ctx, id)
+			if err != nil || started != test.started {
+				t.Fatalf("Start(%d) = %v, %v; want %v, nil", id, started, err, test.started)
+			}
+			after := readStartSnapshot(t, ctx, tx, id)
+			if string(after.other) != string(before.other) {
+				t.Errorf("other columns changed: %s -> %s", before.other, after.other)
+			}
+			if test.state == "ready" {
+				if after.state != "running" || !after.updatedAt.After(before.updatedAt) || after.ctid == before.ctid {
+					t.Errorf("ready transition before=%+v after=%+v", before, after)
+				}
+				return
+			}
+			if after.state != before.state || !after.updatedAt.Equal(before.updatedAt) || after.ctid != before.ctid {
+				t.Errorf("unexpected row change before=%+v after=%+v", before, after)
+			}
+		})
+	}
+
+	const missingID = int64(-416)
+	if started, err := engine.Start(ctx, missingID); err != nil || started {
+		t.Fatalf("Start(missing ID) = %v, %v; want false, nil", started, err)
+	}
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM work_items WHERE id = $1)`, missingID).Scan(&exists); err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Fatal("missing ID unexpectedly exists")
+	}
+}
+
+func TestStartSerializesConcurrentTransitions(t *testing.T) {
+	pool := openEngineTestPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	userID := insertInterestTestUser(t, ctx, pool)
+	suffix := fmt.Sprintf("start-lock-%d", time.Now().UnixNano())
+	var id int64
+	if err := pool.QueryRow(ctx, `INSERT INTO work_items(kind, subject_key, state, user_id)
+		VALUES ('start_lock', $1, 'ready', $2) RETURNING id`, suffix, userID).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM work_items WHERE id = $1`, id) })
+
+	first, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = first.Rollback(context.Background()) })
+	if _, err := first.Exec(ctx, `UPDATE work_items SET state = 'pending' WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(second.Release)
+	var processID int32
+	if err := second.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&processID); err != nil {
+		t.Fatal(err)
+	}
+	type startResult struct {
+		started bool
+		err     error
+	}
+	started := make(chan struct{})
+	result := make(chan startResult, 1)
+	go func() {
+		close(started)
+		value, startErr := (&Engine{conn: second}).Start(ctx, id)
+		result <- startResult{started: value, err: startErr}
+	}()
+	<-started
+	waitForStartLock(t, ctx, pool, processID)
+
+	committed := make(chan struct{})
+	if err := first.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	close(committed)
+	got := <-result
+	select {
+	case <-committed:
+	default:
+		t.Fatal("Start completed before the locking transaction committed")
+	}
+	if got.err != nil || got.started {
+		t.Fatalf("Start after committed pending transition = %v, %v; want false, nil", got.started, got.err)
+	}
+	var state string
+	if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE id = $1`, id).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != "pending" {
+		t.Fatalf("committed state = %q, want pending", state)
+	}
+}
+
+func waitForStartLock(t *testing.T, ctx context.Context, pool *pgxpool.Pool, processID int32) {
+	t.Helper()
+	for {
+		var waiting bool
+		err := pool.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1 FROM pg_stat_activity
+			WHERE pid = $1 AND state = 'active' AND wait_event_type = 'Lock'
+		)`, processID).Scan(&waiting)
+		if err != nil {
+			t.Fatalf("observe Start row-lock wait: %v", err)
+		}
+		if waiting {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("Start did not wait on the locked row: %v", ctx.Err())
+		default:
+			runtime.Gosched()
+		}
+	}
 }
 
 func TestEngineCrashBetweenCallAndCommitRerunsSafely(t *testing.T) {

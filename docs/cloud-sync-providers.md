@@ -1,9 +1,18 @@
 # Cloud storage provider contract
 
 `internal/sync/app.StorageProvider` is the application boundary for remote
-storage adapters. The port is intentionally provider-neutral; real provider
-implementations, account persistence, and sync orchestration belong to later
-work.
+storage adapters. The port is intentionally provider-neutral. This slice adds
+user-owned destination metadata and encrypted token persistence; real provider
+implementations and sync orchestration belong to later work.
+
+Each sync target belongs to one XFlickr user and stores a provider identifier,
+label, object configuration, connected status, and a token sealed with
+`crypto.Sealed`. The token's associated data is `sync_targets:<id>:token`, so
+the envelope cannot be opened for another target ID. Target reads require both
+the owner ID and target ID and return metadata only; another user's target is
+reported as not found. New targets start as `connected`. Provider OAuth,
+refresh and reconnect handling, per-photo sync items, REST routes, and UI are
+deferred.
 
 ## Shared types and errors
 

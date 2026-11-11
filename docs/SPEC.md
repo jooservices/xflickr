@@ -240,6 +240,12 @@ guide feature implementation; operational environment rules live in
   temporary files after upload completes or is abandoned.
 - Do not turn temporary download storage into a permanent XFlickr archive. The
   user's connected cloud destination is the durable copy when they choose sync.
+- A cloud destination is a user-owned sync target with a provider identifier,
+  label, object configuration, status, and encrypted token. Seal the token with
+  associated data `sync_targets:<id>:token`; metadata reads must check the owner
+  and never return the token. A newly created target starts as `connected`.
+  Provider OAuth, token refresh, per-photo sync state, REST routes and UI are
+  separate later slices.
 
 ## Plans
 

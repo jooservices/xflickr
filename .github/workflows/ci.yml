@@ -54,6 +54,58 @@ jobs:
       - name: Enforce per-file coverage for changed Go files
         run: python3 docker/scripts/coverage_gate.py .tmp/xflickr-coverage.out --exclude docker/scripts/coverage-exclude.txt --check-files --files-only --base origin/develop --baseline docker/scripts/coverage-file-baseline.txt
 
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_DB: xflickr_wtci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d xflickr_wtci"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_NAME: xflickr_wtci
+      DB_USER: postgres
+      DB_PASSWORD: ci-only-password
+      DB_SSLMODE: disable
+      XFLICKR_INTEGRATION_TEST: "1"
+      XFLICKR_DBTEST_INTEGRATION_TEST: "1"
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: backend/go.sum
+      - name: Run PostgreSQL integration slice
+        working-directory: backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -v -p 2 -count=1 ./internal/platform/db/dbtest \
+            -run '^(TestOpenUsesMigratedWorktreeDatabase|TestEmptyDatabaseIsCreatedAndDroppedWithoutTouchingWorktreeSchema)$' \
+            2>&1 | tee integration.log
+          grep -q '^--- PASS: TestOpenUsesMigratedWorktreeDatabase ' integration.log
+          grep -q '^--- PASS: TestEmptyDatabaseIsCreatedAndDroppedWithoutTouchingWorktreeSchema ' integration.log
+      - name: Upload integration log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-log
+          path: backend/integration.log
+          if-no-files-found: warn
+
   stale-check:
     name: stale-check
     runs-on: ubuntu-latest
@@ -106,3 +158,15 @@ jobs:
 
       - name: Audit web dependencies
         run: bash docker/scripts/security-audit-web.sh
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Test backend vulnerability scan wrapper
+        run: bash docker/scripts/security-audit-backend.test.sh
+
+      - name: Scan backend for known vulnerabilities
+        run: bash docker/scripts/security-audit-backend.sh

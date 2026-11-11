@@ -130,6 +130,175 @@ func TestScanNodePropagatesScanError(t *testing.T) {
 	}
 }
 
+func TestAssignmentRepositoryInitial(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 123456000, time.UTC)
+	want := app.Assignment{KeyID: 7, Node: "node-1", Since: now, Reason: "initial"}
+
+	t.Run("stores and reads assignment in one transaction", func(t *testing.T) {
+		tx := &fakeAssignmentTx{row: fakeAssignmentRow{assignment: want}}
+		pool := &fakeAssignmentPool{tx: tx}
+		got, err := (&Repository{pool: pool}).AssignInitial(t.Context(), want.KeyID, want.Node, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want || !tx.committed || tx.rolledBack || len(tx.args) != 4 {
+			t.Fatalf("AssignInitial() = %+v, transaction = %+v", got, tx)
+		}
+		if tx.args[0] != want.KeyID || tx.args[1] != want.Node || tx.args[2] != now || !tx.args[3].(time.Time).Equal(now.Add(-domain.WarningAfter)) {
+			t.Fatalf("insert arguments = %#v", tx.args)
+		}
+	})
+
+	t.Run("begin error", func(t *testing.T) {
+		wantErr := errors.New("begin failed")
+		_, err := (&Repository{pool: &fakeAssignmentPool{beginErr: wantErr}}).AssignInitial(t.Context(), want.KeyID, want.Node, now)
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("AssignInitial() error = %v", err)
+		}
+	})
+
+	t.Run("unsupported transaction pool", func(t *testing.T) {
+		_, err := (&Repository{pool: &fakeNodePool{}}).AssignInitial(t.Context(), want.KeyID, want.Node, now)
+		if err == nil || !strings.Contains(err.Error(), "cluster: assignment transaction is unavailable") {
+			t.Fatalf("AssignInitial() error = %v", err)
+		}
+	})
+
+	t.Run("insert error rolls back", func(t *testing.T) {
+		wantErr := errors.New("insert failed")
+		tx := &fakeAssignmentTx{execErr: wantErr}
+		_, err := (&Repository{pool: &fakeAssignmentPool{tx: tx}}).AssignInitial(t.Context(), want.KeyID, want.Node, now)
+		if !errors.Is(err, wantErr) || !tx.rolledBack || tx.committed {
+			t.Fatalf("AssignInitial() error = %v, transaction = %+v", err, tx)
+		}
+	})
+
+	t.Run("unavailable row rolls back", func(t *testing.T) {
+		tx := &fakeAssignmentTx{row: fakeAssignmentRow{err: pgx.ErrNoRows}}
+		_, err := (&Repository{pool: &fakeAssignmentPool{tx: tx}}).AssignInitial(t.Context(), want.KeyID, want.Node, now)
+		if !errors.Is(err, app.ErrAssignmentUnavailable) || !tx.rolledBack {
+			t.Fatalf("AssignInitial() error = %v, transaction = %+v", err, tx)
+		}
+	})
+
+	t.Run("read error rolls back", func(t *testing.T) {
+		wantErr := errors.New("read failed")
+		tx := &fakeAssignmentTx{row: fakeAssignmentRow{err: wantErr}}
+		_, err := (&Repository{pool: &fakeAssignmentPool{tx: tx}}).AssignInitial(t.Context(), want.KeyID, want.Node, now)
+		if !errors.Is(err, wantErr) || !strings.Contains(err.Error(), "cluster: read key assignment") || !tx.rolledBack {
+			t.Fatalf("AssignInitial() error = %v, transaction = %+v", err, tx)
+		}
+	})
+
+	t.Run("rollback error is preserved", func(t *testing.T) {
+		readErr := errors.New("read failed")
+		rollbackErr := errors.New("rollback failed")
+		tx := &fakeAssignmentTx{row: fakeAssignmentRow{err: readErr}, rollbackErr: rollbackErr}
+		_, err := (&Repository{pool: &fakeAssignmentPool{tx: tx}}).AssignInitial(t.Context(), want.KeyID, want.Node, now)
+		if !errors.Is(err, readErr) || !errors.Is(err, rollbackErr) {
+			t.Fatalf("AssignInitial() error = %v", err)
+		}
+	})
+
+	t.Run("commit error", func(t *testing.T) {
+		wantErr := errors.New("commit failed")
+		tx := &fakeAssignmentTx{row: fakeAssignmentRow{assignment: want}, commitErr: wantErr}
+		_, err := (&Repository{pool: &fakeAssignmentPool{tx: tx}}).AssignInitial(t.Context(), want.KeyID, want.Node, now)
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("AssignInitial() error = %v", err)
+		}
+	})
+}
+
+func TestAssignmentRepositoryGet(t *testing.T) {
+	want := app.Assignment{KeyID: 7, Node: "node-1", Since: time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC), Reason: "initial"}
+	for _, test := range []struct {
+		name string
+		row  pgx.Row
+		want error
+	}{
+		{name: "found", row: fakeAssignmentRow{assignment: want}},
+		{name: "missing", row: fakeAssignmentRow{err: pgx.ErrNoRows}, want: app.ErrAssignmentUnavailable},
+		{name: "scan error", row: fakeAssignmentRow{err: errors.New("bad row")}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			pool := &fakeNodePool{row: test.row}
+			got, err := (&Repository{pool: pool}).GetAssignment(t.Context(), want.KeyID)
+			if test.want != nil {
+				if !errors.Is(err, test.want) {
+					t.Fatalf("GetAssignment() error = %v, want %v", err, test.want)
+				}
+				return
+			}
+			if test.name == "found" && (err != nil || got != want) {
+				t.Fatalf("GetAssignment() = %+v, %v", got, err)
+			}
+			if test.name == "scan error" && (err == nil || !strings.Contains(err.Error(), "cluster: read key assignment")) {
+				t.Fatalf("GetAssignment() error = %v", err)
+			}
+		})
+	}
+}
+
+type fakeAssignmentPool struct {
+	*fakeNodePool
+	tx       *fakeAssignmentTx
+	beginErr error
+}
+
+func (pool *fakeAssignmentPool) Begin(context.Context) (pgx.Tx, error) {
+	return pool.tx, pool.beginErr
+}
+
+type fakeAssignmentTx struct {
+	pgx.Tx
+	row         pgx.Row
+	execErr     error
+	commitErr   error
+	rollbackErr error
+	args        []any
+	committed   bool
+	rolledBack  bool
+}
+
+func (tx *fakeAssignmentTx) Exec(_ context.Context, _ string, args ...any) (pgconn.CommandTag, error) {
+	tx.args = args
+	return pgconn.CommandTag{}, tx.execErr
+}
+
+func (tx *fakeAssignmentTx) QueryRow(context.Context, string, ...any) pgx.Row {
+	return tx.row
+}
+
+func (tx *fakeAssignmentTx) Commit(context.Context) error {
+	tx.committed = true
+	return tx.commitErr
+}
+
+func (tx *fakeAssignmentTx) Rollback(context.Context) error {
+	tx.rolledBack = true
+	return tx.rollbackErr
+}
+
+type fakeAssignmentRow struct {
+	assignment app.Assignment
+	err        error
+}
+
+func (row fakeAssignmentRow) Scan(dest ...any) error {
+	if row.err != nil {
+		return row.err
+	}
+	if len(dest) != 4 {
+		return errors.New("unexpected assignment scan shape")
+	}
+	*dest[0].(*int64) = row.assignment.KeyID
+	*dest[1].(*string) = row.assignment.Node
+	*dest[2].(*time.Time) = row.assignment.Since
+	*dest[3].(*string) = row.assignment.Reason
+	return nil
+}
+
 type fakeNodePool struct {
 	row  pgx.Row
 	args []any
