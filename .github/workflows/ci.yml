@@ -106,3 +106,15 @@ jobs:
 
       - name: Audit web dependencies
         run: bash docker/scripts/security-audit-web.sh
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Test backend vulnerability scan wrapper
+        run: bash docker/scripts/security-audit-backend.test.sh
+
+      - name: Scan backend for known vulnerabilities
+        run: bash docker/scripts/security-audit-backend.sh

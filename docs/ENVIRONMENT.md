@@ -25,7 +25,7 @@ Credentials live in the private `Workspaces/.env.docker`. Never print it, never 
 6. The Flickr API key and secret are entered only in the application UI (setup wizard and Keys screen), stored encrypted. There is no CLI or `.env` path for them and none may be added.
 7. Ollama (captions, embeddings) runs natively on the host when available; tests use the fake Captioner and Embedder. AI features are for the owner only in release 1.
 8. Deployment to other servers is out of scope for release 1.
-9. Go 1.27.3 and Node are installed natively on the VM. `backend/go.mod` pins
+9. Go 1.27.4 and Node are installed natively on the VM. `backend/go.mod` pins
    the Go version used by GitHub Actions; the root `Dockerfile` uses the same
    version for its build image. `make check-go-version` verifies those pins and
    runs in CI. `docker/scripts/run.sh` runs Go and Node directly, so `make lint`,
