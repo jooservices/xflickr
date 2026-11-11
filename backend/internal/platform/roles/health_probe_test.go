@@ -17,8 +17,9 @@ import (
 )
 
 type probeTestRole struct {
-	name  string
-	ready *atomic.Bool
+	name       string
+	ready      *atomic.Bool
+	configured chan struct{}
 }
 
 func (r probeTestRole) Name() string { return r.name }
@@ -33,6 +34,9 @@ func (r probeTestRole) Run(ctx context.Context) error {
 			return nil
 		},
 	})
+	if r.configured != nil {
+		close(r.configured)
+	}
 	<-ctx.Done()
 	return nil
 }
@@ -42,15 +46,23 @@ func TestRunWithHealthSharesReadinessAcrossRoles(t *testing.T) {
 	t.Setenv("OBS_HTTP_PORT", strconv.Itoa(port))
 	var firstReady, secondReady atomic.Bool
 	secondReady.Store(true)
+	firstConfigured, secondConfigured := make(chan struct{}), make(chan struct{})
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	runErr := make(chan error, 1)
 	go func() {
 		runErr <- RunWithHealth(ctx, []Role{
-			probeTestRole{name: "first", ready: &firstReady},
-			probeTestRole{name: "second", ready: &secondReady},
+			probeTestRole{name: "first", ready: &firstReady, configured: firstConfigured},
+			probeTestRole{name: "second", ready: &secondReady, configured: secondConfigured},
 		}, "test")
 	}()
+	for _, configured := range []chan struct{}{firstConfigured, secondConfigured} {
+		select {
+		case <-configured:
+		case <-time.After(2 * time.Second):
+			t.Fatal("role readiness checks were not configured")
+		}
+	}
 
 	status, body := awaitProbeStatus(t, port, "/readyz", http.StatusServiceUnavailable)
 	if !strings.Contains(body, "\"name\":\"first.dependency\",\"status\":\"error\"") {
