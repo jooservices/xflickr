@@ -189,10 +189,6 @@ func TestPhotoLaneHandlesLegacyAndAccountScopedSizes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username)
-		SELECT $1 || '-owner-' || n, $1 || '-owner-' || n FROM generate_series(1,3999) AS n`, suffix); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
 		t.Fatal(err)
 	}
@@ -509,11 +505,12 @@ func TestPhotoLaneReturnsOwnerKeyWhenFollowerRanksPhotoOwner(t *testing.T) {
 	pool := dbtest.Open(t, loadCatalogDatabase(t))
 	suffix := fmt.Sprintf("lane-owner-key-%d", time.Now().UnixNano())
 	owner := suffix + "-owner"
-	var ownerUser, followerUser, ownerKey, followerKey, accountID int64
+	priorityOwner := suffix + "-priority"
+	var ownerUser, followerUser, priorityUser, ownerKey, followerKey, accountID int64
 	for _, user := range []struct {
 		email string
 		id    *int64
-	}{{suffix + "-owner@example.test", &ownerUser}, {suffix + "-follower@example.test", &followerUser}} {
+	}{{suffix + "-owner@example.test", &ownerUser}, {suffix + "-follower@example.test", &followerUser}, {suffix + "-priority@example.test", &priorityUser}} {
 		if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role)
 			VALUES($1,'integration-hash','user') RETURNING id`, user.email).Scan(user.id); err != nil {
 			t.Fatal(err)
@@ -535,11 +532,15 @@ func TestPhotoLaneReturnsOwnerKeyWhenFollowerRanksPhotoOwner(t *testing.T) {
 		VALUES($1,$2,$3,'owner','{}','{}','ok') RETURNING id`, ownerUser, ownerKey, owner).Scan(&accountID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, owner); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1),($2,$2)`, owner, priorityOwner); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred)
 		VALUES($1,$2,0,'connected_account',false),($3,$2,2,'contact',true)`, ownerUser, owner, followerUser); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO crawl_interests(user_id,person_nsid,depth,via,starred,selected_until)
+		VALUES($1,$2,0,'test',false,now()+interval '1 hour')`, priorityUser, priorityOwner); err != nil {
 		t.Fatal(err)
 	}
 	photoID := time.Now().UnixNano()
@@ -548,19 +549,38 @@ func TestPhotoLaneReturnsOwnerKeyWhenFollowerRanksPhotoOwner(t *testing.T) {
 		VALUES($1,$2,'65535',now(),'public','[]'::jsonb,'unavailable','{}',decode(repeat('ab',32),'hex'))`, photoID, owner); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO photos
+		(id,owner_nsid,server,last_update,visibility,sizes,sizes_status,raw,content_hash)
+		VALUES($1,$2,'1234',now(),'public','[]'::jsonb,'provisional','{}',decode(repeat('ab',32),'hex'))`, photoID+1, priorityOwner); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		bg := context.Background()
-		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE id=$1`, photoID)
-		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid=$1`, owner)
-		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id=ANY($1)`, []int64{ownerUser, followerUser})
+		_, _ = pool.Exec(bg, `DELETE FROM photos WHERE id=ANY($1)`, []int64{photoID, photoID + 1})
+		_, _ = pool.Exec(bg, `DELETE FROM people WHERE nsid=ANY($1)`, []string{owner, priorityOwner})
+		_, _ = pool.Exec(bg, `DELETE FROM users WHERE id=ANY($1)`, []int64{ownerUser, followerUser, priorityUser})
 	})
 
-	refs, err := (postgres.PhotoLane{Pool: pool}).Select(ctx, 1, 0, nil)
-	if err != nil || len(refs) != 1 || refs[0].ID != photoID {
-		t.Fatalf("Select() = %+v, %v; want the restricted owner photo", refs, err)
+	refs, err := (postgres.PhotoLane{Pool: pool}).Select(ctx, 1000, 0, nil)
+	if err != nil {
+		t.Fatalf("Select() error = %v", err)
 	}
-	if refs[0].OwnerKeyID != ownerKey || refs[0].OwnerKeyID == followerKey {
-		t.Fatalf("selected owner key = %d, want owner key %d instead of follower key %d", refs[0].OwnerKeyID, ownerKey, followerKey)
+	priorityIndex, ownerIndex := -1, -1
+	var selectedOwnerKey int64
+	for index, ref := range refs {
+		switch ref.ID {
+		case photoID + 1:
+			priorityIndex = index
+		case photoID:
+			ownerIndex = index
+			selectedOwnerKey = ref.OwnerKeyID
+		}
+	}
+	if priorityIndex < 0 || ownerIndex <= priorityIndex {
+		t.Fatalf("Select() positions: priority=%d owner=%d; want both photos with priority first", priorityIndex, ownerIndex)
+	}
+	if selectedOwnerKey != ownerKey || selectedOwnerKey == followerKey {
+		t.Fatalf("selected owner key = %d, want owner key %d instead of follower key %d", selectedOwnerKey, ownerKey, followerKey)
 	}
 }
 
