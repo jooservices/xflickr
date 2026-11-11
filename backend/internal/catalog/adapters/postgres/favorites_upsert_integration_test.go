@@ -15,11 +15,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	catalog "github.com/jooservices/xflickr/internal/catalog/domain"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 )
 
-func TestFavoritesUnchangedKeepsRowVersion(t *testing.T) {
+func TestFavoritesSamePayloadKeepsRowVersion(t *testing.T) {
 	ctx, pool, repository, person, ids, now := openFavoritesFixture(t, 1000)
 	favorites := make([]Favorite, len(ids))
 	for i, id := range ids {
@@ -46,6 +47,71 @@ func TestFavoritesUnchangedKeepsRowVersion(t *testing.T) {
 		if after[id] != before[id] {
 			t.Errorf("favorite %d version changed from %+v to %+v", id, before[id], after[id])
 		}
+	}
+}
+
+func TestFavoritesCrawlUpsertRefreshesSeenAt(t *testing.T) {
+	ctx, pool, repository, person, ids, now := openFavoritesFixture(t, 1)
+	id := ids[0]
+	initial := Favorite{PersonNSID: person, PhotoID: id, FaveDate: now, SeenAt: now.Add(-time.Hour)}
+	if err := repository.UpsertFavoritesBatch(ctx, []Favorite{initial}); err != nil {
+		t.Fatalf("insert initial favorite: %v", err)
+	}
+	before, err := readFavoriteVersions(ctx, pool, person, ids)
+	if err != nil {
+		t.Fatalf("read initial favorite version: %v", err)
+	}
+
+	if err := repository.UpsertFavorites(ctx, []catalog.Favorite{{PersonNSID: person, PhotoID: id, FaveDate: now}}); err != nil {
+		t.Fatalf("upsert crawl favorite: %v", err)
+	}
+	after, err := readFavoriteVersions(ctx, pool, person, ids)
+	if err != nil {
+		t.Fatalf("read crawl favorite version: %v", err)
+	}
+	if after[id] == before[id] {
+		t.Fatal("crawl favorite row version did not change when SeenAt was omitted")
+	}
+	var seen time.Time
+	if err := pool.QueryRow(ctx, `SELECT seen_at FROM favorites WHERE person_nsid=$1 AND photo_id=$2`, person, id).Scan(&seen); err != nil {
+		t.Fatalf("read crawl favorite seen_at: %v", err)
+	}
+	if !seen.After(initial.SeenAt) {
+		t.Fatalf("crawl favorite seen_at = %s, want later than %s", seen, initial.SeenAt)
+	}
+}
+
+func TestFavoritesUnchangedDoesNotWaitForRowLock(t *testing.T) {
+	ctx, pool, repository, person, ids, now := openFavoritesFixture(t, 1)
+	favorite := Favorite{PersonNSID: person, PhotoID: ids[0], FaveDate: now, SeenAt: now}
+	if err := repository.UpsertFavoritesBatch(ctx, []Favorite{favorite}); err != nil {
+		t.Fatalf("insert favorite: %v", err)
+	}
+
+	blocker, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = blocker.Rollback(context.Background()) })
+	var lockedID int64
+	if err := blocker.QueryRow(ctx, `SELECT photo_id FROM favorites WHERE person_nsid=$1 AND photo_id=$2 FOR UPDATE`, person, ids[0]).Scan(&lockedID); err != nil {
+		t.Fatalf("lock favorite row: %v", err)
+	}
+
+	writer, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = writer.Rollback(context.Background()) })
+	if _, err := writer.Exec(ctx, `SET LOCAL lock_timeout = '500ms'`); err != nil {
+		t.Fatalf("set writer lock timeout: %v", err)
+	}
+	writerRepository, err := New(writer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writerRepository.UpsertFavoritesBatch(ctx, []Favorite{favorite}); err != nil {
+		t.Fatalf("unchanged favorite waited for a row lock: %v", err)
 	}
 }
 
