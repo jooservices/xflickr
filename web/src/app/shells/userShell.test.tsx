@@ -5,10 +5,13 @@ import { apiKeyBody, flickrAccountBody } from '../../test/fixtures';
 import { server } from '../../test/server';
 import { adminSession, renderApp, userSession } from '../../test/render';
 
+import { SESSION_EXPIRED_EVENT } from '../../shared/api/sessionEvents';
+import { SESSION_SCOPED_KEY_PREFIX } from '../../shared/sessionScoped';
 import { USER_NAV } from './nav';
 
 beforeEach(() => {
   window.localStorage.clear();
+  server.use(http.get('*/favorites', () => HttpResponse.json({ items: [] })));
 });
 
 describe('user shell', () => {
@@ -28,6 +31,14 @@ describe('user shell', () => {
   it.each(USER_NAV.filter((item) => item.path !== '/'))(
     'routes $id to a page and marks the tab current',
     async (item) => {
+      if (item.id === 'library') {
+        server.use(http.get('*/favorites', () => HttpResponse.json({ items: [] })));
+      }
+      if (item.id === 'albums') {
+        server.use(
+          http.get('*/me/albums', () => HttpResponse.json({ items: [], contact_owners: [] })),
+        );
+      }
       renderApp({ session: userSession, path: item.path });
 
       expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
@@ -38,6 +49,10 @@ describe('user shell', () => {
         expect(screen.getByTestId('user-crawl-page')).toBeInTheDocument();
       } else if (item.id === 'keys') {
         expect(screen.getByTestId('keys-page')).toBeInTheDocument();
+      } else if (item.id === 'library') {
+        expect(screen.getByTestId('user-library-page')).toBeInTheDocument();
+      } else if (item.id === 'albums') {
+        expect(screen.getByTestId('albums-page')).toBeInTheDocument();
       } else {
         expect(screen.getByTestId('shell-page')).toBeInTheDocument();
       }
@@ -46,6 +61,7 @@ describe('user shell', () => {
   );
 
   it('moves focus to the page heading after a route change', async () => {
+    server.use(http.get('*/favorites', () => HttpResponse.json({ items: [] })));
     renderApp({ session: userSession });
 
     fireEvent.click(await screen.findByTestId('shell-nav-library'));
@@ -88,6 +104,16 @@ describe('user shell', () => {
     expect(await screen.findByTestId('shell-page')).toBeInTheDocument();
   });
 
+  it('returns from an unknown route to the previous page', async () => {
+    const { router } = renderApp({ session: userSession });
+    await screen.findByTestId('shell-page');
+    await router.navigate('/nope');
+
+    fireEvent.click(await screen.findByTestId('shell-notfound-back'));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'));
+  });
+
   it('switches EN/VI at once and updates <html lang>', async () => {
     renderApp({ session: userSession });
     const toggle = await screen.findByTestId('shell-lang-toggle');
@@ -116,6 +142,7 @@ describe('user shell', () => {
     expect(live).toHaveAttribute('aria-pressed', 'false');
     expect(live).toHaveTextContent('Paused');
     expect(await screen.findByTestId('shell-toast')).toHaveTextContent('Live data paused');
+    await waitFor(() => expect(screen.queryByTestId('shell-toast')).toBeNull(), { timeout: 3500 });
   });
 
   it('hides the counters while nothing produces notifications, downloads or a tray', async () => {
@@ -504,5 +531,22 @@ describe('crawling-off banner', () => {
       'shell-token-expired-banner-11',
       'shell-token-expired-banner-12',
     ]);
+  });
+
+  it('drops session-scoped storage when the session expires so it cannot return after sign-in', async () => {
+    window.sessionStorage.setItem(`${SESSION_SCOPED_KEY_PREFIX}library.selection.1`, '[1,2]');
+    window.sessionStorage.setItem('unrelated', 'kept');
+    renderApp({ session: userSession, path: '/profile' });
+    await screen.findByTestId('shell-nav-profile');
+
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+
+    await waitFor(() =>
+      expect(
+        window.sessionStorage.getItem(`${SESSION_SCOPED_KEY_PREFIX}library.selection.1`),
+      ).toBeNull(),
+    );
+    expect(window.sessionStorage.getItem('unrelated')).toBe('kept');
+    window.sessionStorage.clear();
   });
 });

@@ -122,6 +122,8 @@
   safe tombstones, and visibility change events.
 - [Web app shells](web-shells.md) — user and admin shells, route guard, tokens,
   state components, and EN/VI i18n.
+- [Library screen](library-screen.md) — catalog-backed favorites, cursor paging,
+  loaded-range filters, and justified virtual rows.
 - [Schedule backlog](schedule.md) — deduplicated work items, cursors, static
   score ordering, and state transitions.
 - [Database performance notes](database.md) — work_items/river_job bloat,

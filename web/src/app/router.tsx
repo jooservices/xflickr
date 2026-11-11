@@ -16,9 +16,11 @@ import { CrawlPage } from '../pages/crawl';
 import { ContactsPage } from '../pages/contacts/ContactsPage';
 import { QuotaPage } from '../pages/admin/quota';
 import { AlbumsPage } from '../pages/albums';
+import { LibraryPage } from '../pages/library';
 import { RouteErrorPage } from './ErrorBoundary';
 
 function userPageElement(path: string, labelKey: MessageKey) {
+  if (path === '/library') return <LibraryPage />;
   if (path === '/profile') return <ProfilePage />;
   if (path === '/contacts') return <ContactsPage />;
   if (path === '/crawl') return <CrawlPage />;

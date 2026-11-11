@@ -12,6 +12,7 @@ import loginEn from './locales/en/login.json';
 import profileEn from './locales/en/profile.json';
 import setupEn from './locales/en/setup.json';
 import shellEn from './locales/en/shell.json';
+import userEn from './locales/en/user.json';
 import adminVi from './locales/vi/admin.json';
 import authVi from './locales/vi/auth.json';
 import albumsVi from './locales/vi/albums.json';
@@ -24,6 +25,7 @@ import loginVi from './locales/vi/login.json';
 import profileVi from './locales/vi/profile.json';
 import setupVi from './locales/vi/setup.json';
 import shellVi from './locales/vi/shell.json';
+import userVi from './locales/vi/user.json';
 import glossaryJson from './glossary.json';
 
 export const LOCALES = ['en', 'vi'] as const;
@@ -44,6 +46,7 @@ export const NAMESPACES = [
   'profile',
   'setup',
   'shell',
+  'user',
 ] as const;
 export type Namespace = (typeof NAMESPACES)[number];
 
@@ -60,6 +63,7 @@ const enResources = {
   profile: profileEn,
   setup: setupEn,
   shell: shellEn,
+  user: userEn,
 } as const;
 
 const viResources = {
@@ -75,6 +79,7 @@ const viResources = {
   profile: profileVi,
   setup: setupVi,
   shell: shellVi,
+  user: userVi,
 } as const;
 
 export const resources = {

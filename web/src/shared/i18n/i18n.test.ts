@@ -43,6 +43,19 @@ describe('translateErrorCode', () => {
 });
 
 describe('locale storage helpers', () => {
+  it('recognizes stored locale values and switches in both directions', async () => {
+    const { isLocale, otherLocale, readStoredLocale, LOCALE_STORAGE_KEY } = await import('./init');
+    window.localStorage.setItem(LOCALE_STORAGE_KEY, 'vi');
+
+    expect(readStoredLocale()).toBe('vi');
+    expect(isLocale('en')).toBe(true);
+    expect(isLocale('vi')).toBe(true);
+    expect(isLocale('fr')).toBe(false);
+    expect(isLocale(42)).toBe(false);
+    expect(otherLocale('en')).toBe('vi');
+    expect(otherLocale('vi')).toBe('en');
+  });
+
   it('reads and ignores invalid stored locales', async () => {
     const { readStoredLocale, persistLocale, LOCALE_STORAGE_KEY, splitMessageKey } =
       await import('./init');

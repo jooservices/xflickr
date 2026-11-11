@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "5.104.5",
+    "@tanstack/react-virtual": "3.14.26",
     "i18next": "26.5.11",
     "react": "19.3.1",
     "react-dom": "19.3.1",
