@@ -68,7 +68,15 @@ func TestObservationLookupUsesRecordIndex(t *testing.T) {
 	if err := catalog.UpsertPeople(ctx, []catalogdomain.Person{{NSID: ownerNSID, Username: suffix}}); err != nil {
 		t.Fatal(err)
 	}
-	photoID := time.Now().UnixNano()
+	var photoID int64
+	if err := tx.QueryRow(ctx, `
+		SELECT value
+		FROM generate_series(1, 100000) AS value
+		WHERE satisfies_hash_partition('observations'::regclass, 16, 1, value::text)
+		LIMIT 1
+	`).Scan(&photoID); err != nil {
+		t.Fatalf("find photo ID routed to observations_p01: %v", err)
+	}
 	photo := catalogdomain.Photo{
 		ID: photoID, OwnerNSID: ownerNSID, LastUpdate: time.Now().UTC(),
 		Visibility: catalogdomain.VisibilityPublic, Raw: []byte(`{"id":1}`),
@@ -121,7 +129,7 @@ func TestObservationLookupUsesRecordIndex(t *testing.T) {
 	if strings.Contains(planText, "Seq Scan on observations") || strings.Contains(planText, "Seq Scan on observations_p") {
 		t.Fatalf("photo sharing lookup scans observations sequentially:\n%s", planText)
 	}
-	if !strings.Contains(planText, "observations_p00_kind_record_idx") && !strings.Contains(planText, "record_lookup_idx") {
-		t.Fatalf("photo sharing lookup did not use a partition record index:\n%s", planText)
+	if !strings.Contains(planText, "observations_p01_record_lookup_idx") {
+		t.Fatalf("photo sharing lookup did not use the p01 record index:\n%s", planText)
 	}
 }
