@@ -43,18 +43,32 @@ func (c *FolderClient) EnsureAlbum(ctx context.Context, name string) (app.Remote
 	}
 
 	query := "'root' in parents and mimeType = '" + folderMimeType + "' and trashed = false and name = '" + escapeQueryLiteral(name) + "'"
-	listed, err := c.service.Files.List().Q(query).PageSize(1).Fields("files(id)").Context(ctx).Do()
-	if err != nil {
-		return "", safeDriveError(ctx, "list folders", err)
-	}
-	if err := ctx.Err(); err != nil {
-		return "", fmt.Errorf("gdrive: list folders: %w", err)
-	}
-	if listed != nil && len(listed.Files) > 0 {
-		if listed.Files[0] == nil || strings.TrimSpace(listed.Files[0].Id) == "" {
-			return "", errors.New("gdrive: list folders: Drive returned an empty folder ID")
+	var pageToken string
+	for {
+		request := c.service.Files.List().Q(query).PageSize(1).Fields("files(id),nextPageToken").Context(ctx)
+		if pageToken != "" {
+			request.PageToken(pageToken)
 		}
-		return app.RemoteAlbumID(listed.Files[0].Id), nil
+		listed, err := request.Do()
+		if err != nil {
+			return "", safeDriveError(ctx, "list folders", err)
+		}
+		if err := ctx.Err(); err != nil {
+			return "", fmt.Errorf("gdrive: list folders: %w", err)
+		}
+		if listed == nil {
+			break
+		}
+		if len(listed.Files) > 0 {
+			if listed.Files[0] == nil || strings.TrimSpace(listed.Files[0].Id) == "" {
+				return "", errors.New("gdrive: list folders: Drive returned an empty folder ID")
+			}
+			return app.RemoteAlbumID(listed.Files[0].Id), nil
+		}
+		if listed.NextPageToken == "" {
+			break
+		}
+		pageToken = listed.NextPageToken
 	}
 
 	created, err := c.service.Files.Create(&drive.File{

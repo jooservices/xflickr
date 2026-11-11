@@ -26,8 +26,8 @@ func TestEnsureAlbumFindsExistingFolder(t *testing.T) {
 		if got := r.URL.Query().Get("pageSize"); got != "1" {
 			t.Errorf("pageSize = %q; want 1", got)
 		}
-		if got := r.URL.Query().Get("fields"); got != "files(id)" {
-			t.Errorf("fields = %q; want files(id)", got)
+		if got := r.URL.Query().Get("fields"); got != "files(id),nextPageToken" {
+			t.Errorf("fields = %q; want files(id),nextPageToken", got)
 		}
 		writeJSON(t, w, map[string]any{"files": []map[string]string{{"id": "folder-existing"}}})
 	}))
@@ -35,6 +35,41 @@ func TestEnsureAlbumFindsExistingFolder(t *testing.T) {
 	id, err := client.EnsureAlbum(t.Context(), " family ")
 	if err != nil || id != "folder-existing" {
 		t.Fatalf("EnsureAlbum() = %q, %v; want folder-existing, nil", id, err)
+	}
+}
+
+func TestEnsureAlbumFindsFolderAfterEmptyPage(t *testing.T) {
+	requests := 0
+	client := newFolderClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("request = %s %s; want another list page", r.Method, r.URL.Path)
+			http.Error(w, "unexpected request", http.StatusMethodNotAllowed)
+			return
+		}
+		requests++
+		if got, want := r.URL.Query().Get("fields"), "files(id),nextPageToken"; got != want {
+			t.Errorf("fields = %q; want %q", got, want)
+		}
+		if got := r.URL.Query().Get("pageSize"); got != "1" {
+			t.Errorf("pageSize = %q; want 1", got)
+		}
+		switch token := r.URL.Query().Get("pageToken"); token {
+		case "":
+			writeJSON(t, w, map[string]any{"files": []any{}, "nextPageToken": "page-2"})
+		case "page-2":
+			writeJSON(t, w, map[string]any{"files": []map[string]string{{"id": "folder-later-page"}}})
+		default:
+			t.Errorf("pageToken = %q; want empty token or page-2", token)
+			http.Error(w, "unexpected page token", http.StatusBadRequest)
+		}
+	}))
+
+	id, err := client.EnsureAlbum(t.Context(), "family")
+	if err != nil || id != "folder-later-page" {
+		t.Fatalf("EnsureAlbum() = %q, %v; want folder-later-page, nil", id, err)
+	}
+	if requests != 2 {
+		t.Fatalf("list request count = %d; want 2", requests)
 	}
 }
 
