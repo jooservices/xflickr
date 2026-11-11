@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useBlocker, useNavigate } from 'react-router';
 import { useSession } from '../../entities';
 import { SESSION_QUERY_KEY } from '../../entities/session/SessionProvider';
-import { useI18n } from '../../shared';
+import { clearSessionScopedStorage, useI18n } from '../../shared';
 import type { Locale } from '../../shared';
 import { csrfFetchOptions, signalSessionExpired } from '../../features/auth/api';
 import {
@@ -278,6 +278,7 @@ export function ProfilePage() {
 
   async function signOut() {
     await logout().catch(() => undefined);
+    clearSessionScopedStorage();
     client.removeQueries();
     client.setQueryData(SESSION_QUERY_KEY, { status: 'unauthenticated' });
     void navigate('/login', { replace: true });

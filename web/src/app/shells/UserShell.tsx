@@ -12,6 +12,7 @@ import {
   useI18n,
   useLoadingTiming,
   useTheme,
+  clearSessionScopedStorage,
 } from '../../shared';
 import type { MessageKey } from '../../shared/i18n';
 import { AvatarMenu } from './AvatarMenu';
@@ -214,6 +215,7 @@ function Shell({ forbidden }: UserShellProps) {
 
   const signOut = () => {
     void logout().finally(() => {
+      clearSessionScopedStorage();
       client.clear();
       window.location.assign('/login');
     });

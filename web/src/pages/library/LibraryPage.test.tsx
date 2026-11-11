@@ -255,7 +255,7 @@ describe('LibraryPage', () => {
     expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('2');
     expect(screen.getByTestId('user-library-photo-select-1')).toBeChecked();
     fireEvent.click(screen.getByTestId('user-library-clear-selection'));
-    expect(window.sessionStorage.getItem('xflickr.library.selection.2')).toBeNull();
+    expect(window.sessionStorage.getItem('xflickr.session.library.selection.2')).toBeNull();
   });
 
   it('shows a recoverable initial error and retries the first page', async () => {

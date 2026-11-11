@@ -1,4 +1,6 @@
-const KEY_PREFIX = 'xflickr.library.selection.';
+import { SESSION_SCOPED_KEY_PREFIX } from '../../shared/sessionScoped';
+
+const KEY_PREFIX = `${SESSION_SCOPED_KEY_PREFIX}library.selection.`;
 
 const keyFor = (userId: number): string => `${KEY_PREFIX}${String(userId)}`;
 
