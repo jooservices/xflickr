@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -22,6 +24,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/db"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 	"github.com/jooservices/xflickr/internal/sync/app"
+	"github.com/jooservices/xflickr/migrations"
 )
 
 func TestRepositoryCreatePersistsSealedEnvelope(t *testing.T) {
@@ -483,9 +486,6 @@ func rollbackTargetMigration(t *testing.T, ctx context.Context, cfg config.DBCon
 	if isolatedCfg.Name == cfg.Name {
 		t.Fatal("migration rollback database reused the worktree database")
 	}
-	if err := db.Migrate(ctx, isolatedCfg, db.MigrateUp, nil); err != nil {
-		t.Fatalf("prepare isolated migration rollback database: %v", err)
-	}
 	isolatedPool, err := db.NewPool(ctx, isolatedCfg)
 	if err != nil {
 		t.Fatalf("open isolated migration rollback database: %v", err)
@@ -498,7 +498,19 @@ func rollbackTargetMigration(t *testing.T, ctx context.Context, cfg config.DBCon
 	if currentDatabase != isolatedCfg.Name {
 		t.Fatalf("migration rollback connected to %q, want isolated database %q", currentDatabase, isolatedCfg.Name)
 	}
-	if err := db.Migrate(ctx, isolatedCfg, db.MigrateDown, nil); err != nil {
+	if _, err := isolatedPool.Exec(ctx, `CREATE TABLE users (id BIGINT PRIMARY KEY)`); err != nil {
+		t.Fatalf("prepare isolated migration rollback user table: %v", err)
+	}
+	const migrationName = "20261111131000_sync_targets.sql"
+	migration, err := fs.ReadFile(migrations.Files, migrationName)
+	if err != nil {
+		t.Fatalf("read sync target migration: %v", err)
+	}
+	files := fstest.MapFS{migrationName: &fstest.MapFile{Data: migration}}
+	if err := db.MigrateFiles(ctx, isolatedCfg, db.MigrateUp, nil, files); err != nil {
+		t.Fatalf("apply sync target migration to isolated database: %v", err)
+	}
+	if err := db.MigrateFiles(ctx, isolatedCfg, db.MigrateDown, nil, files); err != nil {
 		t.Fatalf("roll back sync target migration: %v", err)
 	}
 	var table *string
