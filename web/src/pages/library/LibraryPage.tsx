@@ -302,11 +302,13 @@ export function LibraryPage() {
             ) : null}
 
             {photos.length === 0 ? (
-              <section className={styles.state} data-testid="user-library-empty">
-                <Icon name="image" size={28} />
-                <h2>{t('user.library.empty.title')}</h2>
-                <p>{t('user.library.empty.text')}</p>
-              </section>
+              favorites.hasNextPage ? null : (
+                <section className={styles.state} data-testid="user-library-empty">
+                  <Icon name="image" size={28} />
+                  <h2>{t('user.library.empty.title')}</h2>
+                  <p>{t('user.library.empty.text')}</p>
+                </section>
+              )
             ) : visiblePhotos.length === 0 ? (
               <section className={styles.filteredEmpty} data-testid="user-library-empty">
                 <p>{t('user.library.empty.filtered')}</p>
