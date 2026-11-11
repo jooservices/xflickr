@@ -1902,6 +1902,43 @@ export const GetAdminOpsStatusResponse = zod.object({
 });
 
 /**
+ * Returns a bounded newest-first page of open incidents. Only safe metadata is exposed; detector titles, scopes, and detail are omitted.
+ * @summary List open incidents
+ */
+export const listAdminOpenIncidentsQueryCursorMax = 128;
+
+export const listAdminOpenIncidentsQueryLimitDefault = 50;
+export const listAdminOpenIncidentsQueryLimitMax = 100;
+
+export const ListAdminOpenIncidentsQueryParams = zod.object({
+  cursor: zod
+    .string()
+    .max(listAdminOpenIncidentsQueryCursorMax)
+    .optional()
+    .describe('Opaque keyset cursor returned by the previous page'),
+  limit: zod
+    .int()
+    .min(1)
+    .max(listAdminOpenIncidentsQueryLimitMax)
+    .default(listAdminOpenIncidentsQueryLimitDefault)
+    .describe('Number of incidents to return'),
+});
+
+export const ListAdminOpenIncidentsResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.int(),
+      severity: zod.enum(['info', 'warning', 'critical']),
+      first_seen: zod.iso.datetime({ offset: true }),
+      last_seen: zod.iso.datetime({ offset: true }),
+      count: zod.int().min(1),
+    }),
+  ),
+  next_cursor: zod.string().describe('Empty when there are no more open incidents'),
+  server_time: zod.iso.datetime({ offset: true }),
+});
+
+/**
  * Creates download items only for photos visible to the signed-in user. Hidden photos are skipped and counted.
  * @summary Create a download request
  */

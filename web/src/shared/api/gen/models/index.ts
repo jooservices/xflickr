@@ -9,6 +9,9 @@
 export * from './adminKeyQuota';
 export * from './adminKeyQuotaState';
 export * from './adminKeyQuotaTrend';
+export * from './adminOpenIncident';
+export * from './adminOpenIncidentPage';
+export * from './adminOpenIncidentSeverity';
 export * from './adminQueue';
 export * from './adminQuota';
 export * from './adminUser';
@@ -86,6 +89,7 @@ export * from './laneUsage';
 export * from './link';
 export * from './linkMethod';
 export * from './links';
+export * from './listAdminOpenIncidentsParams';
 export * from './listAdminUsersParams';
 export * from './listAlbumPhotosParams';
 export * from './listAlbumsParams';

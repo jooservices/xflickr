@@ -20,3 +20,46 @@ status:
         content:
           application/json:
             schema: { $ref: ../schemas/common.yaml#/Error }
+open_incidents:
+  get:
+    operationId: ListAdminOpenIncidents
+    tags: [admin]
+    summary: List open incidents
+    description: Returns a bounded newest-first page of open incidents. Only safe metadata is exposed; detector titles, scopes, and detail are omitted.
+    parameters:
+      - name: cursor
+        in: query
+        required: false
+        description: Opaque keyset cursor returned by the previous page
+        schema: { type: string, maxLength: 128 }
+      - name: limit
+        in: query
+        required: false
+        description: Number of incidents to return
+        schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+    responses:
+      '200':
+        description: Open incident page
+        content:
+          application/json:
+            schema: { $ref: ../schemas/ops.yaml#/AdminOpenIncidentPage }
+      '400':
+        description: Invalid cursor or page limit
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '401':
+        description: Authentication required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '403':
+        description: Administrator role required
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
+      '500':
+        description: Incident data is unavailable
+        content:
+          application/json:
+            schema: { $ref: ../schemas/common.yaml#/Error }
