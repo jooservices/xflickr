@@ -23,6 +23,7 @@ func TestLegacyIdentityRoutes(t *testing.T) {
 		{path: "/auth/login", want: http.StatusNotFound},
 		{path: "/me", want: http.StatusNotFound},
 		{path: "/me/sessions/12", want: http.StatusNotFound},
+		{path: "/me/albums", want: http.StatusNoContent},
 		{path: "/me/crawl", want: http.StatusNoContent},
 		{path: "/me/crawl/pause", want: http.StatusNoContent},
 		{path: "/me/contacts/12", want: http.StatusNoContent},

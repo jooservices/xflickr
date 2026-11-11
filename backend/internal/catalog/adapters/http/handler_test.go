@@ -12,18 +12,20 @@ import (
 )
 
 type readRepoStub struct {
-	person      app.Person
-	personOK    bool
-	people      app.PeoplePage
-	photos      app.PhotosPage
-	favorites   app.FavoritesPage
-	albums      app.AlbumsPage
-	albumPhotos app.AlbumPhotosPage
-	photo       app.Photo
-	photoOK     bool
-	listErr     error
-	lastLimit   int
-	listCalls   int
+	person        app.Person
+	personOK      bool
+	people        app.PeoplePage
+	photos        app.PhotosPage
+	favorites     app.FavoritesPage
+	albums        app.AlbumsPage
+	contactAlbums app.ContactAlbumsPage
+	albumPhotos   app.AlbumPhotosPage
+	photo         app.Photo
+	photoOK       bool
+	listErr       error
+	lastLimit     int
+	listCalls     int
+	lastOwnerNSID string
 }
 
 func (s *readRepoStub) ListPeople(_ context.Context, _ int64, _ sharingapp.SQLPredicate, _ *app.PersonCursor, limit int) (app.PeoplePage, error) {
@@ -52,6 +54,13 @@ func (s *readRepoStub) ListVisibleAlbums(_ context.Context, _ int64, _ sharingap
 	s.lastLimit = limit
 	s.listCalls++
 	return s.albums, s.listErr
+}
+
+func (s *readRepoStub) ListContactAlbums(_ context.Context, _ int64, ownerNSID string, _ sharingapp.SQLPredicate, _ *app.AlbumCursor, limit int) (app.ContactAlbumsPage, error) {
+	s.lastLimit = limit
+	s.listCalls++
+	s.lastOwnerNSID = ownerNSID
+	return s.contactAlbums, s.listErr
 }
 
 func (s *readRepoStub) ListVisibleAlbumPhotos(_ context.Context, _ int64, _ string, _ sharingapp.SQLPredicate, _ *app.AlbumPhotoCursor, limit int) (app.AlbumPhotosPage, error) {
@@ -115,6 +124,16 @@ func TestListHandlersDistinguishOmittedAndZeroLimits(t *testing.T) {
 			},
 		},
 		{
+			name: "contact albums",
+			run: func(limit *int) (any, error) {
+				return handler.ListMyAlbums(context.Background(), gen.ListMyAlbumsRequestObject{Params: gen.ListMyAlbumsParams{Limit: limit}})
+			},
+			isInvalidPage: func(response any) bool {
+				got, ok := response.(gen.ListMyAlbums400JSONResponse)
+				return ok && got.Code == "invalid_page"
+			},
+		},
+		{
 			name: "album photos",
 			run: func(limit *int) (any, error) {
 				return handler.ListAlbumPhotos(context.Background(), gen.ListAlbumPhotosRequestObject{ID: "album", Params: gen.ListAlbumPhotosParams{Limit: limit}})
@@ -156,10 +175,14 @@ func TestHandlerMapsAllCatalogReadResponses(t *testing.T) {
 	person := app.Person{NSID: "owner", Username: "owner-name", Realname: "Owner", Icon: "icon", PhotosCount: 1}
 	repo := &readRepoStub{
 		person: person, personOK: true,
-		people:      app.PeoplePage{Items: []app.Person{person}, NextCursor: &app.PersonCursor{NSID: "owner"}},
-		photos:      app.PhotosPage{Items: []app.Photo{photo}, NextCursor: &app.PhotoCursor{LastUpdate: now, ID: photo.ID}},
-		favorites:   app.FavoritesPage{Items: []app.Favorite{{Photo: photo, FaveDate: now}}},
-		albums:      app.AlbumsPage{Items: []app.Album{{ID: "album", OwnerNSID: "owner", Title: "Album", VisiblePhotosCount: 1}}},
+		people:    app.PeoplePage{Items: []app.Person{person}, NextCursor: &app.PersonCursor{NSID: "owner"}},
+		photos:    app.PhotosPage{Items: []app.Photo{photo}, NextCursor: &app.PhotoCursor{LastUpdate: now, ID: photo.ID}},
+		favorites: app.FavoritesPage{Items: []app.Favorite{{Photo: photo, FaveDate: now}}},
+		albums:    app.AlbumsPage{Items: []app.Album{{ID: "album", OwnerNSID: "owner", Title: "Album", VisiblePhotosCount: 1}}},
+		contactAlbums: app.ContactAlbumsPage{
+			Items:         []app.ContactAlbum{{ID: "contact-album", OwnerNSID: "contact", Title: "Contact album"}},
+			ContactOwners: []string{"contact", "later-contact"},
+		},
 		albumPhotos: app.AlbumPhotosPage{Items: []app.Photo{photo}, NextCursor: &app.AlbumPhotoCursor{Position: 0, PhotoID: photo.ID}},
 		photo:       photo, photoOK: true,
 	}
@@ -208,6 +231,19 @@ func TestHandlerMapsAllCatalogReadResponses(t *testing.T) {
 	albums := albumsResponse.(gen.ListAlbums200JSONResponse)
 	if len(albums.Items) != 1 || albums.Items[0].ID != "album" || albums.Items[0].PhotosCount != 1 {
 		t.Fatalf("albums=%+v", albums)
+	}
+
+	ownerNSID := "later-contact"
+	contactAlbumsResponse, err := handler.ListMyAlbums(ctx, gen.ListMyAlbumsRequestObject{
+		Params: gen.ListMyAlbumsParams{OwnerNsid: &ownerNSID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contactAlbums := contactAlbumsResponse.(gen.ListMyAlbums200JSONResponse)
+	if len(contactAlbums.Items) != 1 || contactAlbums.Items[0].ID != "contact-album" ||
+		len(contactAlbums.ContactOwners) != 2 || repo.lastOwnerNSID != ownerNSID {
+		t.Fatalf("contact albums=%+v", contactAlbums)
 	}
 
 	albumPhotosResponse, err := handler.ListAlbumPhotos(ctx, gen.ListAlbumPhotosRequestObject{ID: "album"})
@@ -276,6 +312,9 @@ func TestHandlerHidesMissingRecordsAndRejectsBadPages(t *testing.T) {
 	}
 	if response, err := unauthenticated.ListAlbums(context.Background(), gen.ListAlbumsRequestObject{}); err != nil || response.(gen.ListAlbums401JSONResponse).Code != "unauthenticated" {
 		t.Fatalf("albums auth response=%#v err=%v", response, err)
+	}
+	if response, err := unauthenticated.ListMyAlbums(context.Background(), gen.ListMyAlbumsRequestObject{}); err != nil || response.(gen.ListMyAlbums401JSONResponse).Code != "unauthenticated" {
+		t.Fatalf("contact albums auth response=%#v err=%v", response, err)
 	}
 	if response, err := unauthenticated.ListAlbumPhotos(context.Background(), gen.ListAlbumPhotosRequestObject{ID: "album"}); err != nil || response.(gen.ListAlbumPhotos401JSONResponse).Code != "unauthenticated" {
 		t.Fatalf("album photos auth response=%#v err=%v", response, err)

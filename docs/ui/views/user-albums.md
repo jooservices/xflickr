@@ -10,8 +10,7 @@ JOOXF-174.
 
 ## Purpose
 
-Show albums discovered across the signed-in user's contacts and how many
-photos XFlickr has stored from each album compared with Flickr's total. This is
+Show album metadata discovered across the signed-in user's contacts. This is
 a read-only index; opening a card navigates to the album detail view.
 
 ## Route and access
@@ -30,50 +29,51 @@ Inside the USER shell main column (max width 1200px, 24px desktop padding,
 
 1. Page heading `Albums` and brief description, “Albums of all your contacts.”
 2. A labelled contact filter with `All contacts` selected by default, followed
-   by one option per contact with albums. The selected filter is stored as
-   `contact` in the query string; selecting All removes it. Unknown or
-   inaccessible contact ids reset to All and show the standard inline notice.
-3. A responsive, newest-updated-first grid of album cards using the existing
-   `album-card` and `album-stack` components. Each card has up to three stacked
-   stored-photo covers, title, owner name, and “{stored_count} stored of
-   {total_count} on Flickr”. A card without a stored cover uses the neutral
-   album placeholder. Stored may be zero and may be lower than Flickr total.
+   by contact owners with album metadata. The server returns the first 20,000
+   contacts in NSID order plus the currently selected contact, so the list is
+   bounded rather than complete (see `docs/albums.md`). The selected filter is stored as `contact` in
+   the query string; selecting All removes it. Unknown or inaccessible contact
+   ids reset to All and show the standard inline notice.
+3. A responsive, newest-updated-first grid of album cards. Each card shows a
+   cover (use the neutral album placeholder until a cover URL is returned),
+   title, owner NSID, and update date when available. Do not show a photo count.
 4. On a successful zero-result response, replace the grid with the empty block
    and its Browse contacts action.
 
-Do not add a search field, sort control, pagination, bulk selection, download
-button, or album editing. Header, shell navigation, and notifications belong to
-their own specifications.
+Use keyset pagination and load additional cards without hiding cards already
+shown. Do not add a search field, sort control, bulk selection, download
+button, or album editing. Header, shell navigation, and notifications belong
+to their own specifications.
 
 ## Data and API
 
-No existing OpenAPI operation or backend HTTP route returns the signed-in
-user's albums or contact choices. Do not call Flickr from the browser. JOOXF-174
-must add the contract requests below before implementation; these are requests,
-not current endpoints. The authenticated `/events` operation already exists.
+The authenticated `GET /me/albums` operation returns contact album metadata,
+the complete `contact_owners` list, and keyset cursors. The optional
+`owner_nsid` query parameter filters album results on the server. The operation
+does not return cover URLs, owner display names, or a photo count. Do not call
+Flickr from the browser. The authenticated `/events` operation already exists.
 
 | Element | Source | Fields used |
 | --- | --- | --- |
-| Album cards and list metadata | `GET /me/albums?contact_nsid={nsid}` **contract request** | `items[]`: `id`, `title`, `owner_nsid`, `owner_name`, `stored_count`, `total_count`, `cover_photo_urls[]`, `updated_at`; response `total`, `updated_at` |
-| Contact filter options | Derived from the complete `items[]` album response | Distinct `owner_nsid` and `owner_name` pairs. Include only contacts that own at least one returned album; fall back to the NSID when the name is empty. |
-| Stacked covers | `cover_photo_urls[]` in album response | Up to three stored Flickr size URLs ordered by album position. Omit unavailable covers. The server selects stored sizes; the client never constructs Flickr URLs. |
+| Album cards and list metadata | `GET /me/albums` | `items[]`: `id`, `title`, `owner_nsid`, optional `updated_at`; response `next_cursor` |
+| Contact filter options | `GET /me/albums` | `contact_owners[]`, independent of the album page cursor. |
+| Cover | Neutral album placeholder | The list response does not include cover URLs. |
 | Live refresh | `GET /events` (exists) | Authenticated SSE. `albums.updated` **event contract request** with optional `contact_nsid`, `total`, and `updated_at`. |
 
-`stored_count` counts this user's stored photo records that belong to the
-album; `total_count` is Flickr's `photos_count`. Both are nonnegative integers.
-`updated_at` is ISO 8601 UTC. Return all cards for this view; no pagination is
-used. Sort by `updated_at` descending, null timestamps last, then `id`
-descending. Filter server-side by exact contact NSID. `owner_name` falls back
-to `owner_nsid`; an absent cover uses the neutral placeholder. Return only
-eligible public or user-visible records, never private observations from
-another user. No response may contain Flickr credentials, private media, or
-secret values. Do not persist results in browser storage.
+Album list visibility requires both the album owner's contact relationship to
+the signed-in user's connected accounts and at least one non-tombstoned album
+photo visible to that user under the shared photo-visibility policy. This
+visibility check does not return or expose a photo count. `updated_at` is ISO
+8601 UTC or absent. Sort by `updated_at` descending, null timestamps last, then
+`id` descending. The server filters albums by `owner_nsid` and advances a
+bounded keyset probe. A page may have no visible items and a cursor when more
+candidates remain; do not show the final Empty state until the cursor is
+exhausted. No response may contain Flickr credentials, private media, or secret
+values. Do not persist results in browser storage.
 
-Contract requests: add `GET /me/albums`, its response and `contact_nsid` query
-filter, and define the `albums.updated` event payload. Contact filter options
-are derived from the complete album list, so no contact-list endpoint or
-additional interest fields are needed. The album-detail route `/albums/{id}`
-belongs to the album view contract and is not added here.
+The album-detail route `/albums/{id}` belongs to the album view contract and is
+not added here. A future album detail may show “N photos loaded” for its first
+bounded photo page but must not claim a complete album total.
 
 ## Actions
 
@@ -140,7 +140,7 @@ localized inline notice. Never expose whether an inaccessible contact exists.
 This view is live. Reuse the shell's authenticated `/events` stream. On
 `albums.updated`, refresh the list when the event has no `contact_nsid`, or when
 its `contact_nsid` matches the active filter (including All). Coalesce events
-for 500ms; update cards, total and `updated_at` without moving focus or
+for 500ms; update cards and `updated_at` without moving focus or
 announcing every changed card. Resume SSE using `Last-Event-ID` as specified by
 the shell.
 
@@ -163,7 +163,7 @@ Partial / stale.
 
 - Use one `h1`; associate the visible contact-filter label with a native select.
   Album cards are semantic links with an accessible name including title,
-  owner, and stored/total counts.
+  owner, and update date when present. Do not include a photo count.
 - Decorative cover images use `alt=""`; the album title names the link. Missing
   covers use the neutral placeholder, never a broken-image glyph. Focus uses
   the 2px accent outline.
@@ -186,8 +186,7 @@ NSIDs are data and are not translated. Shared shell strings remain owned by
 | `user.albums.filter.label` | Filter by contact | Lọc theo liên hệ |
 | `user.albums.filter.all` | All contacts | Tất cả liên hệ |
 | `user.albums.filter.option` | {contact_name} | {contact_name} |
-| `user.albums.card.open` | Open album {title} by {owner_name} | Mở album {title} của {owner_name} |
-| `user.albums.card.stored-total` | {stored_count} stored of {total_count} on Flickr | Đã lưu {stored_count} trên tổng số {total_count} trên Flickr |
+| `user.albums.card.open` | Open album {title} by {owner} | Mở album {title} của {owner} |
 | `user.albums.empty.title` | No albums yet | Chưa có album |
 | `user.albums.empty.body` | Albums from your contacts will appear here after they are discovered. | Album từ các liên hệ sẽ xuất hiện ở đây sau khi được khám phá. |
 | `user.albums.empty.action` | Browse contacts | Xem liên hệ |

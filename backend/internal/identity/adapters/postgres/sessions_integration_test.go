@@ -29,6 +29,17 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 )
 
+type sessionsStrictHandler struct {
+	identityhttp.StrictHandler
+}
+
+func (sessionsStrictHandler) ListMyAlbums(context.Context, gen.ListMyAlbumsRequestObject) (gen.ListMyAlbumsResponseObject, error) {
+	return gen.ListMyAlbums500JSONResponse(gen.Error{
+		Code:    "not_implemented",
+		Message: "Catalog endpoints are not available in identity tests",
+	}), nil
+}
+
 func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use the shared worktree database")
@@ -128,7 +139,7 @@ func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 		}
 		return identityhttp.AccessUser
 	}))
-	server := httptest.NewServer(gen.HandlerFromMux(gen.NewStrictHandler(identityhttp.StrictHandler{Handler: identityhttp.Handler{Sessions: service, Users: repository, Version: "test"}}, nil), router))
+	server := httptest.NewServer(gen.HandlerFromMux(gen.NewStrictHandler(sessionsStrictHandler{StrictHandler: identityhttp.StrictHandler{Handler: identityhttp.Handler{Sessions: service, Users: repository, Version: "test"}}}, nil), router))
 	t.Cleanup(server.Close)
 
 	health, err := server.Client().Get(server.URL + "/healthz")
@@ -249,7 +260,7 @@ func TestIdentityRESTLifecycleIntegration(t *testing.T) {
 		return identityhttp.AccessUser
 	}))
 	router.Use(identityhttp.Contract)
-	strict := gen.NewStrictHandler(identityhttp.StrictHandler{Handler: identity}, []gen.StrictMiddlewareFunc{
+	strict := gen.NewStrictHandler(sessionsStrictHandler{StrictHandler: identityhttp.StrictHandler{Handler: identity}}, []gen.StrictMiddlewareFunc{
 		identityhttp.Middleware,
 		identityhttp.MaintainSessionCookies(service),
 	})

@@ -96,3 +96,22 @@ CatalogAlbumPage:
     items: { type: array, items: { $ref: '#/CatalogAlbum' } }
     next_cursor: { type: string }
   required: [items]
+
+MyAlbum:
+  type: object
+  additionalProperties: false
+  properties:
+    id: { type: string }
+    owner_nsid: { type: string }
+    title: { type: string }
+    updated_at: { type: string, format: date-time }
+  required: [id, owner_nsid, title]
+
+MyAlbumPage:
+  type: object
+  additionalProperties: false
+  properties:
+    items: { type: array, items: { $ref: '#/MyAlbum' } }
+    contact_owners: { type: array, items: { type: string } }
+    next_cursor: { type: string }
+  required: [items, contact_owners]

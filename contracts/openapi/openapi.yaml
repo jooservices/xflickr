@@ -102,6 +102,8 @@ paths:
     $ref: ./paths/catalog.yaml#/person_photos
   /favorites:
     $ref: ./paths/catalog.yaml#/favorites
+  /me/albums:
+    $ref: ./paths/catalog.yaml#/my_albums
   /albums:
     $ref: ./paths/catalog.yaml#/albums
   /albums/{id}/photos:

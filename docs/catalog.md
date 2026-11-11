@@ -35,11 +35,18 @@ is the source for the generated server and web clients.
 
 Every collection uses an opaque keyset cursor and a page size from 1 to 100
 (default 50). People are listed when the user observed them or has at least one
-visible photo from them. Favorites and albums are limited to the user's
-connected Flickr accounts. Photo rows in every response use the shared sharing
-policy and exclude tombstones; hidden records are omitted from lists and return
-the same 404 as missing records for detail reads. Album and person photo counts
-report only rows visible to the signed-in user.
+visible photo from them. Favorites and `/albums` are limited to the user's
+connected Flickr accounts. `/me/albums` lists metadata for known contacts only
+when at least one non-tombstoned photo in the album is visible under the same
+sharing policy. It returns complete `contact_owners` options and accepts an
+`owner_nsid` filter. One request checks at most 128 album photo memberships per
+album; its cursor resumes an album probe when that bound is reached. It does
+not return a photo count. Photo rows in every response
+use the shared sharing policy and exclude tombstones; hidden records are
+omitted from lists and return the same 404 as missing records for detail reads.
+Counts on photo-backed list endpoints include only rows visible to the signed-in
+user. An album detail may report only the number of photos in its first bounded
+page as “N photos loaded”, never an album total.
 
 Photo responses contain tags as `labels`, stored Flickr size entries and their
 `sizes_status`, plus `ai_status` (`ready` when a caption enrichment exists,

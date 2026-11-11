@@ -18,12 +18,14 @@ import (
 )
 
 type readsDB struct {
-	queryErr error
-	rowErr   error
-	rows     *readsRows
-	row      *readsRow
-	query    string
-	args     []any
+	queryErr  error
+	pageErr   error
+	rowErr    error
+	rows      *readsRows
+	ownerRows *readsRows
+	row       *readsRow
+	query     string
+	args      []any
 }
 
 func (*readsDB) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
@@ -32,6 +34,21 @@ func (*readsDB) Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 
 func (db *readsDB) Query(_ context.Context, query string, args ...any) (pgx.Rows, error) {
 	db.query, db.args = query, append([]any(nil), args...)
+	if strings.Contains(query, "first_contacts AS") && strings.Contains(query, "selected_contact AS") {
+		if db.ownerRows == nil {
+			return &readsRows{}, db.queryErr
+		}
+		return db.ownerRows, db.queryErr
+	}
+	if strings.Contains(query, "WITH contact_owners AS MATERIALIZED") {
+		if db.rows == nil {
+			return &readsRows{}, db.pageErr
+		}
+		return db.rows, db.pageErr
+	}
+	if db.rows == nil {
+		return &readsRows{}, db.queryErr
+	}
 	return db.rows, db.queryErr
 }
 
@@ -262,6 +279,97 @@ func TestVisibleFavoritesAlbumsAndAlbumPhotosKeysets(t *testing.T) {
 	}
 }
 
+func TestContactAlbumVisibilityBoundsPhotoCandidates(t *testing.T) {
+	ctx := context.Background()
+	const userID int64 = 75
+	predicate := sharingapp.Filter(sharingdomain.User{ID: userID}).SQL
+	db := &readsDB{rows: &readsRows{}}
+	repository, err := New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ListContactAlbums(ctx, userID, "", predicate, nil, 10); err != nil {
+		t.Fatal(err)
+	}
+	photoScan := strings.Index(db.query, "FROM album_photos")
+	if photoScan < 0 {
+		t.Fatalf("contact album query has no bounded membership probe: %s", db.query)
+	}
+	photoJoin := strings.Index(db.query[photoScan:], "JOIN photos")
+	photoLimit := strings.Index(db.query[photoScan:], "LIMIT")
+	if photoLimit < 0 || (photoJoin >= 0 && photoLimit > photoJoin) {
+		t.Fatalf("album photo candidates are not limited before visibility checks: %s", db.query)
+	}
+}
+
+func TestContactAlbumProbeCursorBoundsEmptyPages(t *testing.T) {
+	ctx := context.Background()
+	const userID int64 = 76
+	predicate := sharingapp.Filter(sharingdomain.User{ID: userID}).SQL
+	db := &readsDB{
+		rows: &readsRows{rows: [][]any{
+			{"hidden-1", "contact", "Hidden", pgtype.Timestamptz{}, false, false, nil, nil},
+			{"hidden-2", "contact", "Hidden", pgtype.Timestamptz{}, false, false, nil, nil},
+		}},
+	}
+	repository, err := New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := repository.ListContactAlbums(ctx, userID, "", predicate, nil, 1)
+	if err != nil || len(page.Items) != 0 || page.NextCursor == nil || page.NextCursor.ID != "hidden-2" {
+		t.Fatalf("bounded empty page=%+v err=%v", page, err)
+	}
+
+	db.rows = &readsRows{rows: [][]any{{
+		"long-album", "contact", "Long album", pgtype.Timestamptz{}, false, true,
+		pgtype.Int4{Int32: 127, Valid: true}, pgtype.Int8{Int64: 128, Valid: true},
+	}}}
+	page, err = repository.ListContactAlbums(ctx, userID, "", predicate, nil, 1)
+	if err != nil || page.NextCursor == nil || page.NextCursor.ID != "long-album" ||
+		page.NextCursor.ProbePosition != 127 || page.NextCursor.ProbePhotoID != 128 {
+		t.Fatalf("photo probe continuation=%+v err=%v", page.NextCursor, err)
+	}
+
+	db.rows = &readsRows{rows: [][]any{{"long-album", "contact", "Long album", pgtype.Timestamptz{}, false, true, nil, nil}}}
+	if _, err := repository.ListContactAlbums(ctx, userID, "", predicate, nil, 1); err == nil {
+		t.Fatal("probe continuation without a photo key accepted")
+	}
+}
+
+func TestContactAlbumReadFailuresAndOwnerValidation(t *testing.T) {
+	ctx := context.Background()
+	const userID int64 = 77
+	predicate := sharingapp.Filter(sharingdomain.User{ID: userID}).SQL
+	db := &readsDB{}
+	repository, err := New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ListContactAlbums(ctx, userID, strings.Repeat("x", 256), predicate, nil, 1); !errors.Is(err, app.ErrInvalidPage) {
+		t.Fatalf("oversized owner filter error=%v", err)
+	}
+	if _, err := repository.ListContactAlbums(ctx, userID, " owner ", predicate, nil, 1); !errors.Is(err, app.ErrInvalidPage) {
+		t.Fatalf("trimmed owner filter error=%v", err)
+	}
+	if _, err := repository.ListContactAlbums(ctx, userID, "owner", predicate, &app.AlbumCursor{ID: "cursor"}, 1); !errors.Is(err, app.ErrInvalidCursor) {
+		t.Fatalf("cursor from another owner filter error=%v", err)
+	}
+	db.ownerRows = &readsRows{rows: [][]any{{"owner"}}, scanErr: errors.New("owner scan failed")}
+	if _, err := repository.ListContactAlbums(ctx, userID, "", predicate, nil, 1); err == nil {
+		t.Fatal("owner scan failure ignored")
+	}
+	db.ownerRows = &readsRows{err: errors.New("owner rows failed")}
+	if _, err := repository.ListContactAlbums(ctx, userID, "", predicate, nil, 1); err == nil {
+		t.Fatal("owner rows failure ignored")
+	}
+	db.ownerRows = nil
+	db.pageErr = errors.New("page query failed")
+	if _, err := repository.ListContactAlbums(ctx, userID, "", predicate, nil, 1); err == nil {
+		t.Fatal("page query failure ignored")
+	}
+}
+
 func TestVisiblePhotoReadFailuresAreNotExposedAsRecords(t *testing.T) {
 	ctx := context.Background()
 	const userID int64 = 74
@@ -301,5 +409,86 @@ func TestVisiblePhotoReadFailuresAreNotExposedAsRecords(t *testing.T) {
 	}
 	if err := validateRead(ctx, repository, 0, predicate, 1); err == nil {
 		t.Fatal("zero user accepted")
+	}
+}
+
+func TestContactAlbumReadsUseOwnerVisibilityAndStableKeysets(t *testing.T) {
+	ctx := context.Background()
+	const userID int64 = 75
+	predicate := sharingapp.Filter(sharingdomain.User{ID: userID}).SQL
+	db := &readsDB{}
+	repository, err := New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	db.rows = &readsRows{rows: [][]any{
+		{"contact-album-1", "contact-1", "Album 1", pgtype.Timestamptz{Time: now, Valid: true}, true, false, nil, nil},
+		{"contact-album-2", "contact-2", "Album 2", pgtype.Timestamptz{Time: now.Add(-time.Hour), Valid: true}, true, false, nil, nil},
+	}}
+
+	db.ownerRows = &readsRows{rows: [][]any{{"contact-1"}, {"contact-2"}}}
+	page, err := repository.ListContactAlbums(ctx, userID, "", predicate, nil, 1)
+	if err != nil || len(page.Items) != 1 || page.Items[0].ID != "contact-album-1" || page.NextCursor == nil {
+		t.Fatalf("contact albums=%+v err=%v", page, err)
+	}
+	if len(page.ContactOwners) != 2 || page.ContactOwners[1] != "contact-2" {
+		t.Fatalf("contact owner options=%v", page.ContactOwners)
+	}
+	if strings.Contains(db.query, "count(") ||
+		!strings.Contains(db.query, "contacts.person_nsid=flickr_accounts.nsid") ||
+		!strings.Contains(db.query, "a.owner_nsid=contact_owners.contact_nsid") ||
+		!strings.Contains(db.query, "album_photos.album_id=candidates.id") ||
+		!strings.Contains(db.query, "photos.tombstoned_at IS NULL") ||
+		!strings.Contains(db.query, predicate.Expression) ||
+		!strings.Contains(db.query, "flickr_accounts.user_id=$1") ||
+		!strings.Contains(db.query, "ORDER BY albums.updated_at DESC NULLS LAST,albums.id DESC") ||
+		!strings.Contains(db.query, "LIMIT $8") {
+		t.Fatalf("contact album query must use contact and photo visibility evidence: %s", db.query)
+	}
+	if db.args[0] != userID || db.args[1] != "" || db.args[6] != 2 {
+		t.Fatalf("contact album args=%v", db.args)
+	}
+
+	db.rows = &readsRows{rows: [][]any{{"contact-album-2", "contact-2", "Album 2", pgtype.Timestamptz{Time: now.Add(-time.Hour), Valid: true}, true, false, nil, nil}}}
+	page, err = repository.ListContactAlbums(ctx, userID, "", predicate, page.NextCursor, 1)
+	if err != nil || len(page.Items) != 1 || page.Items[0].ID != "contact-album-2" {
+		t.Fatalf("contact album cursor page=%+v err=%v", page, err)
+	}
+	cursorTime, ok := db.args[3].(*time.Time)
+	if !strings.Contains(db.query, "a.updated_at<$4::timestamptz") || db.args[2] != "contact-album-1" || !ok || !cursorTime.Equal(now) {
+		t.Fatalf("contact album cursor query=%q args=%v", db.query, db.args)
+	}
+
+	if _, err := repository.ListContactAlbums(ctx, userID, "", predicate, &app.AlbumCursor{}, 1); !errors.Is(err, app.ErrInvalidCursor) {
+		t.Fatalf("invalid cursor error=%v", err)
+	}
+	if _, err := repository.ListContactAlbums(ctx, 0, "", predicate, nil, 1); err == nil {
+		t.Fatal("zero user accepted")
+	}
+	if _, err := repository.ListContactAlbums(ctx, userID, "", predicate, nil, app.MaxPageSize+1); err == nil {
+		t.Fatal("oversized page accepted")
+	}
+	db.queryErr = errors.New("query failed")
+	if _, err := repository.ListContactAlbums(ctx, userID, "", predicate, nil, 1); !errors.Is(err, db.queryErr) {
+		t.Fatalf("query error=%v", err)
+	}
+	db.queryErr = nil
+	db.rows = &readsRows{rows: [][]any{{"contact-album-1", "contact-1", "Album 1", pgtype.Timestamptz{Time: now, Valid: true}, true, false, nil, nil}}, scanErr: errors.New("scan failed")}
+	if _, err := repository.ListContactAlbums(ctx, userID, "", predicate, nil, 1); err == nil {
+		t.Fatal("scan error ignored")
+	}
+	db.rows = &readsRows{err: errors.New("rows failed")}
+	if _, err := repository.ListContactAlbums(ctx, userID, "", predicate, nil, 1); err == nil {
+		t.Fatal("rows error ignored")
+	}
+	db.rows = &readsRows{rows: [][]any{{"contact-album-null", "contact-3", "Album without update time", pgtype.Timestamptz{}, true, false, nil, nil}}}
+	page, err = repository.ListContactAlbums(ctx, userID, "", predicate, nil, 1)
+	if err != nil || len(page.Items) != 1 || page.Items[0].UpdatedAt != nil {
+		t.Fatalf("contact album with null timestamp=%+v err=%v", page, err)
+	}
+	_, err = repository.ListContactAlbums(ctx, userID, "", predicate, &app.AlbumCursor{ID: "contact-album-null"}, 1)
+	if err != nil || !strings.Contains(db.query, "a.updated_at IS NULL AND a.id<$3") || db.args[2] != "contact-album-null" {
+		t.Fatalf("null timestamp cursor query=%q args=%v err=%v", db.query, db.args, err)
 	}
 }

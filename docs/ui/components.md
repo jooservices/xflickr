@@ -1053,9 +1053,9 @@ Gallery: [USER light](mockups/components.html#user-light-contact-card).
 
 ## album-card
 
-An album with a stacked cover, title, owner, and stored-of-total counts. Export
-`AlbumCard`. Empty albums show a sunken stack and the empty-block copy belongs
-to the view, not a fake cover.
+An album with a stacked cover, title, owner, and update date. Do not show a
+photo count. Export `AlbumCard`. Empty albums show a sunken stack and the
+empty-block copy belongs to the view, not a fake cover.
 
 Slice: `web/src/shared/ui/album-card`.
 
@@ -1066,9 +1066,8 @@ Gallery: [USER light](mockups/components.html#user-light-album-card).
 | Prop | Type | Default | Description |
 | --- | --- | --- | --- |
 | title | string | — | Album title |
-| owner | string | — | Owner name |
-| stored | number | — | Photos stored |
-| total | number | — | Photos on Flickr |
+| owner | string | — | Owner name or identifier |
+| updatedAt | string? | — | Last update time |
 | onOpen | () => void | — | Opens the album |
 
 ### Variants
@@ -1082,7 +1081,7 @@ Gallery: [USER light](mockups/components.html#user-light-album-card).
 
 | State | Appearance | Behaviour |
 | --- | --- | --- |
-| default | Transparent button, stacked covers at 4:3, title and counts under it | Click opens the album |
+| default | Transparent button, stacked covers at 4:3, title, owner, and update date | Click opens the album |
 | hover | The front cover lifts with the hover shadow | Pointer cursor |
 | focus | 2px accent outline around the stack | Tab focuses the card |
 | active | 1px translate down while pressed | Enter or Space opens the album |
@@ -1096,7 +1095,7 @@ Gallery: [USER light](mockups/components.html#user-light-album-card).
 
 ### ARIA
 
-- Button named with the title, owner, and counts.
+- Button named with the title, owner, and update date.
 - Cover artwork is aria-hidden.
 - Loading sets aria-busy="true".
 
