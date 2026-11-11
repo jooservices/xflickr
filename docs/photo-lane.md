@@ -6,14 +6,19 @@ whose sizes are not terminally confirmed for their current `last_update` and
 that are not tombstoned, joined with `crawl_interests` through the owner. Only
 starred or actively selected contacts are eligible for background size work;
 unselected, unstarred contacts (including expired selections) do not enter the
-lane, regardless of depth. Explicit photo requests for download or sync use the
+lane, regardless of depth. Legacy `unavailable` results and photos whose server
+is `65535` remain eligible even when their stored check time matches the photo
+version, so existing restricted photos can be confirmed through OAuth. Explicit
+photo requests for download or sync use the
 existing download flow, which queues `photo.sizes` directly with the requesting
 user's key and the interactive quota class. They do not require a starred or
 selected owner. A photo being opened in the Lightbox screen (JOOXF-171) will
 enqueue an interactive size confirmation through the same download flow.
-Listing URLs and dimensions remain provisional until needed.
-Once sizes are current, enabled optional facets may be selected for photos owned by
-starred or actively selected contacts.
+Listing URLs and dimensions remain provisional until needed. Once a current
+global result or an eligible photo-owner account result confirms sizes, enabled
+optional facets may be selected for photos owned by starred or actively selected
+contacts. Account-scoped confirmation can unlock optional work while the
+catalog's global `sizes_status` remains provisional.
 
 ## Ordering
 
@@ -56,10 +61,13 @@ account-scoped `unavailable` result without resolving waiting downloads yet.
 The same job continues through the remaining eligible accounts owned by the
 requester. Only after all candidates fail or are already restricted are that
 user's waiting downloads resolved as unavailable; the catalog photo is not
-marked globally unavailable. A current account-scoped outcome suppresses the
-photo-lane size job for that photo version and visibility, so later pump cycles
-move on instead of re-enqueueing it. Existing global outcomes remain intact;
-the schema migration adds account-scoped storage without rewriting photo rows.
+marked globally unavailable. Only a current result from an active, valid account
+for the photo owner's Flickr identity closes the background sizes lane; an
+outcome belonging to another user's account does not suppress that owner's
+work. A current owner-account confirmation also makes eligible optional facets
+available. Other accounts' stored sizes remain private to their XFlickr user.
+Existing global outcomes remain intact; the schema migration adds account-scoped
+storage without rewriting photo rows.
 An unchanged anonymous confirmed result is reused without reclassification as
 long as the photo remains public and is not a restricted placeholder. Cleanup
 of already queued work is tracked separately in JOOXF-311.
@@ -88,7 +96,8 @@ Optional facets are configured by application settings: `photo_info_enabled`,
 are app-level settings and cannot be overridden by an individual user. Each
 optional job has a separate `photo.facet` kind and runs on `sync-low`; size jobs
 remain on `sync`, so optional work has its own worker capacity. A photo cannot
-receive optional work until a current size result has been confirmed. Flickr
+receive optional work until a current global or eligible photo-owner account
+size result has been confirmed. Flickr
 not-found and permission errors persist an empty result for that photo version;
 transient failures retry. Comments and favorites fetch up to 200 pages of 50
 items per request, with each request charged to the photo quota.
@@ -102,13 +111,13 @@ are removed before info or EXIF data is persisted.
 ## Query and indexes
 
 `catalog/adapters/postgres/photolane.sql` ranks persons from two indexed,
-`LIMIT`ed streams (selected, starred) and probes only the
-top-ranked persons through the partial index `photos_sizes_pending_idx`
-(`owner_nsid, uploaded_at DESC, id DESC`), which contains photos without a
-terminal size result and confirmed photos whose `sizes_checked_at` is older
-than `last_update`. Unavailable and tombstoned photos are excluded. The caller
-starts with 128 persons and doubles the probe only while it finds too few
-photos and a stream was cut by its limit.
+`LIMIT`ed streams (selected, starred) and probes only the top-ranked persons.
+The partial index `photos_sizes_pending_idx` covers pending sizes and stale
+global confirmations; `photos_sizes_restricted_idx` covers legacy `unavailable`
+rows and placeholder-server photos, including old global confirmations. Its
+partition indexes are built concurrently. Tombstoned photos remain excluded.
+The caller starts with 128 persons and doubles the probe only while it finds too
+few photos and a stream was cut by its limit.
 
 Limit: when the best-ranked persons have no pending photos left, the probe
 widens until it reaches persons with work, which costs more per call. The query

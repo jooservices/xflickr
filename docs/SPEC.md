@@ -165,9 +165,11 @@ guide feature implementation; operational environment rules live in
   version, visibility, and account status still match. Shared observations do
   not grant access to those URLs. Try each eligible account owned by the
   requester in the same job; report unavailable only after all eligible
-  accounts have failed or are already restricted. A current
-  account-scoped outcome stops the photo lane from re-queueing sizes for that
-  photo version and visibility.
+  accounts have failed or are already restricted. A current result from an
+  active, valid account matching the photo owner's Flickr identity stops the
+  photo lane from re-queueing sizes for that version and visibility; unrelated
+  account outcomes do not. A current owner-account confirmation also makes
+  enabled optional facets eligible while global sizes remain provisional.
 - Enforce each key's configured hourly allowance over the preceding rolling
   60 minutes, across all lanes; a fixed-hour boundary never releases recent
   grants. Report reset as the oldest counted grant's expiry and rebuild exact
