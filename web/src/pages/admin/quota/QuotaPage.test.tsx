@@ -197,7 +197,10 @@ describe('API quota page', () => {
       expect(empty).toHaveTextContent('Chưa có khóa API hợp lệ');
       expect(empty).toHaveTextContent('khi có khóa API Flickr hợp lệ');
     });
-    expect(screen.getByRole('link', { name: 'Open my API keys' })).toHaveAttribute('href', '/keys');
+    expect(screen.getByRole('link', { name: 'Mở khóa API của tôi' })).toHaveAttribute(
+      'href',
+      '/keys',
+    );
   });
 
   it('shows stale state and retry for an empty snapshot after refresh fails', async () => {
