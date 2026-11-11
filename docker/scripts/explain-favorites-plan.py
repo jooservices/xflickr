@@ -91,7 +91,6 @@ ANALYZE observations;
 ANALYZE sharing_settings;
 ANALYZE photo_enrichments;
 
-SELECT 'Favorites plan fixture rows: ' || count(*) FROM favorites;
 EXPLAIN (ANALYZE, BUFFERS)
 WITH visible_account_favorites AS MATERIALIZED (
     SELECT account_favorites.*
@@ -192,6 +191,7 @@ def main() -> int:
         parser.error("--rows must be at least 400000")
 
     try:
+        print(f"Favorites plan fixture rows: {args.rows}")
         output = run_plan(args.rows)
         print(output, end="")
         check_plan(output)
