@@ -102,7 +102,7 @@ func TestEveryPhotoFacetRecordsRestrictionWithoutCompletingGlobalData(t *testing
 		for _, cause := range []error{flickr.ErrNotFound, flickr.ErrPermission} {
 			t.Run(facet+cause.Error(), func(t *testing.T) {
 				states := &stateFake{}
-				store := &photoFacetStoreFake{source: catalog.PhotoFacetSource{LastUpdate: epoch, SizesStatus: catalog.SizesConfirmed, SizesCheckedAt: &epoch}, exists: true}
+				store := &photoFacetStoreFake{source: catalog.PhotoFacetSource{LastUpdate: epoch, SizesConfirmed: true}, exists: true}
 				client := &photoFacetClientFake{infoErr: cause, exifErr: cause, contextsErr: cause, commentsErr: cause, favoritesErr: cause}
 				h := PhotoFacets{Store: store, Flickr: client, States: states}
 				job := PhotoFacetJob{PhotoID: 42, KeyID: 7, Facet: facet}

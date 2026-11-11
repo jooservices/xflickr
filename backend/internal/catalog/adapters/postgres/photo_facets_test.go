@@ -8,18 +8,17 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestLoadPhotoFacetSource(t *testing.T) {
 	updatedAt := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
-	db := &photoFacetDBFake{row: photoFacetRow{values: []any{"secret", updatedAt, "confirmed", pgtype.Timestamptz{Time: updatedAt, Valid: true}}}}
+	db := &photoFacetDBFake{row: photoFacetRow{values: []any{"secret", updatedAt, true}}}
 	repository, err := New(db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	source, exists, err := repository.LoadPhotoFacetSource(context.Background(), 42)
-	if err != nil || !exists || source.Secret != "secret" || !source.LastUpdate.Equal(updatedAt) || source.SizesStatus != "confirmed" || source.SizesCheckedAt == nil || !source.SizesCheckedAt.Equal(updatedAt) {
+	if err != nil || !exists || source.Secret != "secret" || !source.LastUpdate.Equal(updatedAt) || !source.SizesConfirmed {
 		t.Fatalf("LoadPhotoFacetSource()=%+v exists=%t err=%v", source, exists, err)
 	}
 	db.row = photoFacetRow{err: pgx.ErrNoRows}
@@ -30,9 +29,9 @@ func TestLoadPhotoFacetSource(t *testing.T) {
 	if _, _, err := repository.LoadPhotoFacetSource(context.Background(), 42); err == nil {
 		t.Fatal("LoadPhotoFacetSource swallowed query error")
 	}
-	db.row = photoFacetRow{values: []any{"secret", updatedAt, "confirmed", pgtype.Timestamptz{}}}
-	if source, exists, err := repository.LoadPhotoFacetSource(context.Background(), 42); err != nil || !exists || source.SizesCheckedAt != nil {
-		t.Fatalf("LoadPhotoFacetSource(without size check)=%+v exists=%t err=%v", source, exists, err)
+	db.row = photoFacetRow{values: []any{"secret", updatedAt, false}}
+	if source, exists, err := repository.LoadPhotoFacetSource(context.Background(), 42); err != nil || !exists || source.SizesConfirmed {
+		t.Fatalf("LoadPhotoFacetSource(without confirmed result)=%+v exists=%t err=%v", source, exists, err)
 	}
 	if _, _, err := repository.LoadPhotoFacetSource(nil, 42); err == nil {
 		t.Fatal("LoadPhotoFacetSource accepted nil context")
@@ -64,8 +63,8 @@ func (r photoFacetRow) Scan(dest ...any) error {
 			*target = value.(string)
 		case *time.Time:
 			*target = value.(time.Time)
-		case *pgtype.Timestamptz:
-			*target = value.(pgtype.Timestamptz)
+		case *bool:
+			*target = value.(bool)
 		default:
 			return errors.New("unexpected scan destination")
 		}

@@ -57,13 +57,12 @@ type Photo struct {
 }
 
 // PhotoFacetSource is the minimal photo state required before fetching
-// optional metadata. The sizes check gates extra Flickr calls and LastUpdate
-// versions the fetched result.
+// optional metadata. SizesConfirmed applies the catalog's shared eligibility
+// rule for current global and account-scoped size results.
 type PhotoFacetSource struct {
 	Secret         string
 	LastUpdate     time.Time
-	SizesStatus    SizesStatus
-	SizesCheckedAt *time.Time
+	SizesConfirmed bool
 }
 
 // Validate checks fields whose values are constrained by the catalog schema.
