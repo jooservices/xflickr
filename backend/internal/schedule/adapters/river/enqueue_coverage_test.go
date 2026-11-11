@@ -705,13 +705,6 @@ func TestScheduleSQLHelpersAndRescore(t *testing.T) {
 			}
 		})
 	}
-	if _, err := countInflight(ctx, &coverageTx{rowFn: func(context.Context, string, ...any) pgx.Row { return coverageRow{err: errors.New("count")} }}, 1, "media", 10); err == nil {
-		t.Fatal("ignored inflight error")
-	}
-	if got, err := countInflight(ctx, &coverageTx{rowFn: func(context.Context, string, ...any) pgx.Row { return coverageRow{values: []any{int(4)}} }}, 1, "media", 10); err != nil || got != 4 {
-		t.Fatalf("count=%d err=%v", got, err)
-	}
-
 	settings := coverageSettings()
 	tests := []struct {
 		name     string
@@ -782,20 +775,72 @@ func TestPumpReadsGlobalInflightCountsOncePerTick(t *testing.T) {
 	}
 }
 
-func TestCountInflightQueryIsBounded(t *testing.T) {
+func TestCountInflightSelectsAndCountsOnlyBoundedIDs(t *testing.T) {
 	ctx := context.Background()
-	var query string
-	var args []any
-	tx := &coverageTx{rowFn: func(_ context.Context, sql string, values ...any) pgx.Row {
-		query = sql
-		args = values
-		return coverageRow{values: []any{int(4)}}
-	}}
-	if _, err := countInflight(ctx, tx, 1, "media", 10); err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name   string
+		keyID  int64
+		worker string
+		args   []any
+	}{
+		{name: "node", args: []any{10}},
+		{name: "key", keyID: 1, args: []any{int64(1), 10}},
+		{name: "worker", worker: "media", args: []any{"media", 10}},
+		{name: "key and worker", keyID: 1, worker: "media", args: []any{int64(1), "media", 10}},
 	}
-	if !strings.Contains(strings.ToUpper(query), "LIMIT") || len(args) == 0 || args[len(args)-1] != 10 {
-		t.Fatalf("inflight query=%q args=%v; want a limit of 10", query, args)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var query string
+			var args []any
+			rows := coverageRowsOf([]any{int64(3)}, []any{int64(7)})
+			tx := &coverageTx{queryFn: func(_ context.Context, sql string, values ...any) (pgx.Rows, error) {
+				query = sql
+				args = values
+				return rows, nil
+			}}
+			got, err := countInflight(ctx, tx, test.keyID, test.worker, 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != 2 {
+				t.Fatalf("count = %d, want 2 selected IDs", got)
+			}
+			upperQuery := strings.ToUpper(query)
+			if !strings.Contains(upperQuery, "SELECT ID") || !strings.Contains(upperQuery, "LIMIT") || strings.Contains(upperQuery, "COUNT(") {
+				t.Fatalf("inflight query = %q, want bounded ID selection", query)
+			}
+			if !reflect.DeepEqual(args, test.args) {
+				t.Fatalf("query args = %v, want %v", args, test.args)
+			}
+			if !rows.closed {
+				t.Fatal("inflight rows were not closed")
+			}
+		})
+	}
+}
+
+func TestCountInflightReportsQueryAndReadErrors(t *testing.T) {
+	ctx := context.Background()
+	for _, test := range []struct {
+		name     string
+		rows     *coverageRows
+		queryErr error
+	}{
+		{name: "query", queryErr: errors.New("query")},
+		{name: "scan", rows: &coverageRows{index: -1, values: [][]any{{int64(1)}}, scanErr: errors.New("scan")}},
+		{name: "rows", rows: &coverageRows{index: -1, values: [][]any{{int64(1)}}, err: errors.New("iterate")}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tx := &coverageTx{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
+				return test.rows, test.queryErr
+			}}
+			if _, err := countInflight(ctx, tx, 1, "media", 10); err == nil || !strings.Contains(err.Error(), "count inflight work") {
+				t.Fatalf("countInflight() error = %v, want contextual error", err)
+			}
+			if test.rows != nil && !test.rows.closed {
+				t.Fatal("inflight rows were not closed after error")
+			}
+		})
 	}
 }
 
