@@ -175,19 +175,14 @@ function RailItem({
   label,
   id,
   icon,
-  issues,
   onNavigate,
 }: {
   path: string;
   label: string;
   id: string;
   icon: Parameters<typeof Icon>[0]['name'];
-  issues: number;
   onNavigate: () => void;
 }) {
-  const { t } = useI18n();
-  const showBadge = id === 'issues' && issues > 0;
-
   return (
     <NavLink
       to={path}
@@ -197,17 +192,7 @@ function RailItem({
       data-testid={`admin-nav-${id}`}
     >
       <Icon name={icon} size={16} />
-      {showBadge ? (
-        <>
-          <span aria-hidden="true">{label}</span>
-          <span className={styles.srOnly}>{t('admin.nav.issues-count', { count: issues })}</span>
-          <span className={styles.badge} aria-hidden="true" data-testid="admin-nav-issues-badge">
-            {issues}
-          </span>
-        </>
-      ) : (
-        <span>{label}</span>
-      )}
+      <span>{label}</span>
     </NavLink>
   );
 }
@@ -286,7 +271,6 @@ function Frame() {
                   path={item.path}
                   icon={item.icon}
                   label={t(item.labelKey)}
-                  issues={showCounts ? data.open_issues : 0}
                   onNavigate={closeDrawer}
                 />
               ))}

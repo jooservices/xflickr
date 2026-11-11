@@ -8,6 +8,13 @@ The approved baseline is Events & audit in the
 [design system](../design-system.md), [components](../components.md),
 [patterns](../patterns.md), [accessibility](../a11y.md), and [i18n](../i18n.md).
 
+## Delivery status
+
+This view is deferred. JOOXF-183's first slice implements only a read-only
+open-incident list; it does not define or expose an ADMIN event or audit API.
+Keep this route out of the ADMIN navigation until its API, authorization, and
+page states are implemented together.
+
 ## Purpose
 
 Show a live, searchable record of operational events and a separate audit

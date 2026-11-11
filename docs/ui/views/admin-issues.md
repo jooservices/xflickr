@@ -1,7 +1,26 @@
 # Admin issues
 
+## Current implementation slice (JOOXF-183)
+
+The working route is `/admin/issues`, linked in the ADMIN rail after the
+read endpoint and its loading, empty, error, and forbidden states were
+implemented together. It lists only open incidents, with severity, incident
+ID, first-seen time, last-seen time, and repeat count. Pagination uses an
+opaque cursor and does not show a total. The UI and API omit `title`, `kind`,
+`scope`, and `detail` because detector-provided content has not been verified
+safe for display. Refresh and load-more are supported; no live stream or
+incident mutation is offered. Events & audit is deferred and is not in the
+ADMIN rail.
+
+The design below records the later target. Its actions, filters, search,
+detail view, status counts, SSE, and Events & audit are not implemented by this
+slice.
+
 ## Purpose
-Give ADMIN one live queue for operational incidents. Follow the approved POC. Cover the eleven flow cases named by JOOXF-160; infrastructure detector cases may reuse this view after their separate detector work lands.
+The full target gives ADMIN one live queue for operational incidents. It
+follows the approved POC and covers the eleven flow cases named by JOOXF-160;
+infrastructure detector cases may reuse this view after their separate
+detector work lands.
 
 ## Route and access
 - Route /admin/issues; ADMIN only; default dark control-room theme, with existing ADMIN light theme.
@@ -15,13 +34,31 @@ Give ADMIN one live queue for operational incidents. Follow the approved POC. Co
 - Pair severity text with icon/color. Never render raw detail JSON, credentials, full keys, tokens, or unredacted provider responses. Show safe key label only when supplied by the API.
 
 ## Data
-Existing and requested incident fields/endpoints are defined below in Data and API.
+The current slice and later target are described below in Data and API.
 
 ## Data and API
 ### Existing implementation
-The internal manager in backend/internal/ops/domain/incident.go, backend/internal/ops/app/incidents.go, backend/internal/ops/adapters/postgres/incidents.go, and backend/migrations/20261028120000_incidents.sql stores id, kind, scope, severity (info|warning|critical), title, object detail, state (open|acked|closed), first_seen, last_seen, count, acked_by, closed_at. Repeated opens for an active kind+scope increment count/last_seen. Ack accepts open; Close accepts open or acked; AutoClose closes active incidents for a detector kind/scope. Only a new critical incident requests notification. This manager is internal, not an HTTP endpoint. No ADMIN incident read/action/SSE route exists in the server or OpenAPI.
-### Contract request for JOOXF-183
-These are requested routes, not implemented routes:
+The internal manager in `backend/internal/ops/domain/incident.go`,
+`backend/internal/ops/app/incidents.go`,
+`backend/internal/ops/adapters/postgres/incidents.go`, and
+`backend/migrations/20261028120000_incidents.sql` stores `id`, `kind`,
+`scope`, `severity` (`info|warning|critical`), `title`, object `detail`,
+`state` (`open|acked|closed`), `first_seen`, `last_seen`, `count`, `acked_by`,
+and `closed_at`. Repeated opens for an active kind+scope increment
+`count`/`last_seen`. Ack accepts open; Close accepts open or acked; AutoClose
+closes active incidents for a detector kind/scope. Only a new critical
+incident requests notification.
+
+### Implemented ADMIN read route
+
+`GET /api/v1/admin/incidents?cursor=&limit=` returns
+`{items,next_cursor,server_time}`. The default limit is 50 and the maximum is
+100. Each item has only `id`, `severity`, `first_seen`, `last_seen`, and
+`count`. The route is ADMIN-only. It has no status, severity or text filters,
+no total count, and no detail or mutation routes.
+
+### Future target (not implemented by this slice)
+
 - GET /admin/incidents?state=&severity=&q=&cursor=&limit= returns {items,next_cursor,server_time}; default limit 50, maximum 100. Search safe title, kind, area, summary only. Items include stored fields plus area, summary, detection, automatic_action, human_step, closed_by (admin|detector), closed_at, auto_closed derived from closed_by. Add/persist closure source because current storage cannot distinguish manual from detector close. Do not return raw detail.
 - GET /admin/incidents/{id} returns the same safe fields and redacted evidence references only.
 - POST /admin/incidents/{id}/ack records the authenticated admin and returns updated item. Only open is valid.
@@ -136,4 +173,8 @@ The page root exposes data-testid="admin-issues-page"; all hooks are listed belo
 admin-issues-page, admin-issues-live-status, admin-issues-count-open, admin-issues-count-acked, admin-issues-count-closed, admin-issues-filter-severity, admin-issues-filter-search, admin-issues-sort, admin-issues-tabs, admin-issues-table, admin-issues-row-{id}, admin-issues-empty, admin-issues-loading, admin-issues-error, admin-issues-stale, admin-issues-forbidden, admin-issues-detail, admin-issues-ack-{id}, admin-issues-resolve-{id}, admin-issues-resolve-dialog, admin-issues-retry.
 
 ## Out of scope
-Detector implementation/threshold policy (JOOXF-160 and detector tickets), infrastructure detector implementation (JOOXF-159), requested API/server implementation (JOOXF-183), notification delivery, bulk actions, reopen, detector configuration, and destructive workload/queue operations.
+Detector implementation/threshold policy (JOOXF-160 and detector tickets),
+infrastructure detector implementation (JOOXF-159), incident notification
+delivery, bulk actions, reopen, detector configuration, Events & audit, and
+destructive workload/queue operations are out of scope. Acknowledge, resolve,
+filters, search, detail, counts, and SSE remain future slices.
