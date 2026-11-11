@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
@@ -67,6 +68,87 @@ func TestGroupsCommitUpTo500Unchanged(t *testing.T) {
 	if name != "Group 42" || members != 42 || poolCount != 84 {
 		t.Fatalf("row 42 = %q members=%d pool=%d", name, members, poolCount)
 	}
+}
+
+func TestGroupsUpsertPlanUsesPrimaryKeys(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	cases := []struct {
+		name          string
+		conflictIndex string
+		query         string
+	}{
+		{
+			name:          "groups",
+			conflictIndex: "groups_pkey",
+			query: `INSERT INTO groups (nsid,name,description,members_count,pool_count,seen_at)
+				VALUES ('plan-group@N00','Plan Group','',0,0,CURRENT_TIMESTAMP)
+				ON CONFLICT (nsid) DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,
+				members_count=EXCLUDED.members_count,pool_count=EXCLUDED.pool_count,seen_at=EXCLUDED.seen_at
+				WHERE (groups.name,groups.description,groups.members_count,groups.pool_count,groups.seen_at)
+				IS DISTINCT FROM (EXCLUDED.name,EXCLUDED.description,EXCLUDED.members_count,EXCLUDED.pool_count,EXCLUDED.seen_at)`,
+		},
+		{
+			name:          "person groups",
+			conflictIndex: "person_groups_pkey",
+			query: `INSERT INTO person_groups (person_nsid,group_nsid,seen_at)
+				VALUES ('plan-person@N00','plan-group@N00',CURRENT_TIMESTAMP)
+				ON CONFLICT (person_nsid,group_nsid) DO UPDATE SET seen_at=EXCLUDED.seen_at
+				WHERE person_groups.seen_at IS DISTINCT FROM EXCLUDED.seen_at`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var raw []byte
+			if err := pool.QueryRow(ctx, "EXPLAIN (FORMAT JSON) "+tc.query).Scan(&raw); err != nil {
+				t.Fatalf("explain upsert: %v", err)
+			}
+			var plan any
+			if err := json.Unmarshal(raw, &plan); err != nil {
+				t.Fatalf("decode plan: %v", err)
+			}
+			hasSeqScan, hasConflictIndex := inspectGroupsUpsertPlan(plan, tc.conflictIndex)
+			if hasSeqScan {
+				t.Fatal("upsert plan contains a Seq Scan")
+			}
+			if !hasConflictIndex {
+				t.Fatalf("upsert plan does not use conflict arbiter %q: %s", tc.conflictIndex, raw)
+			}
+		})
+	}
+}
+
+func inspectGroupsUpsertPlan(value any, conflictIndex string) (bool, bool) {
+	hasSeqScan, hasConflictIndex := false, false
+	switch node := value.(type) {
+	case map[string]any:
+		if nodeType, ok := node["Node Type"].(string); ok && (nodeType == "Seq Scan" || nodeType == "Parallel Seq Scan") {
+			hasSeqScan = true
+		}
+		if arbiters, ok := node["Conflict Arbiter Indexes"].([]any); ok {
+			for _, arbiter := range arbiters {
+				if arbiter == conflictIndex {
+					hasConflictIndex = true
+				}
+			}
+		}
+		for _, child := range node {
+			childSeqScan, childConflictIndex := inspectGroupsUpsertPlan(child, conflictIndex)
+			hasSeqScan = hasSeqScan || childSeqScan
+			hasConflictIndex = hasConflictIndex || childConflictIndex
+		}
+	case []any:
+		for _, child := range node {
+			childSeqScan, childConflictIndex := inspectGroupsUpsertPlan(child, conflictIndex)
+			hasSeqScan = hasSeqScan || childSeqScan
+			hasConflictIndex = hasConflictIndex || childConflictIndex
+		}
+	}
+	return hasSeqScan, hasConflictIndex
 }
 
 func TestGroupsCommit5000MembershipsInOneTransaction(t *testing.T) {

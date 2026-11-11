@@ -120,26 +120,49 @@ func (Groups) Plan(_ context.Context, p domain.Person) []domain.WorkSpec {
 
 func (Groups) Handle(_ context.Context, p domain.Page) (domain.Result, error) {
 	var e struct {
-		Groups struct {
-			Pages int `json:"pages"`
-			Items []struct {
-				NSID        string     `json:"nsid"`
-				Name        string     `json:"name"`
-				Members     flickr.Int `json:"members"`
-				Pool        flickr.Int `json:"pool_count"`
-				Description string     `json:"description"`
-			} `json:"group"`
+		Groups *struct {
+			Pages int             `json:"pages"`
+			Items json.RawMessage `json:"group"`
 		} `json:"groups"`
 	}
 	if err := json.Unmarshal(p.Payload, &e); err != nil {
 		return domain.Result{}, fmt.Errorf("crawl facets: decode groups: %w", err)
 	}
-	out := domain.Result{Groups: make([]catalog.Group, 0, len(e.Groups.Items)), PersonGroups: make([]catalog.PersonGroup, 0, len(e.Groups.Items))}
-	for _, x := range e.Groups.Items {
+	if e.Groups == nil {
+		return domain.Result{}, fmt.Errorf("crawl facets: decode groups: groups envelope is missing")
+	}
+	var items []struct {
+		NSID        string     `json:"nsid"`
+		Name        string     `json:"name"`
+		Members     flickr.Int `json:"members"`
+		Pool        flickr.Int `json:"pool_count"`
+		Description string     `json:"description"`
+	}
+	if len(e.Groups.Items) > 0 {
+		if strings.TrimSpace(string(e.Groups.Items)) == "null" {
+			return domain.Result{}, fmt.Errorf("crawl facets: decode groups: group list is null")
+		}
+		if err := json.Unmarshal(e.Groups.Items, &items); err != nil {
+			return domain.Result{}, fmt.Errorf("crawl facets: decode groups: %w", err)
+		}
+	}
+	if len(items) == 0 && p.Number < e.Groups.Pages {
+		return domain.Result{}, fmt.Errorf("crawl facets: decode groups: empty page before final page")
+	}
+	for i, x := range items {
+		if strings.TrimSpace(x.NSID) == "" {
+			return domain.Result{}, fmt.Errorf("crawl facets: decode groups: group %d has no nsid", i+1)
+		}
+		if strings.TrimSpace(x.Name) == "" {
+			return domain.Result{}, fmt.Errorf("crawl facets: decode groups: group %d has no name", i+1)
+		}
+	}
+	out := domain.Result{Groups: make([]catalog.Group, 0, len(items)), PersonGroups: make([]catalog.PersonGroup, 0, len(items))}
+	for _, x := range items {
 		out.Groups = append(out.Groups, catalog.Group{NSID: x.NSID, Name: x.Name, Description: x.Description, MembersCount: int64(x.Members), PoolCount: int64(x.Pool)})
 		out.PersonGroups = append(out.PersonGroups, catalog.PersonGroup{PersonNSID: p.Item.Subject, GroupNSID: x.NSID})
 	}
-	out.HasMore = p.Number < e.Groups.Pages && len(e.Groups.Items) > 0
+	out.HasMore = p.Number < e.Groups.Pages && len(items) > 0
 	return out, nil
 }
 
