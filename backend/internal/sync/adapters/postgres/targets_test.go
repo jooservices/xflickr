@@ -172,6 +172,66 @@ func TestRepositoryGetScopesByOwnerAndMapsMissingRows(t *testing.T) {
 	}
 }
 
+func TestRepositoryListScopesOwnerAndCursor(t *testing.T) {
+	rows := &targetRowsFake{values: [][]any{
+		{int64(43), int64(7), "drive", "Archive", []byte(`{"folder":"archive"}`), "connected"},
+		{int64(44), int64(7), "dropbox", "Photos", []byte(`{}`), "reconnect_required"},
+	}}
+	tx := &targetTxFake{queryRows: rows}
+	repository, err := New(&targetDatabaseFake{tx: tx})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := repository.List(t.Context(), 7, 42, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].ID != 43 || got[1].ID != 44 || got[1].Status != "reconnect_required" || string(got[0].Config) != `{"folder":"archive"}` {
+		t.Fatalf("listed targets = %+v", got)
+	}
+	if len(tx.queryArgs) != 3 || tx.queryArgs[0] != int64(7) || tx.queryArgs[1] != int64(42) || tx.queryArgs[2] != 2 {
+		t.Fatalf("list query args = %#v", tx.queryArgs)
+	}
+	if !rows.closed || tx.commits != 1 || tx.rollbacks != 0 {
+		t.Fatalf("closed=%t commits=%d rollbacks=%d", rows.closed, tx.commits, tx.rollbacks)
+	}
+}
+
+func TestRepositoryListHandlesQueryAndRowFailures(t *testing.T) {
+	queryErr := errors.New("list query failed")
+	tx := &targetTxFake{queryErr: queryErr}
+	repository, _ := New(&targetDatabaseFake{tx: tx})
+	if _, err := repository.List(t.Context(), 7, 0, 5); !errors.Is(err, queryErr) || !strings.Contains(err.Error(), "list targets") {
+		t.Fatalf("query error = %v", err)
+	}
+	if tx.rollbacks != 1 || tx.commits != 0 {
+		t.Fatalf("query rollback=%d commit=%d", tx.rollbacks, tx.commits)
+	}
+
+	scanErr := errors.New("target row failed")
+	rows := &targetRowsFake{values: [][]any{{int64(43), int64(7), "drive", "Archive", []byte(`{}`), "connected"}}, scanErr: scanErr}
+	tx = &targetTxFake{queryRows: rows}
+	repository, _ = New(&targetDatabaseFake{tx: tx})
+	if _, err := repository.List(t.Context(), 7, 0, 5); !errors.Is(err, scanErr) || !strings.Contains(err.Error(), "scan target") {
+		t.Fatalf("scan error = %v", err)
+	}
+	if !rows.closed || tx.rollbacks != 1 || tx.commits != 0 {
+		t.Fatalf("scan closed=%t rollback=%d commit=%d", rows.closed, tx.rollbacks, tx.commits)
+	}
+
+	iterationErr := errors.New("target iteration failed")
+	rows = &targetRowsFake{rowErr: iterationErr}
+	tx = &targetTxFake{queryRows: rows}
+	repository, _ = New(&targetDatabaseFake{tx: tx})
+	if _, err := repository.List(t.Context(), 7, 0, 5); !errors.Is(err, iterationErr) || !strings.Contains(err.Error(), "list targets") {
+		t.Fatalf("iteration error = %v", err)
+	}
+	if !rows.closed || tx.rollbacks != 1 || tx.commits != 0 {
+		t.Fatalf("iteration closed=%t rollback=%d commit=%d", rows.closed, tx.rollbacks, tx.commits)
+	}
+}
+
 func TestRepositoryRejectsMissingDatabaseAndContext(t *testing.T) {
 	if _, err := New(nil); err == nil {
 		t.Fatal("constructor accepted nil database")
@@ -180,15 +240,24 @@ func TestRepositoryRejectsMissingDatabaseAndContext(t *testing.T) {
 		if _, err := repository.Get(t.Context(), 7, 42); err == nil {
 			t.Fatal("Get accepted missing database")
 		}
+		if _, err := repository.List(t.Context(), 7, 0, 1); err == nil {
+			t.Fatal("List accepted missing database")
+		}
 	}
 	repository, _ := New(&targetDatabaseFake{tx: &targetTxFake{}})
 	if _, err := repository.Get(nil, 7, 42); err == nil || !strings.Contains(err.Error(), "context") {
 		t.Fatalf("nil context error = %v", err)
 	}
+	if _, err := repository.List(nil, 7, 0, 1); err == nil || !strings.Contains(err.Error(), "context") {
+		t.Fatalf("nil list context error = %v", err)
+	}
 	canceled, cancel := context.WithCancel(t.Context())
 	cancel()
 	if _, err := repository.Get(canceled, 7, 42); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled context error = %v", err)
+	}
+	if _, err := repository.List(canceled, 7, 0, 1); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled list context error = %v", err)
 	}
 }
 
@@ -211,6 +280,15 @@ func TestTargetsPostgresRoundTrip(t *testing.T) {
 	plaintext := []byte("target-token-roundtrip")
 	created, err := service.Create(ctx, app.Target{UserID: userID, Provider: "drive", Label: "Archive", Config: json.RawMessage(`{"folder":"archive"}`)}, plaintext)
 	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.Create(ctx, app.Target{UserID: userID, Provider: "dropbox", Label: "Photos", Config: json.RawMessage(`{}`)}, plaintext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherUserID := targetTestUser(t, ctx, pool)
+	t.Cleanup(func() { deleteTargetTestUser(t, pool, otherUserID) })
+	if _, err := service.Create(ctx, app.Target{UserID: otherUserID, Provider: "drive", Label: "Other", Config: json.RawMessage(`{}`)}, plaintext); err != nil {
 		t.Fatal(err)
 	}
 	var stored []byte
@@ -238,8 +316,24 @@ func TestTargetsPostgresRoundTrip(t *testing.T) {
 	if _, err := service.Get(ctx, userID+1, created.ID); !errors.Is(err, app.ErrTargetNotFound) {
 		t.Fatalf("other owner error = %v", err)
 	}
-	if _, err := service.Get(ctx, userID, created.ID+1); !errors.Is(err, app.ErrTargetNotFound) {
+	if _, err := service.Get(ctx, userID, second.ID+1); !errors.Is(err, app.ErrTargetNotFound) {
 		t.Fatalf("missing target error = %v", err)
+	}
+	firstPage, err := service.List(ctx, userID, 0, 1)
+	if err != nil || len(firstPage) != 1 || firstPage[0].ID != created.ID {
+		t.Fatalf("first target page = %+v, error = %v", firstPage, err)
+	}
+	secondPage, err := service.List(ctx, userID, firstPage[0].ID, 1)
+	if err != nil || len(secondPage) != 1 || secondPage[0].ID != second.ID {
+		t.Fatalf("second target page = %+v, error = %v", secondPage, err)
+	}
+	otherTargets, err := service.List(ctx, otherUserID, 0, 5)
+	if err != nil || len(otherTargets) != 1 || otherTargets[0].UserID != otherUserID {
+		t.Fatalf("other user's targets = %+v, error = %v", otherTargets, err)
+	}
+	emptyPage, err := service.List(ctx, userID, secondPage[0].ID, 5)
+	if err != nil || len(emptyPage) != 0 {
+		t.Fatalf("empty target page = %+v, error = %v", emptyPage, err)
 	}
 
 	failure := targetSealerFailure{err: errors.New("seal failed")}
@@ -255,7 +349,7 @@ func TestTargetsPostgresRoundTrip(t *testing.T) {
 		t.Fatal("target row exists after seal failure")
 	}
 
-	rollbackTargetMigration(t, ctx, cfg)
+	rollbackTargetMigrations(t, ctx, cfg)
 	var targetSurvivedRollback bool
 	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM sync_targets WHERE id = $1 AND user_id = $2)`, created.ID, userID).Scan(&targetSurvivedRollback); err != nil {
 		t.Fatalf("check worktree target after isolated rollback: %v", err)
@@ -265,7 +359,7 @@ func TestTargetsPostgresRoundTrip(t *testing.T) {
 	}
 }
 
-func TestTargetsGetPlanUsesPrimaryKey(t *testing.T) {
+func TestTargetQueriesUseIndexes(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use the worktree database")
 	}
@@ -274,6 +368,8 @@ func TestTargetsGetPlanUsesPrimaryKey(t *testing.T) {
 	pool := dbtest.Open(t, targetDatabaseConfig(t))
 	userID := targetTestUser(t, ctx, pool)
 	t.Cleanup(func() { deleteTargetTestUser(t, pool, userID) })
+	fixtureUserID := targetTestUser(t, ctx, pool)
+	t.Cleanup(func() { deleteTargetTestUser(t, pool, fixtureUserID) })
 	repository, err := New(pool)
 	if err != nil {
 		t.Fatal(err)
@@ -287,7 +383,7 @@ func TestTargetsGetPlanUsesPrimaryKey(t *testing.T) {
 	const fixtureRows = 400000
 	if _, err := pool.Exec(ctx, `INSERT INTO sync_targets (user_id, provider, label, token_sealed, config, status)
 SELECT $1, 'drive', 'plan-fixture-' || item::text, $2, '{}'::jsonb, 'connected'
-FROM generate_series(1, $3::integer) AS item`, userID, []byte("fixture-envelope"), fixtureRows); err != nil {
+FROM generate_series(1, $3::integer) AS item`, fixtureUserID, []byte("fixture-envelope"), fixtureRows); err != nil {
 		t.Fatalf("insert plan fixtures: %v", err)
 	}
 	if _, err := pool.Exec(ctx, `ANALYZE sync_targets`); err != nil {
@@ -308,8 +404,26 @@ FROM generate_series(1, $3::integer) AS item`, userID, []byte("fixture-envelope"
 	}
 	t.Logf("owner-scoped target query plan on %d rows: %s", fixtureRows+1, encoded)
 	indexes, scans := targetPlanEvidence(plans[0].Plan)
-	if !indexes["sync_targets_pkey"] {
-		t.Fatalf("plan does not use sync_targets_pkey: %s", encoded)
+	if !indexes["sync_targets_pkey"] && !indexes["sync_targets_user_id_id_idx"] {
+		t.Fatalf("plan does not use a target lookup index: %s", encoded)
+	}
+	if scans {
+		t.Fatalf("plan contains a sync_targets Seq Scan: %s", encoded)
+	}
+	encoded = nil
+	if err := pool.QueryRow(ctx, `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) `+listSQL, userID, int64(0), 5).Scan(&encoded); err != nil {
+		t.Fatalf("explain owner-scoped target page: %v", err)
+	}
+	if err := json.Unmarshal(encoded, &plans); err != nil {
+		t.Fatalf("decode list plan: %v", err)
+	}
+	if len(plans) != 1 {
+		t.Fatalf("list plan roots = %d", len(plans))
+	}
+	t.Logf("owner-scoped target page plan on %d rows: %s", fixtureRows+1, encoded)
+	indexes, scans = targetPlanEvidence(plans[0].Plan)
+	if !indexes["sync_targets_user_id_id_idx"] {
+		t.Fatalf("plan does not use sync_targets_user_id_id_idx: %s", encoded)
 	}
 	if scans {
 		t.Fatalf("plan contains a sync_targets Seq Scan: %s", encoded)
@@ -345,14 +459,24 @@ func (database *targetDatabaseFake) BeginTx(context.Context, pgx.TxOptions) (pgx
 
 type targetTxFake struct {
 	pgx.Tx
-	rows      []pgx.Row
-	rowArgs   []any
-	execArgs  []any
-	execCalls int
-	execErr   error
-	commitErr error
-	commits   int
-	rollbacks int
+	rows       []pgx.Row
+	queryRows  pgx.Rows
+	queryErr   error
+	rowArgs    []any
+	queryArgs  []any
+	execArgs   []any
+	queryCalls int
+	execCalls  int
+	execErr    error
+	commitErr  error
+	commits    int
+	rollbacks  int
+}
+
+func (tx *targetTxFake) Query(_ context.Context, _ string, args ...any) (pgx.Rows, error) {
+	tx.queryCalls++
+	tx.queryArgs = append([]any(nil), args...)
+	return tx.queryRows, tx.queryErr
 }
 
 func (tx *targetTxFake) QueryRow(_ context.Context, _ string, args ...any) pgx.Row {
@@ -385,6 +509,34 @@ type targetRow struct {
 	values []any
 	err    error
 }
+
+type targetRowsFake struct {
+	pgx.Rows
+	values  [][]any
+	index   int
+	scanErr error
+	rowErr  error
+	closed  bool
+}
+
+func (rows *targetRowsFake) Next() bool {
+	if rows.index >= len(rows.values) {
+		return false
+	}
+	rows.index++
+	return true
+}
+
+func (rows *targetRowsFake) Scan(destinations ...any) error {
+	if rows.scanErr != nil {
+		return rows.scanErr
+	}
+	return (targetRow{values: rows.values[rows.index-1]}).Scan(destinations...)
+}
+
+func (rows *targetRowsFake) Err() error { return rows.rowErr }
+
+func (rows *targetRowsFake) Close() { rows.closed = true }
 
 func (row targetRow) Scan(destinations ...any) error {
 	if row.err != nil {
@@ -481,7 +633,7 @@ func targetTestKeyring(t *testing.T) *crypto.Keyring {
 	return ring
 }
 
-func rollbackTargetMigration(t *testing.T, ctx context.Context, cfg config.DBConfig) {
+func rollbackTargetMigrations(t *testing.T, ctx context.Context, cfg config.DBConfig) {
 	t.Helper()
 	isolatedCfg := dbtest.EmptyDatabase(t, cfg)
 	if isolatedCfg.Name == cfg.Name {
@@ -502,17 +654,35 @@ func rollbackTargetMigration(t *testing.T, ctx context.Context, cfg config.DBCon
 	if _, err := isolatedPool.Exec(ctx, `CREATE TABLE users (id BIGINT PRIMARY KEY)`); err != nil {
 		t.Fatalf("prepare isolated migration rollback user table: %v", err)
 	}
-	const migrationName = "20261111131000_sync_targets.sql"
-	migration, err := fs.ReadFile(migrations.Files, migrationName)
+	const targetMigration = "20261111131000_sync_targets.sql"
+	targetSQL, err := fs.ReadFile(migrations.Files, targetMigration)
 	if err != nil {
-		t.Fatalf("read sync target migration: %v", err)
+		t.Fatalf("read sync target table migration: %v", err)
 	}
-	files := fstest.MapFS{migrationName: &fstest.MapFile{Data: migration}}
+	const indexMigration = "20261112100000_sync_targets_owner_cursor_index.sql"
+	indexSQL, err := fs.ReadFile(migrations.Files, indexMigration)
+	if err != nil {
+		t.Fatalf("read sync target index migration: %v", err)
+	}
+	files := fstest.MapFS{
+		targetMigration: &fstest.MapFile{Data: targetSQL},
+		indexMigration:  &fstest.MapFile{Data: indexSQL},
+	}
 	if err := db.MigrateFiles(ctx, isolatedCfg, db.MigrateUp, nil, files); err != nil {
-		t.Fatalf("apply sync target migration to isolated database: %v", err)
+		t.Fatalf("apply sync target migrations to isolated database: %v", err)
 	}
 	if err := db.MigrateFiles(ctx, isolatedCfg, db.MigrateDown, nil, files); err != nil {
-		t.Fatalf("roll back sync target migration: %v", err)
+		t.Fatalf("roll back sync target index migration: %v", err)
+	}
+	var index *string
+	if err := isolatedPool.QueryRow(ctx, `SELECT to_regclass('public.sync_targets_user_id_id_idx')::text`).Scan(&index); err != nil {
+		t.Fatalf("read rolled back target index: %v", err)
+	}
+	if index != nil {
+		t.Fatalf("sync_targets_user_id_id_idx still exists after rollback: %s", *index)
+	}
+	if err := db.MigrateFiles(ctx, isolatedCfg, db.MigrateDown, nil, files); err != nil {
+		t.Fatalf("roll back sync target table migration: %v", err)
 	}
 	var table *string
 	if err := isolatedPool.QueryRow(ctx, `SELECT to_regclass('public.sync_targets')::text`).Scan(&table); err != nil {

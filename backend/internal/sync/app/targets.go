@@ -17,7 +17,11 @@ var (
 	ErrTargetNotFound = errors.New("sync: target not found")
 	// ErrInvalidTarget means the target metadata or token is invalid.
 	ErrInvalidTarget = errors.New("sync: invalid target")
+	// ErrInvalidTargetPage means target listing received an invalid owner or page.
+	ErrInvalidTargetPage = errors.New("sync: invalid target page")
 )
+
+const maxTargetPageSize = 100
 
 // Target is the user-owned metadata for one connected storage destination.
 // It never includes the destination token.
@@ -35,6 +39,7 @@ type Target struct {
 type TargetRepository interface {
 	Create(context.Context, Target, func(int64) (crypto.Sealed, error)) (Target, error)
 	Get(context.Context, int64, int64) (Target, error)
+	List(context.Context, int64, int64, int) ([]Target, error)
 }
 
 // TargetSealer encrypts a destination token using associated data.
@@ -92,6 +97,21 @@ func (s Targets) Get(ctx context.Context, userID, id int64) (Target, error) {
 		return Target{}, fmt.Errorf("sync: get target: %w", err)
 	}
 	return target, nil
+}
+
+// List returns one bounded page of targets owned by userID after afterID.
+func (s Targets) List(ctx context.Context, userID, afterID int64, limit int) ([]Target, error) {
+	if err := s.ready(ctx); err != nil {
+		return nil, err
+	}
+	if userID <= 0 || afterID < 0 || limit <= 0 || limit > maxTargetPageSize {
+		return nil, ErrInvalidTargetPage
+	}
+	targets, err := s.Repository.List(ctx, userID, afterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("sync: list targets: %w", err)
+	}
+	return targets, nil
 }
 
 // TargetTokenAAD binds a token envelope to the target row that owns it.
