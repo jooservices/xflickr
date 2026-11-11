@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -231,7 +232,7 @@ func TestTargetsPostgresRoundTrip(t *testing.T) {
 		t.Fatalf("wrong AAD error = %v", err)
 	}
 	loaded, err := service.Get(ctx, userID, created.ID)
-	if err != nil || loaded.ID != created.ID || loaded.Provider != "drive" || loaded.Label != "Archive" || string(loaded.Config) != `{"folder":"archive"}` {
+	if err != nil || loaded.ID != created.ID || loaded.Provider != "drive" || loaded.Label != "Archive" || !jsonEqual(t, loaded.Config, []byte(`{"folder":"archive"}`)) {
 		t.Fatalf("loaded target = %+v, error = %v", loaded, err)
 	}
 	if _, err := service.Get(ctx, userID+1, created.ID); !errors.Is(err, app.ErrTargetNotFound) {
@@ -520,4 +521,18 @@ func rollbackTargetMigration(t *testing.T, ctx context.Context, cfg config.DBCon
 	if table != nil {
 		t.Fatalf("sync_targets still exists after rollback: %s", *table)
 	}
+}
+
+// jsonEqual compares two JSON documents structurally: PostgreSQL stores jsonb in a normalised form,
+// so the stored text can differ from the input in whitespace and key order.
+func jsonEqual(t *testing.T, got, want []byte) bool {
+	t.Helper()
+	var left, right any
+	if err := json.Unmarshal(got, &left); err != nil {
+		t.Fatalf("decode stored JSON %q: %v", got, err)
+	}
+	if err := json.Unmarshal(want, &right); err != nil {
+		t.Fatalf("decode expected JSON %q: %v", want, err)
+	}
+	return reflect.DeepEqual(left, right)
 }
