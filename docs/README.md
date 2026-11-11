@@ -67,6 +67,8 @@
   and five-minute expiry cleanup.
 - [Cloud storage provider contract](cloud-sync-providers.md) — provider port,
   capabilities, upload verification, and reusable adapter contract tests.
+- [Dropbox metadata check](dropbox-provider.md) — known-path metadata checks,
+  App-folder paths, content hash semantics, and current slice limits.
 - [Cloud sync engine](cloud-sync-engine.md) — temporary blob ownership, upload
   verification order, cleanup, and retry boundaries.
 - [AI captioning](ai-captioning.md) — caption port, Ollama vision requests,
