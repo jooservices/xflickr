@@ -68,6 +68,8 @@
   quota caps.
 - [Admin API quota view](admin-quota.md) — live per-key quota state and the
   fields the current API does not expose yet.
+- [Cluster nodes quota states](cluster-nodes.md) — the first `/admin/nodes`
+  slice and its data source, refresh states, and deferred node functionality.
 - [Quota governor](quota.md) — per-key token bucket, clock-second burst cap,
   rolling 60-minute budget, ready-before-grant rebuild, demand-based lane lending and admin floor, and cooldown behavior.
 - [ADR 0007: Ledger ready before any grant](adr/0007-ledger-ready-before-grant.md) — grants never set ready; every role rebuilds first.

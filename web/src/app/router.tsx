@@ -18,6 +18,7 @@ import { QuotaPage } from '../pages/admin/quota';
 import { AlbumsPage } from '../pages/albums';
 import { LibraryPage } from '../pages/library';
 import { HomePage } from '../pages/home/HomePage';
+import { NodesPage } from '../pages/admin/nodes/NodesPage';
 import { RouteErrorPage } from './ErrorBoundary';
 
 function userPageElement(path: string, labelKey: MessageKey) {
@@ -70,7 +71,9 @@ const adminPages: RouteObject[] = [
     return {
       path: item.path.slice('/admin/'.length),
       element:
-        item.id === 'quota' ? (
+        item.id === 'nodes' ? (
+          <NodesPage />
+        ) : item.id === 'quota' ? (
           <QuotaPage />
         ) : (
           <PlaceholderPage scope="admin" titleKey={item.labelKey} />
