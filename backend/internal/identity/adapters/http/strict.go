@@ -201,6 +201,10 @@ func (StrictHandler) GetAdminFlags(context.Context, gen.GetAdminFlagsRequestObje
 	return nil, errFeatureFlagsServedBySettings
 }
 
+func (StrictHandler) GetAdminFlag(context.Context, gen.GetAdminFlagRequestObject) (gen.GetAdminFlagResponseObject, error) {
+	return nil, errFeatureFlagsServedBySettings
+}
+
 func (StrictHandler) UpdateAdminFlags(context.Context, gen.UpdateAdminFlagsRequestObject) (gen.UpdateAdminFlagsResponseObject, error) {
 	return nil, errFeatureFlagsServedBySettings
 }

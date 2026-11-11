@@ -1234,6 +1234,23 @@ export const GetAdminFlagsResponseItem = zod.object({
     .array(zod.int().min(1))
     .max(getAdminFlagsResponseUserIdsMax)
     .describe('Required for all audiences; must be empty unless audience is user_ids.'),
+  links: zod
+    .object({
+      self: zod.object({
+        href: zod.string(),
+        method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+      }),
+    })
+    .catchall(
+      zod.object({
+        href: zod.string(),
+        method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+      }),
+    )
+    .optional()
+    .describe(
+      'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+    ),
 });
 export const GetAdminFlagsResponse = zod.array(GetAdminFlagsResponseItem);
 
@@ -1262,12 +1279,108 @@ export const UpdateAdminFlagsBody = zod.object({
           .array(zod.int().min(1))
           .max(updateAdminFlagsBodyFlagsItemUserIdsMax)
           .describe('Required for all audiences; must be empty unless audience is user_ids.'),
+        links: zod
+          .object({
+            self: zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          })
+          .catchall(
+            zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          )
+          .optional()
+          .describe(
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+          ),
       }),
     )
     .min(1),
 });
 
 export const UpdateAdminFlagsResponse = zod.void();
+
+/**
+ * @summary Read one configured feature flag
+ */
+export const getAdminFlagPathNameMax = 128;
+
+export const getAdminFlagPathNameRegExp = new RegExp('^[a-z][a-z0-9_.-]{0,127}$');
+
+export const GetAdminFlagParams = zod.object({
+  name: zod.string().min(1).max(getAdminFlagPathNameMax).regex(getAdminFlagPathNameRegExp),
+});
+
+export const getAdminFlagResponseCodeMin = 200;
+export const getAdminFlagResponseCodeMax = 200;
+
+export const getAdminFlagResponseDataOneNameMax = 128;
+
+export const getAdminFlagResponseDataOneNameRegExp = new RegExp('^[a-z][a-z0-9_.-]{0,127}$');
+
+export const getAdminFlagResponseDataOneUserIdsMax = 10000;
+
+export const GetAdminFlagResponse = zod.object({
+  success: zod.literal(true),
+  code: zod.int().min(getAdminFlagResponseCodeMin).max(getAdminFlagResponseCodeMax),
+  message: zod.string(),
+  data: zod
+    .object({
+      name: zod
+        .string()
+        .min(1)
+        .max(getAdminFlagResponseDataOneNameMax)
+        .regex(getAdminFlagResponseDataOneNameRegExp),
+      enabled: zod.boolean(),
+      audience: zod.enum(['all', 'admins', 'user_ids']),
+      user_ids: zod
+        .array(zod.int().min(1))
+        .max(getAdminFlagResponseDataOneUserIdsMax)
+        .describe('Required for all audiences; must be empty unless audience is user_ids.'),
+      links: zod
+        .object({
+          self: zod.object({
+            href: zod.string(),
+            method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+          }),
+        })
+        .catchall(
+          zod.object({
+            href: zod.string(),
+            method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+          }),
+        )
+        .describe(
+          'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+        ),
+    })
+    .and(
+      zod.object({
+        links: zod
+          .object({
+            self: zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          })
+          .catchall(
+            zod.object({
+              href: zod.string(),
+              method: zod.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+            }),
+          )
+          .describe(
+            'Relations: self, authentication-options, users, sessions, me, user, revoke, sessions, password, sharing, update, crawl. Each relation carries an href and method. Only available relations are present.',
+          ),
+      }),
+    ),
+  meta: zod.record(zod.string(), zod.unknown()),
+  errors: zod.null(),
+  trace_id: zod.string(),
+});
 
 /**
  * Every assignment is recorded in the audit trail.

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.0.0
  */
 import type { FeatureFlagAudience } from './featureFlagAudience';
+import type { Links } from './links';
 
 export interface FeatureFlag {
   /**
@@ -22,4 +23,5 @@ export interface FeatureFlag {
    * @items.minimum 1
    */
   user_ids: number[];
+  readonly links?: Links;
 }

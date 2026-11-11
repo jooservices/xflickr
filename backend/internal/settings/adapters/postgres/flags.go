@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/jooservices/xflickr/internal/settings/app"
 	"github.com/jooservices/xflickr/internal/settings/domain"
 )
 
@@ -16,6 +18,11 @@ const (
 SELECT name, enabled, audience, user_ids
 FROM feature_flags
 ORDER BY name`
+
+	getFeatureFlagSQL = `
+SELECT name, enabled, audience, user_ids
+FROM feature_flags
+WHERE name = $1`
 
 	userIsAdminSQL = `
 SELECT EXISTS (
@@ -77,6 +84,8 @@ func (database pgxFlagDB) Begin(ctx context.Context) (flagTx, error) {
 // FlagRepository stores the feature flag rows in PostgreSQL.
 type FlagRepository struct{ database flagDB }
 
+var _ app.FeatureFlagRepository = (*FlagRepository)(nil)
+
 func NewFlagRepository(pool *pgxpool.Pool) (*FlagRepository, error) {
 	if pool == nil {
 		return nil, errFlagDatabaseRequired
@@ -110,6 +119,21 @@ func (repository *FlagRepository) ListFlags(ctx context.Context) ([]domain.Featu
 		return nil, fmt.Errorf("settings: iterate feature flags: %w", err)
 	}
 	return flags, nil
+}
+
+// GetFlag reads one feature flag by its primary key.
+func (repository *FlagRepository) GetFlag(ctx context.Context, name string) (domain.FeatureFlag, error) {
+	if err := repository.ready(ctx); err != nil {
+		return domain.FeatureFlag{}, err
+	}
+	flag, err := scanFeatureFlag(repository.database.QueryRow(ctx, getFeatureFlagSQL, name))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.FeatureFlag{}, app.ErrFeatureFlagNotFound
+	}
+	if err != nil {
+		return domain.FeatureFlag{}, fmt.Errorf("settings: query feature flag %q: %w", name, err)
+	}
+	return flag, nil
 }
 
 func (repository *FlagRepository) UserIsAdmin(ctx context.Context, userID int64) (bool, error) {

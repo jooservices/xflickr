@@ -37,6 +37,8 @@ import type {
   MetricSeries,
   OpsStatus,
   Plan,
+  RESTFeatureFlagEnvelope,
+  RESTProblem,
   UpdateAdminFlagsRequest,
   UpdateAdminPlansRequest,
   UpdateAdminUserRequest,
@@ -44,6 +46,26 @@ import type {
 } from '../models';
 
 import { customFetch } from '../../mutator';
+
+// https://stackoverflow.com/questions/49579094/typescript-conditional-types-filter-out-readonly-properties-pick-only-requir/49579497#49579497
+type IfEquals<X, Y, A = X, B = never> =
+  (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? A : B;
+
+type WritableKeys<T> = {
+  [P in keyof T]-?: IfEquals<{ [Q in P]: T[P] }, { -readonly [Q in P]: T[P] }, P>;
+}[keyof T];
+
+type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends (k: infer I) => void
+  ? I
+  : never;
+type DistributeReadOnlyOverUnions<T> = T extends any ? NonReadonly<T> : never;
+
+type Writable<T> = Pick<T, WritableKeys<T>>;
+type NonReadonly<T> = [T] extends [UnionToIntersection<T>]
+  ? {
+      [P in keyof Writable<T>]: T[P] extends object ? NonReadonly<NonNullable<T[P]>> : T[P];
+    }
+  : DistributeReadOnlyOverUnions<T>;
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
@@ -937,7 +959,7 @@ export const getUpdateAdminFlagsUrl = () => {
  * @summary Create or update feature flags
  */
 export const updateAdminFlags = async (
-  updateAdminFlagsRequest: UpdateAdminFlagsRequest,
+  updateAdminFlagsRequest: NonReadonly<UpdateAdminFlagsRequest>,
   options?: Parameters<typeof customFetch>[1],
 ): Promise<updateAdminFlagsResponse> => {
   const getHeaders = (
@@ -1005,9 +1027,9 @@ export const getUpdateAdminFlagsMutationOptions = <TError = Error, TContext = un
 export type UpdateAdminFlagsMutationResult = NonNullable<
   Awaited<ReturnType<typeof updateAdminFlags>>
 >;
-export type UpdateAdminFlagsMutationBody = UpdateAdminFlagsRequest;
+export type UpdateAdminFlagsMutationBody = NonReadonly<UpdateAdminFlagsRequest>;
 export type UpdateAdminFlagsMutationError = Error;
-export type UpdateAdminFlagsMutationVariables = { data: UpdateAdminFlagsRequest };
+export type UpdateAdminFlagsMutationVariables = { data: NonReadonly<UpdateAdminFlagsRequest> };
 
 /**
  * @summary Create or update feature flags
@@ -1031,6 +1053,181 @@ export const useUpdateAdminFlags = <TError = Error, TContext = unknown>(
 > => {
   return useMutation(getUpdateAdminFlagsMutationOptions(options), queryClient);
 };
+export type getAdminFlagResponse200 = {
+  data: RESTFeatureFlagEnvelope;
+  status: 200;
+};
+
+export type getAdminFlagResponse400 = {
+  data: RESTProblem;
+  status: 400;
+};
+
+export type getAdminFlagResponse401 = {
+  data: RESTProblem;
+  status: 401;
+};
+
+export type getAdminFlagResponse403 = {
+  data: RESTProblem;
+  status: 403;
+};
+
+export type getAdminFlagResponse404 = {
+  data: RESTProblem;
+  status: 404;
+};
+
+export type getAdminFlagResponse422 = {
+  data: RESTProblem;
+  status: 422;
+};
+
+export type getAdminFlagResponse500 = {
+  data: RESTProblem;
+  status: 500;
+};
+
+export type getAdminFlagResponseSuccess = getAdminFlagResponse200 & {
+  headers: Headers;
+};
+export type getAdminFlagResponseError = (
+  | getAdminFlagResponse400
+  | getAdminFlagResponse401
+  | getAdminFlagResponse403
+  | getAdminFlagResponse404
+  | getAdminFlagResponse422
+  | getAdminFlagResponse500
+) & {
+  headers: Headers;
+};
+
+export type getAdminFlagResponse = getAdminFlagResponseSuccess | getAdminFlagResponseError;
+
+export const getGetAdminFlagUrl = (name: string) => {
+  return `/api/v1/admin/flags/${name}`;
+};
+
+/**
+ * @summary Read one configured feature flag
+ */
+export const getAdminFlag = async (
+  name: string,
+  options?: Parameters<typeof customFetch>[1],
+): Promise<getAdminFlagResponse> => {
+  return customFetch<getAdminFlagResponse>(getGetAdminFlagUrl(name), {
+    ...options,
+    method: 'GET',
+  });
+};
+
+export const getGetAdminFlagQueryKey = (name: string) => {
+  return [`/api/v1/admin/flags/${name}`] as const;
+};
+
+export const getGetAdminFlagQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAdminFlag>>,
+  TError = RESTProblem,
+>(
+  name: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminFlag>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAdminFlagQueryKey(name);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminFlag>>> = ({ signal }) =>
+    getAdminFlag(name, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: name !== null && name !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getAdminFlag>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type GetAdminFlagQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminFlag>>>;
+export type GetAdminFlagQueryError = RESTProblem;
+
+export function useGetAdminFlag<
+  TData = Awaited<ReturnType<typeof getAdminFlag>>,
+  TError = RESTProblem,
+>(
+  name: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminFlag>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminFlag>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminFlag>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAdminFlag<
+  TData = Awaited<ReturnType<typeof getAdminFlag>>,
+  TError = RESTProblem,
+>(
+  name: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminFlag>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAdminFlag>>,
+          TError,
+          Awaited<ReturnType<typeof getAdminFlag>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAdminFlag<
+  TData = Awaited<ReturnType<typeof getAdminFlag>>,
+  TError = RESTProblem,
+>(
+  name: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminFlag>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Read one configured feature flag
+ */
+
+export function useGetAdminFlag<
+  TData = Awaited<ReturnType<typeof getAdminFlag>>,
+  TError = RESTProblem,
+>(
+  name: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAdminFlag>>, TError, TData>>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAdminFlagQueryOptions(name, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 export type updateAdminUserPlanResponse204 = {
   data: void;
   status: 204;

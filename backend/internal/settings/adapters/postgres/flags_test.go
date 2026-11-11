@@ -7,8 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/jooservices/xflickr/internal/settings/app"
 	"github.com/jooservices/xflickr/internal/settings/domain"
 )
 
@@ -16,6 +18,8 @@ type flagDBStub struct {
 	rows     flagRows
 	queryErr error
 	row      flagRow
+	rowQuery string
+	rowArgs  []any
 	beginErr error
 	tx       flagTx
 	queries  int
@@ -28,8 +32,10 @@ func (database *flagDBStub) Query(context.Context, string, ...any) (flagRows, er
 	return database.rows, database.queryErr
 }
 
-func (database *flagDBStub) QueryRow(context.Context, string, ...any) flagRow {
+func (database *flagDBStub) QueryRow(_ context.Context, query string, args ...any) flagRow {
 	database.rowCalls++
+	database.rowQuery = query
+	database.rowArgs = append([]any(nil), args...)
 	return database.row
 }
 
@@ -82,6 +88,34 @@ func (rows *flagRowsStub) Close()     { rows.closed = true }
 type flagRowStub struct {
 	value bool
 	err   error
+}
+
+type flagFeatureRowStub struct {
+	values []any
+	err    error
+}
+
+func (row flagFeatureRowStub) Scan(destinations ...any) error {
+	if row.err != nil {
+		return row.err
+	}
+	for i, value := range row.values {
+		switch target := destinations[i].(type) {
+		case *string:
+			*target = value.(string)
+		case *bool:
+			*target = value.(bool)
+		case *[]int64:
+			if value == nil {
+				*target = nil
+			} else {
+				*target = append([]int64(nil), value.([]int64)...)
+			}
+		default:
+			return errors.New("unexpected scan destination")
+		}
+	}
+	return nil
 }
 
 func (row flagRowStub) Scan(destination ...any) error {
@@ -177,6 +211,61 @@ func TestFlagRepositoryListFlags(t *testing.T) {
 				t.Fatalf("ListFlags() error = %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestFlagRepositoryGetFlag(t *testing.T) {
+	databaseErr := errors.New("database unavailable")
+	for _, test := range []struct {
+		name    string
+		values  []any
+		rowErr  error
+		want    domain.FeatureFlag
+		wantErr error
+	}{
+		{
+			name:   "all audience with empty array",
+			values: []any{"admin.banner", false, "all", nil},
+			want:   domain.FeatureFlag{Name: "admin.banner", Enabled: false, Audience: domain.AudienceAll, UserIDs: []int64{}},
+		},
+		{
+			name:   "user id audience preserves stored order",
+			values: []any{"targeted.banner", true, "user_ids", []int64{9, 3}},
+			want:   domain.FeatureFlag{Name: "targeted.banner", Enabled: true, Audience: domain.AudienceUserIDs, UserIDs: []int64{9, 3}},
+		},
+		{
+			name:    "not found",
+			rowErr:  pgx.ErrNoRows,
+			wantErr: app.ErrFeatureFlagNotFound,
+		},
+		{
+			name:    "database error",
+			rowErr:  databaseErr,
+			wantErr: databaseErr,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			database := &flagDBStub{row: flagFeatureRowStub{values: test.values, err: test.rowErr}}
+			repository := newFlagRepository(database)
+			got, err := repository.GetFlag(t.Context(), "admin.banner")
+			if test.wantErr != nil {
+				if !errors.Is(err, test.wantErr) {
+					t.Fatalf("GetFlag() error = %v; want %v", err, test.wantErr)
+				}
+				if test.name == "database error" && !strings.Contains(err.Error(), "query feature flag") {
+					t.Fatalf("database error was not wrapped: %v", err)
+				}
+			} else if err != nil || !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("GetFlag() = %+v, %v; want %+v", got, err, test.want)
+			}
+			if database.rowCalls != 1 || database.rowQuery != getFeatureFlagSQL || len(database.rowArgs) != 1 || database.rowArgs[0] != "admin.banner" {
+				t.Fatalf("query = %q, args = %#v, calls = %d", database.rowQuery, database.rowArgs, database.rowCalls)
+			}
+		})
+	}
+
+	if _, err := newFlagRepository(&flagDBStub{}).GetFlag(nil, "admin.banner"); err == nil || !strings.Contains(err.Error(), "context is required") {
+		t.Fatalf("GetFlag(nil context) error = %v", err)
 	}
 }
 

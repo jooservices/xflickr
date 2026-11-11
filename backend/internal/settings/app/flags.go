@@ -15,14 +15,18 @@ const MaxFeatureFlagCacheAge = 30 * time.Second
 
 var (
 	ErrFlagRepositoryRequired = errors.New("settings: feature flag repository is required")
-	ErrNoFeatureFlags         = errors.New("settings: at least one feature flag is required")
-	ErrDuplicateFeatureFlag   = errors.New("settings: feature flag names must be unique")
+	// ErrFeatureFlagNotFound reports that a named feature flag does not exist.
+	ErrFeatureFlagNotFound  = errors.New("settings: feature flag not found")
+	ErrNoFeatureFlags       = errors.New("settings: at least one feature flag is required")
+	ErrDuplicateFeatureFlag = errors.New("settings: feature flag names must be unique")
 )
 
 // FeatureFlagRepository persists rollout flags and determines whether a user
 // currently has the administrator role.
 type FeatureFlagRepository interface {
 	ListFlags(context.Context) ([]domain.FeatureFlag, error)
+	// GetFlag reads one flag from storage by its name.
+	GetFlag(context.Context, string) (domain.FeatureFlag, error)
 	UserIsAdmin(context.Context, int64) (bool, error)
 	UpsertFlags(context.Context, []domain.FeatureFlag) error
 }
@@ -63,6 +67,28 @@ func (service *FeatureFlags) List(ctx context.Context) ([]domain.FeatureFlag, er
 		return nil, err
 	}
 	return cloneFeatureFlags(flags), nil
+}
+
+// Get reads one flag directly from the repository without using the snapshot.
+func (service *FeatureFlags) Get(ctx context.Context, name string) (domain.FeatureFlag, error) {
+	if service == nil || service.repository == nil {
+		return domain.FeatureFlag{}, ErrFlagRepositoryRequired
+	}
+	if ctx == nil {
+		return domain.FeatureFlag{}, ErrContextRequired
+	}
+	if err := ctx.Err(); err != nil {
+		return domain.FeatureFlag{}, err
+	}
+	flag, err := service.repository.GetFlag(ctx, name)
+	if err != nil {
+		return domain.FeatureFlag{}, fmt.Errorf("settings: get feature flag %q: %w", name, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return domain.FeatureFlag{}, err
+	}
+	flag.UserIDs = append([]int64(nil), flag.UserIDs...)
+	return flag, nil
 }
 
 // Enabled returns whether name is enabled for userID. Unknown flags are off.

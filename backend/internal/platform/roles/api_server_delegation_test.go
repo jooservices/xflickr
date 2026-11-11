@@ -11,6 +11,9 @@ import (
 // without panicking; this pins that apiServer forwards these admin operations.
 func TestAPIServerForwardsAdminOperations(t *testing.T) {
 	server := apiServer{}
+	if response, err := server.GetAdminFlag(t.Context(), gen.GetAdminFlagRequestObject{Name: "flag"}); err == nil && response == nil {
+		t.Fatal("GetAdminFlag returned neither a response nor an error")
+	}
 	if response, err := server.GetAdminFlags(t.Context(), gen.GetAdminFlagsRequestObject{}); err == nil && response == nil {
 		t.Fatal("GetAdminFlags returned neither a response nor an error")
 	}

@@ -10,14 +10,40 @@ FeatureFlag:
       pattern: '^[a-z][a-z0-9_.-]{0,127}$'
     enabled: { type: boolean }
     audience:
-      type: string
-      enum: [all, admins, user_ids]
+      $ref: '#/FeatureFlagAudience'
     user_ids:
       type: array
       maxItems: 10000
       uniqueItems: true
       items: { type: integer, format: int64, minimum: 1 }
       description: Required for all audiences; must be empty unless audience is user_ids.
+    links:
+      readOnly: true
+      $ref: ./rest.yaml#/Links
+FeatureFlagAudience:
+  type: string
+  enum: [all, admins, user_ids]
+RESTFeatureFlag:
+  allOf:
+    - $ref: '#/FeatureFlag'
+    - type: object
+      required: [links]
+      properties:
+        links: { $ref: ./rest.yaml#/Links }
+RESTFeatureFlagEnvelope:
+  type: object
+  additionalProperties: false
+  required: [success, code, message, data, meta, errors, trace_id]
+  properties:
+    success: { type: boolean, const: true }
+    code: { type: integer, minimum: 200, maximum: 200 }
+    message: { type: string }
+    data: { $ref: '#/RESTFeatureFlag' }
+    meta:
+      type: object
+      additionalProperties: true
+    errors: { type: 'null' }
+    trace_id: { type: string }
 UpdateAdminFlagsRequest:
   type: object
   additionalProperties: false
