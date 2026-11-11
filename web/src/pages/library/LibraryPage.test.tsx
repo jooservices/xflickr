@@ -255,7 +255,7 @@ describe('LibraryPage', () => {
     expect(screen.getByTestId('user-library-selection-status')).toHaveTextContent('2');
     expect(screen.getByTestId('user-library-photo-select-1')).toBeChecked();
     fireEvent.click(screen.getByTestId('user-library-clear-selection'));
-    expect(window.sessionStorage.getItem('xflickr.library.selection')).toBeNull();
+    expect(window.sessionStorage.getItem('xflickr.library.selection.2')).toBeNull();
   });
 
   it('shows a recoverable initial error and retries the first page', async () => {
@@ -394,12 +394,15 @@ describe('LibraryPage', () => {
 
   it('re-measures the grid offset when content above it changes height', async () => {
     const callbacks: ResizeObserverCallback[] = [];
+    const observed: Element[] = [];
     class ResizeObserverStub {
       constructor(callback: ResizeObserverCallback) {
         callbacks.push(callback);
       }
 
-      observe = vi.fn();
+      observe = vi.fn((target: Element) => {
+        observed.push(target);
+      });
 
       disconnect = vi.fn();
 
@@ -416,6 +419,10 @@ describe('LibraryPage', () => {
 
     const grid = await screen.findByTestId('user-library-grid');
     expect(grid).toHaveAttribute('data-scroll-margin', '100');
+    // The element rendered right before the grid (the results bar) is watched, not only <body>.
+    const before = grid.previousElementSibling ?? grid.parentElement?.previousElementSibling;
+    expect(before).not.toBeNull();
+    expect(observed).toContain(before);
     top = 260;
     for (const callback of callbacks) {
       callback([], {} as ResizeObserver);

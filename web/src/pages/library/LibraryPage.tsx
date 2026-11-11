@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import type { CatalogFavorite } from '../../shared/api/gen/models';
+import { useSession } from '../../entities';
 import { Icon, useI18n } from '../../shared';
 import { LibraryApiError, loadFavorites } from '../../features/library/api';
 import { PhotoGrid } from './PhotoGrid';
@@ -30,7 +31,9 @@ export function LibraryPage() {
     retry: false,
   });
   const [selectionMode, setSelectionMode] = useState(false);
-  const [selected, setSelected] = useState<Set<number>>(() => loadSelection());
+  const { session } = useSession();
+  const userId = session.status === 'authenticated' ? session.user.id : 0;
+  const [selected, setSelected] = useState<Set<number>>(() => loadSelection(userId));
   const [contacts, setContacts] = useState<Set<string>>(() => new Set());
   const [contactSearch, setContactSearch] = useState('');
   const [debouncedContactSearch, setDebouncedContactSearch] = useState('');
@@ -38,8 +41,8 @@ export function LibraryPage() {
   const [captioned, setCaptioned] = useState(false);
 
   useEffect(() => {
-    saveSelection(selected);
-  }, [selected]);
+    saveSelection(userId, selected);
+  }, [selected, userId]);
 
   useEffect(() => {
     document.title = `${t('user.library.title')} · XFlickr`;

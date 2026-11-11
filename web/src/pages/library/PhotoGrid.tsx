@@ -82,14 +82,28 @@ export function PhotoGrid({
     measureScrollMargin();
   }, [locale, measureScrollMargin, photos.length, selectionFull, selectionMode, staleNotice]);
 
-  // Content above the grid (filters, notices, the selection bar) can change height without changing
-  // any prop used above, which would leave the virtualizer positioning rows from a stale offset.
+  // Content above the grid (filters, result bar, notices) can change height without changing any prop
+  // used above or the size of <body>, which would leave the virtualizer positioning rows from a stale
+  // offset. Observe the grid's container and every element rendered before the grid at each level up to
+  // <body>, so a size change anywhere above it re-measures the offset.
   useEffect(() => {
     window.addEventListener('resize', measureScrollMargin);
     if (typeof ResizeObserver === 'undefined') {
       return () => window.removeEventListener('resize', measureScrollMargin);
     }
     const observer = new ResizeObserver(() => measureScrollMargin());
+    let node: Element | null = gridRef.current;
+    while (node !== null && node !== document.body) {
+      for (
+        let before = node.previousElementSibling;
+        before !== null;
+        before = before.previousElementSibling
+      ) {
+        observer.observe(before);
+      }
+      node = node.parentElement;
+      if (node !== null) observer.observe(node);
+    }
     observer.observe(document.body);
     return () => {
       observer.disconnect();

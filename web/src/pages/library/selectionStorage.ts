@@ -1,9 +1,22 @@
-const STORAGE_KEY = 'xflickr.library.selection';
+const KEY_PREFIX = 'xflickr.library.selection.';
 
-/** Reads the kept selection; storage can be unavailable or hold garbage, in which case it is empty. */
-export function loadSelection(): Set<number> {
+const keyFor = (userId: number): string => `${KEY_PREFIX}${String(userId)}`;
+
+/**
+ * Reads the selection kept for this user in the browser session. Selections of any other user left in
+ * the same tab (a previous sign-in) are deleted, so photo IDs and counts never leak to the next user.
+ * Storage can be unavailable or hold garbage, in which case the selection is empty.
+ */
+export function loadSelection(userId: number): Set<number> {
   try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    const own = keyFor(userId);
+    for (let index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.sessionStorage.key(index);
+      if (key !== null && key.startsWith(KEY_PREFIX) && key !== own) {
+        window.sessionStorage.removeItem(key);
+      }
+    }
+    const raw = window.sessionStorage.getItem(own);
     if (raw === null) return new Set();
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return new Set();
@@ -17,11 +30,12 @@ export function loadSelection(): Set<number> {
   }
 }
 
-/** Keeps the selection for the browser session so it survives leaving and re-opening the Library. */
-export function saveSelection(selected: ReadonlySet<number>): void {
+/** Keeps the selection for this user and browser session so it survives leaving and re-opening the Library. */
+export function saveSelection(userId: number, selected: ReadonlySet<number>): void {
   try {
-    if (selected.size === 0) window.sessionStorage.removeItem(STORAGE_KEY);
-    else window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify([...selected]));
+    const own = keyFor(userId);
+    if (selected.size === 0) window.sessionStorage.removeItem(own);
+    else window.sessionStorage.setItem(own, JSON.stringify([...selected]));
   } catch {
     // Private mode or a full quota: the selection then lives only in memory, as before.
   }
