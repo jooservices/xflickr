@@ -1395,6 +1395,16 @@ type SharingSetting struct {
 	ChangedAt pgtype.Timestamptz
 }
 
+type SyncTarget struct {
+	ID          int64
+	UserID      int64
+	Provider    string
+	Label       string
+	TokenSealed []byte
+	Config      []byte
+	Status      string
+}
+
 type User struct {
 	ID           int64
 	Email        string
