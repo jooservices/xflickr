@@ -1,4 +1,9 @@
 -- +goose NO TRANSACTION
+-- DEPLOY REQUIREMENT: this migration replaces the primary key of entity_facet_restrictions by two partial
+-- unique indexes. A running application of the PREVIOUS version uses `ON CONFLICT (entity_type, entity_id,
+-- facet, user_id, key_id)` without the partial-index predicate, which PostgreSQL cannot match to a partial
+-- index, so its restriction writes would fail until it is replaced. Stop the server before `migrate up`
+-- (restart-xflickr.sh: stop, migrate, start), or accept a few seconds of failed restriction writes.
 -- +goose Up
 ALTER TABLE entity_facet_restrictions ADD COLUMN account_id BIGINT;
 ALTER TABLE entity_facet_restrictions

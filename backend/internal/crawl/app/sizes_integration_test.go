@@ -327,6 +327,10 @@ func (integrationPhotoKeys) Choose(_ context.Context, _ string, class quotadomai
 	return 99, nil
 }
 
+func (integrationPhotoKeys) Available(_ context.Context, _ string, keyID quotaapp.KeyID, class quotadomain.Class) (bool, error) {
+	return keyID == 99 && class == quotadomain.Photo, nil
+}
+
 func (c riverSizesClient) GetSizes(ctx context.Context, _ int64, photoID string) ([]flickr.PhotoSize, error) {
 	return c.client.PhotosGetSizes(ctx, flickr.Credentials{APIKey: "integration-key"}, photoID)
 }
