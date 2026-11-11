@@ -1,15 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router';
+import { Link } from 'react-router';
 import type { CatalogFavorite } from '../../shared/api/gen/models';
 import { Icon, useI18n } from '../../shared';
-import { LibraryApiError, createTrayDownload, loadFavorites } from '../../features/library/api';
+import { LibraryApiError, loadFavorites } from '../../features/library/api';
 import { PhotoGrid } from './PhotoGrid';
+import { selectVisible } from './selection';
 import styles from './LibraryPage.module.css';
-
-function errorCode(error: unknown): string | undefined {
-  return error instanceof LibraryApiError ? error.code : undefined;
-}
 
 function errorStatus(error: unknown): number | undefined {
   return error instanceof LibraryApiError ? error.status : undefined;
@@ -24,7 +21,6 @@ function uniqueFavorites(
 
 export function LibraryPage() {
   const { locale, t } = useI18n();
-  const navigate = useNavigate();
   const favorites = useInfiniteQuery({
     queryKey: ['library', 'favorites'],
     initialPageParam: undefined as string | undefined,
@@ -39,8 +35,6 @@ export function LibraryPage() {
   const [debouncedContactSearch, setDebouncedContactSearch] = useState('');
   const [sizesReady, setSizesReady] = useState(false);
   const [captioned, setCaptioned] = useState(false);
-  const [actionError, setActionError] = useState<string | undefined>();
-  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     document.title = `${t('user.library.title')} · XFlickr`;
@@ -116,21 +110,6 @@ export function LibraryPage() {
     setCaptioned(false);
   };
 
-  const submitTray = async () => {
-    if (selected.size === 0 || submitting) return;
-    setSubmitting(true);
-    setActionError(undefined);
-    try {
-      const download = await createTrayDownload([...selected].sort((left, right) => left - right));
-      setSelected(new Set());
-      await navigate(`/downloads?id=${String(download.id)}`);
-    } catch (error) {
-      setActionError(errorCode(error));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const status = errorStatus(currentError);
   const forbidden = status === 403;
   const initialError = favorites.isError && favorites.data === undefined && !forbidden;
@@ -147,17 +126,6 @@ export function LibraryPage() {
             {t('user.library.lead-loaded', { count: number.format(photos.length) })}
           </p>
         </div>
-        <button
-          className={styles.primaryButton}
-          type="button"
-          data-testid="user-library-download-tray"
-          disabled={selected.size === 0 || submitting}
-          aria-busy={submitting}
-          onClick={() => void submitTray()}
-        >
-          <Icon name="tray" size={16} />
-          {t('user.library.action.download', { count: number.format(selected.size) })}
-        </button>
       </header>
 
       {loading ? (
@@ -298,14 +266,12 @@ export function LibraryPage() {
                     data-testid="user-library-select-visible"
                     disabled={selected.size >= 500 || visiblePhotos.length === 0}
                     onClick={() =>
-                      setSelected(
-                        (current) =>
-                          new Set([
-                            ...current,
-                            ...visiblePhotos
-                              .slice(0, 500 - current.size)
-                              .map(({ photo }) => photo.id),
-                          ]),
+                      setSelected((current) =>
+                        selectVisible(
+                          current,
+                          visiblePhotos.map(({ photo }) => photo.id),
+                          500,
+                        ),
                       )
                     }
                   >
@@ -331,23 +297,6 @@ export function LibraryPage() {
               ) : null}
             </div>
 
-            {actionError !== undefined ? (
-              <div
-                className={styles.actionError}
-                role="alert"
-                data-testid="user-library-action-error"
-              >
-                {actionError === 'temp_storage_full' ? (
-                  t('user.library.error.storage')
-                ) : actionError === 'flickr_key_required' ? (
-                  <>
-                    {t('user.library.error.key')} <Link to="/keys">{t('shell.nav.keys')}</Link>
-                  </>
-                ) : (
-                  t('user.library.error.action')
-                )}
-              </div>
-            ) : null}
             {selected.size >= 500 ? (
               <p className={styles.limit}>{t('user.library.tray.limit')}</p>
             ) : null}
@@ -357,9 +306,6 @@ export function LibraryPage() {
                 <Icon name="image" size={28} />
                 <h2>{t('user.library.empty.title')}</h2>
                 <p>{t('user.library.empty.text')}</p>
-                <Link to="/accounts" className={styles.stateLink}>
-                  {t('user.library.empty.cta-account')}
-                </Link>
               </section>
             ) : visiblePhotos.length === 0 ? (
               <section className={styles.filteredEmpty} data-testid="user-library-empty">

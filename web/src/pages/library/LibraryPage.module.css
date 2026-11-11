@@ -100,7 +100,6 @@
 
 .clearButton,
 .secondaryButton,
-.primaryButton,
 .stateLink {
   display: inline-flex;
   align-items: center;
@@ -118,12 +117,6 @@
   cursor: pointer;
 }
 
-.primaryButton {
-  color: var(--accent-ink);
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
 .clearButton {
   min-height: 36px;
   padding: 5px 11px;
@@ -138,13 +131,8 @@
   background: var(--sunken);
 }
 
-.primaryButton:hover {
-  filter: brightness(1.07);
-}
-
 .clearButton:disabled,
-.secondaryButton:disabled,
-.primaryButton:disabled {
+.secondaryButton:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -334,7 +322,6 @@
 }
 
 .moreError,
-.actionError,
 .limit {
   display: flex;
   flex-wrap: wrap;
@@ -471,10 +458,6 @@
   .pageHead > div {
     min-width: 0;
     flex: 1 1 160px;
-  }
-
-  .pageHead .primaryButton {
-    max-width: 100%;
   }
 
   .gridViewport {

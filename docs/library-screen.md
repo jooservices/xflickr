@@ -7,10 +7,15 @@ uses dimensions from an available catalog size; photos without a size URL use
 a neutral placeholder.
 
 The screen supports filtering the favorites already loaded by contact, sizes
-readiness, and AI caption readiness. It labels the loaded range explicitly and
-does not claim that its loaded count or contact choices describe the full
-library. Selection stays in the page while filters and cursor pages change.
-The tray is submitted through the existing `POST /downloads` operation.
+readiness, and AI caption readiness. Its count is the number of unique favorites
+loaded so far, not an estimate of the full library. Select visible applies to
+all loaded photos matching the current filters, including virtualized photos
+outside the viewport, and does not fetch another page. It preserves selection
+from other filters and pages, skips already selected IDs before applying the
+500-photo cap, and is safe to repeat. Selection stays in the page until cleared
+or the authenticated session ends. The download action is hidden until the
+downloads screen is implemented; the empty state does not link to the accounts
+placeholder.
 
 The approved [Library view spec](ui/views/user-library.md) describes the full
 target. Completing it needs a bounded all-library cursor operation and server
