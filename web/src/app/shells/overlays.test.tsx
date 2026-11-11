@@ -111,12 +111,28 @@ describe('notifications drawer', () => {
 
     const scrim = screen.getByTestId('shell-notifications').parentElement;
     expect(scrim).not.toBeNull();
-    fireEvent.click(scrim as HTMLElement);
+    fireEvent.pointerDown(scrim as HTMLElement);
+    fireEvent.pointerUp(scrim as HTMLElement);
+    fireEvent.click(scrim as HTMLElement, { detail: 1 });
 
     await waitFor(() => {
       expect(screen.queryByTestId('shell-notifications')).toBeNull();
     });
     expect(bell).toHaveFocus();
+  });
+
+  it('keeps notifications open when a drag starts in the drawer and ends on the scrim', async () => {
+    renderApp({ session: userSession });
+    fireEvent.click(await screen.findByTestId('shell-notifications-button'));
+    const drawer = screen.getByTestId('shell-notifications');
+    const scrim = drawer.parentElement;
+    expect(scrim).not.toBeNull();
+
+    fireEvent.pointerDown(screen.getByRole('heading', { name: 'Notifications' }));
+    fireEvent.pointerUp(scrim as HTMLElement);
+    fireEvent.click(scrim as HTMLElement, { detail: 1 });
+
+    expect(drawer).toBeInTheDocument();
   });
 
   it('keeps notifications open on drawer click', async () => {
@@ -149,7 +165,9 @@ describe('notifications drawer', () => {
 
     const scrim = screen.getByTestId('shell-notifications').parentElement;
     expect(scrim).not.toBeNull();
-    fireEvent.click(scrim as HTMLElement);
+    fireEvent.pointerDown(scrim as HTMLElement);
+    fireEvent.pointerUp(scrim as HTMLElement);
+    fireEvent.click(scrim as HTMLElement, { detail: 1 });
 
     await waitFor(() => {
       expect(screen.queryByTestId('shell-notifications')).toBeNull();
