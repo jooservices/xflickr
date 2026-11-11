@@ -29,8 +29,9 @@ Inside the USER shell main column (max width 1200px, 24px desktop padding,
 
 1. Page heading `Albums` and brief description, “Albums of all your contacts.”
 2. A labelled contact filter with `All contacts` selected by default, followed
-   by every contact owner with album metadata. The server returns the complete
-   `contact_owners` option list. The selected filter is stored as `contact` in
+   by contact owners with album metadata. The server returns the first 20,000
+   contacts in NSID order plus the currently selected contact, so the list is
+   bounded rather than complete (see `docs/albums.md`). The selected filter is stored as `contact` in
    the query string; selecting All removes it. Unknown or inaccessible contact
    ids reset to All and show the standard inline notice.
 3. A responsive, newest-updated-first grid of album cards. Each card shows a
