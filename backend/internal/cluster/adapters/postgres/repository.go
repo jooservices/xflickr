@@ -69,7 +69,7 @@ func (repository *Repository) FindDuplicateEgress(ctx context.Context, node doma
 	if node.EgressIP == "" {
 		return "", nil
 	}
-	warningInterval := pgtype.Interval{Microseconds: domain.WarningAfter.Microseconds()}
+	warningInterval := pgtype.Interval{Microseconds: domain.WarningAfter.Microseconds(), Valid: true}
 	var duplicate string
 	err := repository.pool.QueryRow(ctx, findDuplicateEgressSQL, node.EgressIP, node.Name, at.UTC(), warningInterval).Scan(&duplicate)
 	if errors.Is(err, pgx.ErrNoRows) {

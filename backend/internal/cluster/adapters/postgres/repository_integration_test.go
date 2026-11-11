@@ -91,7 +91,7 @@ func TestNodeTokenAndHeartbeatLifecycle(t *testing.T) {
 
 func TestFindDuplicateEgress(t *testing.T) {
 	at := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
-	warningInterval := pgtype.Interval{Microseconds: domain.WarningAfter.Microseconds()}
+	warningInterval := pgtype.Interval{Microseconds: domain.WarningAfter.Microseconds(), Valid: true}
 
 	t.Run("empty address skips lookup", func(t *testing.T) {
 		pool := &fakeNodePool{row: fakeDuplicateNameRow{name: "other"}}
@@ -235,7 +235,7 @@ FROM generate_series(1, $2::integer) AS fixture(id)`, prefix, fixtureSize, at)
 		t.Fatalf("analyze duplicate egress fixtures: %v", err)
 	}
 
-	warningInterval := pgtype.Interval{Microseconds: domain.WarningAfter.Microseconds()}
+	warningInterval := pgtype.Interval{Microseconds: domain.WarningAfter.Microseconds(), Valid: true}
 	var rawPlan []byte
 	if err := pool.QueryRow(ctx, `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) `+findDuplicateEgressSQL,
 		egressIP, prefix+"-current", at, warningInterval).Scan(&rawPlan); err != nil {
