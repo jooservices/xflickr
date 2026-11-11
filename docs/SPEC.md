@@ -164,8 +164,10 @@ guide feature implementation; operational environment rules live in
   ID. Return OAuth sizes only to that account's XFlickr user while photo
   version, visibility, and account status still match. Shared observations do
   not grant access to those URLs. Try each eligible account owned by the
-  requester before marking the photo unavailable, and suppress account-resolved
-  photos from subsequent lane cycles while the version and visibility match.
+  requester in the same job; report unavailable only after all eligible
+  accounts have failed or are already restricted. A current
+  account-scoped outcome stops the photo lane from re-queueing sizes for that
+  photo version and visibility.
 - Enforce each key's configured hourly allowance over the preceding rolling
   60 minutes, across all lanes; a fixed-hour boundary never releases recent
   grants. Report reset as the oldest counted grant's expiry and rebuild exact

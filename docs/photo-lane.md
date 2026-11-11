@@ -34,10 +34,11 @@ concurrent producers from inserting the same job twice. `Next` pages past
 skipped photos (bounded) so already-queued photos do not starve the lane.
 
 For each job, the handler resolves the XFlickr user who owns its API key and
-checks that user's restriction for the current photo version. Server `65535`
-is Flickr's restricted placeholder, so anonymous `getSizes` is never spent on
-it. Other pending photos try anonymous `getSizes` first. A successful anonymous
-result is safe to store globally. A not-found or permission response records a
+checks that user's restriction for the current photo version. It reuses a
+global confirmed result only while the photo is public and does not use server
+`65535`. A non-public photo or restricted placeholder skips anonymous
+`getSizes`; other pending photos try it first. A successful anonymous result
+is safe to store globally. A not-found or permission response records a
 restriction for that XFlickr user and API key; another user or key can still
 make its own anonymous attempt.
 
@@ -51,14 +52,17 @@ user while the account remains active and the photo version and visibility
 match. Sharing a photo observation does not share its OAuth-authorized sizes.
 
 A failed signed attempt records its restriction by account ID and stores an
-account-scoped `unavailable` result. A later request can select another
-eligible account owned by the requester. If none can produce sizes, only that
-user's waiting downloads are resolved as unavailable; the catalog photo is
-not marked globally unavailable. Legacy global unavailable results and
-unattributed global confirmed URLs are reset by the migration so each caller
-can be evaluated safely. An unchanged anonymous confirmed result is reused
-without reclassification. Cleanup of already queued work is tracked separately
-in JOOXF-311.
+account-scoped `unavailable` result without resolving waiting downloads yet.
+The same job continues through the remaining eligible accounts owned by the
+requester. Only after all candidates fail or are already restricted are that
+user's waiting downloads resolved as unavailable; the catalog photo is not
+marked globally unavailable. A current account-scoped outcome suppresses the
+photo-lane size job for that photo version and visibility, so later pump cycles
+move on instead of re-enqueueing it. Existing global outcomes remain intact;
+the schema migration adds account-scoped storage without rewriting photo rows.
+An unchanged anonymous confirmed result is reused without reclassification as
+long as the photo remains public and is not a restricted placeholder. Cleanup
+of already queued work is tracked separately in JOOXF-311.
 
 Quota exhaustion returns a River snooze, so it does not consume an attempt and
 the same job resumes through the quota governor when its wait expires. Other
