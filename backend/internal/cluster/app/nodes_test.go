@@ -108,6 +108,139 @@ func TestHeartbeatWrapsRepositoryErrors(t *testing.T) {
 	}
 }
 
+func TestAssignInitialValidatesInputAndUsesClock(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 123456000, time.UTC)
+	want := Assignment{KeyID: 7, Node: "node-1", Since: now, Reason: "initial"}
+
+	t.Run("invalid input does not reach repository", func(t *testing.T) {
+		for _, test := range []struct {
+			name  string
+			keyID int64
+			node  string
+		}{
+			{name: "nonpositive key", keyID: 0, node: "node-1"},
+			{name: "empty node", keyID: 7, node: ""},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				repository := &assignmentRepositoryFake{}
+				service := Assignments{Repository: repository}
+				if _, err := service.AssignInitial(t.Context(), test.keyID, test.node); !errors.Is(err, ErrAssignmentUnavailable) {
+					t.Fatalf("AssignInitial() error = %v", err)
+				}
+				if repository.assignCalls != 0 {
+					t.Fatal("invalid input reached the repository")
+				}
+			})
+		}
+	})
+
+	t.Run("repository is required", func(t *testing.T) {
+		if _, err := (Assignments{}).AssignInitial(t.Context(), 7, "node-1"); err == nil {
+			t.Fatal("AssignInitial() accepted a nil repository")
+		}
+	})
+
+	t.Run("injected clock", func(t *testing.T) {
+		repository := &assignmentRepositoryFake{assignResult: want}
+		service := Assignments{Repository: repository, Now: func() time.Time { return now }}
+		got, err := service.AssignInitial(t.Context(), want.KeyID, want.Node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want || !repository.assignNow.Equal(now) {
+			t.Fatalf("assignment = %+v at %s, want %+v at %s", got, repository.assignNow, want, now)
+		}
+	})
+
+	t.Run("default clock", func(t *testing.T) {
+		repository := &assignmentRepositoryFake{assignResult: Assignment{KeyID: 7, Node: "node-1", Reason: "initial"}}
+		if _, err := (Assignments{Repository: repository}).AssignInitial(t.Context(), 7, "node-1"); err != nil {
+			t.Fatal(err)
+		}
+		if repository.assignNow.IsZero() {
+			t.Fatal("AssignInitial() did not use its default clock")
+		}
+	})
+
+	t.Run("repository error is preserved", func(t *testing.T) {
+		wantErr := context.Canceled
+		service := Assignments{Repository: &assignmentRepositoryFake{assignErr: wantErr}, Now: func() time.Time { return now }}
+		if _, err := service.AssignInitial(t.Context(), 7, "node-1"); !errors.Is(err, wantErr) {
+			t.Fatalf("AssignInitial() error = %v, want %v", err, wantErr)
+		}
+	})
+}
+
+func TestQueueForAssignment(t *testing.T) {
+	t.Run("returns logical node queue", func(t *testing.T) {
+		repository := &assignmentRepositoryFake{getResult: Assignment{KeyID: 7, Node: "node-1"}}
+		queue, err := (Assignments{Repository: repository}).QueueFor(t.Context(), 7)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if queue != "crawl@node-1" || repository.getKeyID != 7 {
+			t.Fatalf("QueueFor() = %q for key %d", queue, repository.getKeyID)
+		}
+	})
+
+	t.Run("missing assignment", func(t *testing.T) {
+		repository := &assignmentRepositoryFake{getErr: ErrAssignmentUnavailable}
+		if _, err := (Assignments{Repository: repository}).QueueFor(t.Context(), 7); !errors.Is(err, ErrAssignmentUnavailable) {
+			t.Fatalf("QueueFor() error = %v", err)
+		}
+	})
+
+	t.Run("repository cancellation", func(t *testing.T) {
+		repository := &assignmentRepositoryFake{getErr: context.Canceled}
+		if _, err := (Assignments{Repository: repository}).QueueFor(t.Context(), 7); !errors.Is(err, context.Canceled) {
+			t.Fatalf("QueueFor() error = %v", err)
+		}
+	})
+
+	t.Run("rejects invalid key before lookup", func(t *testing.T) {
+		repository := &assignmentRepositoryFake{}
+		if _, err := (Assignments{Repository: repository}).QueueFor(t.Context(), 0); !errors.Is(err, ErrAssignmentUnavailable) {
+			t.Fatalf("QueueFor() error = %v", err)
+		}
+		if repository.getCalls != 0 {
+			t.Fatal("invalid key reached the repository")
+		}
+	})
+
+	t.Run("repository is required", func(t *testing.T) {
+		if _, err := (Assignments{}).QueueFor(t.Context(), 7); err == nil {
+			t.Fatal("QueueFor() accepted a nil repository")
+		}
+	})
+}
+
+type assignmentRepositoryFake struct {
+	assignResult Assignment
+	getResult    Assignment
+	assignErr    error
+	getErr       error
+	assignCalls  int
+	getCalls     int
+	assignKeyID  int64
+	assignNode   string
+	assignNow    time.Time
+	getKeyID     int64
+}
+
+func (repository *assignmentRepositoryFake) AssignInitial(_ context.Context, keyID int64, node string, now time.Time) (Assignment, error) {
+	repository.assignCalls++
+	repository.assignKeyID = keyID
+	repository.assignNode = node
+	repository.assignNow = now
+	return repository.assignResult, repository.assignErr
+}
+
+func (repository *assignmentRepositoryFake) GetAssignment(_ context.Context, keyID int64) (Assignment, error) {
+	repository.getCalls++
+	repository.getKeyID = keyID
+	return repository.getResult, repository.getErr
+}
+
 type nodeRepositoryFake struct {
 	created           domain.Node
 	tokenHash         []byte
