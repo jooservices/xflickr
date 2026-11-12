@@ -13,81 +13,25 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/api/rest"
 )
 
-// routeAccess is the single place that declares the auth requirement of every
-// route mounted from the OpenAPI contract, keyed by "METHOD pattern". A route
-// missing here is treated as admin-only and fails TestEveryRouteDeclaresAccess.
-var routeAccess = map[string]identityhttp.Access{
-	"GET /api/v1":                        identityhttp.AccessPublic,
-	"GET /healthz":                       identityhttp.AccessPublic,
-	"GET /readyz":                        identityhttp.AccessPublic,
-	"GET /api/v1/authentication-options": identityhttp.AccessPublic,
-	"POST /api/v1/users":                 identityhttp.AccessPublic,
-	"GET /api/v1/users/{id}":             identityhttp.AccessUser,
-	"POST /api/v1/sessions":              identityhttp.AccessPublic,
-	"DELETE /api/v1/sessions/current":    identityhttp.AccessPublic,
-	"GET /api/v1/sessions/current":       identityhttp.AccessUser,
-	"GET /api/v1/sessions/{id}":          identityhttp.AccessUser,
-	"GET /api/v1/me":                     identityhttp.AccessUser,
-	"PATCH /api/v1/me":                   identityhttp.AccessUser,
-	"GET /api/v1/me/sessions":            identityhttp.AccessUser,
-	"DELETE /api/v1/me/sessions":         identityhttp.AccessUser,
-	"GET /api/v1/me/sessions/{id}":       identityhttp.AccessUser,
-	"DELETE /api/v1/me/sessions/{id}":    identityhttp.AccessUser,
-	"PUT /api/v1/me/password":            identityhttp.AccessUser,
-	"GET /api/v1/me/sharing":             identityhttp.AccessUser,
-	"PUT /api/v1/me/sharing":             identityhttp.AccessUser,
-	"GET /api/v1/me/home":                identityhttp.AccessUser,
-	"GET /keys":                          identityhttp.AccessUser,
-	"POST /keys":                         identityhttp.AccessUser,
-	"GET /keys/{id}":                     identityhttp.AccessUser,
-	"PUT /keys/{id}":                     identityhttp.AccessUser,
-	"DELETE /keys/{id}":                  identityhttp.AccessUser,
-	"GET /keys/{id}/quota":               identityhttp.AccessUser,
-	"POST /flickr-accounts/connect":      identityhttp.AccessUser,
-	"GET /flickr-accounts":               identityhttp.AccessUser,
-	"GET /flickr-accounts/callback":      identityhttp.AccessUser,
-	"GET /me/crawl":                      identityhttp.AccessUser,
-	"GET /me/crawl/queue":                identityhttp.AccessUser,
-	"GET /me/crawl/settings":             identityhttp.AccessUser,
-	"PUT /me/crawl/settings":             identityhttp.AccessUser,
-	"PUT /me/crawl/pause":                identityhttp.AccessUser,
-	"PUT /me/crawl/resume":               identityhttp.AccessUser,
-	"PUT /me/contacts/{nsid}/star":       identityhttp.AccessUser,
-	"PUT /me/contacts/{nsid}/select":     identityhttp.AccessUser,
-	"POST /downloads":                    identityhttp.AccessUser,
-	"GET /people":                        identityhttp.AccessUser,
-	"GET /contacts":                      identityhttp.AccessUser,
-	"GET /people/{nsid}":                 identityhttp.AccessUser,
-	"GET /people/{nsid}/photos":          identityhttp.AccessUser,
-	"GET /favorites":                     identityhttp.AccessUser,
-	"GET /me/albums":                     identityhttp.AccessUser,
-	"GET /albums":                        identityhttp.AccessUser,
-	"GET /albums/{id}/photos":            identityhttp.AccessUser,
-	"GET /photos/{id}":                   identityhttp.AccessUser,
+// routeAccess is the single place that resolves the auth requirement of every
+// route mounted from the OpenAPI contract, keyed by "METHOD pattern". Each area
+// declares its own routes in its own file (routes_*.go) so tickets that add an
+// endpoint do not edit the same lines. A route missing everywhere is treated as
+// admin-only and fails TestEveryRouteDeclaresAccess.
+var routeAccess = mergeRouteAccess(identityRouteAccess, crawlRouteAccess, catalogRouteAccess, mediaRouteAccess, adminRouteAccess)
 
-	"GET /downloads/{id}/parts":                       identityhttp.AccessUser,
-	"POST /downloads/{id}/parts/{partNumber}/fetched": identityhttp.AccessUser,
-	"POST /downloads/{id}/retry-failed":               identityhttp.AccessUser,
-
-	"GET /events": identityhttp.AccessUser,
-
-	"GET /admin/users":               identityhttp.AccessAdmin,
-	"PATCH /admin/users/{id}":        identityhttp.AccessAdmin,
-	"PUT /admin/users/{id}/plan":     identityhttp.AccessAdmin,
-	"GET /admin/plans":               identityhttp.AccessAdmin,
-	"PUT /admin/plans":               identityhttp.AccessAdmin,
-	"GET /admin/flags":               identityhttp.AccessAdmin,
-	"PUT /admin/flags":               identityhttp.AccessAdmin,
-	"GET /api/v1/admin/flags/{name}": identityhttp.AccessPublic,
-	"GET /admin/queue":               identityhttp.AccessAdmin,
-	"GET /admin/quota":               identityhttp.AccessAdmin,
-	"GET /admin/calls/stats":         identityhttp.AccessAdmin,
-	"GET /admin/metrics":             identityhttp.AccessAdmin,
-	"GET /admin/ops/status":          identityhttp.AccessAdmin,
-	"GET /admin/incidents":           identityhttp.AccessAdmin,
-	"POST /admin/nodes":              identityhttp.AccessAdmin,
-
-	"POST /internal/nodes/heartbeat": identityhttp.AccessPublic,
+// mergeRouteAccess joins the per-area route tables; a route declared twice is a programming error.
+func mergeRouteAccess(areas ...map[string]identityhttp.Access) map[string]identityhttp.Access {
+	merged := make(map[string]identityhttp.Access)
+	for _, area := range areas {
+		for route, access := range area {
+			if _, exists := merged[route]; exists {
+				panic("roles: route declared in two route tables: " + route)
+			}
+			merged[route] = access
+		}
+	}
+	return merged
 }
 
 // accessResolver classifies a request by the route pattern the router matches
