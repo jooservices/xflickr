@@ -1,111 +1,13 @@
-import { createBrowserRouter, useNavigate } from 'react-router';
+import { createBrowserRouter } from 'react-router';
 import type { RouteObject } from 'react-router';
-import { PlaceholderPage } from '../pages';
-import { NotFoundState } from '../shared';
-import type { MessageKey } from '../shared';
-import { AdminGuard } from './guards';
-import { AdminGuardFailed, AdminGuardLoading, AdminShell } from './shells/AdminShell';
-import { UserShell } from './shells/UserShell';
-import { ADMIN_NAV, USER_NAV } from './shells/nav';
 import { LoginPage } from '../pages/login/LoginPage';
 import { RegisterPage } from '../pages/register/RegisterPage';
-import { ProfilePage } from '../pages/profile/ProfilePage';
-import { KeysPage } from '../pages/keys';
-import { SetupPage } from '../pages/setup/SetupPage';
-import { CrawlPage } from '../pages/crawl';
-import { ContactsPage } from '../pages/contacts/ContactsPage';
-import { DefaultsPage } from '../pages/admin/defaults/DefaultsPage';
-import { QuotaPage } from '../pages/admin/quota';
-import { IssuesPage } from '../pages/admin/issues';
-import { AlbumsPage } from '../pages/albums';
-import { LibraryPage } from '../pages/library';
-import { HomePage } from '../pages/home/HomePage';
-import { NodesPage } from '../pages/admin/nodes/NodesPage';
-import { OverviewPage } from '../pages/admin/overview/OverviewPage';
+import { AdminGuard } from './guards';
 import { RouteErrorPage } from './ErrorBoundary';
-
-function userPageElement(path: string, labelKey: MessageKey) {
-  if (path === '/library') return <LibraryPage />;
-  if (path === '/profile') return <ProfilePage />;
-  if (path === '/contacts') return <ContactsPage />;
-  if (path === '/crawl') return <CrawlPage />;
-  if (path === '/albums') return <AlbumsPage />;
-  if (path === '/keys') return <KeysPage />;
-  return <PlaceholderPage scope="shell" titleKey={labelKey} unavailable />;
-}
-
-const userPages: RouteObject[] = [
-  {
-    index: true,
-    element: <HomePage />,
-  },
-  ...USER_NAV.filter((item) => item.path !== '/').map((item): RouteObject => ({
-    path: item.path.slice(1),
-    element: userPageElement(item.path, item.labelKey),
-  })),
-  {
-    path: 'contacts/:id',
-    element: <PlaceholderPage scope="shell" titleKey="shell.page.contact" unavailable />,
-  },
-  {
-    path: 'albums/:id',
-    element: <PlaceholderPage scope="shell" titleKey="shell.page.album" unavailable />,
-  },
-  {
-    path: 'accounts',
-    element: <PlaceholderPage scope="shell" titleKey="shell.page.accounts" unavailable />,
-  },
-  {
-    path: 'sessions',
-    element: <PlaceholderPage scope="shell" titleKey="shell.page.sessions" unavailable />,
-  },
-  {
-    path: 'onboarding',
-    element: <SetupPage />,
-  },
-  { path: '*', element: <UserNotFound /> },
-];
-
-const adminPages: RouteObject[] = [
-  ...ADMIN_NAV.map((item): RouteObject => {
-    if (item.path === '/admin') {
-      return { index: true, element: <OverviewPage /> };
-    }
-    return {
-      path: item.path.slice('/admin/'.length),
-      element:
-        item.id === 'defaults' ? (
-          <DefaultsPage />
-        ) : item.id === 'nodes' ? (
-          <NodesPage />
-        ) : item.id === 'quota' ? (
-          <QuotaPage />
-        ) : item.id === 'issues' ? (
-          <IssuesPage />
-        ) : (
-          <PlaceholderPage scope="admin" titleKey={item.labelKey} />
-        ),
-    };
-  }),
-  { path: 'nodes/:id', element: <PlaceholderPage scope="admin" titleKey="admin.nav.nodes" /> },
-  { path: '*', element: <UserNotFound /> },
-];
-
-function UserNotFound() {
-  const navigate = useNavigate();
-
-  return (
-    <NotFoundState
-      testId="shell-notfound"
-      onHome={() => {
-        void navigate('/');
-      }}
-      onBack={() => {
-        void navigate(-1);
-      }}
-    />
-  );
-}
+import { AdminGuardFailed, AdminGuardLoading, AdminShell } from './shells/AdminShell';
+import { UserShell } from './shells/UserShell';
+import { adminPages } from './routes/adminRoutes';
+import { userPages } from './routes/userRoutes';
 
 export const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage />, errorElement: <RouteErrorPage /> },
