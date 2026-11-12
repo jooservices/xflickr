@@ -202,6 +202,9 @@ func TestCatalogKindsArePlannedExactlyOncePerCycle(t *testing.T) {
 	for _, spec := range registry.Plan(context.Background(), domain.Person{NSID: "p@N01"}) {
 		initial[spec.Kind] = spec.Method
 	}
+	if initial["groups"] != "flickr.people.getGroups" {
+		t.Fatalf("initial group method = %q", initial["groups"])
+	}
 	refresh := map[string]int{}
 	for _, probe := range []string{"flickr.people.getPhotos", "flickr.favorites.getList"} {
 		item := domain.Item{Subject: "p@N01", Cursor: domain.Cursor{Method: probe}}
@@ -211,7 +214,7 @@ func TestCatalogKindsArePlannedExactlyOncePerCycle(t *testing.T) {
 		}
 		for _, spec := range result.Work {
 			refresh[spec.Kind]++
-			if want, ok := initial[spec.Kind]; ok && want != spec.Method {
+			if want, ok := initial[spec.Kind]; ok && spec.Kind != "groups" && want != spec.Method {
 				t.Fatalf("%s refresh uses %s, initial plan uses %s", spec.Kind, spec.Method, want)
 			}
 		}
@@ -220,5 +223,25 @@ func TestCatalogKindsArePlannedExactlyOncePerCycle(t *testing.T) {
 		if initial[kind] == "" || refresh[kind] != 1 {
 			t.Fatalf("%s: initial=%q refreshed=%d, want planned initially and refreshed once per cycle", kind, initial[kind], refresh[kind])
 		}
+	}
+}
+
+func TestChangeCheckRefreshesPublicGroups(t *testing.T) {
+	person := "contact@N01"
+	item := domain.Item{Subject: person, Cursor: domain.Cursor{Method: "flickr.favorites.getList"}}
+	result, err := (ChangeCheck{}).Handle(t.Context(), domain.Page{Item: item, Payload: json.RawMessage(`{"photos":{"total":0}}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []domain.WorkSpec{
+		{Kind: "albums", Subject: person, Method: "flickr.photosets.getList", Reopen: true, Params: map[string]string{"user_id": person, "per_page": "500"}},
+		{Kind: "galleries", Subject: person, Method: "flickr.galleries.getList", Reopen: true, Params: map[string]string{"user_id": person, "per_page": "500", "continuation": "0"}},
+		{Kind: "groups", Subject: person, Method: "flickr.people.getPublicGroups", Reopen: true, Params: map[string]string{"user_id": person, "per_page": "500"}},
+	}
+	if !reflect.DeepEqual(result.Work, want) {
+		t.Fatalf("refresh work = %#v, want %#v", result.Work, want)
+	}
+	if result.NextWorkCursor != nil {
+		t.Fatal("favorites probe should finish the check item")
 	}
 }
