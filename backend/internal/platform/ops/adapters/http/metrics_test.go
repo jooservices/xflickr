@@ -142,9 +142,31 @@ func runInvalidMetricsQueries(t *testing.T, tests []struct {
 	}
 }
 
-func TestGetAdminMetricsDimensionValidation(t *testing.T) {
+func TestGetAdminMetricsInvalidDimensions(t *testing.T) {
+	var tests []struct {
+		name   string
+		change func(*gen.GetAdminMetricsParams)
+	}
 	for _, dimension := range []string{"queue", "role", "node"} {
-		for _, value := range []string{strings.Repeat("é", 128), strings.Repeat("é", 129), "", "\xff", " é "} {
+		for _, value := range []string{strings.Repeat("é", 129), "", "\xff"} {
+			tests = append(tests, struct {
+				name   string
+				change func(*gen.GetAdminMetricsParams)
+			}{
+				name: dimension + "/" + fmt.Sprintf("%q", value),
+				change: func(p *gen.GetAdminMetricsParams) {
+					fields := map[string]*string{"queue": &p.Queue, "role": &p.Role, "node": &p.Node}
+					*fields[dimension] = value
+				},
+			})
+		}
+	}
+	runInvalidMetricsQueries(t, tests)
+}
+
+func TestGetAdminMetricsValidDimensions(t *testing.T) {
+	for _, dimension := range []string{"queue", "role", "node"} {
+		for _, value := range []string{strings.Repeat("é", 128), " é "} {
 			t.Run(dimension+"/"+fmt.Sprintf("%q", value), func(t *testing.T) {
 				request := validMetricsRequest()
 				fields := map[string]*string{"queue": &request.Params.Queue, "role": &request.Params.Role, "node": &request.Params.Node}
@@ -153,13 +175,6 @@ func TestGetAdminMetricsDimensionValidation(t *testing.T) {
 				response, err := (Handler{ActorID: actor, Metrics: reader, Now: fixedMetricsNow}).GetAdminMetrics(t.Context(), request)
 				if err != nil {
 					t.Fatal(err)
-				}
-				if value == "" || value == "\xff" || value == strings.Repeat("é", 129) {
-					body, ok := response.(gen.GetAdminMetrics400JSONResponse)
-					if !ok || body.Code != "invalid_request" || reader.calls != 0 {
-						t.Fatalf("response=%T calls=%d", response, reader.calls)
-					}
-					return
 				}
 				if _, ok := response.(gen.GetAdminMetrics200JSONResponse); !ok || reader.calls != 1 || reader.query.Queue != request.Params.Queue || reader.query.Role != request.Params.Role || reader.query.Node != request.Params.Node {
 					t.Fatalf("response=%T query=%+v calls=%d", response, reader.query, reader.calls)
