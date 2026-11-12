@@ -15,9 +15,16 @@ import (
 	"github.com/minio/minio-go/v7/pkg/lifecycle"
 
 	"github.com/jooservices/xflickr/internal/media/app"
+	"github.com/jooservices/xflickr/internal/media/blobstoretest"
 )
 
 var _ app.BlobStore = (*BlobStore)(nil)
+
+func TestBlobStoreContract(t *testing.T) {
+	blobstoretest.Run(t, func(t *testing.T) app.BlobStore {
+		return &BlobStore{client: newFakeS3Client(t), bucket: fakeBucket}
+	})
+}
 
 type fakeClient struct {
 	exists          bool
