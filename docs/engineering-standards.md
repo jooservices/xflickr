@@ -77,7 +77,7 @@ there is no baseline file. Never add a `nolint` marker to fix a finding.
   `fetch-depth: 0` so the merge base exists. Locally, fetch `origin/develop` before linting.
 - Function-level gate (JOOXF-511): `docker/scripts/go_function_gate.py` (stdlib only) measures
   every function of the Go files changed since the merge base with `origin/develop` through
-  `docker/scripts/gofuncstats/main.go` (go/ast: cyclomatic complexity, lines, parameters) and
+  `backend/cmd/gofuncstats/main.go` (go/ast: cyclomatic complexity, lines, parameters) and
   compares it with the same function at the merge base. A function above complexity 10, 40 lines
   or 4 parameters fails when it grows, so growth inside an old function is caught. A function
   below a limit may grow up to the limit; a new function must be within all limits. Test files

@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 LIMITS = {"complexity": 10, "lines": 40, "params": 4}
-STATS_SOURCE = Path(__file__).resolve().parent / "gofuncstats" / "main.go"
+STATS_SOURCE = Path(__file__).resolve().parents[2] / "backend" / "cmd" / "gofuncstats" / "main.go"
 
 
 class GateError(Exception):
