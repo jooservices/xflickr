@@ -56,6 +56,7 @@ components:
   media-domain:     { in: internal/media/domain/** }
   media-app:        { in: internal/media/app/** }
   media-adapters:   { in: internal/media/adapters/** }
+  media-blobstoretest: { in: internal/media/blobstoretest/** }
   sync-app:         { in: internal/sync/app/** }
   sync-adapters:    { in: internal/sync/adapters/** }
   sync-providertest: { in: internal/sync/providertest/** }
@@ -144,6 +145,8 @@ deps:
     mayDependOn: [media-domain, catalog-domain, catalog-app, sharing-domain]
   media-adapters:
     mayDependOn: [media-domain, media-app, platform, quota-domain, sharing-domain]
+  media-blobstoretest:
+    mayDependOn: [media-app]
   sync-app:
     mayDependOn: [platform, media-app]
   sync-adapters:

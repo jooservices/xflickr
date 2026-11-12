@@ -17,6 +17,8 @@ import (
 	"github.com/jooservices/xflickr/internal/media/app"
 )
 
+var _ app.BlobStore = (*BlobStore)(nil)
+
 type fakeClient struct {
 	exists          bool
 	checkErr        error

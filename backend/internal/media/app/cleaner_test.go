@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"io"
 	"testing"
 	"time"
 
@@ -35,31 +34,21 @@ func (f *fakeAssets) DeleteAsset(_ context.Context, id int64) error {
 	return nil
 }
 
+// fakeBlobs records deletions and can fail them; storage behaviour comes from
+// packBlobStore, so it honours the blob store contract.
 type fakeBlobs struct {
+	packBlobStore
 	err  error
 	keys []string
 }
 
-func (f *fakeBlobs) Put(context.Context, string, io.Reader) error {
-	return nil
-}
-
-func (f *fakeBlobs) Get(context.Context, string) (io.ReadCloser, error) {
-	return nil, nil
-}
-
-func (f *fakeBlobs) Delete(_ context.Context, key string) error {
+func (f *fakeBlobs) Delete(ctx context.Context, key string) error {
 	f.keys = append(f.keys, key)
-	return f.err
+	if f.err != nil {
+		return f.err
+	}
+	return f.packBlobStore.Delete(ctx, key)
 }
-
-func (f *fakeBlobs) PresignGet(context.Context, string, time.Duration) (string, error) {
-	return "", nil
-}
-
-func (f *fakeBlobs) Stat(context.Context, string) (BlobInfo, error) { return BlobInfo{}, nil }
-func (f *fakeBlobs) Usage(context.Context) (int64, error)           { return 0, nil }
-func (f *fakeBlobs) Full(context.Context) (bool, error)             { return false, nil }
 
 func TestCleanerRunOnceSelectsDeletesBlobThenRow(t *testing.T) {
 	assets := &fakeAssets{items: []domain.Asset{{ID: 12, BlobKey: "a"}, {ID: 13, BlobKey: "b"}}}
