@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/jooservices/xflickr/internal/media/app"
-	"github.com/jooservices/xflickr/internal/media/app/blobstoretest"
+	"github.com/jooservices/xflickr/internal/media/blobstoretest"
 )
 
 // TestInMemoryBlobFakesMeetContract runs the shared blob store contract against

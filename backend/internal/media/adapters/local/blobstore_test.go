@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/jooservices/xflickr/internal/media/app"
-	"github.com/jooservices/xflickr/internal/media/app/blobstoretest"
+	"github.com/jooservices/xflickr/internal/media/blobstoretest"
 )
 
 var _ app.BlobStore = (*BlobStore)(nil)
