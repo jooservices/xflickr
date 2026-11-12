@@ -120,6 +120,14 @@ func TestGetAdminMetricsValidation(t *testing.T) {
 		{name: "missing step", change: func(p *gen.GetAdminMetricsParams) { p.Step = "" }},
 		{name: "unsupported step", change: func(p *gen.GetAdminMetricsParams) { p.Step = "5m" }},
 	}
+	runInvalidMetricsQueries(t, tests)
+}
+
+func runInvalidMetricsQueries(t *testing.T, tests []struct {
+	name   string
+	change func(*gen.GetAdminMetricsParams)
+}) {
+	t.Helper()
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			reader := &seriesReaderStub{}
@@ -132,7 +140,9 @@ func TestGetAdminMetricsValidation(t *testing.T) {
 			}
 		})
 	}
+}
 
+func TestGetAdminMetricsDimensionValidation(t *testing.T) {
 	for _, dimension := range []string{"queue", "role", "node"} {
 		for _, value := range []string{strings.Repeat("é", 128), strings.Repeat("é", 129), "", "\xff", " é "} {
 			t.Run(dimension+"/"+fmt.Sprintf("%q", value), func(t *testing.T) {
@@ -157,7 +167,9 @@ func TestGetAdminMetricsValidation(t *testing.T) {
 			})
 		}
 	}
+}
 
+func TestGetAdminMetricsPreservesWhitespace(t *testing.T) {
 	t.Run("leading and trailing spaces are preserved", func(t *testing.T) {
 		request := validMetricsRequest()
 		request.Params.Queue = " queue "
@@ -170,7 +182,9 @@ func TestGetAdminMetricsValidation(t *testing.T) {
 			t.Fatalf("response=%T queue=%q", response, reader.query.Queue)
 		}
 	})
+}
 
+func TestGetAdminMetricsNormalizesTime(t *testing.T) {
 	t.Run("current minute is accepted and offsets normalize to UTC", func(t *testing.T) {
 		request := validMetricsRequest()
 		zone := time.FixedZone("UTC+3", 3*60*60)
@@ -185,7 +199,9 @@ func TestGetAdminMetricsValidation(t *testing.T) {
 			t.Fatalf("response=%T from=%s to=%s", response, reader.query.From.Location(), reader.query.To.Location())
 		}
 	})
+}
 
+func TestGetAdminMetricsPreservesFiniteValues(t *testing.T) {
 	t.Run("finite values pass through the reader boundary", func(t *testing.T) {
 		reader := &seriesReaderStub{points: []metricsapp.Point{{At: time.Now(), Value: math.MaxFloat64}}}
 		response, err := (Handler{ActorID: actor, Metrics: reader, Now: fixedMetricsNow}).GetAdminMetrics(t.Context(), validMetricsRequest())
