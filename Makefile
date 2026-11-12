@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help lint arch-lint test test-integration e2e gen gen-stale check check-go-version ui-spec-check dev-up dev-down develop-up develop-down develop-logs develop-status
+.PHONY: help lint arch-lint test test-integration e2e gen gen-stale check check-go-version precheck next-migration ui-spec-check dev-up dev-down develop-up develop-down develop-logs develop-status
 
 help:
 	@./docker/scripts/help.sh
@@ -32,6 +32,12 @@ check:
 
 check-go-version:
 	@python3 docker/scripts/check_go_version.py
+
+precheck:
+	@python3 docker/scripts/migration_versions.py check
+
+next-migration:
+	@python3 docker/scripts/migration_versions.py next "$(NAME)"
 
 # Node 24 loads a directory argument as a module. The glob runs the tests under scripts/.
 ui-spec-check:

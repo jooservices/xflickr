@@ -15,6 +15,12 @@ jobs:
       - name: Check pinned Go versions
         run: make check-go-version
 
+      - name: Check migration versions are unique and well named
+        run: make precheck
+
+      - name: Test the migration version checker
+        run: python3 docker/scripts/migration_versions_test.py
+
       - name: Test Go version check
         run: python3 docker/scripts/test_check_go_version.py
 
