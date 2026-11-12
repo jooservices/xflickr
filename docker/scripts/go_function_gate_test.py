@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Tests for go_function_gate.py: growth inside an old function fails the gate."""
+"""Tests for go_function_gate.py: complexity growth above 10 fails the gate (JOOXF-516).
+
+Length and parameter count are review signals, not gates, so growing them never fails.
+"""
 
 import subprocess
 import sys
@@ -14,7 +17,7 @@ FUNC = "Work"
 
 
 def func_source(name: str, ifs: int = 0, params: int = 1, lines: int = 0) -> str:
-    """Return a Go function with 1 + ifs complexity and 4 + 3 * ifs + lines lines."""
+    """Return a Go function with 1 + ifs complexity and 4 + 3 * ifs + lines lines and params parameters."""
     signature = ", ".join(f"p{i} int" for i in range(params))
     body = ["\tx := 0"]
     body += [f"\tif x < {i} {{\n\t\tx++\n\t}}" for i in range(ifs)]
@@ -59,8 +62,8 @@ class FunctionGateTest(unittest.TestCase):
         )
 
     def test_fails_and_names_old_function_above_limit_that_grows(self):
-        self.commit(go_file(func_source(FUNC, ifs=11)))
-        self.write(go_file(func_source(FUNC, ifs=12)))
+        self.commit(go_file(func_source(FUNC, ifs=9)))
+        self.write(go_file(func_source(FUNC, ifs=10)))
 
         result = self.run_gate()
 
@@ -111,30 +114,35 @@ class FunctionGateTest(unittest.TestCase):
 
     def test_passes_new_function_within_limits(self):
         self.commit("package pkg\n")
-        self.write(go_file(func_source(FUNC, ifs=9, params=4)))
+        self.write(go_file(func_source(FUNC, ifs=9)))
 
         result = self.run_gate()
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_fails_old_function_above_length_limit_that_grows(self):
+    def test_passes_old_function_that_grows_in_length_with_complexity_within_limit(self):
         self.commit(go_file(func_source(FUNC, lines=36)))
         self.write(go_file(func_source(FUNC, lines=37)))
 
         result = self.run_gate()
 
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn(FUNC, result.stderr)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_fails_function_at_parameter_limit_that_gains_a_parameter(self):
+    def test_passes_function_that_gains_parameters_with_complexity_within_limit(self):
         self.commit(go_file(func_source(FUNC, params=4)))
-        self.write(go_file(func_source(FUNC, params=5)))
+        self.write(go_file(func_source(FUNC, params=6)))
 
         result = self.run_gate()
 
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn(FUNC, result.stderr)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_passes_new_long_function_with_many_parameters_within_complexity_limit(self):
+        self.commit("package pkg\n")
+        self.write(go_file(func_source(FUNC, params=6, lines=60)))
+
+        result = self.run_gate()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 if __name__ == "__main__":
     unittest.main()
