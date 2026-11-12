@@ -16,3 +16,4 @@ internal/quota/app/callstats.go 0.0
 internal/quota/app/partitions.go 80.0
 pkg/flickr/errors.go 72.7
 pkg/flickr/oauth/call_observer.go 66.6
+internal/platform/roles/scheduler_role.go 70.3
