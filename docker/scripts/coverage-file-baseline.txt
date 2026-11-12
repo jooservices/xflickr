@@ -19,4 +19,3 @@ pkg/flickr/oauth/call_observer.go 66.6
 internal/platform/roles/scheduler_role.go 70.2
 internal/platform/roles/crawl_role.go 81.5
 internal/platform/roles/api_handlers.go 81.9
-internal/settings/domain/settings.go 72.9
