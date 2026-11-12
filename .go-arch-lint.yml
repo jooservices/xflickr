@@ -41,6 +41,7 @@ components:
   catalog-app:      { in: internal/catalog/app/** }
   catalog-adapters: { in: internal/catalog/adapters/** }
   catalog-adapters-gen: { in: internal/catalog/adapters/postgres/gen/** }
+  settings-adapters-gen: { in: internal/settings/adapters/postgres/gen/** }
   catalog-observation-adapters: { in: internal/catalog/adapters/postgres/observations/** }
   crawl-domain:     { in: internal/crawl/domain/** }
   crawl-app:        { in: internal/crawl/app/** }
@@ -98,7 +99,7 @@ deps:
   settings-app:
     mayDependOn: [settings-domain, platform, pkg]
   settings-adapters:
-    mayDependOn: [settings-domain, settings-app, platform, pkg]
+    mayDependOn: [settings-domain, settings-app, settings-adapters-gen, platform, pkg]
   ops-app:
     mayDependOn: [ops-domain]
   ops-adapters:
