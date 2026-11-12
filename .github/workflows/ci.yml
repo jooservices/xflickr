@@ -11,6 +11,10 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@v5
+        with:
+          # Full history so the merge base with origin/develop exists for
+          # golangci-lint's new-from-merge-base gate.
+          fetch-depth: 0
 
       - name: Check pinned Go versions
         run: make check-go-version
@@ -50,6 +54,12 @@ jobs:
 
       - name: Enforce the module boundaries
         run: make arch-lint
+
+      - name: Lint Go code changed since origin/develop
+        # Same command as docker/scripts/lint.sh (version pinned there too);
+        # the new-from-merge-base scope lives in .golangci.yml.
+        working-directory: backend
+        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run --config ../.golangci.yml ./...
 
   web:
     name: web
