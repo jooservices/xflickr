@@ -41,8 +41,8 @@ func (s *readRepoStub) GetPerson(context.Context, int64, string, sharingapp.SQLP
 	return s.person, s.personOK, s.listErr
 }
 
-func (s *readRepoStub) ListPersonPhotos(_ context.Context, _ int64, _ string, _ sharingapp.SQLPredicate, _ *app.PhotoCursor, limit int) (app.PhotosPage, error) {
-	s.lastLimit = limit
+func (s *readRepoStub) ListPersonPhotos(_ context.Context, q app.PersonPhotosQuery) (app.PhotosPage, error) {
+	s.lastLimit = q.Limit
 	s.listCalls++
 	return s.photos, s.listErr
 }

@@ -152,13 +152,22 @@ type ContactsPage struct {
 	NextCursor *ContactCursor
 }
 
+// PersonPhotosQuery selects the photos of one person that a viewer may see.
+type PersonPhotosQuery struct {
+	UserID    int64
+	NSID      string
+	Predicate sharingapp.SQLPredicate
+	Cursor    *PhotoCursor
+	Limit     int
+}
+
 // ReadRepository performs catalog reads with a predicate from the reusable
 // sharing policy. Its SQL predicate is constructed by ReadService, never from
 // request input.
 type ReadRepository interface {
 	ListPeople(context.Context, int64, sharingapp.SQLPredicate, *PersonCursor, int) (PeoplePage, error)
 	GetPerson(context.Context, int64, string, sharingapp.SQLPredicate) (Person, bool, error)
-	ListPersonPhotos(context.Context, int64, string, sharingapp.SQLPredicate, *PhotoCursor, int) (PhotosPage, error)
+	ListPersonPhotos(context.Context, PersonPhotosQuery) (PhotosPage, error)
 	ListVisibleFavorites(context.Context, int64, sharingapp.SQLPredicate, *FavoriteCursor, int) (FavoritesPage, error)
 	ListVisibleAlbums(context.Context, int64, sharingapp.SQLPredicate, *AlbumCursor, int) (AlbumsPage, error)
 	ListContactAlbums(context.Context, int64, string, sharingapp.SQLPredicate, *AlbumCursor, int) (ContactAlbumsPage, error)
@@ -208,22 +217,31 @@ func (s ReadService) GetPerson(ctx context.Context, userID int64, nsid string) (
 	return person, nil
 }
 
-func (s ReadService) ListPersonPhotos(ctx context.Context, userID int64, nsid, cursor string, limit int) (PhotosPage, string, error) {
-	if err := s.validate(ctx, userID); err != nil {
+// PersonPhotosRequest is a request for a person's photos. Cursor is the opaque
+// page token that ReadService decodes.
+type PersonPhotosRequest struct {
+	UserID int64
+	NSID   string
+	Cursor string
+	Limit  int
+}
+
+func (s ReadService) ListPersonPhotos(ctx context.Context, req PersonPhotosRequest) (PhotosPage, string, error) {
+	if err := s.validate(ctx, req.UserID); err != nil {
 		return PhotosPage{}, "", err
 	}
-	if strings.TrimSpace(nsid) == "" {
+	if strings.TrimSpace(req.NSID) == "" {
 		return PhotosPage{}, "", ErrNotFound
 	}
-	parsed, err := decodeCursor[PhotoCursor](cursor, "person-photos")
+	parsed, err := decodeCursor[PhotoCursor](req.Cursor, "person-photos")
 	if err != nil {
 		return PhotosPage{}, "", err
 	}
-	limit, err = normalizeLimit(limit)
+	limit, err := normalizeLimit(req.Limit)
 	if err != nil {
 		return PhotosPage{}, "", err
 	}
-	page, err := s.Repository.ListPersonPhotos(ctx, userID, nsid, visibility(userID), parsed, limit)
+	page, err := s.Repository.ListPersonPhotos(ctx, PersonPhotosQuery{UserID: req.UserID, NSID: req.NSID, Predicate: visibility(req.UserID), Cursor: parsed, Limit: limit})
 	if err != nil {
 		return PhotosPage{}, "", err
 	}

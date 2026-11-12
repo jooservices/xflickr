@@ -281,28 +281,28 @@ func TestVisibleReadsValidatePolicyAndPaginatePeopleAndPhotos(t *testing.T) {
 
 	db.row = &readsRow{values: []any{"owner", "Owner", "Name", "icon", int64(1)}}
 	db.rows = &readsRows{rows: [][]any{readTestPhotoRow(42)}}
-	photos, err := repository.ListPersonPhotos(ctx, userID, "owner", predicate, nil, 10)
+	photos, err := repository.ListPersonPhotos(ctx, app.PersonPhotosQuery{UserID: userID, NSID: "owner", Predicate: predicate, Limit: 10})
 	if err != nil || len(photos.Items) != 1 || photos.Items[0].Labels[0] != "tag" || photos.Items[0].Sizes[0].Label != "Large" {
 		t.Fatalf("person photos=%+v err=%v", photos, err)
 	}
 	db.rows = &readsRows{rows: [][]any{readTestPhotoRow(42), readTestPhotoRow(43)}}
-	photos, err = repository.ListPersonPhotos(ctx, userID, "owner", predicate, &app.PhotoCursor{LastUpdate: now, ID: 42}, 1)
+	photos, err = repository.ListPersonPhotos(ctx, app.PersonPhotosQuery{UserID: userID, NSID: "owner", Predicate: predicate, Cursor: &app.PhotoCursor{LastUpdate: now, ID: 42}, Limit: 1})
 	if err != nil || len(photos.Items) != 1 || photos.NextCursor == nil {
 		t.Fatalf("person photo keyset=%+v err=%v", photos, err)
 	}
 	db.row = &readsRow{err: pgx.ErrNoRows}
-	if _, err := repository.ListPersonPhotos(ctx, userID, "hidden", predicate, nil, 10); !errors.Is(err, app.ErrNotFound) {
+	if _, err := repository.ListPersonPhotos(ctx, app.PersonPhotosQuery{UserID: userID, NSID: "hidden", Predicate: predicate, Limit: 10}); !errors.Is(err, app.ErrNotFound) {
 		t.Fatalf("hidden person's photos error=%v", err)
 	}
 	db.row = &readsRow{values: []any{"owner", "Owner", "Name", "icon", int64(1)}}
 	db.rows = &readsRows{rows: [][]any{readTestPhotoRow(1)}}
-	if _, err := repository.ListPersonPhotos(ctx, userID, "owner", predicate, &app.PhotoCursor{}, 1); !errors.Is(err, app.ErrInvalidCursor) {
+	if _, err := repository.ListPersonPhotos(ctx, app.PersonPhotosQuery{UserID: userID, NSID: "owner", Predicate: predicate, Cursor: &app.PhotoCursor{}, Limit: 1}); !errors.Is(err, app.ErrInvalidCursor) {
 		t.Fatalf("invalid photo cursor=%v", err)
 	}
 	invalidSizes := readTestPhotoRow(1)
 	invalidSizes[10] = []byte("not-json")
 	db.rows = &readsRows{rows: [][]any{invalidSizes}}
-	if _, err := repository.ListPersonPhotos(ctx, userID, "owner", predicate, nil, 1); err == nil {
+	if _, err := repository.ListPersonPhotos(ctx, app.PersonPhotosQuery{UserID: userID, NSID: "owner", Predicate: predicate, Limit: 1}); err == nil {
 		t.Fatal("invalid sizes payload accepted")
 	}
 }

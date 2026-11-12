@@ -139,28 +139,28 @@ OR EXISTS (SELECT 1 FROM photos WHERE photos.owner_nsid=people.nsid AND photos.t
 	return person, true, nil
 }
 
-func (r *Repository) ListPersonPhotos(ctx context.Context, userID int64, nsid string, predicate sharingapp.SQLPredicate, cursor *app.PhotoCursor, limit int) (app.PhotosPage, error) {
-	if err := validateRead(ctx, r, userID, predicate, limit); err != nil {
+func (r *Repository) ListPersonPhotos(ctx context.Context, q app.PersonPhotosQuery) (app.PhotosPage, error) {
+	if err := validateRead(ctx, r, q.UserID, q.Predicate, q.Limit); err != nil {
 		return app.PhotosPage{}, err
 	}
-	if _, ok, err := r.GetPerson(ctx, userID, nsid, predicate); err != nil {
+	if _, ok, err := r.GetPerson(ctx, q.UserID, q.NSID, q.Predicate); err != nil {
 		return app.PhotosPage{}, err
 	} else if !ok {
 		return app.PhotosPage{}, app.ErrNotFound
 	}
-	query := `SELECT ` + photoReadColumns + ` FROM photos WHERE photos.owner_nsid=$2 AND photos.tombstoned_at IS NULL AND ` + predicate.Expression
-	args := append([]any(nil), predicate.Args...)
-	if cursor != nil {
-		if cursor.LastUpdate.IsZero() || cursor.ID <= 0 {
+	query := `SELECT ` + photoReadColumns + ` FROM photos WHERE photos.owner_nsid=$2 AND photos.tombstoned_at IS NULL AND ` + q.Predicate.Expression
+	args := append([]any(nil), q.Predicate.Args...)
+	if q.Cursor != nil {
+		if q.Cursor.LastUpdate.IsZero() || q.Cursor.ID <= 0 {
 			return app.PhotosPage{}, app.ErrInvalidCursor
 		}
 		query += ` AND (photos.last_update,photos.id)<($3,$4) ORDER BY photos.last_update DESC,photos.id DESC LIMIT $5`
-		args = append(args, nsid, cursor.LastUpdate, cursor.ID, limit+1)
+		args = append(args, q.NSID, q.Cursor.LastUpdate, q.Cursor.ID, q.Limit+1)
 	} else {
 		query += ` ORDER BY photos.last_update DESC,photos.id DESC LIMIT $3`
-		args = append(args, nsid, limit+1)
+		args = append(args, q.NSID, q.Limit+1)
 	}
-	return collectPhotoPage(ctx, r, query, args, limit)
+	return collectPhotoPage(ctx, r, query, args, q.Limit)
 }
 
 func (r *Repository) ListVisibleFavorites(ctx context.Context, userID int64, predicate sharingapp.SQLPredicate, cursor *app.FavoriteCursor, limit int) (app.FavoritesPage, error) {
