@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import type { JSX } from 'react';
-import { Link, useNavigate } from 'react-router';
-import { ForbiddenState, useI18n } from '../../../shared';
+import { Link } from 'react-router';
+import { useI18n } from '../../../shared';
+import { ForbiddenOverview } from './ForbiddenOverview';
 import styles from '../quota/QuotaPage.module.css';
 import { OverviewHeader } from './OverviewHeader';
 import { OverviewKpis } from './OverviewKpis';
+import { OverviewNotices } from './OverviewNotices';
 import { useOverviewData } from './useOverviewData';
 
 /** First slice of the ADMIN overview: the key quota numbers that an existing endpoint already serves. */
 export function OverviewPage(): JSX.Element {
   const { t } = useI18n();
-  const navigate = useNavigate();
   const [now, setNow] = useState(() => Date.now());
   const data = useOverviewData(now);
 
@@ -20,33 +21,12 @@ export function OverviewPage(): JSX.Element {
     return () => window.clearInterval(timer);
   }, [t]);
 
-  if (data.forbidden) {
-    return (
-      <div data-testid="admin-page">
-        <div data-testid="admin-overview-page">
-          <ForbiddenState
-            testId="admin-overview-forbidden"
-            ctaTestId="admin-overview-forbidden-home"
-            onHome={() => void navigate('/')}
-          />
-        </div>
-      </div>
-    );
-  }
+  if (data.forbidden) return <ForbiddenOverview />;
   return (
     <div data-testid="admin-page">
       <div className={styles.page} data-testid="admin-overview-page">
         <OverviewHeader refreshing={data.refreshing} onRefresh={data.refetch} />
-        {data.failed ? (
-          <div className={styles.error} role="alert" data-testid="admin-overview-error">
-            <strong>{t('admin.overview.error')}</strong>
-          </div>
-        ) : null}
-        {data.stale ? (
-          <div className={styles.stale} role="status" data-testid="admin-overview-stale">
-            {t('admin.overview.stale')}
-          </div>
-        ) : null}
+        <OverviewNotices failed={data.failed} stale={data.stale} />
         <OverviewKpis exhausted={data.exhausted} keyCount={data.keyCount} />
         <nav aria-label={t('admin.overview.links')}>
           <Link to="/admin/quota" data-testid="admin-overview-link-quota">
