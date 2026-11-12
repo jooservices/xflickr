@@ -22,9 +22,13 @@ restriction deadline while retaining the first outcome. Successful rechecks do
 not need to delete the historical row; its deadline has already elapsed.
 
 Photo-addressed not-found and permission failures restrict the individual facet
-(`sizes`, `info`, `exif`, `contexts`, `comments`, or `photo_favorites`) for the API
-key used by the photo worker. These workers resolve the connected account from
-that key. They do not tombstone a photo or mark its other facets complete.
+(`sizes`, `info`, `exif`, `contexts`, `comments`, or `photo_favorites`). For
+anonymous sizes failures, the restriction is scoped to the XFlickr user and API
+key. For OAuth sizes failures, it is scoped to the connected account ID, so two
+accounts that share an API key are evaluated independently. A later request can
+try another eligible account owned by that requester. OAuth-authorized sizes
+are stored and served only for that account's XFlickr user. Workers do not
+tombstone a photo or mark its other facets complete.
 Photo restrictions have no time expiry: they reopen when Flickr's `last_update`
 advances or when reconciliation changes visibility and publishes
 `photo.visibility_changed`. The scheduler checks the chosen caller and current
@@ -39,6 +43,6 @@ in effect. No live Flickr call is needed to verify this behavior: unit fakes and
 worktree PostgreSQL integration tests cover classification, caller isolation,
 first-write preservation, interval/version reopening and visibility changes.
 
-Legacy `sizes_status=unavailable` rows predate caller attribution. They retain
-suppression for their recorded version, and become eligible on a later version
-or visibility change. New failures use caller-specific restriction rows.
+Legacy `sizes_status=unavailable` rows predate caller attribution and remain
+unchanged by the account-scoped sizes migration. New failures use
+caller-specific restriction rows; they do not complete global photo sizes.

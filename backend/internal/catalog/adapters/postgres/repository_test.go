@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -63,13 +64,13 @@ func TestRepositoryRejectsInvalidCallsBeforeDatabaseAccess(t *testing.T) {
 func TestLoadSizesState(t *testing.T) {
 	updated := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
 	checked := updated.Add(time.Minute)
-	db := &photoSizesDB{row: photoSizesRow{values: []any{int64(8), updated, "confirmed", pgtype.Timestamptz{Time: checked, Valid: true}, domain.RestrictedPlaceholderServer, []byte(`[]`)}}}
+	db := &photoSizesDB{row: photoSizesRow{values: []any{int64(8), "owner@N00", updated, "confirmed", pgtype.Timestamptz{Time: checked, Valid: true}, domain.RestrictedPlaceholderServer, "private", []byte(`[]`)}}}
 	repository, err := postgres.New(db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	photo, exists, err := repository.LoadSizes(context.Background(), 8)
-	if err != nil || !exists || photo.ID != 8 || photo.Server != domain.RestrictedPlaceholderServer || photo.SizesStatus != domain.SizesConfirmed || photo.SizesCheckedAt == nil || !photo.SizesCheckedAt.Equal(checked) {
+	if err != nil || !exists || photo.ID != 8 || photo.OwnerNSID != "owner@N00" || photo.Server != domain.RestrictedPlaceholderServer || photo.Visibility != domain.Visibility("private") || photo.SizesStatus != domain.SizesConfirmed || photo.SizesCheckedAt == nil || !photo.SizesCheckedAt.Equal(checked) {
 		t.Fatalf("LoadSizes() = %+v, %v, %v", photo, exists, err)
 	}
 	if _, exists, err := repository.LoadSizes(context.Background(), 0); err == nil || exists {
@@ -91,12 +92,61 @@ func TestLoadSizesState(t *testing.T) {
 	}
 }
 
-type photoSizesDB struct {
-	disconnectedDB
-	row photoSizesRow
+func TestAccountSizesAreScopedToPhotoAccountVersionAndVisibility(t *testing.T) {
+	version := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
+	db := &photoSizesDB{row: photoSizesRow{values: []any{"confirmed"}}}
+	repository, err := postgres.New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, exists, err := repository.AccountSizes(context.Background(), 8, 13, version, "private")
+	if err != nil || !exists || status != domain.SizesConfirmed {
+		t.Fatalf("AccountSizes() = %q, %v, %v", status, exists, err)
+	}
+	if !strings.Contains(db.query, "photo_id=$1 AND account_id=$2 AND photo_updated_at=$3 AND photo_visibility=$4") || len(db.args) != 4 || db.args[0] != int64(8) || db.args[1] != int64(13) || db.args[3] != "private" {
+		t.Fatalf("account sizes query is not scoped: %s args=%v", db.query, db.args)
+	}
+	db.row = photoSizesRow{err: pgx.ErrNoRows}
+	if _, exists, err := repository.AccountSizes(context.Background(), 8, 13, version, "private"); err != nil || exists {
+		t.Fatalf("missing account sizes = %v, %v", exists, err)
+	}
+	db.row = photoSizesRow{err: errors.New("query failed")}
+	if _, _, err := repository.AccountSizes(context.Background(), 8, 13, version, "private"); err == nil {
+		t.Fatal("AccountSizes swallowed query error")
+	}
+	for _, input := range []struct {
+		ctx        context.Context
+		photoID    int64
+		accountID  int64
+		version    time.Time
+		visibility string
+	}{
+		{ctx: context.Background(), accountID: 13, version: version, visibility: "private"},
+		{ctx: context.Background(), photoID: 8, version: version, visibility: "private"},
+		{ctx: context.Background(), photoID: 8, accountID: 13, visibility: "private"},
+		{ctx: context.Background(), photoID: 8, accountID: 13, version: version},
+		{photoID: 8, accountID: 13, version: version, visibility: "private"},
+	} {
+		if _, _, err := repository.AccountSizes(input.ctx, input.photoID, input.accountID, input.version, input.visibility); err == nil {
+			t.Fatal("AccountSizes accepted invalid input")
+		}
+	}
+	if _, _, err := (*postgres.Repository)(nil).AccountSizes(context.Background(), 8, 13, version, "private"); err == nil {
+		t.Fatal("AccountSizes accepted nil repository")
+	}
 }
 
-func (db *photoSizesDB) QueryRow(context.Context, string, ...interface{}) pgx.Row { return db.row }
+type photoSizesDB struct {
+	disconnectedDB
+	row   photoSizesRow
+	query string
+	args  []any
+}
+
+func (db *photoSizesDB) QueryRow(_ context.Context, query string, args ...interface{}) pgx.Row {
+	db.query, db.args = query, append([]any(nil), args...)
+	return db.row
+}
 
 type photoSizesRow struct {
 	values []any

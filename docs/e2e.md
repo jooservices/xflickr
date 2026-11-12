@@ -57,10 +57,13 @@ E2E_HOLD=1 ./docker/scripts/e2e.sh   # start the stack and keep it up for manual
 `docker/scripts/e2e.sh` needs the generated worktree `.env` and the shared services (`make dev-up`). It:
 
 1. builds `xflickr` and `fakeflickr` through the shared Go runtime and the web bundle through the Node runtime;
-2. resets the worktree database (`DROP SCHEMA public`, then `migrate up`); it refuses any database whose name
-   does not start with `xflickr_wt`, so the live `xflickr` database is never touched;
-3. starts `fakeflickr` and the app (roles `api,scheduler,crawl`) on free local ports. The Redis prefix is unique
-   per run, the master key is random, and `FLICKR_UPSTREAM_URL` points the app at `fakeflickr`;
+2. resets the worktree database through the configured loopback PostgreSQL
+   endpoint (`DROP SCHEMA public`, then `migrate up`); reset failures stop the
+   run, and the same endpoint is verified again before migration;
+3. starts `fakeflickr` and the app (roles `api,scheduler,crawl,media`) on free local ports. The Redis prefix is
+   unique per run, the master key is random, and `FLICKR_UPSTREAM_URL` points the app at `fakeflickr`. Host
+   `psql` resets only the verified worktree endpoint. The `media` role consumes
+   `photo.sizes_resolved` so download items leave `waiting_sizes`;
 4. runs Playwright on the host with Google Chrome (Playwright never runs in Docker; `docker/scripts/playwright.sh`).
 
 The first registered user is the admin. The stack hands the specs `E2E_BASE_URL`, `E2E_FAKEFLICKR_URL`,
@@ -77,7 +80,7 @@ The first registered user is the admin. The stack hands the specs `E2E_BASE_URL`
 | `03-flickr-account.spec.ts` | Connect through fakeflickr OAuth: authorize, callback, the account is shown.                                                                                                                                                                                                                                                                          |
 | `04-crawl.spec.ts`          | Confirms the connected account and completed crawl work appear in Crawl status, changes depth (survives a reload), and verifies pause/resume responses.                                                                                                                                                                                               |
 | `05-profile.spec.ts`        | Profile display, revoke one session, sign out other sessions, change and restore the password, and update and restore sharing through the REST resource.                                                                                                                                                                                              |
-| `06-photo-sizes.spec.ts`    | A provisional photo remains unconfirmed until an explicit download request confirms sizes. The catalogue fixture adds an observation for the connected account in the guarded worktree database so the normal visibility policy applies. This verifies confirmation, not ZIP completion, and uses the VM/Ubuntu PostgreSQL client at `/usr/bin/psql`. |
+| `06-photo-sizes.spec.ts`    | A provisional photo remains unconfirmed until an explicit download request confirms sizes; the owner's restricted seed photo (server 65535) confirms sizes through a signed `getSizes` retry. The catalogue fixture adds an observation for the connected account in the guarded worktree database so the normal visibility policy applies. This verifies confirmation, not ZIP completion, and uses the VM/Ubuntu PostgreSQL client at `/usr/bin/psql`. |
 | `06-deleted-entity.spec.ts` | Missing-person crawl failure persists one gone marker; reopening work completes safely and Crawl remains usable. Uses the guarded native worktree SQL fixture helper.                                                                                                                                                                                 |
 | `99-route-sweep.spec.ts`    | Every route at desktop and 390 px; sign-in, keys and crawl in light and dark at both widths (no sideways scroll, no overlapping controls).                                                                                                                                                                                                            |
 

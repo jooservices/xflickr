@@ -39,7 +39,7 @@ func TestPhotoFacetWritesAndStatusAreAtomic(t *testing.T) {
 	})
 
 	source, exists, err := repository.LoadPhotoFacetSource(ctx, photoID)
-	if err != nil || !exists || source.SizesStatus != "confirmed" || source.SizesCheckedAt == nil {
+	if err != nil || !exists || !source.SizesConfirmed {
 		t.Fatalf("LoadPhotoFacetSource()=%+v exists=%t err=%v", source, exists, err)
 	}
 	fetchedAt := updatedAt.Add(time.Minute)

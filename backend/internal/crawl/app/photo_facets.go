@@ -120,7 +120,7 @@ func (h PhotoFacets) Handle(ctx context.Context, job PhotoFacetJob) error {
 }
 
 func photoFacetSourceReady(source catalog.PhotoFacetSource, exists bool) bool {
-	return exists && source.SizesStatus == catalog.SizesConfirmed && source.SizesCheckedAt != nil && !source.SizesCheckedAt.Before(source.LastUpdate)
+	return exists && source.SizesConfirmed
 }
 
 func (h PhotoFacets) fetch(ctx context.Context, job PhotoFacetJob, source catalog.PhotoFacetSource) ([]byte, error) {

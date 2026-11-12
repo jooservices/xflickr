@@ -23,6 +23,7 @@ import (
 	"github.com/jooservices/xflickr/internal/catalog/app"
 	catalogdomain "github.com/jooservices/xflickr/internal/catalog/domain"
 	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
+	crawldomain "github.com/jooservices/xflickr/internal/crawl/domain"
 	"github.com/jooservices/xflickr/internal/fakeflickr"
 	"github.com/jooservices/xflickr/internal/media/adapters/cdn"
 	"github.com/jooservices/xflickr/internal/media/adapters/local"
@@ -37,6 +38,18 @@ import (
 type continuationFlickr struct {
 	client *flickr.Client
 	calls  atomic.Int64
+}
+
+type emptySizesAuth struct{}
+
+func (emptySizesAuth) SizesAuthCandidates(context.Context, string, int64) ([]crawldomain.SizesAuthCandidate, error) {
+	return nil, nil
+}
+
+type sizesUserByKey struct{}
+
+func (sizesUserByKey) UserIDForKey(_ context.Context, keyID int64) (int64, error) {
+	return keyID, nil
 }
 
 func (f *continuationFlickr) GetSizes(ctx context.Context, _ int64, id string) ([]flickr.PhotoSize, error) {
@@ -133,7 +146,9 @@ func TestSizesContinuationPostgresRiverMixedManifest(t *testing.T) {
 		t.Fatalf("sizes transaction rollback: %s %v", rolledBackStatus, err)
 	}
 	client := &continuationFlickr{client: flickr.NewClient(server.URL+"/services/rest", nil)}
-	sizes := crawlapp.Sizes{Store: sizesStore, Flickr: client}
+	sizes := crawlapp.Sizes{
+		Store: sizesStore, Accounts: sizesStore, Auth: emptySizesAuth{}, Users: sizesUserByKey{}, Flickr: client,
+	}
 	// Resolve and redeliver before workers start, so exact queue counts and
 	// rollback are observable without timing-dependent assertions.
 	for _, id := range ids[1:] {

@@ -527,3 +527,32 @@ func TestInvalidKeyScenarioAnswersFlickrError100(t *testing.T) {
 		t.Fatalf("empty key answer = %v", body)
 	}
 }
+
+func TestRestrictedGetSizesRequiresToken(t *testing.T) {
+	server := testServer(t, NewScenarios(ScenarioConfig{SizesNeedToken: []string{"52000000001"}}))
+	post := func(values url.Values) map[string]any {
+		t.Helper()
+		res, err := server.Client().PostForm(server.URL+"/services/rest", values)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var body map[string]any
+		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		return body
+	}
+	denied := post(url.Values{"method": {"flickr.photos.getSizes"}, "api_key": {"k"}, "photo_id": {"52000000001"}, "format": {"json"}, "nojsoncallback": {"1"}})
+	if denied["stat"] != "fail" || denied["code"].(float64) != 1 {
+		t.Fatalf("anonymous sizes = %#v", denied)
+	}
+	ok := post(url.Values{"method": {"flickr.photos.getSizes"}, "api_key": {"k"}, "photo_id": {"52000000001"}, "oauth_token": {"access-token"}, "format": {"json"}, "nojsoncallback": {"1"}})
+	if ok["stat"] != "ok" {
+		t.Fatalf("signed sizes = %#v", ok)
+	}
+	seeded := post(url.Values{"method": {"flickr.photos.getSizes"}, "api_key": {"k"}, "photo_id": {"52000000004"}, "format": {"json"}, "nojsoncallback": {"1"}})
+	if seeded["stat"] != "fail" {
+		t.Fatalf("seed restricted anonymous sizes = %#v", seeded)
+	}
+}

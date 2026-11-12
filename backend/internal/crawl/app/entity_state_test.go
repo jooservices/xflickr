@@ -104,7 +104,7 @@ func TestEveryPhotoFacetRecordsRestrictionWithoutCompletingGlobalData(t *testing
 		for _, cause := range []error{flickr.ErrNotFound, flickr.ErrPermission} {
 			t.Run(facet+cause.Error(), func(t *testing.T) {
 				states := &stateFake{}
-				store := &photoFacetStoreFake{source: catalog.PhotoFacetSource{LastUpdate: epoch, SizesStatus: catalog.SizesConfirmed, SizesCheckedAt: &epoch}, exists: true}
+				store := &photoFacetStoreFake{source: catalog.PhotoFacetSource{LastUpdate: epoch, SizesConfirmed: true}, exists: true}
 				client := &photoFacetClientFake{infoErr: cause, exifErr: cause, contextsErr: cause, commentsErr: cause, favoritesErr: cause}
 				h := PhotoFacets{Store: store, Flickr: client, States: states}
 				job := PhotoFacetJob{PhotoID: 42, KeyID: 7, Facet: facet}
@@ -128,12 +128,15 @@ func TestEveryPhotoFacetRecordsRestrictionWithoutCompletingGlobalData(t *testing
 		h, store, client := sizesRig()
 		states := &stateFake{}
 		h.States = states
+		h.Users = staticKeyUser{userID: 7}
+		h.Auth = &sizesAuthFake{}
+		h.Accounts = &accountSizesFake{}
 		client.err = cause
 		if err := h.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
 			t.Fatal(err)
 		}
-		if states.state != "restricted" || store.status != catalog.SizesUnavailable {
-			t.Fatal("sizes restriction did not resolve waiting downloads")
+		if states.state != "restricted" || store.status == catalog.SizesUnavailable {
+			t.Fatal("sizes restriction completed global sizes instead of recording scoped access")
 		}
 		states.blocked = true
 		if err := h.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
@@ -152,8 +155,9 @@ func TestEntityStateErrorsAreRetried(t *testing.T) {
 	if !errors.Is(r.engine.Handle(t.Context(), 7), failure) {
 		t.Fatal("lost read error")
 	}
-	h, _, _ := sizesRig()
+	h, _, sizesClient := sizesRig()
 	h.States = &stateFake{err: failure}
+	sizesClient.err = flickr.ErrPermission
 	if !errors.Is(h.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}), failure) {
 		t.Fatal("lost sizes error")
 	}

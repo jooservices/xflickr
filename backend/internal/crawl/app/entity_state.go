@@ -18,6 +18,7 @@ type EntityAccess struct {
 	EntityRef
 	Facet         string
 	UserID, KeyID int64
+	AccountID     int64
 	Version       time.Time
 }
 

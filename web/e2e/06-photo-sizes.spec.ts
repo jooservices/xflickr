@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { ADMIN_STATE, apiWrite } from './support/auth';
+import { ADMIN_STATE, apiWrite, setFlickrScenario } from './support/auth';
 import { observeCrawledPhoto } from './support/catalog';
 import { expectNoErrorPage, monitor } from './support/monitor';
 import { worktreeSQL } from './support/worktree';
@@ -60,4 +60,37 @@ test('confirms provisional photo sizes through an explicit download request', as
   ).toBe('t');
   await expectNoErrorPage(page, '/crawl after a direct download request');
   watch.expectClean('on-demand sizes');
+});
+
+test('confirms the owner restricted photo sizes with the connected account token', async ({
+  page,
+  request,
+}) => {
+  const watch = monitor(page);
+  await setFlickrScenario(request, {});
+  await page.goto('/crawl');
+  await expect(page.getByTestId('user-crawl-page')).toBeVisible();
+  const photoID = 52000000004;
+  await expect.poll(() => observeCrawledPhoto(photoID), { timeout: 30_000 }).toBe(true);
+  worktreeSQL(
+    `UPDATE photos SET server='65535', sizes_status='provisional', sizes_checked_at=NULL WHERE id=${photoID}`,
+  );
+  expect(worktreeSQL(`SELECT server FROM photos WHERE id=${photoID}`)).toBe('65535');
+  const created = await apiWrite(page, 'POST', '/downloads', {
+    kind: 'tray',
+    photo_ids: [photoID],
+  });
+  expect(created.status).toBe(201);
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`/photos/${photoID}`);
+        expect(response.status()).toBe(200);
+        return ((await response.json()) as { sizes_status: string }).sizes_status;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe('confirmed');
+  await expectNoErrorPage(page, '/crawl after restricted sizes confirmation');
+  watch.expectClean('restricted owner sizes');
 });
