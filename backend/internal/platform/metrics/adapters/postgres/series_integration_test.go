@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -148,4 +149,29 @@ func cleanupSeriesSamples(t *testing.T, pool *pgxpool.Pool, queuePrefix string) 
 			t.Errorf("delete metric series fixture: %v", err)
 		}
 	})
+}
+
+func TestReadSeriesUnicodeDimensions(t *testing.T) {
+	pool := integrationPool(t)
+	store := postgres.Store{Pool: pool}
+	reader := postgres.SeriesStore{Pool: pool}
+	dimension := strings.Repeat("é", 128)
+	from := time.Date(2026, 11, 1, 8, 0, 0, 0, time.UTC)
+	cleanupSeriesSamples(t, pool, dimension)
+	sample := domain.Sample{Name: domain.MetricQueueJobsAvailable,
+		Labels: map[string]string{"queue": dimension, "role": dimension, "node": dimension}, At: from, Value: 17}
+	if err := store.WriteBatch(t.Context(), []domain.Sample{sample}); err != nil {
+		t.Fatal(err)
+	}
+	query := app.SeriesQuery{Queue: dimension, Role: dimension, Node: dimension, From: from, To: from.Add(time.Minute)}
+	points, err := reader.ReadSeries(t.Context(), query)
+	if err != nil || len(points) != 1 || !points[0].At.Equal(from) || points[0].Value != 17 {
+		t.Fatalf("points=%+v err=%v", points, err)
+	}
+	// Canonically equivalent text is still a distinct label.
+	query.Node = strings.Repeat("e\u0301", 128)
+	points, err = reader.ReadSeries(t.Context(), query)
+	if err != nil || points == nil || len(points) != 0 {
+		t.Fatalf("different label points=%+v err=%v", points, err)
+	}
 }
