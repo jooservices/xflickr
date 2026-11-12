@@ -6,6 +6,8 @@ ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd -P)"
 
 GO_ARCH_LINT_VERSION="${GO_ARCH_LINT_VERSION:-v1.19.0}"
 
+"$SCRIPT_DIR/run.sh" python python3 "$SCRIPT_DIR/module_cycles.py"
+
 (
 	cd "$ROOT/backend"
 	"$SCRIPT_DIR/run.sh" go go run "github.com/fe3dback/go-arch-lint@$GO_ARCH_LINT_VERSION" \

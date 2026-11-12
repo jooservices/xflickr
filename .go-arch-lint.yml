@@ -92,13 +92,13 @@ deps:
   accounts-adapters:
     mayDependOn: [accounts-domain, accounts-app, platform, pkg, settings-domain]
   identity-app:
-    mayDependOn: [identity-domain, platform, pkg, settings-app]
+    mayDependOn: [identity-domain, platform, pkg]
   identity-adapters:
-    mayDependOn: [identity-domain, identity-app, platform, pkg, settings-app]
+    mayDependOn: [identity-domain, identity-app, platform, pkg]
   settings-app:
-    mayDependOn: [settings-domain, platform, pkg, identity-app]
+    mayDependOn: [settings-domain, platform, pkg]
   settings-adapters:
-    mayDependOn: [settings-domain, settings-app, platform, pkg, identity-app]
+    mayDependOn: [settings-domain, settings-app, platform, pkg]
   ops-app:
     mayDependOn: [ops-domain]
   ops-adapters:

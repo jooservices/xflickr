@@ -39,6 +39,9 @@ jobs:
       - name: Test the worktree environment helper
         run: python3 docker/scripts/test_worktree_env.py
 
+      - name: Test the module cycle checker
+        run: python3 docker/scripts/module_cycles_test.py
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
