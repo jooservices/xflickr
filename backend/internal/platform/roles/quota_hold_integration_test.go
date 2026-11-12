@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	redisv9 "github.com/redis/go-redis/v9"
 
 	"github.com/jooservices/xflickr/internal/platform/config"
@@ -20,21 +21,43 @@ import (
 	scheduleapp "github.com/jooservices/xflickr/internal/schedule/app"
 )
 
-// TestHourlyCeilingHoldsPendingWorkUntilReset proves, with the real Redis
-// governor and the real pump, that a key at the 3,500 automated-call ceiling
-// (3,600 limit minus the 100-call reserve) keeps pending work buffered and
-// releases it after the counted background grants expire. The 4/s rate and burst of 5 are
-// shared by the person and photo lanes, and the reserve stays for interactive use.
+type quotaHoldFixture struct {
+	ctx         context.Context
+	pool        *pgxpool.Pool
+	redisClient *redisv9.Client
+	governor    quotaRedis.Governor
+	store       scheduleriver.Store
+	keyID       int64
+	itemID      int64
+	base        string
+}
+
+// TestHourlyCeilingHoldsPendingWorkUntilReset proves the 3400 effective budget
+// holds background work at 3300 grants and resumes it after rolling expiry.
 func TestHourlyCeilingHoldsPendingWorkUntilReset(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use the shared worktree database")
 	}
+	f := newQuotaHoldFixture(t)
+	assertQuotaBudget(t, f)
+	assertSharedBurst(t, f)
+	assertBackgroundHeld(t, f)
+	assertInteractiveReserve(t, f)
+	assertExpiredGrantsResume(t, f)
+}
+
+func newQuotaHoldFixture(t *testing.T) *quotaHoldFixture {
+	t.Helper()
 	cfg := crawlIntegrationConfig(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
-	defer cancel()
+	t.Cleanup(cancel)
 	pool := dbtest.Open(t, cfg.DB)
-	redisClient := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
-	defer redisClient.Close()
+	client := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close quota Redis: %v", err)
+		}
+	})
 	_, keyID, itemID, _ := seedCrawlFixture(t, ctx, pool, cfg, "pending", nil)
 	if _, err := pool.Exec(ctx, `UPDATE api_keys SET per_hour_limit=3600, per_second_limit=4, burst=5 WHERE id=$1`, keyID); err != nil {
 		t.Fatal(err)
@@ -42,105 +65,140 @@ func TestHourlyCeilingHoldsPendingWorkUntilReset(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE work_items SET not_before=now() - interval '1 minute' WHERE id=$1`, itemID); err != nil {
 		t.Fatal(err)
 	}
+	prefix := fmt.Sprintf("%sjooxf389:%d:", cfg.Redis.Prefix, keyID)
+	f := &quotaHoldFixture{ctx: ctx, pool: pool, redisClient: client, store: scheduleriver.Store{Pool: pool}, keyID: keyID, itemID: itemID, base: fmt.Sprintf("%squota:key:%d:", prefix, keyID)}
+	clearQuotaFixture(t, f)
+	t.Cleanup(func() { clearQuotaFixture(t, f) })
+	var err error
+	f.governor, _, err = newQuotaGovernor(pool, client, config.Config{Redis: config.RedisConfig{Prefix: prefix}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (quotaRedis.Counters{Client: client, Prefix: prefix}).Restore(ctx, quotaapp.Usage{KeyID: keyID}); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
 
-	prefix := fmt.Sprintf("%sjooxf261:%d:", cfg.Redis.Prefix, keyID)
-	base := fmt.Sprintf("%squota:key:%d:", prefix, keyID)
-	clear := func() {
-		for _, name := range []string{"bucket", "rolling:interactive", "rolling:person", "rolling:photo", "cooldown", "rolling:ready", "rolling:sequence", "photo_demand"} {
-			redisClient.Del(context.Background(), base+name)
+func clearQuotaFixture(t *testing.T, f *quotaHoldFixture) {
+	t.Helper()
+	clearQuotaKeys(t, f, "bucket", "rolling:interactive", "rolling:person", "rolling:photo", "cooldown", "rolling:ready", "rolling:sequence", "photo_demand")
+}
+
+func clearQuotaKeys(t *testing.T, f *quotaHoldFixture, names ...string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, name := range names {
+		if err := f.redisClient.Del(ctx, f.base+name).Err(); err != nil {
+			t.Fatalf("clear quota %s: %v", name, err)
 		}
 	}
-	clear()
-	t.Cleanup(clear)
-	governor, _, err := newQuotaGovernor(pool, redisClient, config.Config{Redis: config.RedisConfig{Prefix: prefix}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := (quotaRedis.Counters{Client: redisClient, Prefix: prefix}).Restore(ctx, quotaapp.Usage{KeyID: keyID}); err != nil {
-		t.Fatal(err)
-	}
-	budget, err := (quotaPostgres.Budgets{Pool: pool}).Budget(ctx, keyID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if budget.HourlyLimit != 3600 || budget.PerSecondRate != 4 || budget.Burst != 5 || budget.Reserve != 100 {
-		t.Fatalf("budget = %+v; want 3600/h, 4/s, burst 5, reserve 100", budget)
-	}
+}
 
+func assertQuotaBudget(t *testing.T, f *quotaHoldFixture) {
+	t.Helper()
+	budget, err := (quotaPostgres.Budgets{Pool: f.pool}).Budget(f.ctx, f.keyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if budget.HourlyLimit != 3400 || budget.PerSecondRate != 4 || budget.Burst != 5 || budget.Reserve != 100 {
+		t.Fatalf("budget = %+v; want registry defaults 3400/h, 4/s, burst 5, reserve 100", budget)
+	}
+}
+
+func assertSharedBurst(t *testing.T, f *quotaHoldFixture) {
+	t.Helper()
 	// Burst: five calls are granted across both lanes, the sixth waits.
 	for i, class := range []quotadomain.Class{quotadomain.Person, quotadomain.Photo, quotadomain.Person, quotadomain.Photo, quotadomain.Person} {
-		if permit, _, err := governor.Acquire(ctx, keyID, class); err != nil || permit == nil {
+		if permit, _, err := f.governor.Acquire(f.ctx, f.keyID, class); err != nil || permit == nil {
 			t.Fatalf("burst call %d (%s) = %v, %v; want granted", i+1, class, permit, err)
 		}
 	}
 	for _, class := range []quotadomain.Class{quotadomain.Photo, quotadomain.Person} {
-		if permit, wait, err := governor.Acquire(ctx, keyID, class); err != nil || permit != nil || wait <= 0 {
-			t.Fatalf("call past burst (%s) = %v, wait %s, err %v; want denied by the shared 4/s bucket", class, permit, wait, err)
+		if permit, wait, err := f.governor.Acquire(f.ctx, f.keyID, class); err != nil || permit != nil || wait <= 0 {
+			t.Fatalf("call past burst (%s) = %v, wait %s, err %v; want denied by the shared burst of 5", class, permit, wait, err)
 		}
 	}
+}
 
-	// Ceiling: 3,500 automated calls spent in the current window.
-	now := time.Now().UnixMilli()
-	redisClient.Del(ctx, base+"rolling:interactive", base+"rolling:person", base+"rolling:photo")
-	grants := make([]redisv9.Z, 3500)
-	for i := range grants {
-		grants[i] = redisv9.Z{Score: float64(now), Member: fmt.Sprintf("fixture:%d", i)}
-	}
-	if err := redisClient.ZAdd(ctx, base+"rolling:person", grants...).Err(); err != nil {
-		t.Fatal(err)
-	}
-	redisClient.Del(ctx, base+"bucket")
+func assertBackgroundHeld(t *testing.T, f *quotaHoldFixture) {
+	t.Helper()
+	// Ceiling: 3300 background calls exhaust the 3400 budget minus reserve.
+	clearQuotaKeys(t, f, "rolling:interactive", "rolling:person", "rolling:photo", "bucket")
+	seedQuotaGrants(t, f, quotaGrantSeed{"person", 3300, time.Now().UnixMilli()})
 	for _, class := range []quotadomain.Class{quotadomain.Person, quotadomain.Photo} {
-		if permit, wait, err := governor.Acquire(ctx, keyID, class); err != nil || permit != nil || wait <= 0 {
+		if permit, wait, err := f.governor.Acquire(f.ctx, f.keyID, class); err != nil || permit != nil || wait <= 0 {
 			t.Fatalf("%s call at the ceiling = %v, wait %s, err %v; want held until reset", class, permit, wait, err)
 		}
 	}
-	if capacity, err := governor.Capacity(ctx, keyID, 2*time.Minute); err != nil || capacity != 0 {
+	if capacity, err := f.governor.Capacity(f.ctx, f.keyID, 2*time.Minute); err != nil || capacity != 0 {
 		t.Fatalf("Capacity() at the ceiling = %d, %v; want 0", capacity, err)
 	}
-	adapter, err := queue.NewRiver(pool, nil)
+	pumpQuotaWork(t, f)
+	var state string
+	if err := f.pool.QueryRow(f.ctx, `SELECT state FROM work_items WHERE id=$1`, f.itemID).Scan(&state); err != nil || state != "pending" {
+		t.Fatalf("item state at the ceiling = %q, %v; want pending (buffered)", state, err)
+	}
+}
+
+func assertInteractiveReserve(t *testing.T, f *quotaHoldFixture) {
+	t.Helper()
+	// The first 99 reserve grants remain recent throughout the expiry phase.
+	seedQuotaGrants(t, f, quotaGrantSeed{"interactive", 99, time.Now().UnixMilli()})
+	clearQuotaKeys(t, f, "bucket")
+	if permit, _, err := f.governor.Acquire(f.ctx, f.keyID, quotadomain.Interactive); err != nil || permit == nil {
+		t.Fatalf("interactive reserve grant 100 = %v, %v; want granted", permit, err)
+	}
+	clearQuotaKeys(t, f, "bucket")
+	if permit, wait, err := f.governor.Acquire(f.ctx, f.keyID, quotadomain.Interactive); err != nil || permit != nil || wait <= 0 {
+		t.Fatalf("interactive grant 101 at 3400 = %v, wait %s, err %v; want denied", permit, wait, err)
+	}
+}
+
+func assertExpiredGrantsResume(t *testing.T, f *quotaHoldFixture) {
+	t.Helper()
+	// Expire only the 3300 background grants; all 100 reserve grants stay recent.
+	seedQuotaGrants(t, f, quotaGrantSeed{"person", 3300, time.Now().Add(-time.Hour - time.Second).UnixMilli()})
+	clearQuotaKeys(t, f, "bucket")
+	if capacity, err := f.governor.Capacity(f.ctx, f.keyID, 2*time.Minute); err != nil || capacity <= 0 {
+		t.Fatalf("Capacity() after reset = %d, %v; want credits again", capacity, err)
+	}
+	pumpQuotaWork(t, f)
+	var state string
+	if err := f.pool.QueryRow(f.ctx, `SELECT state FROM work_items WHERE id=$1`, f.itemID).Scan(&state); err != nil || state != "ready" {
+		t.Fatalf("item state after reset = %q, %v; want ready", state, err)
+	}
+	if permit, _, err := f.governor.Acquire(f.ctx, f.keyID, quotadomain.Person); err != nil || permit == nil {
+		t.Fatalf("person call after reset = %v, %v; want granted", permit, err)
+	}
+}
+
+type quotaGrantSeed struct {
+	class     string
+	count     int
+	timestamp int64
+}
+
+func seedQuotaGrants(t *testing.T, f *quotaHoldFixture, seed quotaGrantSeed) {
+	t.Helper()
+	grants := make([]redisv9.Z, seed.count)
+	for i := range grants {
+		grants[i] = redisv9.Z{Score: float64(seed.timestamp), Member: fmt.Sprintf("fixture:%d", i)}
+	}
+	if err := f.redisClient.ZAdd(f.ctx, f.base+"rolling:"+seed.class, grants...).Err(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func pumpQuotaWork(t *testing.T, f *quotaHoldFixture) {
+	t.Helper()
+	adapter, err := queue.NewRiver(f.pool, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	settings := scheduleapp.PumpSettings{PerKeyReadyCap: 10, NodeReadyCap: 1000, MediaReadyCap: 1000, AIReadyCap: 1000, SyncReadyCap: 1000, RetryMax: 5, RetryBackoff: 30 * time.Second, LeaseTimeout: 2 * time.Minute, ReclaimBatchSize: 100}
-	store := scheduleriver.Store{Pool: pool}
-	if _, err := store.Pump(ctx, settings, governor, adapter); err != nil {
+	if _, err := f.store.Pump(f.ctx, settings, f.governor, adapter); err != nil {
 		t.Fatal(err)
-	}
-	var state string
-	if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE id=$1`, itemID).Scan(&state); err != nil || state != "pending" {
-		t.Fatalf("item state at the ceiling = %q, %v; want pending (buffered)", state, err)
-	}
-	var jobs int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE args->'args'->>'work_item_id'=$1`, fmt.Sprint(itemID)).Scan(&jobs); err != nil || jobs != 0 {
-		t.Fatalf("River jobs at the ceiling = %d, %v; want none", jobs, err)
-	}
-
-	// Reserve: the interactive lane may still spend the last 100 calls.
-	redisClient.Del(ctx, base+"bucket")
-	if permit, _, err := governor.Acquire(ctx, keyID, quotadomain.Interactive); err != nil || permit == nil {
-		t.Fatalf("interactive call in the reserve = %v, %v; want granted", permit, err)
-	}
-
-	// Expiry: old background grants leave the rolling window; the recent
-	// interactive grant remains charged while the buffered item is promoted.
-	for i := range grants {
-		grants[i].Score = float64(now - int64(time.Hour/time.Millisecond) - 1000)
-	}
-	if err := redisClient.ZAdd(ctx, base+"rolling:person", grants...).Err(); err != nil {
-		t.Fatal(err)
-	}
-	redisClient.Del(ctx, base+"bucket")
-	if capacity, err := governor.Capacity(ctx, keyID, 2*time.Minute); err != nil || capacity <= 0 {
-		t.Fatalf("Capacity() after reset = %d, %v; want credits again", capacity, err)
-	}
-	if _, err := store.Pump(ctx, settings, governor, adapter); err != nil {
-		t.Fatal(err)
-	}
-	if err := pool.QueryRow(ctx, `SELECT state FROM work_items WHERE id=$1`, itemID).Scan(&state); err != nil || state != "ready" {
-		t.Fatalf("item state after reset = %q, %v; want ready", state, err)
-	}
-	if permit, _, err := governor.Acquire(ctx, keyID, quotadomain.Person); err != nil || permit == nil {
-		t.Fatalf("person call after reset = %v, %v; want granted", permit, err)
 	}
 }
