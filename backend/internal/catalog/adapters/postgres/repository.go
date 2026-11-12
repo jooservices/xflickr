@@ -21,7 +21,11 @@ type Repository struct {
 	db      gen.DBTX
 }
 
-var _ app.Repository = (*Repository)(nil)
+var (
+	_ app.CatalogWriter   = (*Repository)(nil)
+	_ app.EnrichmentStore = (*Repository)(nil)
+	_ app.AssetStore      = (*Repository)(nil)
+)
 
 // New creates a catalog repository backed by a pgx connection or pool.
 func New(database gen.DBTX) (*Repository, error) {

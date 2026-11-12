@@ -8,15 +8,23 @@ import (
 	"github.com/jooservices/xflickr/internal/catalog/domain"
 )
 
-// Repository persists Flickr people and photos.
-type Repository interface {
+// CatalogWriter persists Flickr people and photos.
+type CatalogWriter interface {
 	UpsertPeople(context.Context, []domain.Person) error
 	UpsertPhotos(context.Context, []domain.Photo) error
 	SetSizes(context.Context, int64, []byte, domain.SizesStatus, time.Time) error
 	MarkTombstone(context.Context, int64, time.Time) error
+}
+
+// EnrichmentStore persists versioned enrichment results for photos.
+type EnrichmentStore interface {
 	UpsertEnrichment(context.Context, domain.PhotoEnrichment) error
 	GetEnrichment(context.Context, int64, domain.EnrichmentKind, string) (domain.PhotoEnrichment, bool, error)
 	DeleteEnrichment(context.Context, int64, domain.EnrichmentKind, string) error
+}
+
+// AssetStore persists downloadable assets and lists the expired ones.
+type AssetStore interface {
 	CreateAsset(context.Context, domain.Asset) (domain.Asset, error)
 	GetAsset(context.Context, int64) (domain.Asset, bool, error)
 	UpdateAsset(context.Context, domain.Asset) error
