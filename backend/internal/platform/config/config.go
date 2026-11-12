@@ -5,17 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net"
-	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
-
-	"github.com/jooservices/xflickr/internal/platform/mail"
 )
 
 // Config contains the settings used by the application's platform adapters.
@@ -309,140 +304,6 @@ func normalizeDatabaseEnvironment(values map[string]string) map[string]string {
 		normalized["DB_USER"] = value
 	}
 	return normalized
-}
-
-// Validate checks PostgreSQL connection and pool settings before use.
-func (cfg DBConfig) Validate() error {
-	if strings.TrimSpace(cfg.Host) == "" {
-		return fmt.Errorf("DB_HOST is required")
-	}
-	if strings.TrimSpace(cfg.Name) == "" {
-		return fmt.Errorf("DB_NAME is required")
-	}
-	if strings.TrimSpace(cfg.User) == "" {
-		return fmt.Errorf("DB_USER is required")
-	}
-	if cfg.Port < 1 || cfg.Port > 65535 {
-		return fmt.Errorf("DB_PORT must be between 1 and 65535")
-	}
-	if cfg.MaxConns < 1 {
-		return fmt.Errorf("DB_MAX_CONNS must be at least 1")
-	}
-	if cfg.MinConns < 0 || cfg.MinConns > cfg.MaxConns {
-		return fmt.Errorf("DB_MIN_CONNS must be between 0 and DB_MAX_CONNS")
-	}
-	if cfg.MaxConnLifetime <= 0 {
-		return fmt.Errorf("DB_MAX_CONN_LIFETIME must be greater than 0")
-	}
-	if cfg.MaxConnIdleTime <= 0 {
-		return fmt.Errorf("DB_MAX_CONN_IDLE_TIME must be greater than 0")
-	}
-	if cfg.HealthCheckPeriod <= 0 {
-		return fmt.Errorf("DB_HEALTH_CHECK_PERIOD must be greater than 0")
-	}
-	return nil
-}
-
-//nolint:cyclop // flat list of independent config invariants
-func (cfg *Config) validate() error {
-	if cfg.CallLog.RetentionDays < 1 || cfg.CallLog.RetentionDays > 3650 {
-		return fmt.Errorf("API_CALL_LOG_RETENTION_DAYS must be between 1 and 3650")
-	}
-	if cfg.Identity.Argon2Memory < 8*uint32(cfg.Identity.Argon2Parallelism) || cfg.Identity.Argon2Iterations == 0 || cfg.Identity.Argon2Parallelism == 0 || cfg.Identity.Argon2SaltLength < 8 || cfg.Identity.Argon2KeyLength < 16 {
-		return fmt.Errorf("ARGON2ID parameters are invalid")
-	}
-	callback, err := url.Parse(strings.TrimSpace(cfg.Flickr.CallbackURL))
-	if err != nil || callback.Host == "" || (callback.Scheme != "http" && callback.Scheme != "https") {
-		return fmt.Errorf("FLICKR_OAUTH_CALLBACK_URL must be an absolute http or https URL")
-	}
-	cfg.Flickr.CallbackURL = callback.String()
-	if upstream := strings.TrimSpace(cfg.Flickr.UpstreamURL); upstream != "" {
-		parsed, err := url.Parse(upstream)
-		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-			return fmt.Errorf("FLICKR_UPSTREAM_URL must be an absolute http or https URL")
-		}
-		cfg.Flickr.UpstreamURL = strings.TrimRight(parsed.String(), "/")
-	}
-	if cfg.HTTPPort < 1 || cfg.HTTPPort > 65535 {
-		return fmt.Errorf("HTTP_PORT must be between 1 and 65535")
-	}
-	if cfg.InternalHTTPAddr != "" {
-		host, portText, err := net.SplitHostPort(cfg.InternalHTTPAddr)
-		port, portErr := strconv.Atoi(portText)
-		address := net.ParseIP(host)
-		if err != nil || portErr != nil || port < 1 || port > 65535 || address == nil {
-			return fmt.Errorf("INTERNAL_HTTP_ADDR must be a specific IP address and a port between 1 and 65535")
-		}
-		if address.IsUnspecified() {
-			return fmt.Errorf("INTERNAL_HTTP_ADDR must not bind to a wildcard address")
-		}
-	}
-	if err := cfg.DB.Validate(); err != nil {
-		return err
-	}
-	settings, err := (mail.SMTPSettings{
-		Addr:     cfg.Mail.SMTPAddr,
-		From:     cfg.Mail.From,
-		Username: cfg.Mail.Username,
-		Password: cfg.Mail.Password,
-	}).Validate()
-	if err != nil {
-		return err
-	}
-	cfg.Mail = MailConfig{
-		SMTPAddr: settings.Addr,
-		From:     settings.From,
-		Username: settings.Username,
-		Password: settings.Password,
-	}
-	if cfg.Redis.Port < 1 || cfg.Redis.Port > 65535 {
-		return fmt.Errorf("REDIS_PORT must be between 1 and 65535")
-	}
-
-	cfg.LogLevel = strings.ToLower(strings.TrimSpace(cfg.LogLevel))
-	switch cfg.LogLevel {
-	case "debug", "info", "warn", "error":
-	default:
-		return fmt.Errorf("LOG_LEVEL must be one of debug, info, warn, or error")
-	}
-
-	cfg.Blob.Driver = strings.ToLower(strings.TrimSpace(cfg.Blob.Driver))
-	if cfg.Blob.MaxBytes < 0 {
-		return fmt.Errorf("BLOB_MAX_BYTES must be zero or greater")
-	}
-	if cfg.Blob.MaxTTL <= 0 {
-		return fmt.Errorf("BLOB_MAX_TTL must be greater than zero")
-	}
-	if cfg.DownloadLinkTTL <= 0 {
-		return fmt.Errorf("DOWNLOAD_LINK_TTL must be greater than zero")
-	}
-	if cfg.DownloadLinkTTL > cfg.Blob.MaxTTL {
-		return fmt.Errorf("DOWNLOAD_LINK_TTL must not exceed BLOB_MAX_TTL")
-	}
-	switch cfg.Blob.Driver {
-	case "local", "s3":
-	default:
-		return fmt.Errorf("BLOB_DRIVER must be local or s3")
-	}
-	if cfg.Blob.Driver == "s3" {
-		var missing []string
-		if strings.TrimSpace(cfg.Blob.S3Endpoint) == "" {
-			missing = append(missing, "S3_ENDPOINT")
-		}
-		if strings.TrimSpace(cfg.Blob.S3Bucket) == "" {
-			missing = append(missing, "S3_BUCKET")
-		}
-		if strings.TrimSpace(cfg.Blob.S3AccessKey) == "" {
-			missing = append(missing, "S3_ACCESS_KEY")
-		}
-		if strings.TrimSpace(cfg.Blob.S3SecretKey) == "" {
-			missing = append(missing, "S3_SECRET_KEY")
-		}
-		if len(missing) > 0 {
-			return fmt.Errorf("BLOB_DRIVER=s3 requires: %s", strings.Join(missing, ", "))
-		}
-	}
-	return nil
 }
 
 // String returns a useful configuration summary without exposing credentials
