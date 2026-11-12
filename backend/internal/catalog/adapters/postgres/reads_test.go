@@ -519,8 +519,11 @@ func TestContactAlbumProbeCursorBoundsEmptyPages(t *testing.T) {
 	}
 
 	db.rows = &readsRows{rows: [][]any{{
-		"long-album", "contact", "Long album", pgtype.Timestamptz{}, false, true,
-		pgtype.Int4{Int32: 127, Valid: true}, pgtype.Int8{Int64: 128, Valid: true},
+		"long-album", "contact", "Long album",
+		pgtype.Timestamptz{},
+		false, true,
+		pgtype.Int4{Int32: 127, Valid: true},
+		pgtype.Int8{Int64: 128, Valid: true},
 	}}}
 	page, err = repository.ListContactAlbums(ctx, userID, "", predicate, nil, 1)
 	if err != nil || page.NextCursor == nil || page.NextCursor.ID != "long-album" ||

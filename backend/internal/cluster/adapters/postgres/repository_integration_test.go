@@ -192,7 +192,14 @@ func TestDuplicateEgressEligibility(t *testing.T) {
 				coolingUntil = timePointer(coolingAt)
 			}
 			if test.currentIP != "" {
-				insertDuplicateNode(t, pool, ctx, prefix+"-candidate", test.roles, test.state, test.candidateIP, timePointer(at.Add(-test.heartbeatAge)), coolingUntil)
+				insertDuplicateNode(t, ctx, pool, duplicateNode{
+					name:         prefix + "-candidate",
+					roles:        test.roles,
+					state:        test.state,
+					egressIP:     test.candidateIP,
+					heartbeatAt:  timePointer(at.Add(-test.heartbeatAge)),
+					coolingUntil: coolingUntil,
+				})
 			}
 			duplicate, err := repository.FindDuplicateEgress(ctx, domain.Node{Name: prefix + "-current", EgressIP: test.currentIP}, at)
 			if err != nil {
@@ -217,8 +224,8 @@ func TestDuplicateEgressPlanUsesIndex(t *testing.T) {
 	const fixtureSize = 400_000
 	at := time.Now().UTC().Truncate(time.Microsecond)
 	const egressIP = "198.19.0.1"
-	insertDuplicateNode(t, pool, ctx, prefix+"-current", []string{"crawl"}, "online", egressIP, timePointer(at), nil)
-	insertDuplicateNode(t, pool, ctx, prefix+"-match", []string{"crawl"}, "online", egressIP, timePointer(at), nil)
+	insertDuplicateNode(t, ctx, pool, duplicateNode{name: prefix + "-current", roles: []string{"crawl"}, state: "online", egressIP: egressIP, heartbeatAt: timePointer(at)})
+	insertDuplicateNode(t, ctx, pool, duplicateNode{name: prefix + "-match", roles: []string{"crawl"}, state: "online", egressIP: egressIP, heartbeatAt: timePointer(at)})
 	command, err := pool.Exec(ctx, `
 INSERT INTO nodes (name, roles, state, egress_ip, last_heartbeat_at, token_hash)
 SELECT $1 || '-' || lpad(fixture.id::text, 6, '0'), ARRAY['crawl'], 'online',
@@ -258,13 +265,23 @@ func openDuplicateIntegrationDatabase(t *testing.T) *pgxpool.Pool {
 	return dbtest.Open(t, cfg)
 }
 
-func insertDuplicateNode(t *testing.T, pool *pgxpool.Pool, ctx context.Context, name string, roles []string, state, egressIP string, heartbeatAt, coolingUntil *time.Time) {
+// duplicateNode describes one node fixture for the duplicate egress IP tests.
+type duplicateNode struct {
+	name         string
+	roles        []string
+	state        string
+	egressIP     string
+	heartbeatAt  *time.Time
+	coolingUntil *time.Time
+}
+
+func insertDuplicateNode(t *testing.T, ctx context.Context, pool *pgxpool.Pool, node duplicateNode) {
 	t.Helper()
 	if _, err := pool.Exec(ctx, `
 INSERT INTO nodes (name, roles, state, egress_ip, last_heartbeat_at, cooling_until, token_hash)
 VALUES ($1, $2, $3, NULLIF($4, '')::inet, $5, $6,
-        decode(md5($1) || md5($1 || ':token'), 'hex'))`, name, roles, state, egressIP, heartbeatAt, coolingUntil); err != nil {
-		t.Fatalf("insert duplicate egress fixture %q: %v", name, err)
+        decode(md5($1) || md5($1 || ':token'), 'hex'))`, node.name, node.roles, node.state, node.egressIP, node.heartbeatAt, node.coolingUntil); err != nil {
+		t.Fatalf("insert duplicate egress fixture %q: %v", node.name, err)
 	}
 }
 

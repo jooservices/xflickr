@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
 	catalog "github.com/jooservices/xflickr/internal/catalog/domain"
 )
 

@@ -80,7 +80,7 @@ func TestGetAdminFlagsMapsResponse(t *testing.T) {
 
 func TestGetAdminFlagMapsRepresentation(t *testing.T) {
 	service := &fakeFeatureFlagService{flag: domain.FeatureFlag{Name: "admin.banner", Enabled: true, Audience: domain.AudienceAll}}
-	response := mustVisitFlagResponse(t, Handler{Flags: service}, t.Context(), service.flag.Name)
+	response := mustVisitFlagResponse(t, t.Context(), Handler{Flags: service}, service.flag.Name)
 	if response.Code != 200 || response.Header().Get("Content-Type") != "application/json" || response.Header().Get("Cache-Control") != "private, no-store" {
 		t.Fatalf("success response headers/status = %d %v", response.Code, response.Header())
 	}
@@ -106,7 +106,7 @@ func TestGetAdminFlagStableAcrossTraces(t *testing.T) {
 	var previous *httptest.ResponseRecorder
 	for _, id := range []byte{1, 2} {
 		ctx := flagTraceContext(t.Context(), id)
-		response := mustVisitFlagResponse(t, handler, ctx, "banner")
+		response := mustVisitFlagResponse(t, ctx, handler, "banner")
 		if response.Header().Get("X-Trace-Id") != trace.SpanContextFromContext(ctx).TraceID().String() {
 			t.Fatalf("trace header = %q", response.Header().Get("X-Trace-Id"))
 		}
@@ -137,7 +137,7 @@ func TestGetAdminFlagETagTracksRepresentation(t *testing.T) {
 	base := domain.FeatureFlag{Name: "banner", Enabled: true, Audience: domain.AudienceUserIDs, UserIDs: []int64{9, 3}}
 	service := &fakeFeatureFlagService{flag: base}
 	handler := Handler{Flags: service}
-	first := mustVisitFlagResponse(t, handler, t.Context(), base.Name)
+	first := mustVisitFlagResponse(t, t.Context(), handler, base.Name)
 	assertFlagETag(t, first)
 	for _, field := range []string{"name", "enabled", "audience", "user ID content", "user ID order", "nil IDs"} {
 		t.Run(field, func(t *testing.T) {
@@ -157,7 +157,7 @@ func TestGetAdminFlagETagTracksRepresentation(t *testing.T) {
 				changed.UserIDs = nil
 			}
 			service.flag = changed
-			response := mustVisitFlagResponse(t, handler, t.Context(), changed.Name)
+			response := mustVisitFlagResponse(t, t.Context(), handler, changed.Name)
 			assertFlagETag(t, response)
 			if response.Header().Get("ETag") == first.Header().Get("ETag") {
 				t.Fatal("changed field did not change ETag")
@@ -199,7 +199,7 @@ func assertFlagProblem(t *testing.T, test flagProblemCase) {
 		handler = Handler{}
 	}
 	ctx := flagTraceContext(t.Context(), 3)
-	recorder := mustVisitFlagResponse(t, handler, ctx, test.flagName)
+	recorder := mustVisitFlagResponse(t, ctx, handler, test.flagName)
 	var body struct {
 		Type     string `json:"type"`
 		Status   int    `json:"status"`
@@ -221,7 +221,7 @@ func assertFlagProblem(t *testing.T, test flagProblemCase) {
 	}
 }
 
-func mustVisitFlagResponse(t *testing.T, handler Handler, ctx context.Context, name string) *httptest.ResponseRecorder {
+func mustVisitFlagResponse(t *testing.T, ctx context.Context, handler Handler, name string) *httptest.ResponseRecorder {
 	t.Helper()
 	response, err := handler.GetAdminFlag(ctx, gen.GetAdminFlagRequestObject{Name: name})
 	if err != nil {
