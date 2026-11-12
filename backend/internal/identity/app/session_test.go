@@ -43,15 +43,15 @@ type sessionMemory struct {
 	revokeIDErr error
 }
 
-func (m *sessionMemory) InsertSession(_ context.Context, userID int64, tokenHash []byte, expiresAt, seenAt time.Time, userAgent, ipAddress string) (domain.Session, error) {
-	m.gotUser = userID
-	m.gotHash = append([]byte(nil), tokenHash...)
-	m.gotExpires = expiresAt
-	m.gotSeen = seenAt
+func (m *sessionMemory) InsertSession(_ context.Context, in SessionInsert) (domain.Session, error) {
+	m.gotUser = in.UserID
+	m.gotHash = append([]byte(nil), in.TokenHash...)
+	m.gotExpires = in.ExpiresAt
+	m.gotSeen = in.SeenAt
 	if m.insertErr != nil {
 		return domain.Session{}, m.insertErr
 	}
-	return domain.Session{ID: 11, UserID: userID, ExpiresAt: expiresAt, LastSeenAt: seenAt, CreatedAt: seenAt, UserAgent: userAgent, IPAddress: ipAddress}, nil
+	return domain.Session{ID: 11, UserID: in.UserID, ExpiresAt: in.ExpiresAt, LastSeenAt: in.SeenAt, CreatedAt: in.SeenAt, UserAgent: in.UserAgent, IPAddress: in.IPAddress}, nil
 }
 
 func (m *sessionMemory) FindSessionByHash(context.Context, []byte, time.Time) (domain.Session, error) {

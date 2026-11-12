@@ -99,7 +99,7 @@ func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 	if !bytes.Equal(stored, domain.HashSessionToken(raw)) || bytes.Contains(stored, []byte(raw)) {
 		t.Fatal("session row does not store the SHA-256 hash of the opaque id")
 	}
-	if _, err := repository.InsertSession(ctx, owner.ID, bytes.Repeat([]byte{1}, 16), time.Now().Add(time.Hour), time.Now(), "", ""); err == nil {
+	if _, err := repository.InsertSession(ctx, app.SessionInsert{UserID: owner.ID, TokenHash: bytes.Repeat([]byte{1}, 16), ExpiresAt: time.Now().Add(time.Hour), SeenAt: time.Now()}); err == nil {
 		t.Fatal("short token hash was stored")
 	}
 	listed, err := repository.ListSessions(ctx, owner.ID)
@@ -206,7 +206,7 @@ func TestSessionStoreSlidingExpiryAndCSRF(t *testing.T) {
 
 	canceled, stop := context.WithCancel(ctx)
 	stop()
-	if _, err := repository.InsertSession(canceled, owner.ID, domain.HashSessionToken(raw), time.Now().Add(time.Hour), time.Now(), "", ""); err == nil {
+	if _, err := repository.InsertSession(canceled, app.SessionInsert{UserID: owner.ID, TokenHash: domain.HashSessionToken(raw), ExpiresAt: time.Now().Add(time.Hour), SeenAt: time.Now()}); err == nil {
 		t.Fatal("insert succeeded with a canceled context")
 	}
 	if _, err := repository.FindSessionByHash(canceled, domain.HashSessionToken(foreignRaw), time.Now()); err == nil {
