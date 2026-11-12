@@ -383,7 +383,7 @@ describe('PhotoViewer', () => {
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
     expect(next).toHaveFocus();
     fireEvent.keyDown(document, { key: 'Tab' });
-    expect(dialog).toContainElement(document.activeElement);
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
 
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByTestId('photo-lightbox')).toBeNull());

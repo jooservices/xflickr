@@ -171,7 +171,7 @@ export function PhotoViewer({
 
   const response = query.data;
   const status = response?.status;
-  const photo = status === 200 ? response.data : null;
+  const photo = response?.status === 200 ? response.data : null;
   const url = photoUrl(photo);
   const imageFailed =
     currentId !== undefined && failedPreview?.id === currentId && failedPreview.url === url;
