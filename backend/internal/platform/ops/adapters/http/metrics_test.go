@@ -3,11 +3,11 @@ package http
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
 	metricsapp "github.com/jooservices/xflickr/internal/platform/metrics/app"
@@ -103,12 +103,12 @@ func TestGetAdminMetricsValidation(t *testing.T) {
 		{name: "missing series", change: func(p *gen.GetAdminMetricsParams) { p.Series = "" }},
 		{name: "unsupported series", change: func(p *gen.GetAdminMetricsParams) { p.Series = "queue.jobs_running" }},
 		{name: "missing queue", change: func(p *gen.GetAdminMetricsParams) { p.Queue = "" }},
-		{name: "queue exceeds byte limit", change: func(p *gen.GetAdminMetricsParams) { p.Queue = strings.Repeat("q", 129) }},
+		{name: "queue exceeds code point limit", change: func(p *gen.GetAdminMetricsParams) { p.Queue = strings.Repeat("q", 129) }},
 		{name: "queue is invalid UTF-8", change: func(p *gen.GetAdminMetricsParams) { p.Queue = "\xff" }},
 		{name: "missing role", change: func(p *gen.GetAdminMetricsParams) { p.Role = "" }},
-		{name: "role exceeds byte limit", change: func(p *gen.GetAdminMetricsParams) { p.Role = strings.Repeat("r", 129) }},
+		{name: "role exceeds code point limit", change: func(p *gen.GetAdminMetricsParams) { p.Role = strings.Repeat("r", 129) }},
 		{name: "missing node", change: func(p *gen.GetAdminMetricsParams) { p.Node = "" }},
-		{name: "node exceeds byte limit", change: func(p *gen.GetAdminMetricsParams) { p.Node = strings.Repeat("n", 129) }},
+		{name: "node exceeds code point limit", change: func(p *gen.GetAdminMetricsParams) { p.Node = strings.Repeat("n", 129) }},
 		{name: "missing from", change: func(p *gen.GetAdminMetricsParams) { p.From = time.Time{} }},
 		{name: "from not at minute boundary", change: func(p *gen.GetAdminMetricsParams) { p.From = time.Date(2026, 11, 11, 8, 20, 1, 0, time.UTC) }},
 		{name: "missing to", change: func(p *gen.GetAdminMetricsParams) { p.To = time.Time{} }},
@@ -133,18 +133,30 @@ func TestGetAdminMetricsValidation(t *testing.T) {
 		})
 	}
 
-	t.Run("UTF-8 dimensions are measured in bytes and are not trimmed", func(t *testing.T) {
-		request := validMetricsRequest()
-		request.Params.Queue = strings.Repeat("é", 64)
-		reader := &seriesReaderStub{}
-		response, err := (Handler{ActorID: actor, Metrics: reader, Now: fixedMetricsNow}).GetAdminMetrics(t.Context(), request)
-		if err != nil {
-			t.Fatal(err)
+	for _, dimension := range []string{"queue", "role", "node"} {
+		for _, value := range []string{strings.Repeat("é", 128), strings.Repeat("é", 129), "", "\xff", " é "} {
+			t.Run(dimension+"/"+fmt.Sprintf("%q", value), func(t *testing.T) {
+				request := validMetricsRequest()
+				fields := map[string]*string{"queue": &request.Params.Queue, "role": &request.Params.Role, "node": &request.Params.Node}
+				*fields[dimension] = value
+				reader := &seriesReaderStub{}
+				response, err := (Handler{ActorID: actor, Metrics: reader, Now: fixedMetricsNow}).GetAdminMetrics(t.Context(), request)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if value == "" || value == "\xff" || value == strings.Repeat("é", 129) {
+					body, ok := response.(gen.GetAdminMetrics400JSONResponse)
+					if !ok || body.Code != "invalid_request" || reader.calls != 0 {
+						t.Fatalf("response=%T calls=%d", response, reader.calls)
+					}
+					return
+				}
+				if _, ok := response.(gen.GetAdminMetrics200JSONResponse); !ok || reader.calls != 1 || reader.query.Queue != request.Params.Queue || reader.query.Role != request.Params.Role || reader.query.Node != request.Params.Node {
+					t.Fatalf("response=%T query=%+v calls=%d", response, reader.query, reader.calls)
+				}
+			})
 		}
-		if _, ok := response.(gen.GetAdminMetrics200JSONResponse); !ok || !utf8.ValidString(reader.query.Queue) || len(reader.query.Queue) != 128 {
-			t.Fatalf("response=%T queue bytes=%d", response, len(reader.query.Queue))
-		}
-	})
+	}
 
 	t.Run("leading and trailing spaces are preserved", func(t *testing.T) {
 		request := validMetricsRequest()
