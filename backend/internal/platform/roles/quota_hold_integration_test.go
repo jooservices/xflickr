@@ -135,10 +135,19 @@ func assertBackgroundHeld(t *testing.T, f *quotaHoldFixture) {
 	if capacity, err := f.governor.Capacity(f.ctx, f.keyID, 2*time.Minute); err != nil || capacity != 0 {
 		t.Fatalf("Capacity() at the ceiling = %d, %v; want 0", capacity, err)
 	}
+	// River job ids only grow, so the watermark and the range scan below stay on the primary key.
+	var watermark int64
+	if err := f.pool.QueryRow(f.ctx, `SELECT COALESCE(max(id), 0) FROM river_job`).Scan(&watermark); err != nil {
+		t.Fatal(err)
+	}
 	pumpQuotaWork(t, f)
 	var state string
 	if err := f.pool.QueryRow(f.ctx, `SELECT state FROM work_items WHERE id=$1`, f.itemID).Scan(&state); err != nil || state != "pending" {
 		t.Fatalf("item state at the ceiling = %q, %v; want pending (buffered)", state, err)
+	}
+	var created int
+	if err := f.pool.QueryRow(f.ctx, `SELECT count(*) FROM (SELECT 1 FROM river_job WHERE id > $1 LIMIT 10) AS newer`, watermark).Scan(&created); err != nil || created != 0 {
+		t.Fatalf("River jobs created at the ceiling = %d, %v; want none while quota is exhausted", created, err)
 	}
 }
 
