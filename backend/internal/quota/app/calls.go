@@ -54,19 +54,30 @@ type CallRecorder struct {
 	dropped   atomic.Uint64
 }
 
-// NewCallRecorder creates a recorder with bounded storage. The callback must
-// be non-blocking; it is intended for incrementing a metric.
-func NewCallRecorder(writer CallBatchWriter, queueSize, batchSize int, interval time.Duration, onDrop func()) *CallRecorder {
-	if queueSize <= 0 {
-		queueSize = 10_000
+// CallRecorderOptions configures a CallRecorder. Zero or invalid sizes and
+// intervals fall back to the defaults.
+type CallRecorderOptions struct {
+	Writer    CallBatchWriter
+	QueueSize int
+	BatchSize int
+	Interval  time.Duration
+	// OnDrop is optional and must be non-blocking; it is intended for
+	// incrementing a metric.
+	OnDrop func()
+}
+
+// NewCallRecorder creates a recorder with bounded storage.
+func NewCallRecorder(opts CallRecorderOptions) *CallRecorder {
+	if opts.QueueSize <= 0 {
+		opts.QueueSize = 10_000
 	}
-	if batchSize <= 0 || batchSize > queueSize {
-		batchSize = 500
+	if opts.BatchSize <= 0 || opts.BatchSize > opts.QueueSize {
+		opts.BatchSize = 500
 	}
-	if interval <= 0 {
-		interval = time.Second
+	if opts.Interval <= 0 {
+		opts.Interval = time.Second
 	}
-	return &CallRecorder{writer: writer, queue: make(chan CallRecord, queueSize), batchSize: batchSize, interval: interval, onDrop: onDrop}
+	return &CallRecorder{writer: opts.Writer, queue: make(chan CallRecord, opts.QueueSize), batchSize: opts.BatchSize, interval: opts.Interval, onDrop: opts.OnDrop}
 }
 
 // Record queues one record without blocking. It returns false when the

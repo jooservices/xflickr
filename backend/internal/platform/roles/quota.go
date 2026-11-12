@@ -75,7 +75,7 @@ func newQuotaRuntime(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cf
 		Governor:     governor,
 		Rebuilder:    rebuilder,
 		Flusher:      quotaapp.Flusher{Store: usage, Counters: counters, Pruner: calls},
-		CallRecorder: quotaapp.NewCallRecorder(calls, 10_000, 500, time.Second, onDrop),
+		CallRecorder: quotaapp.NewCallRecorder(quotaapp.CallRecorderOptions{Writer: calls, QueueSize: 10_000, BatchSize: 500, Interval: time.Second, OnDrop: onDrop}),
 		Partitions:   quotaapp.Partitions{Store: quotaPostgres.Partitions{Pool: pool}, RetentionDays: cfg.CallLog.RetentionDays},
 		Retention: maintenanceapp.Retention{
 			Store:    maintenancepg.NewStore(pool),

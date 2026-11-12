@@ -17,10 +17,10 @@ func (f callLogWriterFunc) InsertCalls(ctx context.Context, records []quotaapp.C
 
 func TestFlickrCallLogRecordsSafeMetadata(t *testing.T) {
 	written := make(chan quotaapp.CallRecord, 1)
-	recorder := quotaapp.NewCallRecorder(callLogWriterFunc(func(_ context.Context, records []quotaapp.CallRecord) error {
+	recorder := quotaapp.NewCallRecorder(quotaapp.CallRecorderOptions{Writer: callLogWriterFunc(func(_ context.Context, records []quotaapp.CallRecord) error {
 		written <- records[0]
 		return nil
-	}), 4, 1, time.Hour, nil)
+	}), QueueSize: 4, BatchSize: 1, Interval: time.Hour})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -68,10 +68,10 @@ func TestFlickrCallLogWithoutDatabaseAndCallLogIDs(t *testing.T) {
 
 func TestFlickrCallLogRecordsKeyValidationBeforeKeyExists(t *testing.T) {
 	written := make(chan quotaapp.CallRecord, 1)
-	recorder := quotaapp.NewCallRecorder(callLogWriterFunc(func(_ context.Context, records []quotaapp.CallRecord) error {
+	recorder := quotaapp.NewCallRecorder(quotaapp.CallRecorderOptions{Writer: callLogWriterFunc(func(_ context.Context, records []quotaapp.CallRecord) error {
 		written <- records[0]
 		return nil
-	}), 4, 1, time.Hour, nil)
+	}), QueueSize: 4, BatchSize: 1, Interval: time.Hour})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {

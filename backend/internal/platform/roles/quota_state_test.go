@@ -118,7 +118,7 @@ func TestQuotaRuntimeStartRunsCallRecorderAndPartitionMaintenance(t *testing.T) 
 	written := make(chan int, 1)
 	maintained := make(chan struct{}, 1)
 	retained := make(chan struct{}, 1)
-	recorder := quotaapp.NewCallRecorder(callBatchWriterFake{wrote: written}, 4, 1, time.Hour, nil)
+	recorder := quotaapp.NewCallRecorder(quotaapp.CallRecorderOptions{Writer: callBatchWriterFake{wrote: written}, QueueSize: 4, BatchSize: 1, Interval: time.Hour})
 	quota := quotaRuntime{
 		Rebuilder:    &quotaapp.Rebuilder{Store: store, Calls: startCalls{}, Counters: startCounters{}},
 		Flusher:      quotaapp.Flusher{Store: store, Counters: startCounters{}, Interval: time.Hour},

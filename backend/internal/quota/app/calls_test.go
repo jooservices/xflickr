@@ -16,7 +16,7 @@ func (f callBatchWriterFunc) InsertCalls(ctx context.Context, records []CallReco
 
 func TestCallRecorderRejectsOverflowWithoutBlocking(t *testing.T) {
 	var dropped uint64
-	recorder := NewCallRecorder(callBatchWriterFunc(func(context.Context, []CallRecord) error { return nil }), 1, 1, time.Hour, func() { dropped++ })
+	recorder := NewCallRecorder(CallRecorderOptions{Writer: callBatchWriterFunc(func(context.Context, []CallRecord) error { return nil }), QueueSize: 1, BatchSize: 1, Interval: time.Hour, OnDrop: func() { dropped++ }})
 	record := CallRecord{KeyID: 1, Method: "flickr.test", Status: "ok"}
 	if !recorder.Record(record) {
 		t.Fatal("first record was rejected")
@@ -35,7 +35,7 @@ func TestCallRecorderBatchAndShutdownFlush(t *testing.T) {
 		written <- append([]CallRecord(nil), records...)
 		return nil
 	})
-	recorder := NewCallRecorder(writer, 8, 2, time.Hour, nil)
+	recorder := NewCallRecorder(CallRecorderOptions{Writer: writer, QueueSize: 8, BatchSize: 2, Interval: time.Hour})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -82,7 +82,7 @@ func TestCallRecorderBatchAndShutdownFlush(t *testing.T) {
 func TestCallRecorderReportsWriterErrors(t *testing.T) {
 	boom := errors.New("database unavailable")
 	gotError := make(chan error, 1)
-	recorder := NewCallRecorder(callBatchWriterFunc(func(context.Context, []CallRecord) error { return boom }), 2, 1, time.Hour, nil)
+	recorder := NewCallRecorder(CallRecorderOptions{Writer: callBatchWriterFunc(func(context.Context, []CallRecord) error { return boom }), QueueSize: 2, BatchSize: 1, Interval: time.Hour})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -107,11 +107,11 @@ func TestCallRecorderReportsWriterErrors(t *testing.T) {
 func TestCallRecorderConcurrentOverflowAccounting(t *testing.T) {
 	var mu sync.Mutex
 	drops := 0
-	recorder := NewCallRecorder(callBatchWriterFunc(func(context.Context, []CallRecord) error { return nil }), 1, 1, time.Hour, func() {
+	recorder := NewCallRecorder(CallRecorderOptions{Writer: callBatchWriterFunc(func(context.Context, []CallRecord) error { return nil }), QueueSize: 1, BatchSize: 1, Interval: time.Hour, OnDrop: func() {
 		mu.Lock()
 		drops++
 		mu.Unlock()
-	})
+	}})
 	if !recorder.Record(CallRecord{KeyID: 1, Method: "flickr.test", Status: "ok"}) {
 		t.Fatal("first record was rejected")
 	}
