@@ -123,8 +123,8 @@ linters:
 
 # Gate only changed code: findings on lines not changed since origin/develop
 # are not reported. Findings are anchored at the func line, so a function is
-# checked when it is new or its func line changed; growth inside an untouched
-# old function is not caught (see docs/engineering-standards.md).
+# checked when it is new or its func line changed. Growth inside an old function
+# is caught by docker/scripts/go_function_gate.py (JOOXF-511).
 issues:
   new-from-merge-base: origin/develop
 
