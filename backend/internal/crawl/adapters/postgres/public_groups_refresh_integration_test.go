@@ -17,13 +17,19 @@ import (
 // The SQL in this file is hand-written on purpose: it seeds and asserts fixtures on the isolated worktree database, and sqlc
 // generates production queries only.
 type publicGroupsRefreshCase struct {
-	name, body         string
-	membership, failed bool
+	name, body            string
+	membership, failed    bool
+	existing              bool
+	wantDescription       string
+	wantMembers, wantPool int64
 }
 
 func TestPublicGroupsRefreshPersistsMembership(t *testing.T) {
 	for _, tc := range []publicGroupsRefreshCase{
 		{name: "populated", body: `{"groups":{"pages":1,"group":[{"nsid":"%s","name":"Public group"}]}}`, membership: true},
+		{name: "existing metadata omitted", body: `{"groups":{"pages":1,"group":[{"nsid":"%s","name":"Public group"}]}}`, membership: true, existing: true, wantDescription: "Saved description", wantMembers: 42, wantPool: 99},
+		{name: "explicit empty metadata", body: `{"groups":{"pages":1,"group":[{"nsid":"%s","name":"Public group","description":"","members":"0","pool_count":0}]}}`, membership: true, existing: true},
+		{name: "partial metadata", body: `{"groups":{"pages":1,"group":[{"nsid":"%s","name":"Public group","members":"7"}]}}`, membership: true, existing: true, wantDescription: "Saved description", wantMembers: 7, wantPool: 99},
 		{name: "empty", body: `{"groups":{"pages":1,"group":[]}}`},
 		{name: "malformed", body: `{`, failed: true},
 		{name: "invalid member rolls back whole page", body: `{"groups":{"group":[{"nsid":"%s","name":"Public group"},{"nsid":"invalid"}]}}`, failed: true},
@@ -40,6 +46,11 @@ func runPublicGroupsRefresh(t *testing.T, tc publicGroupsRefreshCase) {
 	person := fmt.Sprintf("public-refresh-%d@N01", user)
 	group := person + "-group"
 	check := seedPublicGroupsCheck(t, pool, user, person)
+	if tc.existing {
+		if _, err := pool.Exec(t.Context(), `INSERT INTO groups(nsid,name,description,members_count,pool_count) VALUES($1,'Old name','Saved description',42,99)`, group); err != nil {
+			t.Fatal(err)
+		}
+	}
 	fake := &recordingFlickr{payloads: map[string]json.RawMessage{"flickr.favorites.getList": json.RawMessage(`{"photos":{"total":0}}`)}}
 	if tc.body != "" {
 		fake.payloads["flickr.people.getPublicGroups"] = json.RawMessage(strings.ReplaceAll(tc.body, "%s", group))
@@ -58,6 +69,9 @@ func runPublicGroupsRefresh(t *testing.T, tc publicGroupsRefreshCase) {
 	assertPublicGroupsRequest(t, fake, person)
 	assertPublicGroupsRows(t, pool, person, tc.membership)
 	assertPublicGroupsCompletion(t, pool, item, tc.failed)
+	if tc.membership {
+		assertPublicGroupMetadata(t, pool, group, tc)
+	}
 }
 
 func newPublicGroupsEngine(t *testing.T, pool *pgxpool.Pool, fake crawlapp.Flickr) *crawlapp.Engine {
@@ -149,5 +163,17 @@ func assertPublicGroupsCompletion(t *testing.T, pool *pgxpool.Pool, item int64, 
 		}
 	} else if state != domain.StateDone || attempts != 0 || lastError {
 		t.Fatalf("completed refresh: state=%s attempts=%d error=%t", state, attempts, lastError)
+	}
+}
+
+func assertPublicGroupMetadata(t *testing.T, pool *pgxpool.Pool, group string, tc publicGroupsRefreshCase) {
+	t.Helper()
+	var description string
+	var members, photos int64
+	if err := pool.QueryRow(t.Context(), `SELECT description,members_count,pool_count FROM groups WHERE nsid=$1`, group).Scan(&description, &members, &photos); err != nil {
+		t.Fatal(err)
+	}
+	if description != tc.wantDescription || members != tc.wantMembers || photos != tc.wantPool {
+		t.Fatalf("metadata = (%q,%d,%d), want (%q,%d,%d)", description, members, photos, tc.wantDescription, tc.wantMembers, tc.wantPool)
 	}
 }
