@@ -81,7 +81,10 @@ added, and a change that touches a listed file must bring it under the limits.
     package.
   `make arch-lint` (in CI, job `lint`) enforces the rule through
   `.go-arch-lint.yml`. Every cross-module edge is declared there once, when code
-  first needs it; never add a per-file exception.
+  first needs it; never add a per-file exception. Business module dependencies must
+  be acyclic (ADR 0008), so when two modules need each other a composition root or
+  an orchestrating use case joins them, and `docker/scripts/module_cycles.py` fails
+  on any cycle.
 - Shared infrastructure lives in `internal/platform/<name>/` and stays generic;
   business rules belong to their module. Public packages for outside use live in
   `pkg/`.
