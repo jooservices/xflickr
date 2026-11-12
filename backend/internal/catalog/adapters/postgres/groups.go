@@ -48,6 +48,7 @@ func (r *Repository) upsertGroupsChunk(ctx context.Context, groups []Group) erro
 		if g.NSID == "" || g.Name == "" || g.MembersCount < 0 || g.PoolCount < 0 {
 			return errors.New("catalog: invalid group")
 		}
+		// Hand-written batch SQL on purpose (a pgx pipeline sqlc cannot express): a field Flickr omitted keeps its stored value.
 		batch.Queue(`INSERT INTO groups (nsid,name,description,members_count,pool_count,seen_at) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (nsid) DO UPDATE SET name=EXCLUDED.name,description=CASE WHEN $7 THEN groups.description ELSE EXCLUDED.description END,members_count=CASE WHEN $8 THEN groups.members_count ELSE EXCLUDED.members_count END,pool_count=CASE WHEN $9 THEN groups.pool_count ELSE EXCLUDED.pool_count END,seen_at=EXCLUDED.seen_at WHERE groups.name IS DISTINCT FROM EXCLUDED.name OR groups.seen_at IS DISTINCT FROM EXCLUDED.seen_at OR (NOT $7 AND groups.description IS DISTINCT FROM EXCLUDED.description) OR (NOT $8 AND groups.members_count IS DISTINCT FROM EXCLUDED.members_count) OR (NOT $9 AND groups.pool_count IS DISTINCT FROM EXCLUDED.pool_count)`, g.NSID, g.Name, g.Description, g.MembersCount, g.PoolCount, seenAt(g.SeenAt), g.Missing.Description, g.Missing.MembersCount, g.Missing.PoolCount)
 	}
 	return executeBatch(ctx, r.db, batch, "groups")
