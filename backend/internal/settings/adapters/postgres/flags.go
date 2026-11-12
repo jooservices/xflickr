@@ -6,39 +6,11 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/jooservices/xflickr/internal/settings/adapters/postgres/gen"
 	"github.com/jooservices/xflickr/internal/settings/app"
 	"github.com/jooservices/xflickr/internal/settings/domain"
-)
-
-const (
-	listFeatureFlagsSQL = `
-SELECT name, enabled, audience, user_ids
-FROM feature_flags
-ORDER BY name`
-
-	getFeatureFlagSQL = `
-SELECT name, enabled, audience, user_ids
-FROM feature_flags
-WHERE name = $1`
-
-	userIsAdminSQL = `
-SELECT EXISTS (
-    SELECT 1
-    FROM users
-    WHERE id = $1 AND role = 'admin' AND disabled_at IS NULL
-)`
-
-	upsertFeatureFlagSQL = `
-INSERT INTO feature_flags (name, enabled, audience, user_ids)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (name) DO UPDATE SET
-    enabled = EXCLUDED.enabled,
-    audience = EXCLUDED.audience,
-    user_ids = EXCLUDED.user_ids,
-    updated_at = now()`
 )
 
 var (
@@ -46,77 +18,56 @@ var (
 	errFlagContextRequired  = errors.New("settings: feature flag context is required")
 )
 
-type flagRows interface {
-	Next() bool
-	Scan(...any) error
-	Err() error
-	Close()
+// flagQueries is the set of generated queries that FlagRepository calls.
+type flagQueries interface {
+	ListFeatureFlags(ctx context.Context) ([]gen.ListFeatureFlagsRow, error)
+	GetFeatureFlag(ctx context.Context, name string) (gen.GetFeatureFlagRow, error)
+	UserIsAdmin(ctx context.Context, userID int64) (bool, error)
+	UpsertFeatureFlag(ctx context.Context, arg gen.UpsertFeatureFlagParams) error
 }
 
-type flagRow interface{ Scan(...any) error }
-
-type flagTx interface {
-	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
-	Commit(context.Context) error
-	Rollback(context.Context) error
+// flagTransactions starts the transaction that groups the upserts of one update.
+type flagTransactions interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
-type flagDB interface {
-	Query(context.Context, string, ...any) (flagRows, error)
-	QueryRow(context.Context, string, ...any) flagRow
-	Begin(context.Context) (flagTx, error)
-}
-
-type pgxFlagDB struct{ pool *pgxpool.Pool }
-
-func (database pgxFlagDB) Query(ctx context.Context, query string, args ...any) (flagRows, error) {
-	return database.pool.Query(ctx, query, args...)
-}
-
-func (database pgxFlagDB) QueryRow(ctx context.Context, query string, args ...any) flagRow {
-	return database.pool.QueryRow(ctx, query, args...)
-}
-
-func (database pgxFlagDB) Begin(ctx context.Context) (flagTx, error) {
-	return database.pool.Begin(ctx)
-}
+var (
+	_ flagQueries               = (*gen.Queries)(nil)
+	_ flagTransactions          = (*pgxpool.Pool)(nil)
+	_ app.FeatureFlagRepository = (*FlagRepository)(nil)
+)
 
 // FlagRepository stores the feature flag rows in PostgreSQL.
-type FlagRepository struct{ database flagDB }
+type FlagRepository struct {
+	queries flagQueries
+	txs     flagTransactions
+	inTx    func(pgx.Tx) flagQueries
+}
 
-var _ app.FeatureFlagRepository = (*FlagRepository)(nil)
-
+// NewFlagRepository wires the generated queries to the pool.
 func NewFlagRepository(pool *pgxpool.Pool) (*FlagRepository, error) {
 	if pool == nil {
 		return nil, errFlagDatabaseRequired
 	}
-	return &FlagRepository{database: pgxFlagDB{pool: pool}}, nil
+	queries := gen.New(pool)
+	return newFlagRepository(queries, pool, func(tx pgx.Tx) flagQueries { return queries.WithTx(tx) }), nil
 }
 
-func newFlagRepository(database flagDB) *FlagRepository {
-	return &FlagRepository{database: database}
+func newFlagRepository(queries flagQueries, txs flagTransactions, inTx func(pgx.Tx) flagQueries) *FlagRepository {
+	return &FlagRepository{queries: queries, txs: txs, inTx: inTx}
 }
 
 func (repository *FlagRepository) ListFlags(ctx context.Context) ([]domain.FeatureFlag, error) {
 	if err := repository.ready(ctx); err != nil {
 		return nil, err
 	}
-	rows, err := repository.database.Query(ctx, listFeatureFlagsSQL)
+	rows, err := repository.queries.ListFeatureFlags(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("settings: query feature flags: %w", err)
 	}
-	defer rows.Close()
-
-	flags := make([]domain.FeatureFlag, 0)
-	for rows.Next() {
-		flag, err := scanFeatureFlag(rows)
-		if err != nil {
-			return nil, fmt.Errorf("settings: read feature flag: %w", err)
-		}
-		flags = append(flags, flag)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("settings: iterate feature flags: %w", err)
+	flags := make([]domain.FeatureFlag, 0, len(rows))
+	for _, row := range rows {
+		flags = append(flags, toFeatureFlag(row.Name, row.Enabled, row.Audience, row.UserIds))
 	}
 	return flags, nil
 }
@@ -126,14 +77,14 @@ func (repository *FlagRepository) GetFlag(ctx context.Context, name string) (dom
 	if err := repository.ready(ctx); err != nil {
 		return domain.FeatureFlag{}, err
 	}
-	flag, err := scanFeatureFlag(repository.database.QueryRow(ctx, getFeatureFlagSQL, name))
+	row, err := repository.queries.GetFeatureFlag(ctx, name)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.FeatureFlag{}, app.ErrFeatureFlagNotFound
 	}
 	if err != nil {
 		return domain.FeatureFlag{}, fmt.Errorf("settings: query feature flag %q: %w", name, err)
 	}
-	return flag, nil
+	return toFeatureFlag(row.Name, row.Enabled, row.Audience, row.UserIds), nil
 }
 
 func (repository *FlagRepository) UserIsAdmin(ctx context.Context, userID int64) (bool, error) {
@@ -143,8 +94,8 @@ func (repository *FlagRepository) UserIsAdmin(ctx context.Context, userID int64)
 	if userID <= 0 {
 		return false, nil
 	}
-	var isAdmin bool
-	if err := repository.database.QueryRow(ctx, userIsAdminSQL, userID).Scan(&isAdmin); err != nil {
+	isAdmin, err := repository.queries.UserIsAdmin(ctx, userID)
+	if err != nil {
 		return false, fmt.Errorf("settings: query administrator role: %w", err)
 	}
 	return isAdmin, nil
@@ -162,14 +113,20 @@ func (repository *FlagRepository) UpsertFlags(ctx context.Context, flags []domai
 			return err
 		}
 	}
-	tx, err := repository.database.Begin(ctx)
+	tx, err := repository.txs.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("settings: begin feature flag update: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
+	queries := repository.inTx(tx)
 	for _, flag := range flags {
-		userIDs := append([]int64{}, flag.UserIDs...)
-		if _, err := tx.Exec(ctx, upsertFeatureFlagSQL, flag.Name, flag.Enabled, string(flag.Audience), userIDs); err != nil {
+		arg := gen.UpsertFeatureFlagParams{
+			Name:     flag.Name,
+			Enabled:  flag.Enabled,
+			Audience: string(flag.Audience),
+			UserIds:  append([]int64{}, flag.UserIDs...),
+		}
+		if err := queries.UpsertFeatureFlag(ctx, arg); err != nil {
 			return fmt.Errorf("settings: save feature flag %q: %w", flag.Name, err)
 		}
 	}
@@ -180,7 +137,7 @@ func (repository *FlagRepository) UpsertFlags(ctx context.Context, flags []domai
 }
 
 func (repository *FlagRepository) ready(ctx context.Context) error {
-	if repository == nil || repository.database == nil {
+	if repository == nil || repository.queries == nil {
 		return errFlagDatabaseRequired
 	}
 	if ctx == nil {
@@ -189,15 +146,15 @@ func (repository *FlagRepository) ready(ctx context.Context) error {
 	return ctx.Err()
 }
 
-func scanFeatureFlag(rows interface{ Scan(...any) error }) (domain.FeatureFlag, error) {
-	var flag domain.FeatureFlag
-	var audience string
-	if err := rows.Scan(&flag.Name, &flag.Enabled, &audience, &flag.UserIDs); err != nil {
-		return domain.FeatureFlag{}, err
+// toFeatureFlag maps a generated row to the domain flag; a NULL array reads as no user ids.
+func toFeatureFlag(name string, enabled bool, audience string, userIDs []int64) domain.FeatureFlag {
+	if userIDs == nil {
+		userIDs = []int64{}
 	}
-	flag.Audience = domain.FlagAudience(audience)
-	if flag.UserIDs == nil {
-		flag.UserIDs = []int64{}
+	return domain.FeatureFlag{
+		Name:     name,
+		Enabled:  enabled,
+		Audience: domain.FlagAudience(audience),
+		UserIDs:  userIDs,
 	}
-	return flag, nil
 }
