@@ -57,9 +57,12 @@ A rule that this table does not measure still applies and is checked in review:
 - **DRY:** one implementation of a rule or UI behaviour (add-key form, dialog focus trap, session
   loading); duplication is removed in the change that finds it.
 
-Existing code that breaks a limit is debt, migrated under epic JOOXF-447. The repository has no
-baseline file. For Go, the gate covers changed code only (see "Go complexity gate" below), so
-untouched old code does not fail the build. Never add a `nolint` marker to fix a finding.
+Existing code that breaks a limit is debt, migrated under epic JOOXF-447. For web, the old
+files over the limits are listed in `web/eslint-baseline.txt` (JOOXF-505); that file may only
+shrink. `docker/scripts/web-lint-changed.sh` checks the changed web files (CI job `web`,
+`make lint`) and `docker/scripts/web-lint-report.sh` prints the whole debt. For Go, the gate covers
+changed code only (see "Go complexity gate" below) and there is no baseline file, so untouched old
+code does not fail the build. Never add a `nolint` marker to fix a finding.
 
 ### Go complexity gate (JOOXF-504)
 

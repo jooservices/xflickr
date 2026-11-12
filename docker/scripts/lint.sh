@@ -32,6 +32,7 @@ if [[ -f "$ROOT/web/package.json" ]]; then
 		"$SCRIPT_DIR/run.sh" node npm run lint
 		"$SCRIPT_DIR/run.sh" node npx tsc --noEmit
 		"$SCRIPT_DIR/run.sh" node npx eslint src
+		"$SCRIPT_DIR/web-lint-changed.sh"
 		"$SCRIPT_DIR/run.sh" node npx vitest run
 	)
 fi

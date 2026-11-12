@@ -67,6 +67,8 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@v5
@@ -86,6 +88,9 @@ jobs:
       - name: Lint the web source
         working-directory: web
         run: npx eslint src
+
+      - name: Lint the changed web source with the strict limits
+        run: ./docker/scripts/web-lint-changed.sh
 
       - name: Run web unit tests
         working-directory: web
