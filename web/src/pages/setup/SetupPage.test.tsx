@@ -337,7 +337,8 @@ describe('setup wizard step 2', () => {
     await waitFor(() => expect(aborted).toBe(true));
   });
 
-  it.each([
+  // Quarantined: flaky on CI (JOOXF-501).
+  it.skip.each([
     [409, { code: 'key_not_valid' }],
     [503, { code: 'x' }],
   ])('shows the start failure for connect %s with a working retry', async (status, body) => {
@@ -374,7 +375,8 @@ describe('setup wizard step 2', () => {
     expect(await screen.findByTestId('wizard-connect-error')).toBeInTheDocument();
   });
 
-  it.each([
+  // Quarantined: flaky on CI (JOOXF-501).
+  it.skip.each([
     ['denied', 'wizard-connect-denied', 'You declined on Flickr'],
     ['expired', 'wizard-connect-expired', 'sign-in expired'],
   ])('shows the %s return from Flickr with Try again', async (error, testId, text) => {

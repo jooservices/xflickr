@@ -107,7 +107,10 @@ describe('AlbumsPage', () => {
         calls += 1;
         const cursor = new URL(request.url).searchParams.get('cursor');
         return cursor === 'next'
-          ? json({ items: [{ ...albums.items[1], id: 'album-3' }] })
+          ? json({
+              items: [{ ...albums.items[1], id: 'album-3' }],
+              contact_owners: albums.contact_owners,
+            })
           : json({ ...albums, next_cursor: 'next' });
       }),
     );
@@ -121,7 +124,7 @@ describe('AlbumsPage', () => {
   });
 
   it('shows the localized successful empty state', async () => {
-    server.use(http.get('*/me/albums', () => json({ items: [] })));
+    server.use(http.get('*/me/albums', () => json({ items: [], contact_owners: [] })));
     open('/albums', 'vi');
 
     expect(await screen.findByTestId('albums-empty')).toHaveTextContent('Chưa có album');
@@ -236,7 +239,10 @@ describe('AlbumsPage', () => {
         calls += 1;
         if (calls === 1) return json({ ...albums, next_cursor: 'next' });
         if (calls === 2) return json({ code: 'internal_error' }, 500);
-        return json({ items: [{ ...albums.items[1], id: 'album-3' }] });
+        return json({
+          items: [{ ...albums.items[1], id: 'album-3' }],
+          contact_owners: albums.contact_owners,
+        });
       }),
     );
     open();
