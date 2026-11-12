@@ -14,12 +14,13 @@ Names are 1–128 characters and match `^[a-z][a-z0-9_.-]{0,127}$`. The read
 queries PostgreSQL by the flag primary key, so it reflects updates immediately
 without using the 30-second snapshot cache. It returns the standard success
 envelope, a `self` GET link, a strong ETag over the complete response bytes, and
-`Cache-Control: private, no-store`. The strong validator is the SHA-256 hash of the complete JSON body, including
-the final newline, links, and envelope metadata. Successful responses set body
+`Cache-Control: private, no-store`. The strong validator is the SHA-256 hash of
+the complete JSON body, including the final newline, links, and envelope
+metadata. Successful responses set body
 `trace_id` to `""` so identical flags have identical response bytes and ETags
 across requests. The actual valid request trace ID is returned in `X-Trace-Id`.
-Problem responses retain the actual trace ID in their JSON body. Empty `user_ids` values are represented as `[]`. Query
-parameters are not supported.
+Problem responses retain the actual trace ID in their JSON body. Empty
+`user_ids` values are represented as `[]`. Query parameters are not supported.
 
 The `FeatureFlags` service caches flag definitions for up to 30 seconds. A
 successful update clears the cache in the current process immediately; other
