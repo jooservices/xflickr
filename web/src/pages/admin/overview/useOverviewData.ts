@@ -10,7 +10,8 @@ export function useOverviewData(now: number) {
   return {
     forbidden: status === 403,
     keyCount: keys?.length,
-    exhausted: keys?.filter((key) => key.state === 'exhausted').length,
+    // A key at its limit can report `cooling` (the backend prefers it), so the limit itself decides.
+    exhausted: keys?.filter((key) => key.state === 'exhausted' || key.used >= key.limit).length,
     failed: quota.isError && keys === undefined,
     stale: keys !== undefined && (quota.isError || now - quota.dataUpdatedAt >= STALE_AFTER_MS),
     refreshing: quota.isFetching,

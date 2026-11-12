@@ -33,6 +33,25 @@ describe('admin overview page', () => {
     expect(screen.getByTestId('admin-overview-pending-sections')).toBeInTheDocument();
   });
 
+  it('counts a cooling key that already used its whole limit as at quota', async () => {
+    server.use(
+      http.get('*/admin/quota', () =>
+        HttpResponse.json({
+          keys: [
+            quotaKey(1, 'ok'),
+            { ...quotaKey(2, 'cooling'), used: 3600 },
+            { ...quotaKey(3, 'cooling'), used: 100 },
+          ],
+        }),
+      ),
+    );
+    renderApp({ session: adminSession, path: '/admin' });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('admin-overview-keys-at-quota')).toHaveTextContent('1 of 3 keys'),
+    );
+  });
+
   it('shows a dash and an error when the quota endpoint fails, then refreshes', async () => {
     let requests = 0;
     server.use(
