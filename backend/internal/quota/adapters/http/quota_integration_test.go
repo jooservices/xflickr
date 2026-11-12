@@ -18,11 +18,11 @@ import (
 	"github.com/joho/godotenv"
 	redisv9 "github.com/redis/go-redis/v9"
 
+	opshttp "github.com/jooservices/xflickr/internal/ops/adapters/http"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 	"github.com/jooservices/xflickr/internal/platform/ops"
-	opshttp "github.com/jooservices/xflickr/internal/platform/ops/adapters/http"
 	opspostgres "github.com/jooservices/xflickr/internal/platform/ops/adapters/postgres"
 	quotahttp "github.com/jooservices/xflickr/internal/quota/adapters/http"
 	quotapostgres "github.com/jooservices/xflickr/internal/quota/adapters/postgres"

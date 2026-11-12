@@ -126,7 +126,8 @@ func TestGetAdminMetricsValidation(t *testing.T) {
 func runInvalidMetricsQueries(t *testing.T, tests []struct {
 	name   string
 	change func(*gen.GetAdminMetricsParams)
-}) {
+},
+) {
 	t.Helper()
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

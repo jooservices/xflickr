@@ -16,16 +16,12 @@ type StateService interface {
 	All(context.Context) ([]app.KeyState, error)
 }
 
-type CallStatsService interface {
-	Stats(context.Context, string) (app.CallStats, error)
-}
-
 // QuotaHandler implements GET /keys/{id}/quota and GET /admin/quota. ActorID is
 // populated from the authenticated request context; /admin is already limited
 // to administrators by the identity middleware.
 type QuotaHandler struct {
 	States    StateService
-	CallStats CallStatsService
+	CallStats app.CallStatsReader
 	Node      string
 	ActorID   func(context.Context) (int64, bool)
 }

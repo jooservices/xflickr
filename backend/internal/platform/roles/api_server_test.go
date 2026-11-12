@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
+	opshttp "github.com/jooservices/xflickr/internal/ops/adapters/http"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
 	metricsapp "github.com/jooservices/xflickr/internal/platform/metrics/app"
 	"github.com/jooservices/xflickr/internal/platform/ops"
-	opshttp "github.com/jooservices/xflickr/internal/platform/ops/adapters/http"
 	sharinghttp "github.com/jooservices/xflickr/internal/sharing/adapters/http"
 	sharingapp "github.com/jooservices/xflickr/internal/sharing/app"
 	sharingdomain "github.com/jooservices/xflickr/internal/sharing/domain"

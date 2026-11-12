@@ -9,3 +9,5 @@ This directory contains Architecture Decision Records that capture durable techn
 - [0006: Additive REST foundation and durable idempotency claims](0006-rest-foundation-idempotency.md)
 
 - [0007: Ledger ready before any grant](0007-ledger-ready-before-grant.md)
+
+- [0008: Cross-module imports](0008-cross-module-imports.md)

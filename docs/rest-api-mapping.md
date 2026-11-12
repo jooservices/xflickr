@@ -133,7 +133,7 @@ status branches in `web/src/shared/api/{mutator,validate}.ts`.
 | T | Admin Defaults/User plan screens planned; generated admin client; `schedule/adapters/http/handler_test.go`. |
 | F | Admin Defaults flags planned; generated admin client; `settings/adapters/http/flags_test.go`. |
 | Q | KeyCard usage via `pages/keys/api.ts`; admin shell `app/shells/data.ts`/shell tests; Admin Quota planned; `quota/adapters/http/handler_test.go`. |
-| O | Admin Overview/Metrics/Pipeline planned; generated admin client; `platform/ops/adapters/http/handler_test.go`, `schedule/adapters/http/handler_test.go`, `platform/roles/quota_state_test.go`; `docker/scripts/develop-smoke.sh` calls the ops URL directly. |
+| O | Admin Overview/Metrics/Pipeline planned; generated admin client; `ops/adapters/http/handler_test.go`, `schedule/adapters/http/handler_test.go`, `platform/roles/quota_state_test.go`; `docker/scripts/develop-smoke.sh` calls the ops URL directly. |
 | N | Admin Nodes planned; `cluster/adapters/http/handler_test.go`, `platform/roles/routes_integration_test.go`; `platform/roles/builtin.go` registers a node-agent role but no heartbeat HTTP client. |
 | D | Downloads/Tray planned; generated downloads client; `media/adapters/http/downloads_test.go`, `platform/roles/routes_integration_test.go`. |
 | E | Crawl/download progress planned SSE consumer; `platform/roles/events_test.go`, `platform/sse/handler_test.go`; no EventSource caller found in current web source. |

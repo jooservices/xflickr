@@ -21,8 +21,8 @@ import (
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	identitydomain "github.com/jooservices/xflickr/internal/identity/domain"
+	opshttp "github.com/jooservices/xflickr/internal/ops/adapters/http"
 	metricsapp "github.com/jooservices/xflickr/internal/platform/metrics/app"
-	opshttp "github.com/jooservices/xflickr/internal/platform/ops/adapters/http"
 )
 
 // roleSessions authenticates the "session" cookie as a user with the given role.

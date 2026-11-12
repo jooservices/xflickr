@@ -1,5 +1,8 @@
-# go-arch-lint v1 config. Rules: domain <- app <- adapters; modules talk only
-# through another module's `app` package. Third-party imports are governed by
+# go-arch-lint v1 config. Rules (ADR 0008): domain <- app <- adapters inside a
+# module. Another module may be imported only through its `domain` and `app`
+# packages, never its `adapters`; a `domain` package imports no `app` or
+# `adapters`; composition lives in `wiring`. Each cross-module edge below is
+# declared once, when code needs it. Third-party imports are governed by
 # depguard in .golangci.yml.
 version: 3
 
@@ -26,6 +29,11 @@ components:
   ops-domain:        { in: internal/ops/domain/** }
   ops-app:           { in: internal/ops/app/** }
   ops-adapters:      { in: internal/ops/adapters/** }
+  ops-detectors:     { in: internal/ops/detectors/** }
+  home-app:          { in: internal/home/app/** }
+  home-adapters:     { in: internal/home/adapters/** }
+  search-app:        { in: internal/search/app/** }
+  search-adapters:   { in: internal/search/adapters/** }
   quota-domain:     { in: internal/quota/domain/** }
   quota-app:        { in: internal/quota/app/** }
   quota-adapters:   { in: internal/quota/adapters/** }
@@ -95,8 +103,14 @@ deps:
     mayDependOn: [ops-domain]
   ops-adapters:
     mayDependOn: [ops-domain, ops-app, platform]
+  ops-detectors:
+    mayDependOn: [ops-domain]
+  home-adapters:
+    mayDependOn: [home-app, platform]
+  search-adapters:
+    mayDependOn: [search-app]
   schedule-app:
-    mayDependOn: [schedule-domain, platform, catalog-app, quota-app, quota-domain]
+    mayDependOn: [schedule-domain, platform, catalog-app, quota-app, quota-domain, settings-app]
   schedule-adapters:
     mayDependOn: [schedule-domain, schedule-app, platform, pkg]
   quota-app:
@@ -104,9 +118,9 @@ deps:
   quota-adapters:
     mayDependOn: [quota-domain, quota-app, platform, pkg]
   catalog-app:
-    mayDependOn: [catalog-domain]
+    mayDependOn: [catalog-domain, sharing-app, sharing-domain]
   catalog-adapters:
-    mayDependOn: [catalog-domain, catalog-app, catalog-adapters-gen]
+    mayDependOn: [catalog-domain, catalog-app, catalog-adapters-gen, platform, pkg, sharing-app]
   catalog-observation-adapters:
     mayDependOn: [catalog-domain, catalog-app, catalog-adapters, catalog-adapters-gen]
   sharing-app:
@@ -130,7 +144,7 @@ deps:
   media-adapters:
     mayDependOn: [media-domain, media-app, platform, quota-domain, sharing-domain]
   sync-app:
-    mayDependOn: [platform]
+    mayDependOn: [platform, media-app]
   sync-adapters:
     mayDependOn: [sync-app, platform]
   sync-providertest:
@@ -171,6 +185,11 @@ deps:
       - sharing-adapters
       - media-app
       - media-adapters
+      - home-app
+      - home-adapters
+      - ops-domain
+      - ops-app
+      - ops-adapters
       - platform
       - pkg
   pkg:

@@ -39,6 +39,15 @@ jobs:
       - name: Test the worktree environment helper
         run: python3 docker/scripts/test_worktree_env.py
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Enforce the module boundaries
+        run: make arch-lint
+
   web:
     name: web
     runs-on: ubuntu-latest

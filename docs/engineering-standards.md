@@ -66,9 +66,22 @@ added, and a change that touches a listed file must bring it under the limits.
 - A feature module lives in `internal/<module>/` with `domain/` (rules and types, no
   infrastructure imports), `app/` (use cases that depend on ports, not on adapters)
   and `adapters/<technology>/` (HTTP, PostgreSQL, Redis, Flickr, filesystem, fakes).
-  Dependencies point inward: domain <- app <- adapters. A module reaches another
-  module only through that module's `app` package or through an outbox event.
-  `make arch-lint` and the `depguard` rules enforce it; never add an exception.
+  Dependencies point inward: domain <- app <- adapters. Cross-module imports
+  (ADR 0008, owner decision 2026-11-12):
+  - A module may import another module's `domain` package (plain types and value
+    objects) and its `app` package (use-case interfaces).
+  - A module never imports another module's `adapters`.
+  - A `domain` package imports no `app` or `adapters` package, of its own module
+    or of another.
+  - A behaviour call across modules goes through the other module's `app`
+    interface; a module may also react to another module's outbox event.
+  - Composition (wiring dependencies to implementations) stays in
+    `internal/platform/roles` and the `wiring` component of `.go-arch-lint.yml`.
+  - Shared `internal/platform/...` packages, other than `roles`, import no module
+    package.
+  `make arch-lint` (in CI, job `lint`) enforces the rule through
+  `.go-arch-lint.yml`. Every cross-module edge is declared there once, when code
+  first needs it; never add a per-file exception.
 - Shared infrastructure lives in `internal/platform/<name>/` and stays generic;
   business rules belong to their module. Public packages for outside use live in
   `pkg/`.
