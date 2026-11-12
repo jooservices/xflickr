@@ -83,7 +83,7 @@ func parseMetricsQuery(params gen.GetAdminMetricsParams, now time.Time) (time.Ti
 }
 
 func validMetricDimension(value string) bool {
-	return value != "" && len(value) <= 128 && utf8.ValidString(value)
+	return utf8.ValidString(value) && utf8.RuneCountInString(value) >= 1 && utf8.RuneCountInString(value) <= 128
 }
 
 func minuteBoundary(value time.Time) bool {

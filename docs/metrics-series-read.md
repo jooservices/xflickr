@@ -8,7 +8,7 @@ The request requires `series`, `queue`, `role`, `node`, `from`, `to`, and
 `step`. This slice supports only `series=queue.jobs_available` and `step=1m`.
 Queue, role, and node labels are matched together; samples are never combined
 across queues, roles, or nodes. Dimension labels must be valid UTF-8, non-empty,
-and no more than 128 bytes. Whitespace is preserved.
+and no more than 128 Unicode code points. Whitespace is preserved.
 
 The RFC3339 `from` and `to` values must be at exact minute boundaries. The
 query covers `[from, to)`, spans no more than 60 minutes, and cannot end after
