@@ -21,3 +21,13 @@ sql:
         out: internal/catalog/adapters/postgres/gen
         sql_package: pgx/v5
         emit_interface: true
+  - name: settings
+    engine: postgresql
+    schema: migrations
+    queries: internal/settings/adapters/postgres/queries
+    gen:
+      go:
+        package: gen
+        out: internal/settings/adapters/postgres/gen
+        sql_package: pgx/v5
+        emit_interface: true
