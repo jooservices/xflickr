@@ -11,7 +11,20 @@ import (
 	"time"
 
 	"github.com/jooservices/xflickr/internal/media/app"
+	"github.com/jooservices/xflickr/internal/media/app/blobstoretest"
 )
+
+var _ app.BlobStore = (*BlobStore)(nil)
+
+func TestBlobStoreContract(t *testing.T) {
+	blobstoretest.Run(t, func(t *testing.T) app.BlobStore {
+		store, err := New(t.TempDir(), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return store
+	})
+}
 
 func TestBlobStorePutGetStatUsagePresignDelete(t *testing.T) {
 	store, err := New(t.TempDir(), 32)

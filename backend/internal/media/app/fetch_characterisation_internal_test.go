@@ -27,7 +27,7 @@ func TestFetchWaitUsesTimerWithoutHook(t *testing.T) {
 
 func TestFetchStopsWhileWaitingForBusyHostSlot(t *testing.T) {
 	fetcher := &Fetcher{
-		Blobs: missingBlobStore{},
+		Blobs: &packBlobStore{},
 		HTTP: fetchHTTPFunc(func(context.Context, CDNRequest) (*CDNResponse, error) {
 			return &CDNResponse{StatusCode: 200, Body: io.NopCloser(strings.NewReader("x"))}, nil
 		}),
@@ -45,7 +45,7 @@ func TestFetchRefreshStopsWhileWaitingForBusyNewHostSlot(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	fetcher := &Fetcher{
-		Blobs: missingBlobStore{},
+		Blobs: &packBlobStore{},
 		HTTP: fetchHTTPFunc(func(context.Context, CDNRequest) (*CDNResponse, error) {
 			return &CDNResponse{StatusCode: 404, Body: io.NopCloser(strings.NewReader(""))}, nil
 		}),
@@ -63,7 +63,7 @@ func TestFetchRefreshStopsWhileWaitingForBusyNewHostSlot(t *testing.T) {
 
 func TestFetchStopsWhileWaitingForBusyKeySlot(t *testing.T) {
 	const source = "https://cdn.test/original"
-	fetcher := &Fetcher{Blobs: missingBlobStore{}, HTTP: fetchHTTPFunc(func(context.Context, CDNRequest) (*CDNResponse, error) {
+	fetcher := &Fetcher{Blobs: &packBlobStore{}, HTTP: fetchHTTPFunc(func(context.Context, CDNRequest) (*CDNResponse, error) {
 		t.Fatal("HTTP called while the key was busy")
 		return nil, nil
 	})}

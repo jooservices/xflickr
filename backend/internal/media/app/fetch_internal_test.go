@@ -122,29 +122,12 @@ func (f fetchHTTPFunc) Get(ctx context.Context, request CDNRequest) (*CDNRespons
 	return f(ctx, request)
 }
 
-type missingBlobStore struct{}
-
-func (missingBlobStore) Put(context.Context, string, io.Reader) error       { return nil }
-func (missingBlobStore) Get(context.Context, string) (io.ReadCloser, error) { return nil, ErrNotFound }
-func (missingBlobStore) Delete(context.Context, string) error               { return nil }
-
-func (missingBlobStore) PresignGet(context.Context, string, time.Duration) (string, error) {
-	return "", nil
-}
-
-func (missingBlobStore) Stat(context.Context, string) (BlobInfo, error) {
-	return BlobInfo{}, ErrNotFound
-}
-
-func (missingBlobStore) Usage(context.Context) (int64, error) { return 0, nil }
-func (missingBlobStore) Full(context.Context) (bool, error)   { return false, nil }
-
 func TestFetcherTransportFailuresAndNilResponse(t *testing.T) {
 	for _, do := range []fetchHTTPFunc{
 		func(context.Context, CDNRequest) (*CDNResponse, error) { return nil, errors.New("connection reset") },
 		func(context.Context, CDNRequest) (*CDNResponse, error) { return nil, nil },
 	} {
-		fetcher := &Fetcher{Blobs: missingBlobStore{}, HTTP: do}
+		fetcher := &Fetcher{Blobs: &packBlobStore{}, HTTP: do}
 		if _, _, _, err := fetcher.Fetch(context.Background(), "https://cdn.test/original"); err == nil {
 			t.Fatal("transport failure succeeded")
 		}
@@ -158,7 +141,7 @@ func TestFetcherTransportFailuresAndNilResponse(t *testing.T) {
 func TestFetcherRejectsInvalidInitialPartialResponse(t *testing.T) {
 	calls := 0
 	fetcher := &Fetcher{
-		Blobs: missingBlobStore{},
+		Blobs: &packBlobStore{},
 		HTTP: fetchHTTPFunc(func(context.Context, CDNRequest) (*CDNResponse, error) {
 			calls++
 			return &CDNResponse{StatusCode: 206, ContentRange: "bytes 4-7/8", Body: io.NopCloser(strings.NewReader("data")), ContentLength: 4}, nil
@@ -171,7 +154,7 @@ func TestFetcherRejectsInvalidInitialPartialResponse(t *testing.T) {
 
 func TestFetcherRejectsResponseWithoutBody(t *testing.T) {
 	fetcher := &Fetcher{
-		Blobs: missingBlobStore{},
+		Blobs: &packBlobStore{},
 		HTTP: fetchHTTPFunc(func(context.Context, CDNRequest) (*CDNResponse, error) {
 			return &CDNResponse{StatusCode: 200}, nil
 		}),
@@ -184,14 +167,15 @@ func TestFetcherRejectsResponseWithoutBody(t *testing.T) {
 	}
 }
 
-type failedStatStore struct{ missingBlobStore }
+// failedStatStore fails Stat on purpose; it is fault injection, not a contract fake.
+type failedStatStore struct{ packBlobStore }
 
-func (failedStatStore) Stat(context.Context, string) (BlobInfo, error) {
+func (*failedStatStore) Stat(context.Context, string) (BlobInfo, error) {
 	return BlobInfo{}, errors.New("storage unavailable")
 }
 
 func TestFetcherSurfacesBlobInspectionFailure(t *testing.T) {
-	fetcher := &Fetcher{Blobs: failedStatStore{}, HTTP: fetchHTTPFunc(func(context.Context, CDNRequest) (*CDNResponse, error) {
+	fetcher := &Fetcher{Blobs: &failedStatStore{}, HTTP: fetchHTTPFunc(func(context.Context, CDNRequest) (*CDNResponse, error) {
 		t.Fatal("HTTP called before blob inspection")
 		return nil, nil
 	})}

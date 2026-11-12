@@ -32,7 +32,10 @@ func (f *downloadPartsRepoFake) RetryFailedDownload(context.Context, int64, int6
 	return f.requeued, f.requeueErr
 }
 
+// downloadLinksBlobFake records presigned and deleted keys and can fail them;
+// storage behaviour comes from packBlobStore, so it honours the blob store contract.
 type downloadLinksBlobFake struct {
+	packBlobStore
 	urls      []string
 	keys      []string
 	ttls      []time.Duration
@@ -41,14 +44,12 @@ type downloadLinksBlobFake struct {
 	deleted   []string
 }
 
-func (*downloadLinksBlobFake) Put(context.Context, string, io.Reader) error { return nil }
-func (*downloadLinksBlobFake) Get(context.Context, string) (io.ReadCloser, error) {
-	return nil, ErrNotFound
-}
-
-func (f *downloadLinksBlobFake) Delete(_ context.Context, key string) error {
+func (f *downloadLinksBlobFake) Delete(ctx context.Context, key string) error {
 	f.deleted = append(f.deleted, key)
-	return f.deleteErr[key]
+	if err := f.deleteErr[key]; err != nil {
+		return err
+	}
+	return f.packBlobStore.Delete(ctx, key)
 }
 
 func (f *downloadLinksBlobFake) PresignGet(_ context.Context, key string, ttl time.Duration) (string, error) {
@@ -61,12 +62,6 @@ func (f *downloadLinksBlobFake) PresignGet(_ context.Context, key string, ttl ti
 	f.urls = append(f.urls, url)
 	return url, nil
 }
-
-func (*downloadLinksBlobFake) Stat(context.Context, string) (BlobInfo, error) {
-	return BlobInfo{}, ErrNotFound
-}
-func (*downloadLinksBlobFake) Usage(context.Context) (int64, error) { return 0, nil }
-func (*downloadLinksBlobFake) Full(context.Context) (bool, error)   { return false, nil }
 
 func TestDownloadPartLinksGetCapsLinkTTLAndSignsEveryPart(t *testing.T) {
 	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
