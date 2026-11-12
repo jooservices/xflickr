@@ -39,6 +39,36 @@ jobs:
       - name: Test the worktree environment helper
         run: python3 docker/scripts/test_worktree_env.py
 
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Type check the web
+        working-directory: web
+        run: npx tsc --noEmit
+
+      - name: Lint the web source
+        working-directory: web
+        run: npx eslint src
+
+      - name: Run web unit tests
+        working-directory: web
+        run: npx vitest run
+
   go-coverage:
     name: go-coverage
     runs-on: ubuntu-latest
