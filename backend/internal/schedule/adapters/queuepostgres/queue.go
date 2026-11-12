@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -59,7 +61,19 @@ func (p poolAdapter) Begin(ctx context.Context) (queueTx, error) {
 }
 
 // Store reads queue snapshots and emits aggregate queue state events.
-type Store struct{ pool queueDB }
+type Store struct {
+	pool queueDB
+	// adminMu guards the cached AdminQueue answer: it counts the active work_items several times, which
+	// scans the table, so an admin screen that polls must not repeat it on every request (JOOXF-416).
+	adminMu     sync.Mutex
+	adminValue  app.AdminQueue
+	adminLoaded time.Time
+	adminValid  bool
+	now         func() time.Time
+}
+
+// adminQueueTTL is how long one AdminQueue answer is reused.
+const adminQueueTTL = 15 * time.Second
 
 // New adapts a PostgreSQL pool for queue snapshot reads and events.
 func New(pool *pgxpool.Pool) *Store {
@@ -123,6 +137,24 @@ func (s *Store) AdminQueue(ctx context.Context) (app.AdminQueue, error) {
 	if s == nil || s.pool == nil || ctx == nil {
 		return app.AdminQueue{}, errors.New("schedule: queue database and context are required")
 	}
+	now := time.Now
+	if s.now != nil {
+		now = s.now
+	}
+	s.adminMu.Lock()
+	defer s.adminMu.Unlock()
+	if s.adminValid && now().Sub(s.adminLoaded) < adminQueueTTL {
+		return s.adminValue, nil
+	}
+	value, err := s.loadAdminQueue(ctx)
+	if err != nil {
+		return app.AdminQueue{}, err
+	}
+	s.adminValue, s.adminLoaded, s.adminValid = value, now(), true
+	return value, nil
+}
+
+func (s *Store) loadAdminQueue(ctx context.Context) (app.AdminQueue, error) {
 	result := app.AdminQueue{BacklogByPlan: []app.PlanLaneBacklog{}, ReadyQueueSizes: []app.ReadyQueueSize{}}
 	rows, err := s.pool.Query(ctx, `SELECT COALESCE(p.name, 'unassigned'),
     CASE WHEN w.kind ILIKE '%size%' THEN 'sizes' ELSE 'person' END, count(*)

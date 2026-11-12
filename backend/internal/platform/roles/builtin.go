@@ -787,7 +787,7 @@ func buildConfiguredAPIHandlerSetWithObserver(pool *pgxpool.Pool, redisClient re
 		return apiHandlerSet{}, fmt.Errorf("api: create open incident use case: %w", err)
 	}
 	opsHandler := opshttp.Handler{
-		Service:       ops.Service{Store: opspostgres.Store{Pool: pool, DB: pool}},
+		Service:       ops.Service{Store: &ops.CachedStore{Inner: opspostgres.Store{Pool: pool, DB: pool}}},
 		Metrics:       metricspostgres.SeriesStore{Pool: pool},
 		OpenIncidents: openIncidents,
 		Now:           time.Now,

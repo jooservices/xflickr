@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -280,3 +281,33 @@ func (tx *fakeTx) Exec(_ context.Context, _ string, args ...any) (pgconn.Command
 }
 func (tx *fakeTx) Commit(context.Context) error { return tx.commitErr }
 func (*fakeTx) Rollback(context.Context) error  { return nil }
+
+func TestAdminQueueIsCachedWithinTTLAndNotOnFailure(t *testing.T) {
+	now := time.Unix(5000, 0)
+	db := adminDB()
+	store := &Store{pool: db, now: func() time.Time { return now }}
+	first, err := store.AdminQueue(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	callsAfterFirst := db.queryCalls
+	second, err := store.AdminQueue(context.Background())
+	if err != nil || db.queryCalls != callsAfterFirst || len(second.BacklogByPlan) != len(first.BacklogByPlan) {
+		t.Fatalf("second call hit the database again: calls %d -> %d err=%v", callsAfterFirst, db.queryCalls, err)
+	}
+	now = now.Add(adminQueueTTL + time.Second)
+	db.queryRows = []fakeRows{{items: [][]any{{"pro", "person", int64(2)}}}, {items: [][]any{{"sync", int64(4)}}}}
+	db.queryCalls = 0
+	if _, err := store.AdminQueue(context.Background()); err != nil || db.queryCalls == 0 {
+		t.Fatalf("expired cache must reload: calls=%d err=%v", db.queryCalls, err)
+	}
+	failing := adminDB()
+	failing.queryErrors[1] = errors.New("query")
+	failStore := &Store{pool: failing, now: func() time.Time { return now }}
+	if _, err := failStore.AdminQueue(context.Background()); err == nil {
+		t.Fatal("failed load must surface")
+	}
+	if failStore.adminValid {
+		t.Fatal("a failed load must not be cached")
+	}
+}
