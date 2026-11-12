@@ -150,7 +150,7 @@ func TestExistsWithETagMapsProviderErrors(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected provider error")
 			}
-			if test.want == errNotChecked {
+			if errors.Is(test.want, errNotChecked) {
 				if strings.Contains(err.Error(), "secret-provider-code") {
 					t.Fatalf("error text copies the provider-controlled code: %v", err)
 				}

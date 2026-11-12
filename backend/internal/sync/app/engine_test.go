@@ -107,8 +107,10 @@ func TestUploadRejectsInvalidInputAndCapabilities(t *testing.T) {
 		limit             int64
 	}{
 		{name: "nil context"},
-		{name: "blank key", ctx: t.Context(), key: true}, {name: "invalid album", ctx: t.Context(), album: true},
-		{name: "invalid metadata", ctx: t.Context(), asset: true}, {name: "invalid capabilities", ctx: t.Context(), limit: -1},
+		{name: "blank key", ctx: t.Context(), key: true},
+		{name: "invalid album", ctx: t.Context(), album: true},
+		{name: "invalid metadata", ctx: t.Context(), asset: true},
+		{name: "invalid capabilities", ctx: t.Context(), limit: -1},
 		{name: "asset too large", ctx: t.Context(), limit: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -184,6 +186,7 @@ func (b *blobFake) Get(_ context.Context, _ string) (io.ReadCloser, error) {
 	b.event("get")
 	return &readerFake{Reader: bytes.NewReader(b.data), blob: b}, nil
 }
+
 func (b *blobFake) Delete(_ context.Context, _ string) error {
 	b.deleteCount++
 	b.event("delete")
@@ -234,6 +237,7 @@ func (p *providerFake) Upload(_ context.Context, _ app.RemoteAlbumID, asset app.
 	}
 	return p.uploadID, p.uploadErr
 }
+
 func (p *providerFake) Exists(_ context.Context, id app.RemoteItemID) (bool, error) {
 	p.existsCount++
 	p.existsID = id

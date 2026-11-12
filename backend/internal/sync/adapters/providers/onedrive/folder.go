@@ -170,11 +170,12 @@ func readFolder(resp *http.Response, operation string) (graphFolder, error) {
 				readErr = contextErr
 			}
 		}
-		if errors.Is(readErr, context.Canceled) {
+		switch {
+		case errors.Is(readErr, context.Canceled):
 			readErr = context.Canceled
-		} else if errors.Is(readErr, context.DeadlineExceeded) {
+		case errors.Is(readErr, context.DeadlineExceeded):
 			readErr = context.DeadlineExceeded
-		} else {
+		default:
 			return graphFolder{}, fmt.Errorf("onedrive: %s: could not read Graph response (status %d)", operation, resp.StatusCode)
 		}
 		return graphFolder{}, fmt.Errorf("onedrive: %s: could not read Graph response (status %d): %w", operation, resp.StatusCode, readErr)
