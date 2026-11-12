@@ -161,8 +161,16 @@ func assertExpiredGrantsResume(t *testing.T, f *quotaHoldFixture) {
 	// Expire only the 3300 background grants; all 100 reserve grants stay recent.
 	seedQuotaGrants(t, f, quotaGrantSeed{"person", 3300, time.Now().Add(-time.Hour - time.Second).UnixMilli()})
 	clearQuotaKeys(t, f, "bucket")
-	if capacity, err := f.governor.Capacity(f.ctx, f.keyID, 2*time.Minute); err != nil || capacity <= 0 {
-		t.Fatalf("Capacity() after reset = %d, %v; want credits again", capacity, err)
+	live, err := (quotaRedis.Counters{Client: f.redisClient, Prefix: f.governor.Prefix}).Live(f.ctx, f.keyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live.Used != 100 || live.ByClass[string(quotadomain.Interactive)] != 100 {
+		t.Fatalf("usage after background expiry = %+v; want only 100 interactive grants", live)
+	}
+	// A full-hour window exposes hourly headroom instead of the short-window rate cap.
+	if capacity, err := f.governor.Capacity(f.ctx, f.keyID, time.Hour); err != nil || capacity != 3200 {
+		t.Fatalf("Capacity() after background expiry = %d, %v; want 3400 - 100 used - 100 reserve = 3200", capacity, err)
 	}
 	pumpQuotaWork(t, f)
 	var state string
