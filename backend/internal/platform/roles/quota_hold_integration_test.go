@@ -151,7 +151,6 @@ func assertBackgroundHeld(t *testing.T, f *quotaHoldFixture) {
 		t.Fatalf("River job created at the ceiling = %v, %v; want none while quota is exhausted", created, err)
 	}
 }
-}
 
 func assertInteractiveReserve(t *testing.T, f *quotaHoldFixture) {
 	t.Helper()
