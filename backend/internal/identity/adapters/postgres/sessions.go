@@ -12,13 +12,13 @@ import (
 	"github.com/jooservices/xflickr/internal/identity/domain"
 )
 
-func (repo *Repository) InsertSession(ctx context.Context, userID int64, tokenHash []byte, expiresAt, seenAt time.Time, userAgent, ipAddress string) (domain.Session, error) {
+func (repo *Repository) InsertSession(ctx context.Context, in app.SessionInsert) (domain.Session, error) {
 	var session domain.Session
 	err := repo.pool.QueryRow(ctx, `
 INSERT INTO sessions (user_id, token_hash, expires_at, last_seen_at, user_agent, ip_address)
 VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, user_id, expires_at, last_seen_at, created_at, user_agent, ip_address`,
-		userID, tokenHash, expiresAt, seenAt, userAgent, ipAddress).Scan(&session.ID, &session.UserID, &session.ExpiresAt, &session.LastSeenAt, &session.CreatedAt, &session.UserAgent, &session.IPAddress)
+		in.UserID, in.TokenHash, in.ExpiresAt, in.SeenAt, in.UserAgent, in.IPAddress).Scan(&session.ID, &session.UserID, &session.ExpiresAt, &session.LastSeenAt, &session.CreatedAt, &session.UserAgent, &session.IPAddress)
 	if err != nil {
 		return domain.Session{}, fmt.Errorf("identity: insert session: %w", err)
 	}

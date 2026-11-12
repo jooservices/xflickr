@@ -225,10 +225,10 @@ func (s *identityJourneySessions) RevokeByID(_ context.Context, userID, sessionI
 	return true, nil
 }
 
-func (s *identityJourneySessions) InsertSession(_ context.Context, userID int64, _ []byte, expires, now time.Time, agent, ip string) (domain.Session, error) {
+func (s *identityJourneySessions) InsertSession(_ context.Context, in identityapp.SessionInsert) (domain.Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	session := domain.Session{ID: s.nextID, UserID: userID, ExpiresAt: expires, LastSeenAt: now, CreatedAt: now, UserAgent: agent, IPAddress: ip}
+	session := domain.Session{ID: s.nextID, UserID: in.UserID, ExpiresAt: in.ExpiresAt, LastSeenAt: in.SeenAt, CreatedAt: in.SeenAt, UserAgent: in.UserAgent, IPAddress: in.IPAddress}
 	s.nextID++
 	s.sessions[session.ID] = session
 	return session, nil

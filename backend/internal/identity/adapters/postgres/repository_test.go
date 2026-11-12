@@ -215,11 +215,11 @@ func TestSessionRepositoryMethodsAndErrors(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 	sessionValues := []any{int64(8), int64(4), now.Add(time.Hour), now, now, "agent", "127.0.0.1"}
-	if session, err := testRepo(&identityPoolFake{rowQueue: []pgx.Row{identityRow{values: sessionValues}}}).InsertSession(ctx, 4, []byte{1}, now.Add(time.Hour), now, "agent", "127.0.0.1"); err != nil || session.ID != 8 {
+	if session, err := testRepo(&identityPoolFake{rowQueue: []pgx.Row{identityRow{values: sessionValues}}}).InsertSession(ctx, app.SessionInsert{UserID: 4, TokenHash: []byte{1}, ExpiresAt: now.Add(time.Hour), SeenAt: now, UserAgent: "agent", IPAddress: "127.0.0.1"}); err != nil || session.ID != 8 {
 		t.Fatalf("InsertSession=%+v err=%v", session, err)
 	}
 	boom := errors.New("database failed")
-	if _, err := testRepo(&identityPoolFake{rowQueue: []pgx.Row{identityRow{err: boom}}}).InsertSession(ctx, 4, nil, now, now, "", ""); !errors.Is(err, boom) {
+	if _, err := testRepo(&identityPoolFake{rowQueue: []pgx.Row{identityRow{err: boom}}}).InsertSession(ctx, app.SessionInsert{UserID: 4, ExpiresAt: now, SeenAt: now}); !errors.Is(err, boom) {
 		t.Fatalf("InsertSession error=%v", err)
 	}
 	if session, err := testRepo(&identityPoolFake{rowQueue: []pgx.Row{identityRow{values: sessionValues}}}).FindSessionByHash(ctx, []byte{1}, now); err != nil || session.ID != 8 {

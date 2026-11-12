@@ -57,7 +57,7 @@ type rateLimit struct {
 
 type passwordSessions struct{}
 
-func (passwordSessions) InsertSession(context.Context, int64, []byte, time.Time, time.Time, string, string) (domain.Session, error) {
+func (passwordSessions) InsertSession(context.Context, app.SessionInsert) (domain.Session, error) {
 	return domain.Session{}, nil
 }
 

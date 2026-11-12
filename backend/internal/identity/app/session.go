@@ -22,9 +22,19 @@ type Authenticated struct {
 	Slid      bool
 }
 
+// SessionInsert is the data written for a new session row.
+type SessionInsert struct {
+	UserID    int64
+	TokenHash []byte
+	ExpiresAt time.Time
+	SeenAt    time.Time
+	UserAgent string
+	IPAddress string
+}
+
 // SessionRepository stores hashed session ids.
 type SessionRepository interface {
-	InsertSession(context.Context, int64, []byte, time.Time, time.Time, string, string) (domain.Session, error)
+	InsertSession(context.Context, SessionInsert) (domain.Session, error)
 	FindSessionByHash(context.Context, []byte, time.Time) (domain.Session, error)
 	TouchSession(context.Context, []byte, time.Time, time.Time) (bool, error)
 	DeleteOtherSessions(context.Context, int64, []byte) error
@@ -71,7 +81,14 @@ func (s Sessions) Issue(ctx context.Context, userID int64, userAgent, ipAddress 
 		return "", domain.Session{}, "", err
 	}
 	now := s.now()
-	session, err := s.Repository.InsertSession(ctx, userID, domain.HashSessionToken(raw), now.Add(domain.SessionLifetime), now, userAgent, ipAddress)
+	session, err := s.Repository.InsertSession(ctx, SessionInsert{
+		UserID:    userID,
+		TokenHash: domain.HashSessionToken(raw),
+		ExpiresAt: now.Add(domain.SessionLifetime),
+		SeenAt:    now,
+		UserAgent: userAgent,
+		IPAddress: ipAddress,
+	})
 	if err != nil {
 		return "", domain.Session{}, "", err
 	}
