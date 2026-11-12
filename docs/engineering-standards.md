@@ -19,6 +19,48 @@ reviewer rejects a change that breaks them even when the tests pass.
 - Flickr quota is precious: no call that is not needed, no retry of a request known
   to be deleted or unreachable, no unbounded scan of the large tables.
 
+## Strict rules (owner decision 2026-11-12, no exceptions)
+
+SOLID, KISS, YAGNI and DRY apply to every file, backend and web, with no case-by-case
+exception. A gate that can measure a rule fails CI; the rest is a review rejection. A
+reviewer must reject a change that breaks any line below even when tests pass and CI is green.
+
+Measurable limits (enforced by lint and CI; a violation is fixed, never suppressed):
+
+| Rule | Backend (Go) | Web (TypeScript) |
+|---|---|---|
+| File length (production code) | at most 400 lines | at most 300 lines |
+| Function / component length | at most 40 lines | at most 60 lines per component, 40 per function |
+| Cyclomatic complexity | at most 10 | at most 10 |
+| Parameters | at most 4 (use an options struct above that) | at most 4 (use an object above that) |
+| Interface methods | at most 5 | n/a |
+| `useState` in one component | n/a | at most 5; more state belongs in a hook |
+| Duplication | no duplicated block of 100 tokens or more | same |
+| Unused code | none: unused functions, types, parameters and exports are removed, including code only a test calls | same |
+| Suppressions | no `nolint`, no `eslint-disable`, no `@ts-ignore` | same |
+
+A rule that this table does not measure still applies and is checked in review:
+
+- **S (single responsibility):** one reason to change per file, type, function and component. A
+  file that mixes wiring, business rules and technology adapters is rejected.
+- **O (open/closed):** add behaviour by adding a type behind a port, not by editing a growing
+  `switch` in the caller.
+- **L (Liskov):** every implementation of a port passes the same contract test; a fake that is
+  more permissive than the real adapter is a defect.
+- **I (interface segregation):** a consumer depends only on the methods it calls; split read and
+  write ports.
+- **D (dependency inversion):** domain and app never import infrastructure (enforced by
+  `depguard` and `arch-lint`); constructors take their dependencies.
+- **KISS:** the simplest design that meets the ticket; no pattern without a problem it removes.
+- **YAGNI:** no code for a future need, no extension point without a second user, no wrapper kept
+  only so a test can call a shorter form.
+- **DRY:** one implementation of a rule or UI behaviour (add-key form, dialog focus trap, session
+  loading); duplication is removed in the change that finds it.
+
+Existing code that breaks a limit is migrated under epic JOOXF-447. Until a file is migrated it
+stays on a shrinking list in `docker/scripts/strict-baseline.txt`: an entry may be removed, never
+added, and a change that touches a listed file must bring it under the limits.
+
 ## Backend structure
 
 - A feature module lives in `internal/<module>/` with `domain/` (rules and types, no
@@ -35,6 +77,13 @@ reviewer rejects a change that breaks them even when the tests pass.
 - Constructors are `New...` functions that validate their arguments and return an
   error; they take dependencies explicitly. Wiring happens in one composition place
   per role (`internal/platform/roles`), not inside packages.
+- **New SQL uses sqlc** (owner decision 2026-11-12). Write the statement in the module's
+  `queries/*.sql`, run `make gen`, and call the generated method. Hand-written SQL in an
+  adapter is allowed only as a recorded exception with a one-line reason next to it:
+  runtime-built dynamic SQL, or a pgx batch pipeline that sqlc cannot express (the
+  two-statement upsert batches are an example). Existing hand-written SQL moves to sqlc
+  under epic JOOXF-439; touch it only to move it or when the ticket needs it. Review
+  rejects new hand-written SQL without a reason.
 - SQL goes through pgx with parameters, never string concatenation. Schema changes
   are goose migrations named `YYYYMMDDHHMMSS_description.sql` with `+goose Up` and
   `+goose Down`; sqlc queries live with their module. Keep queries bounded: the

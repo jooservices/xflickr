@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -38,6 +39,30 @@ func (r *Repository) LoadSizes(ctx context.Context, id int64) (domain.Photo, boo
 	}
 	return photo, true, nil
 }
+
+// Two statements instead of INSERT ... ON CONFLICT DO UPDATE (JOOXF-415): the conflict form locks and
+// rewrites a known row every time the crawler sees it again, and last_seen_at is indexed, so no update could
+// be HOT. The insert only adds new rows; the update touches a row only when its content changed, its
+// tombstone state changed, or last_seen_at is more than an hour old.
+const photoInsertSQL = `INSERT INTO photos (
+    id, owner_nsid, secret, server, title, description, tags, taken_at,
+    uploaded_at, last_update, visibility, license, media, geo, sizes,
+    sizes_status, sizes_checked_at, raw, content_hash, tombstoned_at, last_seen_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+    $16, $17, $18, $19, $20, $21
+) ON CONFLICT (id) DO NOTHING`
+
+const photoUpdateSQL = `UPDATE photos SET
+    owner_nsid = $2, secret = $3, server = $4, title = $5, description = $6, tags = $7,
+    taken_at = $8, uploaded_at = $9, last_update = $10, visibility = $11, license = $12,
+    media = $13, geo = $14, raw = $15, content_hash = $16, tombstoned_at = $17, last_seen_at = $18
+WHERE id = $1
+  AND (last_update IS DISTINCT FROM $10
+       OR content_hash IS DISTINCT FROM $16
+       OR tombstoned_at IS DISTINCT FROM $17
+       OR last_seen_at IS NULL
+       OR last_seen_at < $18::timestamptz - interval '1 hour')`
 
 // UpsertPhotos inserts or refreshes at most 500 photos in one pgx batch.
 func (r *Repository) UpsertPhotos(ctx context.Context, photos []domain.Photo) error {
@@ -86,17 +111,48 @@ func (r *Repository) UpsertPhotos(ctx context.Context, photos []domain.Photo) er
 			TombstonedAt: pgTime(photo.TombstonedAt), LastSeenAt: seenAt,
 		})
 	}
-	results := r.queries.UpsertPhoto(ctx, params)
-	var batchErr error
-	results.Exec(func(_ int, err error) {
-		if err != nil && batchErr == nil {
-			batchErr = err
-		}
-	})
-	if batchErr != nil {
-		return fmt.Errorf("catalog: upsert photos: %w", batchErr)
+	prepared := orderPhotoParams(params)
+	batch := &pgx.Batch{}
+	for _, item := range prepared {
+		batch.Queue(photoInsertSQL, photoArgs(item)...)
 	}
-	return nil
+	for _, item := range prepared {
+		batch.Queue(photoUpdateSQL, photoUpdateArgs(item)...)
+	}
+	return executeBatch(ctx, r.db, batch, "photos")
+}
+
+// orderPhotoParams sorts photos by id and keeps the last payload of a duplicate id, so every writer
+// locks rows in the same order and one batch never touches a row twice.
+func orderPhotoParams(params []gen.UpsertPhotoParams) []gen.UpsertPhotoParams {
+	ordered := append([]gen.UpsertPhotoParams(nil), params...)
+	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].ID < ordered[j].ID })
+	unique := ordered[:0]
+	for _, item := range ordered {
+		if n := len(unique); n > 0 && unique[n-1].ID == item.ID {
+			unique[n-1] = item
+			continue
+		}
+		unique = append(unique, item)
+	}
+	return unique
+}
+
+// photoUpdateArgs omits the sizes columns: a re-crawl never rewrites sizes (SetSizes owns them).
+func photoUpdateArgs(p gen.UpsertPhotoParams) []any {
+	return []any{
+		p.ID, p.OwnerNsid, p.Secret, p.Server, p.Title, p.Description, p.Tags, p.TakenAt,
+		p.UploadedAt, p.LastUpdate, p.Visibility, p.License, p.Media, p.Geo,
+		p.Raw, p.ContentHash, p.TombstonedAt, p.LastSeenAt,
+	}
+}
+
+func photoArgs(p gen.UpsertPhotoParams) []any {
+	return []any{
+		p.ID, p.OwnerNsid, p.Secret, p.Server, p.Title, p.Description, p.Tags, p.TakenAt,
+		p.UploadedAt, p.LastUpdate, p.Visibility, p.License, p.Media, p.Geo, p.Sizes,
+		p.SizesStatus, p.SizesCheckedAt, p.Raw, p.ContentHash, p.TombstonedAt, p.LastSeenAt,
+	}
 }
 
 // SetSizes stores a sizes response unless it would downgrade confirmed data.

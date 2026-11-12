@@ -78,128 +78,146 @@ func TestGetAdminFlagsMapsResponse(t *testing.T) {
 	}
 }
 
-func TestGetAdminFlag(t *testing.T) {
-	base := domain.FeatureFlag{Name: "admin.banner", Enabled: true, Audience: domain.AudienceAll, UserIDs: nil}
-	service := &fakeFeatureFlagService{flag: base}
-	handler := Handler{Flags: service}
-	ctx := t.Context()
-	first := mustVisitFlagResponse(t, handler, ctx, base.Name)
-	second := mustVisitFlagResponse(t, handler, ctx, base.Name)
-	if first.Code != 200 || first.Header().Get("Content-Type") != "application/json" || first.Header().Get("Cache-Control") != "private, no-store" {
-		t.Fatalf("success response headers/status = %d %v", first.Code, first.Header())
+func TestGetAdminFlagMapsRepresentation(t *testing.T) {
+	service := &fakeFeatureFlagService{flag: domain.FeatureFlag{Name: "admin.banner", Enabled: true, Audience: domain.AudienceAll}}
+	response := mustVisitFlagResponse(t, Handler{Flags: service}, t.Context(), service.flag.Name)
+	if response.Code != 200 || response.Header().Get("Content-Type") != "application/json" || response.Header().Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("success response headers/status = %d %v", response.Code, response.Header())
 	}
-	var body struct {
-		Success bool   `json:"success"`
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-		Data    struct {
-			Name     string  `json:"name"`
-			Enabled  bool    `json:"enabled"`
-			Audience string  `json:"audience"`
-			UserIDs  []int64 `json:"user_ids"`
-			Links    map[string]struct {
-				Href   string `json:"href"`
-				Method string `json:"method"`
-			} `json:"links"`
-		} `json:"data"`
-		Meta    map[string]any `json:"meta"`
-		Errors  any            `json:"errors"`
-		TraceID string         `json:"trace_id"`
-	}
-	if err := json.Unmarshal(first.Body.Bytes(), &body); err != nil {
+	var body gen.RESTFeatureFlagEnvelope
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	self := body.Data.Links["self"]
-	if !body.Success || body.Code != 200 || body.Message != "Success" || body.Data.Name != base.Name || !body.Data.Enabled || body.Data.Audience != "all" || body.Data.UserIDs == nil || len(body.Data.UserIDs) != 0 || self.Href != "/api/v1/admin/flags/admin.banner" || self.Method != "GET" || body.Meta == nil || body.Errors != nil || service.getCalls != 2 {
+	self := body.Data.Links.Self
+	if !bool(body.Success) || body.Code != 200 || body.Message != "Success" || body.Data.Name != service.flag.Name || !body.Data.Enabled || body.Data.Audience != gen.FeatureFlagAudience(domain.AudienceAll) || !reflect.DeepEqual(body.Data.UserIds, []int64{}) || self.Href != "/api/v1/admin/flags/admin.banner" || self.Method == nil || *self.Method != gen.LinkMethod("GET") || body.Meta == nil || body.Errors != nil || service.getCalls != 1 || body.TraceID != "" {
 		t.Fatalf("success representation = %+v; calls = %d", body, service.getCalls)
 	}
-	if first.Header().Get("ETag") == "" || first.Header().Get("ETag") != second.Header().Get("ETag") {
-		t.Fatalf("unchanged representation ETags = %q / %q", first.Header().Get("ETag"), second.Header().Get("ETag"))
+	if response.Header().Get("X-Trace-Id") != "" {
+		t.Fatal("unexpected trace header without a valid span")
 	}
-	if got, want := first.Header().Get("ETag"), rest.ETag(first.Body.Bytes()); got != want {
-		t.Fatalf("ETag = %q, want full response validator %q", got, want)
-	}
+}
 
-	traceContext := trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{1}}))
-	traced := mustVisitFlagResponse(t, handler, traceContext, base.Name)
-	var tracedBody struct {
-		TraceID string `json:"trace_id"`
-	}
-	if err := json.Unmarshal(traced.Body.Bytes(), &tracedBody); err != nil {
-		t.Fatal(err)
-	}
-	if tracedBody.TraceID == body.TraceID || traced.Header().Get("ETag") == first.Header().Get("ETag") {
-		t.Fatalf("trace changed body without changing ETag: first=%q/%q traced=%q/%q", body.TraceID, first.Header().Get("ETag"), tracedBody.TraceID, traced.Header().Get("ETag"))
-	}
-	if got, want := traced.Header().Get("ETag"), rest.ETag(traced.Body.Bytes()); got != want {
-		t.Fatalf("traced ETag = %q, want full response validator %q", got, want)
-	}
+func flagTraceContext(ctx context.Context, id byte) context.Context {
+	return trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{id}, SpanID: trace.SpanID{id}}))
+}
 
-	for _, changed := range []domain.FeatureFlag{
-		{Name: "admin.banner.v2", Enabled: base.Enabled, Audience: base.Audience},
-		{Name: base.Name, Enabled: false, Audience: base.Audience},
-		{Name: base.Name, Enabled: base.Enabled, Audience: domain.AudienceAdmins},
-		{Name: base.Name, Enabled: base.Enabled, Audience: domain.AudienceUserIDs, UserIDs: []int64{9, 3}},
-	} {
-		service.flag = changed
-		response := mustVisitFlagResponse(t, handler, ctx, changed.Name)
-		if response.Header().Get("ETag") == first.Header().Get("ETag") {
-			t.Errorf("changed field did not change ETag: %+v", changed)
+func TestGetAdminFlagStableAcrossTraces(t *testing.T) {
+	handler := Handler{Flags: &fakeFeatureFlagService{flag: domain.FeatureFlag{Name: "banner", Audience: domain.AudienceAll}}}
+	var previous *httptest.ResponseRecorder
+	for _, id := range []byte{1, 2} {
+		ctx := flagTraceContext(t.Context(), id)
+		response := mustVisitFlagResponse(t, handler, ctx, "banner")
+		if response.Header().Get("X-Trace-Id") != trace.SpanContextFromContext(ctx).TraceID().String() {
+			t.Fatalf("trace header = %q", response.Header().Get("X-Trace-Id"))
 		}
+		var body gen.RESTFeatureFlagEnvelope
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.TraceID != "" {
+			t.Fatalf("body trace = %q", body.TraceID)
+		}
+		assertFlagETag(t, response)
+		if previous != nil && (previous.Body.String() != response.Body.String() || previous.Header().Get("ETag") != response.Header().Get("ETag")) {
+			t.Fatal("request trace changed representation or ETag")
+		}
+		previous = response
 	}
-	service.flag = domain.FeatureFlag{Name: base.Name, Enabled: true, Audience: domain.AudienceUserIDs, UserIDs: []int64{9, 3}}
-	firstOrder := mustVisitFlagResponse(t, handler, ctx, base.Name).Header().Get("ETag")
-	service.flag.UserIDs = []int64{3, 9}
-	secondOrder := mustVisitFlagResponse(t, handler, ctx, base.Name).Header().Get("ETag")
-	if firstOrder == secondOrder {
-		t.Fatalf("user ID order did not affect ETag: %q", firstOrder)
+}
+
+func assertFlagETag(t *testing.T, response *httptest.ResponseRecorder) {
+	t.Helper()
+	tag := response.Header().Get("ETag")
+	if tag != rest.ETag(response.Body.Bytes()) || !strings.HasPrefix(tag, "\"") || !strings.HasSuffix(response.Body.String(), "\n") {
+		t.Fatalf("ETag = %q, want strong full-body validator including newline", tag)
+	}
+}
+
+func TestGetAdminFlagETagTracksRepresentation(t *testing.T) {
+	base := domain.FeatureFlag{Name: "banner", Enabled: true, Audience: domain.AudienceUserIDs, UserIDs: []int64{9, 3}}
+	service := &fakeFeatureFlagService{flag: base}
+	handler := Handler{Flags: service}
+	first := mustVisitFlagResponse(t, handler, t.Context(), base.Name)
+	assertFlagETag(t, first)
+	for _, field := range []string{"name", "enabled", "audience", "user ID content", "user ID order", "nil IDs"} {
+		t.Run(field, func(t *testing.T) {
+			changed := base
+			switch field {
+			case "name":
+				changed.Name = "banner.v2"
+			case "enabled":
+				changed.Enabled = false
+			case "audience":
+				changed.Audience = domain.AudienceAdmins
+			case "user ID content":
+				changed.UserIDs = []int64{9, 4}
+			case "user ID order":
+				changed.UserIDs = []int64{3, 9}
+			case "nil IDs":
+				changed.UserIDs = nil
+			}
+			service.flag = changed
+			response := mustVisitFlagResponse(t, handler, t.Context(), changed.Name)
+			assertFlagETag(t, response)
+			if response.Header().Get("ETag") == first.Header().Get("ETag") {
+				t.Fatal("changed field did not change ETag")
+			}
+		})
 	}
 	if got := apiFeatureFlag(domain.FeatureFlag{Name: "empty", Audience: domain.AudienceAll}).UserIds; !reflect.DeepEqual(got, []int64{}) {
 		t.Fatalf("empty user_ids = %#v, want []", got)
 	}
 }
 
+type flagProblemCase struct {
+	name       string
+	flagName   string
+	service    *fakeFeatureFlagService
+	wantStatus int
+	wantType   string
+	wantErrors bool
+	leak       string
+}
+
 func TestGetAdminFlagReturnsSafeProblems(t *testing.T) {
-	for _, test := range []struct {
-		name       string
-		flagName   string
-		service    *fakeFeatureFlagService
-		wantStatus int
-		wantType   string
-		wantErrors bool
-		leak       string
-	}{
+	for _, test := range []flagProblemCase{
 		{name: "not found", flagName: "missing", service: &fakeFeatureFlagService{getErr: app.ErrFeatureFlagNotFound}, wantStatus: 404, wantType: "/problems/not-found"},
 		{name: "storage failure", flagName: "secret.flag", service: &fakeFeatureFlagService{getErr: errors.New("SQL password=hidden")}, wantStatus: 500, wantType: "/problems/internal-error", leak: "SQL password=hidden"},
 		{name: "invalid name", flagName: "INVALID", service: &fakeFeatureFlagService{}, wantStatus: 422, wantType: "/problems/validation-error", wantErrors: true},
 		{name: "missing service", flagName: "valid", wantStatus: 500, wantType: "/problems/internal-error"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			handler := Handler{Flags: test.service}
-			if test.name == "missing service" {
-				handler = Handler{}
-			}
-			recorder := mustVisitFlagResponse(t, handler, t.Context(), test.flagName)
-			var body struct {
-				Type     string `json:"type"`
-				Status   int    `json:"status"`
-				Instance string `json:"instance"`
-				TraceID  string `json:"trace_id"`
-				Errors   any    `json:"errors"`
-			}
-			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-				t.Fatal(err)
-			}
-			if recorder.Code != test.wantStatus || recorder.Header().Get("Content-Type") != "application/problem+json" || body.Status != test.wantStatus || body.Type != test.wantType || body.Instance == "" || (body.Errors != nil) != test.wantErrors {
-				t.Fatalf("problem response = %d %q %+v", recorder.Code, recorder.Header().Get("Content-Type"), body)
-			}
-			if test.name == "invalid name" && test.service.getCalls != 0 {
-				t.Fatal("invalid flag name reached the feature flag service")
-			}
-			if test.leak != "" && strings.Contains(recorder.Body.String(), test.leak) {
-				t.Fatalf("problem leaked repository error: %s", recorder.Body.String())
-			}
+			assertFlagProblem(t, test)
 		})
+	}
+}
+
+func assertFlagProblem(t *testing.T, test flagProblemCase) {
+	t.Helper()
+	handler := Handler{Flags: test.service}
+	if test.name == "missing service" {
+		handler = Handler{}
+	}
+	ctx := flagTraceContext(t.Context(), 3)
+	recorder := mustVisitFlagResponse(t, handler, ctx, test.flagName)
+	var body struct {
+		Type     string `json:"type"`
+		Status   int    `json:"status"`
+		Instance string `json:"instance"`
+		TraceID  string `json:"trace_id"`
+		Errors   any    `json:"errors"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != test.wantStatus || recorder.Header().Get("Content-Type") != "application/problem+json" || body.Status != test.wantStatus || body.Type != test.wantType || body.Instance == "" || body.TraceID != trace.SpanContextFromContext(ctx).TraceID().String() || (body.Errors != nil) != test.wantErrors {
+		t.Fatalf("problem response = %d %q %+v", recorder.Code, recorder.Header().Get("Content-Type"), body)
+	}
+	if test.name == "invalid name" && test.service.getCalls != 0 {
+		t.Fatal("invalid flag name reached the feature flag service")
+	}
+	if test.leak != "" && strings.Contains(recorder.Body.String(), test.leak) {
+		t.Fatalf("problem leaked repository error: %s", recorder.Body.String())
 	}
 }
 

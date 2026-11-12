@@ -16,10 +16,13 @@ fail() {
 	failures=$((failures + 1))
 }
 
-# run_case <name> <fake go exit status> <wanted exit status> <caller dir> <expected args file> [extra env...]
+# run_case <name> <fake go exit status> <caller dir> <version override>
 run_case() {
-	local name="$1" fake_status="$2" want_status="$3" caller_dir="$4" expected="$5"
-	shift 5
+	local name="$1" fake_status="$2" caller_dir="$3" version_override="$4"
+	local extra_env=()
+	if [[ -n "$version_override" ]]; then
+		extra_env=("GOVULNCHECK_VERSION=$version_override")
+	fi
 	local status=0
 	local previous_failures="$failures"
 	total=$((total + 1))
@@ -27,15 +30,15 @@ run_case() {
 	: >"$WORK/args"
 	(
 		cd -- "$caller_dir"
-		env "$@" PATH="$WORK/bin:$PATH" FAKE_GO_STATUS="$fake_status" FAKE_GO_WORK="$WORK" bash "$CHECK"
+		env -u GOVULNCHECK_VERSION "${extra_env[@]}" PATH="$WORK/bin:$PATH" FAKE_GO_STATUS="$fake_status" FAKE_GO_WORK="$WORK" bash "$CHECK"
 	) >"$WORK/output" 2>&1 || status=$?
-	if [[ "$status" -ne "$want_status" ]]; then
-		fail "$name: exit $status, wanted $want_status"
+	if [[ "$status" -ne "$fake_status" ]]; then
+		fail "$name: exit $status, wanted $fake_status"
 	fi
 	if [[ "$(cat "$WORK/cwd")" != "$ROOT/backend" ]]; then
 		fail "$name: go ran from $(cat "$WORK/cwd"), wanted $ROOT/backend"
 	fi
-	if ! diff -u "$expected" "$WORK/args" >"$WORK/diff"; then
+	if ! diff -u "$WORK/expected-args" "$WORK/args" >"$WORK/diff"; then
 		fail "$name: go arguments differed from the expected govulncheck command"
 	fi
 	if [[ "$failures" -eq "$previous_failures" ]]; then
@@ -52,14 +55,12 @@ printf '%s\n' "$@" >"$FAKE_GO_WORK/args"
 exit "$FAKE_GO_STATUS"
 EOF
 chmod +x "$WORK/bin/go"
-printf 'run\ngolang.org/x/vuln/cmd/govulncheck@v1.9.0\n./...\n' >"$WORK/expected-default"
-printf 'run\ngolang.org/x/vuln/cmd/govulncheck@v9.9.9\n./...\n' >"$WORK/expected-override"
-
-run_case 'backend scan passes' 0 0 "$ROOT" "$WORK/expected-default"
-run_case 'backend scan propagates a vulnerability finding' 3 3 "$ROOT" "$WORK/expected-default"
-run_case 'backend scan targets the module directory from elsewhere' 0 0 "$WORK/elsewhere" "$WORK/expected-default"
-run_case 'backend scan pins the tool version by default' 0 0 "$ROOT" "$WORK/expected-default"
-run_case 'backend scan version can be overridden explicitly' 0 0 "$ROOT" "$WORK/expected-override" GOVULNCHECK_VERSION=v9.9.9
+printf 'run\ngolang.org/x/vuln/cmd/govulncheck@v1.9.0\n./...\n' >"$WORK/expected-args"
+run_case 'backend scan passes' 0 "$ROOT" ''
+run_case 'backend scan propagates a vulnerability finding' 3 "$ROOT" ''
+run_case 'backend scan propagates a tool error' 1 "$ROOT" ''
+run_case 'backend scan targets the module directory from elsewhere' 0 "$WORK/elsewhere" ''
+run_case 'backend scan ignores version override' 0 "$ROOT" 'v9.9.9'
 
 printf '\n%d test(s), %d failure(s)\n' "$total" "$failures"
 [[ "$failures" -eq 0 ]]
