@@ -25,7 +25,7 @@ import (
 
 func TestAssignmentInitialIntegration(t *testing.T) {
 	pool, ctx := openAssignmentDatabase(t)
-	fixture := newAssignmentFixture(t, pool, ctx)
+	fixture := newAssignmentFixture(t, ctx, pool)
 	now := assignmentTime()
 	keyID := fixture.addKey(t, ctx, "valid")
 	node1 := fixture.addNode(t, ctx, "node-1", "online", []string{"crawl"}, &now, nil)
@@ -92,7 +92,7 @@ FROM key_assignments WHERE key_id = $1`, keyID).Scan(&stored.KeyID, &stored.Node
 
 func TestAssignmentRejectsUnavailableIntegration(t *testing.T) {
 	pool, ctx := openAssignmentDatabase(t)
-	fixture := newAssignmentFixture(t, pool, ctx)
+	fixture := newAssignmentFixture(t, ctx, pool)
 	now := assignmentTime()
 	validKey := fixture.addKey(t, ctx, "valid")
 	missingKey := fixture.addKey(t, ctx, "valid")
@@ -142,7 +142,7 @@ func TestAssignmentRejectsUnavailableIntegration(t *testing.T) {
 
 func TestConcurrentInitialAssignmentIntegration(t *testing.T) {
 	pool, ctx := openAssignmentDatabase(t)
-	fixture := newAssignmentFixture(t, pool, ctx)
+	fixture := newAssignmentFixture(t, ctx, pool)
 	now := assignmentTime()
 	keyID := fixture.addKey(t, ctx, "valid")
 	node1 := fixture.addNode(t, ctx, "node-1", "online", []string{"crawl"}, &now, nil)
@@ -208,7 +208,7 @@ func TestAssignmentDatabaseErrorsAndCancellationIntegration(t *testing.T) {
 
 func TestAssignmentLookupPlanIntegration(t *testing.T) {
 	pool, ctx := openAssignmentDatabase(t)
-	fixture := newAssignmentFixture(t, pool, ctx)
+	fixture := newAssignmentFixture(t, ctx, pool)
 	now := assignmentTime()
 	node := fixture.addNode(t, ctx, "plan-node", "online", []string{"crawl"}, &now, nil)
 	const fixtureSize = 400_000
@@ -317,7 +317,7 @@ func openAssignmentDatabase(t *testing.T) (*pgxpool.Pool, context.Context) {
 	return pool, ctx
 }
 
-func newAssignmentFixture(t *testing.T, pool *pgxpool.Pool, ctx context.Context) *assignmentFixture {
+func newAssignmentFixture(t *testing.T, ctx context.Context, pool *pgxpool.Pool) *assignmentFixture {
 	t.Helper()
 	suffix := fmt.Sprintf("assignment-%d", time.Now().UnixNano())
 	var userID int64

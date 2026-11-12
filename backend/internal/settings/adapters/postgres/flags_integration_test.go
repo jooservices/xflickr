@@ -114,15 +114,15 @@ func TestFeatureFlagGetPostgres(t *testing.T) {
 	service := app.NewFeatureFlags(repository)
 	handler := settingshttp.Handler{Flags: service}
 	flag := domain.FeatureFlag{Name: name, Enabled: false, Audience: domain.AudienceAll}
-	updateFlagViaHTTP(t, handler, ctx, flag)
-	first := visitFeatureFlag(t, handler, ctx, name)
+	updateFlagViaHTTP(t, ctx, handler, flag)
+	first := visitFeatureFlag(t, ctx, handler, name)
 	if first.Code != 200 || first.Header().Get("ETag") == "" {
 		t.Fatalf("first flag response = %d %v %s", first.Code, first.Header(), first.Body.String())
 	}
 
 	flag.Enabled = true
-	updateFlagViaHTTP(t, handler, ctx, flag)
-	second := visitFeatureFlag(t, handler, ctx, name)
+	updateFlagViaHTTP(t, ctx, handler, flag)
+	second := visitFeatureFlag(t, ctx, handler, name)
 	var body struct {
 		Data struct {
 			Enabled bool `json:"enabled"`
@@ -199,7 +199,7 @@ func inspectFeatureFlagPlan(node featureFlagPlanNode) (seqScan, primaryKey bool)
 	return seqScan, primaryKey
 }
 
-func visitFeatureFlag(t *testing.T, handler settingshttp.Handler, ctx context.Context, name string) *httptest.ResponseRecorder {
+func visitFeatureFlag(t *testing.T, ctx context.Context, handler settingshttp.Handler, name string) *httptest.ResponseRecorder {
 	t.Helper()
 	response, err := handler.GetAdminFlag(ctx, gen.GetAdminFlagRequestObject{Name: name})
 	if err != nil {
@@ -212,7 +212,7 @@ func visitFeatureFlag(t *testing.T, handler settingshttp.Handler, ctx context.Co
 	return recorder
 }
 
-func updateFlagViaHTTP(t *testing.T, handler settingshttp.Handler, ctx context.Context, flag domain.FeatureFlag) {
+func updateFlagViaHTTP(t *testing.T, ctx context.Context, handler settingshttp.Handler, flag domain.FeatureFlag) {
 	t.Helper()
 	response, err := handler.UpdateAdminFlags(ctx, gen.UpdateAdminFlagsRequestObject{Body: &gen.UpdateAdminFlagsRequest{
 		Flags: []gen.FeatureFlag{{

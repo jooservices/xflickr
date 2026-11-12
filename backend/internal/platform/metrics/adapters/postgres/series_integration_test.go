@@ -158,8 +158,10 @@ func TestReadSeriesUnicodeDimensions(t *testing.T) {
 	dimension := strings.Repeat("é", 128)
 	from := time.Date(2026, 11, 1, 8, 0, 0, 0, time.UTC)
 	cleanupSeriesSamples(t, pool, dimension)
-	sample := domain.Sample{Name: domain.MetricQueueJobsAvailable,
-		Labels: map[string]string{"queue": dimension, "role": dimension, "node": dimension}, At: from, Value: 17}
+	sample := domain.Sample{
+		Name:   domain.MetricQueueJobsAvailable,
+		Labels: map[string]string{"queue": dimension, "role": dimension, "node": dimension}, At: from, Value: 17,
+	}
 	if err := store.WriteBatch(t.Context(), []domain.Sample{sample}); err != nil {
 		t.Fatal(err)
 	}

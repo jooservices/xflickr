@@ -256,7 +256,7 @@ func TestClientDoesNotFollowRedirect(t *testing.T) {
 	}))
 	defer target.Close()
 	var sourceRequests atomic.Int32
-	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		sourceRequests.Add(1)
 		w.Header().Set("Location", target.URL)
 		w.WriteHeader(http.StatusTemporaryRedirect)

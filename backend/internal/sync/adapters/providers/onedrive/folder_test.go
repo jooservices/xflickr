@@ -123,11 +123,11 @@ func TestEnsureAlbumRejectsUnresolvedCreateConflict(t *testing.T) {
 			case r.URL.Path == "/me/drive/special/approot":
 				writeJSON(t, w, http.StatusOK, `{"id":"root-1","folder":{}}`)
 			case r.Method == http.MethodGet:
-				if lookups.Add(1) == 1 {
+				notFound := lookups.Add(1) == 1
+				switch {
+				case notFound || response == "":
 					w.WriteHeader(http.StatusNotFound)
-				} else if response == "" {
-					w.WriteHeader(http.StatusNotFound)
-				} else {
+				default:
 					writeJSON(t, w, http.StatusOK, response)
 				}
 			case r.Method == http.MethodPost:
@@ -178,17 +178,16 @@ func TestEnsureAlbumMapsErrors(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/me/drive/special/approot" {
-					if test.stage == "root" {
-						respond(t, w, test.status, test.response)
-					} else {
-						writeJSON(t, w, http.StatusOK, `{"id":"root-1","folder":{}}`)
-					}
-				} else if r.Method == http.MethodGet && test.stage == "lookup" {
+				switch {
+				case r.URL.Path == "/me/drive/special/approot" && test.stage == "root":
 					respond(t, w, test.status, test.response)
-				} else if r.Method == http.MethodPost && test.stage == "create" {
+				case r.URL.Path == "/me/drive/special/approot":
+					writeJSON(t, w, http.StatusOK, `{"id":"root-1","folder":{}}`)
+				case r.Method == http.MethodGet && test.stage == "lookup":
 					respond(t, w, test.status, test.response)
-				} else {
+				case r.Method == http.MethodPost && test.stage == "create":
+					respond(t, w, test.status, test.response)
+				default:
 					w.WriteHeader(http.StatusNotFound)
 				}
 			}))
