@@ -263,5 +263,4 @@ func TestNewRejectsInvalidDependencies(t *testing.T) {
 			}
 		})
 	}
-
 }

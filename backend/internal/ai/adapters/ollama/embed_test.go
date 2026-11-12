@@ -108,7 +108,7 @@ func TestEmbedRejectsInputBeyondContextWindow(t *testing.T) {
 	})
 	client := newClient(t, server, time.Second, 1)
 
-	assertEmbedError(t, client, t.Context(), []string{text})
+	assertEmbedError(t, t.Context(), client, []string{text})
 	if !providerRejected.Load() {
 		t.Fatal("provider did not reject the input beyond its context window")
 	}
@@ -250,7 +250,7 @@ func TestEmbedProviderFailureAndCancellation(t *testing.T) {
 			http.Error(w, `{"error":"unavailable"}`, http.StatusServiceUnavailable)
 		})
 		client := newClient(t, server, time.Second, 1)
-		assertEmbedError(t, client, t.Context(), []string{"text"})
+		assertEmbedError(t, t.Context(), client, []string{"text"})
 	})
 
 	t.Run("embed HTTP failure", func(t *testing.T) {
@@ -262,7 +262,7 @@ func TestEmbedProviderFailureAndCancellation(t *testing.T) {
 			http.Error(w, `{"error":"unavailable"}`, http.StatusServiceUnavailable)
 		})
 		client := newClient(t, server, time.Second, 1)
-		assertEmbedError(t, client, t.Context(), []string{"text"})
+		assertEmbedError(t, t.Context(), client, []string{"text"})
 	})
 
 	t.Run("timeout", func(t *testing.T) {
@@ -348,7 +348,7 @@ func TestEmbedSharesBreakerWithCaptioner(t *testing.T) {
 	})
 	client := newClient(t, server, time.Second, 1)
 	for range 4 {
-		assertEmbedError(t, client, t.Context(), []string{"text"})
+		assertEmbedError(t, t.Context(), client, []string{"text"})
 	}
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -376,7 +376,7 @@ func TestEmbedSharesBreakerWithCaptioner(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("canceled Embed() did not return")
 	}
-	assertEmbedError(t, client, t.Context(), []string{"text"})
+	assertEmbedError(t, t.Context(), client, []string{"text"})
 	if _, err := client.Describe(t.Context(), []byte("image")); !errors.Is(err, aiapp.ErrCircuitOpen) {
 		t.Fatalf("Describe() error = %v, want shared open circuit", err)
 	}
@@ -451,7 +451,7 @@ func TestEmbedSharesConcurrencyWithCaptioner(t *testing.T) {
 	}
 }
 
-func assertEmbedError(t *testing.T, client *Client, ctx context.Context, texts []string) {
+func assertEmbedError(t *testing.T, ctx context.Context, client *Client, texts []string) {
 	t.Helper()
 	vectors, info, err := client.Embed(ctx, texts)
 	if err == nil || vectors != nil || info != (aiapp.ModelInfo{}) {

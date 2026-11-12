@@ -192,7 +192,7 @@ func TestDuplicateEgressEligibility(t *testing.T) {
 				coolingUntil = timePointer(coolingAt)
 			}
 			if test.currentIP != "" {
-				insertDuplicateNode(t, pool, ctx, prefix+"-candidate", test.roles, test.state, test.candidateIP, timePointer(at.Add(-test.heartbeatAge)), coolingUntil)
+				insertDuplicateNode(t, ctx, pool, prefix+"-candidate", test.roles, test.state, test.candidateIP, timePointer(at.Add(-test.heartbeatAge)), coolingUntil)
 			}
 			duplicate, err := repository.FindDuplicateEgress(ctx, domain.Node{Name: prefix + "-current", EgressIP: test.currentIP}, at)
 			if err != nil {
@@ -217,8 +217,8 @@ func TestDuplicateEgressPlanUsesIndex(t *testing.T) {
 	const fixtureSize = 400_000
 	at := time.Now().UTC().Truncate(time.Microsecond)
 	const egressIP = "198.19.0.1"
-	insertDuplicateNode(t, pool, ctx, prefix+"-current", []string{"crawl"}, "online", egressIP, timePointer(at), nil)
-	insertDuplicateNode(t, pool, ctx, prefix+"-match", []string{"crawl"}, "online", egressIP, timePointer(at), nil)
+	insertDuplicateNode(t, ctx, pool, prefix+"-current", []string{"crawl"}, "online", egressIP, timePointer(at), nil)
+	insertDuplicateNode(t, ctx, pool, prefix+"-match", []string{"crawl"}, "online", egressIP, timePointer(at), nil)
 	command, err := pool.Exec(ctx, `
 INSERT INTO nodes (name, roles, state, egress_ip, last_heartbeat_at, token_hash)
 SELECT $1 || '-' || lpad(fixture.id::text, 6, '0'), ARRAY['crawl'], 'online',
@@ -258,7 +258,7 @@ func openDuplicateIntegrationDatabase(t *testing.T) *pgxpool.Pool {
 	return dbtest.Open(t, cfg)
 }
 
-func insertDuplicateNode(t *testing.T, pool *pgxpool.Pool, ctx context.Context, name string, roles []string, state, egressIP string, heartbeatAt, coolingUntil *time.Time) {
+func insertDuplicateNode(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string, roles []string, state, egressIP string, heartbeatAt, coolingUntil *time.Time) {
 	t.Helper()
 	if _, err := pool.Exec(ctx, `
 INSERT INTO nodes (name, roles, state, egress_ip, last_heartbeat_at, cooling_until, token_hash)
