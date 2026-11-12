@@ -58,6 +58,14 @@ regeneration changes any tracked or untracked file, so a migration or query
 change that is not followed by committed sqlc output cannot merge. Running
 `make gen` twice on a clean tree must produce no diff.
 
+## Migration versions
+
+`make precheck` fails when two files in `backend/migrations` share a version or
+a `.sql` file is not named `YYYYMMDDHHMMSS_name.sql`; CI runs it too. Run
+`make next-migration NAME=add_thing` to print a free filename: it runs
+`git fetch origin` and picks a version above the working tree, `HEAD`, and every
+local and `origin/*` branch, so no version is reused.
+
 ## Password hashing
 
 The API uses Argon2id for account passwords. The hash cost is configurable with

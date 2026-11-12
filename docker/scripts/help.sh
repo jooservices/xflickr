@@ -13,6 +13,8 @@ XFlickr developer commands:
   make gen-stale        Fail when make gen has changed any file.
   make ui-spec-check    Verify POC tokens, icons, component state tables, and component markdown.
   make check            Run all release verification steps.
+  make precheck         Fail on duplicate or malformed migration versions.
+  make next-migration NAME=x  Print a new migration filename above every known version.
   make dev-up           Check shared service health and worktree databases.
   make dev-down         Stop XFlickr-owned development services, if any.
   make develop-up       Build and start the XFlickr develop application container.
