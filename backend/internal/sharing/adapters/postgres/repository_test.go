@@ -53,6 +53,11 @@ func (t txStub) QueryRow(_ context.Context, query string, _ ...any) pgx.Row {
 	return t.selectRow
 }
 
+// Query is required by the generated DBTX; the sharing queries are :one and use QueryRow.
+func (t txStub) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	return nil, errors.New("sharing: unexpected multi-row query")
+}
+
 func (t txStub) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
 	if t.execs != nil {
 		*t.execs++
@@ -117,6 +122,38 @@ func TestGetDefaultAndStoredSettings(t *testing.T) {
 				t.Fatalf("setting = %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestCountSharedRecords(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		row     rowStub
+		want    int64
+		wantErr bool
+	}{
+		{name: "shared records", row: rowStub{values: []any{int64(3)}}, want: 3},
+		{name: "no shared records", row: rowStub{values: []any{int64(0)}}},
+		{name: "query error", row: rowStub{err: errors.New("query")}, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &Repository{run: func(_ context.Context, fn func(settingTx) error) error {
+				return fn(txStub{selectRow: tc.row})
+			}}
+			got, err := repo.CountShared(context.Background(), 7)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("CountShared() error = %v", err)
+			}
+			if !tc.wantErr && got != tc.want {
+				t.Fatalf("count = %d, want %d", got, tc.want)
+			}
+		})
+	}
+	if _, err := (&Repository{run: func(context.Context, func(settingTx) error) error { return nil }}).CountShared(context.Background(), 0); err == nil {
+		t.Fatal("expected missing user error")
+	}
+	if _, err := (&Repository{run: func(context.Context, func(settingTx) error) error { return nil }}).CountShared(nil, 1); err == nil {
+		t.Fatal("expected missing context error")
 	}
 }
 

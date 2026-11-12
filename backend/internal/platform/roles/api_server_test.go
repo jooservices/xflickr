@@ -94,6 +94,10 @@ func (r *sharingRepositoryStub) Get(_ context.Context, userID int64) (sharingdom
 	return sharingdomain.Setting{UserID: userID, Enabled: r.got.Enabled, ChangedAt: r.got.ChangedAt}, nil
 }
 
+func (r *sharingRepositoryStub) CountShared(context.Context, int64) (int64, error) {
+	return 0, nil
+}
+
 type opsStatusStub struct{ value ops.Status }
 
 func (s opsStatusStub) Status(context.Context) (ops.Status, error) { return s.value, nil }

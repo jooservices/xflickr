@@ -152,6 +152,8 @@ export * from './sessionResource';
 export * from './sessionSummary';
 export * from './sharingEnvelope';
 export * from './sharingSetting';
+export * from './sharingSummary';
+export * from './sharingSummaryEnvelope';
 export * from './starContactRequest';
 export * from './updateAdminFlagsRequest';
 export * from './updateAdminPlansRequest';

@@ -313,6 +313,10 @@ func (s *identityJourneySharing) Get(_ context.Context, userID int64) (sharingdo
 	return s.setting, nil
 }
 
+func (s *identityJourneySharing) CountShared(context.Context, int64) (int64, error) {
+	return 0, nil
+}
+
 type identityJourneyEnvelope struct {
 	Success bool            `json:"success"`
 	Code    int             `json:"code"`

@@ -20,6 +20,14 @@ func (s Setting) Validate() error {
 	return nil
 }
 
+// Summary is a user's sharing choice with the number of distinct eligible
+// public records that the user contributes and others can see. The count is
+// zero while sharing is off.
+type Summary struct {
+	Setting           Setting
+	SharedRecordCount int64
+}
+
 // Changed is published whenever the stored sharing choice changes.
 type Changed struct {
 	UserID    int64     `json:"user_id"`

@@ -8,6 +8,7 @@ that serve it, or `MISSING`.
 | --- | --- | --- |
 | `/admin/calls/stats` | `/admin/calls/stats` | `/admin/calls/stats` |
 | `/admin/flags` | `/admin/flags` | `/admin/flags` |
+| `/admin/incidents` | `/admin/incidents` | `/admin/incidents` |
 | `/admin/metrics` | `/admin/metrics` | `/admin/metrics` |
 | `/admin/nodes` | `/admin/nodes` | `/admin/nodes` |
 | `/admin/ops/status` | `/admin/ops/status` | `/admin/ops/status` |
@@ -20,8 +21,10 @@ that serve it, or `MISSING`.
 | `/albums` | `/albums` | `/albums` |
 | `/albums/{}/photos` | `/albums/{id}/photos` | `/albums/{id}/photos` |
 | `/api/v1` | `/api/v1` | `/api/v1` |
+| `/api/v1/admin/flags/{}` | `/api/v1/admin/flags/{name}` | `/api/v1/admin/flags/{name}` |
 | `/api/v1/authentication-options` | `/api/v1/authentication-options` | `/api/v1/authentication-options` |
 | `/api/v1/me` | `/api/v1/me` | `/api/v1/me` |
+| `/api/v1/me/home` | `/api/v1/me/home` | `/api/v1/me/home` |
 | `/api/v1/me/password` | `/api/v1/me/password` | `/api/v1/me/password` |
 | `/api/v1/me/sessions` | `/api/v1/me/sessions` | `/api/v1/me/sessions` |
 | `/api/v1/me/sessions/{}` | `/api/v1/me/sessions/{id}` | `/api/v1/me/sessions/{id}` |
@@ -46,6 +49,7 @@ that serve it, or `MISSING`.
 | `/keys` | `/keys` | `/keys` |
 | `/keys/{}` | `/keys/{id}` | `/keys/{id}` |
 | `/keys/{}/quota` | `/keys/{id}/quota` | `/keys/{id}/quota` |
+| `/me/albums` | `/me/albums` | `/me/albums` |
 | `/me/contacts/{}/select` | `/me/contacts/{nsid}/select` | `/me/contacts/{nsid}/select` |
 | `/me/contacts/{}/star` | `/me/contacts/{nsid}/star` | `/me/contacts/{nsid}/star` |
 | `/me/crawl` | `/me/crawl` | `/me/crawl` |

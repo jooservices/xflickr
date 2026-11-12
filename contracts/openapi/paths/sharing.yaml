@@ -5,12 +5,12 @@ setting:
     summary: Get the current user's sharing choice
     responses:
       '200':
-        description: Persisted sharing setting
+        description: Persisted sharing setting and shared record count
         headers:
           Cache-Control: { schema: { type: string } }
         content:
           application/json:
-            schema: { $ref: ../schemas/sharing.yaml#/SharingEnvelope }
+            schema: { $ref: ../schemas/sharing.yaml#/SharingSummaryEnvelope }
       '401':
         description: Authentication required
         content:

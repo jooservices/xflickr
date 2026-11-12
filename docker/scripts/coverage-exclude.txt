@@ -3,5 +3,6 @@ cmd/* | Command entry points are exercised through process-level flows, not pack
 internal/catalog/adapters/postgres/gen | sqlc-generated PostgreSQL query code.
 internal/platform/adapters/postgres/gen | sqlc-generated PostgreSQL query code.
 internal/settings/adapters/postgres/gen | sqlc-generated PostgreSQL query code.
+internal/sharing/adapters/postgres/gen | sqlc-generated PostgreSQL query code.
 internal/platform/api/gen | oapi-codegen-generated HTTP server code.
 internal/media/blobstoretest | Contract suite helper, exercised by the blob store adapters and fakes that run it.

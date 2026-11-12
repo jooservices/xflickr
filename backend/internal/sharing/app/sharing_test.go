@@ -23,11 +23,16 @@ func (r *repositoryStub) Set(_ context.Context, setting domain.Setting) (domain.
 
 type readerStub struct {
 	setting domain.Setting
+	shared  int64
 	err     error
 }
 
 func (r readerStub) Get(context.Context, int64) (domain.Setting, error) {
 	return r.setting, r.err
+}
+
+func (r readerStub) CountShared(context.Context, int64) (int64, error) {
+	return r.shared, r.err
 }
 
 func TestChangeExecute(t *testing.T) {
@@ -56,10 +61,10 @@ func TestReadExecute(t *testing.T) {
 	if _, err := (Read{}).Execute(context.Background(), 3); err == nil {
 		t.Fatal("expected missing reader error")
 	}
-	want := domain.Setting{UserID: 3, Enabled: true}
-	got, err := (Read{Repository: readerStub{setting: want}}).Execute(context.Background(), 3)
+	want := domain.Summary{Setting: domain.Setting{UserID: 3, Enabled: true}, SharedRecordCount: 4}
+	got, err := (Read{Repository: readerStub{setting: want.Setting, shared: 4}}).Execute(context.Background(), 3)
 	if err != nil || got != want {
-		t.Fatalf("setting = %+v, err = %v", got, err)
+		t.Fatalf("summary = %+v, err = %v", got, err)
 	}
 	storageErr := errors.New("storage")
 	if _, err := (Read{Repository: readerStub{err: storageErr}}).Execute(context.Background(), 3); !errors.Is(err, storageErr) {

@@ -696,6 +696,8 @@ export const ChangeMyPasswordResponse = zod.void();
 /**
  * @summary Get the current user's sharing choice
  */
+export const getMeSharingResponseTwoDataSharedRecordCountMin = 0;
+
 export const GetMeSharingResponse = zod
   .object({
     success: zod.literal(true),
@@ -711,6 +713,12 @@ export const GetMeSharingResponse = zod
       data: zod.object({
         enabled: zod.boolean(),
         changed_at: zod.iso.datetime({ offset: true }).nullable(),
+        shared_record_count: zod
+          .int()
+          .min(getMeSharingResponseTwoDataSharedRecordCountMin)
+          .describe(
+            'Distinct eligible public records this user contributes that other users can see; zero while sharing is off.',
+          ),
         links: zod
           .object({
             self: zod.object({

@@ -26,6 +26,10 @@ func (r sharingRepo) Get(_ context.Context, userID int64) (domain.Setting, error
 	return domain.Setting{UserID: userID, Enabled: true, ChangedAt: time.Unix(1, 0).UTC()}, r.err
 }
 
+func (r sharingRepo) CountShared(context.Context, int64) (int64, error) {
+	return 3, r.err
+}
+
 func actor(id int64) func(context.Context) (int64, bool) {
 	return func(context.Context) (int64, bool) { return id, id > 0 }
 }
@@ -85,6 +89,7 @@ func TestGetMeSharing(t *testing.T) {
 	}{
 		{name: "no actor", status: http.StatusUnauthorized, content: "application/problem+json", bodyPart: "/problems/unauthenticated"},
 		{name: "success", handler: Handler{Read: app.Read{Repository: sharingRepo{}}, ActorID: actor(7)}, status: http.StatusOK, content: "application/json", bodyPart: `"enabled":true`},
+		{name: "shared record count", handler: Handler{Read: app.Read{Repository: sharingRepo{}}, ActorID: actor(7)}, status: http.StatusOK, content: "application/json", bodyPart: `"shared_record_count":3`},
 		{name: "repository error", handler: Handler{Read: app.Read{Repository: sharingRepo{err: errors.New("db")}}, ActorID: actor(7)}, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

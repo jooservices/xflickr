@@ -31,3 +31,13 @@ sql:
         out: internal/settings/adapters/postgres/gen
         sql_package: pgx/v5
         emit_interface: true
+  - name: sharing
+    engine: postgresql
+    schema: migrations
+    queries: internal/sharing/adapters/postgres/queries
+    gen:
+      go:
+        package: gen
+        out: internal/sharing/adapters/postgres/gen
+        sql_package: pgx/v5
+        emit_interface: true
