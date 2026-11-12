@@ -104,14 +104,14 @@ func (c *Client) UploadBytes(ctx context.Context, asset app.Asset) (string, erro
 		return "", fmt.Errorf("%w: uploaded SHA-256 does not match metadata", app.ErrInvalidAsset)
 	}
 
-	token, err := readUploadToken(response.Body, ctx)
+	token, err := readUploadToken(ctx, response.Body)
 	if err != nil {
 		return "", err
 	}
 	return token, nil
 }
 
-func readUploadToken(body io.Reader, ctx context.Context) (string, error) {
+func readUploadToken(ctx context.Context, body io.Reader) (string, error) {
 	content, err := io.ReadAll(io.LimitReader(body, maxUploadTokenBytes+1))
 	if err != nil {
 		if contextErr := ctx.Err(); contextErr != nil {
@@ -165,7 +165,16 @@ func (r *countingReader) Read(p []byte) (int, error) {
 	if finished {
 		r.finish()
 	}
-	return n, err
+	return n, wrapReadError(err)
+}
+
+// wrapReadError adds the upload context to a body read failure. io.EOF is returned unchanged because io.Reader
+// callers compare it directly to mark the end of the stream.
+func wrapReadError(err error) error {
+	if err == nil || errors.Is(err, io.EOF) {
+		return err
+	}
+	return fmt.Errorf("gphotos: read upload body: %w", err)
 }
 
 func (r *countingReader) Close() error {
@@ -186,7 +195,10 @@ func (r *countingReader) Close() error {
 	if activeReads == 0 {
 		r.finish()
 	}
-	return err
+	if err != nil {
+		return fmt.Errorf("gphotos: close upload body: %w", err)
+	}
+	return nil
 }
 
 func (r *countingReader) wait(ctx context.Context) bool {
