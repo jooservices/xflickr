@@ -123,18 +123,14 @@
   "defaults.zip": "ZIP hours",
   "defaults.share": "Resource share",
   "overview.title": "Overview",
-  "overview.subtitle": "Key quota and queue at a glance.",
+  "overview.subtitle": "Key quota at a glance.",
   "overview.refresh": "Refresh",
   "overview.error": "Could not load the overview numbers.",
   "overview.kpis": "Key numbers",
   "overview.keys-at-quota": "Keys at quota",
   "overview.of-keys": " of {{count}} keys",
-  "overview.oldest-age": "Oldest queued item",
-  "overview.seconds": "{{count}} s",
-  "overview.backlog": "Queued calls",
-  "overview.ready": "Ready jobs",
   "overview.links": "Related views",
   "overview.link-quota": "API quota",
-  "overview.link-pipeline": "Pipeline",
-  "overview.pending-sections": "Healthy nodes, open incidents, throughput and recent events appear here once the overview API is available."
+  "overview.pending-sections": "Queue depth, healthy nodes, open incidents, throughput and recent events appear here once their data sources are available.",
+  "overview.stale": "Showing the last successful numbers; the latest refresh failed or is late."
 }
