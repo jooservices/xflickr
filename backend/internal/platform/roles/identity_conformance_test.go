@@ -11,15 +11,10 @@ import (
 	"testing"
 	"time"
 
-	accountshttp "github.com/jooservices/xflickr/internal/accounts/adapters/http"
-	crawlhttp "github.com/jooservices/xflickr/internal/crawl/adapters/http"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
-	mediahttp "github.com/jooservices/xflickr/internal/media/adapters/http"
 	"github.com/jooservices/xflickr/internal/platform/api/rest"
-	quotahttp "github.com/jooservices/xflickr/internal/quota/adapters/http"
-	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
 	sharinghttp "github.com/jooservices/xflickr/internal/sharing/adapters/http"
 	sharingapp "github.com/jooservices/xflickr/internal/sharing/app"
 	sharingdomain "github.com/jooservices/xflickr/internal/sharing/domain"
@@ -343,13 +338,13 @@ func TestIdentityLinkRelationsResolve(t *testing.T) {
 		Password:        identityapp.ChangePassword{Repository: users, Sessions: sessions, Limiter: limiter, Params: params},
 	}
 	sharing := &identityJourneySharing{}
-	router := newAPIRouterWithServices(identity, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{}, crawlhttp.CrawlHandler{}, quotahttp.QuotaHandler{}, sharinghttp.Handler{
+	router := newTestAPIRouter(apiRouterOptions{Identity: identity, Sharing: sharinghttp.Handler{
 		Change: sharingapp.Change{Repository: sharing}, Read: sharingapp.Read{Repository: sharing},
 		ActorID: func(ctx context.Context) (int64, bool) {
 			principal, ok := identityhttp.PrincipalFrom(ctx)
 			return principal.User.ID, ok
 		},
-	}, mediahttp.DownloadHandler{})
+	}})
 
 	csrf, sessionCookie := "", ""
 	send := func(method, path, body string, authenticated bool) *httptest.ResponseRecorder {
@@ -604,7 +599,7 @@ func TestIdentityConformance(t *testing.T) {
 	}
 
 	options := httptest.NewRecorder()
-	router = newAPIRouter(identityhttp.Handler{RegisterUseCase: identityapp.Register{Policy: identityJourneyRegistration(true)}, Sessions: stubSessions{}}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{})
+	router = newTestAPIRouter(apiRouterOptions{Identity: identityhttp.Handler{RegisterUseCase: identityapp.Register{Policy: identityJourneyRegistration(true)}, Sessions: stubSessions{}}})
 	router.ServeHTTP(options, httptest.NewRequest(http.MethodGet, "/api/v1/authentication-options", nil))
 	if options.Code != http.StatusOK || options.Header().Get("Content-Type") != "application/json" || options.Header().Get("Cache-Control") != "private, no-store" || options.Header().Get("ETag") != "" {
 		t.Fatalf("authentication options = %d %q %q %s", options.Code, options.Header().Get("Content-Type"), options.Header().Get("Cache-Control"), options.Body.String())

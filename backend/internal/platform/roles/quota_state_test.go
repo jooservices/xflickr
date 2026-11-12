@@ -13,15 +13,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	redisv9 "github.com/redis/go-redis/v9"
 
-	accountshttp "github.com/jooservices/xflickr/internal/accounts/adapters/http"
-	crawlhttp "github.com/jooservices/xflickr/internal/crawl/adapters/http"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	maintenanceapp "github.com/jooservices/xflickr/internal/platform/maintenance/app"
 	maintenancedomain "github.com/jooservices/xflickr/internal/platform/maintenance/domain"
-	quotahttp "github.com/jooservices/xflickr/internal/quota/adapters/http"
 	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
-	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
 )
 
 func TestNodeIDPrefersConfiguredID(t *testing.T) {
@@ -192,7 +188,7 @@ type nopSink struct{}
 func (nopSink) Send(context.Context, []quotaapp.Event) error { return nil }
 
 func TestAPIRouterServesQuotaEndpointsBehindAuthentication(t *testing.T) {
-	router := newAPIRouterWithQuota(identityhttp.Handler{Version: "t", Sessions: stubSessions{}}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{}, crawlhttp.CrawlHandler{}, quotahttp.QuotaHandler{})
+	router := newTestAPIRouter(apiRouterOptions{Identity: identityhttp.Handler{Version: "t", Sessions: stubSessions{}}})
 	for _, path := range []string{"/keys/1/quota", "/admin/quota"} {
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
@@ -208,7 +204,7 @@ func TestAPIRouterServesSPAForHTMLNavigationOnPagePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("XFLICKR_WEB_DIR", root)
-	router := newAPIRouterWithQuota(identityhttp.Handler{Version: "t", Sessions: stubSessions{}}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{}, crawlhttp.CrawlHandler{}, quotahttp.QuotaHandler{})
+	router := newTestAPIRouter(apiRouterOptions{Identity: identityhttp.Handler{Version: "t", Sessions: stubSessions{}}})
 
 	for _, path := range []string{"/register", "/keys", "/admin/nodes"} {
 		t.Run(path, func(t *testing.T) {

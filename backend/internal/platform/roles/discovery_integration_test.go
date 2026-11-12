@@ -35,7 +35,8 @@ func TestDiscoveryLinkJourneyIntegration(t *testing.T) {
 	pool := dbtest.Open(t, dbCfg)
 	cfg := config.Config{DB: dbCfg, Blob: config.BlobConfig{Driver: "local", LocalDir: t.TempDir()}, Crypto: config.CryptoConfig{MasterKeys: "integration:" + base64.StdEncoding.EncodeToString(make([]byte, 32)), ActiveMasterKeyID: "integration"}, Identity: config.IdentityConfig{Argon2Memory: 8192, Argon2Iterations: 1, Argon2Parallelism: 1, Argon2SaltLength: 16, Argon2KeyLength: 32}}
 	hub := platformsse.NewHub(8)
-	handler, err := buildConfiguredAPIHandlerWithHub(pool, nil, cfg, "discovery-integration", hub)
+	built, err := buildAPIHandlerSet(apiBuildOptions{Pool: pool, Config: cfg, Version: "discovery-integration", Hub: hub})
+	handler := built.public
 	if err != nil {
 		t.Fatal(err)
 	}

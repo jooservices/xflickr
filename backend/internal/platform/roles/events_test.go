@@ -12,19 +12,13 @@ import (
 	"testing"
 	"time"
 
-	accountshttp "github.com/jooservices/xflickr/internal/accounts/adapters/http"
-	crawlhttp "github.com/jooservices/xflickr/internal/crawl/adapters/http"
 	crawlapp "github.com/jooservices/xflickr/internal/crawl/app"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	"github.com/jooservices/xflickr/internal/identity/domain"
-	mediahttp "github.com/jooservices/xflickr/internal/media/adapters/http"
 	"github.com/jooservices/xflickr/internal/platform/api/gen"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	platformsse "github.com/jooservices/xflickr/internal/platform/sse"
-	quotahttp "github.com/jooservices/xflickr/internal/quota/adapters/http"
-	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
-	sharinghttp "github.com/jooservices/xflickr/internal/sharing/adapters/http"
 )
 
 type crawlControlStub struct{ status crawlapp.CrawlStatus }
@@ -164,7 +158,7 @@ func TestAPIStreamEventsUsesLastEventID(t *testing.T) {
 
 func TestAPIRouterProtectsGeneratedSSEEndpoint(t *testing.T) {
 	handler := platformsse.Handler{Hub: platformsse.NewHub(2), Principal: sseUserID}
-	router := newAPIRouterWithServices(identityhttp.Handler{Version: "test", Sessions: stubSessions{}}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{}, crawlhttp.CrawlHandler{}, quotahttp.QuotaHandler{}, sharinghttp.Handler{}, mediahttp.DownloadHandler{}, handler)
+	router := newTestAPIRouter(apiRouterOptions{Identity: identityhttp.Handler{Version: "test", Sessions: stubSessions{}}, Stream: handler})
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/events", nil))
 	if response.Code != http.StatusUnauthorized {
@@ -193,7 +187,7 @@ func TestEventsRouteResumesWithLastEventIDAndIsolatesUsers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	router := newAPIRouterWithServices(identityhttp.Handler{Version: "test", Sessions: cookieSessions{}}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{}, crawlhttp.CrawlHandler{}, quotahttp.QuotaHandler{}, sharinghttp.Handler{}, mediahttp.DownloadHandler{}, platformsse.Handler{Hub: hub, Principal: sseUserID})
+	router := newTestAPIRouter(apiRouterOptions{Identity: identityhttp.Handler{Version: "test", Sessions: cookieSessions{}}, Stream: platformsse.Handler{Hub: hub, Principal: sseUserID}})
 	server := httptest.NewServer(router)
 	defer server.Close()
 	read := func(user, lastID string) string {

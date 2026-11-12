@@ -16,21 +16,14 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	accountshttp "github.com/jooservices/xflickr/internal/accounts/adapters/http"
 	heartbeatclient "github.com/jooservices/xflickr/internal/cluster/adapters/heartbeat"
 	clusterhttp "github.com/jooservices/xflickr/internal/cluster/adapters/http"
 	clusterpostgres "github.com/jooservices/xflickr/internal/cluster/adapters/postgres"
 	clusterapp "github.com/jooservices/xflickr/internal/cluster/app"
 	clusterdomain "github.com/jooservices/xflickr/internal/cluster/domain"
-	crawlhttp "github.com/jooservices/xflickr/internal/crawl/adapters/http"
-	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
-	mediahttp "github.com/jooservices/xflickr/internal/media/adapters/http"
 	opsdomain "github.com/jooservices/xflickr/internal/ops/domain"
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
-	quotahttp "github.com/jooservices/xflickr/internal/quota/adapters/http"
-	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
-	sharinghttp "github.com/jooservices/xflickr/internal/sharing/adapters/http"
 )
 
 func TestHeartbeatClientPersistsNode(t *testing.T) {
@@ -181,9 +174,9 @@ func TestDuplicateEgressHeartbeat(t *testing.T) {
 			t.Errorf("delete duplicate egress incident: %v", err)
 		}
 	})
-	insertHeartbeatNode(t, pool, ctx, currentName, []string{"crawl"}, "offline", egressIP, nil)
+	insertHeartbeatNode(t, ctx, pool, currentName, []string{"crawl"}, "offline", egressIP, nil)
 	duplicateHeartbeat := at.Add(-clusterdomain.WarningAfter)
-	insertHeartbeatNode(t, pool, ctx, duplicateName, []string{"crawl"}, "online", egressIP, &duplicateHeartbeat)
+	insertHeartbeatNode(t, ctx, pool, duplicateName, []string{"crawl"}, "online", egressIP, &duplicateHeartbeat)
 
 	service, err := buildNodeService(pool)
 	if err != nil {
@@ -371,7 +364,7 @@ func cleanupHeartbeatNodes(t *testing.T, pool *pgxpool.Pool, names []string) {
 	})
 }
 
-func insertHeartbeatNode(t *testing.T, pool *pgxpool.Pool, ctx context.Context, name string, roles []string, state, egressIP string, heartbeatAt *time.Time) {
+func insertHeartbeatNode(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string, roles []string, state, egressIP string, heartbeatAt *time.Time) {
 	t.Helper()
 	if _, err := pool.Exec(ctx, `
 INSERT INTO nodes (name, roles, state, egress_ip, last_heartbeat_at, token_hash)
@@ -413,11 +406,7 @@ func (opener *duplicateIncidentOpenerFake) Open(_ context.Context, incident opsd
 }
 
 func heartbeatTestRouters(service clusterapp.Nodes) apiHandlerSet {
-	return newAPIRoutersWithServices(
-		identityhttp.Handler{}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{},
-		crawlhttp.CrawlHandler{}, quotahttp.QuotaHandler{}, sharinghttp.Handler{}, mediahttp.DownloadHandler{},
-		clusterhttp.Handler{Service: service},
-	)
+	return newAPIRouterSet(apiRouterOptions{Nodes: clusterhttp.Handler{Service: service}})
 }
 
 type heartbeatPlanDocument []struct {

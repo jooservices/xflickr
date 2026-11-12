@@ -23,58 +23,30 @@ import (
 	sharinghttp "github.com/jooservices/xflickr/internal/sharing/adapters/http"
 )
 
-func newAPIRouter(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawlers ...crawlhttp.CrawlHandler) http.Handler {
-	var crawl crawlhttp.CrawlHandler
-	if len(crawlers) > 0 {
-		crawl = crawlers[0]
-	}
-	return newAPIRouterWithQuota(identity, keys, connect, plans, crawl, quotahttp.QuotaHandler{})
+// apiRouterOptions holds every handler the API mounts. A zero field is valid
+// and mounts that handler's routes with empty behaviour, as before.
+type apiRouterOptions struct {
+	Identity  identityhttp.Handler
+	Keys      accountshttp.KeyHandler
+	Connect   accountshttp.ConnectHandler
+	Plans     schedulehttp.Handler
+	Crawl     crawlhttp.CrawlHandler
+	Quota     quotahttp.QuotaHandler
+	Sharing   sharinghttp.Handler
+	Downloads mediahttp.DownloadHandler
+	Ops       opshttp.Handler
+	Stream    platformsse.Handler
+	Readiness *httpx.Readiness
+	Flags     settingshttp.Handler
+	Catalog   cataloghttp.Handler
+	Nodes     clusterhttp.Handler
+	Home      homehttp.Handler
 }
 
-func newAPIRouterWithQuota(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawl crawlhttp.CrawlHandler, quota quotahttp.QuotaHandler, sharings ...sharinghttp.Handler) http.Handler {
-	var sharing sharinghttp.Handler
-	if len(sharings) > 0 {
-		sharing = sharings[0]
-	}
-	return newAPIRouterWithServices(identity, keys, connect, plans, crawl, quota, sharing, mediahttp.DownloadHandler{})
-}
-
-func newAPIRouterWithServices(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawl crawlhttp.CrawlHandler, quota quotahttp.QuotaHandler, sharing sharinghttp.Handler, downloads mediahttp.DownloadHandler, options ...any) http.Handler {
-	return newAPIRoutersWithServices(identity, keys, connect, plans, crawl, quota, sharing, downloads, options...).public
-}
-
-func newAPIRoutersWithServices(identity identityhttp.Handler, keys accountshttp.KeyHandler, connect accountshttp.ConnectHandler, plans schedulehttp.Handler, crawl crawlhttp.CrawlHandler, quota quotahttp.QuotaHandler, sharing sharinghttp.Handler, downloads mediahttp.DownloadHandler, options ...any) apiHandlerSet {
-	var opsHandler opshttp.Handler
-	var flagsHandler settingshttp.Handler
-	var catalogHandler cataloghttp.Handler
-	var nodesHandler clusterhttp.Handler
-	var streamHandler platformsse.Handler
-	var readiness *httpx.Readiness
-	var homeHandler homehttp.Handler
-	for _, option := range options {
-		if ops, ok := option.(opshttp.Handler); ok {
-			opsHandler = ops
-		}
-		if events, ok := option.(platformsse.Handler); ok {
-			streamHandler = events
-		}
-		if probe, ok := option.(*httpx.Readiness); ok {
-			readiness = probe
-		}
-		if flags, ok := option.(settingshttp.Handler); ok {
-			flagsHandler = flags
-		}
-		if catalog, ok := option.(cataloghttp.Handler); ok {
-			catalogHandler = catalog
-		}
-		if nodes, ok := option.(clusterhttp.Handler); ok {
-			nodesHandler = nodes
-		}
-		if home, ok := option.(homehttp.Handler); ok {
-			homeHandler = home
-		}
-	}
-	server := apiServer{Handler: identity, KeyHandler: keys, ConnectHandler: connect, CrawlHandler: crawl, QuotaHandler: quota, Sharing: sharing, Home: homeHandler, Downloads: downloads, Ops: opsHandler, Stream: streamHandler, Readiness: readiness, Flags: flagsHandler, Catalog: catalogHandler, Nodes: nodesHandler, planHandler: planHandler{Handler: plans}}
+// newAPIRouterSet builds the public and internal routers from one server.
+func newAPIRouterSet(opts apiRouterOptions) apiHandlerSet {
+	identity := opts.Identity
+	server := apiServer{Handler: identity, KeyHandler: opts.Keys, ConnectHandler: opts.Connect, CrawlHandler: opts.Crawl, QuotaHandler: opts.Quota, Sharing: opts.Sharing, Home: opts.Home, Downloads: opts.Downloads, Ops: opts.Ops, Stream: opts.Stream, Readiness: opts.Readiness, Flags: opts.Flags, Catalog: opts.Catalog, Nodes: opts.Nodes, planHandler: planHandler{Handler: opts.Plans}}
 	publicRouter := chi.NewRouter()
 	serveWebAssets(publicRouter, os.Getenv("XFLICKR_WEB_DIR"))
 	publicRouter.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +76,7 @@ func newAPIRoutersWithServices(identity identityhttp.Handler, keys accountshttp.
 	internalRouter := chi.NewRouter()
 	internalRouter.Use(clusterhttp.InternalHeartbeatOnly)
 	internalRouter.Use(identityhttp.RequestBodyLimit)
-	internalRouter.Use(clusterhttp.NodeAuthMiddleware(nodesHandler.Service))
+	internalRouter.Use(clusterhttp.NodeAuthMiddleware(opts.Nodes.Service))
 	internalStrict := gen.NewStrictHandlerWithOptions(server, nil, gen.StrictHTTPServerOptions{RequestErrorHandlerFunc: badRequest, ResponseErrorHandlerFunc: internalError})
 	internal := gen.HandlerWithOptions(internalStrict, gen.ChiServerOptions{BaseRouter: internalRouter, ErrorHandlerFunc: badRequest})
 	return apiHandlerSet{public: public, internal: internal}

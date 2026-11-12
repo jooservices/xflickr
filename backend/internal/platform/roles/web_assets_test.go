@@ -16,11 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	accountshttp "github.com/jooservices/xflickr/internal/accounts/adapters/http"
-	crawlhttp "github.com/jooservices/xflickr/internal/crawl/adapters/http"
-	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	"github.com/jooservices/xflickr/internal/platform/config"
-	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
 )
 
 func TestDatabaseRolesRejectInvalidConfiguration(t *testing.T) {
@@ -57,7 +53,7 @@ func TestDatabaseRolesStopForUnavailableContext(t *testing.T) {
 }
 
 func TestAPIRouterUsesProvidedCrawlHandler(t *testing.T) {
-	router := newAPIRouter(identityhttp.Handler{}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{}, crawlhttp.CrawlHandler{})
+	router := newTestAPIRouter(apiRouterOptions{})
 	if router == nil {
 		t.Fatal("API router is nil")
 	}
@@ -77,7 +73,7 @@ func TestBuildIdentityHandlerRejectsInvalidPasswordSettings(t *testing.T) {
 	if err == nil {
 		t.Fatal("identity handler accepted invalid password settings")
 	}
-	if _, err = buildConfiguredAPIHandler(&pgxpool.Pool{}, nil, config.Config{}, "test"); err == nil {
+	if _, err = buildTestAPIHandler(&pgxpool.Pool{}, nil, config.Config{}, "test"); err == nil {
 		t.Fatal("API handler accepted invalid identity settings")
 	}
 }

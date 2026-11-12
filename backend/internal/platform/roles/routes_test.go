@@ -18,17 +18,11 @@ import (
 	clusterapp "github.com/jooservices/xflickr/internal/cluster/app"
 	clusterdomain "github.com/jooservices/xflickr/internal/cluster/domain"
 
-	accountshttp "github.com/jooservices/xflickr/internal/accounts/adapters/http"
-	crawlhttp "github.com/jooservices/xflickr/internal/crawl/adapters/http"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	identitydomain "github.com/jooservices/xflickr/internal/identity/domain"
-	mediahttp "github.com/jooservices/xflickr/internal/media/adapters/http"
 	metricsapp "github.com/jooservices/xflickr/internal/platform/metrics/app"
 	opshttp "github.com/jooservices/xflickr/internal/platform/ops/adapters/http"
-	quotahttp "github.com/jooservices/xflickr/internal/quota/adapters/http"
-	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
-	sharinghttp "github.com/jooservices/xflickr/internal/sharing/adapters/http"
 )
 
 // roleSessions authenticates the "session" cookie as a user with the given role.
@@ -45,7 +39,7 @@ func (s roleSessions) Authenticate(_ context.Context, raw string) (identityapp.A
 }
 
 func routerWith(sessions identityhttp.SessionService) http.Handler {
-	return newAPIRouter(identityhttp.Handler{Version: "t", Sessions: sessions}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{})
+	return newTestAPIRouter(apiRouterOptions{Identity: identityhttp.Handler{Version: "t", Sessions: sessions}})
 }
 
 // samplePath fills the path parameters of a route pattern.
@@ -64,7 +58,7 @@ func splitRoute(key string) (method, pattern string) {
 // TestEveryRouteDeclaresAccess fails the build when a mounted route has no
 // declared auth requirement, or the table lists a route that is not mounted.
 func TestEveryRouteDeclaresAccess(t *testing.T) {
-	router := newAPIRouter(identityhttp.Handler{Sessions: stubSessions{}}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{}).(chi.Routes)
+	router := newTestAPIRouter(apiRouterOptions{Identity: identityhttp.Handler{Sessions: stubSessions{}}}).(chi.Routes)
 	mounted := map[string]bool{}
 	if err := chi.Walk(router, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
 		mounted[method+" "+route] = true
@@ -218,10 +212,10 @@ func TestAdminMetricsAuthorization(t *testing.T) {
 				return time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC)
 			},
 		}
-		return newAPIRouterWithServices(
-			identityhttp.Handler{Sessions: roleSessions{stubSessions: stubSessions{}, role: identitydomain.RoleAdmin}}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{},
-			crawlhttp.CrawlHandler{}, quotahttp.QuotaHandler{}, sharinghttp.Handler{}, mediahttp.DownloadHandler{}, opsHandler,
-		)
+		return newTestAPIRouter(apiRouterOptions{
+			Identity: identityhttp.Handler{Sessions: roleSessions{stubSessions: stubSessions{}, role: identitydomain.RoleAdmin}},
+			Ops:      opsHandler,
+		})
 	}
 	path := "/admin/metrics?series=queue.jobs_available&queue=default&role=scheduler&node=node-1&from=2026-11-11T08:00:00Z&to=2026-11-11T09:00:00Z&step=1m"
 	send := func(router http.Handler, target string, role identitydomain.Role) *httptest.ResponseRecorder {
@@ -236,19 +230,17 @@ func TestAdminMetricsAuthorization(t *testing.T) {
 	if got := send(makeRouter(reader), path, "").Code; got != http.StatusUnauthorized {
 		t.Fatalf("anonymous request status=%d, want 401", got)
 	}
-	userRouter := newAPIRouterWithServices(
-		identityhttp.Handler{Sessions: roleSessions{stubSessions: stubSessions{}, role: identitydomain.RoleUser}},
-		accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{}, crawlhttp.CrawlHandler{}, quotahttp.QuotaHandler{},
-		sharinghttp.Handler{}, mediahttp.DownloadHandler{}, opshttp.Handler{ActorID: userIDFromPrincipal, Metrics: reader, Now: func() time.Time { return time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC) }},
-	)
+	userRouter := newTestAPIRouter(apiRouterOptions{
+		Identity: identityhttp.Handler{Sessions: roleSessions{stubSessions: stubSessions{}, role: identitydomain.RoleUser}},
+		Ops:      opshttp.Handler{ActorID: userIDFromPrincipal, Metrics: reader, Now: func() time.Time { return time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC) }},
+	})
 	if got := send(userRouter, path, identitydomain.RoleUser).Code; got != http.StatusForbidden {
 		t.Fatalf("user request status=%d, want 403", got)
 	}
-	adminRouter := newAPIRouterWithServices(
-		identityhttp.Handler{Sessions: roleSessions{stubSessions: stubSessions{}, role: identitydomain.RoleAdmin}},
-		accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{}, crawlhttp.CrawlHandler{}, quotahttp.QuotaHandler{},
-		sharinghttp.Handler{}, mediahttp.DownloadHandler{}, opshttp.Handler{ActorID: userIDFromPrincipal, Metrics: reader, Now: func() time.Time { return time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC) }},
-	)
+	adminRouter := newTestAPIRouter(apiRouterOptions{
+		Identity: identityhttp.Handler{Sessions: roleSessions{stubSessions: stubSessions{}, role: identitydomain.RoleAdmin}},
+		Ops:      opshttp.Handler{ActorID: userIDFromPrincipal, Metrics: reader, Now: func() time.Time { return time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC) }},
+	})
 	if response := send(adminRouter, path, identitydomain.RoleAdmin); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"value":12`) {
 		t.Fatalf("admin request status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -340,7 +332,7 @@ func TestNodeHeartbeatIsIsolatedToConfiguredInternalRouter(t *testing.T) {
 	lastHeartbeat := time.Now().UTC()
 	service := &routeNodeService{node: clusterdomain.Node{Name: "node-1", State: clusterdomain.StateOnline, LastHeartbeatAt: &lastHeartbeat}}
 	nodes := clusterhttp.Handler{Service: service}
-	routers := newAPIRoutersWithServices(identityhttp.Handler{Sessions: stubSessions{}}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{}, crawlhttp.CrawlHandler{}, quotahttp.QuotaHandler{}, sharinghttp.Handler{}, mediahttp.DownloadHandler{}, nodes)
+	routers := newAPIRouterSet(apiRouterOptions{Identity: identityhttp.Handler{Sessions: stubSessions{}}, Nodes: nodes})
 	request := func(method, path, auth string) *http.Request {
 		req := httptest.NewRequest(method, path, strings.NewReader("{\"version\":\"v1\"}"))
 		req.Header.Set("Content-Type", "application/json")

@@ -10,18 +10,12 @@ import (
 	"testing"
 	"time"
 
-	accountshttp "github.com/jooservices/xflickr/internal/accounts/adapters/http"
-	crawlhttp "github.com/jooservices/xflickr/internal/crawl/adapters/http"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	identitydomain "github.com/jooservices/xflickr/internal/identity/domain"
-	mediahttp "github.com/jooservices/xflickr/internal/media/adapters/http"
-	quotahttp "github.com/jooservices/xflickr/internal/quota/adapters/http"
-	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
 	settingshttp "github.com/jooservices/xflickr/internal/settings/adapters/http"
 	settingsapp "github.com/jooservices/xflickr/internal/settings/app"
 	settingsdomain "github.com/jooservices/xflickr/internal/settings/domain"
-	sharinghttp "github.com/jooservices/xflickr/internal/sharing/adapters/http"
 )
 
 type flagReadSessions struct {
@@ -138,12 +132,10 @@ func (*routeFlagService) Update(context.Context, []settingsdomain.FeatureFlag) e
 func TestFlagReadAuthorization(t *testing.T) {
 	sessions := &flagReadSessions{role: identitydomain.RoleAdmin}
 	service := &routeFlagService{flag: settingsdomain.FeatureFlag{Name: "admin.banner", Enabled: true, Audience: settingsdomain.AudienceAll}}
-	router := newAPIRouterWithServices(
-		identityhttp.Handler{Version: "test", Sessions: sessions},
-		accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{},
-		crawlhttp.CrawlHandler{}, quotahttp.QuotaHandler{}, sharinghttp.Handler{}, mediahttp.DownloadHandler{},
-		settingshttp.Handler{Flags: service},
-	)
+	router := newTestAPIRouter(apiRouterOptions{
+		Identity: identityhttp.Handler{Version: "test", Sessions: sessions},
+		Flags:    settingshttp.Handler{Flags: service},
+	})
 	request := func(target, cookie string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(http.MethodGet, target, nil)
 		if cookie != "" {
