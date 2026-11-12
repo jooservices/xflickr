@@ -135,7 +135,8 @@ func assertBackgroundHeld(t *testing.T, f *quotaHoldFixture) {
 	if capacity, err := f.governor.Capacity(f.ctx, f.keyID, 2*time.Minute); err != nil || capacity != 0 {
 		t.Fatalf("Capacity() at the ceiling = %d, %v; want 0", capacity, err)
 	}
-	// River job ids only grow, so the watermark and the range scan below stay on the primary key.
+	// Hand-written SQL on purpose (reason for the strict rules): sqlc generates production queries only, and this
+	// assertion needs a bounded probe of the primary key. River job ids only grow, so both statements stay on it.
 	var watermark int64
 	if err := f.pool.QueryRow(f.ctx, `SELECT COALESCE(max(id), 0) FROM river_job`).Scan(&watermark); err != nil {
 		t.Fatal(err)
@@ -145,10 +146,11 @@ func assertBackgroundHeld(t *testing.T, f *quotaHoldFixture) {
 	if err := f.pool.QueryRow(f.ctx, `SELECT state FROM work_items WHERE id=$1`, f.itemID).Scan(&state); err != nil || state != "pending" {
 		t.Fatalf("item state at the ceiling = %q, %v; want pending (buffered)", state, err)
 	}
-	var created int
-	if err := f.pool.QueryRow(f.ctx, `SELECT count(*) FROM (SELECT 1 FROM river_job WHERE id > $1 LIMIT 10) AS newer`, watermark).Scan(&created); err != nil || created != 0 {
-		t.Fatalf("River jobs created at the ceiling = %d, %v; want none while quota is exhausted", created, err)
+	var created bool
+	if err := f.pool.QueryRow(f.ctx, `SELECT EXISTS (SELECT 1 FROM river_job WHERE id > $1)`, watermark).Scan(&created); err != nil || created {
+		t.Fatalf("River job created at the ceiling = %v, %v; want none while quota is exhausted", created, err)
 	}
+}
 }
 
 func assertInteractiveReserve(t *testing.T, f *quotaHoldFixture) {
