@@ -15,9 +15,9 @@ the audit step propagates npm's exit status. There is no allowlist or
 `continue-on-error` behavior. A shell test uses a fake `npm` executable to
 verify the wrapper's working directory, arguments, and exit status handling.
 
-The same job also scans the backend with `govulncheck` (pinned to a version in
-`docker/scripts/security-audit-backend.sh`, overridable with
-`GOVULNCHECK_VERSION`). It runs from `backend` with the module's Go version and
+The same job also scans the backend with `govulncheck`, fixed at `v1.9.0` in
+`docker/scripts/security-audit-backend.sh`; environment variables cannot
+override this pin. It runs from `backend` with the module's Go version and
 fails the job when the code reaches a known vulnerability in the standard
 library or in a dependency; vulnerabilities in imported but uncalled code are
 reported without failing. A shell test uses a fake `go` executable to verify the

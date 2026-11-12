@@ -113,6 +113,25 @@ func (response flagReadResponse) VisitGetAdminFlagResponse(w http.ResponseWriter
 	if response.problem != nil {
 		return response.writeProblem(w, response.problem)
 	}
+	body := response.successBody()
+	if response.traceID != "" {
+		w.Header().Set("X-Trace-Id", response.traceID)
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return response.writeProblem(w, rest.NewProblem("internal-error", "Feature flag storage is unavailable", nil))
+	}
+	encoded = append(encoded, '\n')
+	return (gen.GetAdminFlag200JSONResponse{
+		Body: body,
+		Headers: gen.GetAdminFlag200ResponseHeaders{
+			CacheControl: "private, no-store",
+			ETag:         rest.ETag(encoded),
+		},
+	}).VisitGetAdminFlagResponse(w)
+}
+
+func (response flagReadResponse) successBody() gen.RESTFeatureFlagEnvelope {
 	public := publicFeatureFlag{
 		Name:     response.flag.Name,
 		Enabled:  response.flag.Enabled,
@@ -128,27 +147,15 @@ func (response flagReadResponse) VisitGetAdminFlagResponse(w http.ResponseWriter
 		UserIds:  public.UserIDs,
 		Links:    gen.Links{Self: gen.Link{Href: href, Method: &method}},
 	}
-	body := gen.RESTFeatureFlagEnvelope{
+	return gen.RESTFeatureFlagEnvelope{
 		Code:    http.StatusOK,
 		Data:    data,
 		Errors:  nil,
 		Message: "Success",
 		Meta:    map[string]interface{}{},
 		Success: gen.RESTFeatureFlagEnvelopeSuccessTrue,
-		TraceID: response.traceID,
+		TraceID: "",
 	}
-	encoded, err := json.Marshal(body)
-	if err != nil {
-		return response.writeProblem(w, rest.NewProblem("internal-error", "Feature flag storage is unavailable", nil))
-	}
-	encoded = append(encoded, '\n')
-	return (gen.GetAdminFlag200JSONResponse{
-		Body: body,
-		Headers: gen.GetAdminFlag200ResponseHeaders{
-			CacheControl: "private, no-store",
-			ETag:         rest.ETag(encoded),
-		},
-	}).VisitGetAdminFlagResponse(w)
 }
 
 func (response flagReadResponse) writeProblem(w http.ResponseWriter, problem *rest.Problem) error {
