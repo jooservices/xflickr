@@ -67,7 +67,16 @@ jobs:
 
       - name: Run web unit tests
         working-directory: web
-        run: npx vitest run
+        run: npx vitest run --reporter=default --reporter=junit --outputFile.junit=vitest-report.xml
+
+      - name: Upload the vitest report when the web job fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-report
+          path: web/vitest-report.xml
+          retention-days: 7
+          if-no-files-found: warn
 
   go-coverage:
     name: go-coverage

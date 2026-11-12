@@ -7,6 +7,7 @@ node_modules/
 dist/
 .tmp/
 coverage/
+vitest-report.xml
 playwright-report/
 test-results/
 blob-report/

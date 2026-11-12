@@ -81,3 +81,8 @@ these environment variables (defaults are also listed in `.env.example`):
 
 Keep these values consistent across API instances. Increasing them raises the
 CPU or memory cost of registration and login.
+
+## Web test report in CI
+
+When the `web` job fails, the vitest JUnit report is uploaded as the run artifact `vitest-report` (kept 7 days).
+Find it in the GitHub Actions tab: open the failed run and download it from the Artifacts section of the summary page.
