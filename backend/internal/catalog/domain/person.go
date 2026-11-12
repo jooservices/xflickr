@@ -26,10 +26,16 @@ type Gallery struct {
 	CreatedAt, UpdatedAt              time.Time
 }
 
+// GroupMetadataMissing identifies fields omitted by a partial Flickr response.
+type GroupMetadataMissing struct {
+	Description, MembersCount, PoolCount bool
+}
+
 // Group is Flickr group metadata.
 type Group struct {
 	NSID, Name, Description string
 	MembersCount, PoolCount int64
+	Missing                 GroupMetadataMissing
 }
 
 // PersonGroup is a discovered group membership.

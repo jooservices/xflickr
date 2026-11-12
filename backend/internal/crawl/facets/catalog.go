@@ -118,37 +118,23 @@ func (Groups) Plan(_ context.Context, p domain.Person) []domain.WorkSpec {
 	return []domain.WorkSpec{{Subject: p.NSID, Method: "flickr.people.getGroups", Params: map[string]string{"user_id": p.NSID, "per_page": catalogPageSize}}}
 }
 
+type groupResponse struct {
+	NSID        string      `json:"nsid"`
+	Name        string      `json:"name"`
+	Members     *flickr.Int `json:"members"`
+	Pool        *flickr.Int `json:"pool_count"`
+	Description *string     `json:"description"`
+}
+
 func (Groups) Handle(_ context.Context, p domain.Page) (domain.Result, error) {
-	var e struct {
-		Groups *struct {
-			Pages int             `json:"pages"`
-			Items json.RawMessage `json:"group"`
-		} `json:"groups"`
+	items, pages, err := decodeGroups(p.Payload)
+	if err != nil {
+		return domain.Result{}, err
 	}
-	if err := json.Unmarshal(p.Payload, &e); err != nil {
-		return domain.Result{}, fmt.Errorf("crawl facets: decode groups: %w", err)
-	}
-	if e.Groups == nil {
-		return domain.Result{}, fmt.Errorf("crawl facets: decode groups: groups envelope is missing")
-	}
-	var items []struct {
-		NSID        string     `json:"nsid"`
-		Name        string     `json:"name"`
-		Members     flickr.Int `json:"members"`
-		Pool        flickr.Int `json:"pool_count"`
-		Description string     `json:"description"`
-	}
-	if len(e.Groups.Items) > 0 {
-		if strings.TrimSpace(string(e.Groups.Items)) == "null" {
-			return domain.Result{}, fmt.Errorf("crawl facets: decode groups: group list is null")
-		}
-		if err := json.Unmarshal(e.Groups.Items, &items); err != nil {
-			return domain.Result{}, fmt.Errorf("crawl facets: decode groups: %w", err)
-		}
-	}
-	if len(items) == 0 && p.Number < e.Groups.Pages {
+	if len(items) == 0 && p.Number < pages {
 		return domain.Result{}, fmt.Errorf("crawl facets: decode groups: empty page before final page")
 	}
+	out := domain.Result{Groups: make([]catalog.Group, 0, len(items)), PersonGroups: make([]catalog.PersonGroup, 0, len(items))}
 	for i, x := range items {
 		if strings.TrimSpace(x.NSID) == "" {
 			return domain.Result{}, fmt.Errorf("crawl facets: decode groups: group %d has no nsid", i+1)
@@ -156,14 +142,52 @@ func (Groups) Handle(_ context.Context, p domain.Page) (domain.Result, error) {
 		if strings.TrimSpace(x.Name) == "" {
 			return domain.Result{}, fmt.Errorf("crawl facets: decode groups: group %d has no name", i+1)
 		}
-	}
-	out := domain.Result{Groups: make([]catalog.Group, 0, len(items)), PersonGroups: make([]catalog.PersonGroup, 0, len(items))}
-	for _, x := range items {
-		out.Groups = append(out.Groups, catalog.Group{NSID: x.NSID, Name: x.Name, Description: x.Description, MembersCount: int64(x.Members), PoolCount: int64(x.Pool)})
+		out.Groups = append(out.Groups, x.catalogGroup())
 		out.PersonGroups = append(out.PersonGroups, catalog.PersonGroup{PersonNSID: p.Item.Subject, GroupNSID: x.NSID})
 	}
-	out.HasMore = p.Number < e.Groups.Pages && len(items) > 0
+	out.HasMore = p.Number < pages && len(items) > 0
 	return out, nil
+}
+
+func decodeGroups(payload json.RawMessage) ([]groupResponse, int, error) {
+	var e struct {
+		Groups *struct {
+			Pages int             `json:"pages"`
+			Items json.RawMessage `json:"group"`
+		} `json:"groups"`
+	}
+	if err := json.Unmarshal(payload, &e); err != nil {
+		return nil, 0, fmt.Errorf("crawl facets: decode groups: %w", err)
+	}
+	if e.Groups == nil {
+		return nil, 0, fmt.Errorf("crawl facets: decode groups: groups envelope is missing")
+	}
+	var items []groupResponse
+	if len(e.Groups.Items) > 0 {
+		if strings.TrimSpace(string(e.Groups.Items)) == "null" {
+			return nil, 0, fmt.Errorf("crawl facets: decode groups: group list is null")
+		}
+		if err := json.Unmarshal(e.Groups.Items, &items); err != nil {
+			return nil, 0, fmt.Errorf("crawl facets: decode groups: %w", err)
+		}
+	}
+	return items, e.Groups.Pages, nil
+}
+
+func (g groupResponse) catalogGroup() catalog.Group {
+	result := catalog.Group{NSID: g.NSID, Name: g.Name, Missing: catalog.GroupMetadataMissing{
+		Description: g.Description == nil, MembersCount: g.Members == nil, PoolCount: g.Pool == nil,
+	}}
+	if g.Description != nil {
+		result.Description = *g.Description
+	}
+	if g.Members != nil {
+		result.MembersCount = int64(*g.Members)
+	}
+	if g.Pool != nil {
+		result.PoolCount = int64(*g.Pool)
+	}
+	return result
 }
 
 type content struct {

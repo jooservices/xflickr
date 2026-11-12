@@ -34,7 +34,7 @@ func (r *Repository) UpsertGalleries(ctx context.Context, items []catalog.Galler
 func (r *Repository) UpsertGroups(ctx context.Context, items []catalog.Group) error {
 	values := make([]Group, 0, len(items))
 	for _, item := range items {
-		values = append(values, Group{NSID: item.NSID, Name: item.Name, Description: item.Description, MembersCount: item.MembersCount, PoolCount: item.PoolCount})
+		values = append(values, Group{NSID: item.NSID, Name: item.Name, Description: item.Description, MembersCount: item.MembersCount, PoolCount: item.PoolCount, Missing: item.Missing})
 	}
 	return r.UpsertGroupsBatch(ctx, values)
 }

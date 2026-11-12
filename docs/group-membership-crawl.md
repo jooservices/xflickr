@@ -17,7 +17,10 @@ the entire page.
 The engine sends a decode error through its existing failure and retry flow. It
 does not upsert groups or memberships, advance the cursor, or finish the page.
 Valid pages continue through the existing transactional group and membership
-upserts.
+upserts. Missing or null description, member count, and pool count preserve each
+stored field independently. Explicit empty descriptions and zero counts replace
+stored values. New groups use empty/zero defaults for missing metadata. Name and
+membership still refresh, without additional Flickr calls.
 
 This slice changes only group refresh method selection. It does not add REST
 or UI behavior. Group metadata via `groups.getInfo` remains deferred until
