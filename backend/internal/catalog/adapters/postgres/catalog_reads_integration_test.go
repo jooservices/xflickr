@@ -243,7 +243,7 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if _, err := reads.GetPerson(ctx, user1ID, hiddenNSID); !errors.Is(err, app.ErrNotFound) {
 		t.Fatalf("hidden person error=%v", err)
 	}
-	personPhotos, _, err := reads.ListPersonPhotos(ctx, user1ID, user2NSID, "", 10)
+	personPhotos, _, err := reads.ListPersonPhotos(ctx, app.PersonPhotosRequest{UserID: user1ID, NSID: user2NSID, Limit: 10})
 	if err != nil || len(personPhotos.Items) != 3 || personPhotos.Items[0].ID != photoIDs[1] || personPhotos.Items[0].SizesStatus != "confirmed" || personPhotos.Items[0].Sizes[0].Label != "Large" {
 		t.Fatalf("visible person photos=%+v err=%v", personPhotos, err)
 	}

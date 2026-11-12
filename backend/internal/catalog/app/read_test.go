@@ -44,8 +44,8 @@ func (s *readRepositoryStub) GetPerson(_ context.Context, userID int64, _ string
 	return s.person, s.personOK, s.record(userID, predicate, DefaultPageSize)
 }
 
-func (s *readRepositoryStub) ListPersonPhotos(_ context.Context, userID int64, _ string, predicate sharingapp.SQLPredicate, _ *PhotoCursor, limit int) (PhotosPage, error) {
-	return s.photos, s.record(userID, predicate, limit)
+func (s *readRepositoryStub) ListPersonPhotos(_ context.Context, q PersonPhotosQuery) (PhotosPage, error) {
+	return s.photos, s.record(q.UserID, q.Predicate, q.Limit)
 }
 
 func (s *readRepositoryStub) ListVisibleFavorites(_ context.Context, userID int64, predicate sharingapp.SQLPredicate, _ *FavoriteCursor, limit int) (FavoritesPage, error) {
@@ -91,7 +91,7 @@ func TestReadServiceAppliesPolicyAndEncodesKeysets(t *testing.T) {
 	}
 
 	repo.photos = PhotosPage{Items: []Photo{{ID: 9}}, NextCursor: &PhotoCursor{LastUpdate: now, ID: 9}}
-	photoPage, photoCursor, err := service.ListPersonPhotos(context.Background(), 42, "person", "", 100)
+	photoPage, photoCursor, err := service.ListPersonPhotos(context.Background(), PersonPhotosRequest{UserID: 42, NSID: "person", Limit: 100})
 	if err != nil || len(photoPage.Items) != 1 || photoCursor == "" || repo.seenLimit != 100 {
 		t.Fatalf("photoPage=%+v cursor=%q err=%v", photoPage, photoCursor, err)
 	}
@@ -189,7 +189,7 @@ func TestReadServiceRejectsInvalidPageAndCursorWithoutReading(t *testing.T) {
 	if _, _, err := service.ListContactAlbums(context.Background(), 1, "", "", MaxPageSize+1); !errors.Is(err, ErrInvalidPage) {
 		t.Fatalf("invalid contact album limit error=%v", err)
 	}
-	if _, _, err := service.ListPersonPhotos(context.Background(), 1, " \t ", "", 10); !errors.Is(err, ErrNotFound) {
+	if _, _, err := service.ListPersonPhotos(context.Background(), PersonPhotosRequest{UserID: 1, NSID: " \t ", Limit: 10}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("blank NSID error=%v", err)
 	}
 	if repo.seenUser != 0 {
@@ -263,7 +263,7 @@ func TestReadServicePropagatesRepositoryErrorsAndNotFound(t *testing.T) {
 	if _, err := service.GetPerson(ctx, 3, " "); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("blank person error=%v", err)
 	}
-	if _, _, err := service.ListPersonPhotos(ctx, 3, " \t ", "", 1); !errors.Is(err, ErrNotFound) {
+	if _, _, err := service.ListPersonPhotos(ctx, PersonPhotosRequest{UserID: 3, NSID: " \t ", Limit: 1}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("blank person photos NSID error=%v", err)
 	}
 	if _, err := service.GetPhoto(ctx, 3, 0); !errors.Is(err, ErrNotFound) {
@@ -277,7 +277,7 @@ func TestReadServicePropagatesRepositoryErrorsAndNotFound(t *testing.T) {
 	if _, err := service.GetPerson(ctx, 3, "person"); !errors.Is(err, boom) {
 		t.Fatalf("get person error=%v", err)
 	}
-	if _, _, err := service.ListPersonPhotos(ctx, 3, "person", "", 1); !errors.Is(err, boom) {
+	if _, _, err := service.ListPersonPhotos(ctx, PersonPhotosRequest{UserID: 3, NSID: "person", Limit: 1}); !errors.Is(err, boom) {
 		t.Fatalf("person photos error=%v", err)
 	}
 	if _, _, err := service.ListFavorites(ctx, 3, "", 1); !errors.Is(err, boom) {

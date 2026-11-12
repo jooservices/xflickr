@@ -78,7 +78,7 @@ func (h Handler) ListPersonPhotos(ctx context.Context, request gen.ListPersonPho
 	if !ok {
 		return gen.ListPersonPhotos401JSONResponse(gen.Error{Code: "unauthenticated", Message: "Authentication required"}), nil
 	}
-	page, next, err := h.Reads.ListPersonPhotos(ctx, userID, request.Nsid, stringParam(request.Params.Cursor), pageLimit(request.Params.Limit))
+	page, next, err := h.Reads.ListPersonPhotos(ctx, app.PersonPhotosRequest{UserID: userID, NSID: request.Nsid, Cursor: stringParam(request.Params.Cursor), Limit: pageLimit(request.Params.Limit)})
 	if errors.Is(err, app.ErrNotFound) {
 		return gen.ListPersonPhotos404JSONResponse(notFoundError()), nil
 	}
