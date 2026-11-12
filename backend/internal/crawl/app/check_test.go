@@ -202,6 +202,9 @@ func TestCatalogKindsArePlannedExactlyOncePerCycle(t *testing.T) {
 	for _, spec := range registry.Plan(context.Background(), domain.Person{NSID: "p@N01"}) {
 		initial[spec.Kind] = spec.Method
 	}
+	if initial["groups"] != "flickr.people.getGroups" {
+		t.Fatalf("initial group method = %q", initial["groups"])
+	}
 	refresh := map[string]int{}
 	for _, probe := range []string{"flickr.people.getPhotos", "flickr.favorites.getList"} {
 		item := domain.Item{Subject: "p@N01", Cursor: domain.Cursor{Method: probe}}

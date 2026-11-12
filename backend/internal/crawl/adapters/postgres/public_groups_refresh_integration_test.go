@@ -14,43 +14,48 @@ import (
 	"github.com/jooservices/xflickr/internal/crawl/facets"
 )
 
+type publicGroupsRefreshCase struct {
+	name, body         string
+	membership, failed bool
+}
+
 func TestPublicGroupsRefreshPersistsMembership(t *testing.T) {
-	for _, tc := range []struct {
-		name, body         string
-		membership, failed bool
-	}{
+	for _, tc := range []publicGroupsRefreshCase{
 		{name: "populated", body: `{"groups":{"pages":1,"group":[{"nsid":"%s","name":"Public group"}]}}`, membership: true},
 		{name: "empty", body: `{"groups":{"pages":1,"group":[]}}`},
 		{name: "malformed", body: `{`, failed: true},
 		{name: "invalid member rolls back whole page", body: `{"groups":{"group":[{"nsid":"%s","name":"Public group"},{"nsid":"invalid"}]}}`, failed: true},
 		{name: "transport error", failed: true},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			pool := openEngineTestPool(t)
-			user := insertInterestTestUser(t, t.Context(), pool)
-			person := fmt.Sprintf("public-refresh-%d@N01", user)
-			group := person + "-group"
-			check := seedPublicGroupsCheck(t, pool, user, person)
-			fake := &recordingFlickr{payloads: map[string]json.RawMessage{"flickr.favorites.getList": json.RawMessage(`{"photos":{"total":0}}`)}}
-			if tc.body != "" {
-				fake.payloads["flickr.people.getPublicGroups"] = json.RawMessage(strings.ReplaceAll(tc.body, "%s", group))
-			}
-			engine := newPublicGroupsEngine(t, pool, fake)
-			if err := engine.Handle(t.Context(), check); err != nil {
-				t.Fatal(err)
-			}
-			var item int64
-			if err := pool.QueryRow(t.Context(), `UPDATE work_items SET state='ready' WHERE user_id=$1 AND kind='groups' AND subject_key=$2 RETURNING id`, user, person).Scan(&item); err != nil {
-				t.Fatal(err)
-			}
-			if err := engine.Handle(t.Context(), item); err != nil {
-				t.Fatal(err)
-			}
-			assertPublicGroupsRequest(t, fake, person)
-			assertPublicGroupsRows(t, pool, person, tc.membership)
-			assertPublicGroupsCompletion(t, pool, item, tc.failed)
-		})
+		t.Run(tc.name, func(t *testing.T) { runPublicGroupsRefresh(t, tc) })
 	}
+}
+
+func runPublicGroupsRefresh(t *testing.T, tc publicGroupsRefreshCase) {
+	t.Helper()
+	pool := openEngineTestPool(t)
+	user := insertInterestTestUser(t, t.Context(), pool)
+	person := fmt.Sprintf("public-refresh-%d@N01", user)
+	group := person + "-group"
+	check := seedPublicGroupsCheck(t, pool, user, person)
+	fake := &recordingFlickr{payloads: map[string]json.RawMessage{"flickr.favorites.getList": json.RawMessage(`{"photos":{"total":0}}`)}}
+	if tc.body != "" {
+		fake.payloads["flickr.people.getPublicGroups"] = json.RawMessage(strings.ReplaceAll(tc.body, "%s", group))
+	}
+	engine := newPublicGroupsEngine(t, pool, fake)
+	if err := engine.Handle(t.Context(), check); err != nil {
+		t.Fatal(err)
+	}
+	var item int64
+	if err := pool.QueryRow(t.Context(), `UPDATE work_items SET state='ready' WHERE user_id=$1 AND kind='groups' AND subject_key=$2 RETURNING id`, user, person).Scan(&item); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Handle(t.Context(), item); err != nil {
+		t.Fatal(err)
+	}
+	assertPublicGroupsRequest(t, fake, person)
+	assertPublicGroupsRows(t, pool, person, tc.membership)
+	assertPublicGroupsCompletion(t, pool, item, tc.failed)
 }
 
 func newPublicGroupsEngine(t *testing.T, pool *pgxpool.Pool, fake crawlapp.Flickr) *crawlapp.Engine {
