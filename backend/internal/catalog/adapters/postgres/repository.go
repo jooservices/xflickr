@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jooservices/xflickr/internal/catalog/adapters/postgres/gen"
-	"github.com/jooservices/xflickr/internal/catalog/app"
 )
 
 // Repository stores catalog records.
@@ -20,12 +19,6 @@ type Repository struct {
 	queries *gen.Queries
 	db      gen.DBTX
 }
-
-var (
-	_ app.CatalogWriter   = (*Repository)(nil)
-	_ app.EnrichmentStore = (*Repository)(nil)
-	_ app.AssetStore      = (*Repository)(nil)
-)
 
 // New creates a catalog repository backed by a pgx connection or pool.
 func New(database gen.DBTX) (*Repository, error) {
