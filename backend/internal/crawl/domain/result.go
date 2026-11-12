@@ -31,6 +31,7 @@ type Result struct {
 	Galleries    []catalog.Gallery
 	Groups       []catalog.Group
 	PersonGroups []catalog.PersonGroup
+	Contacts     []catalog.Contact
 	Observations []Observation
 	Discoveries  []Discovery
 	Work         []WorkSpec

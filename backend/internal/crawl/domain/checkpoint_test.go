@@ -34,11 +34,11 @@ func TestNextCheckpointTable(t *testing.T) {
 }
 
 func TestNeedsScanStartCheckpoint(t *testing.T) {
-	if !NeedsScanStartCheckpoint(FacetPhotos) || !NeedsScanStartCheckpoint(FacetFavorites) {
-		t.Fatal("photos and favorites must need a scan-start checkpoint")
+	if !NeedsScanStartCheckpoint(FacetPhotos) || !NeedsScanStartCheckpoint(FacetFavorites) || !NeedsScanStartCheckpoint(FacetContacts) {
+		t.Fatal("photos, favorites, and contacts must need a scan-start checkpoint")
 	}
 	if NeedsScanStartCheckpoint("albums") || NeedsScanStartCheckpoint("check") {
-		t.Fatal("other facets must not stamp a photos/favorites checkpoint")
+		t.Fatal("other facets must not stamp a scan-start checkpoint")
 	}
 }
 

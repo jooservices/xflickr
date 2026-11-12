@@ -56,10 +56,25 @@ func (f *crawlFlickr) Resolve(ctx context.Context, request crawlapp.Request) (cr
 	if request.UserID <= 0 {
 		return request, fmt.Errorf("crawl: observation user is required")
 	}
-	err := f.pool.QueryRow(ctx, `SELECT a.key_id, a.id FROM flickr_accounts a
+	var query string
+	var args []any
+	if request.Method == "flickr.contacts.getList" {
+		if request.SubjectNSID == "" || request.Params["user_id"] != request.SubjectNSID {
+			return request, fmt.Errorf("crawl: contacts account subject does not match work item")
+		}
+		query = `SELECT a.key_id, a.id FROM flickr_accounts a
+ JOIN api_keys k ON k.id=a.key_id AND k.user_id=a.user_id
+ WHERE a.user_id=$1 AND a.nsid=$2 AND a.status='ok' AND k.status='valid'
+ ORDER BY a.id LIMIT 1`
+		args = []any{request.UserID, request.SubjectNSID}
+	} else {
+		query = `SELECT a.key_id, a.id FROM flickr_accounts a
  JOIN api_keys k ON k.id=a.key_id AND k.user_id=a.user_id
  WHERE a.user_id=$1 AND a.status='ok' AND k.status='valid'
- ORDER BY (a.key_id=$2) DESC, a.id LIMIT 1`, request.UserID, request.KeyID).Scan(&request.KeyID, &request.AccountID)
+ ORDER BY (a.key_id=$2) DESC, a.id LIMIT 1`
+		args = []any{request.UserID, request.KeyID}
+	}
+	err := f.pool.QueryRow(ctx, query, args...).Scan(&request.KeyID, &request.AccountID)
 	if err != nil {
 		return request, fmt.Errorf("crawl: resolve work user's account: %w", err)
 	}

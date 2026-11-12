@@ -132,6 +132,26 @@ type ContactAlbumsPage struct {
 	NextCursor    *AlbumCursor
 }
 
+// ContactCursor identifies the last contact in a keyset page.
+type ContactCursor struct {
+	NSID string `json:"nsid"`
+}
+
+// Contact is one stored contact relationship visible to a user.
+type Contact struct {
+	NSID        string
+	Username    string
+	Realname    string
+	Icon        string
+	AccountNSID string
+}
+
+// ContactsPage contains one user's visible contacts and the next keyset cursor.
+type ContactsPage struct {
+	Items      []Contact
+	NextCursor *ContactCursor
+}
+
 // ReadRepository performs catalog reads with a predicate from the reusable
 // sharing policy. Its SQL predicate is constructed by ReadService, never from
 // request input.
@@ -143,6 +163,7 @@ type ReadRepository interface {
 	ListVisibleAlbums(context.Context, int64, sharingapp.SQLPredicate, *AlbumCursor, int) (AlbumsPage, error)
 	ListContactAlbums(context.Context, int64, string, sharingapp.SQLPredicate, *AlbumCursor, int) (ContactAlbumsPage, error)
 	ListVisibleAlbumPhotos(context.Context, int64, string, sharingapp.SQLPredicate, *AlbumPhotoCursor, int) (AlbumPhotosPage, error)
+	ListContacts(context.Context, int64, *ContactCursor, int) (ContactsPage, error)
 	GetPhoto(context.Context, int64, int64, sharingapp.SQLPredicate) (Photo, bool, error)
 }
 
@@ -294,6 +315,28 @@ func (s ReadService) ListAlbumPhotos(ctx context.Context, userID int64, albumID,
 	return page, next, err
 }
 
+// ListContacts returns people linked as contacts of the user's connected
+// Flickr accounts, ordered by NSID with an opaque keyset cursor.
+func (s ReadService) ListContacts(ctx context.Context, userID int64, cursor string, limit int) (ContactsPage, string, error) {
+	if err := s.validate(ctx, userID); err != nil {
+		return ContactsPage{}, "", err
+	}
+	parsed, err := decodeCursor[ContactCursor](cursor, "contacts")
+	if err != nil {
+		return ContactsPage{}, "", err
+	}
+	limit, err = normalizeLimit(limit)
+	if err != nil {
+		return ContactsPage{}, "", err
+	}
+	page, err := s.Repository.ListContacts(ctx, userID, parsed, limit)
+	if err != nil {
+		return ContactsPage{}, "", err
+	}
+	next, err := encodeCursor("contacts", page.NextCursor)
+	return page, next, err
+}
+
 func (s ReadService) GetPhoto(ctx context.Context, userID, photoID int64) (Photo, error) {
 	if err := s.validate(ctx, userID); err != nil {
 		return Photo{}, err
@@ -365,32 +408,30 @@ func encodeCursor[T any](kind string, cursor *T) (string, error) {
 }
 
 func validateCursor(cursor any) error {
+	valid := false
 	switch value := cursor.(type) {
 	case PersonCursor:
-		if value.NSID == "" {
-			return ErrInvalidCursor
-		}
+		valid = value.NSID != ""
 	case PhotoCursor:
-		if value.LastUpdate.IsZero() || value.ID <= 0 {
-			return ErrInvalidCursor
-		}
+		valid = !value.LastUpdate.IsZero() && value.ID > 0
 	case FavoriteCursor:
 		// FlickrAccountID 0 is a cursor issued before accounts were part of the key: it keeps
 		// its old meaning (continue strictly after the date/photo pair) so paging that was in
 		// flight during the deployment is not interrupted. Negative ids are never valid.
 		if value.FaveDate.IsZero() || value.PhotoID <= 0 || value.FlickrAccountID < 0 {
-			return ErrInvalidCursor
+			valid = false
+		} else {
+			valid = true
 		}
 	case AlbumCursor:
-		if value.ID == "" || value.ProbePosition < 0 || value.ProbePhotoID < 0 ||
-			(value.ProbePhotoID == 0 && value.ProbePosition != 0) {
-			return ErrInvalidCursor
-		}
+		valid = value.ID != "" && value.ProbePosition >= 0 && value.ProbePhotoID >= 0 &&
+			(value.ProbePhotoID != 0 || value.ProbePosition == 0)
 	case AlbumPhotoCursor:
-		if value.Position < 0 || value.PhotoID <= 0 {
-			return ErrInvalidCursor
-		}
-	default:
+		valid = value.Position >= 0 && value.PhotoID > 0
+	case ContactCursor:
+		valid = value.NSID != ""
+	}
+	if !valid {
 		return ErrInvalidCursor
 	}
 	return nil

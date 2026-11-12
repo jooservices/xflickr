@@ -56,6 +56,7 @@ var routeAccess = map[string]identityhttp.Access{
 	"PUT /me/contacts/{nsid}/select":     identityhttp.AccessUser,
 	"POST /downloads":                    identityhttp.AccessUser,
 	"GET /people":                        identityhttp.AccessUser,
+	"GET /contacts":                      identityhttp.AccessUser,
 	"GET /people/{nsid}":                 identityhttp.AccessUser,
 	"GET /people/{nsid}/photos":          identityhttp.AccessUser,
 	"GET /favorites":                     identityhttp.AccessUser,

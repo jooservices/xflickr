@@ -202,10 +202,10 @@ open; the fixture numbers must not be reported as satisfying it.
    configurable catalog intervals and hint coalescing, with freshness policy
    agreed by the lead. Test unchanged/empty people, max-depth interests,
    concurrent producers and paused contacts. No permanent empty-person skip.
-5. **Restore explicit direct-contact enumeration.** The crawl has no production
-   contacts facet or writer call despite the catalog contacts repository.
-   Agree a separately authorized scope because the parent excludes new Flickr
-   methods; preserve the depth-1 contact / later favorite-owner rules.
+5. **Restore explicit direct-contact enumeration.** Delivered by JOOXF-348:
+   production `contacts` facet calls authenticated `flickr.contacts.getList`
+   once per connected account per `contacts_refresh_interval`, stores
+   relationships, and registers depth-1 interests via `contact`.
 6. **Implement and test gallery continuation.** Delivered in JOOXF-349.
    Flickr documents request parameter `continuation`, response field
    `continuation`, initial value `0`, and terminal value `-1`. The handler

@@ -6,6 +6,45 @@ worktree database and `fakeflickr` as the Flickr upstream. Nothing in it mocks a
 (The mocked specs moved to `web/e2e-mocked`; `npm run e2e:mocked` runs them. They check UI states only.
 `language-switch.spec.ts` switches to Vietnamese, walks login/register/keys/crawl/profile, and switches back.)
 
+## Compose reusable steps
+
+A `Step` is `(page: Page) => Promise<void>`. Declare a scenario as a readonly
+array of steps and pass it to `runScenario`:
+
+```ts
+import { signIn } from "./support/auth";
+import { runScenario } from "./support/scenario";
+
+await runScenario(page, [(p) => signIn(p, email, password)]);
+```
+
+Steps run sequentially, each awaited before the next begins. The scenario
+completes only after every step completes. A rejected step stops execution;
+its original error propagates unchanged and later steps do not run. `signIn`
+submits the existing form and waits for either the user or admin shell.
+
+The real-stack sign-out/sign-in test and mocked sign-in/sign-out test compose
+this same step. The mocked test proves UI composition with fake API responses;
+it does not replace real-stack integration evidence.
+
+### First-slice status and deferred work (JOOXF-187)
+
+This slice partially delivers ticket AC1–AC2: typed scenario execution and
+composition of the existing sign-in step. Additional steps (add key, connect
+account, browse, search, request/fetch download and admin actions), their tests,
+and composition of the remaining journeys are deferred. Individual product
+scenarios belong to JOOXF-188–190.
+
+Ticket AC3–AC4 remain deferred: a verified shared-services/worktree-database
+harness with fake Flickr and the browser on vm-tools, failure reports and
+screenshots, every-route scenarios with zero console errors, and CI integration.
+The existing runner below resets the schema with `DROP SCHEMA`, uses Docker
+PostgreSQL, and describes a host browser. It is unchanged and must not be run
+until its worktree safety and vm-tools execution have been verified. The run
+instructions below describe that existing harness, not a verified safe command
+for this slice. `docs/ENVIRONMENT.md` takes precedence: shared services and the
+worktree database, without Compose or testcontainers.
+
 ## Run it
 
 ```sh
@@ -33,17 +72,17 @@ The first registered user is the admin. The stack hands the specs `E2E_BASE_URL`
 
 ## What runs
 
-| File | Covers |
-|---|---|
-| `00-monitor.spec.ts` | Seeded failures: the monitor must fail on HTML-instead-of-JSON, error statuses, console errors, uncaught exceptions and failed requests. |
-| `01-auth.spec.ts` | Register the first user, sign out and in, wrong password (clear error, email kept), session expiry. |
-| `02-keys.spec.ts` | Empty state, an invalid key (fakeflickr answers error 100; the dialog stays open with the input kept), a valid key and its usage. |
-| `03-flickr-account.spec.ts` | Connect through fakeflickr OAuth: authorize, callback, the account is shown. |
-| `04-crawl.spec.ts` | Confirms the connected account and completed crawl work appear in Crawl status, changes depth (survives a reload), and verifies pause/resume responses. |
-| `05-profile.spec.ts` | Profile display, revoke one session, sign out other sessions, change and restore the password, and update and restore sharing through the REST resource. |
-| `06-photo-sizes.spec.ts` | A provisional photo remains unconfirmed until an explicit download request confirms sizes; the owner's restricted seed photo (server 65535) confirms sizes through a signed `getSizes` retry. The catalogue fixture adds an observation for the connected account in the guarded worktree database so the normal visibility policy applies. This verifies confirmation, not ZIP completion, and uses the VM/Ubuntu PostgreSQL client at `/usr/bin/psql`. |
-| `06-deleted-entity.spec.ts` | Missing-person crawl failure persists one gone marker; reopening work completes safely and Crawl remains usable. Uses the guarded native worktree SQL fixture helper. |
-| `99-route-sweep.spec.ts` | Every route at desktop and 390 px; sign-in, keys and crawl in light and dark at both widths (no sideways scroll, no overlapping controls). |
+| File                        | Covers                                                                                                                                                                                                                                                                                                                                                |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `00-monitor.spec.ts`        | Seeded failures: the monitor must fail on HTML-instead-of-JSON, error statuses, console errors, uncaught exceptions and failed requests.                                                                                                                                                                                                              |
+| `01-auth.spec.ts`           | Register the first user, sign out and in, wrong password (clear error, email kept), session expiry.                                                                                                                                                                                                                                                   |
+| `02-keys.spec.ts`           | Empty state, an invalid key (fakeflickr answers error 100; the dialog stays open with the input kept), a valid key and its usage.                                                                                                                                                                                                                     |
+| `03-flickr-account.spec.ts` | Connect through fakeflickr OAuth: authorize, callback, the account is shown.                                                                                                                                                                                                                                                                          |
+| `04-crawl.spec.ts`          | Confirms the connected account and completed crawl work appear in Crawl status, changes depth (survives a reload), and verifies pause/resume responses.                                                                                                                                                                                               |
+| `05-profile.spec.ts`        | Profile display, revoke one session, sign out other sessions, change and restore the password, and update and restore sharing through the REST resource.                                                                                                                                                                                              |
+| `06-photo-sizes.spec.ts`    | A provisional photo remains unconfirmed until an explicit download request confirms sizes; the owner's restricted seed photo (server 65535) confirms sizes through a signed `getSizes` retry. The catalogue fixture adds an observation for the connected account in the guarded worktree database so the normal visibility policy applies. This verifies confirmation, not ZIP completion, and uses the VM/Ubuntu PostgreSQL client at `/usr/bin/psql`. |
+| `06-deleted-entity.spec.ts` | Missing-person crawl failure persists one gone marker; reopening work completes safely and Crawl remains usable. Uses the guarded native worktree SQL fixture helper.                                                                                                                                                                                 |
+| `99-route-sweep.spec.ts`    | Every route at desktop and 390 px; sign-in, keys and crawl in light and dark at both widths (no sideways scroll, no overlapping controls).                                                                                                                                                                                                            |
 
 The Crawl screen has no start, pause or resume control yet, and the contract has no start endpoint. Connecting an
 account starts its crawl; the journey checks the account at depth 0 and completed work in the real crawl status.

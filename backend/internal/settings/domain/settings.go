@@ -21,6 +21,7 @@ const (
 	ChangeCheckInterval       Key = "change_check_interval"
 	RestrictedRecheckInterval Key = "restricted_recheck_interval"
 	ReconcileInterval         Key = "reconcile_interval"
+	ContactsRefreshInterval   Key = "contacts_refresh_interval"
 	DailyCallLimit            Key = "daily_call_limit"
 	UsableHourlyQuota         Key = "usable_hourly_quota"
 	QuotaReserve              Key = "quota_reserve"
@@ -68,6 +69,7 @@ type Effective struct {
 	ChangeCheckInterval       time.Duration
 	RestrictedRecheckInterval time.Duration
 	ReconcileInterval         time.Duration
+	ContactsRefreshInterval   time.Duration
 	DailyCallLimit            int64 // zero means unlimited
 	UsableHourlyQuota         int64
 	QuotaReserve              int64
@@ -190,6 +192,7 @@ var schemas = map[Key]JSONSchema{
 	ChangeCheckInterval:       {Type: "integer", Minimum: minOne, Maximum: maxDuration},
 	RestrictedRecheckInterval: {Type: "integer", Minimum: minOne, Maximum: maxDuration},
 	ReconcileInterval:         {Type: "integer", Minimum: minOne, Maximum: maxDuration},
+	ContactsRefreshInterval:   {Type: "integer", Minimum: floatPointer(3600), Maximum: floatPointer(30 * 24 * 3600)},
 	DailyCallLimit:            {Type: "integer", Minimum: minZero},
 	UsableHourlyQuota:         {Type: "integer", Minimum: minOne},
 	QuotaReserve:              {Type: "integer", Minimum: minZero},
@@ -242,6 +245,7 @@ func Keys() []Key {
 		MaxDepth,
 		ChangeCheckInterval,
 		ReconcileInterval,
+		ContactsRefreshInterval,
 		RestrictedRecheckInterval,
 		DailyCallLimit,
 		UsableHourlyQuota,
@@ -285,6 +289,7 @@ func Defaults() []Definition {
 		{Key: ChangeCheckInterval, Value: json.RawMessage("86400"), UserOverridable: true},
 		{Key: RestrictedRecheckInterval, Value: json.RawMessage("2592000"), UserOverridable: false},
 		{Key: ReconcileInterval, Value: json.RawMessage("2592000"), UserOverridable: true},
+		{Key: ContactsRefreshInterval, Value: json.RawMessage("86400"), UserOverridable: true, Min: floatPointer(3600), Max: floatPointer(30 * 24 * 3600)},
 		{Key: DailyCallLimit, Value: json.RawMessage("0"), UserOverridable: true},
 		{Key: UsableHourlyQuota, Value: json.RawMessage("3400"), UserOverridable: false, Min: floatPointer(1)},
 		{Key: QuotaReserve, Value: json.RawMessage("100"), UserOverridable: true},
@@ -537,6 +542,9 @@ func Merge(snapshot Snapshot) (Effective, []DroppedOverride, error) {
 	}
 	if result.ReconcileInterval, err = duration(values[ReconcileInterval]); err != nil {
 		return Effective{}, nil, invalidStored(ReconcileInterval, err)
+	}
+	if result.ContactsRefreshInterval, err = duration(values[ContactsRefreshInterval]); err != nil {
+		return Effective{}, nil, invalidStored(ContactsRefreshInterval, err)
 	}
 	if result.DailyCallLimit, err = integer64(values[DailyCallLimit]); err != nil {
 		return Effective{}, nil, invalidStored(DailyCallLimit, err)

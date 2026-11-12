@@ -11,13 +11,27 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
+	cataloggen "github.com/jooservices/xflickr/internal/catalog/adapters/postgres/gen"
 	"github.com/jooservices/xflickr/internal/catalog/app"
 	"github.com/jooservices/xflickr/internal/catalog/domain"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 	sharingapp "github.com/jooservices/xflickr/internal/sharing/app"
 	sharingdomain "github.com/jooservices/xflickr/internal/sharing/domain"
 )
+
+type contactsQueryCapture struct {
+	cataloggen.DBTX
+	query string
+	args  []any
+}
+
+func (db *contactsQueryCapture) Query(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
+	db.query, db.args = query, append([]any(nil), args...)
+	return db.DBTX.Query(ctx, query, args...)
+}
 
 func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
@@ -54,13 +68,24 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 		suffix + "-contact-album-null-2",
 	}
 	var user1ID, user2ID, account1ID, account1SecondID, account1ThirdID, account2ID int64
-	defer func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM contacts WHERE person_nsid=ANY($1) OR contact_nsid=ANY($1)`, personIDs)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM albums WHERE id=ANY($1)`, append([]string{albumID, hiddenAlbumID}, contactAlbumIDs...))
-		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id=ANY($1)`, append(cleanupPhotoIDs, extraPhotoIDs...))
-		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE nsid=ANY($1)`, personIDs)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=ANY($1)`, []int64{user1ID, user2ID})
-	}()
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM contacts WHERE person_nsid=ANY($1) OR contact_nsid=ANY($1)`, personIDs); err != nil {
+			t.Errorf("delete contacts fixture: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM albums WHERE id=ANY($1)`, append([]string{albumID, hiddenAlbumID}, contactAlbumIDs...)); err != nil {
+			t.Errorf("delete albums fixture: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM photos WHERE owner_nsid=ANY($1) OR id=ANY($2)`, personIDs, append(cleanupPhotoIDs, extraPhotoIDs...)); err != nil {
+			t.Errorf("delete photos fixture: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM people WHERE nsid=ANY($1)`, personIDs); err != nil {
+			t.Errorf("delete people fixture: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM users WHERE id=ANY($1)`, []int64{user1ID, user2ID}); err != nil {
+			t.Errorf("delete users fixture: %v", err)
+		}
+	})
 	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration','user') RETURNING id`, suffix+"-u1@example.invalid").Scan(&user1ID); err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +124,29 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if err := repository.UpsertPeople(ctx, people); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `UPDATE people SET photos_count=99 WHERE nsid=ANY($1)`, []string{user2NSID, hiddenNSID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid) VALUES($1,$2),($1,$3)`, user1NSID, user2NSID, hiddenNSID); err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
+	const hiddenPhotoCount = 1200
+	hiddenPhotoStart := time.Now().UnixNano() + 1_000_000
+	hiddenPhotos := make([]domain.Photo, hiddenPhotoCount)
+	for i := range hiddenPhotos {
+		id := hiddenPhotoStart + int64(i)
+		hiddenPhotos[i] = domain.Photo{
+			ID: id, OwnerNSID: hiddenNSID, Title: "private", LastUpdate: now,
+			Visibility: domain.VisibilityPrivate, Raw: []byte(fmt.Sprintf(`{"id":%d}`, id)),
+		}
+	}
+	for start := 0; start < len(hiddenPhotos); start += 500 {
+		end := min(start+500, len(hiddenPhotos))
+		if err := repository.UpsertPhotos(ctx, hiddenPhotos[start:end]); err != nil {
+			t.Fatal(err)
+		}
+	}
 	photos := []domain.Photo{
 		{ID: photoIDs[0], OwnerNSID: user1NSID, Title: "private to one", LastUpdate: now, Visibility: domain.VisibilityPrivate, Raw: []byte(`{"id":1}`)},
 		{ID: photoIDs[1], OwnerNSID: user2NSID, Title: "shared public", LastUpdate: now.Add(-time.Second), Visibility: domain.VisibilityPublic, Tags: []string{"shared"}, Sizes: []byte(`[{"label":"Large","width":1200,"height":800}]`), SizesStatus: domain.SizesConfirmed, Raw: []byte(`{"id":2}`)},
@@ -127,6 +174,21 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 		if _, err := pool.Exec(ctx, `INSERT INTO observations(user_id,flickr_account_id,record_kind,record_id) VALUES($1,$2,$3,$4)`, observation.userID, observation.accountID, observation.kind, observation.id); err != nil {
 			t.Fatal(err)
 		}
+	}
+	contactsCapture := &contactsQueryCapture{DBTX: pool}
+	contactsRepository, err := postgres.New(contactsCapture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contacts, _, err := (app.ReadService{Repository: contactsRepository}).ListContacts(ctx, user1ID, "", 10)
+	if err != nil {
+		t.Fatalf("list contacts: %v", err)
+	}
+	if len(contacts.Items) != 2 {
+		t.Fatalf("contact count = %d, want 2 stored contacts", len(contacts.Items))
+	}
+	if strings.Contains(contactsCapture.query, "photos") || strings.Contains(contactsCapture.query, "observations") {
+		t.Fatalf("contacts query must not count photos: %s", contactsCapture.query)
 	}
 	if err := repository.UpsertFavoritesBatch(ctx, []postgres.Favorite{
 		{PersonNSID: user1NSID, PhotoID: photoIDs[1], FaveDate: now},
@@ -584,4 +646,135 @@ func inspectCatalogReadPlan(node catalogReadPlanNode) (seqScan, observationIndex
 		observationIndex = observationIndex || childObservationIndex
 	}
 	return seqScan, observationIndex
+}
+
+func TestContactsKeysetPageUsesReverseIndexAndBoundedPlan(t *testing.T) {
+	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's isolated PostgreSQL database")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	pool := dbtest.Open(t, loadCatalogDatabase(t))
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := tx.Rollback(context.Background()); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			t.Errorf("rollback contacts plan fixture: %v", err)
+		}
+	}()
+	suffix := fmt.Sprintf("contacts-plan-%d", time.Now().UnixNano())
+	account := suffix + "-account"
+	contactPrefix := suffix + "-contact-"
+	const fixtureContactCount = 400_000
+	firstContacts := make([]string, 26)
+	for i := range firstContacts {
+		firstContacts[i] = fmt.Sprintf("%s%06d", contactPrefix, i)
+	}
+	var userID, keyID int64
+	if err := tx.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'integration','user') RETURNING id`, suffix+"@example.invalid").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst) VALUES($1,'test',$2,'{}',1000,10,20) RETURNING id`, userID, suffix+"-key").Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO flickr_accounts(user_id,key_id,nsid,username,token_sealed,secret_sealed,status) VALUES($1,$2,$3,'account','{}','{}','ok')`, userID, keyID, account); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO people(nsid,username) VALUES($1,$1)`, account); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO people(nsid,username)
+SELECT $1 || lpad(contact_number::text, 6, '0'), $1 || lpad(contact_number::text, 6, '0')
+FROM generate_series(0,$2::integer-1) AS fixture(contact_number)`, contactPrefix, fixtureContactCount); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid)
+SELECT $1, $2 || lpad(contact_number::text, 6, '0')
+FROM generate_series(0,$3::integer-1) AS fixture(contact_number)`, account, contactPrefix, fixtureContactCount); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `ANALYZE contacts`); err != nil {
+		t.Fatal(err)
+	}
+	captured := &contactsQueryCapture{DBTX: tx}
+	repository, err := postgres.New(captured)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := repository.ListContacts(ctx, userID, nil, 25)
+	if err != nil || len(page.Items) != 25 || page.NextCursor == nil {
+		t.Fatalf("contacts page items=%d next=%v err=%v", len(page.Items), page.NextCursor, err)
+	}
+	if page.Items[0].NSID != firstContacts[0] || page.Items[24].NSID != firstContacts[24] || page.NextCursor.NSID != firstContacts[24] {
+		t.Fatalf("contacts page first=%q last=%q cursor=%+v", page.Items[0].NSID, page.Items[24].NSID, page.NextCursor)
+	}
+	if strings.Contains(captured.query, "photos") || strings.Contains(captured.query, "observations") {
+		t.Fatalf("contacts page query must not count photos: %s", captured.query)
+	}
+	var plan []any
+	var raw []byte
+	if err := tx.QueryRow(ctx, "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+captured.query, captured.args...).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatalf("decode explain plan: %v", err)
+	}
+	var explain []string
+	planRows, err := tx.Query(ctx, "EXPLAIN (ANALYZE, BUFFERS) "+captured.query, captured.args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for planRows.Next() {
+		var line string
+		if err := planRows.Scan(&line); err != nil {
+			planRows.Close()
+			t.Fatal(err)
+		}
+		explain = append(explain, line)
+	}
+	if err := planRows.Err(); err != nil {
+		planRows.Close()
+		t.Fatal(err)
+	}
+	planRows.Close()
+	t.Logf("contacts keyset page EXPLAIN (ANALYZE, BUFFERS):\n%s", strings.Join(explain, "\n"))
+	if !contactsPagePlanBounded(plan) {
+		t.Fatal("contacts page plan did not stop after 26 indexed, distinct contact rows")
+	}
+}
+
+func contactsPagePlanBounded(value any) bool {
+	switch node := value.(type) {
+	case []any:
+		for _, child := range node {
+			if contactsPagePlanBounded(child) {
+				return true
+			}
+		}
+	case map[string]any:
+		if node["Node Type"] == "Limit" && node["Parent Relationship"] == "InitPlan" {
+			rows, rowsOK := node["Actual Rows"].(float64)
+			children, childrenOK := node["Plans"].([]any)
+			if rowsOK && rows == 26 && childrenOK && len(children) == 1 {
+				unique, uniqueOK := children[0].(map[string]any)
+				if uniqueOK && unique["Node Type"] == "Unique" {
+					uniqueRows, uniqueRowsOK := unique["Actual Rows"].(float64)
+					encoded, err := json.Marshal(unique)
+					uniquePlan := string(encoded)
+					return uniqueRowsOK && uniqueRows == 26 && err == nil &&
+						strings.Contains(uniquePlan, "contacts_contact_nsid_person_nsid_idx") &&
+						!strings.Contains(uniquePlan, `"Node Type":"Sort"`) &&
+						!strings.Contains(uniquePlan, "Aggregate")
+				}
+			}
+		}
+		for _, child := range node {
+			if contactsPagePlanBounded(child) {
+				return true
+			}
+		}
+	}
+	return false
 }

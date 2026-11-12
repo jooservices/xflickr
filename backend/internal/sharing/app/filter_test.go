@@ -32,3 +32,15 @@ func TestFilterBuildsEquivalentSQLAndSearchRules(t *testing.T) {
 		}
 	}
 }
+
+func TestVisiblePhotoObservationAllowsOwnedOrSharedPhotos(t *testing.T) {
+	predicate := VisiblePhotoObservation(42)
+	for _, fragment := range []string{"o.user_id = $1", "photos.visibility = 'public'", "ss.enabled"} {
+		if !strings.Contains(predicate.Expression, fragment) {
+			t.Errorf("visible photo predicate does not contain %q: %s", fragment, predicate.Expression)
+		}
+	}
+	if len(predicate.Args) != 1 || predicate.Args[0] != int64(42) {
+		t.Fatalf("visible photo predicate args=%+v", predicate.Args)
+	}
+}

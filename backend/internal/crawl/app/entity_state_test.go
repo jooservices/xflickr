@@ -3,10 +3,12 @@ package app
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
 	catalog "github.com/jooservices/xflickr/internal/catalog/domain"
+	"github.com/jooservices/xflickr/internal/crawl/domain"
 	"github.com/jooservices/xflickr/pkg/flickr"
 )
 
@@ -185,6 +187,38 @@ func TestRestrictedCheckAdvancesOtherProbe(t *testing.T) {
 	if r.tx.advanced == nil || r.tx.advanced.Method != "flickr.favorites.getList" {
 		t.Fatalf("did not advance: %+v", r.tx)
 	}
+}
+
+func TestContactsSkipsGoneEntities(t *testing.T) {
+	r := newRig(t)
+	registry := NewRegistry()
+	if err := registry.Register(&fakeFacet{name: "contacts", lane: domain.LanePerson}); err != nil {
+		t.Fatal(err)
+	}
+	r.engine.Registry = registry
+	r.store.item.Kind = "contacts"
+	r.store.item.Cursor.Method = "flickr.contacts.getList"
+	r.store.item.Cursor.Params = map[string]string{"user_id": "gone@N00", "per_page": "500"}
+	r.engine.States = &gonePersonStates{id: "gone@N00"}
+	if err := r.engine.Handle(t.Context(), 7); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.flickr.requests) != 0 {
+		t.Fatalf("gone contacts account still called Flickr: %+v", r.flickr.requests)
+	}
+	if !slices.Contains(r.store.calls, "finish") {
+		t.Fatalf("gone contacts work was not finished: %v", r.store.calls)
+	}
+}
+
+type gonePersonStates struct{ id string }
+
+func (s gonePersonStates) Suppressed(_ context.Context, a EntityAccess, _ time.Time) (bool, error) {
+	return a.Kind == "person" && a.ID == s.id, nil
+}
+
+func (s gonePersonStates) RecordFailure(context.Context, EntityAccess, string, string, time.Time, time.Time) error {
+	return nil
 }
 
 func TestEngineMissingEntityUsesAddressedID(t *testing.T) {

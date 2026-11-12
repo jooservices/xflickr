@@ -100,6 +100,8 @@ paths:
     $ref: ./paths/events.yaml#/stream
   /people:
     $ref: ./paths/catalog.yaml#/people
+  /contacts:
+    $ref: ./paths/catalog.yaml#/contacts
   /people/{nsid}:
     $ref: ./paths/catalog.yaml#/person
   /people/{nsid}/photos:
@@ -227,6 +229,8 @@ components:
       $ref: ./schemas/catalog.yaml#/CatalogSize
     CatalogPerson:
       $ref: ./schemas/catalog.yaml#/CatalogPerson
+    CatalogContact:
+      $ref: ./schemas/catalog.yaml#/CatalogContact
     CatalogPhoto:
       $ref: ./schemas/catalog.yaml#/CatalogPhoto
     CatalogFavorite:
@@ -235,6 +239,8 @@ components:
       $ref: ./schemas/catalog.yaml#/CatalogAlbum
     CatalogPersonPage:
       $ref: ./schemas/catalog.yaml#/CatalogPersonPage
+    CatalogContactPage:
+      $ref: ./schemas/catalog.yaml#/CatalogContactPage
     CatalogPhotoPage:
       $ref: ./schemas/catalog.yaml#/CatalogPhotoPage
     CatalogFavoritePage:

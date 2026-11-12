@@ -46,3 +46,11 @@ func (r *Repository) UpsertPersonGroups(ctx context.Context, items []catalog.Per
 	}
 	return r.UpsertPersonGroupsBatch(ctx, values)
 }
+
+func (r *Repository) UpsertContacts(ctx context.Context, items []catalog.Contact) error {
+	values := make([]Contact, 0, len(items))
+	for _, item := range items {
+		values = append(values, Contact{PersonNSID: item.PersonNSID, ContactNSID: item.ContactNSID, SeenAt: item.SeenAt})
+	}
+	return r.UpsertContactsBatch(ctx, values)
+}

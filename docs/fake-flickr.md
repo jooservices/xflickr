@@ -5,6 +5,10 @@ with generated JPEGs and a CDN-style image path. The built-in YAML seed is
 embedded in the binary; `FAKEFLICKR_SEED` can point to another YAML dataset.
 The seed includes people, photos, favorites, albums, contacts, groups, and
 galleries, with a three-level contact and favorite discovery graph.
+Authenticated `flickr.contacts.getList` and public `flickr.contacts.getPublicList`
+page the seeded contact edges for the resolved person (defaulting to the first
+seed person when `user_id` is omitted on methods that require a signed-in
+member).
 
 `galleries.getList` follows Flickr's continuation contract. It requires the
 initial `continuation=0`, returns an opaque numeric offset when more seeded

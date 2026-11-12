@@ -169,9 +169,24 @@ The cursor advances over people who are not yet due without marking them
 checked, and wraps only after visiting the end of the list. At a wrap, one
 `flickr.photos.getContactsPhotos` probe is scheduled per connected account.
 The `contacts_photos` facet queues a check for each distinct owner in the
-response. `crawl_interests` stores per-person photo, favorite, and check
-checkpoints. The settings interval is enforced by the scheduler, not a cron
-job.
+response. Independently, `ScheduleContacts` enqueues the `contacts` facet
+(`flickr.contacts.getList`) for each connected account when
+`contacts_refresh_interval` has elapsed since the previous completed or failed
+item. When users have connected the same Flickr NSID, the newest contacts scan
+is selected by its start checkpoint and work-item ID. Older scans stop before
+another Flickr call, and page commits lock and verify the selected scan before
+writing relationships or reconciling the list. This prevents an interleaved
+older page from lowering `seen_at` and causing a newer complete scan to delete
+a contact that remains present. Each selected page also registers its contact
+discoveries for every user with an active connected account for that NSID,
+using each user's own maximum depth. `crawl_interests` stores per-person photo,
+favorite, and check checkpoints. The settings interval is enforced by the
+scheduler, not a cron job.
+
+Contacts work is assigned only to an account with an `ok` connection and a
+`valid` API key. If a pending contacts item no longer matches usable
+credentials, the scheduler can move it to another eligible account for the
+same Flickr NSID while preserving its cursor.
 
 ## Scoring
 

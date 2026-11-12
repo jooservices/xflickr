@@ -33,6 +33,7 @@ func TestMergeSeededDefaults(t *testing.T) {
 		ChangeCheckInterval:       24 * time.Hour,
 		RestrictedRecheckInterval: 30 * 24 * time.Hour,
 		ReconcileInterval:         30 * 24 * time.Hour,
+		ContactsRefreshInterval:   24 * time.Hour,
 		DailyCallLimit:            0,
 		UsableHourlyQuota:         3400,
 		QuotaReserve:              100,

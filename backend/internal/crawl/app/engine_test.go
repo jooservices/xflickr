@@ -19,12 +19,13 @@ import (
 var epoch = time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 
 type fakeFacet struct {
-	name   string
-	lane   domain.Lane
-	plan   []domain.WorkSpec
-	result domain.Result
-	err    error
-	pages  []domain.Page
+	name    string
+	lane    domain.Lane
+	plan    []domain.WorkSpec
+	result  domain.Result
+	results []domain.Result
+	err     error
+	pages   []domain.Page
 }
 
 func (f *fakeFacet) Name() string      { return f.name }
@@ -35,19 +36,24 @@ func (f *fakeFacet) Plan(context.Context, domain.Person) []domain.WorkSpec {
 
 func (f *fakeFacet) Handle(_ context.Context, page domain.Page) (domain.Result, error) {
 	f.pages = append(f.pages, page)
+	if index := len(f.pages) - 1; index < len(f.results) {
+		return f.results[index], f.err
+	}
 	return f.result, f.err
 }
 
 type fakeStore struct {
-	item      domain.Item
-	loadErr   error
-	started   bool
-	startErr  error
-	calls     []string
-	deferral  Deferral
-	stop      StopRequest
-	reason    string
-	stampHook func(domain.Cursor, domain.Cursor)
+	item              domain.Item
+	loadErr           error
+	started           bool
+	startErr          error
+	calls             []string
+	deferral          Deferral
+	stop              StopRequest
+	reason            string
+	stampHook         func(domain.Cursor, domain.Cursor)
+	staleContactsScan bool
+	beginContactsErr  error
 }
 
 func (s *fakeStore) Load(context.Context, int64) (domain.Item, error) { return s.item, s.loadErr }
@@ -69,6 +75,16 @@ func (s *fakeStore) StampScanStart(_ context.Context, _ int64, at int64, expecte
 			s.stampHook(previous, s.item.Cursor)
 		}
 	}
+	return nil
+}
+
+func (s *fakeStore) BeginContactsScan(context.Context, int64, string, int64) (bool, error) {
+	s.calls = append(s.calls, "begin_contacts_scan")
+	return !s.staleContactsScan, s.beginContactsErr
+}
+
+func (s *fakeStore) FinishStaleContactsScan(context.Context, int64) error {
+	s.calls = append(s.calls, "finish_stale_contacts_scan")
 	return nil
 }
 
@@ -97,17 +113,24 @@ func (s *fakeStore) Stop(_ context.Context, r StopRequest) error {
 
 // fakeTx records writes and can hold a current item for the lock check.
 type fakeTx struct {
-	current      domain.Item
-	lockErr      error
-	failOn       string
-	log          []string
-	enqueued     []NewWork
-	interests    []domain.Interest
-	observations []domain.Observation
-	groups       []catalog.Group
-	personGroups []catalog.PersonGroup
-	advanced     *domain.Cursor
-	finished     bool
+	current           domain.Item
+	lockErr           error
+	failOn            string
+	log               []string
+	enqueued          []NewWork
+	interests         []domain.Interest
+	observations      []domain.Observation
+	contactsUser      int64
+	contactsNSID      string
+	contactsAt        time.Time
+	contactUsers      []int64
+	staleContactsScan bool
+	contactsGuardErr  error
+	groups            []catalog.Group
+	personGroups      []catalog.PersonGroup
+	ensured           []string
+	advanced          *domain.Cursor
+	finished          bool
 }
 
 type legacyCatalogWriter struct{ CatalogWriter }
@@ -140,7 +163,10 @@ func (t *fakeTx) UpsertPeople(context.Context, []catalog.Person) error {
 	return t.fail("people")
 }
 
-func (t *fakeTx) EnsurePeople(context.Context, []catalog.Person) error {
+func (t *fakeTx) EnsurePeople(_ context.Context, people []catalog.Person) error {
+	for _, person := range people {
+		t.ensured = append(t.ensured, person.NSID)
+	}
 	return t.fail("ensure_people")
 }
 
@@ -166,6 +192,10 @@ func (t *fakeTx) UpsertPersonGroups(_ context.Context, groups []catalog.PersonGr
 	return t.fail("person_groups")
 }
 
+func (t *fakeTx) UpsertContacts(context.Context, []catalog.Contact) error {
+	return t.fail("contacts")
+}
+
 func (t *fakeTx) Add(_ context.Context, i domain.Interest) error {
 	t.interests = append(t.interests, i)
 	return t.fail("interest")
@@ -176,8 +206,21 @@ func (t *fakeTx) Record(_ context.Context, _ int64, _ int, o []domain.Observatio
 	return t.fail("observe")
 }
 
+func (t *fakeTx) CompleteContacts(_ context.Context, userID int64, accountNSID string, scannedAt time.Time) error {
+	t.contactsUser, t.contactsNSID, t.contactsAt = userID, accountNSID, scannedAt
+	return t.fail("contacts_complete")
+}
+
+func (t *fakeTx) LockCurrentContactsScan(context.Context, int64, string, int64) (bool, error) {
+	return !t.staleContactsScan, t.contactsGuardErr
+}
+
+func (t *fakeTx) ConnectedUsersForAccount(context.Context, string) ([]int64, error) {
+	return append([]int64(nil), t.contactUsers...), nil
+}
+
 func (t *fakeTx) Do(_ context.Context, fn func(Writers) error) error {
-	return fn(Writers{Work: t, Catalog: t, Interests: t, Observations: t})
+	return fn(Writers{Work: t, Catalog: t, Interests: t, Observations: t, Contacts: t})
 }
 
 type fakeKeys struct {
@@ -393,7 +436,7 @@ func TestHandleSuccessCommitsPageAndAdvances(t *testing.T) {
 		t.Fatal(err)
 	}
 	req := r.flickr.requests[0]
-	if req.KeyID != 9 || req.UserID != 3 || req.Method != "flickr.people.getPhotos" || req.Params["page"] != "2" || req.Params["user_id"] != "100@N01" {
+	if req.KeyID != 9 || req.UserID != 3 || req.SubjectNSID != "100@N01" || req.Method != "flickr.people.getPhotos" || req.Params["page"] != "2" || req.Params["user_id"] != "100@N01" {
 		t.Fatalf("request = %+v", req)
 	}
 	if len(r.permit.done) != 1 || r.permit.done[0] != nil {
@@ -410,7 +453,7 @@ func TestHandleSuccessCommitsPageAndAdvances(t *testing.T) {
 		t.Fatalf("enqueued = %+v", r.tx.enqueued)
 	}
 	planned, explicit := r.tx.enqueued[0], r.tx.enqueued[1]
-	if planned.Kind != "contacts" || planned.Depth != 2 || planned.Cursor.Page != 1 || planned.Subject != "200@N01" {
+	if planned.Kind != "contacts" || planned.Depth != 2 || planned.Cursor.Page != 1 || planned.Cursor.CheckpointAt != epoch.Unix() || planned.Subject != "200@N01" {
 		t.Fatalf("planned = %+v", planned)
 	}
 	if explicit.Kind != "photos" || explicit.Depth != 1 {
@@ -418,6 +461,161 @@ func TestHandleSuccessCommitsPageAndAdvances(t *testing.T) {
 	}
 	if len(r.tx.observations) != 1 || r.tx.advanced == nil || r.tx.advanced.Page != 3 || r.tx.finished {
 		t.Fatalf("tx = %+v", r.tx)
+	}
+}
+
+func TestContactsReconciliationRunsOnlyOnFinalPage(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		hasMore bool
+	}{
+		{name: "intermediate page", hasMore: true},
+		{name: "final page"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t)
+			r.store.item.Kind = "contacts"
+			r.store.item.Subject = "account@N00"
+			r.store.item.Cursor = domain.Cursor{Page: 2, Method: "flickr.contacts.getList", CheckpointAt: epoch.Unix()}
+			r.tx.current.Cursor = r.store.item.Cursor
+			r.favFace.result = domain.Result{HasMore: tc.hasMore}
+			if err := r.engine.Handle(t.Context(), 7); err != nil {
+				t.Fatal(err)
+			}
+			if tc.hasMore {
+				if r.tx.contactsNSID != "" {
+					t.Fatalf("intermediate page reconciled contacts for %q", r.tx.contactsNSID)
+				}
+				return
+			}
+			if r.tx.contactsUser != 3 || r.tx.contactsNSID != "account@N00" || !r.tx.contactsAt.Equal(epoch.Truncate(time.Second)) {
+				t.Fatalf("contacts reconciliation = user:%d account:%q at:%s", r.tx.contactsUser, r.tx.contactsNSID, r.tx.contactsAt)
+			}
+		})
+	}
+}
+
+func TestContactsScanAddsEveryPageForEachConnectedUser(t *testing.T) {
+	r := newRig(t)
+	r.store.item.Kind = domain.FacetContacts
+	r.store.item.Subject = "account@N00"
+	r.store.item.Depth = 0
+	r.store.item.Cursor = domain.Cursor{Page: 1, Method: "flickr.contacts.getList", CheckpointAt: epoch.Unix()}
+	r.tx.current = domain.Item{State: domain.StateRunning, Cursor: r.store.item.Cursor}
+	r.tx.contactUsers = []int64{3, 4}
+	r.favFace.plan = nil
+	r.favFace.results = []domain.Result{
+		{Discoveries: []domain.Discovery{{NSID: "first@N00", Via: "contact"}}, HasMore: true},
+		{Discoveries: []domain.Discovery{{NSID: "second@N00", Via: "contact"}}},
+	}
+
+	if err := r.engine.Handle(t.Context(), r.store.item.ID); err != nil {
+		t.Fatalf("first contacts page: %v", err)
+	}
+	if r.tx.advanced == nil || r.tx.advanced.Page != 2 || r.tx.finished {
+		t.Fatalf("first page progress = %+v, finished=%v", r.tx.advanced, r.tx.finished)
+	}
+	r.store.item.Cursor = *r.tx.advanced
+	r.tx.current = domain.Item{State: domain.StateRunning, Cursor: *r.tx.advanced}
+	r.tx.advanced = nil
+
+	if err := r.engine.Handle(t.Context(), r.store.item.ID); err != nil {
+		t.Fatalf("second contacts page: %v", err)
+	}
+	if len(r.flickr.requests) != 2 {
+		t.Fatalf("Flickr calls = %d, want one per page", len(r.flickr.requests))
+	}
+	if len(r.tx.interests) != 4 {
+		t.Fatalf("contact interests = %+v, want both discoveries for both connected users", r.tx.interests)
+	}
+	want := map[int64]map[string]bool{
+		3: {"first@N00": false, "second@N00": false},
+		4: {"first@N00": false, "second@N00": false},
+	}
+	for _, interest := range r.tx.interests {
+		if interest.Depth != 1 || interest.Via != "contact" {
+			t.Fatalf("interest = %+v, want depth 1 via contact", interest)
+		}
+		if users, ok := want[interest.UserID]; ok {
+			users[interest.PersonNSID] = true
+		}
+	}
+	for userID, people := range want {
+		for person, found := range people {
+			if !found {
+				t.Errorf("user %d has no interest for %s", userID, person)
+			}
+		}
+	}
+}
+
+func TestSupersededContactsScanStopsBeforeFlickrCall(t *testing.T) {
+	r := newRig(t)
+	r.store.item.Kind = domain.FacetContacts
+	r.store.item.Subject = "account@N00"
+	r.store.staleContactsScan = true
+	r.tx.current.Cursor = r.store.item.Cursor
+
+	if err := r.engine.Handle(t.Context(), r.store.item.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.flickr.requests) != 0 {
+		t.Fatalf("superseded contacts scan made %d Flickr calls", len(r.flickr.requests))
+	}
+	if got := r.store.calls[len(r.store.calls)-1]; got != "finish_stale_contacts_scan" {
+		t.Fatalf("last store call = %q, want stale scan finish; calls=%v", got, r.store.calls)
+	}
+}
+
+func TestContactsScanRegistrationFailureStopsBeforeFlickrCall(t *testing.T) {
+	r := newRig(t)
+	r.store.item.Kind = domain.FacetContacts
+	r.store.item.Subject = "account@N00"
+	r.store.beginContactsErr = errors.New("database unavailable")
+	r.tx.current.Cursor = r.store.item.Cursor
+
+	if err := r.engine.Handle(t.Context(), r.store.item.ID); err == nil || !strings.Contains(err.Error(), "database unavailable") {
+		t.Fatalf("Handle() error = %v, want registration error", err)
+	}
+	if len(r.flickr.requests) != 0 {
+		t.Fatalf("contacts registration failure made %d Flickr calls", len(r.flickr.requests))
+	}
+}
+
+func TestContactsPageSupersededDuringFlickrCallDoesNotCommit(t *testing.T) {
+	r := newRig(t)
+	r.store.item.Kind = domain.FacetContacts
+	r.store.item.Subject = "account@N00"
+	r.tx.current.Cursor = r.store.item.Cursor
+	r.tx.staleContactsScan = true
+	r.favFace.result = domain.Result{Contacts: []catalog.Contact{{PersonNSID: "account@N00", ContactNSID: "contact@N00"}}}
+	r.flickr.payload = json.RawMessage(`{"contacts":{"pages":1,"contact":[{"nsid":"contact@N00"}]}}`)
+
+	if err := r.engine.Handle(t.Context(), r.store.item.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.tx.log) != 0 || r.tx.finished || r.tx.advanced != nil {
+		t.Fatalf("superseded contacts page committed: log=%v finished=%v cursor=%+v", r.tx.log, r.tx.finished, r.tx.advanced)
+	}
+	if got := r.store.calls[len(r.store.calls)-1]; got != "finish_stale_contacts_scan" {
+		t.Fatalf("last store call = %q, want stale scan finish; calls=%v", got, r.store.calls)
+	}
+}
+
+func TestContactsPageScanGuardFailureAbortsCommit(t *testing.T) {
+	r := newRig(t)
+	r.store.item.Kind = domain.FacetContacts
+	r.store.item.Subject = "account@N00"
+	r.tx.current.Cursor = r.store.item.Cursor
+	r.tx.contactsGuardErr = errors.New("database unavailable")
+	r.favFace.result = domain.Result{Contacts: []catalog.Contact{{PersonNSID: "account@N00", ContactNSID: "contact@N00"}}}
+	r.flickr.payload = json.RawMessage(`{"contacts":{"pages":1,"contact":[{"nsid":"contact@N00"}]}}`)
+
+	if err := r.engine.Handle(t.Context(), r.store.item.ID); err == nil || !strings.Contains(err.Error(), "database unavailable") {
+		t.Fatalf("Handle() error = %v, want scan guard error", err)
+	}
+	if len(r.tx.log) != 0 || r.tx.finished || r.tx.advanced != nil {
+		t.Fatalf("scan guard error allowed a page commit: log=%v finished=%v cursor=%+v", r.tx.log, r.tx.finished, r.tx.advanced)
 	}
 }
 
@@ -450,7 +648,7 @@ func TestCrawlPageCommitCallsRefreshLast(t *testing.T) {
 func TestPageCatalogRequiresSplitPeopleWriter(t *testing.T) {
 	var writer CatalogWriter = legacyCatalogWriter{}
 	people := []catalog.Person{{NSID: "person@flickr", Username: "person"}}
-	if _, err := peoplePageWriterFor(writer, people); err == nil {
+	if _, err := peoplePageWriterFor(writer, people, nil); err == nil {
 		t.Fatal("page accepted a writer without split people operations")
 	}
 }
@@ -785,6 +983,29 @@ func TestHandleWaitsWithoutKeyOrPermit(t *testing.T) {
 	r.engine.Keys = fakeKeys{err: errors.New("db down")}
 	if err := r.engine.Handle(t.Context(), 7); err == nil {
 		t.Fatal("key lookup failure must surface")
+	}
+}
+
+func TestWriteCatalogEnsuresContactSubjectsBeforeRelationships(t *testing.T) {
+	tx := &fakeTx{}
+	err := writeCatalog(t.Context(), tx, tx, domain.Result{
+		People:   []catalog.Person{{NSID: "friend@N00", Username: "friend"}},
+		Contacts: []catalog.Contact{{PersonNSID: "acct@N00", ContactNSID: "friend@N00"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"ensure_people", "contacts"}
+	if len(tx.log) != len(want) {
+		t.Fatalf("log = %v, want %v", tx.log, want)
+	}
+	for i, step := range want {
+		if tx.log[i] != step {
+			t.Fatalf("log = %v, want %v", tx.log, want)
+		}
+	}
+	if len(tx.ensured) != 2 || tx.ensured[0] != "friend@N00" || tx.ensured[1] != "acct@N00" {
+		t.Fatalf("ensured = %v, want contact and account subjects before relationship write", tx.ensured)
 	}
 }
 

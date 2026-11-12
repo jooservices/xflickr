@@ -16,9 +16,13 @@ type cycleStoreFake struct {
 	now               time.Time
 	checkInterval     time.Duration
 	reconcileInterval time.Duration
+	contactsInterval  time.Duration
 	called            bool
+	contactsCalled    bool
 	result            bool
+	contactsResult    bool
 	err               error
+	contactsErr       error
 }
 
 type cycleUsersFake struct {
@@ -31,6 +35,11 @@ func (f cycleUsersFake) UsersWithInterests(context.Context) ([]int64, error) { r
 func (f *cycleStoreFake) ScheduleNext(_ context.Context, userID int64, now time.Time, checkInterval, reconcileInterval time.Duration) (bool, error) {
 	f.called, f.userID, f.now, f.checkInterval, f.reconcileInterval = true, userID, now, checkInterval, reconcileInterval
 	return f.result, f.err
+}
+
+func (f *cycleStoreFake) ScheduleContacts(_ context.Context, userID int64, now time.Time, interval time.Duration) (bool, error) {
+	f.contactsCalled, f.userID, f.now, f.contactsInterval = true, userID, now, interval
+	return f.contactsResult, f.contactsErr
 }
 
 type cycleSettingsFake struct {
@@ -163,5 +172,40 @@ func TestEffectiveReconcileIntervalUsesConfiguredOrThirtyDayDefault(t *testing.T
 	}
 	if got := EffectiveReconcileInterval(settingsdomain.Effective{}); got != 30*24*time.Hour {
 		t.Fatalf("default interval = %s", got)
+	}
+}
+
+func TestContactsRefreshIntervalSetting(t *testing.T) {
+	if got := EffectiveContactsRefreshInterval(settingsdomain.Effective{ContactsRefreshInterval: 2 * time.Hour}); got != 2*time.Hour {
+		t.Fatalf("configured interval = %s", got)
+	}
+	if got := EffectiveContactsRefreshInterval(settingsdomain.Effective{}); got != 24*time.Hour {
+		t.Fatalf("default interval = %s", got)
+	}
+	def := settingsdomain.Defaults()
+	var found bool
+	for _, setting := range def {
+		if setting.Key != settingsdomain.ContactsRefreshInterval {
+			continue
+		}
+		found = true
+		if string(setting.Value) != "86400" || setting.Min == nil || *setting.Min != 3600 || setting.Max == nil || *setting.Max != 30*24*3600 {
+			t.Fatalf("contacts_refresh_interval default = %+v", setting)
+		}
+		if err := settingsdomain.ValidateValue(setting.Key, []byte("3600"), setting.Min, setting.Max); err != nil {
+			t.Fatalf("min bound rejected: %v", err)
+		}
+		if err := settingsdomain.ValidateValue(setting.Key, []byte("2592000"), setting.Min, setting.Max); err != nil {
+			t.Fatalf("max bound rejected: %v", err)
+		}
+		if err := settingsdomain.ValidateValue(setting.Key, []byte("3599"), setting.Min, setting.Max); err == nil {
+			t.Fatal("below min accepted")
+		}
+		if err := settingsdomain.ValidateValue(setting.Key, []byte("2592001"), setting.Min, setting.Max); err == nil {
+			t.Fatal("above max accepted")
+		}
+	}
+	if !found {
+		t.Fatal("contacts_refresh_interval missing from defaults")
 	}
 }
