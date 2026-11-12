@@ -21,6 +21,7 @@ import { AlbumsPage } from '../pages/albums';
 import { LibraryPage } from '../pages/library';
 import { HomePage } from '../pages/home/HomePage';
 import { NodesPage } from '../pages/admin/nodes/NodesPage';
+import { OverviewPage } from '../pages/admin/overview/OverviewPage';
 import { RouteErrorPage } from './ErrorBoundary';
 
 function userPageElement(path: string, labelKey: MessageKey) {
@@ -68,7 +69,7 @@ const userPages: RouteObject[] = [
 const adminPages: RouteObject[] = [
   ...ADMIN_NAV.map((item): RouteObject => {
     if (item.path === '/admin') {
-      return { index: true, element: <PlaceholderPage scope="admin" titleKey={item.labelKey} /> };
+      return { index: true, element: <OverviewPage /> };
     }
     return {
       path: item.path.slice('/admin/'.length),

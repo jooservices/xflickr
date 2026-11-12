@@ -121,5 +121,16 @@
   "defaults.contacts": "Liên hệ",
   "defaults.ai": "AI mỗi ngày",
   "defaults.zip": "Giờ lưu ZIP",
-  "defaults.share": "Tỷ lệ tài nguyên"
+  "defaults.share": "Tỷ lệ tài nguyên",
+  "overview.title": "Tổng quan",
+  "overview.subtitle": "Hạn mức khóa trong một cái nhìn.",
+  "overview.refresh": "Làm mới",
+  "overview.error": "Không tải được số liệu tổng quan.",
+  "overview.kpis": "Số liệu chính",
+  "overview.keys-at-quota": "Khóa chạm hạn mức",
+  "overview.of-keys": " trên {{count}} khóa",
+  "overview.links": "Màn hình liên quan",
+  "overview.link-quota": "Hạn mức API",
+  "overview.pending-sections": "Độ sâu hàng đợi, nút khỏe, sự cố đang mở, thông lượng và sự kiện gần đây sẽ xuất hiện ở đây khi nguồn dữ liệu sẵn sàng.",
+  "overview.stale": "Đang hiển thị số liệu lần tải thành công gần nhất; lần làm mới mới nhất thất bại hoặc bị trễ."
 }

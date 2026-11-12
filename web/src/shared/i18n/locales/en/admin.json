@@ -121,5 +121,16 @@
   "defaults.contacts": "Contacts",
   "defaults.ai": "AI per day",
   "defaults.zip": "ZIP hours",
-  "defaults.share": "Resource share"
+  "defaults.share": "Resource share",
+  "overview.title": "Overview",
+  "overview.subtitle": "Key quota at a glance.",
+  "overview.refresh": "Refresh",
+  "overview.error": "Could not load the overview numbers.",
+  "overview.kpis": "Key numbers",
+  "overview.keys-at-quota": "Keys at quota",
+  "overview.of-keys": " of {{count}} keys",
+  "overview.links": "Related views",
+  "overview.link-quota": "API quota",
+  "overview.pending-sections": "Queue depth, healthy nodes, open incidents, throughput and recent events appear here once their data sources are available.",
+  "overview.stale": "Showing the last successful numbers; the latest refresh failed or is late."
 }
