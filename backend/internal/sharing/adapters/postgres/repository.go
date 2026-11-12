@@ -10,11 +10,13 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/jooservices/xflickr/internal/platform/db"
+	"github.com/jooservices/xflickr/internal/sharing/adapters/postgres/gen"
 	"github.com/jooservices/xflickr/internal/sharing/app"
 	"github.com/jooservices/xflickr/internal/sharing/domain"
 )
 
 type settingTx interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
 	QueryRow(context.Context, string, ...any) pgx.Row
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 }
@@ -70,6 +72,27 @@ func (r *Repository) Set(ctx context.Context, setting domain.Setting) (domain.Se
 		return domain.Setting{}, err
 	}
 	return result, nil
+}
+
+// CountShared returns the distinct public photo records the user observed, as
+// long as the user's sharing is on. The generated query returns zero when off.
+func (r *Repository) CountShared(ctx context.Context, userID int64) (int64, error) {
+	if r == nil || r.run == nil || ctx == nil || userID <= 0 {
+		return 0, errors.New("sharing: database, context and user are required")
+	}
+	var count int64
+	err := r.run(ctx, func(tx settingTx) error {
+		shared, err := gen.New(tx).CountSharedRecords(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("sharing: count shared records: %w", err)
+		}
+		count = shared
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 // Get loads a user's sharing setting, defaulting to disabled when it has never

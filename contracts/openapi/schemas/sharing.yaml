@@ -7,6 +7,26 @@ SharingSetting:
     changed_at: { type: [string, 'null'], format: date-time }
     links: { $ref: ./rest.yaml#/Links }
 
+SharingSummary:
+  type: object
+  additionalProperties: false
+  required: [enabled, changed_at, shared_record_count, links]
+  properties:
+    enabled: { type: boolean }
+    changed_at: { type: [string, 'null'], format: date-time }
+    shared_record_count:
+      type: integer
+      minimum: 0
+      description: Distinct eligible public records this user contributes that other users can see; zero while sharing is off.
+    links: { $ref: ./rest.yaml#/Links }
+
+SharingSummaryEnvelope:
+  allOf:
+    - $ref: ./rest.yaml#/RESTEnvelope
+    - type: object
+      properties:
+        data: { $ref: '#/SharingSummary' }
+
 UpdateSharingRequest:
   type: object
   additionalProperties: false

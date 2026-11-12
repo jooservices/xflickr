@@ -53,6 +53,7 @@ components:
   sharing-domain:   { in: internal/sharing/domain/** }
   sharing-app:      { in: internal/sharing/app/** }
   sharing-adapters: { in: internal/sharing/adapters/** }
+  sharing-adapters-gen: { in: internal/sharing/adapters/postgres/gen/** }
   media-domain:     { in: internal/media/domain/** }
   media-app:        { in: internal/media/app/** }
   media-adapters:   { in: internal/media/adapters/** }
@@ -128,7 +129,7 @@ deps:
   sharing-app:
     mayDependOn: [sharing-domain]
   sharing-adapters:
-    mayDependOn: [sharing-domain, sharing-app, platform]
+    mayDependOn: [sharing-domain, sharing-app, sharing-adapters-gen, platform]
   crawl-domain:
     mayDependOn: [catalog-domain]
   crawl-app:

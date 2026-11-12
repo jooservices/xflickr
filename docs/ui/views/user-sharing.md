@@ -58,14 +58,13 @@ USER dark gallery token set.
 ## Data and API
 
 Paths are relative to `/api/v1`. Existing endpoints are marked **exists**.
-Contract requests are requirements for the build ticket; this design ticket
-does not change OpenAPI.
+Contract requests are requirements that no endpoint delivers yet.
 
 | Content | Source and fields |
 | --- | --- |
-| Initial setting and summary | `GET /me/sharing` **contract request** (authenticated; no read operation exists yet). Return `enabled: boolean` (false when unset), `changed_at: date-time (nullable)`, `shared_record_count: integer` (distinct eligible public records contributed by this user and visible to others; zero when off), `received_record_count: integer` (distinct eligible public records available from other opted-in users; zero when off), `calls_saved_count: integer` (deduplicated Flickr calls avoided through shared record reuse; zero when off), `calls_saved_period: "week"`, and `server_time: date-time`. Counts exclude private/friends/family records and are aggregate counts only. |
+| Initial setting and summary | `GET /me/sharing` **exists** (authenticated). Returns `enabled: boolean` (false when unset), `changed_at: date-time (nullable)`, and `shared_record_count: integer` (at least 0; distinct eligible public records contributed by this user and visible to others; zero when off). Counts exclude private/friends/family records and are aggregate counts only. **Contract request, separate ticket** (no data source yet): `received_record_count: integer` (distinct eligible public records available from other opted-in users; zero when off), `calls_saved_count: integer` (deduplicated Flickr calls avoided through shared record reuse; zero when off), `calls_saved_period: "week"`, and `server_time: date-time`. |
 | Change setting | `PUT /me/sharing` **exists**. Send `{enabled: boolean}`; response has `enabled`, `changed_at`. Requires CSRF. Persist the choice and publish `sharing.changed` transactionally. On success reconcile the switch immediately; when off, set all three summary counts to zero in the response/cache before refreshing summary. **Contract request:** include the updated counts in the response, or guarantee the subsequent summary read reflects the committed choice. |
-| Summary refresh | `GET /me/sharing` contract request above. Re-read after successful setting change and after a sharing summary event. |
+| Summary refresh | `GET /me/sharing` **exists** (see above). Re-read after successful setting change and after a sharing summary event. |
 | Live summary | `GET /events` **exists** as authenticated SSE with `Last-Event-ID`, but currently streams crawl/download progress only. **Contract request:** add user-scoped `sharing.summary.updated` carrying no counts or personal record data; on receipt fetch `GET /me/sharing`. The setting's internal `sharing.changed` outbox event is not itself a browser event. |
 | Errors | Shared `Error` body has `code`, `message`, `details`. Localize by `code`; never display server English `message`. `401` expires session; `403` forbidden; `429`/network/5xx retain previous values and offer retry. |
 

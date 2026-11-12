@@ -21,7 +21,12 @@ import type {
   UseQueryResult,
 } from '@tanstack/react-query';
 
-import type { RESTProblem, SharingEnvelope, UpdateSharingRequest } from '../models';
+import type {
+  RESTProblem,
+  SharingEnvelope,
+  SharingSummaryEnvelope,
+  UpdateSharingRequest,
+} from '../models';
 
 import { customFetch } from '../../mutator';
 
@@ -81,7 +86,7 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 export type getMeSharingResponse200 = {
-  data: SharingEnvelope;
+  data: SharingSummaryEnvelope;
   status: 200;
 };
 

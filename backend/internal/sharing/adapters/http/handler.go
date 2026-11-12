@@ -25,6 +25,8 @@ type Handler struct {
 
 type sharingResponse struct {
 	setting domain.Setting
+	// shared is set only by GET; the PUT response keeps the setting-only contract.
+	shared  *int64
 	status  int
 	problem *rest.Problem
 	traceID string
@@ -46,6 +48,9 @@ func (response sharingResponse) write(w http.ResponseWriter) error {
 		"me":     rest.NewLink("/api/v1/me", http.MethodGet),
 	}
 	data := map[string]any{"enabled": response.setting.Enabled, "changed_at": changedAt, "links": links}
+	if response.shared != nil {
+		data["shared_record_count"] = *response.shared
+	}
 	return rest.WriteSuccess(w, response.status, http.StatusText(response.status), data, nil, response.traceID)
 }
 
@@ -70,14 +75,15 @@ func (h Handler) GetMeSharing(ctx context.Context, _ gen.GetMeSharingRequestObje
 	if !ok {
 		return sharingResponse{problem: rest.NewProblem("unauthenticated", "Authentication required", nil), traceID: sharingTraceID(ctx)}, nil
 	}
-	setting, err := h.Read.Execute(ctx, userID)
+	summary, err := h.Read.Execute(ctx, userID)
 	if errors.Is(err, app.ErrInvalidUser) {
 		return sharingResponse{problem: rest.NewProblem("unauthenticated", "Authentication required", nil), traceID: sharingTraceID(ctx)}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return sharingResponse{setting: setting, status: http.StatusOK, traceID: sharingTraceID(ctx)}, nil
+	shared := summary.SharedRecordCount
+	return sharingResponse{setting: summary.Setting, shared: &shared, status: http.StatusOK, traceID: sharingTraceID(ctx)}, nil
 }
 
 func (h Handler) PutMeSharing(ctx context.Context, request gen.PutMeSharingRequestObject) (gen.PutMeSharingResponseObject, error) {
