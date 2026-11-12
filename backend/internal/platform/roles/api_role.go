@@ -82,7 +82,7 @@ func (r APIRole) Run(ctx context.Context) error {
 	defer stopMetrics()
 	hub := platformsse.NewHub(256)
 	go listenSSEEvents(ctx, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"}, hub)
-	handlers, err := buildConfiguredAPIHandlerSetWithObserver(pool, redisClient, cfg, r.version, hub, readinessFromContext(ctx), callObserver)
+	handlers, err := buildAPIHandlerSet(apiBuildOptions{Pool: pool, Redis: redisClient, Config: cfg, Version: r.version, Hub: hub, ProbeReadiness: readinessFromContext(ctx), CallObserver: callObserver})
 	if err != nil {
 		return err
 	}

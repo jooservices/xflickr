@@ -22,7 +22,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	redisv9 "github.com/redis/go-redis/v9"
 
-	accountshttp "github.com/jooservices/xflickr/internal/accounts/adapters/http"
 	accountsettings "github.com/jooservices/xflickr/internal/accounts/adapters/settings"
 	accountsapp "github.com/jooservices/xflickr/internal/accounts/app"
 	identityhttp "github.com/jooservices/xflickr/internal/identity/adapters/http"
@@ -36,7 +35,6 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/config"
 	quotaapp "github.com/jooservices/xflickr/internal/quota/app"
 	quotadomain "github.com/jooservices/xflickr/internal/quota/domain"
-	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
 	scheduleapp "github.com/jooservices/xflickr/internal/schedule/app"
 	flickrclient "github.com/jooservices/xflickr/pkg/flickr"
 )
@@ -133,10 +131,10 @@ func TestAPIRoleReturnsListenerError(t *testing.T) {
 func TestBuildConfiguredAPIHandler(t *testing.T) {
 	client := redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:1"})
 	defer client.Close()
-	if _, err := buildConfiguredAPIHandler(nil, client, config.Config{}, "test"); err == nil {
+	if _, err := buildTestAPIHandler(nil, client, config.Config{}, "test"); err == nil {
 		t.Fatal("handler builder accepted a nil database")
 	}
-	if _, err := buildConfiguredAPIHandler(&pgxpool.Pool{}, client, config.Config{Identity: config.IdentityConfig{Argon2Memory: 32 * 1024, Argon2Iterations: 1, Argon2Parallelism: 1, Argon2SaltLength: 16, Argon2KeyLength: 32}}, "test"); err == nil {
+	if _, err := buildTestAPIHandler(&pgxpool.Pool{}, client, config.Config{Identity: config.IdentityConfig{Argon2Memory: 32 * 1024, Argon2Iterations: 1, Argon2Parallelism: 1, Argon2SaltLength: 16, Argon2KeyLength: 32}}, "test"); err == nil {
 		t.Fatal("handler builder accepted missing keyring configuration")
 	}
 	encoded := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
@@ -146,7 +144,7 @@ func TestBuildConfiguredAPIHandler(t *testing.T) {
 		Redis:    config.RedisConfig{Prefix: "handler-test:"},
 		Blob:     config.BlobConfig{Driver: "local", LocalDir: t.TempDir()},
 	}
-	handler, err := buildConfiguredAPIHandler(&pgxpool.Pool{}, client, cfg, "configured-test")
+	handler, err := buildTestAPIHandler(&pgxpool.Pool{}, client, cfg, "configured-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -934,7 +932,7 @@ func TestBuildKeyHandlerWiresEncryptionAndPrincipal(t *testing.T) {
 }
 
 func TestAPIRouterRequiresSessionAndCSRF(t *testing.T) {
-	router := newAPIRouter(identityhttp.Handler{Version: "router-test", Sessions: stubSessions{}}, accountshttp.KeyHandler{}, accountshttp.ConnectHandler{}, schedulehttp.Handler{})
+	router := newTestAPIRouter(apiRouterOptions{Identity: identityhttp.Handler{Version: "router-test", Sessions: stubSessions{}}})
 	health := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	healthResponse := httptest.NewRecorder()
 	router.ServeHTTP(healthResponse, health)

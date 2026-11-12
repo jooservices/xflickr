@@ -76,7 +76,7 @@ func TestRoutesWithSessionIntegration(t *testing.T) {
 	}
 	redisClient := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	t.Cleanup(func() { _ = redisClient.Close() })
-	handler, err := buildConfiguredAPIHandler(pool, redisClient, cfg, "routes-integration")
+	handler, err := buildTestAPIHandler(pool, redisClient, cfg, "routes-integration")
 	if err != nil {
 		t.Fatal(err)
 	}

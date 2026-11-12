@@ -57,82 +57,121 @@ import (
 	flickrclient "github.com/jooservices/xflickr/pkg/flickr"
 )
 
-func buildConfiguredAPIHandler(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, version string) (http.Handler, error) {
-	return buildConfiguredAPIHandlerWithHub(pool, redisClient, cfg, version, platformsse.NewHub(256))
+// apiBuildOptions are the inputs of the API composition root.
+type apiBuildOptions struct {
+	Pool           *pgxpool.Pool
+	Redis          redisv9.UniversalClient
+	Config         config.Config
+	Version        string
+	Hub            *platformsse.Hub
+	ProbeReadiness *httpx.Readiness
+	CallObserver   flickrclient.CallObserver
 }
 
-func buildConfiguredAPIHandlerWithHub(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, version string, hub *platformsse.Hub, readiness ...*httpx.Readiness) (http.Handler, error) {
-	handlers, err := buildConfiguredAPIHandlerSetWithHub(pool, redisClient, cfg, version, hub, readiness...)
-	return handlers.public, err
-}
-
-func buildConfiguredAPIHandlerSetWithHub(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, version string, hub *platformsse.Hub, readiness ...*httpx.Readiness) (apiHandlerSet, error) {
-	var probeReadiness *httpx.Readiness
-	if len(readiness) > 0 {
-		probeReadiness = readiness[0]
-	}
-	return buildConfiguredAPIHandlerSetWithObserver(pool, redisClient, cfg, version, hub, probeReadiness, nil)
-}
-
-func buildConfiguredAPIHandlerSetWithObserver(pool *pgxpool.Pool, redisClient redisv9.UniversalClient, cfg config.Config, version string, hub *platformsse.Hub, probeReadiness *httpx.Readiness, callObserver flickrclient.CallObserver) (apiHandlerSet, error) {
-	if pool == nil {
+// buildAPIHandlerSet wires every API handler in a fixed order and mounts them.
+func buildAPIHandlerSet(opts apiBuildOptions) (apiHandlerSet, error) {
+	if opts.Pool == nil {
 		return apiHandlerSet{}, errors.New("api: postgres database is required")
 	}
-	identity, err := buildIdentityHandler(pool, redisClient, cfg, version)
-	if err != nil {
+	var routes apiRouterOptions
+	if err := fillAccountHandlers(opts, &routes); err != nil {
 		return apiHandlerSet{}, err
 	}
-	keys, err := buildKeyHandler(pool, cfg, callObserver)
-	if err != nil {
+	if err := fillContentHandlers(opts, &routes); err != nil {
 		return apiHandlerSet{}, err
 	}
-	connect, err := buildConnectHandler(pool, redisClient, cfg, callObserver)
-	if err != nil {
+	if err := fillStorageHandlers(opts, &routes); err != nil {
 		return apiHandlerSet{}, err
 	}
-	plans, err := buildPlanHandler(pool)
-	if err != nil {
+	if err := fillOperationalHandlers(opts.Pool, &routes); err != nil {
 		return apiHandlerSet{}, err
 	}
-	flags, err := buildFeatureFlagHandler(pool)
+	routes.Quota = buildQuotaHandler(opts.Pool, opts.Redis, opts.Config)
+	routes.Stream = platformsse.Handler{Hub: opts.Hub, Principal: sseUserID}
+	routes.Readiness = opts.ProbeReadiness
+	return newAPIRouterSet(routes), nil
+}
+
+// fillAccountHandlers wires identity, API keys, OAuth connect, plans and flags.
+func fillAccountHandlers(opts apiBuildOptions, routes *apiRouterOptions) error {
+	identity, err := buildIdentityHandler(opts.Pool, opts.Redis, opts.Config, opts.Version)
 	if err != nil {
-		return apiHandlerSet{}, err
+		return err
 	}
-	catalogRepository, err := catalogpostgres.New(pool)
+	routes.Identity = identity
+	keys, err := buildKeyHandler(opts.Pool, opts.Config, opts.CallObserver)
 	if err != nil {
-		return apiHandlerSet{}, err
+		return err
 	}
-	catalogReads := cataloghttp.Handler{Reads: catalogapp.ReadService{Repository: catalogRepository}, ActorID: userIDFromPrincipal}
-	crawl, err := buildCrawlHandlerWithEvents(pool, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"})
+	routes.Keys = keys
+	connect, err := buildConnectHandler(opts.Pool, opts.Redis, opts.Config, opts.CallObserver)
 	if err != nil {
-		return apiHandlerSet{}, err
+		return err
 	}
-	sharing, err := buildSharingHandler(pool)
+	routes.Connect = connect
+	plans, err := buildPlanHandler(opts.Pool)
 	if err != nil {
-		return apiHandlerSet{}, err
+		return err
 	}
+	routes.Plans = plans
+	flags, err := buildFeatureFlagHandler(opts.Pool)
+	if err != nil {
+		return err
+	}
+	routes.Flags = flags
+	return nil
+}
+
+// fillContentHandlers wires the catalog, crawl and sharing handlers.
+func fillContentHandlers(opts apiBuildOptions, routes *apiRouterOptions) error {
+	catalogRepository, err := catalogpostgres.New(opts.Pool)
+	if err != nil {
+		return err
+	}
+	routes.Catalog = cataloghttp.Handler{Reads: catalogapp.ReadService{Repository: catalogRepository}, ActorID: userIDFromPrincipal}
+	crawl, err := buildCrawlHandlerWithEvents(opts.Pool, platformsse.Publisher{Client: opts.Redis, Channel: opts.Config.Redis.Prefix + "events"})
+	if err != nil {
+		return err
+	}
+	routes.Crawl = crawl
+	sharing, err := buildSharingHandler(opts.Pool)
+	if err != nil {
+		return err
+	}
+	routes.Sharing = sharing
+	return nil
+}
+
+// fillStorageHandlers wires the blob store, the readiness probe and downloads.
+func fillStorageHandlers(opts apiBuildOptions, routes *apiRouterOptions) error {
 	// The store always exists so download creation always applies the
 	// temp-storage back-pressure check; an empty driver fails fast.
-	blobs, err := newBlobStore(context.Background(), cfg)
+	blobs, err := newBlobStore(context.Background(), opts.Config)
 	if err != nil {
-		return apiHandlerSet{}, err
+		return err
 	}
-	if probeReadiness != nil {
-		probeReadiness.ConfigureRole("api", postgresDependency(pool), redisDependency(redisClient), blobStoreDependency(blobs))
+	if opts.ProbeReadiness != nil {
+		opts.ProbeReadiness.ConfigureRole("api", postgresDependency(opts.Pool), redisDependency(opts.Redis), blobStoreDependency(blobs))
 	}
-	downloads, err := buildDownloadHandlerWithEvents(pool, blobs, platformsse.Publisher{Client: redisClient, Channel: cfg.Redis.Prefix + "events"}, cfg.DownloadLinkTTL)
+	downloads, err := buildDownloadHandlerWithEvents(opts.Pool, blobs, platformsse.Publisher{Client: opts.Redis, Channel: opts.Config.Redis.Prefix + "events"}, opts.Config.DownloadLinkTTL)
 	if err != nil {
-		return apiHandlerSet{}, err
+		return err
 	}
+	routes.Downloads = downloads
+	return nil
+}
+
+// fillOperationalHandlers wires operations, cluster nodes and the home page.
+func fillOperationalHandlers(pool *pgxpool.Pool, routes *apiRouterOptions) error {
 	incidentReader, err := opsstore.NewOpenIncidentRepository(pool)
 	if err != nil {
-		return apiHandlerSet{}, fmt.Errorf("api: create open incident reader: %w", err)
+		return fmt.Errorf("api: create open incident reader: %w", err)
 	}
 	openIncidents, err := opsapp.NewOpenIncidents(incidentReader)
 	if err != nil {
-		return apiHandlerSet{}, fmt.Errorf("api: create open incident use case: %w", err)
+		return fmt.Errorf("api: create open incident use case: %w", err)
 	}
-	opsHandler := opshttp.Handler{
+	routes.Ops = opshttp.Handler{
 		Service:       ops.Service{Store: opspostgres.Store{Pool: pool, DB: pool}},
 		Metrics:       metricspostgres.SeriesStore{Pool: pool},
 		OpenIncidents: openIncidents,
@@ -141,14 +180,15 @@ func buildConfiguredAPIHandlerSetWithObserver(pool *pgxpool.Pool, redisClient re
 	}
 	nodeService, err := buildNodeService(pool)
 	if err != nil {
-		return apiHandlerSet{}, err
+		return err
 	}
-	nodesHandler := clusterhttp.Handler{Service: nodeService}
-	homeHandler, err := buildHomeHandler(pool)
+	routes.Nodes = clusterhttp.Handler{Service: nodeService}
+	home, err := buildHomeHandler(pool)
 	if err != nil {
-		return apiHandlerSet{}, err
+		return err
 	}
-	return newAPIRoutersWithServices(identity, keys, connect, plans, crawl, buildQuotaHandler(pool, redisClient, cfg), sharing, downloads, opsHandler, platformsse.Handler{Hub: hub, Principal: sseUserID}, probeReadiness, flags, catalogReads, nodesHandler, homeHandler), nil
+	routes.Home = home
+	return nil
 }
 
 func buildNodeService(pool *pgxpool.Pool) (clusterapp.Nodes, error) {

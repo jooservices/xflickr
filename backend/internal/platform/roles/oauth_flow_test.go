@@ -22,7 +22,6 @@ import (
 	identityapp "github.com/jooservices/xflickr/internal/identity/app"
 	identitydomain "github.com/jooservices/xflickr/internal/identity/domain"
 	"github.com/jooservices/xflickr/internal/platform/crypto"
-	schedulehttp "github.com/jooservices/xflickr/internal/schedule/adapters/http"
 )
 
 const (
@@ -118,7 +117,7 @@ func TestOAuthFlowThroughRouterAgainstFakeOAuth(t *testing.T) {
 		},
 		Principal: userIDFromPrincipal,
 	}
-	router := newAPIRouter(identityhttp.Handler{Version: "t", Sessions: flowSessions{}}, accountshttp.KeyHandler{}, connect, schedulehttp.Handler{})
+	router := newTestAPIRouter(apiRouterOptions{Identity: identityhttp.Handler{Version: "t", Sessions: flowSessions{}}, Connect: connect})
 
 	do := func(request *http.Request, signedIn bool) *httptest.ResponseRecorder {
 		if signedIn {
