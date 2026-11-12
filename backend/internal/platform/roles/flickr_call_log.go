@@ -86,7 +86,7 @@ func startFlickrCallLog(ctx context.Context, pool *pgxpool.Pool) (flickrclient.C
 	if pool == nil {
 		return flickrCallLog{}, func() {}
 	}
-	recorder := quotaapp.NewCallRecorder(quotaPostgres.CallLog{Pool: pool}, 10_000, 500, time.Second, nil)
+	recorder := quotaapp.NewCallRecorder(quotaapp.CallRecorderOptions{Writer: quotaPostgres.CallLog{Pool: pool}, QueueSize: 10_000, BatchSize: 500, Interval: time.Second})
 	recorderCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {

@@ -601,7 +601,7 @@ func TestPumpHelpersAndQueueDispatch(t *testing.T) {
 			}}
 			credit := &coverageCredits{capacity: tc.credits, err: tc.creditErr}
 			jobs := &coverageJobs{err: tc.queueErr}
-			got, err := store.pumpKey(ctx, tx, 1, limits, credit, jobs, store.inflight, inflightSnapshot{workers: map[string]int{"media": 0, "ai": 0, "sync": 0}})
+			got, err := store.pumpKey(ctx, tx, 1, pumpPass{pumpEnv: pumpEnv{settings: limits, jobs: jobs}, credits: credit, count: store.inflight, snapshot: inflightSnapshot{workers: map[string]int{"media": 0, "ai": 0, "sync": 0}}})
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("error=%v want %q", err, tc.wantErr)
@@ -993,7 +993,7 @@ func TestPumpQueueEmptyRowsAndCreditsBoundaries(t *testing.T) {
 	if got, err := (Store{}).pumpQueue(ctx, tx, 1, queueCap{name: "media", cap: 2}, 2, settings, &coverageJobs{}); err != nil || got != 0 {
 		t.Fatalf("empty group pump=%d err=%v", got, err)
 	}
-	if _, err := (Store{}).pumpQueuePlan(ctx, &coverageTx{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) { return coverageRowsOf(), nil }}, 1, queueCap{name: "media"}, 1, 2, settings, &coverageJobs{}); err != nil {
+	if _, err := (Store{}).pumpQueuePlan(ctx, &coverageTx{queryFn: func(context.Context, string, ...any) (pgx.Rows, error) { return coverageRowsOf(), nil }}, queuePlan{keyID: 1, cap: queueCap{name: "media"}, planID: 1, limit: 2}, pumpEnv{settings: settings, jobs: &coverageJobs{}}); err != nil {
 		t.Fatal(err)
 	}
 }

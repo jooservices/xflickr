@@ -112,7 +112,7 @@ func (s Store) pumpKeys(ctx context.Context, tx pgx.Tx, keys []int64, settings a
 	}
 	dispatched := 0
 	for _, keyID := range keys {
-		result, err := s.pumpKey(ctx, tx, keyID, settings, credits, jobs, count, snapshot)
+		result, err := s.pumpKey(ctx, tx, keyID, pumpPass{pumpEnv: pumpEnv{settings: settings, jobs: jobs}, credits: credits, count: count, snapshot: snapshot})
 		var unavailable interface{ KeyUnavailable() bool }
 		if errors.As(err, &unavailable) && unavailable.KeyUnavailable() {
 			continue
@@ -129,49 +129,90 @@ func (s Store) pumpKeys(ctx context.Context, tx pgx.Tx, keys []int64, settings a
 	return dispatched, nil
 }
 
+// pumpEnv is the configuration and job queue shared by one pump pass.
+type pumpEnv struct {
+	settings app.PumpSettings
+	jobs     queue.JobQueue
+}
+
+// pumpPass is what one key needs from its pump pass: the shared environment,
+// the credit provider, the in-flight counter and the node and worker snapshot.
+type pumpPass struct {
+	pumpEnv
+	credits  app.CreditProvider
+	count    inflightCounter
+	snapshot inflightSnapshot
+}
+
+// queuePlan is one plan's allocation of work items on one queue for a key.
+type queuePlan struct {
+	keyID  int64
+	cap    queueCap
+	planID int64
+	limit  int
+}
+
 type inflightCounter func(context.Context, pgx.Tx, int64, string, int) (int, error)
 
-func (s Store) pumpKey(ctx context.Context, tx pgx.Tx, keyID int64, settings app.PumpSettings, credits app.CreditProvider, jobs queue.JobQueue, count inflightCounter, snapshot inflightSnapshot) (pumpResult, error) {
+// keyState is one key's pump state between its credit check and its queues.
+type keyState struct {
+	keyID       int64
+	remaining   int
+	keyInflight int
+	result      pumpResult
+}
+
+func (s Store) pumpKey(ctx context.Context, tx pgx.Tx, keyID int64, pass pumpPass) (pumpResult, error) {
 	result := pumpResult{workers: make(map[string]int, 3)}
-	remaining, err := credits.Capacity(ctx, keyID, 2*time.Minute)
+	remaining, err := pass.credits.Capacity(ctx, keyID, 2*time.Minute)
 	if err != nil {
 		return result, fmt.Errorf("schedule: read key %d quota credits: %w", keyID, err)
 	}
-	keyInflight, err := count(ctx, tx, keyID, "", settings.PerKeyReadyCap)
+	keyInflight, err := pass.count(ctx, tx, keyID, "", pass.settings.PerKeyReadyCap)
 	if err != nil {
 		return result, err
 	}
-	if remaining <= 0 || keyInflight >= settings.PerKeyReadyCap || snapshot.node >= settings.NodeReadyCap {
+	if remaining <= 0 || keyInflight >= pass.settings.PerKeyReadyCap || pass.snapshot.node >= pass.settings.NodeReadyCap {
 		return result, nil
 	}
-	for _, cap := range configuredQueues(settings) {
-		workerInflight := snapshot.workers[cap.name] + result.workers[cap.name]
+	state := keyState{keyID: keyID, remaining: remaining, keyInflight: keyInflight, result: result}
+	if err := s.pumpKeyQueues(ctx, tx, pass, &state); err != nil {
+		return pumpResult{}, err
+	}
+	return state.result, nil
+}
+
+// pumpKeyQueues dispatches one key's work queue by queue until the key, node
+// or credit limit is reached.
+func (s Store) pumpKeyQueues(ctx context.Context, tx pgx.Tx, pass pumpPass, state *keyState) error {
+	for _, cap := range configuredQueues(pass.settings) {
+		workerInflight := pass.snapshot.workers[cap.name] + state.result.workers[cap.name]
 		limit, err := app.Credits(app.CreditInput{
-			RemainingQuota: remaining - result.total,
-			PerKeyReadyCap: settings.PerKeyReadyCap,
-			KeyInflight:    keyInflight + result.total,
-			NodeCap:        settings.NodeReadyCap,
-			NodeInflight:   snapshot.node + result.total,
+			RemainingQuota: state.remaining - state.result.total,
+			PerKeyReadyCap: pass.settings.PerKeyReadyCap,
+			KeyInflight:    state.keyInflight + state.result.total,
+			NodeCap:        pass.settings.NodeReadyCap,
+			NodeInflight:   pass.snapshot.node + state.result.total,
 			WorkerCap:      cap.cap,
 			WorkerInflight: workerInflight,
 		})
 		if err != nil {
-			return pumpResult{}, err
+			return err
 		}
 		if limit == 0 {
 			continue
 		}
-		queued, err := s.pumpQueue(ctx, tx, keyID, cap, limit, settings, jobs)
+		queued, err := s.pumpQueue(ctx, tx, state.keyID, cap, limit, pass.settings, pass.jobs)
 		if err != nil {
-			return pumpResult{}, err
+			return err
 		}
-		result.total += queued
-		result.workers[cap.name] += queued
-		if result.total >= remaining || keyInflight+result.total >= settings.PerKeyReadyCap || snapshot.node+result.total >= settings.NodeReadyCap {
+		state.result.total += queued
+		state.result.workers[cap.name] += queued
+		if state.result.total >= state.remaining || state.keyInflight+state.result.total >= pass.settings.PerKeyReadyCap || pass.snapshot.node+state.result.total >= pass.settings.NodeReadyCap {
 			break
 		}
 	}
-	return result, nil
+	return nil
 }
 
 const planBacklogSQL = `SELECT p.id, p.resource_share, count(backlog.work_item_id)::int
@@ -228,7 +269,7 @@ func (s Store) pumpQueue(ctx context.Context, tx pgx.Tx, keyID int64, cap queueC
 		if allocation == 0 {
 			continue
 		}
-		queued, err := s.pumpQueuePlan(ctx, tx, keyID, cap, group.ID, allocation, settings, jobs)
+		queued, err := s.pumpQueuePlan(ctx, tx, queuePlan{keyID: keyID, cap: cap, planID: group.ID, limit: allocation}, pumpEnv{settings: settings, jobs: jobs})
 		if err != nil {
 			return 0, err
 		}
@@ -237,12 +278,12 @@ func (s Store) pumpQueue(ctx context.Context, tx pgx.Tx, keyID int64, cap queueC
 	return total, nil
 }
 
-func (s Store) pumpQueuePlan(ctx context.Context, tx pgx.Tx, keyID int64, cap queueCap, planID int64, limit int, settings app.PumpSettings, jobs queue.JobQueue) (int, error) {
-	rows, err := tx.Query(ctx, `SELECT w.id, w.kind, w.subject_key, w.cursor FROM work_items w LEFT JOIN users u ON u.id=w.user_id WHERE w.state = 'pending' AND w.key_id = $1 AND w.worker_type = $2 AND w.not_before <= now() AND COALESCE(u.plan_id,(SELECT id FROM plans WHERE name='free'))=$3 AND NOT EXISTS (SELECT 1 FROM crawl_interests ci WHERE ci.user_id=w.user_id AND ci.person_nsid=w.subject_key AND ci.paused_at IS NOT NULL) ORDER BY w.score DESC, w.not_before, w.id LIMIT $4 FOR UPDATE OF w SKIP LOCKED`, keyID, cap.name, planID, limit)
+func (s Store) pumpQueuePlan(ctx context.Context, tx pgx.Tx, plan queuePlan, env pumpEnv) (int, error) {
+	rows, err := tx.Query(ctx, `SELECT w.id, w.kind, w.subject_key, w.cursor FROM work_items w LEFT JOIN users u ON u.id=w.user_id WHERE w.state = 'pending' AND w.key_id = $1 AND w.worker_type = $2 AND w.not_before <= now() AND COALESCE(u.plan_id,(SELECT id FROM plans WHERE name='free'))=$3 AND NOT EXISTS (SELECT 1 FROM crawl_interests ci WHERE ci.user_id=w.user_id AND ci.person_nsid=w.subject_key AND ci.paused_at IS NOT NULL) ORDER BY w.score DESC, w.not_before, w.id LIMIT $4 FOR UPDATE OF w SKIP LOCKED`, plan.keyID, plan.cap.name, plan.planID, plan.limit)
 	if err != nil {
 		return 0, fmt.Errorf("schedule: select pending work: %w", err)
 	}
-	batch := make([]workRow, 0, limit)
+	batch := make([]workRow, 0, plan.limit)
 	for rows.Next() {
 		var row workRow
 		if err := rows.Scan(&row.ID, &row.Kind, &row.Subject, &row.Cursor); err != nil {
@@ -258,10 +299,10 @@ func (s Store) pumpQueuePlan(ctx context.Context, tx pgx.Tx, keyID int64, cap qu
 	}
 	for _, row := range batch {
 		args, _ := json.Marshal(row)
-		if err := jobs.Enqueue(ctx, tx, queue.Job{Kind: row.Kind, Args: args}, queue.Options{Queue: cap.name, MaxAttempts: max(1, settings.RetryMax), LeaseTimeout: settings.LeaseTimeout, Backoff: settings.RetryBackoff}); err != nil {
+		if err := env.jobs.Enqueue(ctx, tx, queue.Job{Kind: row.Kind, Args: args}, queue.Options{Queue: plan.cap.name, MaxAttempts: max(1, env.settings.RetryMax), LeaseTimeout: env.settings.LeaseTimeout, Backoff: env.settings.RetryBackoff}); err != nil {
 			return 0, err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE work_items SET state='ready', lease_expires_at=now()+$2::bigint * interval '1 microsecond', updated_at=now() WHERE id=$1 AND state='pending'`, row.ID, settings.LeaseTimeout.Microseconds()); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE work_items SET state='ready', lease_expires_at=now()+$2::bigint * interval '1 microsecond', updated_at=now() WHERE id=$1 AND state='pending'`, row.ID, env.settings.LeaseTimeout.Microseconds()); err != nil {
 			return 0, fmt.Errorf("schedule: mark work ready: %w", err)
 		}
 	}
