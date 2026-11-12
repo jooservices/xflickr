@@ -10,6 +10,12 @@ beforeEach(() => {
   window.localStorage.clear();
 });
 
+/** Root test id of each admin page that has its own component; other ids render the placeholder. */
+const PAGE_TEST_ID: Record<string, string> = {
+  issues: 'admin-issues-page',
+  defaults: 'admin-defaults-page',
+};
+
 type QuotaKey = {
   key_id: number;
   node: string;
@@ -66,11 +72,7 @@ describe('admin shell', () => {
   it.each(ADMIN_NAV)('routes $id to its page and highlights it', async (item) => {
     renderApp({ session: adminSession, path: item.path });
 
-    if (item.id === 'issues') {
-      expect(await screen.findByTestId('admin-issues-page')).toBeInTheDocument();
-    } else {
-      expect(await screen.findByTestId('admin-page')).toBeInTheDocument();
-    }
+    expect(await screen.findByTestId(PAGE_TEST_ID[item.id] ?? 'admin-page')).toBeInTheDocument();
     expect(screen.getByTestId(`admin-nav-${item.id}`)).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
   });
