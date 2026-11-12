@@ -20,6 +20,7 @@ export function KeyBannerView({ banner, bannerRef, onRetry }: KeyBannerProps) {
       role="alert"
       className={styles.error}
       data-testid="wizard-key-error"
+      data-setup-focus="true"
     >
       {t(bannerCopy[banner])}
       {banner !== 'invalid' ? (

@@ -1,7 +1,6 @@
 import type { FlickrAccount } from '../../shared/api/gen/models';
 import type { MessageKey } from '../../shared/i18n';
 
-export type Step = 1 | 2 | 3;
 export type KeyBanner = 'invalid' | 'network' | 'node';
 export type FieldError = 'format' | 'duplicate';
 export type ConnectError = 'denied' | 'expired' | 'start';

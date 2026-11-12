@@ -68,6 +68,8 @@
   plan assignment.
 - [API keys](api-keys.md) — bring-your-own Flickr key validation, sealing, and
   quota caps.
+- [Setup wizard](setup-wizard.md) — page contracts, registry navigation,
+  redirect entry resolution, and shared setup data.
 - [Admin API quota view](admin-quota.md) — live per-key quota state and the
   fields the current API does not expose yet.
 - [Cluster nodes quota states](cluster-nodes.md) — the first `/admin/nodes`
