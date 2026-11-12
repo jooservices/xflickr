@@ -61,10 +61,10 @@ Existing code that breaks a limit is debt, migrated under epic JOOXF-447. For we
 files over the limits are listed in `web/eslint-baseline.txt` (JOOXF-505); that file may only
 shrink. `docker/scripts/web-lint-changed.sh` checks the changed web files (CI job `web`,
 `make lint`) and `docker/scripts/web-lint-report.sh` prints the whole debt. For Go, the gate covers
-changed code only (see "Go complexity gate" below) and there is no baseline file, so untouched old
-code does not fail the build. Never add a `nolint` marker to fix a finding.
+changed code and stops old functions above a limit from growing (see "Go complexity gate" below);
+there is no baseline file. Never add a `nolint` marker to fix a finding.
 
-### Go complexity gate (JOOXF-504)
+### Go complexity gate (JOOXF-504, JOOXF-511)
 
 - Tool: golangci-lint v2.15.0 with `.golangci.yml`. `make lint` (`docker/scripts/lint.sh`) and the
   CI `lint` job run the same command.
@@ -75,9 +75,14 @@ code does not fail the build. Never add a `nolint` marker to fix a finding.
 - Scope: `issues.new-from-merge-base: origin/develop`. Only findings on lines changed since the
   merge base with `origin/develop` fail the build. The CI `lint` job checks out with
   `fetch-depth: 0` so the merge base exists. Locally, fetch `origin/develop` before linting.
-- Limit of this gate: it is line-based. It catches new functions and functions whose `func` line
-  is changed. It does not catch growth inside an untouched old function. A function-level gate is a
-  separate ticket, so this tool does not guarantee that old code only shrinks.
+- Function-level gate (JOOXF-511): `docker/scripts/go_function_gate.py` (stdlib only) measures
+  every function of the Go files changed since the merge base with `origin/develop` through
+  `backend/cmd/gofuncstats/main.go` (go/ast: cyclomatic complexity, lines, parameters) and
+  compares it with the same function at the merge base. A function above complexity 10, 40 lines
+  or 4 parameters fails when it grows, so growth inside an old function is caught. A function
+  below a limit may grow up to the limit; a new function must be within all limits. Test files
+  are exempt, as in `.golangci.yml`. Run `python3 docker/scripts/go_function_gate.py [--base REF]`;
+  `docker/scripts/lint.sh` and the CI `lint` job run it with its unit tests.
 - Existing `nolint:cyclop` markers stay until their functions are split. Do not add new ones.
 
 ## Backend structure

@@ -55,6 +55,9 @@ jobs:
       - name: Enforce the module boundaries
         run: make arch-lint
 
+      - name: Gate the complexity of changed Go functions
+        run: python3 docker/scripts/go_function_gate_test.py && python3 docker/scripts/go_function_gate.py
+
       - name: Lint Go code changed since origin/develop
         # Same command as docker/scripts/lint.sh (version pinned there too);
         # the new-from-merge-base scope lives in .golangci.yml.
