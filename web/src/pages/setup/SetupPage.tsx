@@ -1,78 +1,28 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { FormEvent, RefObject } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { connectFlickrAccount } from '../../shared/api/gen/flickr-accounts/flickr-accounts';
-import type { ApiKey, FlickrAccount } from '../../shared/api/gen/models';
+import type { ApiKey } from '../../shared/api/gen/models';
 import { Icon, useI18n, useLoadingTiming } from '../../shared';
-import type { MessageKey } from '../../shared/i18n';
 import { AddKeyModal } from '../../features/keys/AddKeyModal';
-import {
-  clean,
-  keyPattern,
-  loadAccounts,
-  loadCrawlSettings,
-  loadKeys,
-  saveKey,
-  secretPattern,
-  startCrawl,
-} from '../../features/keys/api';
+import { loadAccounts, loadCrawlSettings, loadKeys, startCrawl } from '../../features/keys/api';
 import styles from './SetupPage.module.css';
+import {
+  DEFAULT_DEPTH,
+  DEMO,
+  PALETTE,
+  POLL_MS,
+  SKELETON_DELAY,
+  accountStatusCopy,
+  bannerCopy,
+  connectErrorCopy,
+  statusOf,
+  tileBackground,
+} from './setupModel';
+import type { ConnectError, Step } from './setupModel';
+import { useKeyForm } from './useKeyForm';
 
-type Step = 1 | 2 | 3;
-type KeyBanner = 'invalid' | 'network' | 'node';
-type FieldError = 'format' | 'duplicate';
-type ConnectError = 'denied' | 'expired' | 'start';
-
-const SKELETON_DELAY = 150;
-/** Polling on step 3 while the live stream is not available: 10, 20, 40, 60 s. */
-const POLL_MS = [10_000, 20_000, 40_000, 60_000];
-const PALETTE = [
-  '#e9a97c,#8fd0a4',
-  '#7ca8e9,#7cc9d0',
-  '#8fd0a4,#7ca8e9',
-  '#d98fb4,#9a8fe0',
-  '#f0d27a,#e9a97c',
-  '#9a8fe0,#f0d27a',
-  '#7cc9d0,#b4c97c',
-  '#e07c7c,#d98fb4',
-  '#b4c97c,#e07c7c',
-];
-
-/** Background of mosaic tile `index`; a neutral tile when the palette is empty. */
-export function tileBackground(palette: readonly string[], index: number): string {
-  if (palette.length === 0) return 'var(--sunken)';
-  return `linear-gradient(135deg,${palette[index % palette.length]})`;
-}
-
-/** The demo build (and dev server) offers Fill example; production does not. */
-const DEMO = import.meta.env.DEV || import.meta.env.VITE_DEMO === 'true';
-const DEFAULT_DEPTH = 2;
-
-function randomHex(length: number): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(length / 2));
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-const statusOf = (error: unknown) => (error as { status?: number } | null)?.status;
-
-const accountStatusCopy: Record<FlickrAccount['status'], MessageKey> = {
-  ok: 'setup.done.account.ok',
-  reconnect_required: 'shell.banner.reconnect',
-  revoked: 'setup.done.account.revoked',
-};
-
-const connectErrorCopy: Record<ConnectError, MessageKey> = {
-  denied: 'setup.connect.denied',
-  expired: 'setup.connect.expired',
-  start: 'setup.connect.error.start',
-};
-
-const bannerCopy: Record<KeyBanner, MessageKey> = {
-  invalid: 'setup.key.error.invalid',
-  network: 'setup.key.error.network',
-  node: 'setup.key.error.no-node',
-};
+export { tileBackground };
 
 export function SetupPage() {
   const { t } = useI18n();
@@ -80,9 +30,6 @@ export function SetupPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const heading = useRef<HTMLHeadingElement>(null);
-  const keyField = useRef<HTMLInputElement>(null);
-  const secretField = useRef<HTMLInputElement>(null);
-  const keyBannerRef = useRef<HTMLDivElement>(null);
   const rows = useRef(new Map<number, HTMLLIElement>());
   const announced = useRef<number | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -114,15 +61,6 @@ export function SetupPage() {
   const [finishError, setFinishError] = useState<'finish' | 'depth' | null>(null);
   const [starting, setStarting] = useState(false);
 
-  const [key, setKey] = useState('');
-  const [secret, setSecret] = useState('');
-  const [showSecret, setShowSecret] = useState(false);
-  const [touched, setTouched] = useState({ key: false, secret: false });
-  const [submitted, setSubmitted] = useState(false);
-  const [serverErrors, setServerErrors] = useState<{ key?: FieldError; secret?: FieldError }>({});
-  const [banner, setBanner] = useState<KeyBanner | null>(null);
-  const [sending, setSending] = useState(false);
-
   const [waiting, setWaiting] = useState(false);
   const [connectError, setConnectError] = useState<ConnectError | null>(() => redirectErrorKind);
 
@@ -142,6 +80,33 @@ export function SetupPage() {
   const activeKey = keys.find((item) => item.id === selectedKeyId) ?? validKeys.at(-1) ?? null;
   const accountList = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
   const hasAccount = accountList.length > 0;
+
+  const {
+    key,
+    secret,
+    showSecret,
+    setShowSecret,
+    keyError,
+    secretError,
+    banner,
+    sending,
+    keyField,
+    secretField,
+    bannerRef: keyBannerRef,
+    setField,
+    blurField,
+    submit,
+    fillExample,
+    clearBanner,
+  } = useKeyForm({
+    onSaved: (saved) => {
+      queryClient.setQueryData<ApiKey[]>(['/keys'], [...keys, saved]);
+      setSelectedKeyId(saved.id);
+      setLiveText(t('setup.key.ok'));
+      goTo(2);
+      void queryClient.invalidateQueries({ queryKey: ['/keys'] });
+    },
+  });
 
   // The server decides the step; `?step=` is only a hint that is honoured when the
   // data supports it.
@@ -203,7 +168,7 @@ export function SetupPage() {
     if (!target && focusedFor.current.startsWith(`${step}:${view}:`)) return;
     focusedFor.current = mark;
     (target ?? heading.current)?.focus();
-  }, [step, view, hasBanner]);
+  }, [step, view, hasBanner, keyBannerRef]);
 
   // The account that was just connected is announced and focused once.
   const connectedAccount =
@@ -241,67 +206,10 @@ export function SetupPage() {
     };
   }, [view, step, refetchAccounts]);
 
-  const keyFormatInvalid = !keyPattern.test(clean(key));
-  const secretFormatInvalid = !secretPattern.test(clean(secret));
-  const keyError: FieldError | null =
-    serverErrors.key ?? ((touched.key || submitted) && keyFormatInvalid ? 'format' : null);
-  const secretError: FieldError | null =
-    serverErrors.secret ?? ((touched.secret || submitted) && secretFormatInvalid ? 'format' : null);
-
-  // Focus after the click has finished moving focus to the button.
-  const focusField = (field: RefObject<HTMLInputElement | null>) => {
-    window.setTimeout(() => field.current?.focus(), 0);
-  };
-
   const goTo = (next: Step) => {
     setConnectError(null);
-    setBanner(null);
+    clearBanner();
     setOverride(next);
-  };
-
-  const submitKey = async (event?: FormEvent) => {
-    event?.preventDefault();
-    if (sending) return;
-    setSubmitted(true);
-    setBanner(null);
-    setServerErrors({});
-    if (keyFormatInvalid || secretFormatInvalid) {
-      focusField(keyFormatInvalid ? keyField : secretField);
-      return;
-    }
-    setSending(true);
-    const result = await saveKey({
-      label: t('setup.key.default-label'),
-      key: clean(key),
-      secret: clean(secret),
-    });
-    setSending(false);
-    if ('key' in result) {
-      queryClient.setQueryData<ApiKey[]>(['/keys'], [...keys, result.key]);
-      setSelectedKeyId(result.key.id);
-      setKey('');
-      setSecret('');
-      setShowSecret(false);
-      setTouched({ key: false, secret: false });
-      setSubmitted(false);
-      setLiveText(t('setup.key.ok'));
-      goTo(2);
-      void queryClient.invalidateQueries({ queryKey: ['/keys'] });
-      return;
-    }
-    const { banner: failedBanner, fields } = result.failure;
-    if (failedBanner) setBanner(failedBanner);
-    if (fields) {
-      setServerErrors(fields);
-      focusField(fields.key ? keyField : secretField);
-    }
-  };
-
-  const fillExample = () => {
-    setKey(randomHex(32));
-    setSecret(randomHex(16));
-    setServerErrors({});
-    setBanner(null);
   };
 
   const addedKey = (added: ApiKey) => {
@@ -481,7 +389,7 @@ export function SetupPage() {
                         <button
                           type="button"
                           className={styles.ghost}
-                          onClick={() => void submitKey()}
+                          onClick={() => void submit()}
                         >
                           {t('common.retry')}
                         </button>
@@ -489,7 +397,7 @@ export function SetupPage() {
                     </div>
                   ) : null}
                   <form
-                    onSubmit={(event) => void submitKey(event)}
+                    onSubmit={(event) => void submit(event)}
                     noValidate
                     data-testid="wizard-key-form"
                   >
@@ -499,11 +407,8 @@ export function SetupPage() {
                         ref={keyField}
                         className={styles.mono}
                         value={key}
-                        onChange={(event) => {
-                          setKey(event.target.value);
-                          setServerErrors((current) => ({ ...current, key: undefined }));
-                        }}
-                        onBlur={() => setTouched((current) => ({ ...current, key: true }))}
+                        onChange={(event) => setField('key', event.target.value)}
+                        onBlur={() => blurField('key')}
                         aria-describedby={`wizard-key-help${keyError ? ' wizard-key-err' : ''}`}
                         aria-invalid={keyError !== null || banner === 'invalid'}
                         autoComplete="off"
@@ -533,11 +438,8 @@ export function SetupPage() {
                           type={showSecret ? 'text' : 'password'}
                           className={styles.mono}
                           value={secret}
-                          onChange={(event) => {
-                            setSecret(event.target.value);
-                            setServerErrors((current) => ({ ...current, secret: undefined }));
-                          }}
-                          onBlur={() => setTouched((current) => ({ ...current, secret: true }))}
+                          onChange={(event) => setField('secret', event.target.value)}
+                          onBlur={() => blurField('secret')}
                           aria-describedby={`wizard-secret-help${secretError ? ' wizard-secret-err' : ''}`}
                           aria-invalid={secretError !== null}
                           autoComplete="new-password"
