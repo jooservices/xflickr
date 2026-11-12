@@ -14,6 +14,8 @@ import (
 	"github.com/jooservices/xflickr/internal/crawl/facets"
 )
 
+// The SQL in this file is hand-written on purpose: it seeds and asserts fixtures on the isolated worktree database, and sqlc
+// generates production queries only.
 type publicGroupsRefreshCase struct {
 	name, body         string
 	membership, failed bool
