@@ -14,8 +14,10 @@ import (
 func TestExecuteWithCommandsDispatchesCryptoRotation(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	called := false
-	code := executeWithCommands(context.Background(), []string{"crypto", "rotate", "--target", "public.settings,id,secret", "--batch-size=7"}, "", nil, &stdout, &stderr, nil,
-		func(_ context.Context, targets []crypto.Target, batchSize int, output io.Writer) error {
+	code := executeWithCommands(context.Background(), []string{"crypto", "rotate", "--target", "public.settings,id,secret", "--batch-size=7"}, commandOptions{
+		stdout: &stdout,
+		stderr: &stderr,
+		runRotation: func(_ context.Context, targets []crypto.Target, batchSize int, output io.Writer) error {
 			called = true
 			if len(targets) != 1 || targets[0] != (crypto.Target{Table: "public.settings", IDColumn: "id", SealedColumn: "secret"}) {
 				t.Errorf("rotation targets = %#v", targets)
@@ -24,7 +26,8 @@ func TestExecuteWithCommandsDispatchesCryptoRotation(t *testing.T) {
 				t.Errorf("rotation batch/output = (%d, %T), want (7, stdout)", batchSize, output)
 			}
 			return nil
-		})
+		},
+	})
 	if code != 0 || !called || stderr.Len() != 0 {
 		t.Fatalf("executeWithCommands() = (%d, called=%t, stderr=%q)", code, called, stderr.String())
 	}

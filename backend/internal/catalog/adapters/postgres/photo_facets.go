@@ -42,8 +42,9 @@ func (r *Repository) LoadPhotoFacetSource(ctx context.Context, id int64) (domain
 
 // SetPhotoFacet replaces one photo's optional facet data and records the
 // photo version only after the data writes succeed.
-func (r *Repository) SetPhotoFacet(ctx context.Context, photoID int64, facet string, data []byte, photoUpdatedAt, fetchedAt time.Time) error {
-	if r == nil || r.db == nil || ctx == nil || photoID <= 0 || photoUpdatedAt.IsZero() || fetchedAt.IsZero() || !jsonDocument(data) {
+func (r *Repository) SetPhotoFacet(ctx context.Context, update domain.PhotoFacetUpdate) error {
+	photoID, facet, photoUpdatedAt, fetchedAt := update.PhotoID, update.Facet, update.PhotoUpdatedAt, update.FetchedAt
+	if !r.validPhotoFacetUpdate(ctx, update) {
 		return errors.New("catalog: invalid photo facet update")
 	}
 	database := r.db
@@ -59,7 +60,7 @@ func (r *Repository) SetPhotoFacet(ctx context.Context, photoID int64, facet str
 		defer func() { _ = tx.Rollback(context.Background()) }()
 		database = tx
 	}
-	if err := writePhotoFacet(ctx, database, photoID, facet, data, fetchedAt); err != nil {
+	if err := writePhotoFacet(ctx, database, update); err != nil {
 		return fmt.Errorf("catalog: store photo %d %s facet: %w", photoID, facet, err)
 	}
 	_, err := database.Exec(ctx, `INSERT INTO photo_facet_status (photo_id, facet, photo_updated_at, fetched_at)
@@ -78,9 +79,14 @@ func (r *Repository) SetPhotoFacet(ctx context.Context, photoID int64, facet str
 	return nil
 }
 
-func writePhotoFacet(ctx context.Context, database gen.DBTX, photoID int64, facet string, data []byte, fetchedAt time.Time) error {
+func (r *Repository) validPhotoFacetUpdate(ctx context.Context, update domain.PhotoFacetUpdate) bool {
+	return r != nil && r.db != nil && ctx != nil && update.PhotoID > 0 && !update.PhotoUpdatedAt.IsZero() && !update.FetchedAt.IsZero() && jsonDocument(update.Data)
+}
+
+func writePhotoFacet(ctx context.Context, database gen.DBTX, update domain.PhotoFacetUpdate) error {
 	var err error
-	switch facet {
+	photoID, data, fetchedAt := update.PhotoID, update.Data, update.FetchedAt
+	switch update.Facet {
 	case "info":
 		_, err = database.Exec(ctx, `INSERT INTO photo_info (photo_id, data, fetched_at) VALUES ($1,$2,$3)
 			ON CONFLICT (photo_id) DO UPDATE SET data=EXCLUDED.data,fetched_at=EXCLUDED.fetched_at`, photoID, data, fetchedAt)
@@ -93,7 +99,7 @@ func writePhotoFacet(ctx context.Context, database gen.DBTX, photoID int64, face
 	case "photo_favorites":
 		err = setPhotoFavorites(ctx, database, photoID, data, fetchedAt)
 	default:
-		return fmt.Errorf("catalog: unsupported photo facet %q", facet)
+		return fmt.Errorf("catalog: unsupported photo facet %q", update.Facet)
 	}
 	if err != nil {
 		return err

@@ -56,7 +56,7 @@ func validPhotoFacet(facet string) bool {
 // PhotoFacetStore loads a photo and stores a completed optional facet.
 type PhotoFacetStore interface {
 	LoadPhotoFacetSource(context.Context, int64) (catalog.PhotoFacetSource, bool, error)
-	SetPhotoFacet(context.Context, int64, string, []byte, time.Time, time.Time) error
+	SetPhotoFacet(context.Context, catalog.PhotoFacetUpdate) error
 }
 
 // PhotoFacetClient performs the Flickr methods used for optional photo data.
@@ -113,7 +113,8 @@ func (h PhotoFacets) Handle(ctx context.Context, job PhotoFacetJob) error {
 			return err
 		}
 	}
-	if err := h.Store.SetPhotoFacet(ctx, job.PhotoID, job.Facet, data, source.LastUpdate, h.now()); err != nil {
+	update := catalog.PhotoFacetUpdate{PhotoID: job.PhotoID, Facet: job.Facet, Data: data, PhotoUpdatedAt: source.LastUpdate, FetchedAt: h.now()}
+	if err := h.Store.SetPhotoFacet(ctx, update); err != nil {
 		return fmt.Errorf("crawl: store photo %d %s facet: %w", job.PhotoID, job.Facet, err)
 	}
 	return nil

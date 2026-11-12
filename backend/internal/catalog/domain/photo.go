@@ -66,6 +66,16 @@ type PhotoFacetSource struct {
 	SizesCheckedAt *time.Time
 }
 
+// PhotoFacetUpdate is one completed optional facet of a photo: its data, the
+// photo version it was fetched for and the fetch time.
+type PhotoFacetUpdate struct {
+	PhotoID        int64
+	Facet          string
+	Data           []byte
+	PhotoUpdatedAt time.Time
+	FetchedAt      time.Time
+}
+
 // Validate checks fields whose values are constrained by the catalog schema.
 func (p Photo) Validate() error {
 	if p.ID <= 0 || p.OwnerNSID == "" || p.LastUpdate.IsZero() || len(p.Raw) == 0 {
