@@ -75,6 +75,7 @@
 - [Quota governor](quota.md) — per-key token bucket, clock-second burst cap,
   rolling 60-minute budget, ready-before-grant rebuild, demand-based lane lending and admin floor, and cooldown behavior.
 - [ADR 0007: Ledger ready before any grant](adr/0007-ledger-ready-before-grant.md) — grants never set ready; every role rebuilds first.
+- [ADR 0008: Cross-module imports](adr/0008-cross-module-imports.md) — modules import each other's `domain` and `app`, never `adapters`.
 - [Flickr accounts](flickr-accounts.md) — OAuth connect flow, sealed tokens,
   account status, and events.
 - [Catalog people and photos](catalog.md) — partitioned photo metadata,
