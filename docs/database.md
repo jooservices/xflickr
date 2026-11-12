@@ -434,3 +434,24 @@ People writes sort each batch by `nsid`. `EnsurePeople` inserts missing rows
 with `ON CONFLICT DO NOTHING`; `RefreshChangedPeople` locks and updates only
 changed rows with `FOR NO KEY UPDATE` in NSID order, compatible with foreign-key
 key-share locks. It advances `last_seen_at` at most once per hour per person.
+
+## Photo upsert write amplification (JOOXF-415)
+
+`UpsertPhotos` used `INSERT ... ON CONFLICT DO UPDATE`. A conflicting row is locked and, because
+`last_seen_at` always changed, rewritten on every crawl, and `last_seen_at` is indexed, so none of
+those updates could be HOT. Production showed 52.5M photo UPDATEs against 64.9M INSERTs with zero HOT.
+
+It now follows the same two-statement pattern as people and favorites:
+
+1. `INSERT ... ON CONFLICT (id) DO NOTHING`, rows ordered by `id`.
+2. An `UPDATE ... WHERE id = $1 AND (...)` that touches a row only when `last_update` or
+   `content_hash` differ, `tombstoned_at` changed, or `last_seen_at` is more than one hour old.
+
+Rows are sorted by id (the last payload of a duplicate id wins) so concurrent writers lock in the same
+order. A re-crawl never rewrites the sizes columns; `SetSizes` owns them.
+
+Measured on the worktree database (`photos_upsert_integration_test.go`): upserting the same 1,000
+photos twice leaves every row's `xmin`/`ctid` unchanged (the old statement rewrote all 1,000); changed,
+tombstoned and stale rows are updated; two writers with overlapping reversed batches do not deadlock;
+the UPDATE plan is an Index Scan on the partition primary key without a Seq Scan. WAL and `n_tup_upd`
+on production must be re-measured after deploy (not measured here).
