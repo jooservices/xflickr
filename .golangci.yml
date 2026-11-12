@@ -14,13 +14,19 @@ linters:
     - revive
     - gosec
     - cyclop
+    - gocognit
+    - funlen
     - wrapcheck
     - errorlint
     - depguard
     - misspell
   settings:
     cyclop:
-      max-complexity: 15
+      max-complexity: 10
+    gocognit:
+      min-complexity: 15
+    funlen:
+      lines: 40
     depguard:
       rules:
         # Cross-cutting boundaries are also enforced by .go-arch-lint.yml.
@@ -70,6 +76,9 @@ linters:
         - name: dot-imports
         - name: unreachable-code
         - name: unused-parameter
+        - name: argument-limit
+          arguments:
+            - 4
     wrapcheck:
       ignore-package-globs:
         - github.com/jooservices/xflickr/*
@@ -101,6 +110,8 @@ linters:
       - path: _test\.go
         linters:
           - cyclop
+          - funlen
+          - gocognit
           - wrapcheck
           - gosec
           - errcheck
@@ -109,6 +120,13 @@ linters:
         text: "SA1012"
         linters:
           - staticcheck
+
+# Gate only changed code: findings on lines not changed since origin/develop
+# are not reported. Findings are anchored at the func line, so a function is
+# checked when it is new or its func line changed; growth inside an untouched
+# old function is not caught (see docs/engineering-standards.md).
+issues:
+  new-from-merge-base: origin/develop
 
 formatters:
   enable:

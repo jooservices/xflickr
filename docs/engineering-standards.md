@@ -57,9 +57,25 @@ A rule that this table does not measure still applies and is checked in review:
 - **DRY:** one implementation of a rule or UI behaviour (add-key form, dialog focus trap, session
   loading); duplication is removed in the change that finds it.
 
-Existing code that breaks a limit is migrated under epic JOOXF-447. Until a file is migrated it
-stays on a shrinking list in `docker/scripts/strict-baseline.txt`: an entry may be removed, never
-added, and a change that touches a listed file must bring it under the limits.
+Existing code that breaks a limit is debt, migrated under epic JOOXF-447. The repository has no
+baseline file. For Go, the gate covers changed code only (see "Go complexity gate" below), so
+untouched old code does not fail the build. Never add a `nolint` marker to fix a finding.
+
+### Go complexity gate (JOOXF-504)
+
+- Tool: golangci-lint v2.15.0 with `.golangci.yml`. `make lint` (`docker/scripts/lint.sh`) and the
+  CI `lint` job run the same command.
+- Limits: cyclop (cyclomatic complexity) 10; gocognit (cognitive complexity) 15; funlen (function
+  length) 40 lines; revive `argument-limit` 4 parameters.
+- Test files are exempt from cyclop, gocognit, funlen, wrapcheck, gosec and errcheck. The revive
+  parameter limit applies to tests too.
+- Scope: `issues.new-from-merge-base: origin/develop`. Only findings on lines changed since the
+  merge base with `origin/develop` fail the build. The CI `lint` job checks out with
+  `fetch-depth: 0` so the merge base exists. Locally, fetch `origin/develop` before linting.
+- Limit of this gate: it is line-based. It catches new functions and functions whose `func` line
+  is changed. It does not catch growth inside an untouched old function. A function-level gate is a
+  separate ticket, so this tool does not guarantee that old code only shrinks.
+- Existing `nolint:cyclop` markers stay until their functions are split. Do not add new ones.
 
 ## Backend structure
 
@@ -116,7 +132,7 @@ added, and a change that touches a listed file must bring it under the limits.
 ## Code style
 
 - `gofmt`, and every linter in `.golangci.yml` must pass: errcheck, govet,
-  staticcheck, gocritic, revive, gosec, cyclop (complexity at most 15), wrapcheck,
+  staticcheck, gocritic, revive, gosec, cyclop (complexity at most 10), wrapcheck,
   errorlint, depguard, misspell. Do not add `nolint` without a reason in the same
   line and the lead's approval.
 - Names: short and exact; exported identifiers have a doc comment that starts with
