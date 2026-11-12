@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import eslint from '@eslint/js';
 import prettier from 'eslint-config-prettier';
 import boundaries from 'eslint-plugin-boundaries';
@@ -8,6 +9,31 @@ import tseslint from 'typescript-eslint';
 import glossary from './src/shared/i18n/glossary.json' with { type: 'json' };
 
 const layers = ['app', 'pages', 'features', 'entities', 'shared'];
+
+// Old files over the limits, one "path rule" pair per line (see web/eslint-baseline.txt).
+// The exemption is applied per file and rule; a new file or a new rule is never exempt.
+// XFLICKR_WEB_LINT_NO_BASELINE=1 ignores the baseline; docker/scripts/web-lint-report.sh uses it.
+function readBaseline() {
+  if (process.env.XFLICKR_WEB_LINT_NO_BASELINE === '1') {
+    return [];
+  }
+  return readFileSync(new URL('./eslint-baseline.txt', import.meta.url), 'utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#'))
+    .map((line) => {
+      const [file, rule] = line.split(/\s+/);
+      return { file, rule };
+    });
+}
+
+const baseline = readBaseline();
+const baselineBlocks = [...new Set(baseline.map((entry) => entry.rule))].map((rule) => ({
+  files: baseline.filter((entry) => entry.rule === rule).map((entry) => entry.file),
+  rules: { [rule]: 'off' },
+}));
+
+const functionLimit = (max) => ['error', { max, skipBlankLines: true, skipComments: true }];
 
 const layerElements = layers.map((layer) => ({
   type: layer,
@@ -30,6 +56,7 @@ export default tseslint.config(
       'blob-report/**',
       'src/shared/__boundary_fixtures__/**',
       'src/shared/api/gen/**',
+      'src/shared/api/zod/**',
     ],
   },
   {
@@ -44,6 +71,23 @@ export default tseslint.config(
   {
     ...reactHooks.configs.flat.recommended,
     files: ['**/*.{ts,tsx}'],
+  },
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    rules: {
+      complexity: ['error', 10],
+      'max-params': ['error', 4],
+      'max-lines': ['error', 300],
+      'react-hooks/rules-of-hooks': 'error',
+    },
+  },
+  {
+    files: ['src/**/*.ts'],
+    rules: { 'max-lines-per-function': functionLimit(40) },
+  },
+  {
+    files: ['src/**/*.tsx'],
+    rules: { 'max-lines-per-function': functionLimit(60) },
   },
   {
     files: ['**/*.{ts,tsx}'],
@@ -106,5 +150,6 @@ export default tseslint.config(
       ],
     },
   },
+  ...baselineBlocks,
   prettier,
 );
