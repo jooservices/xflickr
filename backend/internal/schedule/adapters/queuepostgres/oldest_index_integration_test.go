@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"testing/fstest"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,14 +15,12 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/db"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 	"github.com/jooservices/xflickr/internal/schedule/adapters/queuepostgres"
-	"github.com/jooservices/xflickr/migrations"
 )
 
 const oldestAgeSQL = `SELECT COALESCE(GREATEST(0, floor(extract(epoch FROM now()-min(created_at)))), 0)::bigint
 FROM work_items
 WHERE state IN ('pending', 'ready', 'running', 'waiting');`
 const oldestIndex = "work_items_active_created_at_idx"
-const oldestMigration = "20261112120300_work_items_active_created_at_index.sql"
 
 func oldestConfig(t *testing.T) config.DBConfig {
 	t.Helper()
@@ -44,17 +41,24 @@ func oldestConfig(t *testing.T) config.DBConfig {
 	return dbtest.EmptyDatabase(t, cfg)
 }
 
+func oldestPool(t *testing.T, cfg config.DBConfig) *pgxpool.Pool {
+	t.Helper()
+	pool := dbtest.Open(t, cfg)
+	oldestExec(t, pool, `INSERT INTO users(id,email,password_hash,role) VALUES(496,'oldest@example.test','unused','user')`)
+	return pool
+}
+
 func TestOldestActiveAgeIntegration(t *testing.T) {
-	pool := dbtest.Open(t, oldestConfig(t))
+	pool := oldestPool(t, oldestConfig(t))
 	for _, state := range []string{"pending", "ready", "running", "waiting"} {
 		t.Run(state, func(t *testing.T) {
 			oldestExec(t, pool, `DELETE FROM work_items`)
-			oldestExec(t, pool, `INSERT INTO work_items(kind,subject_key,state,created_at) VALUES
-    ('person','done','done',now()-interval '1 day'),
-    ('person','failed','failed',now()-interval '2 days'),
-    ('person','newer','pending',now()-interval '10 seconds')`)
-			_, err := pool.Exec(t.Context(), `INSERT INTO work_items(kind,subject_key,state,created_at)
-    VALUES('person','oldest',$1,now()-interval '120 seconds')`, state)
+			oldestExec(t, pool, `INSERT INTO work_items(user_id,kind,subject_key,state,created_at) VALUES
+    (496,'person','done','done',now()-interval '1 day'),
+    (496,'person','failed','failed',now()-interval '2 days'),
+    (496,'person','newer','pending',now()-interval '10 seconds')`)
+			_, err := pool.Exec(t.Context(), `INSERT INTO work_items(user_id,kind,subject_key,state,created_at)
+    VALUES(496,'person','oldest',$1,now()-interval '120 seconds')`, state)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -66,13 +70,13 @@ func TestOldestActiveAgeIntegration(t *testing.T) {
 		assertOldestAge(t, pool, 0)
 	})
 	t.Run("inactive only", func(t *testing.T) {
-		oldestExec(t, pool, `INSERT INTO work_items(kind,subject_key,state,created_at)
-   VALUES('person','inactive','done',now()-interval '1 day')`)
+		oldestExec(t, pool, `INSERT INTO work_items(user_id,kind,subject_key,state,created_at)
+   VALUES(496,'person','inactive','done',now()-interval '1 day')`)
 		assertOldestAge(t, pool, 0)
 	})
 	t.Run("future", func(t *testing.T) {
-		oldestExec(t, pool, `INSERT INTO work_items(kind,subject_key,state,created_at)
-   VALUES('person','future','waiting',now()+interval '1 day')`)
+		oldestExec(t, pool, `INSERT INTO work_items(user_id,kind,subject_key,state,created_at)
+   VALUES(496,'person','future','waiting',now()+interval '1 day')`)
 		assertOldestAge(t, pool, 0)
 	})
 }
@@ -102,7 +106,7 @@ func TestOldestActiveAgeIndexPlanIntegration(t *testing.T) {
 	if os.Getenv("XFLICKR_INDEX_PLAN_TEST") != "1" {
 		t.Skip("set XFLICKR_INDEX_PLAN_TEST=1 for the separate 400,000-row measurement")
 	}
-	pool := dbtest.Open(t, oldestConfig(t))
+	pool := oldestPool(t, oldestConfig(t))
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 	tx, err := pool.Begin(ctx)
@@ -114,8 +118,8 @@ func TestOldestActiveAgeIndexPlanIntegration(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	_, err = tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state,created_at)
- SELECT 'person',g::text,(ARRAY['pending','ready','running','waiting','done','failed'])[1+g%6],
+	_, err = tx.Exec(ctx, `INSERT INTO work_items(user_id,kind,subject_key,state,created_at)
+ SELECT 496,'person',g::text,(ARRAY['pending','ready','running','waiting','done','failed'])[1+g%6],
  now()-g*interval '1 second' FROM generate_series(1,400000) g`)
 	if err != nil {
 		t.Fatal(err)
@@ -127,6 +131,11 @@ func TestOldestActiveAgeIndexPlanIntegration(t *testing.T) {
 	if err := tx.QueryRow(ctx, `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) `+oldestAgeSQL).Scan(&raw); err != nil {
 		t.Fatal(err)
 	}
+	assertOldestExplain(t, raw)
+}
+
+func assertOldestExplain(t *testing.T, raw []byte) {
+	t.Helper()
 	var plans []oldestExplain
 	if err := json.Unmarshal(raw, &plans); err != nil {
 		t.Fatal(err)
@@ -176,7 +185,31 @@ func checkOldestPlan(t *testing.T, node oldestPlanNode) bool {
 
 func TestOldestActiveAgeIndexMigrationIntegration(t *testing.T) {
 	cfg := oldestConfig(t)
-	pool := dbtest.Open(t, cfg)
+	pool := oldestPool(t, cfg)
+	assertOldestIndex(t, pool)
+	oldestExec(t, pool, `CREATE INDEX oldest_migration_sentinel ON work_items(subject_key)`)
+	oldestExec(t, pool, `INSERT INTO work_items(user_id,kind,subject_key) VALUES(496,'person','preserved')`)
+	if err := db.Migrate(t.Context(), cfg, db.MigrateDown, nil); err != nil {
+		t.Fatal(err)
+	}
+	var removed, sentinel bool
+	var subject string
+	err := pool.QueryRow(t.Context(), `SELECT to_regclass($1) IS NULL,
+ to_regclass('oldest_migration_sentinel') IS NOT NULL,subject_key FROM work_items`, oldestIndex).Scan(&removed, &sentinel, &subject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !removed || !sentinel || subject != "preserved" {
+		t.Fatal("down did not preserve unrelated index and data")
+	}
+	if err := db.Migrate(t.Context(), cfg, db.MigrateUp, nil); err != nil {
+		t.Fatal(err)
+	}
+	assertOldestIndex(t, pool)
+}
+
+func assertOldestIndex(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
 	var valid bool
 	var definition, predicate string
 	err := pool.QueryRow(t.Context(), `SELECT indisvalid,pg_get_indexdef(indexrelid),pg_get_expr(indpred,indrelid)
@@ -190,34 +223,5 @@ func TestOldestActiveAgeIndexMigrationIntegration(t *testing.T) {
 	const wantPredicate = "(state = ANY (ARRAY['pending'::text, 'ready'::text, 'running'::text, 'waiting'::text]))"
 	if predicate != wantPredicate {
 		t.Fatalf("predicate = %s; want %s", predicate, wantPredicate)
-	}
-	oldestExec(t, pool, `CREATE INDEX oldest_migration_sentinel ON work_items(subject_key)`)
-	oldestExec(t, pool, `INSERT INTO work_items(kind,subject_key) VALUES('person','preserved')`)
-	content, err := migrations.Files.ReadFile(oldestMigration)
-	if err != nil {
-		t.Fatal(err)
-	}
-	files := fstest.MapFS{oldestMigration: &fstest.MapFile{Data: content}}
-	if err := db.MigrateFiles(t.Context(), cfg, db.MigrateDown, nil, files); err != nil {
-		t.Fatal(err)
-	}
-	var removed, sentinel bool
-	var subject string
-	err = pool.QueryRow(t.Context(), `SELECT to_regclass($1) IS NULL,
- to_regclass('oldest_migration_sentinel') IS NOT NULL,subject_key FROM work_items`, oldestIndex).Scan(&removed, &sentinel, &subject)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !removed || !sentinel || subject != "preserved" {
-		t.Fatal("down did not preserve unrelated index and data")
-	}
-	if err := db.MigrateFiles(t.Context(), cfg, db.MigrateUp, nil, files); err != nil {
-		t.Fatal(err)
-	}
-	if err := pool.QueryRow(t.Context(), `SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass($1)`, oldestIndex).Scan(&valid); err != nil {
-		t.Fatal(err)
-	}
-	if !valid {
-		t.Fatal("reapplied index is invalid")
 	}
 }

@@ -46,6 +46,7 @@ or scan data yet; measure it after rollout.
 | `crawl_interests_person_nsid_idx` | crawl_interests | | used | `interests.go` by `person_nsid` | keep |
 | `crawl_interests_paused_idx` | crawl_interests | partial | used | pause checks / enqueue filters | keep |
 | `crawl_interests_selected_idx` / `_starred_idx` / `_depth_idx` | crawl_interests | | used | `photolane.sql` ranking streams | keep |
+| `work_items_active_created_at_idx` | work_items | partial | pending deployment | existing AdminQueue active backlog minimum created_at | keep (JOOXF-496 slice 1) |
 | `work_items_failed_lease_expired_idx` | work_items | partial | not in audit window | Reclaim self-heal for lease-expired failures ordered by `updated_at, id` | keep (JOOXF-386) |
 | `river_job_active_work_item_idx` | river_job | partial expression | not in audit window | Reclaim's live-job lookup by work item ID | keep (JOOXF-386) |
 | `work_items_active_key_count_idx` | work_items | partial | not in audit window | bounded active count by key | keep (JOOXF-386) |
@@ -455,3 +456,47 @@ photos twice leaves every row's `xmin`/`ctid` unchanged (the old statement rewro
 tombstoned and stale rows are updated; two writers with overlapping reversed batches do not deadlock;
 the UPDATE plan is an Index Scan on the partition primary key without a Seq Scan. WAL and `n_tup_upd`
 on production must be re-measured after deploy (not measured here).
+
+## Active backlog age index (JOOXF-496 slice 1)
+
+The existing `Store.AdminQueue` query is unchanged:
+
+```sql
+SELECT COALESCE(GREATEST(0, floor(extract(epoch FROM now()-min(created_at)))), 0)::bigint
+FROM work_items
+WHERE state IN ('pending', 'ready', 'running', 'waiting');
+```
+
+`work_items_active_created_at_idx` is a partial btree on `created_at` with
+exactly that state predicate. This measures active backlog, not only pending
+work. Empty backlog and future timestamps still return zero. JSON, permissions,
+UI and counts are unchanged. The endpoint's `backlog_by_plan` and
+`ready_queue_sizes` still use existing counts; this slice does not make the
+whole endpoint bounded or complete the counters ticket.
+
+Measured on dev-workspaces on 2026-11-12 in a fresh isolated PostgreSQL database:
+400,000 work items distributed across all six states, inserted in a transaction
+and rolled back after `ANALYZE` and `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`.
+The unchanged SQL used `Result -> Limit -> Index Only Scan` on
+`work_items_active_created_at_idx`, returning one index row in one loop, with
+no sequential scan on `work_items`. Execution took **0.195 ms**, with **4 shared
+buffer hits and 0 shared reads** (one heap fetch). Planning took 0.936 ms with
+137 shared hits and one shared read. These are fixture measurements, not a
+production latency forecast or a hard I/O bound: MVCC visibility, dead tuples,
+cache state and statistics affect physical reads.
+
+Run the large fixture separately from the default fast suite:
+
+```sh
+cd backend
+XFLICKR_INTEGRATION_TEST=1 XFLICKR_INDEX_PLAN_TEST=1 \
+  go test -p 1 ./internal/schedule/adapters/queuepostgres \
+  -run '^TestOldestActiveAgeIndexPlanIntegration$' -v -count=1
+```
+
+The migration builds and drops the index concurrently without a table rewrite.
+Before retrying an interrupted build, inspect `pg_index.indisvalid` for this
+index. Remove only an invalid remnant with `DROP INDEX CONCURRENTLY
+work_items_active_created_at_idx` before retrying; do not hide it with
+`IF NOT EXISTS` or drop a valid index. The isolated migration test verifies
+validity, key and predicate, down preserving unrelated data/indexes, and reapply.
