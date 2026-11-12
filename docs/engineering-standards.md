@@ -35,6 +35,13 @@ reviewer rejects a change that breaks them even when the tests pass.
 - Constructors are `New...` functions that validate their arguments and return an
   error; they take dependencies explicitly. Wiring happens in one composition place
   per role (`internal/platform/roles`), not inside packages.
+- **New SQL uses sqlc** (owner decision 2026-11-12). Write the statement in the module's
+  `queries/*.sql`, run `make gen`, and call the generated method. Hand-written SQL in an
+  adapter is allowed only as a recorded exception with a one-line reason next to it:
+  runtime-built dynamic SQL, or a pgx batch pipeline that sqlc cannot express (the
+  two-statement upsert batches are an example). Existing hand-written SQL moves to sqlc
+  under epic JOOXF-439; touch it only to move it or when the ticket needs it. Review
+  rejects new hand-written SQL without a reason.
 - SQL goes through pgx with parameters, never string concatenation. Schema changes
   are goose migrations named `YYYYMMDDHHMMSS_description.sql` with `+goose Up` and
   `+goose Down`; sqlc queries live with their module. Keep queries bounded: the
