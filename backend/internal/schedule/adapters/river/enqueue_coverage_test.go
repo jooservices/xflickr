@@ -267,7 +267,7 @@ func TestLoadSettingsReadsValidSettingsAndRejectsMalformedValues(t *testing.T) {
 	for _, tc := range []struct{ name, key, value, want string }{
 		{name: "integer parse", key: "retry_max", value: "bad", want: "parse pump setting retry_max"},
 		{name: "nonpositive age batch", key: "score_aging_batch_size", value: "0", want: "score aging batch size must be positive"},
-		{name: "nonpositive reclaim batch", key: "queue.reclaim_batch_size", value: "0", want: "invalid pump settings"},
+		{name: "nonpositive reclaim batch", key: "queue.reclaim_batch_size", value: "0", want: "invalid reclaim batch size"},
 		{name: "decimal parse", key: "score_weight_plan", value: "bad", want: "parse pump setting score_weight_plan"},
 		{name: "settings validation", key: "media_ready_cap", value: "-1", want: "invalid pump settings"},
 		{name: "score validation", key: "score_weight_plan", value: "-1", want: "invalid score settings"},
