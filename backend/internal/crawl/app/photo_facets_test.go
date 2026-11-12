@@ -160,15 +160,15 @@ func (s *photoFacetStoreFake) LoadPhotoFacetSource(context.Context, int64) (cata
 	return s.source, s.exists, nil
 }
 
-func (s *photoFacetStoreFake) SetPhotoFacet(_ context.Context, _ int64, facet string, data []byte, photoUpdatedAt, fetchedAt time.Time) error {
+func (s *photoFacetStoreFake) SetPhotoFacet(_ context.Context, update catalog.PhotoFacetUpdate) error {
 	if s.setErr != nil {
 		return s.setErr
 	}
 	if s.data == nil {
 		s.data = make(map[string][]byte)
 	}
-	s.lastFacet, s.lastPhotoUpdatedAt, s.lastFetchedAt = facet, photoUpdatedAt, fetchedAt
-	s.data[facet] = append([]byte(nil), data...)
+	s.lastFacet, s.lastPhotoUpdatedAt, s.lastFetchedAt = update.Facet, update.PhotoUpdatedAt, update.FetchedAt
+	s.data[update.Facet] = append([]byte(nil), update.Data...)
 	return nil
 }
 

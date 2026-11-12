@@ -9,6 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jooservices/xflickr/internal/catalog/domain"
 )
 
 func TestLoadPhotoFacetSource(t *testing.T) {
@@ -96,7 +98,8 @@ func TestSetPhotoFacetWritesEachShapeInATransaction(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := repository.SetPhotoFacet(context.Background(), 42, test.facet, []byte(test.data), updatedAt, fetchedAt); err != nil {
+			update := domain.PhotoFacetUpdate{PhotoID: 42, Facet: test.facet, Data: []byte(test.data), PhotoUpdatedAt: updatedAt, FetchedAt: fetchedAt}
+			if err := repository.SetPhotoFacet(context.Background(), update); err != nil {
 				t.Fatalf("SetPhotoFacet(): %v", err)
 			}
 			if db.beginCount != 1 || db.commitCount != 1 || db.execCount < 2 {
@@ -113,7 +116,8 @@ func TestSetPhotoFacetSupportsDatabaseWithoutTransactions(t *testing.T) {
 		t.Fatal(err)
 	}
 	updatedAt := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
-	if err := repository.SetPhotoFacet(context.Background(), 42, "info", []byte(`{"title":"photo"}`), updatedAt, updatedAt.Add(time.Minute)); err != nil {
+	update := domain.PhotoFacetUpdate{PhotoID: 42, Facet: "info", Data: []byte(`{"title":"photo"}`), PhotoUpdatedAt: updatedAt, FetchedAt: updatedAt.Add(time.Minute)}
+	if err := repository.SetPhotoFacet(context.Background(), update); err != nil {
 		t.Fatalf("SetPhotoFacet() without transaction support: %v", err)
 	}
 }
@@ -143,7 +147,8 @@ func TestSetPhotoFacetRollsBackFailuresAndValidatesData(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			db := &photoFacetDBFake{}
-			err := newRepository(db).SetPhotoFacet(context.Background(), 42, test.facet, []byte(test.data), updatedAt, fetchedAt)
+			update := domain.PhotoFacetUpdate{PhotoID: 42, Facet: test.facet, Data: []byte(test.data), PhotoUpdatedAt: updatedAt, FetchedAt: fetchedAt}
+			err := newRepository(db).SetPhotoFacet(context.Background(), update)
 			if err == nil {
 				t.Fatal("SetPhotoFacet accepted invalid input")
 			}
@@ -172,7 +177,8 @@ func TestSetPhotoFacetRollsBackFailuresAndValidatesData(t *testing.T) {
 		{name: "commit", db: &photoFacetDBFake{commitErr: boom}, facet: "info", data: `{}`, wantError: boom},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			err := newRepository(test.db).SetPhotoFacet(context.Background(), 42, test.facet, []byte(test.data), updatedAt, fetchedAt)
+			update := domain.PhotoFacetUpdate{PhotoID: 42, Facet: test.facet, Data: []byte(test.data), PhotoUpdatedAt: updatedAt, FetchedAt: fetchedAt}
+			err := newRepository(test.db).SetPhotoFacet(context.Background(), update)
 			if !errors.Is(err, test.wantError) {
 				t.Fatalf("SetPhotoFacet() error=%v, want %v", err, test.wantError)
 			}
@@ -202,7 +208,8 @@ func TestSetPhotoFacetRollsBackFailuresAndValidatesData(t *testing.T) {
 			if test.name == "zero fetch time" {
 				fetched = time.Time{}
 			}
-			if err := newRepository(&photoFacetDBFake{}).SetPhotoFacet(ctx, test.id, "info", test.data, test.at, fetched); err == nil {
+			update := domain.PhotoFacetUpdate{PhotoID: test.id, Facet: "info", Data: test.data, PhotoUpdatedAt: test.at, FetchedAt: fetched}
+			if err := newRepository(&photoFacetDBFake{}).SetPhotoFacet(ctx, update); err == nil {
 				t.Fatal("SetPhotoFacet accepted invalid arguments")
 			}
 		})

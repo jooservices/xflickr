@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jooservices/xflickr/internal/catalog/adapters/postgres"
+	"github.com/jooservices/xflickr/internal/catalog/domain"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 )
 
@@ -43,10 +44,12 @@ func TestPhotoFacetWritesAndStatusAreAtomic(t *testing.T) {
 		t.Fatalf("LoadPhotoFacetSource()=%+v exists=%t err=%v", source, exists, err)
 	}
 	fetchedAt := updatedAt.Add(time.Minute)
-	if err := repository.SetPhotoFacet(ctx, photoID, "contexts", []byte(`{"set":[{"id":"set-1","title":"original"}],"pool":[]}`), updatedAt, fetchedAt); err != nil {
+	original := domain.PhotoFacetUpdate{PhotoID: photoID, Facet: "contexts", Data: []byte(`{"set":[{"id":"set-1","title":"original"}],"pool":[]}`), PhotoUpdatedAt: updatedAt, FetchedAt: fetchedAt}
+	if err := repository.SetPhotoFacet(ctx, original); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.SetPhotoFacet(ctx, photoID, "contexts", []byte(`{"set":[{"id":"set-2","title":"new"},{"title":"invalid"}],"pool":[]}`), updatedAt, fetchedAt.Add(time.Minute)); err == nil {
+	invalid := domain.PhotoFacetUpdate{PhotoID: photoID, Facet: "contexts", Data: []byte(`{"set":[{"id":"set-2","title":"new"},{"title":"invalid"}],"pool":[]}`), PhotoUpdatedAt: updatedAt, FetchedAt: fetchedAt.Add(time.Minute)}
+	if err := repository.SetPhotoFacet(ctx, invalid); err == nil {
 		t.Fatal("SetPhotoFacet accepted context item without an ID")
 	}
 	var contextID, title string
@@ -57,7 +60,8 @@ func TestPhotoFacetWritesAndStatusAreAtomic(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT photo_updated_at FROM photo_facet_status WHERE photo_id=$1 AND facet='contexts'`, photoID).Scan(&statusAt); err != nil || !statusAt.Equal(updatedAt) {
 		t.Fatalf("facet status = %s, err %v; want %s", statusAt, err, updatedAt)
 	}
-	if err := repository.SetPhotoFacet(ctx, photoID, "info", []byte(`{"title":"seed"}`), updatedAt, fetchedAt); err != nil {
+	seed := domain.PhotoFacetUpdate{PhotoID: photoID, Facet: "info", Data: []byte(`{"title":"seed"}`), PhotoUpdatedAt: updatedAt, FetchedAt: fetchedAt}
+	if err := repository.SetPhotoFacet(ctx, seed); err != nil {
 		t.Fatal(err)
 	}
 	var raw []byte

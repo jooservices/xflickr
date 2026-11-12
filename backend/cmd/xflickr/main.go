@@ -14,6 +14,16 @@ import (
 
 var version = "dev"
 
+// commandOptions are the dependencies of the command dispatcher.
+type commandOptions struct {
+	envRoles      string
+	registry      *roles.Registry
+	stdout        io.Writer
+	stderr        io.Writer
+	runMigrations migrationRunner
+	runRotation   rotationRunner
+}
+
 func main() {
 	os.Exit(mainExit())
 }
@@ -25,43 +35,56 @@ func mainExit() int {
 }
 
 func execute(ctx context.Context, args []string, envRoles string, registry *roles.Registry, stderr io.Writer) int {
-	return executeWithCommands(ctx, args, envRoles, registry, os.Stdout, stderr, runConfiguredMigrations, runConfiguredRotation)
+	return executeWithCommands(ctx, args, commandOptions{envRoles: envRoles, registry: registry, stdout: os.Stdout, stderr: stderr, runMigrations: runConfiguredMigrations, runRotation: runConfiguredRotation})
 }
 
 func executeWithHealth(ctx context.Context, args []string, envRoles string, registry *roles.Registry, stderr io.Writer) int {
-	return executeWithCommandsAndHealth(ctx, args, envRoles, registry, os.Stdout, stderr, runConfiguredMigrations, runConfiguredRotation, true)
+	return executeWithCommandsAndHealth(ctx, args, commandOptions{envRoles: envRoles, registry: registry, stdout: os.Stdout, stderr: stderr, runMigrations: runConfiguredMigrations, runRotation: runConfiguredRotation}, true)
 }
 
 func executeWithMigration(ctx context.Context, args []string, envRoles string, registry *roles.Registry, stdout, stderr io.Writer, run migrationRunner) int {
-	return executeWithCommands(ctx, args, envRoles, registry, stdout, stderr, run, runConfiguredRotation)
+	return executeWithCommands(ctx, args, commandOptions{envRoles: envRoles, registry: registry, stdout: stdout, stderr: stderr, runMigrations: run, runRotation: runConfiguredRotation})
 }
 
-func executeWithCommands(ctx context.Context, args []string, envRoles string, registry *roles.Registry, stdout, stderr io.Writer, runMigrations migrationRunner, runRotation rotationRunner) int {
-	return executeWithCommandsAndHealth(ctx, args, envRoles, registry, stdout, stderr, runMigrations, runRotation, false)
+func executeWithCommands(ctx context.Context, args []string, opts commandOptions) int {
+	return executeWithCommandsAndHealth(ctx, args, opts, false)
 }
 
-func executeWithCommandsAndHealth(ctx context.Context, args []string, envRoles string, registry *roles.Registry, stdout, stderr io.Writer, runMigrations migrationRunner, runRotation rotationRunner, withHealth bool) int {
-	if len(args) > 0 && args[0] == "backfill-observations" {
-		return runObservationBackfill(ctx, args[1:], stdout, stderr, roles.BackfillObservations)
+func executeWithCommandsAndHealth(ctx context.Context, args []string, opts commandOptions, withHealth bool) int {
+	if code, handled := runSubcommand(ctx, args, opts); handled {
+		return code
 	}
-	if len(args) > 0 && args[0] == "repair-checkpoints" {
-		return runCheckpointRepair(ctx, args[1:], stdout, stderr, roles.RepairZeroCheckpoints)
-	}
-	if len(args) > 0 && args[0] == "migrate" {
-		return runMigrate(ctx, args[1:], stdout, stderr, runMigrations)
-	}
-	if len(args) > 0 && args[0] == "requeue" {
-		return runRequeue(ctx, args[1:], stdout, stderr, runConfiguredRequeue)
-	}
-	if len(args) > 0 && args[0] == "crypto" {
-		return runCrypto(ctx, args[1:], stdout, stderr, runRotation)
-	}
-
-	selected, err := parseRoles(args, envRoles, registry)
+	selected, err := parseRoles(args, opts.envRoles, opts.registry)
 	if err != nil {
-		fmt.Fprintf(stderr, "xflickr: %v\n", err)
+		fmt.Fprintf(opts.stderr, "xflickr: %v\n", err)
 		return 2
 	}
+	return runRoles(ctx, selected, opts.stderr, withHealth)
+}
+
+// runSubcommand runs the maintenance command named by args[0]. It reports
+// false when args does not start with a maintenance command.
+func runSubcommand(ctx context.Context, args []string, opts commandOptions) (int, bool) {
+	if len(args) == 0 {
+		return 0, false
+	}
+	switch args[0] {
+	case "backfill-observations":
+		return runObservationBackfill(ctx, args[1:], opts.stdout, opts.stderr, roles.BackfillObservations), true
+	case "repair-checkpoints":
+		return runCheckpointRepair(ctx, args[1:], opts.stdout, opts.stderr, roles.RepairZeroCheckpoints), true
+	case "migrate":
+		return runMigrate(ctx, args[1:], opts.stdout, opts.stderr, opts.runMigrations), true
+	case "requeue":
+		return runRequeue(ctx, args[1:], opts.stdout, opts.stderr, runConfiguredRequeue), true
+	case "crypto":
+		return runCrypto(ctx, args[1:], opts.stdout, opts.stderr, opts.runRotation), true
+	default:
+		return 0, false
+	}
+}
+
+func runRoles(ctx context.Context, selected []roles.Role, stderr io.Writer, withHealth bool) int {
 	var runErr error
 	if withHealth {
 		runErr = roles.RunWithHealth(ctx, selected, version)
