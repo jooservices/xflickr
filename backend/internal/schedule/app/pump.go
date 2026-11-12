@@ -9,6 +9,7 @@ import (
 
 	"github.com/jooservices/xflickr/internal/platform/queue"
 	"github.com/jooservices/xflickr/internal/schedule/domain"
+	settingsapp "github.com/jooservices/xflickr/internal/settings/app"
 )
 
 const PumpInterval = 2 * time.Second
@@ -30,8 +31,11 @@ type PumpSettings struct {
 }
 
 func (s PumpSettings) Validate() error {
-	if s.PerKeyReadyCap < 0 || s.NodeReadyCap < 0 || s.MediaReadyCap < 0 || s.AIReadyCap < 0 || s.SyncReadyCap < 0 || s.RetryMax < 0 || s.RetryBackoff < 0 || s.LeaseTimeout < 0 || s.ReclaimBatchSize < 1 || s.AgingBatchSize < 0 || s.MaxDepth < 0 {
+	if s.PerKeyReadyCap < 0 || s.NodeReadyCap < 0 || s.MediaReadyCap < 0 || s.AIReadyCap < 0 || s.SyncReadyCap < 0 || s.RetryMax < 0 || s.RetryBackoff < 0 || s.LeaseTimeout < 0 || s.AgingBatchSize < 0 || s.MaxDepth < 0 {
 		return errors.New("schedule: invalid pump settings")
+	}
+	if err := settingsapp.ValidateReclaimBatchSize(s.ReclaimBatchSize); err != nil {
+		return fmt.Errorf("schedule: invalid reclaim batch size: %w", err)
 	}
 	if s.AgingBatchSize > 0 {
 		if _, err := domain.Score(domain.ScoreInput{MaxDepth: s.MaxDepth}, s.ScoreWeights); err != nil {
