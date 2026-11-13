@@ -29,3 +29,17 @@ If the migration is interrupted, completed valid leaf indexes are retained on
 retry; an invalid concurrent build must be dropped concurrently before retrying.
 New observations partitions must receive a lookup index before photo reads
 depend on them.
+
+The JOOXF-407 integration measurement seeds 400,001 observations in a rolled
+back transaction, runs `EXPLAIN (ANALYZE, BUFFERS)` for the user-scoped photo
+lookup, and reports the execution plan and p01 lookup-index size. The plan test
+fails if the query uses a sequential scan or misses the lookup index. Its
+measured time, buffer I/O, and index size are recorded in the pull request
+because they describe the current development database and fixture, not a
+production capacity guarantee.
+
+On `dev-workspaces` (2026-11-13), the 400,001-row fixture used
+`observations_p01_record_lookup_idx`, completed in 0.126 ms, and recorded 9
+shared buffer hits with no shared reads. The p01 lookup index measured
+2,162,688 bytes during the transaction. The transaction rolled back after the
+measurement; these figures describe this fixture and host only.

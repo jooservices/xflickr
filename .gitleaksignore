@@ -32,3 +32,11 @@ f4d86b44647589d3ac471dce058b97f81f097a76:backend/internal/platform/config/config
 # Public OAuth 1.0 example tokens (RFC 5849 and the Flickr API documentation) used as signer test vectors.
 b0e45244b3b0b467e791db8f67d56f3be92d3ca7:backend/pkg/flickr/oauth/signer_test.go:generic-api-key:162
 b0e45244b3b0b467e791db8f67d56f3be92d3ca7:backend/pkg/flickr/oauth/signer_test.go:generic-api-key:233
+
+# Reviewed: deterministic test-only key-format fixtures in the MSW-isolated key-form tests.
+1f13a592773da4df5eb12a2856bca2806611fa1d:web/src/pages/setup/useKeyForm.test.ts:generic-api-key:11
+1f13a592773da4df5eb12a2856bca2806611fa1d:web/src/pages/setup/useKeyForm.test.ts:generic-api-key:12
+1f13a592773da4df5eb12a2856bca2806611fa1d:web/src/pages/setup/useKeyForm.test.ts:generic-api-key:91
+456655353ed81320f61cca6903d35bb89f46a888:web/src/pages/setup/useKeyForm.test.ts:generic-api-key:11
+456655353ed81320f61cca6903d35bb89f46a888:web/src/pages/setup/useKeyForm.test.ts:generic-api-key:12
+456655353ed81320f61cca6903d35bb89f46a888:web/src/pages/setup/useKeyForm.test.ts:generic-api-key:91

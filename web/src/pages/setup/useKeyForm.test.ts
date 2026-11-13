@@ -8,8 +8,8 @@ import { I18nBridge, i18nInstance } from '../../shared';
 import { server } from '../../test/server';
 import { useKeyForm } from './useKeyForm';
 
-const KEY = '0123456789abcdef0123456789abcdef';
-const SECRET = '0123456789abcdef';
+const KEY = 'a'.repeat(32);
+const SECRET = 'b'.repeat(16);
 
 const acceptedKey = {
   id: 5,
@@ -88,6 +88,6 @@ it('useKeyForm maps the duplicate-key answer to a key field error that clears on
   expect(result.current.banner).toBeNull();
   expect(onSaved).not.toHaveBeenCalled();
 
-  act(() => result.current.setField('key', 'fedcba9876543210fedcba9876543210'));
+  act(() => result.current.setField('key', KEY));
   expect(result.current.keyError).toBeNull();
 });

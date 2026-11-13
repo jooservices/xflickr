@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
+import type { TouchEvent } from 'react';
+import { Link } from 'react-router';
 import { getPhoto } from '../../shared/api/gen/catalog/catalog';
 import type { CatalogPhoto } from '../../shared/api/gen/models';
 import { Icon, useI18n } from '../../shared';
@@ -70,11 +72,14 @@ export function PhotoViewer({
   opener,
   onClose,
 }: PhotoViewerProps): JSX.Element {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
+  const number = new Intl.NumberFormat(locale);
   const dialog = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   const photoIdsRef = useRef(photoIds);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const originalTitle = useRef(document.title);
   const instanceId = useId();
   const validInitialIndex =
     Number.isInteger(initialIndex) && initialIndex >= 0 && initialIndex < photoIds.length;
@@ -93,10 +98,25 @@ export function PhotoViewer({
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+  const response = query.data;
+  const status = response?.status;
+  const photo = response?.status === 200 ? response.data : null;
 
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
+
+  useEffect(() => {
+    const title = photo?.title.trim() || t('lightbox.title');
+    document.title = `${title} · ${t('lightbox.title')} · XFlickr`;
+  }, [photo?.title, t]);
+
+  useEffect(
+    () => () => {
+      document.title = originalTitle.current;
+    },
+    [],
+  );
 
   useLayoutEffect(() => {
     photoIdsRef.current = photoIds;
@@ -169,9 +189,6 @@ export function PhotoViewer({
     };
   }, [opener]);
 
-  const response = query.data;
-  const status = response?.status;
-  const photo = response?.status === 200 ? response.data : null;
   const url = photoUrl(photo);
   const imageFailed =
     currentId !== undefined && failedPreview?.id === currentId && failedPreview.url === url;
@@ -194,7 +211,25 @@ export function PhotoViewer({
           : photo?.title.trim() || t('lightbox.title');
 
   const move = (amount: number) => {
+    if (photoIds.length === 0) return;
     setIndex((current) => (current + amount + photoIds.length) % photoIds.length);
+  };
+
+  const startTouch = (event: TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    touchStart.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+  };
+
+  const finishTouch = (event: TouchEvent<HTMLDivElement>) => {
+    const start = touchStart.current;
+    const touch = event.changedTouches[0];
+    touchStart.current = null;
+    if (!start || !touch) return;
+
+    const horizontal = touch.clientX - start.x;
+    const vertical = touch.clientY - start.y;
+    if (Math.abs(horizontal) < 50 || Math.abs(horizontal) <= Math.abs(vertical)) return;
+    move(horizontal < 0 ? 1 : -1);
   };
 
   const retry = () => {
@@ -263,7 +298,14 @@ export function PhotoViewer({
           </>
         ) : null}
 
-        <div className={styles.imageArea}>
+        <div
+          className={styles.imageArea}
+          onTouchStart={startTouch}
+          onTouchEnd={finishTouch}
+          onTouchCancel={() => {
+            touchStart.current = null;
+          }}
+        >
           {showEmpty ? (
             <div className={styles.message} data-testid="lightbox-empty">
               <h2>{t('lightbox.empty.title')}</h2>
@@ -353,9 +395,71 @@ export function PhotoViewer({
           </div>
         ) : null}
         {!showEmpty && !showNotFound && !showRequestError && !showSessionExpired ? (
-          <h1 id="lightbox-title" className={styles.title}>
-            {heading}
-          </h1>
+          <>
+            <h1 id="lightbox-title" className={styles.title}>
+              {heading}
+            </h1>
+            {photo ? (
+              <>
+                <section className={styles.detailSection} data-testid="lightbox-owner">
+                  <h2>{t('lightbox.owner')}</h2>
+                  <Link
+                    to={`/contacts/${encodeURIComponent(photo.owner_nsid)}`}
+                    onClick={() => onCloseRef.current()}
+                  >
+                    {photo.owner_nsid}
+                  </Link>
+                </section>
+                {photo.description.trim() !== '' ? (
+                  <p className={styles.description}>{photo.description}</p>
+                ) : null}
+                <section className={styles.detailSection} data-testid="lightbox-sizes">
+                  <h2>{t('lightbox.sizes.title')}</h2>
+                  <p className={styles.sizeStatus}>
+                    {t(`lightbox.sizes.status.${photo.sizes_status}`)}
+                  </p>
+                  {photo.sizes.length > 0 ? (
+                    <ul className={styles.sizeList}>
+                      {photo.sizes.map((size, sizeIndex) => (
+                        <li key={`${size.label}:${String(sizeIndex)}`}>
+                          <span>{size.label}</span>
+                          <span>
+                            {size.width !== undefined && size.height !== undefined
+                              ? `${number.format(size.width)} × ${number.format(size.height)}`
+                              : t('lightbox.sizes.dimensions-unavailable')}
+                          </span>
+                          <small>
+                            {t(
+                              photo.sizes_status === 'confirmed'
+                                ? 'lightbox.sizes.confirmed'
+                                : 'lightbox.sizes.provisional',
+                            )}
+                          </small>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </section>
+                {photo.labels.length > 0 ? (
+                  <section className={styles.detailSection} data-testid="lightbox-tags">
+                    <h2>{t('lightbox.tags.title')}</h2>
+                    <ul className={styles.tagList}>
+                      {photo.labels.map((label) => (
+                        <li key={label}>
+                          <Link
+                            to={`/search?q=${encodeURIComponent(label)}`}
+                            onClick={() => onCloseRef.current()}
+                          >
+                            {label}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
+              </>
+            ) : null}
+          </>
         ) : null}
       </aside>
     </div>
