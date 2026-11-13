@@ -18,6 +18,9 @@ Credentials live in the private `Workspaces/.env.docker`. Never print it, never 
 ## Rules that replace ticket wording
 
 1. No testcontainers and no per-job containers on the VM: integration tests use `xflickr_test` or, in a ticket worktree, the worktree database `xflickr_wt<id>`. Two exceptions are allowed: GitHub Actions may use service containers (they run on GitHub's runners, not on the VM), and a chaos or load test that needs isolation may use a one-off container if its ticket says so.
+   `make test-integration` recreates only the current worktree database and
+   reapplies migrations before running the integration suite. Preserve any
+   fixture data you need before running it.
 2. No dev Docker Compose for databases or search. `make dev-up` runs `docker/scripts/worktree_env.py --check`: it confirms the worktree `.env` selects its own database and that PostgreSQL, Redis and search answer. The only container XFlickr may own is a future application container (one image, roles comma separated).
 3. Temporary download files and thumbnails use a directory on the VM disk behind the `BlobStore` port (local filesystem adapter first); the S3 adapter is optional later. Presigned ZIP links use `DOWNLOAD_LINK_TTL` (15m by default), which cannot exceed `BLOB_MAX_TTL`.
 4. Uptime checks use OpenObserve alerts; external monitoring on the ESXi monitor server is a deferred ticket.
@@ -25,12 +28,13 @@ Credentials live in the private `Workspaces/.env.docker`. Never print it, never 
 6. The Flickr API key and secret are entered only in the application UI (setup wizard and Keys screen), stored encrypted. There is no CLI or `.env` path for them and none may be added.
 7. Ollama (captions, embeddings) runs natively on the host when available; tests use the fake Captioner and Embedder. AI features are for the owner only in release 1.
 8. Deployment to other servers is out of scope for release 1.
-9. Go 1.27.4 and Node are installed natively on the VM. `backend/go.mod` pins
-   the Go version used by GitHub Actions; the root `Dockerfile` uses the same
-   version for its build image. `make check-go-version` verifies those pins and
-   runs in CI. `docker/scripts/run.sh` runs Go and Node directly, so `make lint`,
-   `make test` and `make check` work on the VM and on GitHub Actions. If
-   `WORKSPACES_RUNTIME` is set it is used instead.
+9. Go, Node, Python and golangci-lint are pinned in `.tool-versions`. CI reads
+   those pins for its setup actions; `make check-tool-versions` warns when the
+   local Go, Node or Python runtime differs. `backend/go.mod` and the root
+   `Dockerfile` must keep the same Go version; `make check-go-version` verifies
+   them. `docker/scripts/run.sh` runs Go and Node directly, so the Make targets
+   work on the VM and on GitHub Actions. If `WORKSPACES_RUNTIME` is set it is
+   used instead.
 10. Work is done in a git worktree per ticket with its own database. Create it from the Workspaces root with `python3 scripts/git/main.py create --repo JOOservices/projects/xflickr --company JOOservices --ticket JOOXF-<n> --description "<slug>" --base develop`, then run `python3 docker/scripts/worktree_env.py <id>` inside the worktree, where `<id>` is the ticket key in lowercase without the hyphen (`JOOXF-294` becomes `jooxf294`). That creates `xflickr_wt<id>`, writes a private `.env` with a fresh master key (both `DB_NAME`/`DB_USER` and the `DB_DATABASE`/`DB_USERNAME` aliases, plus the worktree path so a copied `.env` is refused), and refuses the live and shared test databases. Running it again keeps the master key.
 11. The develop runtime on the VM is a native process built from `backend/cmd/xflickr` with its own git-ignored `.env.develop` (it holds the encryption master key: never delete or replace it). It uses the live database `xflickr`. Only the develop runtime touches the live database. It is started by hand for now; `make develop-up` and `docs/develop-environment.md` still describe the older Docker flow of the WSL workstation and do not apply on the VM until JOOXF-315 (native develop runtime) replaces them.
 12. The mandatory Gitleaks scan before push reads `.gitleaksignore`, which lists the 24 reviewed false positives of the history by fingerprint (test constants, RFC 5849 example tokens, a generated OpenAPI blob). A new finding is fixed or rejected, never added there without a lead review of the value.
@@ -84,5 +88,6 @@ CPU or memory cost of registration and login.
 
 ## Web test report in CI
 
-When the `web` job fails, the vitest JUnit report is uploaded as the run artifact `vitest-report` (kept 7 days).
-Find it in the GitHub Actions tab: open the failed run and download it from the Artifacts section of the summary page.
+When a `web-test` shard fails, its vitest JUnit report is uploaded as a
+`vitest-report-*` run artifact (kept 7 days). Open the failed run and download
+the matching shard from the Artifacts section of the summary page.

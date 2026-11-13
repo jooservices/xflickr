@@ -2,70 +2,113 @@ name: CI
 
 on:
   push:
+    branches: [develop, master]
   pull_request:
 
+concurrency:
+  group: xflickr-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: write
+  contents: read
+
 jobs:
-  lint:
-    name: lint
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.select.outputs.go }}
+      web: ${{ steps.select.outputs.web }}
+      integration: ${{ steps.select.outputs.integration }}
+      stale: ${{ steps.select.outputs.stale }}
+      security_go: ${{ steps.select.outputs.security_go }}
+      security_web: ${{ steps.select.outputs.security_web }}
+      go_groups: ${{ steps.select.outputs.go_groups }}
+      integration_modules: ${{ steps.select.outputs.integration_modules }}
+      go_version: ${{ steps.select.outputs.go_version }}
+      node_version: ${{ steps.select.outputs.node_version }}
+      python_version: ${{ steps.select.outputs.python_version }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Select jobs and read tool pins
+        id: select
+        env:
+          CHANGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: make ci-changes
+
+      - if: ${{ failure() }}
+        uses: ./.github/actions/cancel-on-failure
+
+  static:
+    name: static
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
         uses: actions/checkout@v5
         with:
-          # Full history so the merge base with origin/develop exists for
-          # golangci-lint's new-from-merge-base gate.
           fetch-depth: 0
 
-      - name: Check pinned Go versions
-        run: make check-go-version
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ needs.changes.outputs.python_version }}
 
-      - name: Check migration versions are unique and well named
-        run: make precheck
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ needs.changes.outputs.node_version }}
 
-      - name: Test the migration version checker
-        run: python3 docker/scripts/migration_versions_test.py
+      - name: Set up Go for Go-related static checks
+        if: needs.changes.outputs.go == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ needs.changes.outputs.go_version }}
+          cache-dependency-path: backend/go.sum
 
-      - name: Test Go version check
-        run: python3 docker/scripts/test_check_go_version.py
+      - name: Run fast verification stages
+        env:
+          CI_CHANGED_GO: ${{ needs.changes.outputs.go }}
+          COMMIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          COMMIT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: make static
 
-      - name: Check the UI view catalogue
-        run: ./docker/scripts/ui-spec-check.sh
+      - if: ${{ failure() }}
+        uses: ./.github/actions/cancel-on-failure
 
-      - name: Test the UI view catalogue gate
-        run: ./docker/scripts/ui-spec-check.test.sh
-
-      - name: Test the per-package coverage gate
-        run: python3 docker/scripts/test_coverage_gate.py
-
-      - name: Test OpenObserve crawl-health freshness alerts
-        run: python3 docker/scripts/test_obs_alert_config.py
-
-      - name: Test the worktree environment helper
-        run: python3 docker/scripts/test_worktree_env.py
-
-      - name: Test the module cycle checker
-        run: python3 docker/scripts/module_cycles_test.py
+  lint:
+    name: lint
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: backend/go.mod
+          go-version: ${{ needs.changes.outputs.go_version }}
           cache-dependency-path: backend/go.sum
 
-      - name: Enforce the module boundaries
-        run: make arch-lint
+      - name: Lint Go code
+        run: make lint
 
-      - name: Gate the complexity of changed Go functions
-        run: python3 docker/scripts/go_function_gate_test.py && python3 docker/scripts/go_function_gate.py
+      - if: ${{ failure() }}
+        uses: ./.github/actions/cancel-on-failure
 
-      - name: Lint Go code changed since origin/develop
-        # Same command as docker/scripts/lint.sh (version pinned there too);
-        # the new-from-merge-base scope lives in .golangci.yml.
-        working-directory: backend
-        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run --config ../.golangci.yml ./...
-
-  web:
-    name: web
+  web-lint:
+    name: web-lint
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
@@ -76,41 +119,84 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version: ${{ needs.changes.outputs.node_version }}
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Install web dependencies
-        working-directory: web
-        run: npm ci
+      - name: Lint web source
+        run: make web-lint
 
-      - name: Type check the web
-        working-directory: web
-        run: npx tsc --noEmit
+      - if: ${{ failure() }}
+        uses: ./.github/actions/cancel-on-failure
 
-      - name: Lint the web source
-        working-directory: web
-        run: npx eslint src
+  web-test:
+    name: web-test (${{ matrix.shard }})
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["1/4", "2/4", "3/4", "4/4"]
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
 
-      - name: Lint the changed web source with the strict limits
-        run: ./docker/scripts/web-lint-changed.sh
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ needs.changes.outputs.node_version }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
 
-      - name: Run web unit tests
-        working-directory: web
-        run: npx vitest run --reporter=default --reporter=junit --outputFile.junit=vitest-report.xml
+      - name: Run the web test shard
+        env:
+          WEB_SHARD: ${{ matrix.shard }}
+        run: make web-test
 
-      - name: Upload the vitest report when the web job fails
+      - name: Upload the vitest report when this shard fails
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: vitest-report
+          name: vitest-report-${{ strategy.job-index }}
           path: web/vitest-report.xml
           retention-days: 7
           if-no-files-found: warn
 
-  go-coverage:
-    name: go-coverage
+      - if: ${{ failure() }}
+        uses: ./.github/actions/cancel-on-failure
+
+  web-coverage:
+    name: web-coverage
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ needs.changes.outputs.node_version }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Run web unit tests and coverage gate
+        run: make web-test
+
+      - if: ${{ failure() }}
+        uses: ./.github/actions/cancel-on-failure
+
+  go-test:
+    name: go-test (${{ matrix.group }})
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(needs.changes.outputs.go_groups) }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@v5
@@ -120,19 +206,66 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: backend/go.mod
+          go-version: ${{ needs.changes.outputs.go_version }}
           cache-dependency-path: backend/go.sum
 
-      - name: Run backend tests and enforce per-package coverage
-        run: ./docker/scripts/coverage-gate.sh
+      - name: Run Go package test shard
+        env:
+          TEST_GROUP: ${{ matrix.group }}
+        run: make go-test
 
-      - name: Enforce per-file coverage for changed Go files
-        run: python3 docker/scripts/coverage_gate.py .tmp/xflickr-coverage.out --exclude docker/scripts/coverage-exclude.txt --check-files --files-only --base origin/develop --baseline docker/scripts/coverage-file-baseline.txt
+      - name: Upload this Go coverage profile
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage-${{ matrix.group }}
+          path: .tmp/go-coverage/${{ matrix.group }}.out
+          if-no-files-found: error
+          retention-days: 7
+
+      - if: ${{ failure() }}
+        uses: ./.github/actions/cancel-on-failure
+
+  go-coverage:
+    name: go-coverage
+    needs: [changes, go-test]
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ needs.changes.outputs.python_version }}
+
+      - name: Download Go coverage profiles
+        uses: actions/download-artifact@v4
+        with:
+          pattern: go-coverage-*
+          path: .tmp/go-coverage
+          merge-multiple: true
+
+      - name: Merge shards and enforce coverage gates
+        env:
+          COVERAGE_BASE: origin/develop
+        run: make go-coverage
+
+      - if: ${{ failure() }}
+        uses: ./.github/actions/cancel-on-failure
 
   integration:
-    name: integration
+    name: integration (${{ matrix.module }})
+    needs: changes
+    if: needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.changes.outputs.integration_modules) }}
     services:
       postgres:
         image: pgvector/pgvector:pg18
@@ -145,77 +278,171 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres -d xflickr_wtci"
           --health-interval 10s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+      elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:9.5.6
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: "false"
+          ES_JAVA_OPTS: -Xms1g -Xmx1g
+        ports:
+          - 9200:9200
+        options: >-
+          --health-cmd "curl -fsS http://localhost:9200/_cluster/health?wait_for_status=yellow"
+          --health-interval 10s --health-timeout 10s --health-retries 15
+      mailpit:
+        image: axllent/mailpit:v1.32.0
+        ports:
+          - 11025:1025
+          - 18025:8025
+        options: >-
+          --health-cmd "wget -q -O /dev/null http://localhost:8025/api/v1/info"
+          --health-interval 10s --health-timeout 5s --health-retries 10
     env:
       DB_HOST: 127.0.0.1
       DB_PORT: "5432"
       DB_NAME: xflickr_wtci
+      DB_DATABASE: xflickr_wtci
       DB_USER: postgres
+      DB_USERNAME: postgres
       DB_PASSWORD: ci-only-password
       DB_SSLMODE: disable
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      REDIS_PREFIX: "xflickr_wtci:"
+      SEARCH_URL: http://127.0.0.1:9200
+      SEARCH_USERNAME: ""
+      SEARCH_PASSWORD: ""
+      OPENSEARCH_INDEX_PREFIX: xflickr_wtci_
+      MAIL_SMTP_ADDR: 127.0.0.1:11025
+      MAIL_FROM: no-reply@xflickr.local
+      XFLICKR_MASTER_KEYS: ci-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      XFLICKR_MASTER_KEY_ACTIVE: ci-v1
+      NODE_ID: xflickr-ci
       XFLICKR_INTEGRATION_TEST: "1"
       XFLICKR_DBTEST_INTEGRATION_TEST: "1"
     steps:
       - name: Check out the repository
         uses: actions/checkout@v5
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: backend/go.mod
-          cache: true
+          go-version: ${{ needs.changes.outputs.go_version }}
           cache-dependency-path: backend/go.sum
-      - name: Run PostgreSQL integration slice
-        working-directory: backend
-        shell: bash
-        run: |
-          set -euo pipefail
-          go test -v -p 2 -count=1 ./internal/platform/db/dbtest \
-            -run '^(TestOpenUsesMigratedWorktreeDatabase|TestEmptyDatabaseIsCreatedAndDroppedWithoutTouchingWorktreeSchema)$' \
-            2>&1 | tee integration.log
-          grep -q '^--- PASS: TestOpenUsesMigratedWorktreeDatabase ' integration.log
-          grep -q '^--- PASS: TestEmptyDatabaseIsCreatedAndDroppedWithoutTouchingWorktreeSchema ' integration.log
-      - name: Upload integration log on failure
-        if: failure()
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ needs.changes.outputs.python_version }}
+
+      - name: Run this full integration module shard
+        env:
+          TEST_MODULE: ${{ matrix.module }}
+        run: make test-integration
+
+      - name: Upload integration test log
         uses: actions/upload-artifact@v4
         with:
-          name: integration-log
-          path: backend/integration.log
-          if-no-files-found: warn
+          name: integration-log-${{ matrix.module }}
+          path: .tmp/integration/${{ matrix.module }}.jsonl
+          if-no-files-found: error
+          retention-days: 7
 
-  stale-check:
-    name: stale-check
+      - if: ${{ failure() }}
+        uses: ./.github/actions/cancel-on-failure
+
+  integration-count:
+    name: integration-count
+    needs: [changes, integration]
+    if: needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
         uses: actions/checkout@v5
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ needs.changes.outputs.python_version }}
+
+      - name: Download module logs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: integration-log-*
+          path: .tmp/integration
+          merge-multiple: true
+
+      - name: Require more than 100 completed test cases
+        run: make integration-count
+
+      - if: ${{ failure() }}
+        uses: ./.github/actions/cancel-on-failure
+
+  stale-check:
+    name: stale-check
+    needs: changes
+    if: needs.changes.outputs.stale == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: backend/go.mod
+          go-version: ${{ needs.changes.outputs.go_version }}
           cache-dependency-path: backend/go.sum
 
       - name: Set up Node
         uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version: ${{ needs.changes.outputs.node_version }}
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Check the UI token specification
-        run: make ui-spec-check
-
-      - name: Install web dependencies
-        working-directory: web
-        run: npm ci
-
-      - name: Regenerate code from the OpenAPI contract
-        run: make gen
-
-      - name: Fail when generated code is stale
+      - name: Regenerate and check freshness
         run: make gen-stale
 
-  security:
-    name: security
+      - if: ${{ failure() }}
+        uses: ./.github/actions/cancel-on-failure
+
+  security-backend:
+    name: security-backend
+    needs: changes
+    if: needs.changes.outputs.security_go == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ needs.changes.outputs.go_version }}
+          cache-dependency-path: backend/go.sum
+
+      - name: Audit backend dependencies
+        run: make security-backend
+
+      - if: ${{ failure() }}
+        uses: ./.github/actions/cancel-on-failure
+
+  security-web:
+    name: security-web
+    needs: changes
+    if: needs.changes.outputs.security_web == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
@@ -226,22 +453,51 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v5
         with:
-          node-version: 24
-
-      - name: Test web security audit wrapper
-        run: bash docker/scripts/security-audit-web.test.sh
+          node-version: ${{ needs.changes.outputs.node_version }}
 
       - name: Audit web dependencies
-        run: bash docker/scripts/security-audit-web.sh
+        run: make security-web
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - if: ${{ failure() }}
+        uses: ./.github/actions/cancel-on-failure
+
+  ci-ok:
+    name: ci-ok
+    needs:
+      - changes
+      - static
+      - lint
+      - web-lint
+      - web-test
+      - web-coverage
+      - go-test
+      - go-coverage
+      - integration
+      - integration-count
+      - stale-check
+      - security-backend
+      - security-web
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
+          python-version: ${{ needs.changes.outputs.python_version }}
 
-      - name: Test backend vulnerability scan wrapper
-        run: bash docker/scripts/security-audit-backend.test.sh
+      - name: Aggregate this run attempt's job conclusions
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+          CI_GO: ${{ needs.changes.outputs.go }}
+          CI_WEB: ${{ needs.changes.outputs.web }}
+          CI_INTEGRATION: ${{ needs.changes.outputs.integration }}
+          CI_STALE: ${{ needs.changes.outputs.stale }}
+          CI_SECURITY_GO: ${{ needs.changes.outputs.security_go }}
+          CI_SECURITY_WEB: ${{ needs.changes.outputs.security_web }}
+        run: make ci-aggregate
 
-      - name: Scan backend for known vulnerabilities
-        run: bash docker/scripts/security-audit-backend.sh
+      - if: ${{ failure() }}
+        uses: ./.github/actions/cancel-on-failure

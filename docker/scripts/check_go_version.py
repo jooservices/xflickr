@@ -7,6 +7,8 @@ import re
 import sys
 from pathlib import Path
 
+from check_tool_versions import parse_versions
+
 
 ROOT = Path(__file__).resolve().parents[2]
 VERSION = r"\d+\.\d+\.\d+"
@@ -75,7 +77,7 @@ def ci_go_versions(text: str, module_version: str) -> list[str]:
         file_matches = re.findall(
             r"(?m)^\s+go-version-file:\s*([^\s#]+)", block
         )
-        version_matches = re.findall(r"(?m)^\s+go-version:\s*([^\s#]+)", block)
+        version_matches = re.findall(r"(?m)^\s+go-version:\s*(\$\{\{.*?\}\}|[^\s#]+)", block)
         if len(file_matches) + len(version_matches) != 1:
             raise ValueError("each actions/setup-go step must pin one Go version")
 
@@ -85,6 +87,9 @@ def ci_go_versions(text: str, module_version: str) -> list[str]:
             versions.append(module_version)
         else:
             version = version_matches[0]
+            if version in {"${{ needs.changes.outputs.go }}", "${{ needs.changes.outputs.go_version }}"}:
+                versions.append(module_version)
+                continue
             if re.fullmatch(VERSION, version) is None:
                 raise ValueError(f"unsupported CI Go version: {version}")
             versions.append(version)
@@ -102,10 +107,17 @@ def check_versions(
     module_text: str,
     dockerfile_text: str,
     workflow_texts: list[str],
+    tool_versions_text: str | None = None,
 ) -> str:
     """Raise a useful error when Go versions differ across build inputs."""
     module_version = module_go_version(module_text)
     docker_version = docker_go_version(dockerfile_text)
+    if tool_versions_text is not None:
+        pinned_version = parse_versions(tool_versions_text)["go"]
+        if pinned_version != module_version:
+            raise ValueError(
+                f".tool-versions uses Go {pinned_version} (backend/go.mod uses {module_version})"
+            )
     ci_versions: list[str] = []
     for workflow in workflow_texts:
         ci_versions.extend(ci_go_versions(workflow, module_version))
@@ -134,6 +146,7 @@ def main() -> int:
             (ROOT / "backend/go.mod").read_text(encoding="utf-8"),
             (ROOT / "Dockerfile").read_text(encoding="utf-8"),
             [workflow.read_text(encoding="utf-8") for workflow in workflows],
+            (ROOT / ".tool-versions").read_text(encoding="utf-8"),
         )
     except (OSError, ValueError) as error:
         print(f"Go version check failed: {error}", file=sys.stderr)
