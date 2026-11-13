@@ -44,6 +44,18 @@ func TestQuotaEndpointsAfterCallsIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	pool := dbtest.Open(t, cfg)
+	var originalQuota string
+	if err := pool.QueryRow(ctx, `SELECT value::text FROM app_settings WHERE key='usable_hourly_quota'`).Scan(&originalQuota); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE app_settings SET value='3600'::jsonb WHERE key='usable_hourly_quota'`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `UPDATE app_settings SET value=$1::jsonb WHERE key='usable_hourly_quota'`, originalQuota); err != nil {
+			t.Errorf("restore usable hourly quota: %v", err)
+		}
+	})
 	values, err := godotenv.Read(filepath.Join(root, ".env"))
 	if err != nil {
 		t.Fatal("read shared worktree environment")
