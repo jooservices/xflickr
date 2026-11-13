@@ -78,12 +78,14 @@ func TestCatalogUpsertsBatchIdempotencySizesAndPartitions(t *testing.T) {
 	}
 
 	photoID := photos[0].ID
+	if _, err := pool.Exec(ctx, `UPDATE photos SET last_seen_at=now()-interval '2 hours' WHERE id=$1`, photoID); err != nil {
+		t.Fatal(err)
+	}
 	var originalXmin string
 	var originalSeenAt time.Time
 	if err := pool.QueryRow(ctx, `SELECT xmin::text,last_seen_at FROM photos WHERE id = $1`, photoID).Scan(&originalXmin, &originalSeenAt); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(2 * time.Millisecond)
 	if err := repository.UpsertPhotos(ctx, []domain.Photo{photos[0]}); err != nil {
 		t.Fatalf("repeat photo upsert: %v", err)
 	}

@@ -9,12 +9,12 @@ LOG_DIR="$ROOT/.tmp/integration"
 if [[ -f "$ROOT/.env" ]]; then
 	"$SCRIPT_DIR/dev.sh" verify-db
 fi
-python3 "$SCRIPT_DIR/clean_db.py"
 mkdir -p "$LOG_DIR"
 
 run_module() {
 	local module="$1"
 	local log="$LOG_DIR/$module.jsonl"
+	python3 "$SCRIPT_DIR/clean_db.py"
 	mapfile -t packages < <(python3 "$SCRIPT_DIR/integration_shards.py" integration-packages "$module")
 	if [[ ${#packages[@]} -eq 0 ]]; then
 		printf 'Integration module %s has no opted-in packages.\n' "$module" >&2
