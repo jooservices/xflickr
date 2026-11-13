@@ -2,18 +2,13 @@
   "common.retry": "Thử lại",
   "library.action.clear-selection": "Bỏ chọn",
   "library.action.done-selecting": "Xong",
-  "library.action.download": "Tải ảnh đã chọn ({{count}})",
   "library.action.load-more": "Tải thêm",
   "library.action.select": "Chọn ảnh",
   "library.action.select-visible": "Chọn ảnh đang hiển thị",
-  "library.empty.cta-account": "Kết nối tài khoản Flickr",
   "library.empty.filtered": "Không có ảnh phù hợp với bộ lọc này.",
   "library.empty.text": "Ảnh bạn đánh dấu yêu thích trên Flickr sẽ xuất hiện tại đây.",
   "library.empty.title": "Chưa có ảnh yêu thích",
-  "library.error.action": "Thao tác không thành công. Ảnh bạn chọn vẫn còn đây.",
-  "library.error.key": "Thêm hoặc kiểm tra khóa API Flickr hợp lệ để tải ảnh.",
   "library.error.more": "Không thể tải thêm ảnh.",
-  "library.error.storage": "Bộ nhớ tải tạm đã đầy. Hãy thử lại sau.",
   "library.error.text": "Hãy kiểm tra kết nối rồi thử lại.",
   "library.error.title": "Không thể tải thư viện.",
   "library.filters.captioned": "Đã có chú thích",
@@ -48,7 +43,5 @@
   "library.status.loading": "Đang tải thư viện…",
   "library.status.stale": "Danh sách ảnh đã tải có thể chưa được cập nhật.",
   "library.title": "Thư viện",
-  "library.tray.add": "Thêm {{title}} vào danh sách tải",
-  "library.selection.limit": "Giới hạn lựa chọn là 500 ảnh. Các ảnh đã chọn chưa được thêm vào danh sách tải.",
-  "library.tray.remove": "Xóa {{title}} khỏi danh sách tải"
+  "library.selection.limit": "Giới hạn lựa chọn là 500 ảnh. Các ảnh đã chọn chưa được thêm vào danh sách tải."
 }
