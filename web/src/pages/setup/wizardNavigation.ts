@@ -25,15 +25,16 @@ export function transition(
   current: WizardRoute,
   event: SetupPageEvent,
 ): WizardRoute {
-  if (!current.pageId) return current;
+  if (current.pageId === null) return current;
   const source = requirePage(pages, current.pageId, 'current page');
   const target = transitionTarget(source, event);
-  const destination = requirePage(pages, target.id, source.id);
+  const destination = target.id === null ? null : requirePage(pages, target.id, source.id);
   return {
-    pageId: destination.id,
+    pageId: destination?.id ?? null,
     failure: target.failure,
     payload: target.payload,
     hostError: null,
+    finished: destination === null,
     revision: current.revision + 1,
   };
 }
@@ -41,7 +42,7 @@ export function transition(
 function transitionTarget(
   page: SetupPage,
   event: SetupPageEvent,
-): { id: SetupPageId; failure: string | null; payload: unknown } {
+): { id: SetupPageId | null; failure: string | null; payload: unknown } {
   if (event.type === 'success')
     return { id: page.next, failure: null, payload: event.payload ?? null };
   if (event.type === 'failure')

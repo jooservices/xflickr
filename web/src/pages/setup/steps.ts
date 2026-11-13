@@ -43,7 +43,7 @@ export const setupSteps: SetupPage[] = [
     title: doneTitle,
     progressName: 'setup.step.done',
     component: DonePage,
-    next: 'done',
+    next: null,
     rollbackTo: ['connect', 'key'],
     showRollback: (data, target) => data.hasAccount && target === 'connect',
   }),

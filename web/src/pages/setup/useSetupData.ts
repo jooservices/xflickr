@@ -1,4 +1,12 @@
-import { createContext, createElement, useContext, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  createElement,
+  useContext,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ApiKey, FlickrAccount } from '../../shared/api/gen/models';
 import { useLoadingTiming } from '../../shared';
@@ -12,6 +20,8 @@ export type SetupData = {
   activeKey: ApiKey | null;
   selectedKeyId: number | null;
   setSelectedKeyId: (id: number) => void;
+  keyDraft: KeyDraft;
+  setKeyDraft: Dispatch<SetStateAction<KeyDraft>>;
   hasAccount: boolean;
   initialLoading: boolean;
   showSkeleton: boolean;
@@ -22,6 +32,8 @@ export type SetupData = {
   refetchAccounts: () => Promise<{ isError: boolean }>;
   addKey: (key: ApiKey) => void;
 };
+
+export type KeyDraft = { key: string; secret: string };
 
 const SetupDataContext = createContext<SetupData | null>(null);
 
@@ -41,6 +53,7 @@ export function useSetupData(): SetupData {
 function useSetupDataSource(): SetupData {
   const client = useQueryClient();
   const [selectedKeyId, setSelectedKeyId] = useState<number | null>(null);
+  const [keyDraft, setKeyDraft] = useState<KeyDraft>({ key: '', secret: '' });
   const keysQuery = useQuery({
     queryKey: ['/keys'],
     queryFn: ({ signal }) => loadKeys(signal),
@@ -59,6 +72,8 @@ function useSetupDataSource(): SetupData {
     accountsQuery,
     selectedKeyId,
     setSelectedKeyId,
+    keyDraft,
+    setKeyDraft,
     initialLoading,
     showSkeleton,
   });
@@ -78,6 +93,8 @@ type SetupDataSourceArgs = {
   accountsQuery: SetupQuery<FlickrAccount[]>;
   selectedKeyId: number | null;
   setSelectedKeyId: (id: number | null) => void;
+  keyDraft: KeyDraft;
+  setKeyDraft: Dispatch<SetStateAction<KeyDraft>>;
   initialLoading: boolean;
   showSkeleton: boolean;
 };
@@ -88,6 +105,8 @@ function createSetupData({
   accountsQuery,
   selectedKeyId,
   setSelectedKeyId,
+  keyDraft,
+  setKeyDraft,
   initialLoading,
   showSkeleton,
 }: SetupDataSourceArgs): SetupData {
@@ -105,6 +124,8 @@ function createSetupData({
     activeKey,
     selectedKeyId,
     setSelectedKeyId,
+    keyDraft,
+    setKeyDraft,
     hasAccount: accounts.length > 0,
     initialLoading,
     showSkeleton,

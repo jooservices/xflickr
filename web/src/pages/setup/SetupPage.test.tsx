@@ -462,6 +462,26 @@ describe('setup wizard step 3 and resume', () => {
     expect(await screen.findByTestId('wizard-step-done')).toBeInTheDocument();
   });
 
+  it('keeps a partial key draft when the key page is unmounted and reopened', async () => {
+    server.use(keysReply([acceptedKey]), accountsReply([account]), settingsReply());
+    open();
+    fireEvent.click(await screen.findByTestId('wizard-done-back'));
+    fireEvent.click(await screen.findByTestId('wizard-connect-back'));
+
+    fireEvent.change(await screen.findByTestId('wizard-key-input'), {
+      target: { value: 'partially entered key' },
+    });
+    fireEvent.change(screen.getByTestId('wizard-key-secret'), {
+      target: { value: 'partially entered secret' },
+    });
+    fireEvent.click(screen.getByTestId('wizard-key-back'));
+    fireEvent.click(await screen.findByTestId('wizard-done-back'));
+    fireEvent.click(await screen.findByTestId('wizard-connect-back'));
+
+    expect(await screen.findByTestId('wizard-key-input')).toHaveValue('partially entered key');
+    expect(screen.getByTestId('wizard-key-secret')).toHaveValue('partially entered secret');
+  });
+
   it('shows the empty state when ?step=3 is forced without an account', async () => {
     server.use(keysReply([acceptedKey]), accountsReply());
     open('/onboarding?step=3');

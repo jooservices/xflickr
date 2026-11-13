@@ -8,8 +8,12 @@ renders rollback controls from the active page's contract.
 The entry resolver chooses the connect result page for a Flickr redirect,
 then resumes on the done page when an account exists, the connect page when a
 valid key exists, or the key page otherwise. The connect result page consumes
-and removes Flickr return parameters before reporting its result.
+and removes Flickr return parameters before reporting its result. For
+compatibility, a valid key with no account and `?step=3` resumes on the empty
+done page.
 
-Keys, accounts, and the selected key are shared through setup data context.
-Page components own their form, authorization, or crawl behavior; the shared
-shell owns progress, focus, live announcements, and load states.
+Keys, accounts, the selected key, and an unfinished key form draft are shared
+through setup data context. Page components own their form, authorization, or
+crawl behavior; the shared shell owns progress, focus, live announcements, and
+load states. A terminal success is declared by the done page's `next: null`
+contract, and the host navigates home with the completion toast.

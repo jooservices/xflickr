@@ -23,7 +23,7 @@ export interface SetupPage {
   title: (data: SetupData) => MessageKey;
   progressName: MessageKey;
   component: ComponentType<SetupPageComponentProps>;
-  next: SetupPageId;
+  next: SetupPageId | null;
   onFail: SetupPageId;
   rollbackTo: SetupPageId[];
   showRollback: (data: SetupData, target: SetupPageId) => boolean;
@@ -46,6 +46,7 @@ export type WizardRoute = {
   failure: string | null;
   payload: unknown;
   hostError: string | null;
+  finished: boolean;
   revision: number;
 };
 

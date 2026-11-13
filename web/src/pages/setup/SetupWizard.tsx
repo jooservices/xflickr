@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { useI18n } from '../../shared';
 import { resolveEntry } from './resolveEntry';
 import { useSetupData } from './useSetupData';
@@ -20,9 +20,10 @@ export function SetupWizard({ registry }: SetupWizardProps) {
   const [rollbackEnabled, setRollbackEnabled] = useState(true);
   const pages = useMemo(() => indexPages(registry), [registry]);
   const view = wizardView(data);
-  const page = route.pageId ? requirePage(pages, route.pageId, 'entry') : null;
+  const page = route.pageId !== null ? requirePage(pages, route.pageId, 'entry') : null;
 
   useEntry({ data, search: location.search, view, routeRef, setRoute });
+  useFinishNavigation(route.finished);
   const report = usePageReporter(pages, routeRef, setRoute, setRollbackEnabled);
   const announce = useCallback((message: string) => setLiveText(message), []);
   const updateRollbackEnabled = useCallback((enabled: boolean) => {
@@ -47,7 +48,21 @@ export function SetupWizard({ registry }: SetupWizardProps) {
 }
 
 function initialRoute(): WizardRoute {
-  return { pageId: null, failure: null, payload: null, hostError: null, revision: 0 };
+  return {
+    pageId: null,
+    failure: null,
+    payload: null,
+    hostError: null,
+    finished: false,
+    revision: 0,
+  };
+}
+
+function useFinishNavigation(finished: boolean) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (finished) void navigate('/', { state: { toast: 'setup.done.toast' } });
+  }, [finished, navigate]);
 }
 
 function wizardView(data: ReturnType<typeof useSetupData>): WizardView {

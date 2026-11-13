@@ -11,6 +11,7 @@ export function resolveEntry(data: SetupEntryData, url: SetupEntryUrl): SetupPag
   if (data.accounts.length > 0) return 'done';
 
   const hasValidKey = data.keys.some((key) => key.status === 'valid');
+  // Keep the legacy resume URL: a valid key with step=3 opens the empty done page.
   if (hasValidKey && params.get('step') === '3') return 'done';
   return hasValidKey ? 'connect' : 'key';
 }

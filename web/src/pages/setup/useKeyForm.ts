@@ -6,6 +6,7 @@ import { clean, keyPattern, saveKey, secretPattern } from '../../features/keys/a
 import type { KeyFailure } from '../../features/keys/api';
 import { randomHex } from './setupModel';
 import type { FieldError, KeyBanner } from './setupModel';
+import type { KeyDraft } from './useSetupData';
 
 type Field = 'key' | 'secret';
 type ServerErrors = { key?: FieldError; secret?: FieldError };
@@ -31,9 +32,7 @@ export type KeyForm = {
 };
 
 /** The values and feedback of the add-key form; only the handlers below write them. */
-function useKeyState() {
-  const [key, setKey] = useState('');
-  const [secret, setSecret] = useState('');
+function useKeyState(draft: KeyDraft, setDraft: Dispatch<SetStateAction<KeyDraft>>) {
   const [showSecret, setShowSecret] = useState(false);
   const [touched, setTouched] = useState({ key: false, secret: false });
   const [submitted, setSubmitted] = useState(false);
@@ -41,10 +40,10 @@ function useKeyState() {
   const [banner, setBanner] = useState<KeyBanner | null>(null);
   const [sending, setSending] = useState(false);
   return {
-    key,
-    setKey,
-    secret,
-    setSecret,
+    key: draft.key,
+    setKey: (key: string) => setDraft((current) => ({ ...current, key })),
+    secret: draft.secret,
+    setSecret: (secret: string) => setDraft((current) => ({ ...current, secret })),
     showSecret,
     setShowSecret,
     touched,
@@ -141,9 +140,17 @@ function fillSample(state: KeyState) {
 }
 
 /** State, validation and submit of the add-key form on step 1 of the setup wizard. */
-export function useKeyForm({ onSaved }: { onSaved: (key: ApiKey) => void }): KeyForm {
+export function useKeyForm({
+  onSaved,
+  draft,
+  setDraft,
+}: {
+  onSaved: (key: ApiKey) => void;
+  draft: KeyDraft;
+  setDraft: Dispatch<SetStateAction<KeyDraft>>;
+}): KeyForm {
   const { t } = useI18n();
-  const state = useKeyState();
+  const state = useKeyState(draft, setDraft);
   const keyField = useRef<HTMLInputElement>(null);
   const secretField = useRef<HTMLInputElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);

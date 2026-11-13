@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
-import { RouterProvider, createMemoryRouter } from 'react-router';
+import { RouterProvider, createMemoryRouter, useLocation } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { I18nBridge, i18nInstance } from '../../shared';
 import { definePage } from './definePage';
@@ -37,8 +37,18 @@ function FakeCustomPage({ report, failure, rollback }: SetupPageComponentProps) 
   );
 }
 
-function FakeDonePage() {
-  return <div data-testid="fake-done" />;
+function FakeDonePage({ report }: SetupPageComponentProps) {
+  return (
+    <div data-testid="fake-done">
+      <button onClick={() => report({ type: 'success' })}>Finish</button>
+    </div>
+  );
+}
+
+function FakeHome() {
+  const location = useLocation();
+  const state = location.state as { toast?: string } | null;
+  return <div data-testid="home-toast">{state?.toast}</div>;
 }
 
 function pages(key: SetupPage = keyPage()) {
@@ -68,22 +78,22 @@ function customPage() {
   });
 }
 
-function donePage() {
+function donePage(next: SetupPage['next'] = 'done') {
   return definePage({
     id: 'done',
     title: 'setup.done.title',
     progressName: 'setup.step.done',
-    next: 'done',
+    next,
     component: FakeDonePage,
   });
 }
 
-function renderWizard(registry: SetupPage[]) {
+function renderWizard(registry: SetupPage[], accounts: unknown[] = []) {
   setupDataMock.value = {
     keys: [],
-    accounts: [],
+    accounts,
     initialLoading: false,
-    hasAccount: false,
+    hasAccount: accounts.length > 0,
     showSkeleton: false,
     forbidden: false,
     loadFailed: false,
@@ -92,7 +102,10 @@ function renderWizard(registry: SetupPage[]) {
     refetchAccounts: vi.fn(),
   } as unknown as SetupData;
   const router = createMemoryRouter(
-    [{ path: '/onboarding', element: <SetupWizard registry={registry} /> }],
+    [
+      { path: '/', element: <FakeHome /> },
+      { path: '/onboarding', element: <SetupWizard registry={registry} /> },
+    ],
     { initialEntries: ['/onboarding'] },
   );
   return render(
@@ -109,6 +122,14 @@ afterEach(() => {
 });
 
 describe('SetupWizard registry transitions', () => {
+  it('exits home with the completion toast when a terminal page reports success', async () => {
+    renderWizard([donePage(null)], [{ id: 1 }]);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Finish' }));
+
+    expect(await screen.findByTestId('home-toast')).toHaveTextContent('setup.done.toast');
+  });
+
   it('renders a registered page reached through the current page contract', async () => {
     renderWizard(pages());
 

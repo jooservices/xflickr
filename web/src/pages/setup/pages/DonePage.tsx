@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router';
 import type { ApiKey, FlickrAccount } from '../../../shared/api/gen/models';
 import { useI18n } from '../../../shared';
 import { AddKeyModal } from '../../../features/keys/AddKeyModal';
@@ -94,7 +93,6 @@ function useStartCrawl(
   settings: ReturnType<typeof useDoneSettings>,
   report: SetupPageComponentProps['report'],
 ) {
-  const navigate = useNavigate();
   const [finishError, setFinishError] = useState<'finish' | 'depth' | null>(null);
   const [starting, setStarting] = useState(false);
   const finishing = useRef(false);
@@ -108,7 +106,7 @@ function useStartCrawl(
     setStarting(true);
     setFinishError(null);
     try {
-      await startCrawlRequest(depth, settings, navigate, fail);
+      await startCrawlRequest(depth, settings, report, fail);
     } finally {
       finishing.current = false;
       setStarting(false);
@@ -120,13 +118,13 @@ function useStartCrawl(
 async function startCrawlRequest(
   depth: number,
   settings: ReturnType<typeof useDoneSettings>,
-  navigate: ReturnType<typeof useNavigate>,
+  report: SetupPageComponentProps['report'],
   fail: (error: 'finish' | 'depth') => void,
 ) {
   try {
     const result = await startCrawl(depth);
     if (result.status === 200) {
-      void navigate('/', { state: { toast: 'setup.done.toast' } });
+      report({ type: 'success' });
       return;
     }
     if (result.status === 422 && result.code === 'depth_above_cap') {

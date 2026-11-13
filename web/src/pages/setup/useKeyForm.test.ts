@@ -1,12 +1,13 @@
 import { act, renderHook } from '@testing-library/react';
 import { createElement } from 'react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { I18nextProvider } from 'react-i18next';
 import { http, HttpResponse } from 'msw';
 import { expect, it, vi } from 'vitest';
 import { I18nBridge, i18nInstance } from '../../shared';
 import { server } from '../../test/server';
 import { useKeyForm } from './useKeyForm';
+import type { KeyDraft } from './useSetupData';
 
 const KEY = '0123456789abcdef0123456789abcdef';
 const SECRET = '0123456789abcdef';
@@ -32,7 +33,13 @@ function wrapper({ children }: { children: ReactNode }) {
 
 function renderKeyForm() {
   const onSaved = vi.fn();
-  const hook = renderHook(() => useKeyForm({ onSaved }), { wrapper });
+  const hook = renderHook(
+    () => {
+      const [draft, setDraft] = useState<KeyDraft>({ key: '', secret: '' });
+      return useKeyForm({ onSaved, draft, setDraft });
+    },
+    { wrapper },
+  );
   return { ...hook, onSaved };
 }
 

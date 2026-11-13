@@ -8,8 +8,10 @@ import type { SetupPageComponentProps } from '../types';
 /** Owns the key form and reports its outcome to the wizard host. */
 export function KeyPage({ report, announce, rollback }: SetupPageComponentProps) {
   const { t } = useI18n();
-  const { addKey } = useSetupData();
+  const { addKey, keyDraft, setKeyDraft } = useSetupData();
   const keyForm = useKeyForm({
+    draft: keyDraft,
+    setDraft: setKeyDraft,
     onSaved: (key) => {
       addKey(key);
       announce(t('setup.key.ok'));
