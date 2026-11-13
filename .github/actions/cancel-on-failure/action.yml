@@ -4,7 +4,6 @@ runs:
   using: composite
   steps:
     - name: Cancel the run
-      if: ${{ failure() }}
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
