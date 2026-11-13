@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Lints the web source files changed since origin/develop with the strict limits
-# of web/eslint.config.js (JOOXF-505). CI job web and docker/scripts/lint.sh both
-# run this script, so they check the same files the same way.
+# Lints the web source files changed since origin/develop with the gates of
+# web/eslint.config.js: complexity 10 and the rules of hooks (JOOXF-505, JOOXF-516).
+# CI job web and docker/scripts/lint.sh both run this script, so they check the
+# same files the same way.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"

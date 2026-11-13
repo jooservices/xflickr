@@ -10,8 +10,9 @@ import glossary from './src/shared/i18n/glossary.json' with { type: 'json' };
 
 const layers = ['app', 'pages', 'features', 'entities', 'shared'];
 
-// Old files over the limits, one "path rule" pair per line (see web/eslint-baseline.txt).
+// Old files over the complexity limit, one "path rule" pair per line (see web/eslint-baseline.txt).
 // The exemption is applied per file and rule; a new file or a new rule is never exempt.
+// Component and function length and parameter count are review signals, not gates (JOOXF-516).
 // XFLICKR_WEB_LINT_NO_BASELINE=1 ignores the baseline; docker/scripts/web-lint-report.sh uses it.
 function readBaseline() {
   if (process.env.XFLICKR_WEB_LINT_NO_BASELINE === '1') {
@@ -32,8 +33,6 @@ const baselineBlocks = [...new Set(baseline.map((entry) => entry.rule))].map((ru
   files: baseline.filter((entry) => entry.rule === rule).map((entry) => entry.file),
   rules: { [rule]: 'off' },
 }));
-
-const functionLimit = (max) => ['error', { max, skipBlankLines: true, skipComments: true }];
 
 const layerElements = layers.map((layer) => ({
   type: layer,
@@ -76,18 +75,8 @@ export default tseslint.config(
     files: ['src/**/*.{ts,tsx}'],
     rules: {
       complexity: ['error', 10],
-      'max-params': ['error', 4],
-      'max-lines': ['error', 300],
       'react-hooks/rules-of-hooks': 'error',
     },
-  },
-  {
-    files: ['src/**/*.ts'],
-    rules: { 'max-lines-per-function': functionLimit(40) },
-  },
-  {
-    files: ['src/**/*.tsx'],
-    rules: { 'max-lines-per-function': functionLimit(60) },
   },
   {
     files: ['**/*.{ts,tsx}'],

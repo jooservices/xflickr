@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Prints the number of web lint violations per strict rule across the whole web/src,
-# ignoring web/eslint-baseline.txt, so the old debt is measured (JOOXF-505).
+# Prints the number of web lint violations per gate rule across the whole web/src,
+# ignoring web/eslint-baseline.txt, so the old complexity debt is measured (JOOXF-505).
+# Only complexity (the gate) and the rules of hooks are reported; component and
+# function length and parameter count are review signals, not gates (JOOXF-516).
 # Local report only: it exits 0 whatever it finds.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd -P)"
 
-RULES=(complexity max-params max-lines max-lines-per-function react-hooks/rules-of-hooks)
+RULES=(complexity react-hooks/rules-of-hooks)
 
 count_script='
 const fs = require("node:fs");

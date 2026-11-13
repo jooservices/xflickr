@@ -1,10 +1,10 @@
 // Command gofuncstats prints one tab-separated line per function declared in
 // the Go files it reads, one path per line on stdin:
 //
-//	file  name  lines  complexity  params
+//	file  name  complexity
 //
 // Complexity counts like cyclop: 1 plus each if, for, range, non-default case,
-// select case, && and ||. Lines span the func keyword to the closing brace.
+// select case, && and ||. It is the only measure the function gate fails on.
 package main
 
 import (
@@ -52,8 +52,7 @@ func report(path string) error {
 		if seen[name] > 1 {
 			name = fmt.Sprintf("%s#%d", name, seen[name])
 		}
-		lines := fset.Position(fn.End()).Line - fset.Position(fn.Pos()).Line + 1
-		fmt.Printf("%s\t%s\t%d\t%d\t%d\n", path, name, lines, complexity(fn.Body), paramCount(fn.Type))
+		fmt.Printf("%s\t%s\t%d\n", path, name, complexity(fn.Body))
 	}
 	return nil
 }
@@ -104,12 +103,4 @@ func complexity(body *ast.BlockStmt) int {
 		return true
 	})
 	return score
-}
-
-func paramCount(ft *ast.FuncType) int {
-	count := 0
-	for _, field := range ft.Params.List {
-		count += max(1, len(field.Names))
-	}
-	return count
 }

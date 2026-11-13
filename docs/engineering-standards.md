@@ -19,27 +19,42 @@ reviewer rejects a change that breaks them even when the tests pass.
 - Flickr quota is precious: no call that is not needed, no retry of a request known
   to be deleted or unreachable, no unbounded scan of the large tables.
 
-## Strict rules (owner decision 2026-11-12, no exceptions)
+## Strict rules (owner decisions 2026-11-12 and 2026-11-13, no exceptions)
 
 SOLID, KISS, YAGNI and DRY apply to every file, backend and web, with no case-by-case
-exception. A gate that can measure a rule fails CI; the rest is a review rejection. A
-reviewer must reject a change that breaks any line below even when tests pass and CI is green.
+exception. The target is code that follows these principles (`standards/engineering-principles.md`,
+section 3). Small files, short functions and short parameter lists are a result of good design,
+not numbers to force: there is no numeric cap on file length, function length, parameter count,
+interface size or pull request size. A reviewer must reject a change that breaks any line below
+even when tests pass and CI is green.
 
-Measurable limits (enforced by lint and CI; a violation is fixed, never suppressed):
+Hard gates (CI fails; a violation is fixed, never suppressed):
 
 | Rule | Backend (Go) | Web (TypeScript) |
 |---|---|---|
-| File length (production code) | at most 400 lines | at most 300 lines |
-| Function / component length | at most 40 lines | at most 60 lines per component, 40 per function |
-| Cyclomatic complexity | at most 10 | at most 10 |
-| Parameters | at most 4 (use an options struct above that) | at most 4 (use an object above that) |
-| Interface methods | at most 5 | n/a |
-| `useState` in one component | n/a | at most 5; more state belongs in a hook |
+| Cyclomatic complexity per function | at most 10 | at most 10 |
 | Duplication | no duplicated block of 100 tokens or more | same |
 | Unused code | none: unused functions, types, parameters and exports are removed, including code only a test calls | same |
 | Suppressions | no `nolint`, no `eslint-disable`, no `@ts-ignore` | same |
+| Architecture | module and layer dependency rules (`make arch-lint`, `depguard`, the web boundaries), no dependency cycles | same |
+| Coverage | at least 85 percent per changed source file | same |
 
-A rule that this table does not measure still applies and is checked in review:
+Review signals (never fail the build; the reviewer asks "does this follow the principles?"):
+
+- **File length:** a long file is a question for the author ("which responsibility is mixed in
+  here?"), not an automatic rejection; a short file is not proof of good design.
+- **Function and component length:** the same question. A function that fits on a screen is a
+  reference point, not a limit.
+- **Parameter count:** a long parameter list is a question for the author. An options struct
+  (Go) or an object (TypeScript) is one answer when it fits the design.
+- **Interface size:** an interface that takes many methods is a question for the author
+  (interface segregation: a consumer depends only on what it calls).
+- **State hooks per component:** many state hooks in one component is a question for the author;
+  more state belongs in a hook.
+- Typical reference points, only to start the conversation: a file of a few hundred lines, a
+  function that fits on a screen, about four parameters, an interface of about five methods.
+
+A rule that the gates do not measure still applies and is checked in review:
 
 - **S (single responsibility):** one reason to change per file, type, function and component. A
   file that mixes wiring, business rules and technology adapters is rejected.
@@ -57,32 +72,31 @@ A rule that this table does not measure still applies and is checked in review:
 - **DRY:** one implementation of a rule or UI behaviour (add-key form, dialog focus trap, session
   loading); duplication is removed in the change that finds it.
 
-Existing code that breaks a limit is debt, migrated under epic JOOXF-447. For web, the old
-files over the limits are listed in `web/eslint-baseline.txt` (JOOXF-505); that file may only
-shrink. `docker/scripts/web-lint-changed.sh` checks the changed web files (CI job `web`,
-`make lint`) and `docker/scripts/web-lint-report.sh` prints the whole debt. For Go, the gate covers
-changed code and stops old functions above a limit from growing (see "Go complexity gate" below);
-there is no baseline file. Never add a `nolint` marker to fix a finding.
+Existing code that breaks a hard gate is debt, migrated under epic JOOXF-447. For web, the old
+files over the complexity limit are listed in `web/eslint-baseline.txt` (JOOXF-505); that file may
+only shrink. `docker/scripts/web-lint-changed.sh` checks the changed web files (CI job `web`,
+`make lint`) and `docker/scripts/web-lint-report.sh` prints the whole complexity debt. For Go, the
+gate covers changed code and stops old functions from growing in complexity (see "Go complexity
+gate" below); there is no baseline file. Never add a `nolint` marker to fix a finding.
 
-### Go complexity gate (JOOXF-504, JOOXF-511)
+### Go complexity gate (JOOXF-504, JOOXF-511, JOOXF-516)
 
 - Tool: golangci-lint v2.15.0 with `.golangci.yml`. `make lint` (`docker/scripts/lint.sh`) and the
   CI `lint` job run the same command.
-- Limits: cyclop (cyclomatic complexity) 10; gocognit (cognitive complexity) 15; funlen (function
-  length) 40 lines; revive `argument-limit` 4 parameters.
-- Test files are exempt from cyclop, gocognit, funlen, wrapcheck, gosec and errcheck. The revive
-  parameter limit applies to tests too.
+- Limit: cyclop (cyclomatic complexity) 10. The configuration has no function-length,
+  cognitive-complexity or parameter-count rule: those are review signals (JOOXF-516).
+- Test files are exempt from cyclop, wrapcheck, gosec and errcheck.
 - Scope: `issues.new-from-merge-base: origin/develop`. Only findings on lines changed since the
   merge base with `origin/develop` fail the build. The CI `lint` job checks out with
   `fetch-depth: 0` so the merge base exists. Locally, fetch `origin/develop` before linting.
-- Function-level gate (JOOXF-511): `docker/scripts/go_function_gate.py` (stdlib only) measures
-  every function of the Go files changed since the merge base with `origin/develop` through
-  `backend/cmd/gofuncstats/main.go` (go/ast: cyclomatic complexity, lines, parameters) and
-  compares it with the same function at the merge base. A function above complexity 10, 40 lines
-  or 4 parameters fails when it grows, so growth inside an old function is caught. A function
-  below a limit may grow up to the limit; a new function must be within all limits. Test files
-  are exempt, as in `.golangci.yml`. Run `python3 docker/scripts/go_function_gate.py [--base REF]`;
-  `docker/scripts/lint.sh` and the CI `lint` job run it with its unit tests.
+- Function-level gate (JOOXF-511, JOOXF-516): `docker/scripts/go_function_gate.py` (stdlib only)
+  measures the cyclomatic complexity of every function of the Go files changed since the merge base
+  with `origin/develop` through `backend/cmd/gofuncstats/main.go` and compares it with the same
+  function at the merge base. A function above complexity 10 fails when it grows, so growth inside
+  an old function is caught. A function at or below 10 may grow up to 10; a new function must be at
+  most 10. Test files are exempt, as in `.golangci.yml`. Run
+  `python3 docker/scripts/go_function_gate.py [--base REF]`; `docker/scripts/lint.sh` and the CI
+  `lint` job run it with its unit tests.
 - Existing `nolint:cyclop` markers stay until their functions are split. Do not add new ones.
 
 ## Backend structure
@@ -194,6 +208,9 @@ there is no baseline file. Never add a `nolint` marker to fix a finding.
   `type(scope): Subject (JOOXF-n)`. Pull requests target `develop`, use the
   template sections (What's changed, Why changed, Deployment), are never drafts,
   never mention a model name, and contain the test evidence.
+- One task, one PR, as large as the change really is: there is no numeric cap on the number of
+  files or lines of a pull request. A change that is not one coherent change is split when the
+  ticket is written (`standards/engineering-principles.md`, section 6).
 - Before the pull request: `make lint`, tests of the touched packages, `make
   arch-lint` (no new notice), the Sonar and Gitleaks scans, and a rebase on
   `origin/develop`.

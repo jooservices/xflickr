@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Fail when a Go function above a limit grows (JOOXF-511).
+"""Fail when a Go function above cyclomatic complexity 10 grows (JOOXF-511, JOOXF-516).
 
 Every function of the changed Go files (not test files, as in .golangci.yml) is
 compared with the same function at the merge base with --base. A function above
-a limit that grows fails; a function below a limit may grow up to the limit; a
-new function must be within the limits. Usage: go_function_gate.py [--base REF]
+the limit that grows fails; a function below it may grow up to the limit; a new
+function must be within it. Length and parameter count are review signals, not
+gates, so they are not measured. Usage: go_function_gate.py [--base REF]
 """
 
 import argparse
@@ -13,7 +14,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-LIMITS = {"complexity": 10, "lines": 40, "params": 4}
+COMPLEXITY_LIMIT = 10
 STATS_SOURCE = Path(__file__).resolve().parents[2] / "backend" / "cmd" / "gofuncstats" / "main.go"
 
 
@@ -43,15 +44,14 @@ def changed_go_files(root: Path, base: str):
 
 
 def stats(root: Path, paths):
-    """Return {path: {function name: {metric: value}}} measured under root by gofuncstats."""
+    """Return {path: {function name: complexity}} measured under root by gofuncstats."""
     if not paths:
         return {}
     output = run(["go", "run", str(STATS_SOURCE)], root, stdin="\n".join(paths) + "\n")
     result = {}
     for line in output.splitlines():
-        path, name, lines, complexity, params = line.split("\t")
-        metrics = {"lines": int(lines), "complexity": int(complexity), "params": int(params)}
-        result.setdefault(path, {})[name] = metrics
+        path, name, complexity = line.split("\t")
+        result.setdefault(path, {})[name] = int(complexity)
     return result
 
 
@@ -71,16 +71,15 @@ def violations(pairs, before, after):
     for old, new in pairs:
         old_functions = before.get(old, {})
         for name, now in after.get(new, {}).items():
+            if now <= COMPLEXITY_LIMIT:
+                continue
             was = old_functions.get(name)
-            for metric, limit in LIMITS.items():
-                if now[metric] <= limit:
-                    continue
-                if was is None:
-                    problems.append(f"{new}: {name} is new with {metric} {now[metric]} (limit {limit})")
-                elif now[metric] > was[metric]:
-                    problems.append(
-                        f"{new}: {name} grew in {metric} {was[metric]} -> {now[metric]} (limit {limit})"
-                    )
+            if was is None:
+                problems.append(f"{new}: {name} is new with complexity {now} (limit {COMPLEXITY_LIMIT})")
+            elif now > was:
+                problems.append(
+                    f"{new}: {name} grew in complexity {was} -> {now} (limit {COMPLEXITY_LIMIT})"
+                )
     return problems
 
 
