@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -19,6 +21,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
+	"github.com/jooservices/xflickr/migrations"
 )
 
 const notificationsMigrationVersion int64 = 20261112100000
@@ -137,7 +140,8 @@ func TestNotificationsMigrationDownUp(t *testing.T) {
 	defer cancel()
 	cfg := notificationTestDatabaseConfig(t)
 	cfg = dbtest.EmptyDatabase(t, cfg)
-	if err := db.Migrate(ctx, cfg, db.MigrateUp, io.Discard); err != nil {
+	migrationFiles := notificationMigrationFiles(t)
+	if err := db.MigrateFiles(ctx, cfg, db.MigrateUp, io.Discard, migrationFiles); err != nil {
 		t.Fatalf("prepare isolated migration database: %v", err)
 	}
 	pool, err := db.NewPool(ctx, cfg)
@@ -161,17 +165,39 @@ func TestNotificationsMigrationDownUp(t *testing.T) {
 		t.Fatalf("latest applied migration = %d, want notifications version %d", latestVersion, notificationsMigrationVersion)
 	}
 
-	if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err != nil {
+	if err := db.MigrateFiles(ctx, cfg, db.MigrateDown, io.Discard, migrationFiles); err != nil {
 		t.Fatalf("roll back notifications migration: %v", err)
 	}
 	assertNotificationRelation(t, ctx, pool, "public.notifications", false)
 	assertNotificationRelation(t, ctx, pool, "public.notifications_user_created_id_idx", false)
 
-	if err := db.Migrate(ctx, cfg, db.MigrateUp, io.Discard); err != nil {
+	if err := db.MigrateFiles(ctx, cfg, db.MigrateUp, io.Discard, migrationFiles); err != nil {
 		t.Fatalf("reapply notifications migration: %v", err)
 	}
 	assertNotificationRelation(t, ctx, pool, "public.notifications", true)
 	assertNotificationRelation(t, ctx, pool, "public.notifications_user_created_id_idx", true)
+}
+
+func notificationMigrationFiles(t *testing.T) fstest.MapFS {
+	t.Helper()
+	files := fstest.MapFS{}
+	entries, err := fs.ReadDir(migrations.Files, ".")
+	if err != nil {
+		t.Fatalf("read embedded migrations: %v", err)
+	}
+	version := fmt.Sprint(notificationsMigrationVersion)
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".sql") || strings.SplitN(name, "_", 2)[0] > version {
+			continue
+		}
+		content, err := fs.ReadFile(migrations.Files, name)
+		if err != nil {
+			t.Fatalf("read embedded migration %s: %v", name, err)
+		}
+		files[name] = &fstest.MapFile{Data: content}
+	}
+	return files
 }
 
 type notificationColumn struct {

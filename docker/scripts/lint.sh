@@ -1,39 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd -P)"
+LINTER_VERSION="$(awk '$1 == "golangci-lint" { print $2 }' "$ROOT/.tool-versions")"
 
-GOLANGCI_LINT_VERSION="${GOLANGCI_LINT_VERSION:-v2.15.0}"
-
-"$SCRIPT_DIR/run.sh" shellcheck shellcheck "$SCRIPT_DIR"/*.sh
-"$SCRIPT_DIR/api-usage-check.test.sh"
-"$SCRIPT_DIR/ui-e2e-coverage.test.sh"
-"$SCRIPT_DIR/db-report.test.sh"
-"$SCRIPT_DIR/compare-db.test.sh"
-"$SCRIPT_DIR/run.sh" python python3 "$SCRIPT_DIR/test_obs_alert_config.py"
-"$SCRIPT_DIR/run.sh" python python3 "$SCRIPT_DIR/test_worktree_env.py"
-"$SCRIPT_DIR/run.sh" python python3 "$SCRIPT_DIR/module_cycles_test.py"
-"$SCRIPT_DIR/run.sh" python python3 "$SCRIPT_DIR/test_check_go_version.py"
-"$SCRIPT_DIR/run.sh" python python3 "$SCRIPT_DIR/migration_versions_test.py"
-"$SCRIPT_DIR/run.sh" python python3 "$SCRIPT_DIR/test_sqlc_stale.py"
-"$SCRIPT_DIR/run.sh" python python3 "$SCRIPT_DIR/go_function_gate_test.py" && "$SCRIPT_DIR/run.sh" python python3 "$SCRIPT_DIR/go_function_gate.py"
-"$SCRIPT_DIR/api-usage-check.sh"
-"$SCRIPT_DIR/ui-spec-check.sh"
-(
-	cd "$ROOT/backend"
-	"$SCRIPT_DIR/run.sh" go go vet ./...
-	"$SCRIPT_DIR/run.sh" go go run "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$GOLANGCI_LINT_VERSION" \
-		run --config "$ROOT/.golangci.yml" ./...
-)
-
-if [[ -f "$ROOT/web/package.json" ]]; then
-	(
-		cd "$ROOT/web"
-		"$SCRIPT_DIR/run.sh" node npm run lint
-		"$SCRIPT_DIR/run.sh" node npx tsc --noEmit
-		"$SCRIPT_DIR/run.sh" node npx eslint src
-		"$SCRIPT_DIR/web-lint-changed.sh"
-		"$SCRIPT_DIR/run.sh" node npx vitest run
-	)
+if [[ -z "$LINTER_VERSION" ]]; then
+	printf 'golangci-lint version is missing from .tool-versions.\n' >&2
+	exit 1
 fi
+
+cd "$ROOT/backend"
+"$SCRIPT_DIR/run.sh" go go vet ./...
+"$SCRIPT_DIR/run.sh" go go run "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v$LINTER_VERSION" \
+	run --config "$ROOT/.golangci.yml" ./...

@@ -16,11 +16,12 @@ const dropUnusedIndexesMigration = "20261109090000_drop_unused_indexes.sql"
 // TestDropUnusedIndexesDownRestoresExactDefinitions proves the Down migration
 // recreates each dropped index with an identical pg_get_indexdef.
 func TestDropUnusedIndexesDownRestoresExactDefinitions(t *testing.T) {
-	ctx, cfg, pool := prepareMigrationTest(t)
+	files := migrationFilesThrough(t, dropUnusedIndexesMigration)
+	ctx, cfg, pool := prepareMigrationTestWithFiles(t, files)
 	assertDroppedIndexAbsent(t, ctx, pool, "photos_last_update_idx")
 	assertDroppedIndexAbsent(t, ctx, pool, "photos_owner_nsid_idx")
 
-	if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err != nil {
+	if err := db.MigrateFiles(ctx, cfg, db.MigrateDown, io.Discard, files); err != nil {
 		t.Fatalf("roll back %s: %v", dropUnusedIndexesMigration, err)
 	}
 	first := indexDefinitions(t, ctx, pool, []string{
@@ -28,13 +29,13 @@ func TestDropUnusedIndexesDownRestoresExactDefinitions(t *testing.T) {
 		"photos_owner_nsid_idx",
 	})
 
-	if err := db.Migrate(ctx, cfg, db.MigrateUp, io.Discard); err != nil {
+	if err := db.MigrateFiles(ctx, cfg, db.MigrateUp, io.Discard, files); err != nil {
 		t.Fatalf("re-apply %s: %v", dropUnusedIndexesMigration, err)
 	}
 	assertDroppedIndexAbsent(t, ctx, pool, "photos_last_update_idx")
 	assertDroppedIndexAbsent(t, ctx, pool, "photos_owner_nsid_idx")
 
-	if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err != nil {
+	if err := db.MigrateFiles(ctx, cfg, db.MigrateDown, io.Discard, files); err != nil {
 		t.Fatalf("second roll back of %s: %v", dropUnusedIndexesMigration, err)
 	}
 	second := indexDefinitions(t, ctx, pool, []string{
@@ -47,7 +48,7 @@ func TestDropUnusedIndexesDownRestoresExactDefinitions(t *testing.T) {
 		}
 	}
 
-	if err := db.Migrate(ctx, cfg, db.MigrateUp, io.Discard); err != nil {
+	if err := db.MigrateFiles(ctx, cfg, db.MigrateUp, io.Discard, files); err != nil {
 		t.Fatalf("leave schema with %s applied: %v", dropUnusedIndexesMigration, err)
 	}
 }

@@ -307,8 +307,12 @@ func TestWeightsRescoreAdvancesAcrossBatches(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
 	prefix := fmt.Sprintf("rescore-batches-%d", time.Now().UnixNano())
-	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state,score,depth,created_at)
-		SELECT 'rescore-test',$1||'-'||g,'pending',0,g,now() FROM generate_series(1,5) AS g`, prefix); err != nil {
+	var userID int64
+	if err := tx.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'unused','user') RETURNING id`, prefix+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,score,depth,created_at)
+		SELECT 'rescore-test',$1||'-'||g,$2,'pending',0,g,now() FROM generate_series(1,5) AS g`, prefix, userID); err != nil {
 		t.Fatal(err)
 	}
 	store := Store{database: transactionScheduleDatabase{tx: tx}}
@@ -381,8 +385,12 @@ func TestWeightsRescoreHandlesExpiredSelectionWithMatchingFingerprint(t *testing
 		t.Fatalf("RunBatch for expired selection = %d, %v; want 1", got, err)
 	}
 	var score, expected float64
-	if err := tx.QueryRow(ctx, `SELECT score,work_items_static_score(1,FALSE,FALSE,1,created_at)
-		FROM work_items WHERE subject_key=$1`, prefix).Scan(&score, &expected); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT w.score,
+		COALESCE(p.weight,1)*$2 + ($3-w.depth)*$4 - $5*EXTRACT(EPOCH FROM w.created_at)/60.0
+		FROM work_items w
+		LEFT JOIN users u ON u.id=w.user_id
+		LEFT JOIN plans p ON p.id=u.plan_id
+		WHERE w.subject_key=$1`, prefix, weights.PlanWeight, job.MaxDepth, weights.Depth, weights.AgeMinutes).Scan(&score, &expected); err != nil {
 		t.Fatal(err)
 	}
 	if score != expected {

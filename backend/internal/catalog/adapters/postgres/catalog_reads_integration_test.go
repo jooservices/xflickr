@@ -212,9 +212,6 @@ func TestCatalogReadsApplyTwoUserVisibilityPolicy(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE albums SET updated_at=NULL WHERE id=ANY($1)`, contactAlbumIDs[3:]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO contacts(person_nsid,contact_nsid) VALUES($1,$2)`, user1NSID, user2NSID); err != nil {
-		t.Fatal(err)
-	}
 	if err := repository.UpsertAlbumPhotosBatch(ctx, []postgres.AlbumPhoto{
 		{AlbumID: albumID, PhotoID: photoIDs[1], Position: 0},
 		{AlbumID: albumID, PhotoID: photoIDs[2], Position: 1},

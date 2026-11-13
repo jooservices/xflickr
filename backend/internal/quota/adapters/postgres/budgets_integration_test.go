@@ -189,7 +189,7 @@ func budgetIntegrationPool(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Name != "xflickr_wtjooxf366" {
+	if cfg.Name == "xflickr_test" {
 		t.Fatal("refusing non-ticket worktree database")
 	}
 	return dbtest.Open(t, cfg)

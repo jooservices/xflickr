@@ -8,6 +8,11 @@ mkdir -p "$ROOT/.tmp"
 TEMP_DIR="$(mktemp -d "$ROOT/.tmp/api-usage.XXXXXX")"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
+if ! grep -Fq 'api-usage-check.sh' "$SCRIPT_DIR/static.sh"; then
+	printf 'static verification must run api-usage-check.sh against the repository.\n' >&2
+	exit 1
+fi
+
 mkdir -p "$TEMP_DIR/contracts/openapi" "$TEMP_DIR/backend/internal/platform/api/gen" "$TEMP_DIR/web/src"
 cat >"$TEMP_DIR/contracts/openapi/openapi.yaml" <<'YAML'
 paths:

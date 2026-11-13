@@ -1,0 +1,17 @@
+{
+  "github_only": [
+    "ci-aggregate",
+    "ci-changes",
+    "security-backend",
+    "security-web",
+    "cancel-on-failure",
+    "artifact-upload",
+    "artifact-download",
+    "integration-count"
+  ],
+  "local_only": [
+    "sonar",
+    "e2e",
+    "hooks"
+  ]
+}

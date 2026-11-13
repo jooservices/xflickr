@@ -99,14 +99,37 @@ func TestEnrichmentFreshnessPlan(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancel()
 	pool := dbtest.Open(t, loadCatalogDatabase(t))
-	if _, err := pool.Exec(ctx, `ANALYZE photo_enrichments`); err != nil {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	owner := fmt.Sprintf("enrichment-plan-%d", time.Now().UnixNano())
+	if _, err := tx.Exec(ctx, `INSERT INTO people (nsid, username) VALUES ($1, $1)`, owner); err != nil {
+		t.Fatalf("insert plan fixture owner: %v", err)
+	}
+	const fixtureRows = 400_000
+	photoIDStart := time.Now().UnixNano()
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO photos (id, owner_nsid, last_update, visibility, raw, content_hash)
+		SELECT $1 + photo_id, $2, now(), 'public', '{}'::jsonb, decode(repeat('ab', 32), 'hex')
+		FROM generate_series(0, $3::bigint - 1) AS fixture(photo_id)`, photoIDStart, owner, fixtureRows); err != nil {
+		t.Fatalf("insert photo plan fixture: %v", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO photo_enrichments (photo_id, kind, model, model_version, payload)
+		SELECT $1 + photo_id, 'caption', 'model', 'v1', '{}'::jsonb
+		FROM generate_series(0, $2::bigint - 1) AS fixture(photo_id)`, photoIDStart, fixtureRows); err != nil {
+		t.Fatalf("insert enrichment plan fixture: %v", err)
+	}
+	if _, err := tx.Exec(ctx, `ANALYZE photo_enrichments`); err != nil {
 		t.Fatalf("ANALYZE photo_enrichments: %v", err)
 	}
 	var estimatedRows int64
-	if err := pool.QueryRow(ctx, `SELECT reltuples::bigint FROM pg_class WHERE oid = 'photo_enrichments'::regclass`).Scan(&estimatedRows); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT reltuples::bigint FROM pg_class WHERE oid = 'photo_enrichments'::regclass`).Scan(&estimatedRows); err != nil {
 		t.Fatal(err)
 	}
 	if estimatedRows < 400000 {
@@ -117,7 +140,7 @@ func TestEnrichmentFreshnessPlan(t *testing.T) {
 		SELECT photo_id, kind, model, model_version, payload, created_at
 		FROM photo_enrichments WHERE photo_id = $1 AND kind = $2 AND model = $3`
 	var encoded []byte
-	if err := pool.QueryRow(ctx, query, int64(17), "caption", "model").Scan(&encoded); err != nil {
+	if err := tx.QueryRow(ctx, query, int64(17), "caption", "model").Scan(&encoded); err != nil {
 		t.Fatalf("EXPLAIN freshness query: %v", err)
 	}
 	var result []struct {
