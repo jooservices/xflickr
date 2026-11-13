@@ -1,6 +1,6 @@
 # XFlickr environment (read this first; it overrides any ticket text that disagrees)
 
-XFlickr is developed and run on the Dev Workspaces VM (`dev-workspaces`, 192.168.10.100). Go and Node run natively on the host, and the VM hosts the shared services below. Nothing in this project starts its own database, cache or search service for development or tests. Every service listens on loopback only.
+XFlickr is developed and run on the Dev Workspaces VM (`dev-workspaces`, 192.168.10.100). Go and Node run natively on the host, and the VM hosts the shared services below for local development and tests. Local commands do not start their own database, cache or search service. GitHub Actions runs on separate hosted runners and provisions workflow service containers for integration tests. Every local shared service listens on loopback only.
 
 ## Shared services (on the VM)
 
@@ -17,10 +17,16 @@ Credentials live in the private `Workspaces/.env.docker`. Never print it, never 
 
 ## Rules that replace ticket wording
 
-1. No testcontainers and no per-job containers on the VM: integration tests use `xflickr_test` or, in a ticket worktree, the worktree database `xflickr_wt<id>`. Two exceptions are allowed: GitHub Actions may use service containers (they run on GitHub's runners, not on the VM), and a chaos or load test that needs isolation may use a one-off container if its ticket says so.
-   `make test-integration` recreates only the current worktree database and
-   reapplies migrations before running the integration suite. Preserve any
-   fixture data you need before running it.
+1. Local development and tests use the VM's shared services. Do not use
+   testcontainers or per-job or per-worktree service containers on the VM.
+   Local integration tests use the shared PostgreSQL service with a freshly
+   recreated worktree database, `xflickr_wt<id>`. `make test-integration`
+   recreates only the current worktree database and reapplies migrations
+   before running the suite. Preserve any fixture data you need before running
+   it. GitHub Actions runners have no shared VM services, so each integration
+   shard uses a fresh `pgvector/pgvector:pg18` PostgreSQL service container.
+   Integration tests do not start containers themselves. A chaos or load test
+   that needs isolation may use a one-off container if its ticket says so.
 2. No dev Docker Compose for databases or search. `make dev-up` runs `docker/scripts/worktree_env.py --check`: it confirms the worktree `.env` selects its own database and that PostgreSQL, Redis and search answer. The only container XFlickr may own is a future application container (one image, roles comma separated).
 3. Temporary download files and thumbnails use a directory on the VM disk behind the `BlobStore` port (local filesystem adapter first); the S3 adapter is optional later. Presigned ZIP links use `DOWNLOAD_LINK_TTL` (15m by default), which cannot exceed `BLOB_MAX_TTL`.
 4. Uptime checks use OpenObserve alerts; external monitoring on the ESXi monitor server is a deferred ticket.
