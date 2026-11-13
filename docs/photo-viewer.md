@@ -1,24 +1,26 @@
 # Photo viewer
 
-JOOXF-171 adds a testable photo viewer component for later use by the gallery.
-The viewer accepts the gallery's ordered photo IDs and selected index, requests
-only the current photo through the generated `GET /photos/{id}` client, and
-shows its title and a recorded photo size URL. Provisional listing URLs come
-from `url`; confirmed size URLs come from `source`. Previous and next controls
-wrap through the supplied IDs. The dialog traps focus, closes with Escape, and
-returns focus to its opener or the gallery heading.
+JOOXF-407 connects the photo viewer to the USER Library. Activating a photo
+tile opens an overlay without changing the route. The viewer follows the
+currently visible gallery order, fetches detail only for the selected photo,
+supports previous/next keyboard and touch navigation, and returns focus to the
+invoking tile when closed.
 
-This slice is exercised through a test-only browser harness. It is not linked
-from the product router because JOOXF-170 has not supplied the photo tile and
-gallery list. It uses the current catalog response, which does not contain all
-fields in the approved full viewer contract. Owner, caption, tags, size details,
-favorites, tray actions, downloads, live updates, and touch swipe are deferred.
-The current API returns 404 for both missing and inaccessible photos, so the
-viewer uses one unavailable state for both.
+The current `GET /photos/{id}` catalog response supplies the title, owner NSID,
+description, tags, size status, dimensions, and recorded photo URL. The viewer
+shows those available fields, links the owner and tags to their current routes,
+and labels sizes as provisional or confirmed. The underlying catalog API has no
+owner display name, AI caption text, EXIF, Flickr page URL, favorited-by data,
+tombstones, or live photo events, so the viewer does not invent or display those
+fields. JOOXF-177 owns the real tray and download flow; local Library selection
+is not presented as adding a photo to that tray.
 
-Component/MSW tests cover loading, empty, success, preview failure, retryable
-errors, 404, 401 session expiry, navigation, translations, and focus behavior.
-The mocked Playwright scenario covers keyboard use, accessibility, and desktop
-and mobile reflow. The sharing visibility filter used by photo detail reads is
-supported by a concurrent observations index migration; its behavior and the
-API contract do not change.
+The approved [lightbox view](ui/views/user-lightbox.md) remains the full product
+target. This slice does not change OpenAPI or claim its unavailable actions and
+states as complete. The viewer uses the existing generated detail client and
+the existing catalog visibility behavior, which returns the same 404 response
+for missing and inaccessible photo IDs.
+
+Component/MSW tests cover viewer state and keyboard/touch interaction. The
+mocked Playwright scenario opens a photo from Library, navigates, checks
+accessibility, and verifies focus and route restoration.

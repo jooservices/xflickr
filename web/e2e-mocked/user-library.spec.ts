@@ -88,6 +88,56 @@ test('filters loaded favorites and keeps selection without download navigation',
   await expect(page).toHaveURL(/\/library$/);
 });
 
+test('opens a Library photo, navigates, and restores route and focus', async ({ page }) => {
+  await setup(page);
+  const browserErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  await page.route('**/favorites*', (route) => json(route, { items: [favorite(1), favorite(2)] }));
+  await page.route('**/photos/*', (route) => {
+    const id = Number(new URL(route.request().url()).pathname.split('/').at(-1));
+    return json(route, {
+      ...favorite(id).photo,
+      title: `Detail ${String(id)}`,
+      description: 'Catalog description',
+      labels: ['night-sky'],
+      sizes: [
+        {
+          label: 'Medium',
+          width: 800,
+          height: 600,
+          source: `https://images.test/${String(id)}`,
+        },
+      ],
+    });
+  });
+
+  await page.goto('/library');
+  const opener = page.getByTestId('user-library-photo-open-2');
+  await opener.focus();
+  await opener.press('Enter');
+
+  const viewer = page.getByRole('dialog', { name: 'Detail 2' });
+  await expect(viewer).toBeVisible();
+  await expect(page.getByTestId('lightbox-position')).toHaveText('Photo 2 of 2');
+  await expect(viewer).toContainText('Catalog description');
+  await expect(viewer).toContainText('night-sky');
+  await expect(viewer).toContainText('800 × 600');
+  await expectNoSeriousViolations(page);
+
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('dialog', { name: 'Detail 1' })).toBeVisible();
+  await expect(page.getByTestId('lightbox-position')).toHaveText('Photo 1 of 2');
+  await page.keyboard.press('Escape');
+
+  await expect(viewer).toHaveCount(0);
+  await expect(page).toHaveURL(/\/library$/);
+  await expect(opener).toBeFocused();
+  expect(browserErrors).toEqual([]);
+});
+
 test('keeps a 5,000-photo cursor result virtualized while scrolling', async ({ page }) => {
   await setup(page);
   const total = 5_000;

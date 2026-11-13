@@ -196,6 +196,68 @@
   line-height: 1.25;
 }
 
+.detailSection {
+  margin: 24px 0;
+}
+
+.detailSection h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.description {
+  margin: 18px 0;
+  color: var(--ink-muted, #586273);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.sizeStatus {
+  margin: 0 0 10px;
+  color: var(--ink-muted, #586273);
+  font-size: 13px;
+}
+
+.sizeList,
+.tagList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sizeList li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--sunken, #edf0f4);
+}
+
+.sizeList li small {
+  grid-column: 1 / -1;
+  color: var(--ink-muted, #586273);
+}
+
+.tagList {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.tagList a {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--sunken, #edf0f4);
+  color: var(--ink, #17202d);
+}
+
 .panelSkeleton {
   display: flex;
   flex-direction: column;

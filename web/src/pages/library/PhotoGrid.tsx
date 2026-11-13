@@ -14,6 +14,7 @@ type PhotoGridProps = {
   selectionFull: boolean;
   staleNotice: boolean;
   onToggleSelected: (photoId: number) => void;
+  onOpenPhoto: (photoId: number, opener: HTMLButtonElement) => void;
 };
 
 function visualFor(photo: CatalogPhoto): PhotoVisual {
@@ -47,6 +48,7 @@ export function PhotoGrid({
   selectionFull,
   staleNotice,
   onToggleSelected,
+  onOpenPhoto,
 }: PhotoGridProps) {
   const { locale, t } = useI18n();
   const gridRef = useRef<HTMLDivElement>(null);
@@ -164,44 +166,52 @@ export function PhotoGrid({
                       className={styles.photoTile}
                       data-testid={`user-library-photo-${String(photo.id)}`}
                       role="listitem"
-                      tabIndex={selectionMode ? undefined : 0}
                       style={{ flexBasis: `${String(item.ratio * row.height)}px` }}
                     >
-                      {item.url === undefined ? (
-                        <div className={styles.photoPlaceholder} role="img" aria-label={alt} />
-                      ) : (
-                        <img
-                          className={styles.photoImage}
-                          src={item.url}
-                          alt={alt}
-                          loading="lazy"
-                        />
-                      )}
-                      <div className={styles.flags} aria-label={t('user.library.photo.statuses')}>
-                        <span
-                          className={sizesReady ? styles.readyFlag : styles.pendingFlag}
-                          data-testid={`user-library-photo-sizes-${String(photo.id)}`}
-                        >
-                          {sizesReady
-                            ? t('user.library.photo.sizes-ready')
-                            : t('user.library.photo.sizes-pending')}
-                        </span>
-                        <span
-                          className={captioned ? styles.readyFlag : styles.pendingFlag}
-                          data-testid={`user-library-photo-captioned-${String(photo.id)}`}
-                        >
-                          {captioned
-                            ? t('user.library.photo.captioned')
-                            : t('user.library.photo.caption-pending')}
-                        </span>
-                      </div>
-                      <div
-                        className={styles.photoCaption}
-                        data-testid={`user-library-photo-caption-${String(photo.id)}`}
+                      <button
+                        className={styles.photoOpen}
+                        type="button"
+                        disabled={selectionMode}
+                        aria-label={t('user.library.photo.open', { title })}
+                        data-testid={`user-library-photo-open-${String(photo.id)}`}
+                        onClick={(event) => onOpenPhoto(photo.id, event.currentTarget)}
                       >
-                        <span>{title}</span>
-                        <small>{photo.owner_nsid}</small>
-                      </div>
+                        {item.url === undefined ? (
+                          <div className={styles.photoPlaceholder} role="img" aria-label={alt} />
+                        ) : (
+                          <img
+                            className={styles.photoImage}
+                            src={item.url}
+                            alt={alt}
+                            loading="lazy"
+                          />
+                        )}
+                        <div className={styles.flags} aria-label={t('user.library.photo.statuses')}>
+                          <span
+                            className={sizesReady ? styles.readyFlag : styles.pendingFlag}
+                            data-testid={`user-library-photo-sizes-${String(photo.id)}`}
+                          >
+                            {sizesReady
+                              ? t('user.library.photo.sizes-ready')
+                              : t('user.library.photo.sizes-pending')}
+                          </span>
+                          <span
+                            className={captioned ? styles.readyFlag : styles.pendingFlag}
+                            data-testid={`user-library-photo-captioned-${String(photo.id)}`}
+                          >
+                            {captioned
+                              ? t('user.library.photo.captioned')
+                              : t('user.library.photo.caption-pending')}
+                          </span>
+                        </div>
+                        <div
+                          className={styles.photoCaption}
+                          data-testid={`user-library-photo-caption-${String(photo.id)}`}
+                        >
+                          <span>{title}</span>
+                          <small>{photo.owner_nsid}</small>
+                        </div>
+                      </button>
                       {selectionMode ? (
                         <div className={styles.photoActions}>
                           <label className={styles.selectPhoto}>
