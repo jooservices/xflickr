@@ -105,7 +105,7 @@ func TestObservationLookupUsesRecordIndex(t *testing.T) {
 		t.Fatalf("visible photo id = %d, want %d", visibleID, photoID)
 	}
 
-	rows, err := tx.Query(ctx, `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF) `+query, args...)
+	rows, err := tx.Query(ctx, `EXPLAIN (ANALYZE, BUFFERS) `+query, args...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,6 +126,14 @@ func TestObservationLookupUsesRecordIndex(t *testing.T) {
 	rows.Close()
 	planText := plan.String()
 	t.Logf("shared photo lookup plan:\n%s", planText)
+	var indexBytes int64
+	if err := tx.QueryRow(ctx, `SELECT pg_relation_size($1::regclass)`, "observations_p01_record_lookup_idx").Scan(&indexBytes); err != nil {
+		t.Fatalf("read representative lookup index size: %v", err)
+	}
+	if indexBytes <= 0 {
+		t.Fatal("representative lookup index has no allocated pages")
+	}
+	t.Logf("representative lookup metrics: observation_rows=400001 index_size_bytes=%d; execution time and buffer I/O are in the plan above", indexBytes)
 	if strings.Contains(planText, "Seq Scan on observations") || strings.Contains(planText, "Seq Scan on observations_p") {
 		t.Fatalf("photo sharing lookup scans observations sequentially:\n%s", planText)
 	}
