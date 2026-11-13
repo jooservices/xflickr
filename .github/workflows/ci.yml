@@ -26,6 +26,7 @@ jobs:
       security_web: ${{ steps.select.outputs.security_web }}
       go_groups: ${{ steps.select.outputs.go_groups }}
       integration_modules: ${{ steps.select.outputs.integration_modules }}
+      integration_shards: ${{ steps.select.outputs.integration_shards }}
       go_version: ${{ steps.select.outputs.go_version }}
       node_version: ${{ steps.select.outputs.node_version }}
       python_version: ${{ steps.select.outputs.python_version }}
@@ -257,7 +258,7 @@ jobs:
         uses: ./.github/actions/cancel-on-failure
 
   integration:
-    name: integration (${{ matrix.module }})
+    name: integration (${{ matrix.name }})
     needs: changes
     if: needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
@@ -265,7 +266,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: ${{ fromJSON(needs.changes.outputs.integration_modules) }}
+        include: ${{ fromJSON(needs.changes.outputs.integration_shards) }}
     services:
       postgres:
         image: pgvector/pgvector:pg18
@@ -345,14 +346,14 @@ jobs:
 
       - name: Run this full integration module shard
         env:
-          TEST_MODULE: ${{ matrix.module }}
+          TEST_MODULES: ${{ matrix.modules }}
         run: make test-integration
 
       - name: Upload integration test log
         uses: actions/upload-artifact@v4
         with:
-          name: integration-log-${{ matrix.module }}
-          path: .tmp/integration/${{ matrix.module }}.jsonl
+          name: integration-log-${{ matrix.name }}
+          path: .tmp/integration/*.jsonl
           if-no-files-found: error
           retention-days: 7
 

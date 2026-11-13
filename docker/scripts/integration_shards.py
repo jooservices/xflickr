@@ -20,6 +20,14 @@ GO_TEST_GROUPS = {
     "media": ("ai", "home", "media", "sync"),
     "operations": ("cluster", "ops", "schedule"),
 }
+INTEGRATION_MODULE_SHARDS = {
+    "cluster": ("cluster",),
+    "catalog": ("catalog",),
+    "platform": ("platform",),
+    "schedule": ("schedule",),
+    "runtime": ("accounts", "ai", "cmd", "home", "identity", "media", "ops", "settings"),
+    "services": ("crawl", "quota", "search", "sharing", "sync"),
+}
 
 
 def module_name(package: str) -> str:
@@ -90,6 +98,20 @@ def integration_test_pattern(module: str, tests: dict[str, list[str]]) -> str:
     return "^(" + "|".join(names) + ")$"
 
 
+def integration_module_shards(modules: list[str]) -> list[dict[str, str]]:
+    """Group every discovered integration module into a balanced job shard."""
+    selected = set(modules)
+    assigned = {module for shard_modules in INTEGRATION_MODULE_SHARDS.values() for module in shard_modules}
+    unknown = selected - assigned
+    if unknown:
+        raise ValueError("integration modules missing shard assignment: " + ", ".join(sorted(unknown)))
+    return [
+        {"name": name, "modules": ",".join(module for module in shard_modules if module in selected)}
+        for name, shard_modules in INTEGRATION_MODULE_SHARDS.items()
+        if any(module in selected for module in shard_modules)
+    ]
+
+
 def group_names() -> list[str]:
     """Return the configured package group names in stable order."""
     return sorted(GO_TEST_GROUPS)
@@ -127,6 +149,7 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("go-groups")
     subparsers.add_parser("integration-modules")
+    subparsers.add_parser("integration-shards")
     package_parser = subparsers.add_parser("go-packages")
     package_parser.add_argument("group", choices=GO_TEST_GROUPS)
     module_parser = subparsers.add_parser("integration-packages")
@@ -139,6 +162,8 @@ def main() -> int:
             print(json.dumps(group_names()))
         elif args.command == "integration-modules":
             print(json.dumps(list(integration_test_packages())))
+        elif args.command == "integration-shards":
+            print(json.dumps(integration_module_shards(list(integration_test_packages()))))
         elif args.command == "integration-packages":
             modules = integration_test_packages()
             print_packages(modules.get(args.module, []))

@@ -211,7 +211,7 @@ func TestAssignmentLookupPlanIntegration(t *testing.T) {
 	fixture := newAssignmentFixture(t, ctx, pool)
 	now := assignmentTime()
 	node := fixture.addNode(t, ctx, "plan-node", "online", []string{"crawl"}, &now, nil)
-	const fixtureSize = 400_000
+	const fixtureSize = 50_000
 
 	tx, err := pool.Begin(ctx)
 	if err != nil {

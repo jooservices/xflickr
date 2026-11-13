@@ -67,12 +67,27 @@ run_module() {
 	python3 "$SCRIPT_DIR/integration_test_count.py" "$log"
 }
 
-if [[ -n "${TEST_MODULE:-}" ]]; then
+if [[ -n "${TEST_MODULE:-}" && -n "${TEST_MODULES:-}" ]]; then
+	printf 'Set either TEST_MODULE or TEST_MODULES, not both.\n' >&2
+	exit 1
+elif [[ -n "${TEST_MODULE:-}" ]]; then
 	run_module "$TEST_MODULE"
+elif [[ -n "${TEST_MODULES:-}" ]]; then
+	IFS=',' read -r -a requested_modules <<< "$TEST_MODULES"
+	group_logs=()
+	if [[ ${#requested_modules[@]} -eq 0 ]]; then
+		printf 'TEST_MODULES must contain at least one module.\n' >&2
+		exit 1
+	fi
+	for module in "${requested_modules[@]}"; do
+		run_module "$module"
+		group_logs+=("$LOG_DIR/$module.jsonl")
+	done
+	python3 "$SCRIPT_DIR/integration_test_count.py" --minimum 0 "${group_logs[@]}"
 else
-	modules="$(python3 "$SCRIPT_DIR/integration_shards.py" integration-modules | python3 -c 'import json,sys; print("\n".join(json.load(sys.stdin)))')"
+	all_modules="$(python3 "$SCRIPT_DIR/integration_shards.py" integration-modules | python3 -c 'import json,sys; print("\n".join(json.load(sys.stdin)))')"
 	while IFS= read -r module; do
 		[[ -z "$module" ]] || run_module "$module"
-	done <<<"$modules"
+	done <<<"$all_modules"
 	python3 "$SCRIPT_DIR/integration_test_count.py" --minimum 100 "$LOG_DIR"
 fi

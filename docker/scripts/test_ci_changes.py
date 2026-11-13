@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 
-from ci_changes import classify_paths
+from ci_changes import classify_paths, outputs_for
 
 
 class CIChangesTest(unittest.TestCase):
@@ -26,6 +27,22 @@ class CIChangesTest(unittest.TestCase):
         self.assertEqual(backend, {"go": True, "web": False, "integration": True, "stale": True, "security_go": True, "security_web": False})
         contract = classify_paths(["contracts/openapi/openapi.yaml"])
         self.assertEqual(contract, {"go": True, "web": True, "integration": True, "stale": True, "security_go": True, "security_web": True})
+
+    def test_backend_change_publishes_complete_integration_shards(self) -> None:
+        outputs = outputs_for(["backend/internal/cluster/app/assignment.go"])
+        shards = json.loads(outputs["integration_shards"])
+        modules = [module for shard in shards for module in shard["modules"].split(",")]
+
+        self.assertEqual(len(shards), 6)
+        self.assertEqual(len(modules), len(set(modules)))
+        self.assertEqual(
+            set(modules),
+            {
+                "accounts", "ai", "catalog", "cluster", "cmd", "crawl", "home",
+                "identity", "media", "ops", "platform", "quota", "schedule", "search",
+                "settings", "sharing", "sync",
+            },
+        )
 
 
 if __name__ == "__main__":

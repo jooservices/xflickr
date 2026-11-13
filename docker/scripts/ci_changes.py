@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 from check_tool_versions import ROOT, parse_versions, write_github_output
-from integration_shards import group_names, integration_test_packages
+from integration_shards import group_names, integration_module_shards, integration_test_packages
 
 
 def classify_paths(paths: list[str] | tuple[str, ...]) -> dict[str, bool]:
@@ -72,9 +72,12 @@ def outputs_for(paths: list[str]) -> dict[str, str]:
     if selection["go"]:
         outputs["go_groups"] = json.dumps(group_names())
         if selection["integration"]:
-            outputs["integration_modules"] = json.dumps(list(integration_test_packages()))
+            modules = list(integration_test_packages())
+            outputs["integration_modules"] = json.dumps(modules)
+            outputs["integration_shards"] = json.dumps(integration_module_shards(modules))
     outputs.setdefault("go_groups", "[]")
     outputs.setdefault("integration_modules", "[]")
+    outputs.setdefault("integration_shards", "[]")
     return outputs
 
 

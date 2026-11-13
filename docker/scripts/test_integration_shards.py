@@ -10,7 +10,9 @@ from tempfile import TemporaryDirectory
 from integration_shards import (
     group_packages,
     integration_modules,
+    integration_module_shards,
     integration_test_names,
+    integration_test_packages,
     integration_test_pattern,
 )
 
@@ -45,6 +47,19 @@ class IntegrationShardsTest(unittest.TestCase):
             "github.com/jooservices/xflickr/internal/platform/mail/adapters/smtp"
         ])
         self.assertNotIn("catalog", shards)
+
+    def test_integration_modules_are_assigned_to_one_of_six_job_shards(self) -> None:
+        modules = list(integration_test_packages())
+        shards = integration_module_shards(modules)
+        assigned = [module for shard in shards for module in shard["modules"].split(",")]
+
+        self.assertEqual(len(shards), 6)
+        self.assertEqual(sorted(assigned), sorted(modules))
+        self.assertEqual(len(assigned), len(set(assigned)))
+
+    def test_unknown_integration_module_requires_a_shard_assignment(self) -> None:
+        with self.assertRaisesRegex(ValueError, "missing shard assignment: future-module"):
+            integration_module_shards(["future-module"])
 
     def test_integration_test_pattern_selects_tests_in_marked_files(self) -> None:
         with TemporaryDirectory() as temporary_directory:
