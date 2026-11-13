@@ -56,12 +56,13 @@ run_module() {
 		exit 1
 	fi
 	test_pattern="$(python3 "$SCRIPT_DIR/integration_shards.py" integration-test-pattern "$module")"
-	printf '\n==> Integration module: %s (%d packages; marked test files only)\n' "$module" "${#packages[@]}"
+	printf '\n==> Integration module: %s (%d opted-in packages; selected integration tests)\n' "$module" "${#packages[@]}"
 	(
 		cd "$BACKEND"
 		XFLICKR_INTEGRATION_TEST=1 \
 		XFLICKR_DBTEST_INTEGRATION_TEST=1 \
-		RUNTIME_PASS_ENV='XFLICKR_INTEGRATION_TEST XFLICKR_DBTEST_INTEGRATION_TEST' \
+		XFLICKR_OUTBOX_INTEGRATION_TEST=1 \
+		RUNTIME_PASS_ENV='XFLICKR_INTEGRATION_TEST XFLICKR_DBTEST_INTEGRATION_TEST XFLICKR_OUTBOX_INTEGRATION_TEST' \
 		"$SCRIPT_DIR/run.sh" go go test -json -count=1 -p 1 -run "$test_pattern" "${packages[@]}"
 	) | tee "$log"
 	python3 "$SCRIPT_DIR/integration_test_count.py" "$log"
@@ -86,8 +87,12 @@ elif [[ -n "${TEST_MODULES:-}" ]]; then
 	python3 "$SCRIPT_DIR/integration_test_count.py" --minimum 0 "${group_logs[@]}"
 else
 	all_modules="$(python3 "$SCRIPT_DIR/integration_shards.py" integration-modules | python3 -c 'import json,sys; print("\n".join(json.load(sys.stdin)))')"
+	group_logs=()
 	while IFS= read -r module; do
-		[[ -z "$module" ]] || run_module "$module"
+		if [[ -n "$module" ]]; then
+			run_module "$module"
+			group_logs+=("$LOG_DIR/$module.jsonl")
+		fi
 	done <<<"$all_modules"
-	python3 "$SCRIPT_DIR/integration_test_count.py" --minimum 100 "$LOG_DIR"
+	python3 "$SCRIPT_DIR/integration_test_count.py" --minimum 100 "${group_logs[@]}"
 fi

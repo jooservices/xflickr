@@ -28,6 +28,20 @@ class CIChangesTest(unittest.TestCase):
         contract = classify_paths(["contracts/openapi/openapi.yaml"])
         self.assertEqual(contract, {"go": True, "web": True, "integration": True, "stale": True, "security_go": True, "security_web": True})
 
+    def test_workflow_changes_select_integration_and_stale_checks(self) -> None:
+        workflow = classify_paths([".github/workflows/ci.yml"])
+
+        self.assertTrue(workflow["integration"])
+        self.assertTrue(workflow["stale"])
+
+    def test_generator_changes_select_stale_check(self) -> None:
+        self.assertTrue(classify_paths(["docker/scripts/gen.sh"])["stale"])
+        self.assertTrue(classify_paths(["docker/scripts/gen-stale.sh"])["stale"])
+        self.assertTrue(classify_paths(["web/orval.config.ts"])["stale"])
+
+    def test_architecture_configuration_change_selects_go_checks(self) -> None:
+        self.assertTrue(classify_paths([".go-arch-lint.yml"])["go"])
+
     def test_backend_change_publishes_complete_integration_shards(self) -> None:
         outputs = outputs_for(["backend/internal/cluster/app/assignment.go"])
         shards = json.loads(outputs["integration_shards"])

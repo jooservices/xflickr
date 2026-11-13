@@ -329,6 +329,7 @@ jobs:
       NODE_ID: xflickr-ci
       XFLICKR_INTEGRATION_TEST: "1"
       XFLICKR_DBTEST_INTEGRATION_TEST: "1"
+      XFLICKR_OUTBOX_INTEGRATION_TEST: "1"
     steps:
       - name: Check out the repository
         uses: actions/checkout@v5

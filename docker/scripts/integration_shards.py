@@ -55,36 +55,53 @@ def group_packages(packages: list[str] | tuple[str, ...]) -> dict[str, list[str]
     return groups
 
 
-def integration_modules(package_tests: dict[str, str]) -> dict[str, list[str]]:
-    """Keep only packages whose tests opt into integration behavior."""
+def integration_modules(
+    package_tests: dict[str, str], integration_packages: set[str] | None = None
+) -> dict[str, list[str]]:
+    """Group packages with an integration marker or conventional integration-test file."""
+    integration_packages = integration_packages or set()
     modules: dict[str, list[str]] = {}
     for package, source in package_tests.items():
-        if any(marker in source for marker in INTEGRATION_MARKERS):
+        if package in integration_packages or any(marker in source for marker in INTEGRATION_MARKERS):
             modules.setdefault(module_name(package), []).append(package)
     return {module: sorted(packages) for module, packages in sorted(modules.items())}
 
 
 def integration_test_packages(root: Path = BACKEND) -> dict[str, list[str]]:
-    """Find test packages that opt into PostgreSQL or service integration."""
+    """Find packages with a marker or a conventional integration-test file."""
     package_tests: dict[str, str] = {}
+    integration_packages: set[str] = set()
     for path in sorted(root.rglob("*_test.go")):
         source = path.read_text(encoding="utf-8")
-        if any(marker in source for marker in INTEGRATION_MARKERS):
-            relative = path.parent.relative_to(root).as_posix()
-            package = MODULE_PREFIX + relative
-            package_tests[package] = package_tests.get(package, "") + source
-    return integration_modules(package_tests)
+        relative = path.parent.relative_to(root).as_posix()
+        package = MODULE_PREFIX + relative
+        package_tests[package] = package_tests.get(package, "") + source
+        if path.name.endswith("_integration_test.go") or any(
+            marker in source for marker in INTEGRATION_MARKERS
+        ):
+            integration_packages.add(package)
+    return integration_modules(package_tests, integration_packages)
 
 
 def integration_test_names(root: Path = BACKEND) -> dict[str, list[str]]:
-    """Find Go tests declared in files that opt into integration behavior."""
+    """Find tests in packages that opt into integration behavior."""
+    packages = {
+        package
+        for module_packages in integration_test_packages(root).values()
+        for package in module_packages
+    }
     tests: dict[str, set[str]] = {}
     for path in sorted(root.rglob("*_test.go")):
-        source = path.read_text(encoding="utf-8")
-        if not any(marker in source for marker in INTEGRATION_MARKERS):
-            continue
         relative = path.parent.relative_to(root).as_posix()
-        module = module_name(MODULE_PREFIX + relative)
+        package = MODULE_PREFIX + relative
+        if package not in packages:
+            continue
+        source = path.read_text(encoding="utf-8")
+        if not path.name.endswith("_integration_test.go") and not any(
+            marker in source for marker in INTEGRATION_MARKERS
+        ):
+            continue
+        module = module_name(package)
         tests.setdefault(module, set()).update(
             re.findall(r"^func\s+(Test[A-Za-z0-9_]*)\s*\(", source, re.MULTILINE)
         )
@@ -95,7 +112,7 @@ def integration_test_pattern(module: str, tests: dict[str, list[str]]) -> str:
     """Build a go test -run pattern for one module's integration files."""
     names = tests.get(module, [])
     if not names:
-        raise ValueError(f"integration module {module} has no test functions in marked files")
+        raise ValueError(f"integration module {module} has no test functions in opted-in packages")
     return "^(" + "|".join(names) + ")$"
 
 
@@ -116,6 +133,40 @@ def integration_module_shards(modules: list[str]) -> list[dict[str, str | bool]]
                 "elasticsearch": "search" in assigned,
             })
     return result
+
+
+def verify_integration_test_coverage(root: Path = BACKEND) -> int:
+    """Fail if a discovered integration test is not selected by exactly one shard."""
+    modules = integration_test_packages(root)
+    tests = integration_test_names(root)
+    shards = integration_module_shards(list(modules))
+    assigned = [
+        module
+        for shard in shards
+        for module in str(shard["modules"]).split(",")
+        if module
+    ]
+    missing_modules = sorted(set(modules) - set(assigned))
+    duplicate_modules = sorted(module for module in set(assigned) if assigned.count(module) > 1)
+    if missing_modules or duplicate_modules:
+        details = []
+        details.extend(f"{module} (no shard)" for module in missing_modules)
+        details.extend(f"{module} (multiple shards)" for module in duplicate_modules)
+        raise ValueError("integration test modules must map to one shard: " + ", ".join(details))
+
+    total = 0
+    for module, package_paths in modules.items():
+        pattern = integration_test_pattern(module, tests)
+        unmatched = [name for name in tests[module] if re.fullmatch(pattern, name) is None]
+        if unmatched:
+            raise ValueError(
+                f"integration tests not selected by any shard for {module}: "
+                + ", ".join(unmatched)
+            )
+        if not package_paths:
+            raise ValueError(f"integration module {module} has no test packages")
+        total += len(tests[module])
+    return total
 
 
 def group_names() -> list[str]:
@@ -156,6 +207,7 @@ def main() -> int:
     subparsers.add_parser("go-groups")
     subparsers.add_parser("integration-modules")
     subparsers.add_parser("integration-shards")
+    subparsers.add_parser("verify-integration-coverage")
     package_parser = subparsers.add_parser("go-packages")
     package_parser.add_argument("group", choices=GO_TEST_GROUPS)
     module_parser = subparsers.add_parser("integration-packages")
@@ -170,6 +222,9 @@ def main() -> int:
             print(json.dumps(list(integration_test_packages())))
         elif args.command == "integration-shards":
             print(json.dumps(integration_module_shards(list(integration_test_packages()))))
+        elif args.command == "verify-integration-coverage":
+            count = verify_integration_test_coverage()
+            print(f"Integration shard coverage passed: {count} tests in {len(integration_test_packages())} modules.")
         elif args.command == "integration-packages":
             modules = integration_test_packages()
             print_packages(modules.get(args.module, []))

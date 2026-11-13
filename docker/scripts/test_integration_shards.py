@@ -14,6 +14,7 @@ from integration_shards import (
     integration_test_names,
     integration_test_packages,
     integration_test_pattern,
+    verify_integration_test_coverage,
 )
 
 
@@ -65,30 +66,76 @@ class IntegrationShardsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing shard assignment: future-module"):
             integration_module_shards(["future-module"])
 
-    def test_integration_test_pattern_selects_tests_in_marked_files(self) -> None:
+    def test_integration_test_pattern_selects_package_tests_with_shared_helpers(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            marked = root / "internal/accounts/repository_integration_test.go"
-            marked.parent.mkdir(parents=True)
-            marked.write_text(
+            package_dir = root / "internal/crawl/adapters/postgres"
+            package_dir.mkdir(parents=True)
+            marked_helper = package_dir / "engine_integration_test.go"
+            marked_helper.write_text(
                 "// XFLICKR_INTEGRATION_TEST\n"
-                "func TestRepositoryIntegration(t *testing.T) {}\n"
-                "func TestSharedFixture(t *testing.T) {}\n",
+                "func openIntegrationPool(t *testing.T) {}\n"
+                "func TestEngineIntegration(t *testing.T) {}\n",
                 encoding="utf-8",
             )
-            unmarked = root / "internal/accounts/unit_test.go"
-            unmarked.write_text("func TestUnitOnly(t *testing.T) {}\n", encoding="utf-8")
+            contacts = package_dir / "contacts_integration_test.go"
+            contacts.write_text(
+                "func TestContactsRefreshRemovesMissingRowsOnlyAfterFinalPage(t *testing.T) { openIntegrationPool(t) }\n"
+                "func TestContactsRefreshFailureRetainsExistingRows(t *testing.T) { openIntegrationPool(t) }\n",
+                encoding="utf-8",
+            )
+            unrelated = root / "internal/accounts/unit_test.go"
+            unrelated.parent.mkdir(parents=True)
+            unrelated.write_text("func TestUnitOnly(t *testing.T) {}\n", encoding="utf-8")
 
+            packages = integration_test_packages(root)
             tests = integration_test_names(root)
 
         self.assertEqual(
             tests,
-            {"accounts": ["TestRepositoryIntegration", "TestSharedFixture"]},
+            {
+                "crawl": [
+                    "TestContactsRefreshFailureRetainsExistingRows",
+                    "TestContactsRefreshRemovesMissingRowsOnlyAfterFinalPage",
+                    "TestEngineIntegration",
+                ]
+            },
         )
         self.assertEqual(
-            integration_test_pattern("accounts", tests),
-            "^(TestRepositoryIntegration|TestSharedFixture)$",
+            packages,
+            {"crawl": ["github.com/jooservices/xflickr/internal/crawl/adapters/postgres"]},
         )
+        pattern = integration_test_pattern("crawl", tests)
+        self.assertRegex("TestContactsRefreshRemovesMissingRowsOnlyAfterFinalPage", pattern)
+        self.assertNotIn("accounts", tests)
+
+    def test_repository_contacts_tests_using_shared_integration_fixture_are_discovered(self) -> None:
+        tests = integration_test_names()
+
+        self.assertIn("TestContactsRefreshRemovesMissingRowsOnlyAfterFinalPage", tests["crawl"])
+        self.assertIn("TestContactsRefreshFailureRetainsExistingRows", tests["crawl"])
+        self.assertIn("TestContactsCrawlWithoutPreInsertedAccountPerson", tests["crawl"])
+
+    def test_outbox_integration_tests_are_enabled_by_local_and_ci_runners(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        runner = (root / "docker/scripts/test-integration.sh").read_text(encoding="utf-8")
+        workflow = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+        self.assertIn("XFLICKR_OUTBOX_INTEGRATION_TEST=1", runner)
+        self.assertIn("XFLICKR_OUTBOX_INTEGRATION_TEST", workflow)
+
+    def test_integration_coverage_guard_rejects_tests_without_a_shard(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            package_dir = root / "internal/future"
+            package_dir.mkdir(parents=True)
+            (package_dir / "shared_integration_test.go").write_text(
+                "// XFLICKR_INTEGRATION_TEST\nfunc TestSharedFixture(t *testing.T) {}\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "missing shard assignment: future"):
+                # The repository shard map has no future module, so it must not silently omit it.
+                verify_integration_test_coverage(root)
 
     def test_integration_test_pattern_rejects_empty_module(self) -> None:
         with self.assertRaisesRegex(ValueError, "has no test functions"):

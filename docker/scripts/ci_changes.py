@@ -22,16 +22,23 @@ def classify_paths(paths: list[str] | tuple[str, ...]) -> dict[str, bool]:
         for path in paths
     )
     go = global_change or any(
-        path.startswith(("backend/", "docker/scripts/", "contracts/openapi/")) or path == ".golangci.yml"
+        path.startswith(("backend/", "docker/scripts/", "contracts/openapi/"))
+        or path in {".golangci.yml", ".go-arch-lint.yml"}
         for path in paths
     )
     web = global_change or any(path.startswith(("web/", "contracts/openapi/", "docker/scripts/")) for path in paths)
-    integration = any(path.startswith(("backend/", "docker/scripts/", "contracts/openapi/")) for path in paths)
+    integration = global_change or any(
+        path.startswith(("backend/", "docker/scripts/", "contracts/openapi/")) for path in paths
+    )
+    generator_change = any(
+        path.startswith("docker/scripts/gen") or path == "web/orval.config.ts"
+        for path in paths
+    )
     stale = any(
         path.startswith(("backend/", "contracts/openapi/", "web/src/shared/api/gen/", "web/src/shared/api/zod/"))
         or path in {"Makefile", "Dockerfile"}
         for path in paths
-    )
+    ) or global_change or generator_change
     security_go = go
     security_web = web
     return {

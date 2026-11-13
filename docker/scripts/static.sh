@@ -14,6 +14,7 @@ run_python_test test_tool_versions.py
 run_python_test test_clean_db.py
 run_python_test test_ci_aggregate.py
 run_python_test test_integration_shards.py
+run_python_test test_check.py
 run_python_test test_merge_coverage.py
 run_python_test test_integration_test_count.py
 run_python_test migration_versions_test.py
@@ -24,6 +25,7 @@ run_python_test test_worktree_env.py
 run_python_test module_cycles_test.py
 run_python_test test_sqlc_stale.py
 "$SCRIPT_DIR/api-usage-check.test.sh"
+"$SCRIPT_DIR/api-usage-check.sh"
 "$SCRIPT_DIR/ui-e2e-coverage.test.sh"
 "$SCRIPT_DIR/db-report.test.sh"
 "$SCRIPT_DIR/compare-db.test.sh"
@@ -31,6 +33,7 @@ run_python_test test_sqlc_stale.py
 "$SCRIPT_DIR/ui-spec-check.sh"
 "$SCRIPT_DIR/run.sh" shellcheck shellcheck "$SCRIPT_DIR"/*.sh
 python3 "$SCRIPT_DIR/ci_parity.py"
+python3 "$SCRIPT_DIR/integration_shards.py" verify-integration-coverage
 python3 "$SCRIPT_DIR/check_tool_versions.py"
 "$SCRIPT_DIR/commitlint.sh"
 
