@@ -43,5 +43,6 @@
   "library.status.loading": "Loading your library…",
   "library.status.stale": "Your loaded photos may be out of date.",
   "library.title": "Library",
-  "library.selection.limit": "The selection limit is 500 photos. Selected photos have not been added to the download tray."
+  "library.selection.limit": "The selection limit is 500 photos. Selected photos have not been added to the download tray.",
+  "library.photo.open": "Open {{title}}"
 }

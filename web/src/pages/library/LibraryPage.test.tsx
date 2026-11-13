@@ -36,6 +36,68 @@ afterEach(() => {
 });
 
 describe('LibraryPage', () => {
+  it('opens the selected photo in gallery order and renders available catalog details', async () => {
+    server.use(
+      http.get('*/favorites', () => json({ items: [favorite(1), favorite(2)] })),
+      http.get('*/photos/:id', ({ params }) =>
+        json(
+          photo(Number(params.id), 'linh@N00', {
+            title: 'Aurora',
+            description: 'Northern lights',
+            labels: ['night-sky'],
+            sizes: [
+              {
+                label: 'Medium',
+                width: 800,
+                height: 600,
+                source: 'https://images.test/aurora',
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+    const { router } = open();
+
+    await screen.findByTestId('user-library-photo-2');
+    fireEvent.click(screen.getByTestId('user-library-photo-open-2'));
+
+    const viewer = await screen.findByRole('dialog', { name: 'Aurora' });
+    expect(screen.getByTestId('lightbox-position')).toHaveTextContent('Photo 2 of 2');
+    expect(screen.getByRole('link', { name: 'linh@N00' })).toHaveAttribute(
+      'href',
+      '/contacts/linh%40N00',
+    );
+    expect(viewer).toHaveTextContent('Northern lights');
+    expect(viewer).toHaveTextContent('night-sky');
+    expect(viewer).toHaveTextContent('800 × 600');
+    expect(screen.getByRole('link', { name: 'night-sky' })).toHaveAttribute(
+      'href',
+      '/search?q=night-sky',
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'linh@N00' }));
+    await waitFor(() => expect(screen.queryByTestId('photo-lightbox')).toBeNull());
+    expect(router.state.location.pathname).toBe('/contacts/linh%40N00');
+  });
+
+  it('closes the viewer and opens the search route from a tag', async () => {
+    server.use(
+      http.get('*/favorites', () => json({ items: [favorite(1)] })),
+      http.get('*/photos/:id', () => json(photo(1, 'linh@N00', { labels: ['night-sky'] }))),
+    );
+    const { router } = open();
+
+    await screen.findByTestId('user-library-photo-1');
+    fireEvent.click(screen.getByTestId('user-library-photo-open-1'));
+    await screen.findByRole('dialog', { name: 'Photo 1' });
+    fireEvent.click(screen.getByRole('link', { name: 'night-sky' }));
+
+    await waitFor(() => expect(screen.queryByTestId('photo-lightbox')).toBeNull());
+    expect(router.state.location.pathname).toBe('/search');
+    expect(router.state.location.search).toBe('?q=night-sky');
+  });
+
   it('renders catalog favorites and pages with the returned cursor', async () => {
     const cursors: string[] = [];
     server.use(
@@ -71,9 +133,9 @@ describe('LibraryPage', () => {
   it('reveals the photo caption when its tile receives keyboard focus', async () => {
     server.use(http.get('*/favorites', () => json({ items: [favorite(1)] })));
     open();
-    const tile = await screen.findByTestId('user-library-photo-1');
+    const tile = await screen.findByTestId('user-library-photo-open-1');
 
-    expect(tile).toHaveAttribute('tabindex', '0');
+    expect(tile).toHaveAccessibleName('Open Photo 1');
     tile.focus();
     expect(document.activeElement).toBe(tile);
     expect(screen.getByTestId('user-library-photo-caption-1')).toBeInTheDocument();

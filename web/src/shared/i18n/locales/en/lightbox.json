@@ -12,5 +12,15 @@
   "error.body": "Check your connection, then try again.",
   "error.preview": "Photo preview unavailable",
   "error.not-found": "This photo is unavailable",
-  "retry": "Retry"
+  "retry": "Retry",
+  "owner": "Owner",
+  "sizes.title": "Sizes",
+  "sizes.status.none": "Sizes not checked",
+  "sizes.status.provisional": "Provisional sizes",
+  "sizes.status.confirmed": "Confirmed sizes",
+  "sizes.status.unavailable": "Sizes unavailable",
+  "sizes.dimensions-unavailable": "Dimensions unavailable",
+  "sizes.provisional": "Provisional",
+  "sizes.confirmed": "Confirmed",
+  "tags.title": "Tags"
 }
