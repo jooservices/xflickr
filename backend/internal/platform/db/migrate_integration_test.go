@@ -177,10 +177,56 @@ func TestMigrateAppliesLowerVersionAfterHigherVersion(t *testing.T) {
 
 func prepareMigrationTest(t *testing.T) (context.Context, config.DBConfig, *pgxpool.Pool) {
 	t.Helper()
+	return prepareMigrationTestWithFiles(t, migrations.Files)
+}
+
+func prepareMigrationTestWithFiles(t *testing.T, files fs.FS) (context.Context, config.DBConfig, *pgxpool.Pool) {
+	t.Helper()
 	ctx, cfg := prepareIsolatedDatabase(t)
-	pool := dbtest.Open(t, cfg)
+	if err := db.MigrateFiles(ctx, cfg, db.MigrateUp, io.Discard, files); err != nil {
+		t.Fatalf("migrate isolated test database: %v", err)
+	}
+	pool, err := db.NewPool(ctx, cfg)
+	if err != nil {
+		t.Fatalf("open isolated test database: %v", err)
+	}
+	t.Cleanup(pool.Close)
 	assertCurrentDatabase(t, ctx, pool, cfg.Name)
 	return ctx, cfg, pool
+}
+
+func migrationFilesThrough(t *testing.T, target string) fs.FS {
+	t.Helper()
+	targetVersion, err := goose.NumericComponent(target)
+	if err != nil {
+		t.Fatalf("parse target migration version: %v", err)
+	}
+	entries, err := fs.ReadDir(migrations.Files, ".")
+	if err != nil {
+		t.Fatalf("read embedded migrations: %v", err)
+	}
+	files := fstest.MapFS{}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		version, err := goose.NumericComponent(entry.Name())
+		if err != nil {
+			t.Fatalf("parse migration version from %s: %v", entry.Name(), err)
+		}
+		if version > targetVersion {
+			continue
+		}
+		data, err := fs.ReadFile(migrations.Files, entry.Name())
+		if err != nil {
+			t.Fatalf("read embedded migration %s: %v", entry.Name(), err)
+		}
+		files[entry.Name()] = &fstest.MapFile{Data: data, Mode: 0o444}
+	}
+	if len(files) == 0 {
+		t.Fatalf("no embedded migrations found through %s", target)
+	}
+	return files
 }
 
 func prepareEmptyMigrationTest(t *testing.T) (context.Context, config.DBConfig, *pgxpool.Pool) {

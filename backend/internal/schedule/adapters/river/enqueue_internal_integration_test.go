@@ -307,8 +307,12 @@ func TestWeightsRescoreAdvancesAcrossBatches(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
 	prefix := fmt.Sprintf("rescore-batches-%d", time.Now().UnixNano())
-	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state,score,depth,created_at)
-		SELECT 'rescore-test',$1||'-'||g,'pending',0,g,now() FROM generate_series(1,5) AS g`, prefix); err != nil {
+	var userID int64
+	if err := tx.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'unused','user') RETURNING id`, prefix+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,score,depth,created_at)
+		SELECT 'rescore-test',$1||'-'||g,$2,'pending',0,g,now() FROM generate_series(1,5) AS g`, prefix, userID); err != nil {
 		t.Fatal(err)
 	}
 	store := Store{database: transactionScheduleDatabase{tx: tx}}

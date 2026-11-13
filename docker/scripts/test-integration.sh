@@ -6,7 +6,41 @@ ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd -P)"
 BACKEND="$ROOT/backend"
 LOG_DIR="$ROOT/.tmp/integration"
 
-if [[ -f "$ROOT/.env" ]]; then
+if [[ "${CI:-false}" == "true" ]]; then
+	if [[ -e "$ROOT/.env" ]]; then
+		printf 'CI integration run refuses an existing .env file\n' >&2
+		exit 1
+	fi
+	umask 077
+	{
+		printf 'DB_HOST=%s\n' "$DB_HOST"
+		printf 'DB_PORT=%s\n' "$DB_PORT"
+		printf 'DB_NAME=%s\n' "$DB_NAME"
+		printf 'DB_DATABASE=%s\n' "$DB_DATABASE"
+		printf 'DB_USER=%s\n' "$DB_USER"
+		printf 'DB_USERNAME=%s\n' "$DB_USERNAME"
+		printf 'DB_PASSWORD=%s\n' "$DB_PASSWORD"
+		printf 'DB_SSLMODE=%s\n' "$DB_SSLMODE"
+		printf 'REDIS_HOST=%s\n' "$REDIS_HOST"
+		printf 'REDIS_PORT=%s\n' "$REDIS_PORT"
+		printf 'REDIS_DB=%s\n' "$REDIS_DB"
+		printf 'REDIS_PASSWORD=%s\n' "${REDIS_PASSWORD:-}"
+		printf 'REDIS_PREFIX=%s\n' "$REDIS_PREFIX"
+		printf 'SEARCH_URL=%s\n' "$SEARCH_URL"
+		printf 'SEARCH_USERNAME=%s\n' "$SEARCH_USERNAME"
+		printf 'SEARCH_PASSWORD=%s\n' "$SEARCH_PASSWORD"
+		printf 'OPENSEARCH_INDEX_PREFIX=%s\n' "$OPENSEARCH_INDEX_PREFIX"
+		printf 'MAIL_SMTP_ADDR=%s\n' "$MAIL_SMTP_ADDR"
+		printf 'MAIL_FROM=%s\n' "$MAIL_FROM"
+		printf 'XFLICKR_MASTER_KEYS=%s\n' "$XFLICKR_MASTER_KEYS"
+		printf 'XFLICKR_MASTER_KEY_ACTIVE=%s\n' "$XFLICKR_MASTER_KEY_ACTIVE"
+		printf 'NODE_ID=%s\n' "$NODE_ID"
+		printf 'XFLICKR_WORKTREE_PATH=%s\n' "$ROOT"
+	} >"$ROOT/.env"
+	trap 'rm -f "$ROOT/.env"' EXIT
+fi
+
+if [[ "${CI:-false}" != "true" && -f "$ROOT/.env" ]]; then
 	"$SCRIPT_DIR/dev.sh" verify-db
 fi
 mkdir -p "$LOG_DIR"
