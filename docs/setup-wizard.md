@@ -3,7 +3,9 @@
 The `/onboarding` route is a small host around an ordered registry of setup
 pages. Each page declares its success destination, failure destination, and
 allowed rollback destinations. The host validates reported transitions and
-renders rollback controls from the active page's contract.
+renders rollback controls from the active page's contract. Reports are bound to
+their issuing page visit; a report from a page that is no longer current is
+ignored, including a report from an earlier visit to the same page id.
 
 The entry resolver chooses the connect result page for a Flickr redirect,
 then resumes on the done page when an account exists, the connect page when a

@@ -1,9 +1,16 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import type { RefObject } from 'react';
 import { Link } from 'react-router';
 import { Icon, useI18n } from '../../shared';
 import { PALETTE, tileBackground } from './setupModel';
-import type { SetupPage, SetupPageEvent, WizardRoute, WizardView } from './types';
+import type {
+  SetupPage,
+  SetupPageEvent,
+  SetupPageReporter,
+  SetupPageRollbackSetter,
+  WizardRoute,
+  WizardView,
+} from './types';
 import { useSetupData } from './useSetupData';
 import styles from './SetupPage.module.css';
 
@@ -13,9 +20,9 @@ export type SetupShellProps = {
   page: SetupPage | null;
   route: WizardRoute;
   pages: readonly SetupPage[];
-  report: (event: SetupPageEvent) => void;
+  report: SetupPageReporter;
   rollbackEnabled: boolean;
-  setRollbackEnabled: (enabled: boolean) => void;
+  setRollbackEnabled: SetupPageRollbackSetter;
   announce: (message: string) => void;
   liveText: string;
 };
@@ -123,7 +130,16 @@ function ReadyBody({ ...props }: SetupShellProps & { page: SetupPage }) {
   const content = useRef<HTMLDivElement>(null);
   const progress = useProgress(props.pages, props.page);
   usePageFocus(content, heading, props.page.id, props.route.revision);
-  const PageComponent = props.page.component;
+  const { page, route, report: reportPage, setRollbackEnabled: setPageRollbackEnabled } = props;
+  const PageComponent = page.component;
+  const report = useCallback(
+    (event: SetupPageEvent) => reportPage(page.id, route.pageVisit, event),
+    [page.id, route.pageVisit, reportPage],
+  );
+  const setRollbackEnabled = useCallback(
+    (enabled: boolean) => setPageRollbackEnabled(page.id, route.pageVisit, enabled),
+    [page.id, route.pageVisit, setPageRollbackEnabled],
+  );
   return (
     <>
       <WizardProgress {...progress} />
@@ -145,12 +161,12 @@ function ReadyBody({ ...props }: SetupShellProps & { page: SetupPage }) {
             <RollbackActions
               page={props.page}
               data={props.data}
-              report={props.report}
+              report={report}
               enabled={props.rollbackEnabled}
             />
           }
-          setRollbackEnabled={props.setRollbackEnabled}
-          report={props.report}
+          setRollbackEnabled={setRollbackEnabled}
+          report={report}
           failure={props.route.failure}
           payload={props.route.payload}
           announce={props.announce}
@@ -170,7 +186,7 @@ function RollbackActions({
 }: {
   page: SetupPage;
   data: SetupShellProps['data'];
-  report: SetupShellProps['report'];
+  report: (event: SetupPageEvent) => void;
   enabled: boolean;
 }) {
   const { t } = useI18n();

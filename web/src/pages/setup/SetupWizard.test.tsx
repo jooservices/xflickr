@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import { RouterProvider, createMemoryRouter, useLocation } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -49,6 +49,29 @@ function FakeHome() {
   const location = useLocation();
   const state = location.state as { toast?: string } | null;
   return <div data-testid="home-toast">{state?.toast}</div>;
+}
+
+function DelayedFailurePage({
+  report,
+  rollback,
+  pending,
+  failure,
+}: SetupPageComponentProps & { pending: Promise<void> }) {
+  return (
+    <div data-testid="fake-key">
+      {failure ? <p data-testid="late-page-error">{failure}</p> : null}
+      <button
+        onClick={() => void pending.then(() => report({ type: 'failure', error: 'late failure' }))}
+      >
+        Fail later
+      </button>
+      {rollback}
+    </div>
+  );
+}
+
+function ReturningDonePage({ rollback }: SetupPageComponentProps) {
+  return <div data-testid="returning-done">{rollback}</div>;
 }
 
 function pages(key: SetupPage = keyPage()) {
@@ -219,5 +242,42 @@ describe('SetupWizard rollback validation', () => {
       'Unknown setup page "unknown"',
     );
     expect(screen.getByTestId('fake-custom')).toBeInTheDocument();
+  });
+
+  it('ignores a deferred failure from an earlier visit after returning to that page', async () => {
+    let resolveFailure!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      resolveFailure = resolve;
+    });
+    const key = definePage({
+      id: 'key',
+      title: 'setup.key.title',
+      progressName: 'setup.step.key',
+      next: 'done',
+      rollbackTo: ['done'],
+      component: (props) => <DelayedFailurePage {...props} pending={pending} />,
+    });
+    const done = definePage({
+      id: 'done',
+      title: 'setup.done.title',
+      progressName: 'setup.step.done',
+      next: null,
+      rollbackTo: ['key'],
+      component: ReturningDonePage,
+    });
+    renderWizard([key, done], [{ id: 1 }]);
+    fireEvent.click(await screen.findByTestId('wizard-done-back'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Fail later' }));
+    fireEvent.click(await screen.findByTestId('wizard-key-back'));
+    fireEvent.click(await screen.findByTestId('wizard-done-back'));
+    await screen.findByTestId('fake-key');
+
+    await act(async () => {
+      resolveFailure();
+      await pending;
+    });
+
+    expect(screen.getByTestId('fake-key')).toBeInTheDocument();
+    expect(screen.queryByTestId('late-page-error')).not.toBeInTheDocument();
   });
 });

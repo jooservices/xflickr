@@ -3,7 +3,13 @@ import { useLocation, useNavigate } from 'react-router';
 import { useI18n } from '../../shared';
 import { resolveEntry } from './resolveEntry';
 import { useSetupData } from './useSetupData';
-import type { SetupPage, SetupPageEvent } from './types';
+import type {
+  SetupPage,
+  SetupPageEvent,
+  SetupPageId,
+  SetupPageReporter,
+  SetupPageRollbackSetter,
+} from './types';
 import { SetupShell } from './SetupShell';
 import { indexPages, requirePage, transition } from './wizardNavigation';
 import type { WizardRoute, WizardView } from './types';
@@ -26,9 +32,7 @@ export function SetupWizard({ registry }: SetupWizardProps) {
   useFinishNavigation(route.finished);
   const report = usePageReporter(pages, routeRef, setRoute, setRollbackEnabled);
   const announce = useCallback((message: string) => setLiveText(message), []);
-  const updateRollbackEnabled = useCallback((enabled: boolean) => {
-    setRollbackEnabled(enabled);
-  }, []);
+  const updateRollbackEnabled = usePageRollbackSetter(routeRef, setRollbackEnabled);
   useDocumentTitle();
 
   return (
@@ -54,6 +58,7 @@ function initialRoute(): WizardRoute {
     payload: null,
     hostError: null,
     finished: false,
+    pageVisit: 0,
     revision: 0,
   };
 }
@@ -63,6 +68,21 @@ function useFinishNavigation(finished: boolean) {
   useEffect(() => {
     if (finished) void navigate('/', { state: { toast: 'setup.done.toast' } });
   }, [finished, navigate]);
+}
+
+function usePageRollbackSetter(
+  routeRef: React.RefObject<WizardRoute>,
+  setRollbackEnabled: (enabled: boolean) => void,
+): SetupPageRollbackSetter {
+  return useCallback(
+    (pageId, pageVisit, enabled) => {
+      const current = routeRef.current;
+      if (current.pageId === pageId && current.pageVisit === pageVisit) {
+        setRollbackEnabled(enabled);
+      }
+    },
+    [routeRef, setRollbackEnabled],
+  );
 }
 
 function wizardView(data: ReturnType<typeof useSetupData>): WizardView {
@@ -99,9 +119,11 @@ function usePageReporter(
   routeRef: React.RefObject<WizardRoute>,
   setRoute: (route: WizardRoute) => void,
   setRollbackEnabled: (enabled: boolean) => void,
-) {
+): SetupPageReporter {
   return useCallback(
-    (event: SetupPageEvent) => {
+    (pageId: SetupPageId, pageVisit: number, event: SetupPageEvent) => {
+      const current = routeRef.current;
+      if (current.pageId !== pageId || current.pageVisit !== pageVisit) return;
       try {
         const route = transition(pages, routeRef.current, event);
         routeRef.current = route;

@@ -35,6 +35,7 @@ export function transition(
     payload: target.payload,
     hostError: null,
     finished: destination === null,
+    pageVisit: current.pageVisit + Number(destination?.id !== current.pageId),
     revision: current.revision + 1,
   };
 }

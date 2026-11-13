@@ -84,6 +84,7 @@ async function requestAuthorization(
 ) {
   try {
     const response = await connectFlickrAccount({ key_id: key.id }, { signal: controller.signal });
+    if (controller.signal.aborted) return;
     if (response.status === 200) {
       report({ type: 'success' });
       window.location.assign(response.data.authorize_url);

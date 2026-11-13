@@ -9,6 +9,17 @@ export type SetupPageEvent =
   | { type: 'failure'; error?: string }
   | { type: 'rollback'; target: SetupPageId };
 
+export type SetupPageReporter = (
+  pageId: SetupPageId,
+  pageVisit: number,
+  event: SetupPageEvent,
+) => void;
+export type SetupPageRollbackSetter = (
+  pageId: SetupPageId,
+  pageVisit: number,
+  enabled: boolean,
+) => void;
+
 export type SetupPageComponentProps = {
   rollback?: ReactNode;
   setRollbackEnabled?: (enabled: boolean) => void;
@@ -47,6 +58,7 @@ export type WizardRoute = {
   payload: unknown;
   hostError: string | null;
   finished: boolean;
+  pageVisit: number;
   revision: number;
 };
 
