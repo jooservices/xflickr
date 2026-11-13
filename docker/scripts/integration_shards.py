@@ -26,7 +26,8 @@ INTEGRATION_MODULE_SHARDS = {
     "platform": ("platform",),
     "schedule": ("schedule",),
     "runtime": ("accounts", "ai", "cmd", "home", "identity", "media", "ops", "settings"),
-    "services": ("crawl", "quota", "search", "sharing", "sync"),
+    "services": ("crawl", "quota", "sharing", "sync"),
+    "search": ("search",),
 }
 
 
@@ -98,18 +99,23 @@ def integration_test_pattern(module: str, tests: dict[str, list[str]]) -> str:
     return "^(" + "|".join(names) + ")$"
 
 
-def integration_module_shards(modules: list[str]) -> list[dict[str, str]]:
+def integration_module_shards(modules: list[str]) -> list[dict[str, str | bool]]:
     """Group every discovered integration module into a balanced job shard."""
     selected = set(modules)
     assigned = {module for shard_modules in INTEGRATION_MODULE_SHARDS.values() for module in shard_modules}
     unknown = selected - assigned
     if unknown:
         raise ValueError("integration modules missing shard assignment: " + ", ".join(sorted(unknown)))
-    return [
-        {"name": name, "modules": ",".join(module for module in shard_modules if module in selected)}
-        for name, shard_modules in INTEGRATION_MODULE_SHARDS.items()
-        if any(module in selected for module in shard_modules)
-    ]
+    result = []
+    for name, shard_modules in INTEGRATION_MODULE_SHARDS.items():
+        assigned = [module for module in shard_modules if module in selected]
+        if assigned:
+            result.append({
+                "name": name,
+                "modules": ",".join(assigned),
+                "elasticsearch": "search" in assigned,
+            })
+    return result
 
 
 def group_names() -> list[str]:

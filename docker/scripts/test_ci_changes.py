@@ -33,7 +33,7 @@ class CIChangesTest(unittest.TestCase):
         shards = json.loads(outputs["integration_shards"])
         modules = [module for shard in shards for module in shard["modules"].split(",")]
 
-        self.assertEqual(len(shards), 6)
+        self.assertEqual(len(shards), 7)
         self.assertEqual(len(modules), len(set(modules)))
         self.assertEqual(
             set(modules),
@@ -42,6 +42,10 @@ class CIChangesTest(unittest.TestCase):
                 "identity", "media", "ops", "platform", "quota", "schedule", "search",
                 "settings", "sharing", "sync",
             },
+        )
+        self.assertEqual(
+            {shard["name"] for shard in shards if shard["elasticsearch"]},
+            {"search"},
         )
 
 
