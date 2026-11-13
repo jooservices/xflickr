@@ -4,8 +4,15 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
-from integration_shards import group_packages, integration_modules
+from integration_shards import (
+    group_packages,
+    integration_modules,
+    integration_test_names,
+    integration_test_pattern,
+)
 
 
 class IntegrationShardsTest(unittest.TestCase):
@@ -38,6 +45,35 @@ class IntegrationShardsTest(unittest.TestCase):
             "github.com/jooservices/xflickr/internal/platform/mail/adapters/smtp"
         ])
         self.assertNotIn("catalog", shards)
+
+    def test_integration_test_pattern_selects_tests_in_marked_files(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            marked = root / "internal/accounts/repository_integration_test.go"
+            marked.parent.mkdir(parents=True)
+            marked.write_text(
+                "// XFLICKR_INTEGRATION_TEST\n"
+                "func TestRepositoryIntegration(t *testing.T) {}\n"
+                "func TestSharedFixture(t *testing.T) {}\n",
+                encoding="utf-8",
+            )
+            unmarked = root / "internal/accounts/unit_test.go"
+            unmarked.write_text("func TestUnitOnly(t *testing.T) {}\n", encoding="utf-8")
+
+            tests = integration_test_names(root)
+
+        self.assertEqual(
+            tests,
+            {"accounts": ["TestRepositoryIntegration", "TestSharedFixture"]},
+        )
+        self.assertEqual(
+            integration_test_pattern("accounts", tests),
+            "^(TestRepositoryIntegration|TestSharedFixture)$",
+        )
+
+    def test_integration_test_pattern_rejects_empty_module(self) -> None:
+        with self.assertRaisesRegex(ValueError, "has no test functions"):
+            integration_test_pattern("accounts", {})
 
 
 if __name__ == "__main__":

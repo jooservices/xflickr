@@ -48,19 +48,21 @@ mkdir -p "$LOG_DIR"
 run_module() {
 	local module="$1"
 	local log="$LOG_DIR/$module.jsonl"
+	local test_pattern
 	python3 "$SCRIPT_DIR/clean_db.py"
 	mapfile -t packages < <(python3 "$SCRIPT_DIR/integration_shards.py" integration-packages "$module")
 	if [[ ${#packages[@]} -eq 0 ]]; then
 		printf 'Integration module %s has no opted-in packages.\n' "$module" >&2
 		exit 1
 	fi
-	printf '\n==> Integration module: %s (%d packages)\n' "$module" "${#packages[@]}"
+	test_pattern="$(python3 "$SCRIPT_DIR/integration_shards.py" integration-test-pattern "$module")"
+	printf '\n==> Integration module: %s (%d packages; marked test files only)\n' "$module" "${#packages[@]}"
 	(
 		cd "$BACKEND"
 		XFLICKR_INTEGRATION_TEST=1 \
 		XFLICKR_DBTEST_INTEGRATION_TEST=1 \
 		RUNTIME_PASS_ENV='XFLICKR_INTEGRATION_TEST XFLICKR_DBTEST_INTEGRATION_TEST' \
-		"$SCRIPT_DIR/run.sh" go go test -json -count=1 -p 1 "${packages[@]}"
+		"$SCRIPT_DIR/run.sh" go go test -json -count=1 -p 1 -run "$test_pattern" "${packages[@]}"
 	) | tee "$log"
 	python3 "$SCRIPT_DIR/integration_test_count.py" "$log"
 }

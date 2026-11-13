@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -66,6 +67,29 @@ def integration_test_packages(root: Path = BACKEND) -> dict[str, list[str]]:
     return integration_modules(package_tests)
 
 
+def integration_test_names(root: Path = BACKEND) -> dict[str, list[str]]:
+    """Find Go tests declared in files that opt into integration behavior."""
+    tests: dict[str, set[str]] = {}
+    for path in sorted(root.rglob("*_test.go")):
+        source = path.read_text(encoding="utf-8")
+        if not any(marker in source for marker in INTEGRATION_MARKERS):
+            continue
+        relative = path.parent.relative_to(root).as_posix()
+        module = module_name(MODULE_PREFIX + relative)
+        tests.setdefault(module, set()).update(
+            re.findall(r"^func\s+(Test[A-Za-z0-9_]*)\s*\(", source, re.MULTILINE)
+        )
+    return {module: sorted(names) for module, names in sorted(tests.items())}
+
+
+def integration_test_pattern(module: str, tests: dict[str, list[str]]) -> str:
+    """Build a go test -run pattern for one module's integration files."""
+    names = tests.get(module, [])
+    if not names:
+        raise ValueError(f"integration module {module} has no test functions in marked files")
+    return "^(" + "|".join(names) + ")$"
+
+
 def group_names() -> list[str]:
     """Return the configured package group names in stable order."""
     return sorted(GO_TEST_GROUPS)
@@ -107,6 +131,8 @@ def main() -> int:
     package_parser.add_argument("group", choices=GO_TEST_GROUPS)
     module_parser = subparsers.add_parser("integration-packages")
     module_parser.add_argument("module")
+    test_parser = subparsers.add_parser("integration-test-pattern")
+    test_parser.add_argument("module")
     args = parser.parse_args()
     try:
         if args.command == "go-groups":
@@ -116,6 +142,8 @@ def main() -> int:
         elif args.command == "integration-packages":
             modules = integration_test_packages()
             print_packages(modules.get(args.module, []))
+        elif args.command == "integration-test-pattern":
+            print(integration_test_pattern(args.module, integration_test_names()))
         else:
             packages = go_packages()
             imports = [str(package["ImportPath"]) for package in packages]
