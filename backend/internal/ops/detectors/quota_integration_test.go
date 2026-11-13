@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -56,8 +57,15 @@ func TestQuotaDetectorPersistsIncident(t *testing.T) {
 		t.Fatalf("read persisted quota incident: %v", err)
 	}
 	wantDetail := json.RawMessage(`{"detection":"Key quota reached its limit.","automatic_action":"No automatic remediation is defined.","human_step":"Check the key and reset time in API quota; follow key policy.","used":125,"limit":125}`)
+	var gotJSON, wantJSON any
+	if err := json.Unmarshal(detail, &gotJSON); err != nil {
+		t.Fatalf("decode persisted incident detail: %v", err)
+	}
+	if err := json.Unmarshal(wantDetail, &wantJSON); err != nil {
+		t.Fatalf("decode expected incident detail: %v", err)
+	}
 	if incidentID <= 0 || kind != "quota_exhausted" || storedScope != scope || severity != "warning" ||
-		title != "API key quota exhausted" || state != "open" || string(detail) != string(wantDetail) {
+		title != "API key quota exhausted" || state != "open" || !reflect.DeepEqual(gotJSON, wantJSON) {
 		t.Fatalf("persisted incident = id %d, kind %q, scope %q, severity %q, title %q, state %q, detail %s",
 			incidentID, kind, storedScope, severity, title, state, detail)
 	}
