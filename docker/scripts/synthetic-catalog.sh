@@ -26,13 +26,11 @@ case "$DB_NAME" in
     echo "synthetic-catalog: refusing database '$DB_NAME'" >&2
     exit 1
     ;;
-  xflickr_wt*)
-    ;;
-  *)
-    echo "synthetic-catalog: unexpected database '$DB_NAME'" >&2
-    exit 1
-    ;;
 esac
+if [[ ! "$DB_NAME" =~ ^wt_[a-z0-9]{1,24}$ ]]; then
+  echo "synthetic-catalog: unexpected database '$DB_NAME'" >&2
+  exit 1
+fi
 
 OWNERS="${OWNERS:-100000}"
 PHOTOS="${PHOTOS:-3000000}"

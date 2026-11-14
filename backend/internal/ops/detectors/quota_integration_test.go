@@ -91,7 +91,7 @@ func integrationPool(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatalf("load test PostgreSQL settings: %v", err)
 	}
-	if !strings.HasPrefix(dbConfig.Name, "xflickr_wt") {
+	if !strings.HasPrefix(dbConfig.Name, "wt_") {
 		t.Fatal("integration test requires this worktree's isolated database")
 	}
 	if err := dbtest.ValidateDatabaseName(dbConfig.Name); err != nil {

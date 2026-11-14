@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -96,7 +97,7 @@ def worktree_env(root: Path) -> dict[str, str]:
     values = parse_env_text((root / ".env").read_text(encoding="utf-8"))
     database = values.get("DB_NAME", "")
     if (
-        not database.startswith("xflickr_wt")
+        not re.fullmatch(r"wt_[a-z0-9]{1,24}", database)
         or values.get("DB_DATABASE", database) != database
         or values.get("XFLICKR_WORKTREE_PATH") != str(root.resolve())
     ):

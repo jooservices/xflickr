@@ -55,6 +55,7 @@ func TestRebuildFromCallLog3000Grants(t *testing.T) {
 	}
 	client := redisv9.NewClient(&redisv9.Options{
 		Addr:     net.JoinHostPort(host, strconv.Itoa(port)),
+		Username: values["REDIS_USERNAME"],
 		Password: values["REDIS_PASSWORD"],
 		DB:       db,
 	})
@@ -178,6 +179,7 @@ func TestReadyMarkerSurvivesSteadyTraffic(t *testing.T) {
 	}
 	client := redisv9.NewClient(&redisv9.Options{
 		Addr:     net.JoinHostPort(host, strconv.Itoa(port)),
+		Username: values["REDIS_USERNAME"],
 		Password: values["REDIS_PASSWORD"],
 		DB:       db,
 	})
@@ -267,6 +269,7 @@ func TestRebuildAfterMarkerLossDoesNotDoubleCount(t *testing.T) {
 	}
 	client := redisv9.NewClient(&redisv9.Options{
 		Addr:     net.JoinHostPort(host, strconv.Itoa(port)),
+		Username: values["REDIS_USERNAME"],
 		Password: values["REDIS_PASSWORD"],
 		DB:       db,
 	})
@@ -371,6 +374,7 @@ func TestGovernorUsableQuotaConcurrentRoles(t *testing.T) {
 	}
 	client := redisv9.NewClient(&redisv9.Options{
 		Addr:     net.JoinHostPort(host, strconv.Itoa(port)),
+		Username: values["REDIS_USERNAME"],
 		Password: values["REDIS_PASSWORD"],
 		DB:       db,
 	})

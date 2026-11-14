@@ -65,7 +65,7 @@ func TestQuotaEndpointsAfterCallsIntegration(t *testing.T) {
 		host = "127.0.0.1"
 	}
 	db, _ := strconv.Atoi(values["REDIS_DB"])
-	client := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(host, strconv.Itoa(port)), Password: values["REDIS_PASSWORD"], DB: db})
+	client := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(host, strconv.Itoa(port)), Username: values["REDIS_USERNAME"], Password: values["REDIS_PASSWORD"], DB: db})
 	t.Cleanup(func() { _ = client.Close() })
 	if err := client.Ping(ctx).Err(); err != nil {
 		t.Fatalf("ping shared Redis: %v", err)

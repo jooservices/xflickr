@@ -34,8 +34,10 @@ func TestConfiguredAPIRoleIntegration(t *testing.T) {
 	}
 	for name, value := range map[string]string{
 		"DB_HOST": dbCfg.Host, "DB_PORT": fmt.Sprint(dbCfg.Port), "DB_NAME": dbCfg.Name, "DB_USER": dbCfg.User, "DB_PASSWORD": dbCfg.Password,
-		"REDIS_HOST": "127.0.0.1", "REDIS_PORT": "16382", "REDIS_DB": "8", "REDIS_PASSWORD": env["REDIS_PASSWORD"], "REDIS_PREFIX": env["REDIS_PREFIX"],
-		"OPENSEARCH_INDEX_PREFIX": "xflickr_wtk112_", "NODE_ID": "jOOXF-112-integration",
+		"REDIS_HOST": env["REDIS_HOST"], "REDIS_PORT": env["REDIS_PORT"], "REDIS_DB": env["REDIS_DB"],
+		"REDIS_USERNAME": env["REDIS_USERNAME"], "REDIS_PASSWORD": env["REDIS_PASSWORD"], "REDIS_PREFIX": env["REDIS_PREFIX"] + "api-integration:",
+		"SEARCH_URL": env["SEARCH_URL"], "SEARCH_USERNAME": env["SEARCH_USERNAME"], "SEARCH_PASSWORD": env["SEARCH_PASSWORD"],
+		"OPENSEARCH_INDEX_PREFIX": env["OPENSEARCH_INDEX_PREFIX"] + "api-integration-", "NODE_ID": "jOOXF-522-integration",
 		"XFLICKR_MASTER_KEYS": "integration:" + base64.StdEncoding.EncodeToString(make([]byte, 32)), "XFLICKR_MASTER_KEY_ACTIVE": "integration",
 	} {
 		t.Setenv(name, value)

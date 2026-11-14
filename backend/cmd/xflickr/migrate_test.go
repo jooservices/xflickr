@@ -46,7 +46,7 @@ func TestRunMigrateDelegatesActionAndReportsErrors(t *testing.T) {
 }
 
 func TestRunConfiguredMigrationsWithInjectedDependencies(t *testing.T) {
-	wantConfig := config.DBConfig{Host: "db.internal", Name: "xflickr_wtk85", User: "worker"}
+	wantConfig := config.DBConfig{Host: "db.internal", Name: "wt_jooxf85", User: "worker"}
 	var stdout bytes.Buffer
 	called := false
 	err := runConfiguredMigrationsWith(context.Background(), "status", &stdout,

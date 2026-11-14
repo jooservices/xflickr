@@ -44,6 +44,7 @@ func TestRealRedisClockSecondStaysWithinBurst(t *testing.T) {
 	}
 	client := redisv9.NewClient(&redisv9.Options{
 		Addr:     net.JoinHostPort(host, strconv.Itoa(port)),
+		Username: values["REDIS_USERNAME"],
 		Password: values["REDIS_PASSWORD"],
 		DB:       db,
 	})

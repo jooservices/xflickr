@@ -350,7 +350,7 @@ func openHeartbeatIntegrationDatabase(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return dbtest.Open(t, databaseConfig)
+	return dbtest.Open(t, dbtest.IsolatedSchema(t, databaseConfig))
 }
 
 func cleanupHeartbeatNodes(t *testing.T, pool *pgxpool.Pool, names []string) {

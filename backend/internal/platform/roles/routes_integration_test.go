@@ -69,12 +69,12 @@ func TestRoutesWithSessionIntegration(t *testing.T) {
 	}
 	cfg := config.Config{
 		DB:       dbCfg,
-		Redis:    config.RedisConfig{Host: env["REDIS_HOST"], Port: redisPort, DB: redisDB, Password: env["REDIS_PASSWORD"], Prefix: env["REDIS_PREFIX"]},
+		Redis:    config.RedisConfig{Host: env["REDIS_HOST"], Port: redisPort, DB: redisDB, Username: env["REDIS_USERNAME"], Password: env["REDIS_PASSWORD"], Prefix: env["REDIS_PREFIX"]},
 		Blob:     config.BlobConfig{Driver: "local", LocalDir: t.TempDir()},
 		Crypto:   config.CryptoConfig{MasterKeys: "integration:" + base64.StdEncoding.EncodeToString(make([]byte, 32)), ActiveMasterKeyID: "integration"},
 		Identity: config.IdentityConfig{Argon2Memory: params.Memory, Argon2Iterations: params.Iterations, Argon2Parallelism: params.Parallelism, Argon2SaltLength: params.SaltLength, Argon2KeyLength: params.KeyLength},
 	}
-	redisClient := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	redisClient := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Username: cfg.Redis.Username, Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	t.Cleanup(func() { _ = redisClient.Close() })
 	handler, err := buildTestAPIHandler(pool, redisClient, cfg, "routes-integration")
 	if err != nil {

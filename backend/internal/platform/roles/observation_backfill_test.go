@@ -8,7 +8,7 @@ import (
 
 func TestConfiguredBackfillRejectsBadDatabase(t *testing.T) {
 	t.Setenv("DB_HOST", "127.0.0.1")
-	t.Setenv("DB_NAME", "xflickr_wtjooxf330")
+	t.Setenv("DB_NAME", "wt_jooxf330")
 	t.Setenv("DB_USER", "unused")
 	t.Setenv("DB_PASSWORD", "unused")
 	t.Setenv("DB_PORT", "invalid")

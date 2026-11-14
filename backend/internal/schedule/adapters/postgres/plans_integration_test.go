@@ -31,7 +31,7 @@ func TestPlanStoreIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg = dbtest.EmptyDatabase(t, cfg)
+	cfg = dbtest.IsolatedSchema(t, cfg)
 	pool := dbtest.Open(t, cfg)
 	store := postgres.New(pool)
 	plans, err := store.ListPlans(ctx)
@@ -103,7 +103,7 @@ func TestPlanUpdateRollsBackWhenAuditCannotBeWritten(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg = dbtest.EmptyDatabase(t, cfg)
+	cfg = dbtest.IsolatedSchema(t, cfg)
 	pool := dbtest.Open(t, cfg)
 	store := postgres.New(pool)
 	var original int

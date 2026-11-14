@@ -85,7 +85,7 @@ func TestCrawlKeysChoosesKeyAndMapsNoKey(t *testing.T) {
 }
 
 func TestRegisterCrawlJobsRegistersEveryFacetOnce(t *testing.T) {
-	pool, err := pgxpool.New(context.Background(), "postgres://user:password@127.0.0.1:1/xflickr_wt251?sslmode=disable")
+	pool, err := pgxpool.New(context.Background(), "postgres://user:password@127.0.0.1:1/wt_jooxf251?sslmode=disable")
 	if err != nil {
 		t.Fatal(err)
 	}

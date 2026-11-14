@@ -635,9 +635,9 @@ func targetTestKeyring(t *testing.T) *crypto.Keyring {
 
 func rollbackTargetMigrations(t *testing.T, ctx context.Context, cfg config.DBConfig) {
 	t.Helper()
-	isolatedCfg := dbtest.EmptyDatabase(t, cfg)
-	if isolatedCfg.Name == cfg.Name {
-		t.Fatal("migration rollback database reused the worktree database")
+	isolatedCfg := dbtest.IsolatedSchema(t, cfg)
+	if isolatedCfg.Name != cfg.Name || isolatedCfg.SearchPath == "" {
+		t.Fatal("migration rollback is not scoped to an isolated schema in the worktree database")
 	}
 	isolatedPool, err := db.NewPool(ctx, isolatedCfg)
 	if err != nil {
@@ -675,7 +675,7 @@ func rollbackTargetMigrations(t *testing.T, ctx context.Context, cfg config.DBCo
 		t.Fatalf("roll back sync target index migration: %v", err)
 	}
 	var index *string
-	if err := isolatedPool.QueryRow(ctx, `SELECT to_regclass('public.sync_targets_user_id_id_idx')::text`).Scan(&index); err != nil {
+	if err := isolatedPool.QueryRow(ctx, `SELECT to_regclass(format('%I.%I', current_schema(), 'sync_targets_user_id_id_idx'))::text`).Scan(&index); err != nil {
 		t.Fatalf("read rolled back target index: %v", err)
 	}
 	if index != nil {
@@ -685,7 +685,7 @@ func rollbackTargetMigrations(t *testing.T, ctx context.Context, cfg config.DBCo
 		t.Fatalf("roll back sync target table migration: %v", err)
 	}
 	var table *string
-	if err := isolatedPool.QueryRow(ctx, `SELECT to_regclass('public.sync_targets')::text`).Scan(&table); err != nil {
+	if err := isolatedPool.QueryRow(ctx, `SELECT to_regclass(format('%I.%I', current_schema(), 'sync_targets'))::text`).Scan(&table); err != nil {
 		t.Fatalf("read rolled back table: %v", err)
 	}
 	if table != nil {

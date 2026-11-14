@@ -52,7 +52,7 @@ func newQuotaHoldFixture(t *testing.T) *quotaHoldFixture {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	t.Cleanup(cancel)
 	pool := dbtest.Open(t, cfg.DB)
-	client := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	client := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Username: cfg.Redis.Username, Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	t.Cleanup(func() {
 		if err := client.Close(); err != nil {
 			t.Errorf("close quota Redis: %v", err)

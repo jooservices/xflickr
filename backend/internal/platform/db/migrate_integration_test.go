@@ -155,8 +155,8 @@ func TestMigrateAppliesLowerVersionAfterHigherVersion(t *testing.T) {
 		t.Fatalf("migrate higher version: %v", err)
 	}
 	assertAppliedVersions(t, ctx, pool, []int64{higherVersion})
-	assertRelation(t, ctx, pool, "public.higher_applied", true)
-	assertRelation(t, ctx, pool, "public.lower_applied", false)
+	assertRelation(t, ctx, pool, "higher_applied", true)
+	assertRelation(t, ctx, pool, "lower_applied", false)
 
 	both := fstest.MapFS{
 		lowerFile:  {Data: []byte(lowerSQL), Mode: 0o644},
@@ -171,8 +171,8 @@ func TestMigrateAppliesLowerVersionAfterHigherVersion(t *testing.T) {
 	}
 	// id order records application order. tstamp is too coarse for that check.
 	assertAppliedVersions(t, ctx, pool, []int64{higherVersion, lowerVersion})
-	assertRelation(t, ctx, pool, "public.lower_applied", true)
-	assertRelation(t, ctx, pool, "public.higher_applied", true)
+	assertRelation(t, ctx, pool, "lower_applied", true)
+	assertRelation(t, ctx, pool, "higher_applied", true)
 }
 
 func prepareMigrationTest(t *testing.T) (context.Context, config.DBConfig, *pgxpool.Pool) {
@@ -180,6 +180,7 @@ func prepareMigrationTest(t *testing.T) (context.Context, config.DBConfig, *pgxp
 	ctx, cfg := prepareIsolatedDatabase(t)
 	pool := dbtest.Open(t, cfg)
 	assertCurrentDatabase(t, ctx, pool, cfg.Name)
+	assertCurrentSchemaIsIsolated(t, ctx, pool)
 	return ctx, cfg, pool
 }
 
@@ -192,6 +193,7 @@ func prepareEmptyMigrationTest(t *testing.T) (context.Context, config.DBConfig, 
 	}
 	t.Cleanup(pool.Close)
 	assertCurrentDatabase(t, ctx, pool, cfg.Name)
+	assertCurrentSchemaIsIsolated(t, ctx, pool)
 	return ctx, cfg, pool
 }
 
@@ -201,9 +203,9 @@ func prepareIsolatedDatabase(t *testing.T) (context.Context, config.DBConfig) {
 	hadOutbox := relationExists(t, base, "public.outbox_events")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	t.Cleanup(cancel)
-	cfg := dbtest.EmptyDatabase(t, base)
-	if cfg.Name == base.Name {
-		t.Fatal("isolated database reused the worktree database")
+	cfg := dbtest.IsolatedSchema(t, base)
+	if cfg.Name != base.Name || cfg.SearchPath == "" {
+		t.Fatal("isolated migration test does not use a scoped schema in the worktree database")
 	}
 	t.Cleanup(func() {
 		if hadOutbox && !relationExists(t, base, "public.outbox_events") {
@@ -211,6 +213,17 @@ func prepareIsolatedDatabase(t *testing.T) (context.Context, config.DBConfig) {
 		}
 	})
 	return ctx, cfg
+}
+
+func assertCurrentSchemaIsIsolated(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+	t.Helper()
+	var schema string
+	if err := pool.QueryRow(ctx, "SELECT current_schema()").Scan(&schema); err != nil {
+		t.Fatalf("read isolated migration schema: %v", err)
+	}
+	if schema == "public" {
+		t.Fatal("migration test uses the shared public schema")
+	}
 }
 
 func worktreeDatabaseConfig(t *testing.T) config.DBConfig {
@@ -245,7 +258,7 @@ func relationExists(t *testing.T, cfg config.DBConfig, relation string) bool {
 	defer pool.Close()
 
 	var name *string
-	if err := pool.QueryRow(ctx, `SELECT to_regclass($1)`, relation).Scan(&name); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT to_regclass(format('%I.%I', current_schema(), $1::text))`, relation).Scan(&name); err != nil {
 		t.Fatalf("lookup relation %s: %v", relation, err)
 	}
 	return name != nil

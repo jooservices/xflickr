@@ -108,6 +108,7 @@ func TestCrawlObservationsAtomicReplayAndVisibility(t *testing.T) {
 	defer fake.Close()
 	redisClient := redisv9.NewClient(&redisv9.Options{
 		Addr:     fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port),
+		Username: cfg.Redis.Username,
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
 	})

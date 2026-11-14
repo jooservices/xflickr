@@ -1,18 +1,19 @@
 package dbtest
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
-	"time"
 
 	"github.com/jooservices/xflickr/internal/platform/config"
-	"github.com/jooservices/xflickr/internal/platform/db"
 )
 
-func TestOpenUsesMigratedWorktreeDatabase(t *testing.T) {
+func TestAC5OpenUsesMigratedWorktreeDatabase(t *testing.T) {
+	if os.Getenv("XFLICKR_DBTEST_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_DBTEST_INTEGRATION_TEST=1 to use the configured XFlickr worktree database")
+	}
+
 	dbConfig := worktreeDatabaseConfig(t)
 	pool := Open(t, dbConfig)
 
@@ -21,83 +22,40 @@ func TestOpenUsesMigratedWorktreeDatabase(t *testing.T) {
 		t.Fatalf("read test database name: %v", err)
 	}
 	if currentDatabase != dbConfig.Name {
-		t.Fatalf("connected database does not match the configured test database")
+		t.Fatal("connected database does not match the configured test database")
 	}
-	if !relationExists(t, t.Context(), dbConfig, "public.key_assignments") {
+	var relation *string
+	if err := pool.QueryRow(t.Context(), `SELECT to_regclass('public.key_assignments')`).Scan(&relation); err != nil {
+		t.Fatalf("lookup migrated table: %v", err)
+	}
+	if relation == nil {
 		t.Fatal("key_assignments table is missing from the migrated worktree database")
 	}
 }
 
-func TestEmptyDatabaseIsCreatedAndDroppedWithoutTouchingWorktreeSchema(t *testing.T) {
-	source := worktreeDatabaseConfig(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	hadOutbox := relationExists(t, ctx, source, "public.outbox_events")
+func TestAC5IsolatedSchemaUsesTreeRole(t *testing.T) {
+	if os.Getenv("XFLICKR_DBTEST_INTEGRATION_TEST") != "1" {
+		t.Skip("set XFLICKR_DBTEST_INTEGRATION_TEST=1 to use the configured XFlickr worktree database")
+	}
 
-	var isolatedName string
-	t.Run("create", func(t *testing.T) {
-		isolated := EmptyDatabase(t, source)
-		if isolated.Name == source.Name {
-			t.Fatal("isolated database reused the worktree database")
-		}
-		isolatedName = isolated.Name
+	base := worktreeDatabaseConfig(t)
+	scoped := IsolatedSchema(t, base)
+	if scoped.Name != base.Name || scoped.SearchPath == "" {
+		t.Fatal("isolated schema did not preserve and scope the tree database")
+	}
+	pool := Open(t, scoped)
 
-		pool, err := db.NewPool(ctx, isolated)
-		if err != nil {
-			t.Fatalf("open isolated database: %v", err)
-		}
-		defer pool.Close()
-
-		var currentDatabase string
-		if err := pool.QueryRow(ctx, "SELECT current_database()").Scan(&currentDatabase); err != nil {
-			t.Fatalf("read isolated database name: %v", err)
-		}
-		if currentDatabase != isolated.Name {
-			t.Fatal("connected database does not match the isolated test database")
-		}
-		var gooseTable *string
-		if err := pool.QueryRow(ctx, `SELECT to_regclass('public.goose_db_version')`).Scan(&gooseTable); err != nil {
-			t.Fatalf("lookup goose version table: %v", err)
-		}
-		if gooseTable != nil {
-			t.Fatal("empty database already contains goose versions")
-		}
-	})
-
-	if isolatedName == "" {
-		t.Fatal("isolated database was not created")
+	var currentDatabase, currentSchema string
+	if err := pool.QueryRow(t.Context(), "SELECT current_database(), current_schema()").Scan(&currentDatabase, &currentSchema); err != nil {
+		t.Fatalf("read isolated database and schema: %v", err)
 	}
-	admin, err := db.NewPool(ctx, source)
-	if err != nil {
-		t.Fatalf("open worktree database: %v", err)
-	}
-	defer admin.Close()
-
-	var dropped bool
-	if err := admin.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, isolatedName).Scan(&dropped); err != nil {
-		t.Fatalf("check isolated database cleanup: %v", err)
-	}
-	if !dropped {
-		t.Fatal("isolated database was not dropped")
-	}
-	var currentDatabase string
-	if err := admin.QueryRow(ctx, "SELECT current_database()").Scan(&currentDatabase); err != nil {
-		t.Fatalf("read worktree database name: %v", err)
-	}
-	if currentDatabase != source.Name {
-		t.Fatal("maintenance connection left the worktree database")
-	}
-	if hadOutbox && !relationExists(t, ctx, source, "public.outbox_events") {
-		t.Fatal("worktree outbox_events table was dropped")
+	if currentDatabase != base.Name || currentSchema == "public" {
+		t.Fatalf("isolated test connected to database %q schema %q", currentDatabase, currentSchema)
 	}
 }
 
 func worktreeDatabaseConfig(t *testing.T) config.DBConfig {
 	t.Helper()
-	if os.Getenv("XFLICKR_DBTEST_INTEGRATION_TEST") != "1" {
-		t.Skip("set XFLICKR_DBTEST_INTEGRATION_TEST=1 to use the configured XFlickr worktree database")
-	}
-
 	_, sourceFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("locate integration test source file")
@@ -111,19 +69,4 @@ func worktreeDatabaseConfig(t *testing.T) config.DBConfig {
 		t.Fatal(err)
 	}
 	return dbConfig
-}
-
-func relationExists(t *testing.T, ctx context.Context, cfg config.DBConfig, relation string) bool {
-	t.Helper()
-	pool, err := db.NewPool(ctx, cfg)
-	if err != nil {
-		t.Fatalf("open PostgreSQL database: %v", err)
-	}
-	defer pool.Close()
-
-	var name *string
-	if err := pool.QueryRow(ctx, `SELECT to_regclass($1)`, relation).Scan(&name); err != nil {
-		t.Fatalf("lookup relation %s: %v", relation, err)
-	}
-	return name != nil
 }

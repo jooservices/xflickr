@@ -126,8 +126,8 @@ func TestCreateIndexIntegration(t *testing.T) {
 	}
 }
 
-func TestWorktreeIndexPrefix(t *testing.T) {
-	database := "xflickr_wt" + strings.ToLower(t.Name()[:8])
+func TestAC5WorktreeIndexPrefix(t *testing.T) {
+	database := "wt_" + strings.ToLower(t.Name()[:8])
 	tests := []struct {
 		name     string
 		settings map[string]string
@@ -137,28 +137,28 @@ func TestWorktreeIndexPrefix(t *testing.T) {
 		{
 			name: "uses current worktree configuration",
 			settings: map[string]string{
-				"DB_DATABASE": database, "OPENSEARCH_INDEX_PREFIX": database + "_",
+				"DB_DATABASE": database, "OPENSEARCH_INDEX_PREFIX": database + "-",
 			},
-			want: database + "_",
+			want: database + "-",
 		},
 		{
 			name: "accepts legacy database setting",
 			settings: map[string]string{
-				"DB_NAME": database, "OPENSEARCH_INDEX_PREFIX": database + "_",
+				"DB_NAME": database, "OPENSEARCH_INDEX_PREFIX": database + "-",
 			},
-			want: database + "_",
+			want: database + "-",
 		},
 		{
 			name: "rejects non worktree database",
 			settings: map[string]string{
-				"DB_NAME": "xflickr_test", "OPENSEARCH_INDEX_PREFIX": "xflickr_test_",
+				"DB_NAME": "xflickr_test", "OPENSEARCH_INDEX_PREFIX": "xflickr_test-",
 			},
 			wantErr: true,
 		},
 		{
 			name: "rejects prefix for another database",
 			settings: map[string]string{
-				"DB_DATABASE": database, "OPENSEARCH_INDEX_PREFIX": database + "other_",
+				"DB_DATABASE": database, "OPENSEARCH_INDEX_PREFIX": database + "other-",
 			},
 			wantErr: true,
 		},
@@ -166,7 +166,7 @@ func TestWorktreeIndexPrefix(t *testing.T) {
 			name: "rejects conflicting database aliases",
 			settings: map[string]string{
 				"DB_DATABASE": database, "DB_NAME": database + "other",
-				"OPENSEARCH_INDEX_PREFIX": database + "_",
+				"OPENSEARCH_INDEX_PREFIX": database + "-",
 			},
 			wantErr: true,
 		},
@@ -201,9 +201,9 @@ func worktreeIndexPrefix(settings map[string]string) (string, error) {
 	if database == "" {
 		database = legacyDatabase
 	}
-	const worktreeDatabasePrefix = "xflickr_wt"
+	const worktreeDatabasePrefix = "wt_"
 	worktreeID := strings.TrimPrefix(database, worktreeDatabasePrefix)
-	if len(worktreeID) < 1 || len(worktreeID) > 12 || worktreeID == database {
+	if len(worktreeID) < 1 || len(worktreeID) > 24 || worktreeID == database {
 		return "", errors.New("invalid worktree database")
 	}
 	for _, character := range worktreeID {
@@ -214,7 +214,7 @@ func worktreeIndexPrefix(settings map[string]string) (string, error) {
 		}
 	}
 	prefix := settings["OPENSEARCH_INDEX_PREFIX"]
-	if prefix != database+"_" {
+	if prefix != database+"-" {
 		return "", errors.New("index prefix does not match worktree database")
 	}
 	return prefix, nil

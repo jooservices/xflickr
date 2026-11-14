@@ -14,7 +14,7 @@ export function observeCrawledPhoto(photoID: number): boolean {
       }),
   );
   const database = process.env.DB_DATABASE ?? config.get('DB_DATABASE') ?? '';
-  if (!database.startsWith('xflickr_wt'))
+  if (!/^wt_[a-z0-9]{1,24}$/.test(database))
     throw new Error('E2E fixtures require a worktree database');
   const env = { ...process.env };
   for (const [pg, key] of Object.entries({

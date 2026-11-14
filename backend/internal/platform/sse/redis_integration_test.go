@@ -38,7 +38,7 @@ func TestRedisPublisherDeliversProgressToSSEClient(t *testing.T) {
 			t.Fatal("invalid worktree Redis database")
 		}
 	}
-	client := redis.NewClient(&redis.Options{Addr: fmt.Sprintf("%s:%d", host, port), Password: values["REDIS_PASSWORD"], DB: database})
+	client := redis.NewClient(&redis.Options{Addr: fmt.Sprintf("%s:%d", host, port), Username: values["REDIS_USERNAME"], Password: values["REDIS_PASSWORD"], DB: database})
 	t.Cleanup(func() { _ = client.Close() })
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -50,7 +50,7 @@ func TestRedisPublisherDeliversProgressToSSEClient(t *testing.T) {
 	hub := NewHub(8)
 	listenDone := make(chan error, 1)
 	go func() { listenDone <- publisher.Listen(ctx, hub) }()
-	secondClient := redis.NewClient(&redis.Options{Addr: fmt.Sprintf("%s:%d", host, port), Password: values["REDIS_PASSWORD"], DB: database})
+	secondClient := redis.NewClient(&redis.Options{Addr: fmt.Sprintf("%s:%d", host, port), Username: values["REDIS_USERNAME"], Password: values["REDIS_PASSWORD"], DB: database})
 	t.Cleanup(func() { _ = secondClient.Close() })
 	secondHub := NewHub(8)
 	secondListenDone := make(chan error, 1)

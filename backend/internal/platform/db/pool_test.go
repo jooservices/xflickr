@@ -2,9 +2,12 @@ package db
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jooservices/xflickr/internal/platform/config"
 )
@@ -17,6 +20,7 @@ func TestNewPoolConfigUsesDatabaseAndPoolSettings(t *testing.T) {
 	cfg.User = "worker"
 	cfg.Password = "p@ss:/word"
 	cfg.SSLMode = "require"
+	cfg.SearchPath = "test_jooxf522,public"
 	cfg.MaxConns = 32
 	cfg.MinConns = 3
 	cfg.MaxConnLifetime = 45 * time.Minute
@@ -32,6 +36,9 @@ func TestNewPoolConfigUsesDatabaseAndPoolSettings(t *testing.T) {
 	}
 	if poolConfig.ConnConfig.TLSConfig == nil {
 		t.Error("SSL mode require did not configure TLS")
+	}
+	if poolConfig.ConnConfig.RuntimeParams["search_path"] != cfg.SearchPath {
+		t.Errorf("PostgreSQL search_path = %q, want %q", poolConfig.ConnConfig.RuntimeParams["search_path"], cfg.SearchPath)
 	}
 	if poolConfig.MaxConns != 32 || poolConfig.MinConns != 3 || poolConfig.MaxConnLifetime != 45*time.Minute || poolConfig.MaxConnIdleTime != 12*time.Minute || poolConfig.HealthCheckPeriod != 30*time.Second {
 		t.Errorf("pool settings = %#v", poolConfig)
@@ -61,6 +68,75 @@ func TestNewPoolConfigRejectsInvalidDatabaseAndPoolSettings(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewPoolConfigRejectsInvalidSSLMode(t *testing.T) {
+	cfg := validDatabaseConfig()
+	cfg.SSLMode = "not-a-ssl-mode"
+	if _, err := newPoolConfig(cfg); err == nil || !strings.Contains(err.Error(), "parse PostgreSQL connection settings") {
+		t.Fatalf("newPoolConfig() error = %v, want connection parsing error", err)
+	}
+}
+
+func TestParseConnectionConfigRejectsInvalidSSLMode(t *testing.T) {
+	cfg := validDatabaseConfig()
+	cfg.SSLMode = "not-a-ssl-mode"
+	if _, err := parseConnectionConfig(cfg); err == nil || !strings.Contains(err.Error(), "parse PostgreSQL connection settings") {
+		t.Fatalf("parseConnectionConfig() error = %v, want connection parsing error", err)
+	}
+}
+
+func TestNewPoolConfigOmitsEmptySearchPath(t *testing.T) {
+	cfg := validDatabaseConfig()
+	poolConfig, err := newPoolConfig(cfg)
+	if err != nil {
+		t.Fatalf("newPoolConfig() error = %v", err)
+	}
+	if _, exists := poolConfig.ConnConfig.RuntimeParams["search_path"]; exists {
+		t.Errorf("unexpected search_path runtime parameter: %q", poolConfig.ConnConfig.RuntimeParams["search_path"])
+	}
+}
+
+func TestNewPoolUsesPoolFactoryAndVerifiesConnection(t *testing.T) {
+	wantErr := errors.New("unavailable")
+	cfg := validDatabaseConfig()
+	var pool *pgxpool.Pool
+	createPool := func(ctx context.Context, config *pgxpool.Config) (*pgxpool.Pool, error) {
+		var err error
+		pool, err = pgxpool.NewWithConfig(ctx, config)
+		return pool, err
+	}
+	t.Run("invalid database settings", func(t *testing.T) {
+		invalid := cfg
+		invalid.Host = ""
+		if _, err := newPool(t.Context(), invalid, nil, nil); err == nil || !strings.Contains(err.Error(), "DB_HOST") {
+			t.Fatalf("newPool() error = %v, want DB_HOST validation error", err)
+		}
+	})
+	t.Run("pool factory failure", func(t *testing.T) {
+		_, err := newPool(t.Context(), cfg, func(context.Context, *pgxpool.Config) (*pgxpool.Pool, error) {
+			return nil, wantErr
+		}, func(context.Context, *pgxpool.Pool) error { return nil })
+		if !errors.Is(err, wantErr) || !strings.Contains(err.Error(), "create PostgreSQL pool") {
+			t.Fatalf("newPool() error = %v, want wrapped factory error", err)
+		}
+	})
+	t.Run("connection failure closes pool", func(t *testing.T) {
+		_, err := newPool(t.Context(), cfg, createPool, func(context.Context, *pgxpool.Pool) error { return wantErr })
+		if !errors.Is(err, wantErr) || !strings.Contains(err.Error(), "connect to PostgreSQL") {
+			t.Fatalf("newPool() error = %v, want wrapped ping error", err)
+		}
+		if _, err := pool.Acquire(t.Context()); err == nil {
+			t.Fatal("pool remained open after connection failure")
+		}
+	})
+	t.Run("connected pool", func(t *testing.T) {
+		got, err := newPool(t.Context(), cfg, createPool, func(context.Context, *pgxpool.Pool) error { return nil })
+		if err != nil || got != pool {
+			t.Fatalf("newPool() = (%p, %v), want (%p, nil)", got, err, pool)
+		}
+		got.Close()
+	})
 }
 
 func TestNewPoolReturnsConnectionFailure(t *testing.T) {
