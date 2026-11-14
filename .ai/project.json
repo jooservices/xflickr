@@ -279,7 +279,8 @@
     "web/src/**/*.test.ts",
     "web/src/**/*.test.tsx",
     "web/e2e/**/*.spec.ts",
-    "docker/scripts/*.py",
+    "docker/scripts/test_*.py",
+    "docker/scripts/*_test.py",
     "web/scripts/*.test.mjs"
   ],
   "testNamePatterns": [
