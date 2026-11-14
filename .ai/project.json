@@ -181,7 +181,7 @@
         "web/src/**/*.ts",
         "web/src/**/*.tsx"
       ],
-      "parallel": "unit",
+      "parallel": "unit-web",
       "expectedSeconds": 120,
       "requiresServices": [],
       "changedCmd": "npx vitest related --run {files}"
@@ -196,7 +196,7 @@
         "web/scripts/**",
         "web/e2e/**"
       ],
-      "parallel": "unit",
+      "parallel": "unit-web",
       "expectedSeconds": 60,
       "requiresServices": [],
       "changedCmd": "npm run test:scripts"
