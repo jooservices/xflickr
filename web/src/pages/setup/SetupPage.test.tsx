@@ -175,7 +175,7 @@ describe('setup wizard step 1', () => {
 
     const banner = await screen.findByTestId('wizard-key-error');
     expect(banner).toHaveTextContent('Flickr rejected this key');
-    expect(banner).toHaveFocus();
+    await waitFor(() => expect(banner).toHaveFocus());
     expect(screen.queryByTestId('wizard-key-error-key')).toBeNull();
     expect(screen.getByTestId('wizard-key-input')).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByTestId('wizard-key-input')).toHaveValue(KEY);
@@ -337,11 +337,10 @@ describe('setup wizard step 2', () => {
     await waitFor(() => expect(aborted).toBe(true));
   });
 
-  // Quarantined: flaky on CI (JOOXF-501).
-  it.skip.each([
+  it.each([
     [409, { code: 'key_not_valid' }],
     [503, { code: 'x' }],
-  ])('shows the start failure for connect %s with a working retry', async (status, body) => {
+  ])('AC1 shows the start failure for connect %s with a working retry', async (status, body) => {
     const assign = vi.fn();
     vi.stubGlobal('location', { ...window.location, assign });
     let calls = 0;
@@ -375,11 +374,10 @@ describe('setup wizard step 2', () => {
     expect(await screen.findByTestId('wizard-connect-error')).toBeInTheDocument();
   });
 
-  // Quarantined: flaky on CI (JOOXF-501).
-  it.skip.each([
+  it.each([
     ['denied', 'wizard-connect-denied', 'You declined on Flickr'],
     ['expired', 'wizard-connect-expired', 'sign-in expired'],
-  ])('shows the %s return from Flickr with Try again', async (error, testId, text) => {
+  ])('AC1 shows the %s return from Flickr with Try again', async (error, testId, text) => {
     const assign = vi.fn();
     vi.stubGlobal('location', { ...window.location, assign });
     server.use(
