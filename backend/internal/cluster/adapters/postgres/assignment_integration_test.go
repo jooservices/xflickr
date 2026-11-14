@@ -209,6 +209,14 @@ func TestAssignmentDatabaseErrorsAndCancellationIntegration(t *testing.T) {
 func TestAssignmentLookupPlanIntegration(t *testing.T) {
 	pool, ctx := openAssignmentDatabase(t)
 	fixture := newAssignmentFixture(t, ctx, pool)
+	t.Cleanup(func() {
+		var count int
+		if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM api_keys WHERE user_id=$1 AND label='plan-fixture'`, fixture.userID).Scan(&count); err != nil {
+			t.Errorf("count plan fixtures after rollback: %v", err)
+		} else if count != 0 {
+			t.Errorf("plan fixture left %d API keys behind", count)
+		}
+	})
 	now := assignmentTime()
 	node := fixture.addNode(t, ctx, "plan-node", "online", []string{"crawl"}, &now, nil)
 	const fixtureSize = 400_000
@@ -239,15 +247,11 @@ SELECT min(key_id) FROM inserted_assignments`, fixture.userID, fixture.suffix+"-
 	if err != nil {
 		t.Fatalf("seed assignment lookup plan fixture: %v", err)
 	}
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatalf("commit plan fixture: %v", err)
-	}
-
-	if _, err := pool.Exec(ctx, `ANALYZE key_assignments`); err != nil {
+	if _, err := tx.Exec(ctx, `ANALYZE key_assignments`); err != nil {
 		t.Fatalf("analyze assignment fixture: %v", err)
 	}
 	var rawPlan []byte
-	if err := pool.QueryRow(ctx, `
+	if err := tx.QueryRow(ctx, `
 EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
 SELECT key_id, node, since, reason FROM key_assignments WHERE key_id = $1`, keyID).Scan(&rawPlan); err != nil {
 		t.Fatalf("explain assignment lookup: %v", err)

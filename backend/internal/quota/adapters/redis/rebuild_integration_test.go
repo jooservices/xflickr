@@ -31,6 +31,31 @@ func integrationRoot(t *testing.T) string {
 	return filepath.Clean(filepath.Join(filepath.Dir(sourceFile), "../../../../../"))
 }
 
+// singleKeyUsage keeps the flusher fixture independent of other keys in the worktree database.
+type singleKeyUsage struct {
+	app.UsageStore
+	keyID int64
+}
+
+func (u singleKeyUsage) KeyIDs(ctx context.Context) ([]int64, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return []int64{u.keyID}, nil
+}
+
+type singleKeyCounters struct {
+	app.CounterStore
+	keyID int64
+}
+
+func (c singleKeyCounters) Snapshot(ctx context.Context, keyID int64) (app.Usage, bool, error) {
+	if keyID != c.keyID {
+		return app.Usage{}, false, fmt.Errorf("unexpected fixture key %d", keyID)
+	}
+	return c.CounterStore.Snapshot(ctx, keyID)
+}
+
 func TestRedisLossMidWindowDoesNotOverspend(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use the shared worktree database")
@@ -80,6 +105,9 @@ func TestRedisLossMidWindowDoesNotOverspend(t *testing.T) {
 	if err := pool.QueryRow(ctx, `INSERT INTO api_keys (user_id, label, key_public, secret_sealed, per_hour_limit, per_second_limit, burst) VALUES ($1, 'quota-107', 'k107', '{}'::jsonb, 20, 100, 100) RETURNING id`, userID).Scan(&keyID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO api_keys (user_id, label, key_public, secret_sealed, per_hour_limit, per_second_limit, burst) VALUES ($1, 'unrelated', $2, '{}'::jsonb, 20, 100, 100)`, userID, email+"-other"); err != nil {
+		t.Fatal(err)
+	}
 	prefix = fmt.Sprintf("%sjooxf107:%d:", prefix, keyID)
 	clearKeys := func() {
 		for _, name := range (Governor{Prefix: prefix}).keys(keyID) {
@@ -98,7 +126,7 @@ func TestRedisLossMidWindowDoesNotOverspend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	flusher := app.Flusher{Store: store, Counters: counters}
+	flusher := app.Flusher{Store: singleKeyUsage{UsageStore: store, keyID: keyID}, Counters: singleKeyCounters{CounterStore: counters, keyID: keyID}}
 
 	granted := func(n int) int {
 		var wg sync.WaitGroup
