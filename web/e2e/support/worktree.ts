@@ -20,6 +20,7 @@ export function worktreeSQL(sql: string): string {
       '-X',
       '-A',
       '-t',
+      '-q',
       '-v',
       'ON_ERROR_STOP=1',
       '-h',

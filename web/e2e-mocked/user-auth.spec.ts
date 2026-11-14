@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test';
 
-import { signIn } from '../e2e/support/auth';
+import { signInAs as signIn } from '../e2e/suites/auth';
 import { runScenario } from '../e2e/support/scenario';
 import { mockApi, test } from './support';
 

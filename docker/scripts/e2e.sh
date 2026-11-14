@@ -66,9 +66,15 @@ fi
 
 printf 'Resetting worktree database %s...\n' "$db_name"
 postgres_container="${E2E_POSTGRES_CONTAINER:-workspaces-shared-postgres-1}"
-docker exec -i -e PGPASSWORD="$(env_value DB_PASSWORD)" -e PGOPTIONS="-c client_min_messages=warning" "$postgres_container" \
-	psql -v ON_ERROR_STOP=1 -q -U "$db_user" -d "$db_name" \
-	-c 'DROP SCHEMA public CASCADE' -c 'CREATE SCHEMA public' >/dev/null
+reset_sql=(-c 'DROP SCHEMA public CASCADE' -c 'CREATE SCHEMA public')
+if docker container inspect "$postgres_container" >/dev/null 2>&1; then
+	docker exec -i -e PGPASSWORD="$(env_value DB_PASSWORD)" -e PGOPTIONS="-c client_min_messages=warning" "$postgres_container" \
+		psql -v ON_ERROR_STOP=1 -q -U "$db_user" -d "$db_name" "${reset_sql[@]}" >/dev/null
+else
+	# The shared PostgreSQL is a native service (the Dev Workspaces VM): reach it with the host psql on its loopback port.
+	PGPASSWORD="$(env_value DB_PASSWORD)" PGOPTIONS="-c client_min_messages=warning" \
+		psql -h 127.0.0.1 -p 15435 -v ON_ERROR_STOP=1 -q -U "$db_user" -d "$db_name" "${reset_sql[@]}" >/dev/null
+fi
 
 # Host-side overrides of the generated .env, which names the container-network hosts. The Redis prefix is unique per run.
 export DB_HOST=127.0.0.1 DB_PORT=15435 REDIS_HOST=127.0.0.1 REDIS_PORT=16382
@@ -77,7 +83,7 @@ export REDIS_PREFIX
 export NODE_ID=e2e OPENSEARCH_INDEX_PREFIX="xflickr_${run_id}_"
 master_key="$(openssl rand -base64 32 | tr -d '\n')"
 export XFLICKR_MASTER_KEYS="e2e-v1:${master_key}" XFLICKR_MASTER_KEY_ACTIVE=e2e-v1
-export HTTP_PORT="$api_port" XFLICKR_WEB_DIR="$ROOT/web/dist" XFLICKR_ROLES=api,scheduler,crawl
+export HTTP_PORT="$api_port" XFLICKR_WEB_DIR="$ROOT/web/dist" XFLICKR_ROLES=api,scheduler,crawl,media
 export BLOB_LOCAL_DIR="$STACK_DIR/blobs"
 export FLICKR_OAUTH_CALLBACK_URL="http://127.0.0.1:${api_port}/flickr-accounts/callback"
 export FLICKR_UPSTREAM_URL="http://127.0.0.1:${fake_port}"
@@ -114,5 +120,24 @@ if [[ "${E2E_HOLD:-}" == 1 ]]; then
 	while true; do sleep 1; done
 fi
 
+# The browser runs on the workspace's E2E server (E2E_HOST in the Workspaces .env); the app and fakeflickr stay here and the
+# server reaches them through reverse tunnels. Outside a Workspaces checkout the tests use the local browser.
+find_e2e_browser() {
+	local candidate="$ROOT"
+	while [[ "$candidate" != / ]]; do
+		if [[ -x "$candidate/scripts/dev/e2e-browser" ]]; then
+			printf '%s\n' "$candidate/scripts/dev/e2e-browser"
+			return 0
+		fi
+		candidate="$(dirname -- "$candidate")"
+	done
+	return 1
+}
 rm -rf "$ROOT/web/.e2e-state"
-"$SCRIPT_DIR/playwright.sh" "$@"
+if e2e_browser="$(find_e2e_browser)"; then
+	playwright_version="$("$node_bin" -p "require('$ROOT/web/package.json').devDependencies['@playwright/test']")"
+	unset PLAYWRIGHT_CHROME_CHANNEL
+	"$e2e_browser" --playwright "$playwright_version" --reverse "$api_port" --reverse "$fake_port" -- "$SCRIPT_DIR/playwright.sh" "$@"
+else
+	"$SCRIPT_DIR/playwright.sh" "$@"
+fi

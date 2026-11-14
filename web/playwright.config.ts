@@ -6,7 +6,7 @@ const baseURL = process.env.E2E_BASE_URL;
 const channel = process.env.PLAYWRIGHT_CHROME_CHANNEL;
 
 export default defineConfig({
-  testDir: './e2e',
+  testDir: './e2e/scenarios',
   // The journeys build on each other's state (first user, keys, accounts), so the suite runs in file order.
   fullyParallel: false,
   workers: 1,
