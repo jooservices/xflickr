@@ -1,6 +1,7 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as keyApi from '../../features/keys/api';
 import { renderApp, userSession } from '../../test/render';
 import { server } from '../../test/server';
 
@@ -72,6 +73,14 @@ async function fillAndSubmit() {
   fireEvent.click(screen.getByTestId('keys-add-submit'));
 }
 
+function deferred() {
+  let release = () => {};
+  const wait = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { wait, release: () => release() };
+}
+
 beforeEach(() => {
   leaveTo.mockReset();
 });
@@ -126,6 +135,52 @@ describe('KeysPage states', () => {
     expect(await screen.findByTestId('keys-connect-notice')).toHaveTextContent(
       'The Flickr sign-in expired. Start again.',
     );
+  });
+
+  it('does not start a second connection while a retry is pending', async () => {
+    const pending = deferred();
+    let calls = 0;
+    world([apiKey(1)], [usageItem(1)]);
+    server.use(
+      http.post('*/flickr-accounts/connect', async () => {
+        calls += 1;
+        await pending.wait;
+        return HttpResponse.json({ authorize_url: 'https://flickr.test/authorize' });
+      }),
+    );
+    try {
+      open('/keys?connect_error=invalid_state');
+      await screen.findByTestId('keys-accounts-none');
+      fireEvent.click(await screen.findByTestId('keys-connect-retry'));
+      await waitFor(() => expect(calls).toBe(1));
+      fireEvent.click(screen.getByTestId('keys-connect-retry'));
+      expect(calls).toBe(1);
+      pending.release();
+      await waitFor(() => expect(leaveTo).toHaveBeenCalledWith('https://flickr.test/authorize'));
+    } finally {
+      pending.release();
+    }
+  });
+
+  it.each([
+    ['denied', 'You declined on Flickr'],
+    ['authorization_denied', 'You declined on Flickr'],
+    ['expired', 'The Flickr sign-in expired'],
+    ['unexpected', 'Could not start the Flickr connection'],
+  ])('shows and dismisses the %s callback notice', async (code, message) => {
+    world([apiKey(1, { status: 'invalid' })], [usageItem(1)]);
+    open(`/keys?connect_error=${code}`);
+    expect(await screen.findByTestId('keys-connect-notice')).toHaveTextContent(message);
+    fireEvent.click(screen.getByTestId('keys-connect-retry'));
+    expect(leaveTo).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('keys-connect-dismiss'));
+    expect(screen.queryByTestId('keys-connect-notice')).toBeNull();
+  });
+
+  it('uses the latest account when the connected identifier is invalid', async () => {
+    world([apiKey(1)], [usageItem(1)], [account()]);
+    open('/keys?connected=invalid');
+    expect(await screen.findByTestId('keys-connect-notice')).toHaveTextContent('Anna is connected');
   });
 
   it.each([
@@ -329,6 +384,117 @@ describe('KeysPage cards', () => {
     await waitFor(() => expect(leaveTo).toHaveBeenCalledWith('https://flickr.test/authorize'));
   });
 
+  it('clears the toast timers when the page is gone', async () => {
+    world([apiKey(2)], [usageItem(2)]);
+    server.use(
+      http.post('*/flickr-accounts/connect', () =>
+        HttpResponse.json({ code: 'key_not_valid' }, { status: 409 }),
+      ),
+    );
+    const view = open();
+    fireEvent.click(await screen.findByTestId('keys-accounts-connect-2'));
+    expect(await screen.findByTestId('keys-toast')).toBeInTheDocument();
+
+    const clear = vi.spyOn(window, 'clearTimeout');
+    view.unmount();
+    expect(clear).toHaveBeenCalled();
+    clear.mockRestore();
+  });
+
+  it('removes a toast when its timer completes', async () => {
+    world([apiKey(2)], [usageItem(2)]);
+    server.use(
+      http.post('*/flickr-accounts/connect', () =>
+        HttpResponse.json({ code: 'key_not_valid' }, { status: 409 }),
+      ),
+    );
+    open();
+    const timeout = vi.spyOn(window, 'setTimeout');
+    try {
+      fireEvent.click(await screen.findByTestId('keys-accounts-connect-2'));
+      expect(await screen.findByTestId('keys-toast')).toBeInTheDocument();
+      const timer = timeout.mock.calls.find(([, delay]) => delay === 3000)?.[0];
+      expect(typeof timer).toBe('function');
+      act(() => (timer as () => void)());
+      expect(screen.queryByTestId('keys-toast')).toBeNull();
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it('shows the remove dialog while accounts are still loading', async () => {
+    const pending = deferred();
+    world([apiKey(1)], [usageItem(1)]);
+    server.use(
+      http.get('*/flickr-accounts', async () => {
+        await pending.wait;
+        return HttpResponse.json([]);
+      }),
+    );
+    try {
+      open();
+      fireEvent.click(await screen.findByTestId('keys-card-remove'));
+      expect(screen.getByTestId('keys-remove-modal')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('keys-remove-cancel'));
+      pending.release();
+      await screen.findByTestId('keys-accounts-none');
+    } finally {
+      pending.release();
+    }
+  });
+
+  it('sends one removal when confirmation is clicked twice immediately', async () => {
+    const pending = deferred();
+    let calls = 0;
+    world([apiKey(1)], [usageItem(1)]);
+    server.use(
+      http.delete('*/keys/1', async () => {
+        calls += 1;
+        await pending.wait;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    try {
+      open();
+      fireEvent.click(await screen.findByTestId('keys-card-remove'));
+      const confirm = screen.getByTestId('keys-remove-confirm');
+      act(() => {
+        confirm.click();
+        confirm.click();
+      });
+      await waitFor(() => expect(calls).toBe(1));
+      pending.release();
+      await screen.findByTestId('keys-empty');
+    } finally {
+      pending.release();
+    }
+  });
+
+  it('finishes removal if the key cache is cleared during the request', async () => {
+    const pending = deferred();
+    let calls = 0;
+    world([apiKey(1)], [usageItem(1)]);
+    server.use(
+      http.delete('*/keys/1', async () => {
+        calls += 1;
+        await pending.wait;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    try {
+      const { client } = open();
+      fireEvent.click(await screen.findByTestId('keys-card-remove'));
+      fireEvent.click(screen.getByTestId('keys-remove-confirm'));
+      await waitFor(() => expect(calls).toBe(1));
+      act(() => client.removeQueries({ queryKey: ['/keys'], exact: true }));
+      expect(client.getQueryData(['/keys'])).toBeUndefined();
+      pending.release();
+      expect(await screen.findByTestId('keys-toast')).toBeInTheDocument();
+    } finally {
+      pending.release();
+    }
+  });
+
   it('starts the connection from a key without accounts and reports a failure', async () => {
     world([apiKey(2)], [usageItem(2)]);
     server.use(
@@ -437,6 +603,26 @@ describe('KeysPage cards', () => {
 });
 
 describe('Add API key', () => {
+  it('adds a key when the initial list is still loading', async () => {
+    const pending = deferred();
+    const loadKeys = vi.spyOn(keyApi, 'loadKeys').mockImplementation(async () => {
+      await pending.wait;
+      return [];
+    });
+    server.use(
+      http.post('*/keys', () => HttpResponse.json(apiKey(7, { label: 'Mine' }), { status: 201 })),
+    );
+    try {
+      open('/keys?add=1');
+      await screen.findByTestId('keys-add-modal');
+      await fillAndSubmit();
+      expect(await screen.findByTestId('keys-toast')).toHaveTextContent('Key checked and saved');
+    } finally {
+      pending.release();
+      loadKeys.mockRestore();
+    }
+  });
+
   it('opens from ?add=1, validates, adds the key, and removes the query', async () => {
     world([]);
     const posted: unknown[] = [];

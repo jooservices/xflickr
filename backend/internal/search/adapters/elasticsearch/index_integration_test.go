@@ -127,6 +127,7 @@ func TestCreateIndexIntegration(t *testing.T) {
 }
 
 func TestWorktreeIndexPrefix(t *testing.T) {
+	database := "xflickr_wt" + strings.ToLower(t.Name()[:8])
 	tests := []struct {
 		name     string
 		settings map[string]string
@@ -136,16 +137,16 @@ func TestWorktreeIndexPrefix(t *testing.T) {
 		{
 			name: "uses current worktree configuration",
 			settings: map[string]string{
-				"DB_DATABASE": "xflickr_wtsearch42", "OPENSEARCH_INDEX_PREFIX": "xflickr_wtsearch42_",
+				"DB_DATABASE": database, "OPENSEARCH_INDEX_PREFIX": database + "_",
 			},
-			want: "xflickr_wtsearch42_",
+			want: database + "_",
 		},
 		{
 			name: "accepts legacy database setting",
 			settings: map[string]string{
-				"DB_NAME": "xflickr_wtsearch42", "OPENSEARCH_INDEX_PREFIX": "xflickr_wtsearch42_",
+				"DB_NAME": database, "OPENSEARCH_INDEX_PREFIX": database + "_",
 			},
-			want: "xflickr_wtsearch42_",
+			want: database + "_",
 		},
 		{
 			name: "rejects non worktree database",
@@ -157,22 +158,22 @@ func TestWorktreeIndexPrefix(t *testing.T) {
 		{
 			name: "rejects prefix for another database",
 			settings: map[string]string{
-				"DB_DATABASE": "xflickr_wtsearch42", "OPENSEARCH_INDEX_PREFIX": "xflickr_wtjooxf134_",
+				"DB_DATABASE": database, "OPENSEARCH_INDEX_PREFIX": database + "other_",
 			},
 			wantErr: true,
 		},
 		{
 			name: "rejects conflicting database aliases",
 			settings: map[string]string{
-				"DB_DATABASE": "xflickr_wtsearch42", "DB_NAME": "xflickr_wtother42",
-				"OPENSEARCH_INDEX_PREFIX": "xflickr_wtsearch42_",
+				"DB_DATABASE": database, "DB_NAME": database + "other",
+				"OPENSEARCH_INDEX_PREFIX": database + "_",
 			},
 			wantErr: true,
 		},
 		{
 			name: "rejects missing prefix",
 			settings: map[string]string{
-				"DB_DATABASE": "xflickr_wtsearch42",
+				"DB_DATABASE": database,
 			},
 			wantErr: true,
 		},

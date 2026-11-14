@@ -292,7 +292,8 @@ func (db *snapshotDB) Query(_ context.Context, query string, _ ...any) (pgx.Rows
 	if db.queryErr != nil {
 		return nil, db.queryErr
 	}
-	if strings.Contains(query, "FROM app_settings") {
+	// The keys query reads the settings as sub-selects; only the settings query itself reads them as its table.
+	if strings.Contains(query, "FROM app_settings") && !strings.Contains(query, "FROM api_keys k") {
 		rows := make([][]any, 0, len(db.settings))
 		for key, value := range db.settings {
 			rows = append(rows, []any{key, value})

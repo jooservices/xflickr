@@ -1,0 +1,10 @@
+# Gitleaks configuration for XFlickr: the default rules plus one reviewed exception.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fake Flickr API keys the E2E tests give to fakeflickr; they are not credentials (reviewed by the lead)"
+regexTarget = "line"
+regexes = [
+  '''(VALID_KEY|VALID_SECRET|DEAD_KEY)\s*=\s*.(0123456789abcdef|deadbeefdeadbeef)''',
+]

@@ -2,18 +2,13 @@
   "common.retry": "Try again",
   "library.action.clear-selection": "Clear selection",
   "library.action.done-selecting": "Done selecting",
-  "library.action.download": "Download tray ({{count}})",
   "library.action.load-more": "Load more",
   "library.action.select": "Select photos",
   "library.action.select-visible": "Select visible",
-  "library.empty.cta-account": "Connect a Flickr account",
   "library.empty.filtered": "No photos match these filters.",
   "library.empty.text": "Photos you mark as favorites on Flickr appear here.",
   "library.empty.title": "No favorite photos yet",
-  "library.error.action": "That action failed. Your selection is still here.",
-  "library.error.key": "Add or check a valid Flickr API key to download.",
   "library.error.more": "More photos could not be loaded.",
-  "library.error.storage": "Temporary download storage is full. Try again later.",
   "library.error.text": "Check your connection and try again.",
   "library.error.title": "We couldn’t load your library.",
   "library.filters.captioned": "Captioned",
@@ -48,7 +43,5 @@
   "library.status.loading": "Loading your library…",
   "library.status.stale": "Your loaded photos may be out of date.",
   "library.title": "Library",
-  "library.tray.add": "Add {{title}} to download tray",
-  "library.selection.limit": "The selection limit is 500 photos. Selected photos have not been added to the download tray.",
-  "library.tray.remove": "Remove {{title}} from download tray"
+  "library.selection.limit": "The selection limit is 500 photos. Selected photos have not been added to the download tray."
 }

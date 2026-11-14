@@ -1,0 +1,331 @@
+{
+  "identity": {
+    "name": "Viet Vu",
+    "email": "jooservices@gmail.com",
+    "githubUser": "soulevilx",
+    "sshKey": "~/.ssh/github_ed25519",
+    "forbiddenTraces": [
+      "(?i)co-authored-by:.*(claude|anthropic|codex|openai|chatgpt|gpt|copilot|gemini|grok|opencode|deepseek|cursor)",
+      "(?i)generated (with|by)\\b",
+      "🤖",
+      "(?i)\\bclaude code\\b"
+    ]
+  },
+  "setup": [
+    {
+      "name": "env",
+      "cmd": "python3 docker/scripts/worktree_env.py {ticket_id}",
+      "cwd": "."
+    },
+    {
+      "name": "web-deps",
+      "cmd": "npm ci --no-audit --no-fund",
+      "cwd": "web"
+    },
+    {
+      "name": "go-deps",
+      "cmd": "go mod download",
+      "cwd": "backend"
+    }
+  ],
+  "stages": [
+    {
+      "name": "lint-go",
+      "group": "static",
+      "order": 1,
+      "cmd": "make lint",
+      "cwd": ".",
+      "when": [
+        "backend/**/*.go",
+        "docker/scripts/**",
+        ".github/**",
+        ".ai/project.json"
+      ],
+      "parallel": "static",
+      "expectedSeconds": 90,
+      "requiresServices": [],
+      "changedCmd": "make lint"
+    },
+    {
+      "name": "architecture",
+      "group": "static",
+      "order": 1,
+      "cmd": "make arch-lint",
+      "cwd": ".",
+      "when": [
+        "backend/**/*.go",
+        ".go-arch-lint.yml"
+      ],
+      "parallel": "static",
+      "expectedSeconds": 120,
+      "requiresServices": [],
+      "changedCmd": "make arch-lint"
+    },
+    {
+      "name": "complexity",
+      "group": "static",
+      "order": 1,
+      "cmd": "python3 docker/scripts/go_function_gate.py",
+      "cwd": ".",
+      "when": [
+        "backend/**/*.go"
+      ],
+      "parallel": "static",
+      "expectedSeconds": 30,
+      "requiresServices": [],
+      "changedCmd": "python3 docker/scripts/go_function_gate.py"
+    },
+    {
+      "name": "typecheck-web",
+      "group": "static",
+      "order": 1,
+      "cmd": "npx tsc --noEmit",
+      "cwd": "web",
+      "when": [
+        "web/**/*.ts",
+        "web/**/*.tsx"
+      ],
+      "parallel": "static",
+      "expectedSeconds": 90,
+      "requiresServices": [],
+      "changedCmd": "npx tsc --noEmit"
+    },
+    {
+      "name": "lint-web",
+      "group": "static",
+      "order": 1,
+      "cmd": "npx eslint src",
+      "cwd": "web",
+      "when": [
+        "web/src/**/*.ts",
+        "web/src/**/*.tsx"
+      ],
+      "parallel": "static",
+      "expectedSeconds": 90,
+      "requiresServices": [],
+      "changedCmd": "npx eslint {files}"
+    },
+    {
+      "name": "format-web",
+      "group": "static",
+      "order": 1,
+      "cmd": "npx prettier --check .",
+      "cwd": "web",
+      "when": [
+        "web/**/*.ts",
+        "web/**/*.tsx",
+        "web/**/*.css",
+        "web/**/*.json"
+      ],
+      "parallel": "static",
+      "expectedSeconds": 60,
+      "requiresServices": [],
+      "changedCmd": "npx prettier --check {files}"
+    },
+    {
+      "name": "i18n-web",
+      "group": "static",
+      "order": 1,
+      "cmd": "node scripts/check-i18n.mjs",
+      "cwd": "web",
+      "when": [
+        "web/src/**"
+      ],
+      "parallel": "static",
+      "expectedSeconds": 30,
+      "requiresServices": [],
+      "changedCmd": "node scripts/check-i18n.mjs"
+    },
+    {
+      "name": "e2e-layers",
+      "group": "static",
+      "order": 1,
+      "cmd": "node scripts/check-e2e-layers.mjs",
+      "cwd": "web",
+      "when": [
+        "web/e2e/**",
+        "web/scripts/check-e2e-layers*"
+      ],
+      "parallel": "static",
+      "expectedSeconds": 30,
+      "requiresServices": [],
+      "changedCmd": "node scripts/check-e2e-layers.mjs"
+    },
+    {
+      "name": "secrets",
+      "group": "static",
+      "order": 1,
+      "cmd": "gitleaks git --no-banner --redact --gitleaks-ignore-path .gitleaksignore .",
+      "cwd": ".",
+      "when": [],
+      "parallel": "static",
+      "expectedSeconds": 30,
+      "requiresServices": [],
+      "changedCmd": "gitleaks git --no-banner --redact --gitleaks-ignore-path .gitleaksignore ."
+    },
+    {
+      "name": "unit-go",
+      "group": "test",
+      "order": 2,
+      "cmd": "bash ../docker/scripts/coverage-gate.sh",
+      "cwd": "backend",
+      "when": [
+        "backend/**/*.go"
+      ],
+      "parallel": "unit",
+      "expectedSeconds": 600,
+      "requiresServices": [],
+      "changedCmd": "python3 ../docker/scripts/go_changed.py unit {files}"
+    },
+    {
+      "name": "unit-web",
+      "group": "test",
+      "order": 2,
+      "cmd": "npm run test",
+      "cwd": "web",
+      "when": [
+        "web/src/**/*.ts",
+        "web/src/**/*.tsx"
+      ],
+      "parallel": "unit-web",
+      "expectedSeconds": 120,
+      "requiresServices": [],
+      "changedCmd": "npx vitest related --run {files}"
+    },
+    {
+      "name": "scripts-web",
+      "group": "test",
+      "order": 2,
+      "cmd": "npm run test:scripts",
+      "cwd": "web",
+      "when": [
+        "web/scripts/**",
+        "web/e2e/**"
+      ],
+      "parallel": "unit-web",
+      "expectedSeconds": 60,
+      "requiresServices": [],
+      "changedCmd": "npm run test:scripts"
+    },
+    {
+      "name": "integration",
+      "group": "test",
+      "order": 3,
+      "cmd": "bash ../docker/scripts/test-integration.sh",
+      "cwd": "backend",
+      "when": [
+        "backend/**/*.go"
+      ],
+      "parallel": "",
+      "expectedSeconds": 900,
+      "requiresServices": [
+        "postgres",
+        "redis"
+      ],
+      "changedCmd": "python3 ../docker/scripts/go_changed.py integration {files}"
+    },
+    {
+      "name": "e2e",
+      "group": "test",
+      "order": 4,
+      "cmd": "make e2e",
+      "cwd": ".",
+      "when": [
+        "web/**",
+        "backend/**",
+        "contracts/**"
+      ],
+      "parallel": "",
+      "expectedSeconds": 600,
+      "requiresServices": [
+        "postgres",
+        "redis"
+      ],
+      "changedCmd": "make e2e"
+    },
+    {
+      "name": "security-go",
+      "group": "analysis",
+      "order": 5,
+      "cmd": "bash docker/scripts/security-audit-backend.sh",
+      "cwd": ".",
+      "when": ["backend/**/*.go", "backend/go.mod", "backend/go.sum"],
+      "parallel": "audit",
+      "expectedSeconds": 90,
+      "requiresServices": [],
+      "changedCmd": "bash docker/scripts/security-audit-backend.sh"
+    },
+    {
+      "name": "security-web",
+      "group": "analysis",
+      "order": 5,
+      "cmd": "bash docker/scripts/security-audit-web.sh",
+      "cwd": ".",
+      "when": ["web/package.json", "web/package-lock.json"],
+      "parallel": "audit",
+      "expectedSeconds": 60,
+      "requiresServices": [],
+      "changedCmd": "bash docker/scripts/security-audit-web.sh"
+    },
+    {
+      "name": "sonar",
+      "group": "analysis",
+      "order": 6,
+      "cmd": "{workspace}/scripts/dev/sonar",
+      "cwd": ".",
+      "when": ["backend/**", "web/src/**", "sonar-project.properties"],
+      "parallel": "",
+      "expectedSeconds": 300,
+      "requiresServices": [],
+      "changedCmd": "{workspace}/scripts/dev/sonar"
+    }
+  ],
+  "testGlobs": [
+    "backend/**/*_test.go",
+    "web/src/**/*.test.ts",
+    "web/src/**/*.test.tsx",
+    "web/e2e/**/*.spec.ts",
+    "docker/scripts/test_*.py",
+    "docker/scripts/*_test.py",
+    "web/scripts/*.test.mjs"
+  ],
+  "testNamePatterns": [
+    "func (Test[A-Za-z0-9_]+)\\(",
+    "(?:it|test)\\(\\s*['\"`]([^'\"`]+)['\"`]",
+    "(?m)^\\s*def\\s+(test_[A-Za-z0-9_]+)\\("
+  ],
+  "commitMessage": {
+    "regex": "^(?=.{1,120}$)(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\\([^()\\r\\n]+\\): [A-Z](?:.*[^.])? \\([A-Z][A-Z0-9]*-[0-9]+\\)$",
+    "rules": {
+      "requireTicketKeyMatch": true
+    }
+  },
+  "protectedBranches": [
+    "develop",
+    "main"
+  ],
+  "ticketKeyRegex": "JOOXF-[0-9]+",
+  "forbiddenPatterns": [
+    "//\\s*nolint",
+    "eslint-disable",
+    "@ts-ignore"
+  ],
+  "mechanicalPaths": [
+    "**/*.md",
+    "docs/**"
+  ],
+  "skills": [
+    "engineering-principles",
+    "go-coding-practice",
+    "node-coding-practice",
+    "react-architecture"
+  ],
+  "touchPoints": [
+    "backend/**",
+    "web/**",
+    "contracts/**",
+    "docker/**",
+    "deploy/**",
+    "docs/**"
+  ]
+}

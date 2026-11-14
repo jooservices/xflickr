@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -307,8 +308,17 @@ func TestWeightsRescoreAdvancesAcrossBatches(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
 	prefix := fmt.Sprintf("rescore-batches-%d", time.Now().UnixNano())
-	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,state,score,depth,created_at)
-		SELECT 'rescore-test',$1||'-'||g,'pending',0,g,now() FROM generate_series(1,5) AS g`, prefix); err != nil {
+	var userID int64
+	if err := tx.QueryRow(ctx, `INSERT INTO users(email,password_hash,role) VALUES($1,'unused','user') RETURNING id`, prefix+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	// The rescore walks every pending item of the database, so set the others aside inside this transaction (it is
+	// rolled back) and count only this test's five.
+	if _, err := tx.Exec(ctx, `UPDATE work_items SET state='done' WHERE state='pending'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO work_items(kind,subject_key,user_id,state,score,depth,created_at)
+		SELECT 'rescore-test',$1||'-'||g,$2,'pending',0,g,now() FROM generate_series(1,5) AS g`, prefix, userID); err != nil {
 		t.Fatal(err)
 	}
 	store := Store{database: transactionScheduleDatabase{tx: tx}}
@@ -369,14 +379,19 @@ func TestWeightsRescoreHandlesExpiredSelectionWithMatchingFingerprint(t *testing
 	}
 	store := Store{database: transactionScheduleDatabase{tx: tx}}
 	weights := domain.ScoreWeights{PlanWeight: 10, DirectAction: 100, Starred: 20, Depth: 5, AgeMinutes: .1}
-	wantFingerprint, err := store.ComputeWeightsFingerprint(ctx, weights, 4)
+	// work_items_static_score reads the maximum depth from the settings, so the job must score with the same value.
+	var maxDepth int
+	if err := tx.QueryRow(ctx, `SELECT (value #>> '{}')::int FROM app_settings WHERE key = 'max_depth'`).Scan(&maxDepth); err != nil {
+		t.Fatal(err)
+	}
+	wantFingerprint, err := store.ComputeWeightsFingerprint(ctx, weights, maxDepth)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := store.StoreWeightsFingerprint(ctx, wantFingerprint); err != nil {
 		t.Fatal(err)
 	}
-	job := app.WeightsRescore{Store: store, BatchSize: 10, MaxDepth: 4, Weights: weights}
+	job := app.WeightsRescore{Store: store, BatchSize: 10, MaxDepth: maxDepth, Weights: weights}
 	if got, err := job.RunBatch(ctx); err != nil || got != 1 {
 		t.Fatalf("RunBatch for expired selection = %d, %v; want 1", got, err)
 	}
@@ -385,7 +400,8 @@ func TestWeightsRescoreHandlesExpiredSelectionWithMatchingFingerprint(t *testing
 		FROM work_items WHERE subject_key=$1`, prefix).Scan(&score, &expected); err != nil {
 		t.Fatal(err)
 	}
-	if score != expected {
+	// Scores are floating point: the two computations may differ in the last digit.
+	if math.Abs(score-expected) > 1e-6 {
 		t.Fatalf("expired selection score = %v, want no direct-action bonus %v", score, expected)
 	}
 }

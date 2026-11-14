@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test';
 import type { ConsoleMessage, Page, Request, Response } from '@playwright/test';
-import allowlist from './allowlist.json' with { type: 'json' };
+import allowlist from '../support/allowlist.json' with { type: 'json' };
 
 type Allowed = { method: string; path: string; status: number; reason: string };
 

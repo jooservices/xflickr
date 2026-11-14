@@ -6,26 +6,35 @@ worktree database and `fakeflickr` as the Flickr upstream. Nothing in it mocks a
 (The mocked specs moved to `web/e2e-mocked`; `npm run e2e:mocked` runs them. They check UI states only.
 `language-switch.spec.ts` switches to Vietnamese, walks login/register/keys/crawl/profile, and switches back.)
 
-## Compose reusable steps
+## Three layers
 
-A `Step` is `(page: Page) => Promise<void>`. Declare a scenario as a readonly
-array of steps and pass it to `runScenario`:
+Every E2E test is written in three layers under `web/e2e`; `node scripts/check-e2e-layers.mjs` (part of
+`npm run lint`) fails when a file breaks them.
 
-```ts
-import { signIn } from "./support/auth";
-import { runScenario } from "./support/scenario";
+| Layer    | Directory    | What it is                                                                             | May call              |
+| -------- | ------------ | -------------------------------------------------------------------------------------- | --------------------- |
+| Step     | `steps/`     | One small action or one check on the page (open a page, fill a field, expect a banner) | the page, `support/`  |
+| Suite    | `suites/`    | Steps combined into one feature (sign in, add a key, revoke sessions)                  | steps, `support/`     |
+| Scenario | `scenarios/` | One complete test (`test(...)`) that calls suites                                      | suites, `support/env` |
 
-await runScenario(page, [(p) => signIn(p, email, password)]);
-```
+`support/` is infrastructure without a layer: the environment (`env.ts`), data factories that seed and query the
+worktree database (`factories.ts`, `worktree.ts`, `catalog.ts`) and the route reader (`routes.ts`). A scenario or a
+suite never touches the page directly; it calls a step. Playwright runs `scenarios/` in file order, so the numbered
+files build on each other's state (first user, keys, account).
 
-Steps run sequentially, each awaited before the next begins. The scenario
-completes only after every step completes. A rejected step stops execution;
-its original error propagates unchanged and later steps do not run. `signIn`
-submits the existing form and waits for either the user or admin shell.
+Third parties are mocked and the project's own parts run for real: `fakeflickr` stands in for Flickr (its
+authorize endpoint always succeeds) and the data comes from factories and the crawl of `fakeflickr`'s dataset. See
+the `dev-check` skill for the rules every project follows.
 
-The real-stack sign-out/sign-in test and mocked sign-in/sign-out test compose
-this same step. The mocked test proves UI composition with fake API responses;
-it does not replace real-stack integration evidence.
+The mocked sign-in test in `web/e2e-mocked` reuses the `signInAs` suite; it proves UI composition with fake API
+responses and does not replace real-stack evidence.
+
+### Data the scenarios seed
+
+Every scenario runs against the real backend. The library scenario seeds 501 favorites of the connected account, the
+admin defaults scenario seeds a plan and changes a member's role for one visit, and the admin nodes scenario relabels
+the existing key; each one puts the database back (`support/factories.ts`). Only `fakeflickr` stands in for a third
+party.
 
 ### First-slice status and deferred work (JOOXF-187)
 
@@ -57,11 +66,11 @@ E2E_HOLD=1 ./docker/scripts/e2e.sh   # start the stack and keep it up for manual
 `docker/scripts/e2e.sh` needs the generated worktree `.env` and the shared services (`make dev-up`). It:
 
 1. builds `xflickr` and `fakeflickr` through the shared Go runtime and the web bundle through the Node runtime;
-2. resets the worktree database (`DROP SCHEMA public`, then `migrate up`); it refuses any database whose name
+2. resets the worktree database (`DROP SCHEMA public`, then `migrate up`; through the shared PostgreSQL container when it exists, otherwise with the host `psql` on 127.0.0.1:15435); it refuses any database whose name
    does not start with `xflickr_wt`, so the live `xflickr` database is never touched;
-3. starts `fakeflickr` and the app (roles `api,scheduler,crawl`) on free local ports. The Redis prefix is unique
+3. starts `fakeflickr` and the app (roles `api,scheduler,crawl,media`; the media role consumes the sizes-resolved event that moves waiting downloads on) on free local ports. The Redis prefix is unique
    per run, the master key is random, and `FLICKR_UPSTREAM_URL` points the app at `fakeflickr`;
-4. runs Playwright on the host with Google Chrome (Playwright never runs in Docker; `docker/scripts/playwright.sh`).
+4. runs Playwright with the browser on the workspace E2E server (`E2E_HOST` in the Workspaces `.env`, through `scripts/dev/e2e-browser`; the app and fakeflickr are reached by reverse tunnels). Outside a Workspaces checkout it uses the local Google Chrome (`docker/scripts/playwright.sh`). Playwright never runs in Docker.
 
 The first registered user is the admin. The stack hands the specs `E2E_BASE_URL`, `E2E_FAKEFLICKR_URL`,
 `E2E_ADMIN_EMAIL` and `E2E_ADMIN_PASSWORD`. The sign-in form allows five attempts per quarter hour, so

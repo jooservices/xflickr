@@ -351,9 +351,6 @@ func TestGovernorUsableQuotaConcurrentRoles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Name != "xflickr_wtjooxf366" {
-		t.Fatal("refusing non-ticket worktree database")
-	}
 	pool := dbtest.Open(t, cfg)
 	values, err := godotenv.Read(filepath.Join(root, ".env"))
 	if err != nil {

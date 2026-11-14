@@ -344,7 +344,12 @@ func (s Store) grouped(ctx context.Context, q Querier, snap *ops.Snapshot, name 
 }
 
 func (s Store) keys(ctx context.Context, q Querier, snap *ops.Snapshot) ([]ops.KeyStatus, error) {
-	rows, err := q.Query(ctx, `SELECT k.id, k.label, k.status, k.per_hour_limit,
+	// Limit is the effective hourly grant ceiling the governor enforces: the key's own limit, capped by the daily call
+	// limit and by the usable hourly quota when those settings are positive (the same rule as the quota budget).
+	rows, err := q.Query(ctx, `SELECT k.id, k.label, k.status,
+  LEAST(k.per_hour_limit,
+    COALESCE((SELECT (s.value #>> '{}')::bigint FROM app_settings s WHERE s.key = 'daily_call_limit' AND (s.value #>> '{}')::bigint > 0), k.per_hour_limit),
+    COALESCE((SELECT (s.value #>> '{}')::bigint FROM app_settings s WHERE s.key = 'usable_hourly_quota' AND (s.value #>> '{}')::bigint > 0), k.per_hour_limit)),
   (SELECT count(*) FROM api_call_log l WHERE l.key_id = k.id AND l.outcome IS NULL AND l.called_at > now() - interval '1 hour')
 FROM api_keys k ORDER BY k.id`)
 	if err != nil {

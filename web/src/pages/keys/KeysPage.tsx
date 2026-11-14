@@ -66,15 +66,26 @@ export function KeysPage() {
   const [now, setNow] = useState(() => Date.now());
   const [toasts, setToasts] = useState<{ id: number; text: string }[]>([]);
   const nextToast = useRef(1);
+  const toastTimers = useRef(new Set<number>());
+
+  // A toast timer that outlives the page would update a page that is gone.
+  useEffect(() => {
+    const timers = toastTimers.current;
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
 
   const toast = useCallback((text: string) => {
     const id = nextToast.current;
     nextToast.current += 1;
     setToasts((current) => [...current, { id, text }]);
-    window.setTimeout(
-      () => setToasts((current) => current.filter((item) => item.id !== id)),
-      TOAST_MS,
-    );
+    const timer = window.setTimeout(() => {
+      toastTimers.current.delete(timer);
+      setToasts((current) => current.filter((item) => item.id !== id));
+    }, TOAST_MS);
+    toastTimers.current.add(timer);
   }, []);
 
   const keys = useQuery({
@@ -201,9 +212,7 @@ export function KeysPage() {
     }
   };
 
-  const confirmRemove = () => {
-    const key = removing;
-    if (key === null) return;
+  const confirmRemove = (key: ApiKey) => {
     void guard(key.id, async () => {
       await removeKey(key.id);
       const rest = (queryClient.getQueryData<ApiKey[]>(KEYS) ?? []).filter(
@@ -441,7 +450,7 @@ export function KeysPage() {
           label={removing.label}
           accounts={(accounts.data ?? []).filter((item) => item.key_id === removing.id).length}
           busy={pending.includes(removing.id)}
-          onConfirm={confirmRemove}
+          onConfirm={() => confirmRemove(removing)}
           onCancel={() => setRemoving(null)}
         />
       )}
