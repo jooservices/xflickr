@@ -212,9 +212,7 @@ export function KeysPage() {
     }
   };
 
-  const confirmRemove = () => {
-    const key = removing;
-    if (key === null) return;
+  const confirmRemove = (key: ApiKey) => {
     void guard(key.id, async () => {
       await removeKey(key.id);
       const rest = (queryClient.getQueryData<ApiKey[]>(KEYS) ?? []).filter(
@@ -452,7 +450,7 @@ export function KeysPage() {
           label={removing.label}
           accounts={(accounts.data ?? []).filter((item) => item.key_id === removing.id).length}
           busy={pending.includes(removing.id)}
-          onConfirm={confirmRemove}
+          onConfirm={() => confirmRemove(removing)}
           onCancel={() => setRemoving(null)}
         />
       )}
