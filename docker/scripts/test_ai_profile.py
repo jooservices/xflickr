@@ -62,6 +62,7 @@ class AIProfileTests(unittest.TestCase):
         data = profile()
         self.assertEqual(len(data["stages"]), 17)
         self.assertEqual(len({stage["name"] for stage in data["stages"]}), 17)
+        self.assertTrue(all(stage.get("changedCmd") for stage in data["stages"]))
         self.assertEqual([step["name"] for step in data["setup"]], ["env", "web-deps", "go-deps"])
         self.assertEqual(data["identity"]["email"], "jooservices@gmail.com")
         self.assertIn("docker/scripts/*.py", data["testGlobs"])

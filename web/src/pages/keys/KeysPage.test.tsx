@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderApp, userSession } from '../../test/render';
@@ -126,6 +126,27 @@ describe('KeysPage states', () => {
     expect(await screen.findByTestId('keys-connect-notice')).toHaveTextContent(
       'The Flickr sign-in expired. Start again.',
     );
+  });
+
+  it.each([
+    ['denied', 'You declined on Flickr'],
+    ['authorization_denied', 'You declined on Flickr'],
+    ['expired', 'The Flickr sign-in expired'],
+    ['unexpected', 'Could not start the Flickr connection'],
+  ])('shows and dismisses the %s callback notice', async (code, message) => {
+    world([apiKey(1, { status: 'invalid' })], [usageItem(1)]);
+    open(`/keys?connect_error=${code}`);
+    expect(await screen.findByTestId('keys-connect-notice')).toHaveTextContent(message);
+    fireEvent.click(screen.getByTestId('keys-connect-retry'));
+    expect(leaveTo).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('keys-connect-dismiss'));
+    expect(screen.queryByTestId('keys-connect-notice')).toBeNull();
+  });
+
+  it('uses the latest account when the connected identifier is invalid', async () => {
+    world([apiKey(1)], [usageItem(1)], [account()]);
+    open('/keys?connected=invalid');
+    expect(await screen.findByTestId('keys-connect-notice')).toHaveTextContent('Anna is connected');
   });
 
   it.each([
@@ -344,6 +365,27 @@ describe('KeysPage cards', () => {
     view.unmount();
     expect(clear).toHaveBeenCalled();
     clear.mockRestore();
+  });
+
+  it('removes a toast when its timer completes', async () => {
+    world([apiKey(2)], [usageItem(2)]);
+    server.use(
+      http.post('*/flickr-accounts/connect', () =>
+        HttpResponse.json({ code: 'key_not_valid' }, { status: 409 }),
+      ),
+    );
+    open();
+    const timeout = vi.spyOn(window, 'setTimeout');
+    try {
+      fireEvent.click(await screen.findByTestId('keys-accounts-connect-2'));
+      expect(await screen.findByTestId('keys-toast')).toBeInTheDocument();
+      const timer = timeout.mock.calls.find(([, delay]) => delay === 3000)?.[0];
+      expect(typeof timer).toBe('function');
+      act(() => (timer as () => void)());
+      expect(screen.queryByTestId('keys-toast')).toBeNull();
+    } finally {
+      timeout.mockRestore();
+    }
   });
 
   it('starts the connection from a key without accounts and reports a failure', async () => {

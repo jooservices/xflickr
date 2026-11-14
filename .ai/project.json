@@ -234,7 +234,8 @@
       "requiresServices": [
         "postgres",
         "redis"
-      ]
+      ],
+      "changedCmd": "make e2e"
     },
     {
       "name": "security-go",
@@ -242,10 +243,11 @@
       "order": 5,
       "cmd": "bash docker/scripts/security-audit-backend.sh",
       "cwd": ".",
-      "when": [],
+      "when": ["backend/**/*.go", "backend/go.mod", "backend/go.sum"],
       "parallel": "audit",
       "expectedSeconds": 90,
-      "requiresServices": []
+      "requiresServices": [],
+      "changedCmd": "bash docker/scripts/security-audit-backend.sh"
     },
     {
       "name": "security-web",
@@ -253,10 +255,11 @@
       "order": 5,
       "cmd": "bash docker/scripts/security-audit-web.sh",
       "cwd": ".",
-      "when": [],
+      "when": ["web/package.json", "web/package-lock.json"],
       "parallel": "audit",
       "expectedSeconds": 60,
-      "requiresServices": []
+      "requiresServices": [],
+      "changedCmd": "bash docker/scripts/security-audit-web.sh"
     },
     {
       "name": "sonar",
@@ -264,10 +267,11 @@
       "order": 6,
       "cmd": "{workspace}/scripts/dev/sonar",
       "cwd": ".",
-      "when": [],
+      "when": ["backend/**", "web/src/**", "sonar-project.properties"],
       "parallel": "",
       "expectedSeconds": 300,
-      "requiresServices": []
+      "requiresServices": [],
+      "changedCmd": "{workspace}/scripts/dev/sonar"
     }
   ],
   "testGlobs": [
