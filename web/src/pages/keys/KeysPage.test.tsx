@@ -329,6 +329,23 @@ describe('KeysPage cards', () => {
     await waitFor(() => expect(leaveTo).toHaveBeenCalledWith('https://flickr.test/authorize'));
   });
 
+  it('clears the toast timers when the page is gone', async () => {
+    world([apiKey(2)], [usageItem(2)]);
+    server.use(
+      http.post('*/flickr-accounts/connect', () =>
+        HttpResponse.json({ code: 'key_not_valid' }, { status: 409 }),
+      ),
+    );
+    const view = open();
+    fireEvent.click(await screen.findByTestId('keys-accounts-connect-2'));
+    expect(await screen.findByTestId('keys-toast')).toBeInTheDocument();
+
+    const clear = vi.spyOn(window, 'clearTimeout');
+    view.unmount();
+    expect(clear).toHaveBeenCalled();
+    clear.mockRestore();
+  });
+
   it('starts the connection from a key without accounts and reports a failure', async () => {
     world([apiKey(2)], [usageItem(2)]);
     server.use(
