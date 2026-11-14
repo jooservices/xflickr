@@ -103,7 +103,7 @@ test('the command prints OK for a clean tree and fails with the list for a broke
   }
 });
 
-test('the real e2e directory keeps its layers', () => {
+test('AC6 the e2e directory keeps its three layers', () => {
   const real = join(dirname(fileURLToPath(import.meta.url)), '..', 'e2e');
   assert.deepEqual(checkLayers(real), []);
 });

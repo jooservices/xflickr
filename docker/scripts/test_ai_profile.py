@@ -24,6 +24,19 @@ def make_targets() -> set[str]:
 
 
 class AIProfileTests(unittest.TestCase):
+    def test_AC8_every_acceptance_criterion_has_a_named_test(self) -> None:
+        data = profile()
+        names = set()
+        for glob in data["testGlobs"]:
+            for path in ROOT.glob(glob):
+                if path.is_file():
+                    text = path.read_text(encoding="utf-8")
+                    for pattern in data["testNamePatterns"]:
+                        names.update(re.findall(pattern, text))
+        for index in range(1, 9):
+            with self.subTest(criterion=index):
+                self.assertTrue(any(re.search(rf"AC{index}(?!\d)", name) for name in names))
+
     def test_the_profile_declares_the_checks_of_the_project(self) -> None:
         names = {stage["name"] for stage in profile()["stages"]}
         self.assertTrue(REQUIRED <= names, REQUIRED - names)
@@ -45,9 +58,16 @@ class AIProfileTests(unittest.TestCase):
                 with self.subTest(stage=stage["name"]):
                     self.assertTrue(stage["when"])
 
-    def test_every_command_runs_something_that_exists(self) -> None:
+    def test_AC1_profile_declares_the_flow(self) -> None:
+        data = profile()
+        self.assertEqual(len(data["stages"]), 17)
+        self.assertEqual(len({stage["name"] for stage in data["stages"]}), 17)
+        self.assertEqual([step["name"] for step in data["setup"]], ["env", "web-deps", "go-deps"])
+        self.assertEqual(data["identity"]["email"], "jooservices@gmail.com")
+        self.assertIn("docker/scripts/*.py", data["testGlobs"])
+        self.assertIn("web/scripts/*.test.mjs", data["testGlobs"])
         targets = make_targets()
-        for stage in profile()["stages"]:
+        for stage in data["stages"]:
             for field in ("cmd", "changedCmd"):
                 if field not in stage:
                     continue

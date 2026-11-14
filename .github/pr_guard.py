@@ -8,6 +8,7 @@ identity (name, email, forbiddenTraces).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -21,6 +22,7 @@ GUARD_NAME = "pr_guard.py"
 COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 PLACEHOLDER_KEY = re.compile(r"\b[A-Z][A-Z0-9]*-0+\b")
 TICKET_LINE = re.compile(r"^Ticket:\s*\[([^\]]+)\]\((https?://[^)\s]+)\)\s*$", re.MULTILINE)
+TEMPLATE_SHA256 = "87845b8594cf11edd5877deac4dfa5f6a71c7f2b3fb83568c16bcd0887cadaa7"
 
 
 def headings(template: str) -> list[str]:
@@ -41,6 +43,8 @@ def sections(body: str) -> dict[str, str]:
 
 
 def structure_problems(template: str, body: str) -> list[str]:
+    if hashlib.sha256(template.encode("utf-8")).hexdigest() != TEMPLATE_SHA256:
+        return ["the pull request template differs from the workspace template"]
     wanted = headings(template)
     present = [line.rstrip() for line in body.replace("\r\n", "\n").splitlines() if line.startswith("## ")]
     if present != wanted:
@@ -56,6 +60,8 @@ def ticket_problems(profile: dict, body: str, title: str, branch: str) -> list[s
     pattern = profile["ticketKeyRegex"]
     if not re.fullmatch(pattern, key) or PLACEHOLDER_KEY.fullmatch(key):
         return [f"'{key}' is not a real ticket key"]
+    if match.group(2) != f"https://jooservices.atlassian.net/browse/{key}":
+        return [f"the ticket link must point to {key} in Jira"]
     return [f"the ticket {key} is not in the {where}" for where, text in (("PR title", title), ("branch name", branch)) if key not in re.findall(pattern, text)]
 
 
@@ -91,7 +97,7 @@ def check_commits(profile: dict, revisions: str, repo: Path) -> list[str]:
 
 def sync(project: Path, check_only: bool) -> list[str]:
     """Put the canonical template and this guard into the project's .github; report what differs."""
-    targets = {HERE / "pr_template.md": project / ".github" / TEMPLATE_NAME, Path(__file__).resolve(): project / ".github" / GUARD_NAME}
+    targets = {HERE / TEMPLATE_NAME: project / ".github" / TEMPLATE_NAME, Path(__file__).resolve(): project / ".github" / GUARD_NAME}
     differing = [str(target) for source, target in targets.items() if not target.is_file() or target.read_bytes() != source.read_bytes()]
     if not check_only:
         (project / ".github").mkdir(exist_ok=True)
