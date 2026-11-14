@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -90,6 +91,40 @@ class HooksTests(unittest.TestCase):
         self.assertEqual(len(listed.stdout.splitlines()), 17)
         check = run([str(WORKSPACE / 'scripts/dev/check'), 'run', 'secrets', '--all'], ROOT)
         self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+
+    def test_AC4_final_refuses_proof_when_project_lint_or_acceptance_tests_fail(self) -> None:
+        data = json.loads((ROOT / '.ai/project.json').read_text(encoding='utf-8'))
+        lint = next(stage for stage in data['stages'] if stage['name'] == 'lint-go')
+        self.assertEqual((lint['cmd'], lint['cwd']), ('make lint', '.'))
+        data['stages'] = [lint]
+        (self.worktree / '.ai/project.json').write_text(json.dumps(data), encoding='utf-8')
+        scripts = self.worktree / 'docker/scripts'
+        scripts.mkdir(parents=True)
+        shutil.copy(ROOT / 'docker/scripts/lint.sh', scripts / 'lint.sh')
+        (self.worktree / 'Makefile').write_text('lint:\n\t@bash docker/scripts/lint.sh\n', encoding='utf-8')
+        wrapper = scripts / 'run.sh'
+        wrapper.write_text('#!/bin/sh\nif [ "$1" = python ]; then exec "$2" "$3"; fi\nexit 0\n', encoding='utf-8')
+        wrapper.chmod(0o755)
+        for name in ('api-usage-check.test.sh', 'ui-e2e-coverage.test.sh', 'db-report.test.sh', 'compare-db.test.sh'):
+            gate = scripts / name
+            gate.write_text('#!/bin/sh\nprintf "%s\\n" "$(basename "$0")" >> "$TRACE_FILE"\n[ "$(basename "$0")" != "$FAIL_SCRIPT" ]\n', encoding='utf-8')
+            gate.chmod(0o755)
+        for name in ('test_obs_alert_config.py', 'test_worktree_env.py', 'module_cycles_test.py', 'test_check_go_version.py', 'go_changed_test.py', 'test_ai_profile.py', 'test_ai_hooks.py', 'test_pr_guard.py'):
+            (scripts / name).write_text(
+                'import os\nimport sys\nfrom pathlib import Path\nname = Path(__file__).name\nwith open(os.environ["TRACE_FILE"], "a", encoding="utf-8") as trace:\n    trace.write(name + "\\n")\nsys.exit(name == os.environ["FAIL_SCRIPT"])\n',
+                encoding='utf-8',
+            )
+        self.git('add', '.ai/project.json', 'Makefile', 'docker/scripts', cwd=self.worktree)
+        self.git('commit', '-m', 'test(flow): Check final gate failures (JOOXF-518)', cwd=self.worktree)
+        trace = Path(self.temp.name) / 'trace'
+        for failed_script in ('test_pr_guard.py', 'api-usage-check.test.sh'):
+            with self.subTest(failed_script=failed_script):
+                trace.write_text('', encoding='utf-8')
+                result = run([str(WORKSPACE / 'scripts/dev/check'), 'final'], self.worktree, env={'FAIL_SCRIPT': failed_script, 'TRACE_FILE': str(trace)})
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn(failed_script, trace.read_text(encoding='utf-8').splitlines())
+                proof = run([str(WORKSPACE / 'scripts/dev/handoff'), 'check'], self.worktree)
+                self.assertNotEqual(proof.returncode, 0, proof.stdout + proof.stderr)
 
 
 if __name__ == '__main__':

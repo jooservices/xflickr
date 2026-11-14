@@ -31,6 +31,15 @@ def description() -> str:
 
 
 class PRGuardTests(unittest.TestCase):
+    def test_AC5_rejects_content_placeholders_in_each_section(self) -> None:
+        valid = description()
+        for section in ('Requirement', 'What', 'Why', 'Out of scope', 'Risk / decisions', 'Tests', 'Verification'):
+            for placeholder in ('TODO', 'TBD', 'todo: explain'):
+                with self.subTest(section=section, placeholder=placeholder):
+                    body = valid.replace(f'## {section}\n\nVerified.', f'## {section}\n\n{placeholder}')
+                    self.assertTrue(GUARD.check_pull_request(PROFILE, TEMPLATE, TITLE, body, BRANCH))
+        self.assertEqual(GUARD.check_pull_request(PROFILE, TEMPLATE, TITLE, valid.replace('Verified.', 'The TODO list is validated.'), BRANCH), [])
+
     def test_AC5_pr_guard_enforces_the_template(self) -> None:
         valid = description()
         check = lambda body: GUARD.check_pull_request(PROFILE, TEMPLATE, TITLE, body, BRANCH)

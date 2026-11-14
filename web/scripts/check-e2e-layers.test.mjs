@@ -39,6 +39,8 @@ function problemsOf(files) {
 
 test('accepts scenarios that call suites that call steps', () => {
   assert.deepEqual(problemsOf(GOOD), []);
+  assert.deepEqual(problemsOf({ ...GOOD, 'steps/nested/notes.txt': 'notes' }), []);
+  assert.deepEqual(problemsOf({}), []);
 });
 
 test('a scenario may not import a step or use the page', () => {
@@ -49,6 +51,35 @@ test('a scenario may not import a step or use the page', () => {
   });
   assert.ok(problems.some((line) => line.includes("a scenario may not import '../steps/a'")));
   assert.ok(problems.some((line) => line.includes('may not use the page directly')));
+});
+
+test('AC6 a scenario may pass an aliased page to a suite but not use it directly', () => {
+  const scenario = (action) =>
+    `import { test } from '@playwright/test';\ntest('a', async ({ page: browserPage }) => { ${action} });\n`;
+  assert.deepEqual(
+    problemsOf({ ...GOOD, 'scenarios/a.spec.ts': scenario('await showA(browserPage);') }),
+    [],
+  );
+  const problems = problemsOf({
+    ...GOOD,
+    'scenarios/a.spec.ts': scenario("await browserPage.goto('/a');"),
+  });
+  assert.ok(problems.some((line) => line.includes('may not use the page directly')));
+  const bracketAccess = problemsOf({
+    ...GOOD,
+    'scenarios/a.spec.ts': scenario("await browserPage['goto']('/a');"),
+  });
+  assert.ok(bracketAccess.some((line) => line.includes('may not use the page directly')));
+  const aliasedSuite = problemsOf({
+    ...GOOD,
+    'suites/a.ts': 'export async function showA({ page: view }) { await view.reload(); }\n',
+  });
+  assert.ok(aliasedSuite.some((line) => line.includes('may not use the page directly')));
+  const destructured = problemsOf({
+    ...GOOD,
+    'scenarios/a.spec.ts': "test('a', async ({ page: { goto } }) => { await goto('/a'); });\n",
+  });
+  assert.ok(destructured.some((line) => line.includes('may not use the page directly')));
 });
 
 test('a suite may not skip to the page, import a scenario or hold a test', () => {
@@ -94,6 +125,8 @@ test('the command prints OK for a clean tree and fails with the list for a broke
     const ok = spawnSync('node', [script, '--root', clean], { encoding: 'utf8' });
     assert.equal(ok.status, 0);
     assert.match(ok.stdout, /check-e2e-layers: OK/);
+    const actual = spawnSync('node', [script], { encoding: 'utf8' });
+    assert.equal(actual.status, 0);
     const bad = spawnSync('node', [script, '--root', broken], { encoding: 'utf8' });
     assert.equal(bad.status, 1);
     assert.match(bad.stderr, /1 problem\(s\)/);

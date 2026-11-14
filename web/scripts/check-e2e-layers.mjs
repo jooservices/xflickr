@@ -13,6 +13,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 const ALLOWED_IMPORTS = {
   scenarios: [/^@playwright\/test$/, /^\.\.\/suites\//, /^\.\.\/support\//],
@@ -26,9 +27,6 @@ const ALLOWED_IMPORTS = {
   ],
   support: [/^@playwright\/test$/, /^node:/, /^\.\//],
 };
-// A direct use of the page: only steps may do it.
-const PAGE_USE =
-  /\bpage\.(goto|getBy\w+|locator|click|fill|check|evaluate|request|route|reload|waitFor\w*|keyboard|setViewportSize|context|url|on|off|addInitScript|screenshot|press|type)\b/;
 const TEST_USE =
   /(?<![.\w])test(\.(describe|use|beforeEach|beforeAll|afterEach|afterAll|skip|only))?\s*\(/;
 
@@ -44,6 +42,31 @@ function importsOf(source) {
   return [...source.matchAll(/(?:^|\n)\s*(?:import|export)\b[^;]*?\bfrom\s+['"]([^'"]+)['"]/g)].map(
     (match) => match[1],
   );
+}
+
+function usesPageDirectly(source, file) {
+  const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+  const names = new Set(['page']);
+  let destructuredPage = false;
+  function collect(node) {
+    if (ts.isBindingElement(node) && node.propertyName?.getText(tree) === 'page') {
+      if (ts.isIdentifier(node.name)) names.add(node.name.text);
+      else destructuredPage = true;
+    }
+    ts.forEachChild(node, collect);
+  }
+  collect(tree);
+  function direct(node) {
+    if (
+      (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
+      ts.isIdentifier(node.expression) &&
+      names.has(node.expression.text)
+    ) {
+      return true;
+    }
+    return ts.forEachChild(node, direct) ?? false;
+  }
+  return destructuredPage || direct(tree);
 }
 
 /** The layer rules broken under `root` (the e2e directory), as readable lines. */
@@ -65,7 +88,7 @@ export function checkLayers(root) {
           problems.push(`${where}: a ${layer.replace(/s$/, '')} may not import '${target}'`);
         }
       }
-      if ((layer === 'scenarios' || layer === 'suites') && PAGE_USE.test(source)) {
+      if ((layer === 'scenarios' || layer === 'suites') && usesPageDirectly(source, file)) {
         problems.push(
           `${where}: a ${layer.replace(/s$/, '')} may not use the page directly; call a step`,
         );

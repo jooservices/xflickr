@@ -21,6 +21,7 @@ TEMPLATE_NAME = "pull_request_template.md"
 GUARD_NAME = "pr_guard.py"
 COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 PLACEHOLDER_KEY = re.compile(r"\b[A-Z][A-Z0-9]*-0+\b")
+PLACEHOLDER_CONTENT = re.compile(r"(?im)^\s*(?:[-*]\s*)?(?:TODO|TBD)\b")
 TICKET_LINE = re.compile(r"^Ticket:\s*\[([^\]]+)\]\((https?://[^)\s]+)\)\s*$", re.MULTILINE)
 TEMPLATE_SHA256 = "87845b8594cf11edd5877deac4dfa5f6a71c7f2b3fb83568c16bcd0887cadaa7"
 
@@ -49,7 +50,13 @@ def structure_problems(template: str, body: str) -> list[str]:
     present = [line.rstrip() for line in body.replace("\r\n", "\n").splitlines() if line.startswith("## ")]
     if present != wanted:
         return [f"the description must have exactly these sections in this order: {', '.join(item[3:] for item in wanted)}"]
-    return [f"the section '{heading[3:]}' is empty" for heading, text in sections(body).items() if not text]
+    problems = []
+    for heading, content in sections(body).items():
+        if not content:
+            problems.append(f"the section '{heading[3:]}' is empty")
+        elif PLACEHOLDER_CONTENT.search(content):
+            problems.append(f"the section '{heading[3:]}' contains a placeholder")
+    return problems
 
 
 def ticket_problems(profile: dict, body: str, title: str, branch: str) -> list[str]:

@@ -109,6 +109,8 @@ class AIProfileTests(unittest.TestCase):
     def test_the_project_commits_as_one_identity_and_forbids_ai_traces(self) -> None:
         identity = profile()["identity"]
         self.assertEqual({"name": "Viet Vu", "email": "jooservices@gmail.com"}, {key: identity[key] for key in ("name", "email")})
+        self.assertEqual("soulevilx", identity["githubUser"])
+        self.assertEqual("~/.ssh/github_ed25519", identity["sshKey"])
         self.assertTrue(identity["forbiddenTraces"])
         for pattern in identity["forbiddenTraces"]:
             re.compile(pattern)

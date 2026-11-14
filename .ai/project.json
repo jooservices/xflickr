@@ -2,6 +2,8 @@
   "identity": {
     "name": "Viet Vu",
     "email": "jooservices@gmail.com",
+    "githubUser": "soulevilx",
+    "sshKey": "~/.ssh/github_ed25519",
     "forbiddenTraces": [
       "(?i)co-authored-by:.*(claude|anthropic|codex|openai|chatgpt|gpt|copilot|gemini|grok|opencode|deepseek|cursor)",
       "(?i)generated (with|by)\\b",
@@ -31,15 +33,18 @@
       "name": "lint-go",
       "group": "static",
       "order": 1,
-      "cmd": "go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run --config ../.golangci.yml ./...",
-      "cwd": "backend",
+      "cmd": "make lint",
+      "cwd": ".",
       "when": [
-        "backend/**/*.go"
+        "backend/**/*.go",
+        "docker/scripts/**",
+        ".github/**",
+        ".ai/project.json"
       ],
       "parallel": "static",
       "expectedSeconds": 90,
       "requiresServices": [],
-      "changedCmd": "go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run --config ../.golangci.yml ./..."
+      "changedCmd": "make lint"
     },
     {
       "name": "architecture",
@@ -138,7 +143,8 @@
       "cmd": "node scripts/check-e2e-layers.mjs",
       "cwd": "web",
       "when": [
-        "web/e2e/**"
+        "web/e2e/**",
+        "web/scripts/check-e2e-layers*"
       ],
       "parallel": "static",
       "expectedSeconds": 30,
