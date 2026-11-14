@@ -46,8 +46,9 @@ func TestPumpDispatchesExactlyOneHundredOfTenThousandRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dispatched != 100 {
-		t.Fatalf("Pump() dispatched %d rows, want 100", dispatched)
+	// The pump serves every key of the shared database; this test's key must still get exactly its cap of 100 below.
+	if dispatched < 100 {
+		t.Fatalf("Pump() dispatched %d rows, want at least 100", dispatched)
 	}
 	var ready, riverJobs int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE state='ready'), count(*) FROM work_items WHERE subject_key LIKE $1`, suffix+"-%").Scan(&ready, &riverJobs); err != nil {

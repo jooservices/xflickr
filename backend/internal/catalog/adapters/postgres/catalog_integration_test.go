@@ -88,12 +88,30 @@ func TestCatalogUpsertsBatchIdempotencySizesAndPartitions(t *testing.T) {
 		t.Fatalf("repeat photo upsert: %v", err)
 	}
 	var unchangedXmin string
-	var refreshedSeenAt time.Time
-	if err := pool.QueryRow(ctx, `SELECT xmin::text,last_seen_at FROM photos WHERE id = $1`, photoID).Scan(&unchangedXmin, &refreshedSeenAt); err != nil {
+	var unchangedSeenAt time.Time
+	if err := pool.QueryRow(ctx, `SELECT xmin::text,last_seen_at FROM photos WHERE id = $1`, photoID).Scan(&unchangedXmin, &unchangedSeenAt); err != nil {
 		t.Fatal(err)
 	}
-	if unchangedXmin == originalXmin || !refreshedSeenAt.After(originalSeenAt) {
-		t.Fatalf("photo observation was not refreshed: xmin %s -> %s, last_seen_at %s -> %s", originalXmin, unchangedXmin, originalSeenAt, refreshedSeenAt)
+	// An identical photo seen again within the hour is not rewritten: last_seen_at is indexed.
+	if unchangedXmin != originalXmin || !unchangedSeenAt.Equal(originalSeenAt) {
+		t.Fatalf("unchanged photo within the hour wrote a row: xmin %s -> %s, last_seen_at %s -> %s", originalXmin, unchangedXmin, originalSeenAt, unchangedSeenAt)
+	}
+	// Once the observation is more than an hour old, seeing the photo again refreshes it.
+	var agedXmin string
+	var agedSeenAt time.Time
+	if err := pool.QueryRow(ctx, `UPDATE photos SET last_seen_at = last_seen_at - interval '2 hours' WHERE id = $1 RETURNING xmin::text, last_seen_at`, photoID).Scan(&agedXmin, &agedSeenAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.UpsertPhotos(ctx, []domain.Photo{photos[0]}); err != nil {
+		t.Fatalf("photo upsert after the observation aged: %v", err)
+	}
+	var refreshedXmin string
+	var refreshedSeenAt time.Time
+	if err := pool.QueryRow(ctx, `SELECT xmin::text,last_seen_at FROM photos WHERE id = $1`, photoID).Scan(&refreshedXmin, &refreshedSeenAt); err != nil {
+		t.Fatal(err)
+	}
+	if refreshedXmin == agedXmin || !refreshedSeenAt.After(agedSeenAt) {
+		t.Fatalf("aged photo observation was not refreshed: xmin %s -> %s, last_seen_at %s -> %s", agedXmin, refreshedXmin, agedSeenAt, refreshedSeenAt)
 	}
 	var compressed []byte
 	if err := pool.QueryRow(ctx, `SELECT raw FROM photos WHERE id = $1`, photoID).Scan(&compressed); err != nil {

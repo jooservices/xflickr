@@ -519,7 +519,9 @@ func TestRepairLegacyCheckpointsUsesObserverScopedCatchupFloor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.PhotosUpdated != 1 || report.PhotosUnrepairable != 1 {
+	// The repair covers every interest of the shared database, so the report is a lower bound; the rows of this test
+	// are checked one by one below.
+	if report.PhotosUpdated < 1 || report.PhotosUnrepairable < 1 {
 		t.Fatalf("legacy repair report = %+v", report)
 	}
 	var seen, otherSeen *time.Time

@@ -45,7 +45,7 @@ func TestSnapshotAndHealthLineIntegration(t *testing.T) {
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID) })
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM river_job WHERE args->'args'->>'photo_id' = ANY($1)`, []string{fmt.Sprint(photoQueued), fmt.Sprint(photoRunning)})
+		_, _ = pool.Exec(context.Background(), `DELETE FROM river_job WHERE args->'args'->>'photo_id' = ANY($1)`, []string{fmt.Sprint(photoQueued), fmt.Sprint(photoRunning), fmt.Sprint(photoPending)})
 		_, _ = pool.Exec(context.Background(), `DELETE FROM photos WHERE id = ANY($1)`, []int64{photoQueued, photoRunning, photoPending})
 	})
 	if err := pool.QueryRow(ctx, `INSERT INTO api_keys(user_id,label,key_public,secret_sealed,per_hour_limit,per_second_limit,burst,status) VALUES($1,'ops',$2,'{}',10,1,1,'valid') RETURNING id`, userID, suffix).Scan(&keyID); err != nil {
@@ -92,6 +92,10 @@ VALUES ($1,$2,now(),'public','provisional','[]','{}',decode(repeat('cd',32),'hex
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO river_job(kind,args,queue,state,attempt,max_attempts) VALUES('xflickr',$1,'sync','running',0,3)`, args(photoRunning)); err != nil {
+		t.Fatal(err)
+	}
+	// The backlog is counted from River jobs only: a scheduled job is a pending one.
+	if _, err := pool.Exec(ctx, `INSERT INTO river_job(kind,args,queue,state,attempt,max_attempts,scheduled_at) VALUES('xflickr',$1,'sync','scheduled',0,3,now() + interval '1 hour')`, args(photoPending)); err != nil {
 		t.Fatal(err)
 	}
 

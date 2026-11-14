@@ -95,27 +95,34 @@ func TestNeedsEnrichmentPostgres(t *testing.T) {
 	}
 }
 
+// TestEnrichmentFreshnessPlan proves the freshness lookup is served by the primary key at a realistic size. It builds
+// its own probe table with photo_enrichments' columns and indexes (no foreign keys), so it needs no prepared fixture.
 func TestEnrichmentFreshnessPlan(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use this worktree's configured PostgreSQL database")
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
 	pool := dbtest.Open(t, loadCatalogDatabase(t))
-	if _, err := pool.Exec(ctx, `ANALYZE photo_enrichments`); err != nil {
-		t.Fatalf("ANALYZE photo_enrichments: %v", err)
+	const probe = "enrichment_freshness_plan_probe"
+	if _, err := pool.Exec(ctx, `DROP TABLE IF EXISTS `+probe); err != nil {
+		t.Fatalf("drop an old probe table: %v", err)
 	}
-	var estimatedRows int64
-	if err := pool.QueryRow(ctx, `SELECT reltuples::bigint FROM pg_class WHERE oid = 'photo_enrichments'::regclass`).Scan(&estimatedRows); err != nil {
-		t.Fatal(err)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DROP TABLE IF EXISTS `+probe) })
+	if _, err := pool.Exec(ctx, `CREATE TABLE `+probe+` (LIKE photo_enrichments INCLUDING ALL)`); err != nil {
+		t.Fatalf("create the probe table: %v", err)
 	}
-	if estimatedRows < 400000 {
-		t.Fatalf("photo_enrichments fixture has about %d rows; plan test requires at least 400000 analyzed rows", estimatedRows)
+	if _, err := pool.Exec(ctx, `INSERT INTO `+probe+` (photo_id, kind, model, model_version, payload)
+		SELECT id, 'caption', 'model', 'v1', '{}'::jsonb FROM generate_series(1, 400000) AS id`); err != nil {
+		t.Fatalf("fill the probe table: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `ANALYZE `+probe); err != nil {
+		t.Fatalf("ANALYZE the probe table: %v", err)
 	}
 
-	const query = `EXPLAIN (FORMAT JSON)
+	query := `EXPLAIN (FORMAT JSON)
 		SELECT photo_id, kind, model, model_version, payload, created_at
-		FROM photo_enrichments WHERE photo_id = $1 AND kind = $2 AND model = $3`
+		FROM ` + probe + ` WHERE photo_id = $1 AND kind = $2 AND model = $3`
 	var encoded []byte
 	if err := pool.QueryRow(ctx, query, int64(17), "caption", "model").Scan(&encoded); err != nil {
 		t.Fatalf("EXPLAIN freshness query: %v", err)
@@ -130,11 +137,11 @@ func TestEnrichmentFreshnessPlan(t *testing.T) {
 		t.Fatalf("plan has %d roots; want 1", len(result))
 	}
 	indexFound := false
-	if err := inspectEnrichmentPlan(result[0].Plan, &indexFound); err != nil {
+	if err := inspectEnrichmentPlan(result[0].Plan, probe+"_pkey", &indexFound); err != nil {
 		t.Fatal(err)
 	}
 	if !indexFound {
-		t.Fatal("plan does not use photo_enrichments_pkey")
+		t.Fatalf("plan does not use %s_pkey", probe)
 	}
 }
 
@@ -144,15 +151,15 @@ type explainPlanNode struct {
 	Plans     []explainPlanNode `json:"Plans"`
 }
 
-func inspectEnrichmentPlan(node explainPlanNode, indexFound *bool) error {
+func inspectEnrichmentPlan(node explainPlanNode, wantIndex string, indexFound *bool) error {
 	if node.NodeType == "Seq Scan" {
 		return fmt.Errorf("plan contains unexpected node %q", node.NodeType)
 	}
-	if node.IndexName == "photo_enrichments_pkey" {
+	if node.IndexName == wantIndex {
 		*indexFound = true
 	}
 	for _, child := range node.Plans {
-		if err := inspectEnrichmentPlan(child, indexFound); err != nil {
+		if err := inspectEnrichmentPlan(child, wantIndex, indexFound); err != nil {
 			return err
 		}
 	}

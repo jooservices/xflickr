@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db"
+	"github.com/jooservices/xflickr/migrations"
 )
 
 const dropUnusedIndexesMigration = "20261109090000_drop_unused_indexes.sql"
@@ -17,6 +20,7 @@ const dropUnusedIndexesMigration = "20261109090000_drop_unused_indexes.sql"
 // recreates each dropped index with an identical pg_get_indexdef.
 func TestDropUnusedIndexesDownRestoresExactDefinitions(t *testing.T) {
 	ctx, cfg, pool := prepareMigrationTest(t)
+	rollBackMigrationsNewerThan(t, ctx, cfg, dropUnusedIndexesMigration)
 	assertDroppedIndexAbsent(t, ctx, pool, "photos_last_update_idx")
 	assertDroppedIndexAbsent(t, ctx, pool, "photos_owner_nsid_idx")
 
@@ -34,6 +38,7 @@ func TestDropUnusedIndexesDownRestoresExactDefinitions(t *testing.T) {
 	assertDroppedIndexAbsent(t, ctx, pool, "photos_last_update_idx")
 	assertDroppedIndexAbsent(t, ctx, pool, "photos_owner_nsid_idx")
 
+	rollBackMigrationsNewerThan(t, ctx, cfg, dropUnusedIndexesMigration)
 	if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err != nil {
 		t.Fatalf("second roll back of %s: %v", dropUnusedIndexesMigration, err)
 	}
@@ -49,6 +54,23 @@ func TestDropUnusedIndexesDownRestoresExactDefinitions(t *testing.T) {
 
 	if err := db.Migrate(ctx, cfg, db.MigrateUp, io.Discard); err != nil {
 		t.Fatalf("leave schema with %s applied: %v", dropUnusedIndexesMigration, err)
+	}
+}
+
+// rollBackMigrationsNewerThan rolls back every embedded migration newer than the named one, so that the next
+// rollback is the named migration. A later Up applies them again.
+func rollBackMigrationsNewerThan(t *testing.T, ctx context.Context, cfg config.DBConfig, name string) {
+	t.Helper()
+	entries, err := migrations.Files.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read embedded migrations: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".sql") && entry.Name() > name {
+			if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err != nil {
+				t.Fatalf("roll back a migration newer than %s: %v", name, err)
+			}
+		}
 	}
 }
 

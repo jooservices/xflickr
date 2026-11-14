@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/config"
 	"github.com/jooservices/xflickr/internal/platform/db"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
+	"github.com/jooservices/xflickr/migrations"
 )
 
 const notificationsMigrationVersion int64 = 20261112100000
@@ -153,6 +155,12 @@ func TestNotificationsMigrationDownUp(t *testing.T) {
 	if currentDatabase != cfg.Name {
 		t.Fatal("migration database does not match the integration pool")
 	}
+	// Migrations added after notifications sit on top of it: roll those back first so that the next rollback is notifications.
+	for range migrationsAfter(t, notificationsMigrationVersion) {
+		if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err != nil {
+			t.Fatalf("roll back a migration newer than notifications: %v", err)
+		}
+	}
 	var latestVersion int64
 	if err := pool.QueryRow(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&latestVersion); err != nil {
 		t.Fatalf("read latest applied migration: %v", err)
@@ -172,6 +180,27 @@ func TestNotificationsMigrationDownUp(t *testing.T) {
 	}
 	assertNotificationRelation(t, ctx, pool, "public.notifications", true)
 	assertNotificationRelation(t, ctx, pool, "public.notifications_user_created_id_idx", true)
+}
+
+// migrationsAfter returns the versions of the embedded migrations newer than the given version.
+func migrationsAfter(t *testing.T, version int64) []int64 {
+	t.Helper()
+	entries, err := migrations.Files.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read embedded migrations: %v", err)
+	}
+	var newer []int64
+	for _, entry := range entries {
+		prefix, _, found := strings.Cut(entry.Name(), "_")
+		if !found {
+			continue
+		}
+		number, err := strconv.ParseInt(prefix, 10, 64)
+		if err == nil && number > version {
+			newer = append(newer, number)
+		}
+	}
+	return newer
 }
 
 type notificationColumn struct {

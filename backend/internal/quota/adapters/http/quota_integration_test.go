@@ -31,6 +31,10 @@ import (
 	"github.com/jooservices/xflickr/internal/quota/domain"
 )
 
+// usableHourlyQuota is the effective hourly ceiling every key is capped to (the usable_hourly_quota setting seeded by
+// migration 20261110100000), which sits below the 3600 a key is registered with.
+const usableHourlyQuota = 3400
+
 func TestQuotaEndpointsAfterCallsIntegration(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use the shared worktree database")
@@ -152,7 +156,7 @@ func TestQuotaEndpointsAfterCallsIntegration(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&quota); err != nil {
 		t.Fatal(err)
 	}
-	if quota.KeyID != keyID || quota.Used != 4 || quota.Limit != 3600 || quota.State != gen.KeyQuotaStateOk ||
+	if quota.KeyID != keyID || quota.Used != 4 || quota.Limit != usableHourlyQuota || quota.State != gen.KeyQuotaStateOk ||
 		quota.Lanes != (gen.LaneUsage{Interactive: 1, Person: 2, Photo: 1}) || quota.ResetAt == nil || !quota.ResetAt.Equal(oldest.Add(time.Hour)) {
 		t.Fatalf("quota = %+v", quota)
 	}
@@ -204,7 +208,7 @@ func TestQuotaEndpointsAfterCallsIntegration(t *testing.T) {
 			mine = &admin.Keys[i]
 		}
 	}
-	if mine == nil || mine.Used != 4 || mine.Limit != 3600 || mine.Node != "node-it" || mine.State != gen.AdminKeyQuotaStateOk || mine.Trend != gen.Rising || mine.Label != "mine" {
+	if mine == nil || mine.Used != 4 || mine.Limit != usableHourlyQuota || mine.Node != "node-it" || mine.State != gen.AdminKeyQuotaStateOk || mine.Trend != gen.Rising || mine.Label != "mine" {
 		t.Fatalf("admin keys = %+v", admin.Keys)
 	}
 }

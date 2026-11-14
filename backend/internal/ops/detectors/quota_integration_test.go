@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -57,10 +58,23 @@ func TestQuotaDetectorPersistsIncident(t *testing.T) {
 	}
 	wantDetail := json.RawMessage(`{"detection":"Key quota reached its limit.","automatic_action":"No automatic remediation is defined.","human_step":"Check the key and reset time in API quota; follow key policy.","used":125,"limit":125}`)
 	if incidentID <= 0 || kind != "quota_exhausted" || storedScope != scope || severity != "warning" ||
-		title != "API key quota exhausted" || state != "open" || string(detail) != string(wantDetail) {
+		title != "API key quota exhausted" || state != "open" || !sameJSON(t, detail, wantDetail) {
 		t.Fatalf("persisted incident = id %d, kind %q, scope %q, severity %q, title %q, state %q, detail %s",
 			incidentID, kind, storedScope, severity, title, state, detail)
 	}
+}
+
+// sameJSON compares two JSON documents by value: PostgreSQL's jsonb text has its own spacing and key order.
+func sameJSON(t *testing.T, got, want []byte) bool {
+	t.Helper()
+	var gotValue, wantValue any
+	if err := json.Unmarshal(got, &gotValue); err != nil {
+		t.Fatalf("decode stored detail: %v", err)
+	}
+	if err := json.Unmarshal(want, &wantValue); err != nil {
+		t.Fatalf("decode expected detail: %v", err)
+	}
+	return reflect.DeepEqual(gotValue, wantValue)
 }
 
 func integrationPool(t *testing.T) *pgxpool.Pool {
