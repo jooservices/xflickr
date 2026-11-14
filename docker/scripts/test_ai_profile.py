@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import re
 import shlex
+import shutil
 import unittest
 from pathlib import Path
 
@@ -69,6 +70,8 @@ class AIProfileTests(unittest.TestCase):
         self.assertIn("docker/scripts/*_test.py", data["testGlobs"])
         self.assertIn("web/scripts/*.test.mjs", data["testGlobs"])
         targets = make_targets()
+        package = json.loads((ROOT / "web/package.json").read_text(encoding="utf-8"))
+        node_tools = {"tsc": "typescript", "eslint": "eslint", "prettier": "prettier", "vitest": "vitest"}
         for stage in data["stages"]:
             for field in ("cmd", "changedCmd"):
                 if field not in stage:
@@ -80,6 +83,17 @@ class AIProfileTests(unittest.TestCase):
                         self.assertIn(words[1], targets)
                     elif words[0] in {"bash", "python3"}:
                         self.assertTrue((cwd / words[1]).is_file(), words[1])
+                    elif words[0] == "node":
+                        self.assertTrue((cwd / words[1]).is_file(), words[1])
+                    elif words[0] == "npm":
+                        self.assertEqual(words[1], "run")
+                        self.assertIn(words[2], package["scripts"])
+                    elif words[0] == "npx":
+                        self.assertIn(node_tools[words[1]], package["devDependencies"])
+                    elif words[0] == "go":
+                        self.assertTrue((cwd / "go.mod").is_file())
+                    elif words[0] == "gitleaks":
+                        self.assertIsNotNone(shutil.which("gitleaks"))
                     elif words[0].startswith(WORKSPACE_TOKEN):
                         self.assertTrue(words[0].endswith("/scripts/dev/sonar"))
 
