@@ -26,14 +26,14 @@ class ExplainFavoritesPlanTest(unittest.TestCase):
             parser_path.parent.mkdir(parents=True)
             shutil.copyfile(SCRIPT.with_name("worktree_env.py"), parser_path)
             (root / ".env").write_text(
-                "DB_NAME=wt_jooxf522\nDB_DATABASE=wt_jooxf522\n"
-                "DB_HOST=127.0.0.1\nDB_PORT=15435\nDB_USER=wt_jooxf522\nDB_PASSWORD=fixture\n"
+                "DB_NAME=wt_jooxf_522\nDB_DATABASE=wt_jooxf_522\n"
+                "DB_HOST=127.0.0.1\nDB_PORT=15435\nDB_USER=wt_jooxf_522\nDB_PASSWORD=fixture\n"
             )
             with patch.object(EXPLAIN_FAVORITES_PLAN, "ROOT", root):
                 settings = EXPLAIN_FAVORITES_PLAN.database_settings()
 
-        self.assertEqual(settings["DB_NAME"], "wt_jooxf522")
-        self.assertEqual(settings["DB_USER"], "wt_jooxf522")
+        self.assertEqual(settings["DB_NAME"], "wt_jooxf_522")
+        self.assertEqual(settings["DB_USER"], "wt_jooxf_522")
 
     def test_refuses_the_shared_test_database(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

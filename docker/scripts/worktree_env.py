@@ -18,7 +18,8 @@ from typing import Protocol
 TREE_ENV_NAME = ".env.tree"
 LIVE_DATABASES = frozenset({"xflickr", "xflickr_test"})
 TEST_REDIS_INDEX = "8"
-ID_PATTERN = re.compile(r"^[a-z0-9]{1,24}$")
+ID_PATTERN = re.compile(r"^[a-z0-9_-]{2,32}$")
+DATABASE_NAME_PATTERN = re.compile(r"^wt_[a-z0-9_]{2,32}$")
 SAFE_VALUE = re.compile(r"^[A-Za-z0-9_./:@%+=,~-]*$")
 TREE_KEYS = (
     "TREE_POSTGRES_HOST",
@@ -83,13 +84,13 @@ def render_env(values: dict[str, str]) -> str:
 
 def validate_worktree_id(value: str) -> str:
     if not ID_PATTERN.fullmatch(value):
-        raise ValueError("worktree id must be 1 to 24 lowercase letters or digits")
+        raise ValueError("worktree id must be 2 to 32 lowercase letters, digits, hyphens or underscores")
     return value
 
 
 def database_name(worktree_id: str) -> str:
     """Return the PostgreSQL database resource name produced by scripts/db/tree."""
-    return f"wt_{validate_worktree_id(worktree_id)}"
+    return f"wt_{validate_worktree_id(worktree_id).replace('-', '_')}"
 
 
 def validate_tree(tree: dict[str, str], worktree_id: str) -> None:

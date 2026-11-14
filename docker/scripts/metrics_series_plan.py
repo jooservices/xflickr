@@ -6,7 +6,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -15,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from worktree_env import parse_env_text
+from worktree_env import DATABASE_NAME_PATTERN, parse_env_text
 
 FIXTURE_ROWS = 400_001
 SERIES_SQL = """SELECT bucket, value
@@ -97,7 +96,7 @@ def worktree_env(root: Path) -> dict[str, str]:
     values = parse_env_text((root / ".env").read_text(encoding="utf-8"))
     database = values.get("DB_NAME", "")
     if (
-        not re.fullmatch(r"wt_[a-z0-9]{1,24}", database)
+        not DATABASE_NAME_PATTERN.fullmatch(database)
         or values.get("DB_DATABASE", database) != database
         or values.get("XFLICKR_WORKTREE_PATH") != str(root.resolve())
     ):

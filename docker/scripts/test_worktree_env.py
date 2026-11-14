@@ -18,6 +18,8 @@ from worktree_env import build_env, check_env, database_name, parse_env_text, re
 ROOT = Path(__file__).resolve().parents[2]
 WORKTREE_ID = "jooxf68"
 RESOURCE = "wt_jooxf68"
+TICKET_WORKTREE_ID = "jooxf-522"
+TICKET_RESOURCE = "wt_jooxf_522"
 EXAMPLE = {
     "DB_NAME": "xflickr_test",
     "REDIS_DB": "8",
@@ -42,6 +44,16 @@ TREE = {
     "TREE_ELASTICSEARCH_INDEX_PREFIX": f"{RESOURCE}-",
     "TREE_ELASTICSEARCH_USER": RESOURCE,
     "TREE_ELASTICSEARCH_PASSWORD": "tree-search-secret",
+}
+TICKET_TREE = {
+    **TREE,
+    "TREE_NAME": TICKET_WORKTREE_ID,
+    "TREE_POSTGRES_DATABASE": TICKET_RESOURCE,
+    "TREE_POSTGRES_USER": TICKET_RESOURCE,
+    "TREE_REDIS_USER": TICKET_RESOURCE,
+    "TREE_REDIS_PREFIX": f"{TICKET_RESOURCE}:",
+    "TREE_ELASTICSEARCH_USER": TICKET_RESOURCE,
+    "TREE_ELASTICSEARCH_INDEX_PREFIX": f"{TICKET_RESOURCE}-",
 }
 
 
@@ -79,16 +91,17 @@ class EnvTests(unittest.TestCase):
 
 class ValidationTests(unittest.TestCase):
     def test_accepts_ticket_ids(self):
-        for value in ("jooxf68", "a", "x" * 24):
+        for value in ("jooxf68", "jooxf-522", "jooxf_522", "x" * 32):
             self.assertEqual(validate_worktree_id(value), value)
 
     def test_rejects_unsafe_ticket_ids(self):
-        for value in ("", "UP", "has space", "a-b", "x" * 25, "../x", "a;drop"):
+        for value in ("", "a", "UP", "has space", "x" * 33, "../x", "a;drop"):
             with self.assertRaises(ValueError, msg=value):
                 validate_worktree_id(value)
 
     def test_AC1_database_name_uses_the_db_tree_resource_name(self):
         self.assertEqual(database_name(WORKTREE_ID), RESOURCE)
+        self.assertEqual(database_name(TICKET_WORKTREE_ID), TICKET_RESOURCE)
         self.assertNotIn(database_name(WORKTREE_ID), {"xflickr", "xflickr_test"})
 
 
@@ -203,6 +216,16 @@ class RunTests(unittest.TestCase):
         self.assertNotIn("must-not-be-used", (self.root / ".env").read_text())
         self.assertNotIn("DOCKER_POSTGRES", output)
 
+    def test_AC4_maps_the_lowercase_ticket_key_to_the_db_tree_resource(self):
+        (self.root / ".env.tree").write_text(render_env(TICKET_TREE))
+        code, output = self.call(TICKET_WORKTREE_ID)
+        self.assertEqual(code, 0, output)
+        written = parse_env_text((self.root / ".env").read_text())
+        self.assertEqual(written["DB_NAME"], TICKET_RESOURCE)
+        self.assertEqual(written["DB_USER"], TICKET_RESOURCE)
+        self.assertEqual(written["REDIS_PREFIX"], f"{TICKET_RESOURCE}:")
+        self.assertEqual(written["OPENSEARCH_INDEX_PREFIX"], f"{TICKET_RESOURCE}-")
+
     def test_AC2_missing_env_tree_fails_without_writing_env(self):
         (self.root / ".env.tree").unlink()
         code, output = self.call(WORKTREE_ID)
@@ -290,7 +313,9 @@ class AcceptanceCriteriaTests(unittest.TestCase):
         self.assertIn("scripts/db/tree create", guide)
         self.assertIn("python3 docker/scripts/worktree_env.py", guide)
         self.assertIn("guides/worktree-databases.md", guide)
-        self.assertIn("scripts/db/tree drop <ticket-id>", guide)
+        self.assertIn("scripts/db/tree drop <ticket-id-in-lowercase>", guide)
+        self.assertIn("jooxf-522", guide)
+        self.assertIn("wt_jooxf_522", guide)
 
 
 if __name__ == "__main__":

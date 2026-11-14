@@ -29,7 +29,7 @@ env_value() {
 }
 db_name="$(env_value DB_DATABASE)"
 db_user="$(env_value DB_USERNAME)"
-if [[ ! "$db_name" =~ ^wt_[a-z0-9]{1,24}$ ]]; then
+if [[ ! "$db_name" =~ ^wt_[a-z0-9_]{2,32}$ ]]; then
 	printf 'Refusing to reset database %s: only wt_<ticket-id> worktree databases are allowed.\n' "$db_name" >&2
 	exit 1
 fi

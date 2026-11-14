@@ -19,7 +19,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/db"
 )
 
-var worktreeDatabaseName = regexp.MustCompile(`^wt_[a-z0-9]{1,24}$`)
+var worktreeDatabaseName = regexp.MustCompile(`^wt_[a-z0-9_]{2,32}$`)
 
 // Open returns a migrated pool after refusing live or unrelated databases.
 func Open(t testing.TB, cfg config.DBConfig) *pgxpool.Pool {

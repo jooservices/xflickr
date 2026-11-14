@@ -20,12 +20,14 @@ func TestAC5ValidateDatabaseName(t *testing.T) {
 		allowed bool
 	}{
 		{name: "wt_jooxf522", allowed: true},
+		{name: "wt_jooxf_522", allowed: true},
 		{name: "xflickr", allowed: false},
 		{name: "xflickr_test", allowed: false},
 		{name: "postgres", allowed: false},
 		{name: "xflickr_wtjooxf522", allowed: false},
 		{name: "wt_", allowed: false},
 		{name: "wt_has-dash", allowed: false},
+		{name: "wt_" + strings.Repeat("x", 33), allowed: false},
 		{name: "", allowed: false},
 	}
 	for _, test := range tests {

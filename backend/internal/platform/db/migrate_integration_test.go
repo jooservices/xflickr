@@ -175,6 +175,27 @@ func TestMigrateAppliesLowerVersionAfterHigherVersion(t *testing.T) {
 	assertRelation(t, ctx, pool, "higher_applied", true)
 }
 
+func TestRelationExistsResolvesSchemaQualifiedName(t *testing.T) {
+	ctx, cfg, pool := prepareEmptyMigrationTest(t)
+	var schema string
+	if err := pool.QueryRow(ctx, "SELECT current_schema()").Scan(&schema); err != nil {
+		t.Fatalf("read isolated schema: %v", err)
+	}
+	if _, err := pool.Exec(ctx, "CREATE TABLE relation_exists_probe (id integer)"); err != nil {
+		t.Fatalf("create isolated relation: %v", err)
+	}
+	qualifiedName := schema + ".relation_exists_probe"
+	if !relationExists(t, cfg, qualifiedName) {
+		t.Fatalf("relationExists(%q) = false, want true", qualifiedName)
+	}
+	if _, err := pool.Exec(ctx, "DROP TABLE relation_exists_probe"); err != nil {
+		t.Fatalf("drop isolated relation: %v", err)
+	}
+	if relationExists(t, cfg, qualifiedName) {
+		t.Fatalf("relationExists(%q) = true after the relation was dropped", qualifiedName)
+	}
+}
+
 func prepareMigrationTest(t *testing.T) (context.Context, config.DBConfig, *pgxpool.Pool) {
 	t.Helper()
 	ctx, cfg := prepareIsolatedDatabase(t)
@@ -258,7 +279,7 @@ func relationExists(t *testing.T, cfg config.DBConfig, relation string) bool {
 	defer pool.Close()
 
 	var name *string
-	if err := pool.QueryRow(ctx, `SELECT to_regclass(format('%I.%I', current_schema(), $1::text))`, relation).Scan(&name); err != nil {
+	if err := pool.QueryRow(ctx, "SELECT to_regclass($1::text)", relation).Scan(&name); err != nil {
 		t.Fatalf("lookup relation %s: %v", relation, err)
 	}
 	return name != nil

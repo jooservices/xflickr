@@ -16,15 +16,15 @@ class ContactsUserLookupPlanTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / ".env").write_text(
-                "DB_NAME=wt_jooxf522\nDB_DATABASE=wt_jooxf522\n"
+                "DB_NAME=wt_jooxf_522\nDB_DATABASE=wt_jooxf_522\n"
                 f"XFLICKR_WORKTREE_PATH={root.resolve()}\n"
-                "DB_HOST=127.0.0.1\nDB_PORT=15435\nDB_USER=wt_jooxf522\nDB_PASSWORD=fixture\n"
+                "DB_HOST=127.0.0.1\nDB_PORT=15435\nDB_USER=wt_jooxf_522\nDB_PASSWORD=fixture\n"
             )
             with patch.object(contacts_user_lookup_plan, "ROOT", root):
-                environment = contacts_user_lookup_plan.postgres_environment("jooxf522")
+                environment = contacts_user_lookup_plan.postgres_environment("jooxf-522")
 
-        self.assertEqual(environment["PGDATABASE"], "wt_jooxf522")
-        self.assertEqual(environment["PGUSER"], "wt_jooxf522")
+        self.assertEqual(environment["PGDATABASE"], "wt_jooxf_522")
+        self.assertEqual(environment["PGUSER"], "wt_jooxf_522")
         self.assertNotEqual(environment["PGUSER"], "postgres")
 
     def test_refuses_the_live_database(self) -> None:
@@ -37,7 +37,7 @@ class ContactsUserLookupPlanTest(unittest.TestCase):
             )
             with patch.object(contacts_user_lookup_plan, "ROOT", root):
                 with self.assertRaises(ValueError):
-                    contacts_user_lookup_plan.postgres_environment("jooxf522")
+                    contacts_user_lookup_plan.postgres_environment("jooxf-522")
 
 
 if __name__ == "__main__":
