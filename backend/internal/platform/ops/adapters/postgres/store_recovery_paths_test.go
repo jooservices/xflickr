@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/jooservices/xflickr/internal/platform/ops"
 )
 
@@ -159,7 +160,7 @@ func TestTimeoutClearsOptionalTimestamp(t *testing.T) {
 	if err := row.Scan(&value); err != nil {
 		t.Fatal(err)
 	}
-	var optional = &value
+	optional := &value
 	if err := row.Scan(&optional); err != nil || optional != nil {
 		t.Fatalf("optional timestamp = %v, error = %v", optional, err)
 	}
