@@ -1,6 +1,6 @@
 # XFlickr environment (read this first; it overrides any ticket text that disagrees)
 
-XFlickr is developed and run on the Dev Workspaces VM (`dev-workspaces`, 192.168.10.100). Go and Node run natively on the host, and the VM hosts the shared services below. Nothing in this project starts its own database, cache or search service for development or tests. Every service listens on loopback only.
+XFlickr is developed and run on the Dev Workspaces VM (`dev-workspaces`, 192.168.10.100). Go and Node run natively on the host, and the VM hosts the shared services below for local development and tests. Local commands do not start their own database, cache or search service. GitHub Actions runs on separate hosted runners and provisions workflow service containers for integration tests. Every local shared service listens on loopback only.
 
 ## Shared services (on the VM)
 
@@ -25,12 +25,13 @@ Service administrator credentials live in the private `Workspaces/.env.docker`. 
 6. The Flickr API key and secret are entered only in the application UI (setup wizard and Keys screen), stored encrypted. There is no CLI or `.env` path for them and none may be added.
 7. Ollama (captions, embeddings) runs natively on the host when available; tests use the fake Captioner and Embedder. AI features are for the owner only in release 1.
 8. Deployment to other servers is out of scope for release 1.
-9. Go 1.27.4 and Node are installed natively on the VM. `backend/go.mod` pins
-   the Go version used by GitHub Actions; the root `Dockerfile` uses the same
-   version for its build image. `make check-go-version` verifies those pins and
-   runs in CI. `docker/scripts/run.sh` runs Go and Node directly, so `make lint`,
-   `make test` and `make check` work on the VM and on GitHub Actions. If
-   `WORKSPACES_RUNTIME` is set it is used instead.
+9. Go, Node, Python and golangci-lint are pinned in `.tool-versions`. CI reads
+   those pins for its setup actions; `make check-tool-versions` warns when the
+   local Go, Node or Python runtime differs. `backend/go.mod` and the root
+   `Dockerfile` must keep the same Go version; `make check-go-version` verifies
+   them. `docker/scripts/run.sh` runs Go and Node directly, so the Make targets
+   work on the VM and on GitHub Actions. If `WORKSPACES_RUNTIME` is set it is
+   used instead.
 10. Work is done in a git worktree per ticket with its own scoped service identities. When a ticket needs a database, run `scripts/db/tree create <ticket-id-in-lowercase>` from the Workspaces root, then run `python3 docker/scripts/worktree_env.py <ticket-id-in-lowercase>` from the XFlickr worktree. Keep the hyphen in the ticket key: `JOOXF-522` becomes `jooxf-522`, and the tree tool maps it to PostgreSQL database and role `wt_jooxf_522`; Redis and Elasticsearch receive matching users and private prefixes. `worktree_env.py` maps `.env.tree` into a private `.env`, keeps other settings and an existing master key, and refuses missing or mismatched tree credentials and the PostgreSQL root account. See `Workspaces/guides/worktree-databases.md` for the workspace database lifecycle. When the ticket is finished, remove its resources with `scripts/db/tree drop <ticket-id-in-lowercase>` (for example, `scripts/db/tree drop jooxf-522`). The command removes the tree resources and `.env.tree`.
 11. The develop runtime on the VM is a native process built from `backend/cmd/xflickr` with its own git-ignored `.env.develop` (it holds the encryption master key: never delete or replace it). It uses the live database `xflickr`. Only the develop runtime touches the live database. It is started by hand for now; `make develop-up` and `docs/develop-environment.md` still describe the older Docker flow of the WSL workstation and do not apply on the VM until JOOXF-315 (native develop runtime) replaces them.
 12. The mandatory Gitleaks scan before push reads `.gitleaksignore`, which lists the 24 reviewed false positives of the history by fingerprint (test constants, RFC 5849 example tokens, a generated OpenAPI blob). A new finding is fixed or rejected, never added there without a lead review of the value.
@@ -84,5 +85,6 @@ CPU or memory cost of registration and login.
 
 ## Web test report in CI
 
-When the `web` job fails, the vitest JUnit report is uploaded as the run artifact `vitest-report` (kept 7 days).
-Find it in the GitHub Actions tab: open the failed run and download it from the Artifacts section of the summary page.
+When a `web-test` shard fails, its vitest JUnit report is uploaded as a
+`vitest-report-*` run artifact (kept 7 days). Open the failed run and download
+the matching shard from the Artifacts section of the summary page.

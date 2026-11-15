@@ -48,6 +48,25 @@ class GoVersionTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must read its Go version"):
             check_versions(GO_MOD, DOCKERFILE, [pinned_ci])
 
+    def test_ci_output_pin_and_tool_versions_match_the_module(self) -> None:
+        pinned_ci = CI.replace("go-version-file: backend/go.mod", "go-version: ${{ needs.changes.outputs.go_version }}")
+        self.assertEqual(
+            check_versions(
+                GO_MOD,
+                DOCKERFILE,
+                [pinned_ci],
+                "go 1.27.3\nnodejs 24.22.3\ngolangci-lint 2.15.0\npython 3.13.18\n",
+            ),
+            "1.27.3",
+        )
+        with self.assertRaisesRegex(ValueError, ".tool-versions uses Go 1.27.2"):
+            check_versions(
+                GO_MOD,
+                DOCKERFILE,
+                [pinned_ci],
+                "go 1.27.2\nnodejs 24.22.3\ngolangci-lint 2.15.0\npython 3.13.18\n",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

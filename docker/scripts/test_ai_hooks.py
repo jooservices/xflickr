@@ -102,6 +102,7 @@ class HooksTests(unittest.TestCase):
         scripts.mkdir(parents=True)
         shutil.copy(ROOT / 'docker/scripts/lint.sh', scripts / 'lint.sh')
         (self.worktree / 'Makefile').write_text('lint:\n\t@bash docker/scripts/lint.sh\n', encoding='utf-8')
+        (self.worktree / '.tool-versions').write_text('golangci-lint 2.15.0\n', encoding='utf-8')
         wrapper = scripts / 'run.sh'
         wrapper.write_text('#!/bin/sh\nif [ "$1" = python ]; then exec "$2" "$3"; fi\nexit 0\n', encoding='utf-8')
         wrapper.chmod(0o755)
@@ -114,10 +115,10 @@ class HooksTests(unittest.TestCase):
                 'import os\nimport sys\nfrom pathlib import Path\nname = Path(__file__).name\nwith open(os.environ["TRACE_FILE"], "a", encoding="utf-8") as trace:\n    trace.write(name + "\\n")\nsys.exit(name == os.environ["FAIL_SCRIPT"])\n',
                 encoding='utf-8',
             )
-        self.git('add', '.ai/project.json', 'Makefile', 'docker/scripts', cwd=self.worktree)
+        self.git('add', '.ai/project.json', 'Makefile', '.tool-versions', 'docker/scripts', cwd=self.worktree)
         self.git('commit', '-m', 'test(flow): Check final gate failures (JOOXF-518)', cwd=self.worktree)
         trace = Path(self.temp.name) / 'trace'
-        for failed_script in ('test_pr_guard.py', 'api-usage-check.test.sh'):
+        for failed_script in ('test_pr_guard.py', 'test_ai_profile.py'):
             with self.subTest(failed_script=failed_script):
                 trace.write_text('', encoding='utf-8')
                 result = run([str(WORKSPACE / 'scripts/dev/check'), 'final'], self.worktree, env={'FAIL_SCRIPT': failed_script, 'TRACE_FILE': str(trace)})

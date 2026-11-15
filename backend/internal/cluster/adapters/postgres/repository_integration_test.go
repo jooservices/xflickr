@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -219,14 +220,20 @@ func TestDuplicateEgressPlanUsesIndex(t *testing.T) {
 	pool := openDuplicateIntegrationDatabase(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 	defer cancel()
+	// The 400,000 fixture rows live in a transaction that is rolled back: deleting them afterwards took longer than
+	// any cleanup timeout and left rows that broke the next run on the same database.
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
 	prefix := fmt.Sprintf("duplicate-plan-%d", time.Now().UnixNano())
-	cleanupDuplicateFixtures(t, pool, prefix)
 	const fixtureSize = 400_000
 	at := time.Now().UTC().Truncate(time.Microsecond)
 	const egressIP = "198.19.0.1"
-	insertDuplicateNode(t, ctx, pool, duplicateNode{name: prefix + "-current", roles: []string{"crawl"}, state: "online", egressIP: egressIP, heartbeatAt: timePointer(at)})
-	insertDuplicateNode(t, ctx, pool, duplicateNode{name: prefix + "-match", roles: []string{"crawl"}, state: "online", egressIP: egressIP, heartbeatAt: timePointer(at)})
-	command, err := pool.Exec(ctx, `
+	insertDuplicateNode(t, ctx, tx, duplicateNode{name: prefix + "-current", roles: []string{"crawl"}, state: "online", egressIP: egressIP, heartbeatAt: timePointer(at)})
+	insertDuplicateNode(t, ctx, tx, duplicateNode{name: prefix + "-match", roles: []string{"crawl"}, state: "online", egressIP: egressIP, heartbeatAt: timePointer(at)})
+	command, err := tx.Exec(ctx, `
 INSERT INTO nodes (name, roles, state, egress_ip, last_heartbeat_at, token_hash)
 SELECT $1 || '-' || lpad(fixture.id::text, 6, '0'), ARRAY['crawl'], 'online',
        '198.18.0.0'::inet + fixture.id, $3,
@@ -238,13 +245,13 @@ FROM generate_series(1, $2::integer) AS fixture(id)`, prefix, fixtureSize, at)
 	if command.RowsAffected() != fixtureSize {
 		t.Fatalf("inserted %d index plan fixtures, want %d", command.RowsAffected(), fixtureSize)
 	}
-	if _, err := pool.Exec(ctx, `ANALYZE nodes`); err != nil {
+	if _, err := tx.Exec(ctx, `ANALYZE nodes`); err != nil {
 		t.Fatalf("analyze duplicate egress fixtures: %v", err)
 	}
 
 	warningInterval := pgtype.Interval{Microseconds: domain.WarningAfter.Microseconds(), Valid: true}
 	var rawPlan []byte
-	if err := pool.QueryRow(ctx, `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) `+findDuplicateEgressSQL,
+	if err := tx.QueryRow(ctx, `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) `+findDuplicateEgressSQL,
 		egressIP, prefix+"-current", at, warningInterval).Scan(&rawPlan); err != nil {
 		t.Fatalf("explain duplicate egress lookup: %v", err)
 	}
@@ -275,9 +282,14 @@ type duplicateNode struct {
 	coolingUntil *time.Time
 }
 
-func insertDuplicateNode(t *testing.T, ctx context.Context, pool *pgxpool.Pool, node duplicateNode) {
+// execer is what the fixtures need of a pool or of a transaction.
+type execer interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func insertDuplicateNode(t *testing.T, ctx context.Context, db execer, node duplicateNode) {
 	t.Helper()
-	if _, err := pool.Exec(ctx, `
+	if _, err := db.Exec(ctx, `
 INSERT INTO nodes (name, roles, state, egress_ip, last_heartbeat_at, cooling_until, token_hash)
 VALUES ($1, $2, $3, NULLIF($4, '')::inet, $5, $6,
         decode(md5($1) || md5($1 || ':token'), 'hex'))`, node.name, node.roles, node.state, node.egressIP, node.heartbeatAt, node.coolingUntil); err != nil {
