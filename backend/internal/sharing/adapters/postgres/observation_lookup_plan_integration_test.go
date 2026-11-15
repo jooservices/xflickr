@@ -133,7 +133,7 @@ func TestObservationLookupUsesRecordIndex(t *testing.T) {
 	if indexBytes <= 0 {
 		t.Fatal("representative lookup index has no allocated pages")
 	}
-	t.Logf("representative lookup metrics: observation_rows=400001 index_size_bytes=%d; execution time and buffer I/O are in the plan above", indexBytes)
+	t.Logf("representative lookup metrics (the configured worktree database, which already holds other data; 400001 observation rows are added in this transaction): index_size_bytes=%d; execution time and buffer I/O are in the plan above", indexBytes)
 	if strings.Contains(planText, "Seq Scan on observations") || strings.Contains(planText, "Seq Scan on observations_p") {
 		t.Fatalf("photo sharing lookup scans observations sequentially:\n%s", planText)
 	}

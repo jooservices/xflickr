@@ -88,6 +88,6 @@ it('useKeyForm maps the duplicate-key answer to a key field error that clears on
   expect(result.current.banner).toBeNull();
   expect(onSaved).not.toHaveBeenCalled();
 
-  act(() => result.current.setField('key', KEY));
+  act(() => result.current.setField('key', 'b'.repeat(32)));
   expect(result.current.keyError).toBeNull();
 });
