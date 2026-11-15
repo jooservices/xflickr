@@ -43,5 +43,6 @@
   "library.status.loading": "Đang tải thư viện…",
   "library.status.stale": "Danh sách ảnh đã tải có thể chưa được cập nhật.",
   "library.title": "Thư viện",
-  "library.selection.limit": "Giới hạn lựa chọn là 500 ảnh. Các ảnh đã chọn chưa được thêm vào danh sách tải."
+  "library.selection.limit": "Giới hạn lựa chọn là 500 ảnh. Các ảnh đã chọn chưa được thêm vào danh sách tải.",
+  "library.photo.open": "Mở {{title}}"
 }

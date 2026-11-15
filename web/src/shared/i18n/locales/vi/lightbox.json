@@ -12,5 +12,15 @@
   "error.body": "Kiểm tra kết nối rồi thử lại.",
   "error.preview": "Không thể xem trước ảnh",
   "error.not-found": "Ảnh này không khả dụng",
-  "retry": "Thử lại"
+  "retry": "Thử lại",
+  "owner": "Chủ sở hữu",
+  "sizes.title": "Kích thước",
+  "sizes.status.none": "Chưa kiểm tra kích thước",
+  "sizes.status.provisional": "Kích thước tạm thời",
+  "sizes.status.confirmed": "Kích thước đã xác nhận",
+  "sizes.status.unavailable": "Không có kích thước",
+  "sizes.dimensions-unavailable": "Chưa có thông tin kích thước",
+  "sizes.provisional": "Tạm thời",
+  "sizes.confirmed": "Đã xác nhận",
+  "tags.title": "Thẻ"
 }

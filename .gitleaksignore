@@ -34,6 +34,7 @@ b0e45244b3b0b467e791db8f67d56f3be92d3ca7:backend/pkg/flickr/oauth/signer_test.go
 b0e45244b3b0b467e791db8f67d56f3be92d3ca7:backend/pkg/flickr/oauth/signer_test.go:generic-api-key:233
 
 # JOOXF-506 test constants (placeholder words, reviewed by the lead 2026-11-14)
+# Reviewed: deterministic test-only key-format fixtures in the MSW-isolated key-form tests.
 1f13a592773da4df5eb12a2856bca2806611fa1d:web/src/pages/setup/useKeyForm.test.ts:generic-api-key:11
 1f13a592773da4df5eb12a2856bca2806611fa1d:web/src/pages/setup/useKeyForm.test.ts:generic-api-key:12
 1f13a592773da4df5eb12a2856bca2806611fa1d:web/src/pages/setup/useKeyForm.test.ts:generic-api-key:91

@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
+import { MemoryRouter } from 'react-router';
 import { http, HttpResponse } from 'msw/http';
 import { describe, expect, it, vi } from 'vitest';
 import type { CatalogPhoto } from '../../shared/api/gen/models';
@@ -48,28 +49,30 @@ function ViewerHarness({ photoIds, initialIndex, locale, onClose }: HarnessProps
   return (
     <I18nProvider initialLocale={locale}>
       <QueryClientProvider client={client}>
-        <main>
-          <h1 tabIndex={-1}>Gallery</h1>
-          <button
-            ref={setOpener}
-            type="button"
-            onClick={() => setOpen(true)}
-            data-testid="gallery-opener"
-          >
-            Open photo
-          </button>
-          {open ? (
-            <PhotoViewer
-              photoIds={photoIds}
-              initialIndex={initialIndex}
-              opener={opener}
-              onClose={() => {
-                onClose();
-                setOpen(false);
-              }}
-            />
-          ) : null}
-        </main>
+        <MemoryRouter>
+          <main>
+            <h1 tabIndex={-1}>Gallery</h1>
+            <button
+              ref={setOpener}
+              type="button"
+              onClick={() => setOpen(true)}
+              data-testid="gallery-opener"
+            >
+              Open photo
+            </button>
+            {open ? (
+              <PhotoViewer
+                photoIds={photoIds}
+                initialIndex={initialIndex}
+                opener={opener}
+                onClose={() => {
+                  onClose();
+                  setOpen(false);
+                }}
+              />
+            ) : null}
+          </main>
+        </MemoryRouter>
       </QueryClientProvider>
     </I18nProvider>
   );
@@ -362,6 +365,36 @@ describe('PhotoViewer', () => {
     expect(screen.getByTestId('lightbox-position')).toHaveTextContent('Photo 1 of 2');
   });
 
+  it('moves on horizontal touch swipes and ignores vertical drags', async () => {
+    const requested: string[] = [];
+    server.use(
+      http.get('*/photos/:id', ({ params }) => {
+        requested.push(String(params.id));
+        return HttpResponse.json(photo(Number(params.id)));
+      }),
+    );
+    openViewer();
+    const firstPhoto = await screen.findByRole('img', { name: 'Photo 101' });
+
+    fireEvent.touchStart(firstPhoto, {
+      touches: [{ identifier: 1, target: firstPhoto, clientX: 220, clientY: 80 }],
+    });
+    fireEvent.touchEnd(firstPhoto, {
+      changedTouches: [{ identifier: 1, target: firstPhoto, clientX: 120, clientY: 84 }],
+    });
+    expect(await screen.findByRole('img', { name: 'Photo 202' })).toBeInTheDocument();
+
+    const secondPhoto = screen.getByRole('img', { name: 'Photo 202' });
+    fireEvent.touchStart(secondPhoto, {
+      touches: [{ identifier: 1, target: secondPhoto, clientX: 120, clientY: 80 }],
+    });
+    fireEvent.touchEnd(secondPhoto, {
+      changedTouches: [{ identifier: 1, target: secondPhoto, clientX: 110, clientY: 180 }],
+    });
+    expect(screen.getByRole('img', { name: 'Photo 202' })).toBeInTheDocument();
+    expect(requested).toEqual(['101', '202']);
+  });
+
   it('translates controls and position to Vietnamese', async () => {
     server.use(http.get('*/photos/:id', () => HttpResponse.json(photo(101))));
     openViewer([101, 202], 0, 'vi');
@@ -374,21 +407,27 @@ describe('PhotoViewer', () => {
 
   it('focuses Close, traps Tab, closes with Escape and restores focus to the opener', async () => {
     server.use(http.get('*/photos/:id', () => HttpResponse.json(photo(101))));
+    const previousTitle = document.title;
+    document.title = 'Library · XFlickr';
     const { opener, onClose } = openViewer();
-    const dialog = await screen.findByTestId('photo-lightbox');
+    await screen.findByTestId('photo-lightbox');
     const close = screen.getByTestId('lightbox-close');
-    const next = screen.getByTestId('lightbox-next');
+    const owner = await screen.findByRole('link', { name: 'owner@example' });
+    await screen.findByRole('img', { name: 'Photo 101' });
 
     expect(close).toHaveFocus();
+    expect(document.title).toBe('Photo 101 · Photo viewer · XFlickr');
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
-    expect(next).toHaveFocus();
+    expect(owner).toHaveFocus();
     fireEvent.keyDown(document, { key: 'Tab' });
-    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    expect(close).toHaveFocus();
 
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByTestId('photo-lightbox')).toBeNull());
     expect(onClose).toHaveBeenCalledOnce();
     expect(opener).toHaveFocus();
+    expect(document.title).toBe('Library · XFlickr');
+    document.title = previousTitle;
   });
 
   it('closes from the Close button and restores focus to its opener', async () => {

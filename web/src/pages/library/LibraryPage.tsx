@@ -5,6 +5,7 @@ import type { CatalogFavorite } from '../../shared/api/gen/models';
 import { useSession } from '../../entities';
 import { Icon, useI18n } from '../../shared';
 import { LibraryApiError, loadFavorites } from '../../features/library/api';
+import { PhotoViewer } from '../../features/photo-viewer';
 import { PhotoGrid } from './PhotoGrid';
 import { selectVisible } from './selection';
 import { loadSelection, saveSelection } from './selectionStorage';
@@ -34,6 +35,7 @@ export function LibraryPage() {
   const { session } = useSession();
   const userId = session.status === 'authenticated' ? session.user.id : 0;
   const [selected, setSelected] = useState<Set<number>>(() => loadSelection(userId));
+  const [viewer, setViewer] = useState<{ index: number; opener: HTMLButtonElement } | null>(null);
   const [contacts, setContacts] = useState<Set<string>>(() => new Set());
   const [contactSearch, setContactSearch] = useState('');
   const [debouncedContactSearch, setDebouncedContactSearch] = useState('');
@@ -85,6 +87,7 @@ export function LibraryPage() {
       }),
     [captioned, contacts, photos, sizesReady],
   );
+  const viewerPhotoIds = visiblePhotos.map(({ photo }) => photo.id);
   const number = new Intl.NumberFormat(locale);
   const filtered = contacts.size > 0 || sizesReady || captioned;
   const currentError = favorites.error;
@@ -116,6 +119,11 @@ export function LibraryPage() {
     setDebouncedContactSearch('');
     setSizesReady(false);
     setCaptioned(false);
+  };
+
+  const openPhoto = (photoId: number, opener: HTMLButtonElement) => {
+    const index = viewerPhotoIds.indexOf(photoId);
+    if (index >= 0) setViewer({ index, opener });
   };
 
   const status = errorStatus(currentError);
@@ -349,6 +357,7 @@ export function LibraryPage() {
                 selectionFull={selected.size >= 500}
                 staleNotice={favorites.isRefetchError}
                 onToggleSelected={toggleSelection}
+                onOpenPhoto={openPhoto}
               />
             )}
 
@@ -385,6 +394,14 @@ export function LibraryPage() {
           </section>
         </div>
       )}
+      {viewer ? (
+        <PhotoViewer
+          photoIds={viewerPhotoIds}
+          initialIndex={viewer.index}
+          opener={viewer.opener}
+          onClose={() => setViewer(null)}
+        />
+      ) : null}
     </section>
   );
 }
