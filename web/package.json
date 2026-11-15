@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "lint": "node scripts/check-i18n.mjs && node scripts/check-e2e-layers.mjs && eslint . && prettier --check .",
     "test:i18n-script": "node --test scripts/check-i18n.test.mjs",
-    "test:scripts": "node --test scripts/check-i18n.test.mjs scripts/check-e2e-layers.test.mjs",
+    "test:scripts": "node --test scripts/check-i18n.test.mjs scripts/check-e2e-layers.test.mjs scripts/commitlint-config.test.mjs",
     "format": "prettier --write .",
     "gen:api": "redocly bundle ../contracts/openapi/openapi.yaml --output ../.tmp/openapi.bundle.yaml && orval --config orval.config.ts && prettier --write src/shared/api/gen src/shared/api/zod",
     "test": "vitest run --coverage",
