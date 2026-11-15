@@ -17,7 +17,7 @@ type downloadsFake struct {
 	calls      int
 }
 
-func (f *downloadsFake) DownloadCandidates(context.Context, string, string, []int64) ([]catalogapp.DownloadCandidate, error) {
+func (f *downloadsFake) DownloadCandidates(context.Context, int64, string, string, []int64) ([]catalogapp.DownloadCandidate, error) {
 	return f.candidates, f.err
 }
 

@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 import { SEEDED_NSID } from '../support/env';
 import { observeCrawledPhoto } from '../support/catalog';
@@ -11,7 +11,8 @@ import {
   requeueAlbums,
   seedMissingPerson,
 } from '../support/factories';
-import { apiWrite } from '../steps/api';
+import { worktreeSQL } from '../support/worktree';
+import { apiWrite, setFlickrScenario } from '../steps/api';
 import {
   photoSizesStatus,
   personPhotoCount,
@@ -87,4 +88,29 @@ export async function confirmProvisionalSizesByDownloadRequest(page: Page): Prom
   expect(downloadItemIsActive(repeatedID, photoID)).toBe('t');
   await expectNoErrorPage(page, '/crawl after a direct download request');
   watch.expectClean('on-demand sizes');
+}
+
+/** The owner's own restricted photo is confirmed with the connected account token, not left provisional. */
+export async function confirmOwnerRestrictedSizesWithAccountToken(
+  page: Page,
+  request: APIRequestContext,
+): Promise<void> {
+  const watch = monitor(page);
+  await setFlickrScenario(request, {});
+  await openPage(page, '/crawl');
+  await expectCrawlPage(page);
+  const photoID = 52000000004;
+  await expect.poll(() => observeCrawledPhoto(photoID), { timeout: 30_000 }).toBe(true);
+  worktreeSQL(
+    `UPDATE photos SET server='65535', sizes_status='provisional', sizes_checked_at=NULL WHERE id=${photoID}`,
+  );
+  expect(worktreeSQL(`SELECT server FROM photos WHERE id=${photoID}`)).toBe('65535');
+  const created = await apiWrite(page, 'POST', '/downloads', {
+    kind: 'tray',
+    photo_ids: [photoID],
+  });
+  expect(created.status).toBe(201);
+  await expect.poll(() => photoSizesStatus(page, photoID), { timeout: 15_000 }).toBe('confirmed');
+  await expectNoErrorPage(page, '/crawl after restricted sizes confirmation');
+  watch.expectClean('restricted owner sizes');
 }

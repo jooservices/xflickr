@@ -16,6 +16,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/db"
 	"github.com/jooservices/xflickr/internal/platform/db/dbtest"
 	"github.com/jooservices/xflickr/internal/schedule/adapters/queuepostgres"
+	"github.com/jooservices/xflickr/migrations"
 )
 
 const oldestAgeSQL = `SELECT COALESCE(GREATEST(0, floor(extract(epoch FROM now()-min(created_at)))), 0)::bigint
@@ -184,9 +185,30 @@ func checkOldestPlan(t *testing.T, node oldestPlanNode) bool {
 	return found
 }
 
+// oldestMigration is the migration that creates the index this test rolls back.
+const oldestMigration = "20261112120300_work_items_active_created_at_index.sql"
+
+// rollBackMigrationsNewerThanOldest removes the migrations written after the one under test, so that a single down
+// step reaches it however many migrations were added since.
+func rollBackMigrationsNewerThanOldest(t *testing.T, cfg config.DBConfig) {
+	t.Helper()
+	entries, err := migrations.Files.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read embedded migrations: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".sql") && entry.Name() > oldestMigration {
+			if err := db.Migrate(t.Context(), cfg, db.MigrateDown, nil); err != nil {
+				t.Fatalf("roll back a migration newer than %s: %v", oldestMigration, err)
+			}
+		}
+	}
+}
+
 func TestOldestActiveAgeIndexMigrationIntegration(t *testing.T) {
 	cfg := oldestConfig(t)
 	pool := oldestPool(t, cfg)
+	rollBackMigrationsNewerThanOldest(t, cfg)
 	assertOldestIndex(t, pool)
 	oldestExec(t, pool, `CREATE INDEX oldest_migration_sentinel ON work_items(subject_key)`)
 	oldestExec(t, pool, `INSERT INTO work_items(user_id,kind,subject_key) VALUES(496,'person','preserved')`)

@@ -271,7 +271,7 @@ func (s *Server) response(method string, r *http.Request) (map[string]any, bool)
 		}
 		return photoPage("photos", rows), true
 	case "photos.getSizes":
-		return map[string]any{"stat": "ok", "sizes": map[string]any{"canblog": 0, "canprint": 0, "candownload": 1, "size": []any{s.sizeJSON(photo, r, "Square", 75, 75), s.sizeJSON(photo, r, "Small", 240, 160), s.sizeJSON(photo, r, "Large", 1200, 800), s.sizeJSON(photo, r, "Original", 2400, 1600)}}}, true
+		return s.sizesResponse(photo, r)
 	case "photos.getInfo":
 		return map[string]any{"stat": "ok", "photo": map[string]any{"id": photo.ID, "secret": "seedsecret", "server": "1", "farm": 1, "dateuploaded": "1700000000", "isfavorite": 0, "license": "0", "safety_level": 0, "rotation": 0, "originalsecret": "seedsecret", "originalformat": "jpg", "owner": map[string]any{"nsid": photo.Owner, "username": s.person(photo.Owner).Username, "path_alias": s.person(photo.Owner).Username}, "title": content(photo.Title), "description": content("Seeded public image"), "visibility": map[string]any{"ispublic": 1, "isfriend": 0, "isfamily": 0}, "dates": map[string]any{"posted": "1700000000", "taken": "2023-11-14 00:00:00", "takengranularity": 0, "takenunknown": 0}, "tags": map[string]any{"tag": []any{}}, "urls": map[string]any{"url": []any{map[string]any{"type": "photopage", "_content": publicBaseURL(r) + "/photo/" + photo.ID}}}}}, true
 	case "photos.getExif":
@@ -383,13 +383,25 @@ func (s *Server) galleryList(person Person, r *http.Request) (map[string]any, bo
 	}}, true
 }
 
+// sizesResponse answers photos.getSizes: a restricted photo needs an OAuth token, like the real API.
+func (s *Server) sizesResponse(photo Photo, r *http.Request) (map[string]any, bool) {
+	if (photo.Restricted || s.scenarios.sizesNeedToken(photo.ID)) && strings.TrimSpace(r.Form.Get("oauth_token")) == "" {
+		return flickrFailure(1, "Photo not found")
+	}
+	return map[string]any{"stat": "ok", "sizes": map[string]any{"canblog": 0, "canprint": 0, "candownload": 1, "size": []any{s.sizeJSON(photo, r, "Square", 75, 75), s.sizeJSON(photo, r, "Small", 240, 160), s.sizeJSON(photo, r, "Large", 1200, 800), s.sizeJSON(photo, r, "Original", 2400, 1600)}}}, true
+}
+
 func (s *Server) personJSON(p Person, r *http.Request) map[string]any {
 	return map[string]any{"id": p.NSID, "nsid": p.NSID, "ispro": 0, "is_deleted": 0, "iconserver": "0", "iconfarm": 0, "path_alias": p.Username, "has_stats": 1, "username": content(p.Username), "realname": content(p.RealName), "location": content(""), "description": content("Seed user"), "photosurl": content(publicBaseURL(r) + "/photos/" + p.Username), "profileurl": content(publicBaseURL(r) + "/people/" + p.NSID), "mobileurl": content(""), "photos": map[string]any{"firstdate": content("1700000000"), "firstdatetaken": content("2023-11-14 00:00:00"), "count": content(strconv.Itoa(len(s.photosFor(p.NSID))))}}
 }
 
 func (s *Server) photoJSON(p Photo, r *http.Request) map[string]any {
 	url := publicBaseURL(r) + "/images/" + p.ID + ".jpg"
-	return map[string]any{"id": p.ID, "owner": p.Owner, "secret": "seedsecret", "server": "1", "farm": 1, "title": p.Title, "ispublic": 1, "isfriend": 0, "isfamily": 0, "ownername": s.person(p.Owner).Username, "dateupload": 1700000000, "lastupdate": 1700000100, "date_faved": 1700000200, "views": 1, "tags": "seed", "license": "0", "media": "photo", "description": content("Seeded public image"), "o_width": 2400, "o_height": 1600, "url_sq": url, "url_t": url, "url_s": url, "url_m": url, "url_z": url, "url_l": url, "url_o": url, "width_o": 2400, "height_o": 1600}
+	server := "1"
+	if p.Restricted {
+		server = "65535"
+	}
+	return map[string]any{"id": p.ID, "owner": p.Owner, "secret": "seedsecret", "server": server, "farm": 1, "title": p.Title, "ispublic": 1, "isfriend": 0, "isfamily": 0, "ownername": s.person(p.Owner).Username, "dateupload": 1700000000, "lastupdate": 1700000100, "date_faved": 1700000200, "views": 1, "tags": "seed", "license": "0", "media": "photo", "description": content("Seeded public image"), "o_width": 2400, "o_height": 1600, "url_sq": url, "url_t": url, "url_s": url, "url_m": url, "url_z": url, "url_l": url, "url_o": url, "width_o": 2400, "height_o": 1600}
 }
 
 func (s *Server) sizeJSON(p Photo, r *http.Request, label string, w, h int) map[string]any {

@@ -55,7 +55,7 @@ func (s Downloads) Create(ctx context.Context, input CreateDownloadInput) (media
 			return mediadomain.Download{}, err
 		}
 	}
-	candidates, err := s.Catalog.Candidates(ctx, string(input.Kind), input.Subject, input.PhotoIDs)
+	candidates, err := s.Catalog.Candidates(ctx, input.UserID, string(input.Kind), input.Subject, input.PhotoIDs)
 	if err != nil {
 		return mediadomain.Download{}, err
 	}

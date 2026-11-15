@@ -111,6 +111,57 @@ func TestChooseNeverUsesKeysOfUninterestedUsers(t *testing.T) {
 	}
 }
 
+func TestAvailableChecksOnlyTheRequestedKey(t *testing.T) {
+	pool := newPool([]int64{1}, map[int64][]PoolKey{1: {
+		{ID: 10, Valid: true},
+		{ID: 20, Valid: true},
+	}}, fakeQuota{remaining: map[KeyID]int{10: 5, 20: 500}})
+	available, err := pool.Available(context.Background(), "p", 10, domain.Photo)
+	if err != nil || !available {
+		t.Fatalf("Available(owner key) = %v, %v; want true", available, err)
+	}
+	available, err = pool.Available(context.Background(), "p", 11, domain.Photo)
+	if err != nil || available {
+		t.Fatalf("Available(missing key) = %v, %v; want false", available, err)
+	}
+}
+
+func TestAvailableSkipsInvalidCoolingAndExhaustedKeys(t *testing.T) {
+	keys := map[int64][]PoolKey{1: {
+		{ID: 10, Valid: false},
+		{ID: 11, Valid: true, CooldownUntil: poolNow.Add(time.Minute)},
+		{ID: 12, Valid: true},
+		{ID: 13, Valid: true},
+	}}
+	pool := newPool([]int64{1}, keys, fakeQuota{
+		remaining: map[KeyID]int{10: 10, 11: 10, 12: 0, 13: 10},
+		errs:      map[KeyID]error{13: ErrKeyUnavailable},
+	})
+	for _, key := range []KeyID{10, 11, 12, 13} {
+		available, err := pool.Available(context.Background(), "p", key, domain.Photo)
+		if err != nil || available {
+			t.Errorf("Available(%d) = %v, %v; want false", key, available, err)
+		}
+	}
+}
+
+func TestAvailablePropagatesDependencyErrors(t *testing.T) {
+	boom := errors.New("capacity failed")
+	pool := newPool([]int64{1}, map[int64][]PoolKey{1: {{ID: 10, Valid: true}}},
+		fakeQuota{errs: map[KeyID]error{10: boom}})
+	if _, err := pool.Available(context.Background(), "p", 10, domain.Photo); !errors.Is(err, boom) {
+		t.Fatalf("Available() error = %v; want capacity failure", err)
+	}
+	pool.Keys = fakeKeys{err: boom}
+	if _, err := pool.Available(context.Background(), "p", 10, domain.Photo); !errors.Is(err, boom) {
+		t.Fatalf("Available() key source error = %v; want key source failure", err)
+	}
+	pool.Interests = fakeInterests{err: boom}
+	if _, err := pool.Available(context.Background(), "p", 10, domain.Photo); !errors.Is(err, boom) {
+		t.Fatalf("Available() interest error = %v; want interest failure", err)
+	}
+}
+
 func TestChooseNoInterestOrNoEligibleKeyIsErrNoKey(t *testing.T) {
 	keys := map[int64][]PoolKey{1: {{ID: 10, Valid: true}}}
 	for name, pool := range map[string]KeyPool{

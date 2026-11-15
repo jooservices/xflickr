@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -14,12 +15,23 @@ import (
 //go:embed photolane.sql
 var photoLaneSQL string
 
+//go:embed photo_sizes_confirmed.sql
+var photoSizesConfirmedSQL string
+
+const photoSizesConfirmedMarker = "__PHOTO_SIZES_CONFIRMED__"
+
 const (
 	// firstPersonChunk is how many top-ranked persons the first probe reads.
 	firstPersonChunk = 128
 	// maxPersonChunk bounds how wide a probe may grow.
 	maxPersonChunk = 1 << 20
+	// maxPhotosPerOwner bounds photo reads for each person in one selection.
+	maxPhotosPerOwner = 50
 )
+
+func photoLaneQuery() string {
+	return strings.ReplaceAll(photoLaneSQL, photoSizesConfirmedMarker, photoSizesConfirmedSQL)
+}
 
 type photoLanePool interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)
@@ -43,7 +55,7 @@ func (l PhotoLane) Select(ctx context.Context, limit, skip int, optionalFacets [
 	want := limit + skip
 	var refs []app.PhotoRef
 	for chunk := firstPersonChunk; ; chunk *= 2 {
-		found, more, err := l.probe(ctx, chunk, want, optionalFacets)
+		found, more, err := l.probe(ctx, chunk, want, skip, optionalFacets)
 		if err != nil {
 			return nil, err
 		}
@@ -58,8 +70,8 @@ func (l PhotoLane) Select(ctx context.Context, limit, skip int, optionalFacets [
 	return refs[skip:], nil
 }
 
-func (l PhotoLane) probe(ctx context.Context, persons, photos int, optionalFacets []string) ([]app.PhotoRef, bool, error) {
-	rows, err := l.Pool.Query(ctx, photoLaneSQL, persons, photos, optionalFacets)
+func (l PhotoLane) probe(ctx context.Context, persons, photos, skip int, optionalFacets []string) ([]app.PhotoRef, bool, error) {
+	rows, err := l.Pool.Query(ctx, photoLaneQuery(), persons, photos, optionalFacets, maxPhotosPerOwner, skip)
 	if err != nil {
 		return nil, false, fmt.Errorf("catalog: select photo lane: %w", err)
 	}
@@ -68,13 +80,18 @@ func (l PhotoLane) probe(ctx context.Context, persons, photos int, optionalFacet
 	more := false
 	for rows.Next() {
 		var id *int64
+		var ownerKeyID *int64
 		var owner *string
 		var facet *string
-		if err := rows.Scan(&more, &id, &owner, &facet); err != nil {
+		if err := rows.Scan(&more, &id, &owner, &facet, &ownerKeyID); err != nil {
 			return nil, false, fmt.Errorf("catalog: scan photo lane: %w", err)
 		}
 		if id != nil && owner != nil && facet != nil {
-			out = append(out, app.PhotoRef{ID: *id, OwnerNSID: *owner, Facet: *facet})
+			ref := app.PhotoRef{ID: *id, OwnerNSID: *owner, Facet: *facet}
+			if ownerKeyID != nil {
+				ref.OwnerKeyID = *ownerKeyID
+			}
+			out = append(out, ref)
 		}
 	}
 	if err := rows.Err(); err != nil {

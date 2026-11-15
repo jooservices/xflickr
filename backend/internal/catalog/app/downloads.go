@@ -19,14 +19,14 @@ type DownloadCandidate struct {
 }
 
 type DownloadPhotoRepository interface {
-	DownloadCandidates(context.Context, string, string, []int64) ([]DownloadCandidate, error)
+	DownloadCandidates(context.Context, int64, string, string, []int64) ([]DownloadCandidate, error)
 }
 
 type DownloadCatalog struct{ Photos DownloadPhotoRepository }
 
-func (c DownloadCatalog) Candidates(ctx context.Context, kind, subject string, ids []int64) ([]DownloadCandidate, error) {
-	if ctx == nil || c.Photos == nil {
+func (c DownloadCatalog) Candidates(ctx context.Context, userID int64, kind, subject string, ids []int64) ([]DownloadCandidate, error) {
+	if ctx == nil || c.Photos == nil || userID <= 0 {
 		return nil, errors.New("catalog: download photo repository and context are required")
 	}
-	return c.Photos.DownloadCandidates(ctx, kind, subject, ids)
+	return c.Photos.DownloadCandidates(ctx, userID, kind, subject, ids)
 }

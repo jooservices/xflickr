@@ -18,26 +18,65 @@ type Repository struct {
 
 var _ catalogapp.DownloadPhotoRepository = Repository{}
 
-func (r Repository) DownloadCandidates(ctx context.Context, kind, subject string, ids []int64) ([]catalogapp.DownloadCandidate, error) {
-	if r.Pool == nil || ctx == nil {
+func (r Repository) DownloadCandidates(ctx context.Context, userID int64, kind, subject string, ids []int64) ([]catalogapp.DownloadCandidate, error) {
+	if r.Pool == nil || ctx == nil || userID <= 0 {
 		return nil, errors.New("catalog: download database and context are required")
 	}
+	rows, err := r.queryDownloadPhotos(ctx, userID, kind, subject, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return collectDownloadCandidates(rows)
+}
+
+// queryDownloadPhotos selects the photos of a contact, an album or the tray, each with its sizes state and observers.
+func (r Repository) queryDownloadPhotos(ctx context.Context, userID int64, kind, subject string, ids []int64) (pgx.Rows, error) {
 	var rows pgx.Rows
 	var err error
 	switch kind {
 	case "contact":
-		rows, err = r.Pool.Query(ctx, `WITH selected AS (SELECT p.id,p.owner_nsid,p.visibility,p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update AS sizes_confirmed FROM photos p WHERE p.owner_nsid=$1 AND p.tombstoned_at IS NULL ORDER BY p.id LIMIT 501) SELECT p.id,p.owner_nsid,p.visibility,p.sizes_confirmed,o.user_id,COALESCE(ss.enabled,false) FROM selected p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id ORDER BY p.id`, subject)
+		rows, err = r.Pool.Query(ctx, `WITH selected AS (SELECT p.id,p.owner_nsid,p.visibility,
+((p.visibility='public' AND p.server<>'65535' AND p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update) OR EXISTS (
+ SELECT 1 FROM photo_account_sizes pas JOIN flickr_accounts fa ON fa.id=pas.account_id
+ WHERE pas.photo_id=p.id AND pas.photo_updated_at=p.last_update AND pas.photo_visibility=p.visibility
+ AND pas.sizes_status='confirmed' AND fa.user_id=$1 AND fa.status='ok')) AS sizes_confirmed
+FROM photos p WHERE p.owner_nsid=$2 AND p.tombstoned_at IS NULL ORDER BY p.id LIMIT 501)
+SELECT p.id,p.owner_nsid,p.visibility,p.sizes_confirmed,o.user_id,COALESCE(ss.enabled,false)
+FROM selected p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text
+LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id ORDER BY p.id`, userID, subject)
 	case "album":
-		rows, err = r.Pool.Query(ctx, `WITH selected AS (SELECT p.id,p.owner_nsid,p.visibility,p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update AS sizes_confirmed,ap.position FROM album_photos ap JOIN photos p ON p.id=ap.photo_id WHERE ap.album_id=$1 AND p.tombstoned_at IS NULL ORDER BY ap.position,p.id LIMIT 501) SELECT p.id,p.owner_nsid,p.visibility,p.sizes_confirmed,o.user_id,COALESCE(ss.enabled,false) FROM selected p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id ORDER BY p.position,p.id`, subject)
+		rows, err = r.Pool.Query(ctx, `WITH selected AS (SELECT p.id,p.owner_nsid,p.visibility,
+((p.visibility='public' AND p.server<>'65535' AND p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update) OR EXISTS (
+ SELECT 1 FROM photo_account_sizes pas JOIN flickr_accounts fa ON fa.id=pas.account_id
+ WHERE pas.photo_id=p.id AND pas.photo_updated_at=p.last_update AND pas.photo_visibility=p.visibility
+ AND pas.sizes_status='confirmed' AND fa.user_id=$1 AND fa.status='ok')) AS sizes_confirmed,ap.position
+FROM album_photos ap JOIN photos p ON p.id=ap.photo_id WHERE ap.album_id=$2 AND p.tombstoned_at IS NULL
+ORDER BY ap.position,p.id LIMIT 501)
+SELECT p.id,p.owner_nsid,p.visibility,p.sizes_confirmed,o.user_id,COALESCE(ss.enabled,false)
+FROM selected p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text
+LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id ORDER BY p.position,p.id`, userID, subject)
 	case "tray":
-		rows, err = r.Pool.Query(ctx, `SELECT p.id,p.owner_nsid,p.visibility,p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update, o.user_id, COALESCE(ss.enabled,false) FROM photos p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id WHERE p.id=ANY($1::bigint[]) AND p.tombstoned_at IS NULL ORDER BY p.id`, ids)
+		rows, err = r.Pool.Query(ctx, `SELECT p.id,p.owner_nsid,p.visibility,
+((p.visibility='public' AND p.server<>'65535' AND p.sizes_status='confirmed' AND p.sizes_checked_at>=p.last_update) OR EXISTS (
+ SELECT 1 FROM photo_account_sizes pas JOIN flickr_accounts fa ON fa.id=pas.account_id
+ WHERE pas.photo_id=p.id AND pas.photo_updated_at=p.last_update AND pas.photo_visibility=p.visibility
+ AND pas.sizes_status='confirmed' AND fa.user_id=$1 AND fa.status='ok')),
+o.user_id,COALESCE(ss.enabled,false)
+FROM photos p LEFT JOIN observations o ON o.record_kind='photo' AND o.record_id=p.id::text
+LEFT JOIN sharing_settings ss ON ss.user_id=o.user_id
+WHERE p.id=ANY($2::bigint[]) AND p.tombstoned_at IS NULL ORDER BY p.id`, userID, ids)
 	default:
 		return nil, errors.New("catalog: invalid download kind")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("catalog: select download photos: %w", err)
 	}
-	defer rows.Close()
+	return rows, nil
+}
+
+// collectDownloadCandidates folds the joined rows into one candidate per photo, in row order.
+func collectDownloadCandidates(rows pgx.Rows) ([]catalogapp.DownloadCandidate, error) {
 	byID := make(map[int64]*catalogapp.DownloadCandidate)
 	order := make([]int64, 0)
 	for rows.Next() {

@@ -81,6 +81,7 @@ type PhotoEnqueuer interface {
 // PhotoKeyChooser picks the key that pays for a call about a person.
 type PhotoKeyChooser interface {
 	Choose(ctx context.Context, personNSID string, class quotadomain.Class) (quotaapp.KeyID, error)
+	Available(ctx context.Context, personNSID string, keyID quotaapp.KeyID, class quotadomain.Class) (bool, error)
 }
 
 // PhotoFacetEligibility prevents scheduling a closed caller/facet.
@@ -150,12 +151,9 @@ func (l PhotoLane) enqueue(ctx context.Context, ref catalogapp.PhotoRef) (bool, 
 	if facet == "" {
 		facet = PhotoFacet
 	}
-	key, err := l.Keys.Choose(ctx, ref.OwnerNSID, quotadomain.Photo)
-	if errors.Is(err, quotaapp.ErrNoKey) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("schedule: choose key for photo %d: %w", ref.ID, err)
+	key, ok, err := l.photoKey(ctx, ref, facet)
+	if err != nil || !ok {
+		return false, err
 	}
 	if l.Eligibility != nil {
 		allowed, err := l.Eligibility.PhotoFacetAllowed(ctx, ref.ID, int64(key), facet)
@@ -174,4 +172,27 @@ func (l PhotoLane) enqueue(ctx context.Context, ref catalogapp.PhotoRef) (bool, 
 		return false, fmt.Errorf("schedule: enqueue photo %d: %w", ref.ID, err)
 	}
 	return queued, nil
+}
+
+// photoKey returns the key a photo job runs with: the owner's own key when the owner has one, otherwise the key the
+// governor chooses; ok is false when no key can take the job now.
+func (l PhotoLane) photoKey(ctx context.Context, ref catalogapp.PhotoRef, facet string) (key quotaapp.KeyID, ok bool, err error) {
+	if facet == PhotoFacet {
+		key = quotaapp.KeyID(ref.OwnerKeyID)
+	}
+	if key > 0 {
+		available, err := l.Keys.Available(ctx, ref.OwnerNSID, key, quotadomain.Photo)
+		if err != nil {
+			return 0, false, fmt.Errorf("schedule: check owner key %d for photo %d: %w", key, ref.ID, err)
+		}
+		return key, available, nil
+	}
+	key, err = l.Keys.Choose(ctx, ref.OwnerNSID, quotadomain.Photo)
+	if errors.Is(err, quotaapp.ErrNoKey) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("schedule: choose key for photo %d: %w", ref.ID, err)
+	}
+	return key, true, nil
 }

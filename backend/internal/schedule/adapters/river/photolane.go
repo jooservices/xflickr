@@ -99,17 +99,24 @@ func (e PhotoEnqueuer) EnqueuePhoto(ctx context.Context, job app.PhotoJob) (bool
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('photo-lane.ready-cap', 0))`); err != nil {
 			return false, fmt.Errorf("schedule: lock photo size capacity: %w", err)
 		}
-		var sizeActive, active int
-		if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE args->>'kind'=$1), count(*)
-			FROM river_job
-			WHERE args->>'kind' IN ($1,$2) AND args->>'queue' IN ($3,$4)
-			AND state IN ('available','pending','scheduled','retryable','running')`, PhotoJobKind, PhotoFacetJobKind, PhotoQueue, PhotoExtrasQueue).Scan(&sizeActive, &active); err != nil {
-			return false, fmt.Errorf("schedule: count photo size jobs: %w", err)
+		var sizeAtCap, activeAtCap bool
+		if err := tx.QueryRow(ctx, `SELECT
+				EXISTS (SELECT 1 FROM river_job
+					WHERE args->>'kind'=$1
+					AND args->>'queue' IN ($3,$4)
+					AND state IN ('available','pending','scheduled','retryable','running')
+					LIMIT 1 OFFSET $5::int),
+				EXISTS (SELECT 1 FROM river_job
+					WHERE args->>'kind' IN ($1,$2)
+					AND args->>'queue' IN ($3,$4)
+					AND state IN ('available','pending','scheduled','retryable','running')
+					LIMIT 1 OFFSET $5::int)`, PhotoJobKind, PhotoFacetJobKind, PhotoQueue, PhotoExtrasQueue, e.ReadyCap-1).Scan(&sizeAtCap, &activeAtCap); err != nil {
+			return false, fmt.Errorf("schedule: check photo size capacity: %w", err)
 		}
 		// Optional work may use unclaimed capacity, but it cannot consume the
 		// size-job reservation. Sizes remain enqueueable up to the configured cap
 		// even when the lower-priority queue is full.
-		if (kind == PhotoJobKind && sizeActive >= e.ReadyCap) || (kind == PhotoFacetJobKind && active >= e.ReadyCap) {
+		if (kind == PhotoJobKind && sizeAtCap) || (kind == PhotoFacetJobKind && activeAtCap) {
 			return false, nil
 		}
 	}

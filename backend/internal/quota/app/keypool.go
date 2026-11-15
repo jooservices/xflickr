@@ -85,6 +85,41 @@ func (p KeyPool) Choose(ctx context.Context, personNSID string, class domain.Cla
 	return sel.best.ID, nil
 }
 
+// Available reports whether a specific interested user's key can pay for a call.
+// It checks that key without substituting another key from the pool.
+func (p KeyPool) Available(ctx context.Context, personNSID string, keyID KeyID, class domain.Class) (bool, error) {
+	if err := p.precheck(ctx, class); err != nil {
+		return false, err
+	}
+	users, err := p.Interests.InterestedUsers(ctx, personNSID)
+	if err != nil {
+		return false, fmt.Errorf("quota: load interests for %q: %w", personNSID, err)
+	}
+	now := time.Now()
+	if p.Now != nil {
+		now = p.Now()
+	}
+	seenUsers := make(map[int64]bool, len(users))
+	for _, userID := range users {
+		if seenUsers[userID] {
+			continue
+		}
+		seenUsers[userID] = true
+		keys, err := p.Keys.KeysOf(ctx, userID)
+		if err != nil {
+			return false, fmt.Errorf("quota: load keys of user %d: %w", userID, err)
+		}
+		for _, key := range keys {
+			if key.ID != keyID {
+				continue
+			}
+			_, available, err := p.usable(ctx, key, now)
+			return available, err
+		}
+	}
+	return false, nil
+}
+
 // selection tracks the best key seen so far across all interested users.
 type selection struct {
 	best      PoolKey
@@ -95,15 +130,15 @@ type selection struct {
 
 func (p KeyPool) consider(ctx context.Context, keys []PoolKey, now time.Time, sel *selection) error {
 	for _, key := range keys {
-		if sel.seenKeys[key.ID] || !key.Valid || key.CooldownUntil.After(now) {
+		if sel.seenKeys[key.ID] {
 			continue
 		}
 		sel.seenKeys[key.ID] = true
-		remaining, err := p.remaining(ctx, key)
+		remaining, available, err := p.usable(ctx, key, now)
 		if err != nil {
 			return err
 		}
-		if remaining <= 0 {
+		if !available {
 			continue
 		}
 		if !sel.found || better(key, remaining, sel.best, sel.bestQuota) {
@@ -111,6 +146,17 @@ func (p KeyPool) consider(ctx context.Context, keys []PoolKey, now time.Time, se
 		}
 	}
 	return nil
+}
+
+func (p KeyPool) usable(ctx context.Context, key PoolKey, now time.Time) (int, bool, error) {
+	if !key.Valid || key.CooldownUntil.After(now) {
+		return 0, false, nil
+	}
+	remaining, err := p.remaining(ctx, key)
+	if err != nil {
+		return 0, false, err
+	}
+	return remaining, remaining > 0, nil
 }
 
 func (p KeyPool) precheck(ctx context.Context, class domain.Class) error {

@@ -43,7 +43,10 @@ func TestResolveSizesTransactions(t *testing.T) {
 				rows.err = boom
 			}
 			tx := &mediaTxStub{
-				query: func(context.Context, string, ...any) (pgx.Rows, error) {
+				query: func(_ context.Context, sql string, args ...any) (pgx.Rows, error) {
+					if !strings.Contains(sql, "d.user_id=$2") || args[0] != int64(42) || args[1] != int64(7) {
+						t.Fatalf("user-scoped wait query = %s, args=%v", sql, args)
+					}
 					if tc.fail == "query" {
 						return nil, boom
 					}
@@ -80,7 +83,7 @@ func TestResolveSizesTransactions(t *testing.T) {
 				}
 				return tx, nil
 			}}
-			err := (Downloads{Pool: pool, Jobs: jobs}).ResolveSizes(t.Context(), 42, tc.status)
+			err := (Downloads{Pool: pool, Jobs: jobs}).ResolveSizes(t.Context(), 42, 7, tc.status)
 			if tc.fail != "" {
 				if !errors.Is(err, boom) {
 					t.Fatalf("error=%v", err)
@@ -102,11 +105,11 @@ func TestResolveSizesTransactions(t *testing.T) {
 		})
 	}
 	for _, repo := range []Downloads{{}, {Pool: mediaPoolStub{}}, {Jobs: &mediaQueueStub{}}} {
-		if repo.ResolveSizes(t.Context(), 0, "") == nil {
+		if repo.ResolveSizes(t.Context(), 0, 0, "") == nil {
 			t.Fatal("missing dependencies accepted")
 		}
 	}
-	if (Downloads{Pool: mediaPoolStub{}, Jobs: &mediaQueueStub{}}).ResolveSizes(nil, 0, "") == nil {
+	if (Downloads{Pool: mediaPoolStub{}, Jobs: &mediaQueueStub{}}).ResolveSizes(nil, 0, 0, "") == nil {
 		t.Fatal("nil context accepted")
 	}
 }

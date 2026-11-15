@@ -28,10 +28,11 @@ type Person struct {
 	RealName string `yaml:"realname"`
 }
 type Photo struct {
-	ID    string `yaml:"id"`
-	Owner string `yaml:"owner"`
-	Title string `yaml:"title"`
-	Shape string `yaml:"shape"`
+	ID         string `yaml:"id"`
+	Owner      string `yaml:"owner"`
+	Title      string `yaml:"title"`
+	Shape      string `yaml:"shape"`
+	Restricted bool   `yaml:"restricted"`
 }
 type Favorite struct {
 	Person string `yaml:"person"`
