@@ -57,7 +57,7 @@ func (f *sizesClientFake) GetSizesClass(ctx context.Context, keyID int64, photoI
 func sizesRig() (Sizes, *sizesStoreFake, *sizesClientFake) {
 	checked := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
 	store := &sizesStoreFake{exists: true, photo: catalog.Photo{
-		ID: 40, LastUpdate: checked.Add(-time.Hour), SizesStatus: catalog.SizesProvisional,
+		ID: 40, LastUpdate: checked.Add(-time.Hour), Visibility: catalog.VisibilityPublic, SizesStatus: catalog.SizesProvisional,
 	}}
 	client := &sizesClientFake{sizes: []flickr.PhotoSize{{Label: "Original", Width: 100, Height: 80, Source: "https://example.test/original"}}}
 	handler := Sizes{Store: store, Flickr: client, Now: func() time.Time { return checked }}
@@ -113,12 +113,14 @@ func TestSizesConfirmsFetchedValues(t *testing.T) {
 func TestSizesSkipRules(t *testing.T) {
 	handler, store, client := sizesRig()
 	tests := []struct {
-		name  string
-		setup func(*sizesStoreFake)
+		name      string
+		wantCalls int
+		wantSets  int
+		setup     func(*sizesStoreFake)
 	}{
 		{name: "photo missing", setup: func(s *sizesStoreFake) { s.exists = false }},
-		{name: "already unavailable", setup: func(s *sizesStoreFake) { s.photo.SizesStatus = catalog.SizesUnavailable }},
-		{name: "confirmed unchanged", setup: func(s *sizesStoreFake) {
+		{name: "legacy unavailable", wantCalls: 1, wantSets: 1, setup: func(s *sizesStoreFake) { s.photo.SizesStatus = catalog.SizesUnavailable }},
+		{name: "confirmed unchanged", wantSets: 1, setup: func(s *sizesStoreFake) {
 			checked := s.photo.LastUpdate
 			s.photo.SizesStatus, s.photo.SizesCheckedAt = catalog.SizesConfirmed, &checked
 		}},
@@ -130,12 +132,8 @@ func TestSizesSkipRules(t *testing.T) {
 			if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
 				t.Fatal(err)
 			}
-			wantSets := 1
-			if !store.exists {
-				wantSets = 0
-			}
-			if client.calls != 0 || store.sets != wantSets {
-				t.Fatalf("skip made calls: Flickr=%d writes=%d", client.calls, store.sets)
+			if client.calls != tt.wantCalls || store.sets != tt.wantSets {
+				t.Fatalf("sizes outcome: Flickr=%d/%d writes=%d/%d", client.calls, tt.wantCalls, store.sets, tt.wantSets)
 			}
 		})
 	}
@@ -147,7 +145,7 @@ func TestSizesSkipRules(t *testing.T) {
 	}
 }
 
-func TestSizesMarksUnavailableForTerminalFlickrErrors(t *testing.T) {
+func TestRestrictedAnonymousFailuresRequireAccountSizes(t *testing.T) {
 	for _, cause := range []error{flickr.ErrNotFound, flickr.ErrPermission} {
 		t.Run(cause.Error(), func(t *testing.T) {
 			handler, store, client := sizesRig()
@@ -155,8 +153,8 @@ func TestSizesMarksUnavailableForTerminalFlickrErrors(t *testing.T) {
 			if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
 				t.Fatal(err)
 			}
-			if store.status != catalog.SizesUnavailable || string(store.data) != "[]" || client.calls != 1 {
-				t.Fatalf("terminal outcome: status=%s data=%s calls=%d", store.status, store.data, client.calls)
+			if store.status == catalog.SizesUnavailable || client.calls != 1 {
+				t.Fatalf("restricted outcome: status=%s calls=%d", store.status, client.calls)
 			}
 		})
 	}
@@ -199,9 +197,14 @@ func TestSizesRequiresDependenciesAndHonorsCanceledContext(t *testing.T) {
 	}
 }
 
-func TestSizesUnavailableIsNotRetriedOnRepeatedJobs(t *testing.T) {
+func TestSizesKeyRestrictionSkipsRepeatedAnonymousCalls(t *testing.T) {
 	handler, store, client := sizesRig()
 	client.err = &flickr.CallError{Kind: flickr.ErrNotFound}
+	states := &restrictionStates{blocked: map[string]bool{}}
+	handler.States = states
+	handler.Users = staticKeyUser{userID: 7}
+	handler.Auth = &sizesAuthFake{}
+	handler.Accounts = &accountSizesFake{}
 	if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
 		t.Fatal(err)
 	}
@@ -211,8 +214,8 @@ func TestSizesUnavailableIsNotRetriedOnRepeatedJobs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if client.calls != 1 || store.status != catalog.SizesUnavailable {
-		t.Fatalf("unavailable photo re-requested: calls=%d status=%s", client.calls, store.status)
+	if client.calls != 1 || store.status == catalog.SizesUnavailable || !states.blocked["7:12"] {
+		t.Fatalf("restricted photo repeated anonymous calls: calls=%d status=%s restrictions=%v", client.calls, store.status, states.blocked)
 	}
 }
 
@@ -236,7 +239,7 @@ func TestSizesQuotaExceededWaitsInsteadOfFailing(t *testing.T) {
 	}
 }
 
-func TestSizesPlaceholderIsClassifiedOnceWithoutFlickr(t *testing.T) {
+func TestSizesPlaceholderSkipsAnonymousWithoutGlobalFailure(t *testing.T) {
 	for _, class := range []string{"", "photo", "interactive"} {
 		t.Run(class, func(t *testing.T) {
 			handler, store, client := sizesRig()
@@ -245,16 +248,15 @@ func TestSizesPlaceholderIsClassifiedOnceWithoutFlickr(t *testing.T) {
 			if err := handler.Handle(t.Context(), job); err != nil {
 				t.Fatal(err)
 			}
-			if client.calls != 0 || store.sets != 1 || store.status != catalog.SizesUnavailable || string(store.data) != "[]" || !store.checked.Equal(handler.Now()) {
-				t.Fatalf("placeholder result: calls=%d writes=%d status=%s data=%s checked=%s", client.calls, store.sets, store.status, store.data, store.checked)
+			if client.calls != 0 || store.sets != 0 || store.status == catalog.SizesUnavailable {
+				t.Fatalf("placeholder result: calls=%d writes=%d status=%s", client.calls, store.sets, store.status)
 			}
-			store.photo.SizesStatus = store.status
 			for range 3 {
 				if err := handler.Handle(t.Context(), job); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if client.calls != 0 || store.sets != 4 {
+			if client.calls != 0 || store.sets != 0 {
 				t.Fatalf("repeated placeholder: calls=%d writes=%d", client.calls, store.sets)
 			}
 		})
@@ -265,11 +267,11 @@ func TestSizesPlaceholderStorageFailureRetriesWithoutFlickr(t *testing.T) {
 	handler, store, client := sizesRig()
 	store.photo.Server = catalog.RestrictedPlaceholderServer
 	store.setErr = errors.New("storage unavailable")
-	if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); !errors.Is(err, store.setErr) {
+	if err := handler.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
 		t.Fatalf("Handle() = %v", err)
 	}
-	if client.calls != 0 {
-		t.Fatalf("placeholder made %d Flickr calls", client.calls)
+	if client.calls != 0 || store.sets != 0 {
+		t.Fatalf("placeholder effects: calls=%d global writes=%d", client.calls, store.sets)
 	}
 }
 
@@ -286,17 +288,18 @@ func TestLegacyUnavailableSizesReopenForNewVersion(t *testing.T) {
 	}
 }
 
-func TestSizesEntityFailuresAlsoResolveDownloads(t *testing.T) {
+func TestSizesEntityFailuresDoNotCompleteGlobalSizes(t *testing.T) {
 	for _, cause := range []error{flickr.ErrNotFound, flickr.ErrPermission, flickr.ErrResourceDenied} {
 		t.Run(cause.Error(), func(t *testing.T) {
 			h, store, client := sizesRig()
-			h.States = &stateFake{}
+			states := &stateFake{}
+			h.States = states
 			client.err = cause
 			if err := h.Handle(t.Context(), SizesJob{PhotoID: 40, KeyID: 12}); err != nil {
 				t.Fatal(err)
 			}
-			if store.status != catalog.SizesUnavailable {
-				t.Fatalf("sizes outcome = %s", store.status)
+			if store.status == catalog.SizesUnavailable || states.state != "restricted" {
+				t.Fatalf("global sizes outcome = %s, restriction = %q", store.status, states.state)
 			}
 		})
 	}

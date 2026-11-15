@@ -9,33 +9,25 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jooservices/xflickr/internal/catalog/adapters/postgres/gen"
 	"github.com/jooservices/xflickr/internal/catalog/domain"
 	"github.com/jooservices/xflickr/pkg/flickr"
 )
 
-// LoadPhotoFacetSource loads the photo version and current sizes state. Extra
-// facets are gated on a successful size confirmation for this same version.
+// LoadPhotoFacetSource loads the photo version and shared sizes eligibility.
 func (r *Repository) LoadPhotoFacetSource(ctx context.Context, id int64) (domain.PhotoFacetSource, bool, error) {
 	if r == nil || r.db == nil || ctx == nil || id <= 0 {
 		return domain.PhotoFacetSource{}, false, errors.New("catalog: photo facet database, context and id are required")
 	}
 	var source domain.PhotoFacetSource
-	var status string
-	var checked pgtype.Timestamptz
-	err := r.db.QueryRow(ctx, `SELECT secret, last_update, sizes_status, sizes_checked_at FROM photos WHERE id=$1`, id).
-		Scan(&source.Secret, &source.LastUpdate, &status, &checked)
+	query := fmt.Sprintf(`SELECT p.secret, p.last_update, %s FROM photos AS p WHERE p.id=$1`, photoSizesConfirmedSQL)
+	err := r.db.QueryRow(ctx, query, id).Scan(&source.Secret, &source.LastUpdate, &source.SizesConfirmed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.PhotoFacetSource{}, false, nil
 	}
 	if err != nil {
 		return domain.PhotoFacetSource{}, false, fmt.Errorf("catalog: load photo facet source: %w", err)
-	}
-	source.SizesStatus = domain.SizesStatus(status)
-	if checked.Valid {
-		source.SizesCheckedAt = &checked.Time
 	}
 	return source, true, nil
 }

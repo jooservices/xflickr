@@ -29,6 +29,8 @@ run_python_test test_database_name_checks.py
 run_python_test test_contacts_user_lookup_plan.py
 run_python_test test_explain_favorites_plan.py
 run_python_test test_metrics_series_plan.py
+run_python_test test_download_contact_plan.py
+run_python_test test_photolane_plan.py
 "$SCRIPT_DIR/api-usage-check.test.sh"
 "$SCRIPT_DIR/api-usage-check.sh"
 "$SCRIPT_DIR/ui-e2e-coverage.test.sh"

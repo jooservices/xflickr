@@ -445,6 +445,7 @@ type EntityFacetRestriction struct {
 	Reason         string
 	RecheckAt      pgtype.Timestamptz
 	PhotoUpdatedAt pgtype.Timestamptz
+	AccountID      pgtype.Int8
 }
 
 type EntityState struct {
@@ -886,6 +887,16 @@ type Photo struct {
 	ContentHash    []byte
 	TombstonedAt   pgtype.Timestamptz
 	LastSeenAt     pgtype.Timestamptz
+}
+
+type PhotoAccountSize struct {
+	PhotoID         int64
+	AccountID       int64
+	PhotoUpdatedAt  pgtype.Timestamptz
+	PhotoVisibility string
+	Sizes           []byte
+	SizesStatus     string
+	SizesCheckedAt  pgtype.Timestamptz
 }
 
 type PhotoComment struct {

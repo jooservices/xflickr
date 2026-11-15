@@ -7,9 +7,10 @@ import (
 
 // PhotoRef names a photo and the person who owns it.
 type PhotoRef struct {
-	ID        int64
-	OwnerNSID string
-	Facet     string
+	ID         int64
+	OwnerNSID  string
+	OwnerKeyID int64
+	Facet      string
 }
 
 // PhotoSelector lists photos waiting for getSizes, best interest first. Skip

@@ -40,8 +40,10 @@ func (s fakePhotoFacetSettings) PhotoFacets(context.Context) (PhotoFacetOptions,
 }
 
 type fakeChooser struct {
-	noKey map[string]bool
-	err   error
+	noKey           map[string]bool
+	unavailable     map[quotaapp.KeyID]bool
+	availabilityErr error
+	err             error
 }
 
 func (c fakeChooser) Choose(_ context.Context, nsid string, class quotadomain.Class) (quotaapp.KeyID, error) {
@@ -55,6 +57,16 @@ func (c fakeChooser) Choose(_ context.Context, nsid string, class quotadomain.Cl
 		return 0, quotaapp.ErrNoKey
 	}
 	return 42, nil
+}
+
+func (c fakeChooser) Available(_ context.Context, _ string, key quotaapp.KeyID, class quotadomain.Class) (bool, error) {
+	if class != quotadomain.Photo {
+		return false, errors.New("wrong class")
+	}
+	if c.availabilityErr != nil {
+		return false, c.availabilityErr
+	}
+	return !c.unavailable[key], nil
 }
 
 type fakeEnqueuer struct {
@@ -122,6 +134,52 @@ func TestPhotoLaneNextEnqueuesInOrderWithKeyAndDedupeKey(t *testing.T) {
 	job := enqueuer.jobs[0]
 	if job.KeyID != 42 || job.Class != quotadomain.Photo || job.Facet != "sizes" || job.DedupeKey != "photo:5:sizes" {
 		t.Fatalf("job = %+v", job)
+	}
+}
+
+func TestPhotoLaneUsesOwnerAccountKeyInsteadOfInterestPoolKey(t *testing.T) {
+	enqueuer := &fakeEnqueuer{}
+	lane := PhotoLane{
+		Selector: &fakeSelector{refs: []catalogapp.PhotoRef{{
+			ID: 8, OwnerNSID: "owner", OwnerKeyID: 99, Facet: PhotoFacet,
+		}}},
+		Keys:  fakeChooser{},
+		Queue: enqueuer,
+	}
+	if ids, err := lane.Next(t.Context(), 1); err != nil || !reflect.DeepEqual(ids, []int64{8}) {
+		t.Fatalf("Next() = %v, %v; want the owner's photo job", ids, err)
+	}
+	if got := enqueuer.jobs[0].KeyID; got != 99 {
+		t.Fatalf("background size key = %d; want owner account key 99", got)
+	}
+}
+
+func TestPhotoLaneSkipsUnavailableOwnerKey(t *testing.T) {
+	enqueuer := &fakeEnqueuer{}
+	lane := PhotoLane{
+		Selector: &fakeSelector{refs: []catalogapp.PhotoRef{{
+			ID: 8, OwnerNSID: "owner", OwnerKeyID: 99, Facet: PhotoFacet,
+		}}},
+		Keys: fakeChooser{unavailable: map[quotaapp.KeyID]bool{99: true}}, Queue: enqueuer,
+	}
+	if ids, err := lane.Next(t.Context(), 1); err != nil || len(ids) != 0 {
+		t.Fatalf("Next() = %v, %v; want no queued work", ids, err)
+	}
+	if len(enqueuer.jobs) != 0 {
+		t.Fatalf("enqueued jobs = %v; want none for an unavailable owner key", enqueuer.jobs)
+	}
+}
+
+func TestPhotoLanePropagatesOwnerKeyAvailabilityErrors(t *testing.T) {
+	boom := errors.New("quota unavailable")
+	lane := PhotoLane{
+		Selector: &fakeSelector{refs: []catalogapp.PhotoRef{{
+			ID: 8, OwnerNSID: "owner", OwnerKeyID: 99, Facet: PhotoFacet,
+		}}},
+		Keys: fakeChooser{availabilityErr: boom}, Queue: &fakeEnqueuer{},
+	}
+	if _, err := lane.Next(t.Context(), 1); !errors.Is(err, boom) {
+		t.Fatalf("Next() error = %v; want quota error", err)
 	}
 }
 

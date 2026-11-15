@@ -162,13 +162,21 @@ guide feature implementation; operational environment rules live in
   size URLs.
 - Confirm photo sizes only on demand through the existing download/sync flow
   or for starred or actively selected contacts. Classify listing server `65535`
-  as unavailable locally once, without a Flickr call or a photo tombstone.
-  Confirm other eligible photo sizes with `flickr.photos.getSizes` and record the
-  check time. Skip a confirmed result while the photo's `last_update` is
-  unchanged. Restrict only the caller's sizes facet after Flickr reports not
-  found or permission denied, and reopen it when the photo version or
-  visibility changes.
-- Enforce each key's effective hourly grant ceiling over the preceding rolling
+  as restricted without an anonymous Flickr call or a photo tombstone. Confirm
+  other eligible photo sizes with `flickr.photos.getSizes` and record the check
+  time. Reuse a confirmed global result only while the photo version, server,
+  and public visibility still match. Scope anonymous failures to the requesting
+  user and API key; scope OAuth failures and sizes URLs to the connected account
+  ID. Return OAuth sizes only to that account's XFlickr user while photo
+  version, visibility, and account status still match. Shared observations do
+  not grant access to those URLs. Try each eligible account owned by the
+  requester in the same job; report unavailable only after all eligible
+  accounts have failed or are already restricted. A current result from an
+  active, valid account matching the photo owner's Flickr identity stops the
+  photo lane from re-queueing sizes for that version and visibility; unrelated
+  account outcomes do not. A current owner-account confirmation also makes
+  enabled optional facets eligible while global sizes remain provisional.
+- Enforce each key's configured hourly allowance over the preceding rolling
   60 minutes, across all lanes; a fixed-hour boundary never releases recent
   grants. Report reset as the oldest counted grant's expiry and rebuild exact
   grant timestamps and classes from the durable call log after Redis loss.

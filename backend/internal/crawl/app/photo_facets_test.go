@@ -33,7 +33,7 @@ func TestParsePhotoFacetJob(t *testing.T) {
 
 func TestPhotoFacetsFetchesEveryFacetAfterSizesAndStripsSecrets(t *testing.T) {
 	checked := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
-	store := &photoFacetStoreFake{source: catalog.PhotoFacetSource{Secret: "photo-secret", LastUpdate: checked, SizesStatus: catalog.SizesConfirmed, SizesCheckedAt: &checked}, exists: true}
+	store := &photoFacetStoreFake{source: catalog.PhotoFacetSource{Secret: "photo-secret", LastUpdate: checked, SizesConfirmed: true}, exists: true}
 	client := &photoFacetClientFake{
 		info:     flickr.PhotoInfo{ID: "42", Secret: "private-secret", OriginalSecret: "original-secret"},
 		exif:     flickr.PhotoExif{ID: "42", Secret: "private-secret", Camera: "Fake Camera"},
@@ -83,11 +83,7 @@ func TestPhotoFacetsFetchesEveryFacetAfterSizesAndStripsSecrets(t *testing.T) {
 
 func TestPhotoFacetsRequiresCurrentSizeConfirmation(t *testing.T) {
 	checked := time.Now().UTC()
-	for _, source := range []catalog.PhotoFacetSource{
-		{LastUpdate: checked, SizesStatus: catalog.SizesNone},
-		{LastUpdate: checked, SizesStatus: catalog.SizesConfirmed},
-		{LastUpdate: checked, SizesStatus: catalog.SizesConfirmed, SizesCheckedAt: timePointer(checked.Add(-time.Second))},
-	} {
+	for _, source := range []catalog.PhotoFacetSource{{LastUpdate: checked}} {
 		store := &photoFacetStoreFake{source: source, exists: true}
 		client := &photoFacetClientFake{}
 		if err := (PhotoFacets{Store: store, Flickr: client}).Handle(context.Background(), PhotoFacetJob{PhotoID: 42, KeyID: 7, Facet: PhotoInfoFacet}); err != nil {
@@ -101,7 +97,7 @@ func TestPhotoFacetsRequiresCurrentSizeConfirmation(t *testing.T) {
 
 func TestPhotoFacetsTerminalErrorsStoreEmptyAndTransientErrorsRetry(t *testing.T) {
 	checked := time.Now().UTC()
-	source := catalog.PhotoFacetSource{LastUpdate: checked, SizesStatus: catalog.SizesConfirmed, SizesCheckedAt: &checked}
+	source := catalog.PhotoFacetSource{LastUpdate: checked, SizesConfirmed: true}
 	for facet, want := range map[string]string{
 		PhotoInfoFacet:      `{}`,
 		PhotoExifFacet:      `{}`,
@@ -128,13 +124,13 @@ func TestPhotoFacetsTerminalErrorsStoreEmptyAndTransientErrorsRetry(t *testing.T
 
 func TestPhotoFacetsPropagatesStoreAndPaginationSafetyErrors(t *testing.T) {
 	checked := time.Now().UTC()
-	store := &photoFacetStoreFake{source: catalog.PhotoFacetSource{LastUpdate: checked, SizesStatus: catalog.SizesConfirmed, SizesCheckedAt: &checked}, exists: true, setErr: errors.New("database unavailable")}
+	store := &photoFacetStoreFake{source: catalog.PhotoFacetSource{LastUpdate: checked, SizesConfirmed: true}, exists: true, setErr: errors.New("database unavailable")}
 	client := &photoFacetClientFake{info: flickr.PhotoInfo{ID: "42"}}
 	if err := (PhotoFacets{Store: store, Flickr: client}).Handle(context.Background(), PhotoFacetJob{PhotoID: 42, KeyID: 7, Facet: PhotoInfoFacet}); err == nil {
 		t.Fatal("store error was swallowed")
 	}
 
-	store = &photoFacetStoreFake{source: catalog.PhotoFacetSource{LastUpdate: checked, SizesStatus: catalog.SizesConfirmed, SizesCheckedAt: &checked}, exists: true}
+	store = &photoFacetStoreFake{source: catalog.PhotoFacetSource{LastUpdate: checked, SizesConfirmed: true}, exists: true}
 	commentPages := make(map[int]flickr.Page[flickr.PhotoComment], maxPhotoFacetPages)
 	for page := 1; page <= maxPhotoFacetPages; page++ {
 		commentPages[page] = flickr.Page[flickr.PhotoComment]{Page: page, Pages: maxPhotoFacetPages + 1, Items: []flickr.PhotoComment{{ID: "c1"}}}
@@ -216,5 +212,3 @@ func (f *photoFacetClientFake) PhotosGetFavorites(_ context.Context, _ int64, _ 
 	f.favoriteCalls++
 	return f.favorites[page], f.favoritesErr
 }
-
-func timePointer(value time.Time) *time.Time { return &value }
