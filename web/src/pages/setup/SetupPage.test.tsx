@@ -312,19 +312,24 @@ describe('setup wizard step 2', () => {
     expect(screen.getByTestId('wizard-connect-waiting')).toHaveTextContent('Waiting for Flickr');
   });
 
-  it('cancels a pending connect call and returns to idle', async () => {
-    let aborted = false;
-    server.use(
-      keysReply([acceptedKey]),
-      accountsReply(),
-      http.post('*/flickr-accounts/connect', async ({ request }) => {
-        request.signal.addEventListener('abort', () => {
-          aborted = true;
-        });
-        await delay(5000);
-        return HttpResponse.json({ authorize_url: 'https://flickr.test/authorize' });
-      }),
-    );
+  it('AC3 ignores a late connect response after the user cancels', async () => {
+    const assign = vi.fn();
+    vi.stubGlobal('location', { ...window.location, assign });
+    const originalFetch = globalThis.fetch.bind(globalThis);
+    let connectSignal: AbortSignal | undefined;
+    let resolveLateResponse!: (response: Response) => void;
+    const lateResponse = new Promise<Response>((resolve) => {
+      resolveLateResponse = resolve;
+    });
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (new URL(url, window.location.origin).pathname.endsWith('/flickr-accounts/connect')) {
+        connectSignal = init?.signal ?? undefined;
+        return lateResponse;
+      }
+      return originalFetch(input, init);
+    });
+    server.use(keysReply([acceptedKey]), accountsReply());
     open();
     fireEvent.click(await screen.findByTestId('wizard-connect-allow'));
     expect(await screen.findByTestId('wizard-connect-waiting')).toBeInTheDocument();
@@ -334,7 +339,18 @@ describe('setup wizard step 2', () => {
     expect(screen.queryByTestId('wizard-connect-waiting')).toBeNull();
     expect(screen.queryByTestId('wizard-connect-error')).toBeNull();
     expect(screen.getByTestId('wizard-connect-allow')).toBeEnabled();
-    await waitFor(() => expect(aborted).toBe(true));
+    expect(connectSignal?.aborted).toBe(true);
+
+    await act(async () => {
+      resolveLateResponse(
+        new Response(JSON.stringify({ authorize_url: 'https://flickr.test/late' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(assign).not.toHaveBeenCalled();
   });
 
   it.each([
