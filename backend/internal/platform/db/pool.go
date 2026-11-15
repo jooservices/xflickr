@@ -19,20 +19,33 @@ import (
 // NewPool creates and verifies a traced PostgreSQL connection pool from the
 // application's typed database configuration.
 func NewPool(ctx context.Context, cfg config.DBConfig) (*pgxpool.Pool, error) {
+	return newPool(ctx, cfg, pgxpool.NewWithConfig, pingPool)
+}
+
+func newPool(
+	ctx context.Context,
+	cfg config.DBConfig,
+	createPool func(context.Context, *pgxpool.Config) (*pgxpool.Pool, error),
+	ping func(context.Context, *pgxpool.Pool) error,
+) (*pgxpool.Pool, error) {
 	poolConfig, err := newPoolConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	pool, err := createPool(ctx, poolConfig)
 	if err != nil {
 		return nil, fmt.Errorf("create PostgreSQL pool: %w", err)
 	}
-	if err := pool.Ping(ctx); err != nil {
+	if err := ping(ctx, pool); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("connect to PostgreSQL: %w", err)
 	}
 	return pool, nil
+}
+
+func pingPool(ctx context.Context, pool *pgxpool.Pool) error {
+	return pool.Ping(ctx)
 }
 
 func newPoolConfig(cfg config.DBConfig) (*pgxpool.Config, error) {
@@ -62,6 +75,9 @@ func connectionString(cfg config.DBConfig) string {
 	}
 	query := connectionURL.Query()
 	query.Set("sslmode", cfg.SSLMode)
+	if cfg.SearchPath != "" {
+		query.Set("search_path", cfg.SearchPath)
+	}
 	connectionURL.RawQuery = query.Encode()
 	return connectionURL.String()
 }

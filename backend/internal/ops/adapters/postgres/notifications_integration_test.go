@@ -138,7 +138,10 @@ func TestNotificationsMigrationDownUp(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	cfg := notificationTestDatabaseConfig(t)
-	cfg = dbtest.EmptyDatabase(t, cfg)
+	cfg = dbtest.IsolatedSchema(t, cfg)
+	if cfg.SearchPath == "" {
+		t.Fatal("notification migration test is not scoped to an isolated schema")
+	}
 	if err := db.Migrate(ctx, cfg, db.MigrateUp, io.Discard); err != nil {
 		t.Fatalf("prepare isolated migration database: %v", err)
 	}
@@ -172,14 +175,14 @@ func TestNotificationsMigrationDownUp(t *testing.T) {
 	if err := db.Migrate(ctx, cfg, db.MigrateDown, io.Discard); err != nil {
 		t.Fatalf("roll back notifications migration: %v", err)
 	}
-	assertNotificationRelation(t, ctx, pool, "public.notifications", false)
-	assertNotificationRelation(t, ctx, pool, "public.notifications_user_created_id_idx", false)
+	assertNotificationRelation(t, ctx, pool, "notifications", false)
+	assertNotificationRelation(t, ctx, pool, "notifications_user_created_id_idx", false)
 
 	if err := db.Migrate(ctx, cfg, db.MigrateUp, io.Discard); err != nil {
 		t.Fatalf("reapply notifications migration: %v", err)
 	}
-	assertNotificationRelation(t, ctx, pool, "public.notifications", true)
-	assertNotificationRelation(t, ctx, pool, "public.notifications_user_created_id_idx", true)
+	assertNotificationRelation(t, ctx, pool, "notifications", true)
+	assertNotificationRelation(t, ctx, pool, "notifications_user_created_id_idx", true)
 }
 
 // migrationsAfter returns the versions of the embedded migrations newer than the given version.
@@ -280,16 +283,13 @@ func notificationTestDatabaseConfig(t *testing.T) config.DBConfig {
 	if err != nil {
 		t.Fatalf("load test PostgreSQL settings: %v", err)
 	}
-	if err := dbtest.ValidateDatabaseName(cfg.Name); err != nil {
-		t.Fatal(err)
-	}
 	return cfg
 }
 
 func assertNotificationRelation(t *testing.T, ctx context.Context, pool *pgxpool.Pool, relation string, want bool) {
 	t.Helper()
 	var name *string
-	if err := pool.QueryRow(ctx, `SELECT to_regclass($1)`, relation).Scan(&name); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT to_regclass(format('%I.%I', current_schema(), $1::text))`, relation).Scan(&name); err != nil {
 		t.Fatalf("lookup relation %s: %v", relation, err)
 	}
 	if got := name != nil; got != want {

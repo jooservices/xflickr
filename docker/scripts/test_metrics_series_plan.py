@@ -5,13 +5,30 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import metrics_series_plan
 
 
 class MetricsSeriesPlanTest(unittest.TestCase):
+    def test_AC5_accepts_the_tree_database_for_plan_measurement(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / ".env").write_text(
+                "DB_NAME=wt_jooxf_522\nDB_DATABASE=wt_jooxf_522\n"
+                f"XFLICKR_WORKTREE_PATH={root.resolve()}\n"
+                "DB_HOST=127.0.0.1\nDB_PORT=15435\nDB_USER=wt_jooxf_522\nDB_PASSWORD=fixture\n"
+            )
+            with patch("metrics_series_plan.subprocess.run") as run:
+                run.return_value.returncode = 0
+                values = metrics_series_plan.worktree_env(root)
+
+        self.assertEqual(values["DB_NAME"], "wt_jooxf_522")
+        self.assertEqual(values["DB_USER"], "wt_jooxf_522")
+
     def test_labels_hash_uses_sorted_canonical_json(self) -> None:
         labels = {"role": "scheduler", "queue": "default", "node": "n1"}
         expected = hashlib.sha256(

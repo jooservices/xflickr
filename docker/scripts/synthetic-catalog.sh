@@ -21,18 +21,6 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 done < .env
 
 DB_NAME="${DB_NAME:-${DB_DATABASE:-}}"
-case "$DB_NAME" in
-  xflickr|xflickr_test|'')
-    echo "synthetic-catalog: refusing database '$DB_NAME'" >&2
-    exit 1
-    ;;
-  xflickr_wt*)
-    ;;
-  *)
-    echo "synthetic-catalog: unexpected database '$DB_NAME'" >&2
-    exit 1
-    ;;
-esac
 
 OWNERS="${OWNERS:-100000}"
 PHOTOS="${PHOTOS:-3000000}"

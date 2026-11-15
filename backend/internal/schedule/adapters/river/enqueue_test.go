@@ -92,7 +92,7 @@ func (queueFake) Register(string, queue.Handler) error { return nil }
 
 func closedPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	pool, err := pgxpool.New(context.Background(), "postgres://xflickr:unused@127.0.0.1:1/xflickr_wtunit?sslmode=disable")
+	pool, err := pgxpool.New(context.Background(), "postgres://wt_jooxfunit:unused@127.0.0.1:1/wt_jooxfunit?sslmode=disable")
 	if err != nil {
 		t.Fatal(err)
 	}

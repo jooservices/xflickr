@@ -86,12 +86,13 @@ func TestNoForeignKeyLosesItsSupportingIndex(t *testing.T) {
 WITH large_tables AS (
     SELECT c.oid AS relid, c.relname
     FROM pg_class c
-    JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
+    JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = current_schema()
     WHERE c.relkind IN ('r', 'p')
       AND c.reltuples >= 1000
 ),
 fks AS (
     SELECT
+        lt.relid,
         lt.relname AS table_name,
         con.conname AS constraint_name,
         (SELECT a.attname FROM pg_attribute a
@@ -106,7 +107,7 @@ WHERE NOT EXISTS (
     FROM pg_index x
     JOIN pg_attribute a ON a.attrelid = x.indrelid AND a.attnum = x.indkey[0]
     JOIN pg_class c ON c.oid = x.indrelid
-    WHERE c.relname = f.table_name
+    WHERE x.indrelid = f.relid
       AND a.attname = f.fk_column
       AND x.indisvalid
 )
@@ -137,7 +138,7 @@ func assertDroppedIndexAbsent(t *testing.T, ctx context.Context, pool *pgxpool.P
 	var exists bool
 	if err := pool.QueryRow(ctx, `SELECT EXISTS (
 		SELECT 1 FROM pg_class i
-		JOIN pg_namespace n ON n.oid = i.relnamespace AND n.nspname = 'public'
+		JOIN pg_namespace n ON n.oid = i.relnamespace AND n.nspname = current_schema()
 		WHERE i.relkind IN ('i', 'I') AND i.relname = $1
 	)`, name).Scan(&exists); err != nil {
 		t.Fatalf("lookup index %s: %v", name, err)
@@ -155,7 +156,7 @@ func indexDefinitions(t *testing.T, ctx context.Context, pool *pgxpool.Pool, nam
 		// Partitioned parent indexes use relkind 'I'; leaf indexes use 'i'.
 		err := pool.QueryRow(ctx, `SELECT pg_get_indexdef(i.oid)
 			FROM pg_class i
-			JOIN pg_namespace n ON n.oid = i.relnamespace AND n.nspname = 'public'
+			JOIN pg_namespace n ON n.oid = i.relnamespace AND n.nspname = current_schema()
 			WHERE i.relkind IN ('i', 'I') AND i.relname = $1`, name).Scan(&def)
 		if err != nil {
 			t.Fatalf("pg_get_indexdef(%s): %v", name, err)

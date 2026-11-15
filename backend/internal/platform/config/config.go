@@ -51,6 +51,7 @@ type DBConfig struct {
 	User              string        `env:"DB_USER"`
 	Password          string        `env:"DB_PASSWORD"`
 	SSLMode           string        `env:"DB_SSLMODE" envDefault:"disable"`
+	SearchPath        string        `env:"-"`
 	MaxConns          int32         `env:"DB_MAX_CONNS" envDefault:"20"`
 	MinConns          int32         `env:"DB_MIN_CONNS" envDefault:"2"`
 	MaxConnLifetime   time.Duration `env:"DB_MAX_CONN_LIFETIME" envDefault:"1h"`

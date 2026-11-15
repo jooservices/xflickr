@@ -127,7 +127,7 @@ func TestRepositoryRegistrationAndLookup(t *testing.T) {
 	if redisHost == "" {
 		redisHost = "127.0.0.1"
 	}
-	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(redisHost, strconv.Itoa(redisPort)), Password: values["REDIS_PASSWORD"], DB: redisDB})
+	redisClient := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(redisHost, strconv.Itoa(redisPort)), Username: values["REDIS_USERNAME"], Password: values["REDIS_PASSWORD"], DB: redisDB})
 	defer redisClient.Close()
 	login := app.Login{Repository: repository, Limiter: identityredis.Limiter{Client: redisClient, Prefix: values["REDIS_PREFIX"]}, DummyPasswordHash: user.PasswordHash}
 	loggedIn, err := login.Execute(ctx, email, "integration-password", "127.0.0.1")

@@ -64,7 +64,7 @@ class AIProfileTests(unittest.TestCase):
         self.assertEqual(len(data["stages"]), 17)
         self.assertEqual(len({stage["name"] for stage in data["stages"]}), 17)
         self.assertTrue(all(stage.get("changedCmd") for stage in data["stages"]))
-        self.assertEqual([step["name"] for step in data["setup"]], ["env", "web-deps", "go-deps"])
+        self.assertEqual([step["name"] for step in data["setup"]], ["web-deps", "go-deps"])
         self.assertEqual(data["identity"]["email"], "jooservices@gmail.com")
         self.assertIn("docker/scripts/test_*.py", data["testGlobs"])
         self.assertIn("docker/scripts/*_test.py", data["testGlobs"])
@@ -97,14 +97,16 @@ class AIProfileTests(unittest.TestCase):
                     elif words[0].startswith(WORKSPACE_TOKEN):
                         self.assertTrue(words[0].endswith("/scripts/dev/sonar"))
 
-    def test_the_setup_steps_prepare_a_fresh_worktree(self) -> None:
+    def test_AC4_setup_does_not_write_a_database_environment(self) -> None:
         steps = profile()["setup"]
-        self.assertEqual(["env", "web-deps", "go-deps"], [step["name"] for step in steps])
+        self.assertEqual(["web-deps", "go-deps"], [step["name"] for step in steps])
         for step in steps:
             with self.subTest(step=step["name"]):
                 self.assertTrue((ROOT / step["cwd"]).is_dir())
-        self.assertIn("{ticket_id}", steps[0]["cmd"])
-        self.assertTrue((ROOT / shlex.split(steps[0]["cmd"])[1]).is_file())
+                self.assertNotIn("worktree_env.py", step["cmd"])
+                self.assertNotIn("scripts/db/tree", step["cmd"])
+        self.assertIn("npm ci", steps[0]["cmd"])
+        self.assertIn("go mod download", steps[1]["cmd"])
 
     def test_the_project_commits_as_one_identity_and_forbids_ai_traces(self) -> None:
         identity = profile()["identity"]

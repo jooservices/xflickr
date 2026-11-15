@@ -111,7 +111,7 @@ func (failingAcceptListener) Addr() net.Addr                     { return &net.T
 
 func TestDatabaseRolesStopWhenPostgresIsUnavailable(t *testing.T) {
 	for name, value := range map[string]string{
-		"DB_HOST": "127.0.0.1", "DB_PORT": "1", "DB_NAME": "xflickr_wtunit", "DB_USER": "unused",
+		"DB_HOST": "127.0.0.1", "DB_PORT": "1", "DB_NAME": "wt_jooxfunit", "DB_USER": "unused",
 		"REDIS_PREFIX": "roles-test:", "OPENSEARCH_INDEX_PREFIX": "roles-test_", "NODE_ID": "roles-test",
 		"XFLICKR_MASTER_KEYS":       "test:" + base64.StdEncoding.EncodeToString(make([]byte, 32)),
 		"XFLICKR_MASTER_KEY_ACTIVE": "test",

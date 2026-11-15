@@ -137,19 +137,19 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg18
         env:
-          POSTGRES_DB: xflickr_wtci
+          POSTGRES_DB: wt_ci
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: ci-only-password
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d xflickr_wtci"
+          --health-cmd "pg_isready -U postgres -d wt_ci"
           --health-interval 10s --health-timeout 5s --health-retries 10
     env:
       DB_HOST: 127.0.0.1
       DB_PORT: "5432"
-      DB_NAME: xflickr_wtci
-      DB_USER: postgres
+      DB_NAME: wt_ci
+      DB_USER: wt_ci
       DB_PASSWORD: ci-only-password
       DB_SSLMODE: disable
       XFLICKR_INTEGRATION_TEST: "1"
@@ -163,16 +163,23 @@ jobs:
           go-version-file: backend/go.mod
           cache: true
           cache-dependency-path: backend/go.sum
+      - name: Provision the non-admin integration role
+        env:
+          PGPASSWORD: ci-only-password
+        run: |
+          psql -h 127.0.0.1 -U postgres -d wt_ci -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE wt_ci LOGIN PASSWORD 'ci-only-password' NOSUPERUSER NOCREATEDB NOCREATEROLE" \
+            -c "ALTER DATABASE wt_ci OWNER TO wt_ci"
       - name: Run PostgreSQL integration slice
         working-directory: backend
         shell: bash
         run: |
           set -euo pipefail
           go test -v -p 2 -count=1 ./internal/platform/db/dbtest \
-            -run '^(TestOpenUsesMigratedWorktreeDatabase|TestEmptyDatabaseIsCreatedAndDroppedWithoutTouchingWorktreeSchema)$' \
+            -run '^(TestAC5OpenUsesMigratedWorktreeDatabase|TestAC5IsolatedSchemaUsesTreeRole)$' \
             2>&1 | tee integration.log
-          grep -q '^--- PASS: TestOpenUsesMigratedWorktreeDatabase ' integration.log
-          grep -q '^--- PASS: TestEmptyDatabaseIsCreatedAndDroppedWithoutTouchingWorktreeSchema ' integration.log
+          grep -q '^--- PASS: TestAC5OpenUsesMigratedWorktreeDatabase ' integration.log
+          grep -q '^--- PASS: TestAC5IsolatedSchemaUsesTreeRole ' integration.log
       - name: Upload integration log on failure
         if: failure()
         uses: actions/upload-artifact@v4

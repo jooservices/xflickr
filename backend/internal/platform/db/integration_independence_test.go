@@ -19,7 +19,7 @@ func TestAC7NoIntegrationTestPinsADatabaseName(t *testing.T) {
 		t.Fatal("cannot locate integration test sources")
 	}
 	backend := filepath.Clean(filepath.Join(filepath.Dir(file), "../../.."))
-	database := regexp.MustCompile(`^xflickr_wt[a-z0-9]+$`)
+	database := regexp.MustCompile(`^wt_[a-z0-9_]{2,32}$`)
 	err := filepath.WalkDir(backend, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err

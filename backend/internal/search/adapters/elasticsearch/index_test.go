@@ -25,7 +25,7 @@ func TestNewIndexValidation(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	client := server.Client()
-	validPrefix := "xflickr_wtjooxf134_"
+	validPrefix := "wt_jooxf134-"
 	maxPrefix := "a" + strings.Repeat("a", 244) + "_"
 	tooLongPrefix := "a" + strings.Repeat("a", 245) + "_"
 
@@ -55,7 +55,7 @@ func TestNewIndexValidation(t *testing.T) {
 		{name: "empty fragment", baseURL: "http://search.example/#", prefix: validPrefix, client: client, wantErr: true},
 		{name: "nil client", baseURL: server.URL, prefix: validPrefix, wantErr: true},
 		{name: "empty prefix", baseURL: server.URL, client: client, wantErr: true},
-		{name: "prefix without trailing underscore", baseURL: server.URL, prefix: "xflickr", client: client, wantErr: true},
+		{name: "prefix without trailing separator", baseURL: server.URL, prefix: "xflickr", client: client, wantErr: true},
 		{name: "prefix starts with underscore", baseURL: server.URL, prefix: "_xflickr_", client: client, wantErr: true},
 		{name: "uppercase prefix", baseURL: server.URL, prefix: "XFlickr_", client: client, wantErr: true},
 		{name: "prefix with space", baseURL: server.URL, prefix: "x flickr_", client: client, wantErr: true},
@@ -115,7 +115,7 @@ func TestCreateIndex(t *testing.T) {
 				if r.Method != http.MethodPut {
 					t.Errorf("method = %q, want PUT", r.Method)
 				}
-				wantPath := test.basePath + "/xflickr_wtjooxf134_photos-v1"
+				wantPath := test.basePath + "/wt_jooxf134-photos-v1"
 				if r.URL.Path != wantPath {
 					t.Errorf("path = %q, want %s", r.URL.Path, wantPath)
 				}
@@ -137,7 +137,7 @@ func TestCreateIndex(t *testing.T) {
 					w.WriteHeader(http.StatusBadRequest)
 					return
 				}
-				want := expectedIndexDefinition("xflickr_wtjooxf134_photos")
+				want := expectedIndexDefinition("wt_jooxf134-photos")
 				if !reflect.DeepEqual(payload, want) {
 					t.Errorf("mapping payload = %#v, want %#v", payload, want)
 				}
@@ -145,7 +145,7 @@ func TestCreateIndex(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			index, err := elasticsearch.NewIndex(server.URL+test.basePath, test.username, test.password, "xflickr_wtjooxf134_", server.Client())
+			index, err := elasticsearch.NewIndex(server.URL+test.basePath, test.username, test.password, "wt_jooxf134-", server.Client())
 			if err != nil {
 				t.Fatalf("NewIndex() error = %v", err)
 			}
@@ -227,7 +227,7 @@ func TestUpsertDocument(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		if r.Method != http.MethodPut ||
-			r.URL.Path != basePath+"/xflickr_wtjooxf134_photos/_doc/42" ||
+			r.URL.Path != basePath+"/wt_jooxf134-photos/_doc/42" ||
 			r.URL.Query().Get("require_alias") != "true" {
 			t.Errorf("request = %s %s?%s, want require_alias=true", r.Method, r.URL.Path, r.URL.RawQuery)
 		}
@@ -260,7 +260,7 @@ func TestUpsertDocument(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(server.Close)
-	index := newTestIndex(t, server.URL+basePath, "indexer", "password", "xflickr_wtjooxf134_", server.Client())
+	index := newTestIndex(t, server.URL+basePath, "indexer", "password", "wt_jooxf134-", server.Client())
 	if err := index.Upsert(t.Context(), testDocument()); err != nil {
 		t.Fatalf("Upsert() error = %v", err)
 	}

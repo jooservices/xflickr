@@ -330,7 +330,7 @@ func openRedis(t *testing.T, ctx context.Context) (*redisv9.Client, string) {
 	if prefix == "" {
 		t.Fatal("REDIS_PREFIX is required so the test stays inside the worktree namespace")
 	}
-	client := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(host, strconv.Itoa(port)), Password: values["REDIS_PASSWORD"], DB: db})
+	client := redisv9.NewClient(&redisv9.Options{Addr: net.JoinHostPort(host, strconv.Itoa(port)), Username: values["REDIS_USERNAME"], Password: values["REDIS_PASSWORD"], DB: db})
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

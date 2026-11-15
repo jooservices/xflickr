@@ -598,6 +598,11 @@ func TestContactsKeysetPageUsesReverseIndexAndBoundedPlan(t *testing.T) {
 			t.Errorf("rollback contacts plan fixture: %v", err)
 		}
 	}()
+	// Contacts left by other tests change the planner statistics: the plan is asserted on this fixture alone,
+	// and the delete is rolled back with the transaction.
+	if _, err := tx.Exec(ctx, `DELETE FROM contacts`); err != nil {
+		t.Fatal(err)
+	}
 	suffix := fmt.Sprintf("contacts-plan-%d", time.Now().UnixNano())
 	account := suffix + "-account"
 	contactPrefix := suffix + "-contact-"
@@ -629,7 +634,7 @@ SELECT $1, $2 || lpad(contact_number::text, 6, '0')
 FROM generate_series(0,$3::integer-1) AS fixture(contact_number)`, account, contactPrefix, fixtureContactCount); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tx.Exec(ctx, `ANALYZE contacts`); err != nil {
+	if _, err := tx.Exec(ctx, `ANALYZE contacts, flickr_accounts`); err != nil {
 		t.Fatal(err)
 	}
 	captured := &contactsQueryCapture{DBTX: tx}

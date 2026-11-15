@@ -8,7 +8,6 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   case "$line" in ''|\#*) continue ;; esac
   key="${line%%=*}"; value="${line#*=}"; export "$key=$value"
 done < .env
-case "${DB_NAME:-}" in xflickr_wt*) ;; *) echo "refuse ${DB_NAME:-}" >&2; exit 1 ;; esac
 export PGPASSWORD="${DB_PASSWORD}"
 OUT="${1:-/home/joos/Workspaces/.tmp/jooxf372/explain.txt}"
 mkdir -p "$(dirname "$OUT")"

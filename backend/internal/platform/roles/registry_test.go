@@ -223,7 +223,7 @@ func TestSyncRoleStopsForCanceledContextAndReportsConfigurationErrors(t *testing
 
 func TestSyncRoleReturnsDatabaseConnectionError(t *testing.T) {
 	for key, value := range map[string]string{
-		"DB_HOST": "127.0.0.1", "DB_PORT": "1", "DB_NAME": "xflickr_wt_sync_unit", "DB_USER": "unused",
+		"DB_HOST": "127.0.0.1", "DB_PORT": "1", "DB_NAME": "wt_jooxfsyncunit", "DB_USER": "unused",
 		"REDIS_PREFIX": "sync_unit:", "OPENSEARCH_INDEX_PREFIX": "sync_unit_", "NODE_ID": "sync-unit-test",
 	} {
 		t.Setenv(key, value)
@@ -360,7 +360,7 @@ func TestCrawlAndSchedulerRolesReturnDatabaseErrors(t *testing.T) {
 	for key, value := range map[string]string{
 		"DB_HOST":                   "127.0.0.1",
 		"DB_PORT":                   "1",
-		"DB_NAME":                   "xflickr_wt_roles_unit",
+		"DB_NAME":                   "wt_jooxfrolesunit",
 		"DB_USER":                   "xflickr_roles_test",
 		"REDIS_PREFIX":              "roles_unit:",
 		"OPENSEARCH_INDEX_PREFIX":   "roles_unit_",
@@ -391,7 +391,7 @@ func TestConfiguredAPIRoleReturnsDatabaseConnectionError(t *testing.T) {
 	for key, value := range map[string]string{
 		"DB_HOST":                   "127.0.0.1",
 		"DB_PORT":                   "1",
-		"DB_NAME":                   "xflickr_wt_roles_unit",
+		"DB_NAME":                   "wt_jooxfrolesunit",
 		"DB_USER":                   "xflickr_roles_test",
 		"REDIS_PREFIX":              "roles_unit:",
 		"OPENSEARCH_INDEX_PREFIX":   "roles_unit_",
@@ -410,9 +410,6 @@ func TestConfiguredAPIRoleStartsAgainstTheWorktreeServices(t *testing.T) {
 	if os.Getenv("XFLICKR_INTEGRATION_TEST") != "1" {
 		t.Skip("set XFLICKR_INTEGRATION_TEST=1 to use shared worktree services")
 	}
-	t.Setenv("REDIS_PREFIX", "roles_integration:")
-	t.Setenv("OPENSEARCH_INDEX_PREFIX", "roles_integration_")
-	t.Setenv("NODE_ID", "roles-integration")
 	t.Setenv("XFLICKR_MASTER_KEYS", "test:"+base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{5}, 32)))
 	t.Setenv("XFLICKR_MASTER_KEY_ACTIVE", "test")
 	_, source, _, ok := runtime.Caller(0)
@@ -424,9 +421,17 @@ func TestConfiguredAPIRoleStartsAgainstTheWorktreeServices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load worktree runtime configuration: %v", err)
 	}
-	if !strings.HasPrefix(cfg.DB.Name, "xflickr_wt") {
-		t.Fatal("configured API role requires a worktree database")
-	}
+	t.Setenv("REDIS_HOST", cfg.Redis.Host)
+	t.Setenv("REDIS_PORT", strconv.Itoa(cfg.Redis.Port))
+	t.Setenv("REDIS_DB", strconv.Itoa(cfg.Redis.DB))
+	t.Setenv("REDIS_USERNAME", cfg.Redis.Username)
+	t.Setenv("REDIS_PASSWORD", cfg.Redis.Password)
+	t.Setenv("REDIS_PREFIX", cfg.Redis.Prefix+"role-start:")
+	t.Setenv("SEARCH_URL", cfg.Search.URL)
+	t.Setenv("SEARCH_USERNAME", cfg.Search.Username)
+	t.Setenv("SEARCH_PASSWORD", cfg.Search.Password)
+	t.Setenv("OPENSEARCH_INDEX_PREFIX", cfg.Search.IndexPrefix+"role-start-")
+	t.Setenv("NODE_ID", "roles-integration")
 	t.Setenv("DB_HOST", cfg.DB.Host)
 	t.Setenv("DB_PORT", strconv.Itoa(cfg.DB.Port))
 	t.Setenv("DB_NAME", cfg.DB.Name)
@@ -659,8 +664,8 @@ func TestSchedulerRoleReportsMissingConfigurationAndIdleRoleStops(t *testing.T) 
 
 func TestSchedulerRoleBuildsWithValidSettingsAndStopsOnDatabaseDeadline(t *testing.T) {
 	for key, value := range map[string]string{
-		"DB_HOST": "127.0.0.1", "DB_PORT": "1", "DB_NAME": "xflickr_wtunit", "DB_USER": "unused",
-		"REDIS_PREFIX": "xflickr_wtunit:", "OPENSEARCH_INDEX_PREFIX": "xflickr_wtunit_", "NODE_ID": "scheduler-test",
+		"DB_HOST": "127.0.0.1", "DB_PORT": "1", "DB_NAME": "wt_jooxfunit", "DB_USER": "unused",
+		"REDIS_PREFIX": "wt_jooxfunit:", "OPENSEARCH_INDEX_PREFIX": "wt_jooxfunit-", "NODE_ID": "scheduler-test",
 		"XFLICKR_MASTER_KEYS": "test-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "XFLICKR_MASTER_KEY_ACTIVE": "test-v1",
 	} {
 		t.Setenv(key, value)
@@ -1017,7 +1022,7 @@ func TestBuildConnectHandlerWiresTheFlowAndPrincipal(t *testing.T) {
 	encoded := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))
 	cfg := config.Config{
 		Crypto: config.CryptoConfig{MasterKeys: "test:" + encoded, ActiveMasterKeyID: "test"},
-		Redis:  config.RedisConfig{Prefix: "xflickr_wt98:"},
+		Redis:  config.RedisConfig{Prefix: "wt_jooxf98:"},
 		Flickr: config.FlickrConfig{CallbackURL: "http://127.0.0.1:8080/flickr-accounts/callback"},
 	}
 	handler, err := buildConnectHandler(&pgxpool.Pool{}, redisv9.NewClient(&redisv9.Options{Addr: "127.0.0.1:0"}), cfg)

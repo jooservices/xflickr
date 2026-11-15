@@ -140,9 +140,6 @@ func integrationPool(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatalf("load test PostgreSQL settings: %v", err)
 	}
-	if err := dbtest.ValidateDatabaseName(dbConfig.Name); err != nil {
-		t.Fatal(err)
-	}
 	return dbtest.Open(t, dbConfig)
 }
 

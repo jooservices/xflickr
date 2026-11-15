@@ -51,7 +51,11 @@ func NewIndex(baseURL, username, password, prefix string, client *http.Client) (
 
 // Create creates the physical index and write alias with one Elasticsearch PUT.
 func (i *Index) Create(ctx context.Context) error {
-	body, err := json.Marshal(indexDefinition(i.prefix))
+	return i.create(ctx, json.Marshal)
+}
+
+func (i *Index) create(ctx context.Context, marshal func(any) ([]byte, error)) error {
+	body, err := marshal(indexDefinition(i.prefix))
 	if err != nil {
 		return fmt.Errorf("elasticsearch: encode index mapping: %w", err)
 	}
@@ -105,9 +109,6 @@ func (i *Index) Upsert(ctx context.Context, doc app.Document) error {
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		if response != nil && response.Body != nil {
-			_ = response.Body.Close()
-		}
 		return requestError{operation: "upsert document", cause: err}
 	}
 	defer response.Body.Close()
@@ -148,7 +149,11 @@ func indexDefinition(prefix string) map[string]any {
 }
 
 func validPrefix(prefix string) bool {
-	if len(prefix) < 2 || prefix[len(prefix)-1] != '_' || !lowerAlphaNumeric(prefix[0]) {
+	if len(prefix) < 2 || !lowerAlphaNumeric(prefix[0]) {
+		return false
+	}
+	separator := prefix[len(prefix)-1]
+	if separator != '_' && separator != '-' {
 		return false
 	}
 	for _, character := range []byte(prefix[:len(prefix)-1]) {

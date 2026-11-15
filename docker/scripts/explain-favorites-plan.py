@@ -25,8 +25,6 @@ def database_settings() -> dict[str, str]:
     spec.loader.exec_module(module)
     values = module.parse_env_text((ROOT / ".env").read_text())
 
-    if not re.fullmatch(r"xflickr_wt[a-z0-9]{1,24}", values.get("DB_NAME", "")):
-        raise RuntimeError("refusing to run outside an isolated XFlickr worktree database")
     if values.get("DB_HOST") not in {"127.0.0.1", "localhost"}:
         raise RuntimeError("refusing a non-local database host")
     for key in ("DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"):

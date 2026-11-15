@@ -4,8 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd -P)"
 
-# Verifies that the worktree .env selects its own database and that PostgreSQL,
-# Redis and search answer. XFlickr starts no database, cache or search container.
+# Verifies that .env matches the worktree's .env.tree and that PostgreSQL, Redis
+# and search answer. XFlickr starts no database, cache or search container.
 verify_worktree_database() {
 	"$SCRIPT_DIR/run.sh" python python3 "$SCRIPT_DIR/worktree_env.py" --check --worktree "$ROOT"
 }

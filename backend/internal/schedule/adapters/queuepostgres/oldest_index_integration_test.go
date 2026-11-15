@@ -39,7 +39,7 @@ func oldestConfig(t *testing.T) config.DBConfig {
 	if cfg.Name == "xflickr_test" {
 		t.Fatal("a private worktree database is required")
 	}
-	return dbtest.EmptyDatabase(t, cfg)
+	return dbtest.IsolatedSchema(t, cfg)
 }
 
 func oldestPool(t *testing.T, cfg config.DBConfig) *pgxpool.Pool {
@@ -195,7 +195,7 @@ func TestOldestActiveAgeIndexMigrationIntegration(t *testing.T) {
 	}
 	var removed, sentinel bool
 	var subject string
-	err := pool.QueryRow(t.Context(), `SELECT to_regclass($1) IS NULL,
+	err := pool.QueryRow(t.Context(), `SELECT to_regclass(current_schema() || '.' || $1) IS NULL,
  to_regclass('oldest_migration_sentinel') IS NOT NULL,subject_key FROM work_items`, oldestIndex).Scan(&removed, &sentinel, &subject)
 	if err != nil {
 		t.Fatal(err)

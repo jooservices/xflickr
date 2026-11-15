@@ -13,11 +13,6 @@
   },
   "setup": [
     {
-      "name": "env",
-      "cmd": "python3 docker/scripts/worktree_env.py {ticket_id}",
-      "cwd": "."
-    },
-    {
       "name": "web-deps",
       "cmd": "npm ci --no-audit --no-fund",
       "cwd": "web"

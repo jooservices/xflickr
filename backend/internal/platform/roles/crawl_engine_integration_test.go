@@ -43,8 +43,10 @@ func crawlIntegrationConfig(t *testing.T) config.Config {
 	}
 	for name, value := range map[string]string{
 		"DB_HOST": dbCfg.Host, "DB_PORT": fmt.Sprint(dbCfg.Port), "DB_NAME": dbCfg.Name, "DB_USER": dbCfg.User, "DB_PASSWORD": dbCfg.Password,
-		"REDIS_HOST": env["REDIS_HOST"], "REDIS_PORT": env["REDIS_PORT"], "REDIS_DB": env["REDIS_DB"], "REDIS_PASSWORD": env["REDIS_PASSWORD"], "REDIS_PREFIX": env["REDIS_PREFIX"],
-		"OPENSEARCH_INDEX_PREFIX": "xflickr_wtk251_", "NODE_ID": "jooxf-251-integration",
+		"REDIS_HOST": env["REDIS_HOST"], "REDIS_PORT": env["REDIS_PORT"], "REDIS_DB": env["REDIS_DB"],
+		"REDIS_USERNAME": env["REDIS_USERNAME"], "REDIS_PASSWORD": env["REDIS_PASSWORD"], "REDIS_PREFIX": env["REDIS_PREFIX"] + "crawl-integration:",
+		"SEARCH_URL": env["SEARCH_URL"], "SEARCH_USERNAME": env["SEARCH_USERNAME"], "SEARCH_PASSWORD": env["SEARCH_PASSWORD"],
+		"OPENSEARCH_INDEX_PREFIX": env["OPENSEARCH_INDEX_PREFIX"] + "crawl-integration-", "NODE_ID": "jooxf-522-integration",
 		"XFLICKR_MASTER_KEYS": "integration:" + base64.StdEncoding.EncodeToString(make([]byte, 32)), "XFLICKR_MASTER_KEY_ACTIVE": "integration",
 	} {
 		t.Setenv(name, value)
@@ -67,7 +69,7 @@ func TestCrawlWorkerRunsSyncJobAgainstFakeFlickr(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
 	pool := dbtest.Open(t, cfg.DB)
-	redisClient := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	redisClient := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Username: cfg.Redis.Username, Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	defer redisClient.Close()
 	ring, err := keyringFromConfig(cfg)
 	if err != nil {
@@ -197,7 +199,7 @@ func TestCrawlWorkerKeepsRiverJobCompletedOnRecoverableFlickrFailure(t *testing.
 			ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 			defer cancel()
 			pool := dbtest.Open(t, cfg.DB)
-			redisClient := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+			redisClient := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Username: cfg.Redis.Username, Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 			defer redisClient.Close()
 			_, _, itemID, person := seedCrawlFixture(t, ctx, pool, cfg, "ready", time.Now().Add(2*time.Minute))
 
@@ -405,7 +407,7 @@ func TestRequeuedFailedItemRunsThroughPumpAndWorkerToDone(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
 	pool := dbtest.Open(t, cfg.DB)
-	redisClient := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Password: cfg.Redis.Password, DB: cfg.Redis.DB})
+	redisClient := redisv9.NewClient(&redisv9.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Username: cfg.Redis.Username, Password: cfg.Redis.Password, DB: cfg.Redis.DB})
 	defer redisClient.Close()
 	_, keyID, itemID, person := seedCrawlFixture(t, ctx, pool, cfg, "failed", nil)
 	if _, err := pool.Exec(ctx, `UPDATE work_items SET attempts=5, last_error='lease expired' WHERE id=$1`, itemID); err != nil {

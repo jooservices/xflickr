@@ -503,7 +503,7 @@ func (q *fakeWorkerQueue) Stopped() <-chan struct{} { return q.stopped }
 
 func disconnectedPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	pool, err := pgxpool.New(context.Background(), "postgres://user:password@127.0.0.1:1/xflickr_wt82?sslmode=disable")
+	pool, err := pgxpool.New(context.Background(), "postgres://user:password@127.0.0.1:1/wt_jooxf82?sslmode=disable")
 	if err != nil {
 		t.Fatal(err)
 	}

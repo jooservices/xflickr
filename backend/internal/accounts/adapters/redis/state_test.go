@@ -18,7 +18,7 @@ func newStates(t *testing.T) (States, *miniredis.Miniredis) {
 	server := miniredis.RunT(t)
 	client := redisv9.NewClient(&redisv9.Options{Addr: server.Addr()})
 	t.Cleanup(func() { _ = client.Close() })
-	return States{Client: client, Prefix: "xflickr_wt98:"}, server
+	return States{Client: client, Prefix: "wt_jooxf98:"}, server
 }
 
 func samplePending() app.Pending {
@@ -31,7 +31,7 @@ func TestStatesSaveThenTakeWorksOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	keys := server.Keys()
-	if len(keys) != 1 || !strings.HasPrefix(keys[0], "xflickr_wt98:accounts:oauth:") || strings.Contains(keys[0], "state-one") {
+	if len(keys) != 1 || !strings.HasPrefix(keys[0], "wt_jooxf98:accounts:oauth:") || strings.Contains(keys[0], "state-one") {
 		t.Fatalf("keys = %v", keys)
 	}
 	if ttl := server.TTL(keys[0]); ttl != 10*time.Minute {

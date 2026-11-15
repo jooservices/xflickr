@@ -22,20 +22,13 @@ if [[ ! -f "$ROOT/.env" ]]; then
 	exit 1
 fi
 
-# Only a worktree database may be reset. The live database xflickr is refused here and again below.
+# The reset runs against the database and account in the worktree .env.
 "$SCRIPT_DIR/dev.sh" verify-db >/dev/null
 env_value() {
 	sed -n "s/^$1=//p" "$ROOT/.env" | head -n 1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"
 }
 db_name="$(env_value DB_DATABASE)"
 db_user="$(env_value DB_USERNAME)"
-case "$db_name" in
-	xflickr_wt*) ;;
-	*)
-		printf 'Refusing to reset database %s: only xflickr_wt* worktree databases are allowed.\n' "$db_name" >&2
-		exit 1
-		;;
-esac
 
 free_port() {
 	"$node_bin" -e 'const s = require("node:net").createServer(); s.listen(0, "127.0.0.1", () => { process.stdout.write(String(s.address().port)); s.close(); });'
@@ -43,6 +36,10 @@ free_port() {
 
 api_port="$(free_port)"
 fake_port="$(free_port)"
+probe_port="$(free_port)"
+# free_port releases its listener, so the OS may hand out the same port twice: the three ports must differ.
+while [[ "$fake_port" == "$api_port" ]]; do fake_port="$(free_port)"; done
+while [[ "$probe_port" == "$api_port" || "$probe_port" == "$fake_port" ]]; do probe_port="$(free_port)"; done
 run_id="e2e$(date +%s)"
 admin_password="$(openssl rand -hex 12)"
 
@@ -80,10 +77,11 @@ fi
 export DB_HOST=127.0.0.1 DB_PORT=15435 REDIS_HOST=127.0.0.1 REDIS_PORT=16382
 REDIS_PREFIX="$(env_value REDIS_PREFIX)${run_id}:"
 export REDIS_PREFIX
-export NODE_ID=e2e OPENSEARCH_INDEX_PREFIX="xflickr_${run_id}_"
+OPENSEARCH_INDEX_PREFIX="$(env_value OPENSEARCH_INDEX_PREFIX)${run_id}-"
+export NODE_ID=e2e OPENSEARCH_INDEX_PREFIX
 master_key="$(openssl rand -base64 32 | tr -d '\n')"
 export XFLICKR_MASTER_KEYS="e2e-v1:${master_key}" XFLICKR_MASTER_KEY_ACTIVE=e2e-v1
-export HTTP_PORT="$api_port" XFLICKR_WEB_DIR="$ROOT/web/dist" XFLICKR_ROLES=api,scheduler,crawl,media
+export HTTP_PORT="$api_port" OBS_HTTP_PORT="$probe_port" XFLICKR_WEB_DIR="$ROOT/web/dist" XFLICKR_ROLES=api,scheduler,crawl,media
 export BLOB_LOCAL_DIR="$STACK_DIR/blobs"
 export FLICKR_OAUTH_CALLBACK_URL="http://127.0.0.1:${api_port}/flickr-accounts/callback"
 export FLICKR_UPSTREAM_URL="http://127.0.0.1:${fake_port}"

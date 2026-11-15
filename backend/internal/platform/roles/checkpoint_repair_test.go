@@ -13,7 +13,7 @@ import (
 
 func TestConfiguredCheckpointRepairRejectsBadDatabase(t *testing.T) {
 	t.Setenv("DB_HOST", "127.0.0.1")
-	t.Setenv("DB_NAME", "xflickr_wtjooxf345")
+	t.Setenv("DB_NAME", "wt_jooxf345")
 	t.Setenv("DB_USER", "unused")
 	t.Setenv("DB_PASSWORD", "unused")
 	t.Setenv("DB_PORT", "invalid")
@@ -152,7 +152,7 @@ func setCheckpointRepairDatabaseEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("DB_HOST", "127.0.0.1")
 	t.Setenv("DB_PORT", "5432")
-	t.Setenv("DB_NAME", "xflickr_wtjooxf345")
+	t.Setenv("DB_NAME", "wt_jooxf345")
 	t.Setenv("DB_USER", "unused")
 	t.Setenv("DB_PASSWORD", "unused")
 }
@@ -161,7 +161,7 @@ func withIdleRolePool(t *testing.T) {
 	t.Helper()
 	previous := openRoleDatabase
 	openRoleDatabase = func(ctx context.Context, _ config.DBConfig) (*pgxpool.Pool, error) {
-		cfg, err := pgxpool.ParseConfig("postgres://unused:unused@127.0.0.1:1/xflickr_wtjooxf345?sslmode=disable&connect_timeout=1")
+		cfg, err := pgxpool.ParseConfig("postgres://unused:unused@127.0.0.1:1/wt_jooxf345?sslmode=disable&connect_timeout=1")
 		if err != nil {
 			return nil, err
 		}

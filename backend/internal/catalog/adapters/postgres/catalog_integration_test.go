@@ -246,8 +246,5 @@ func loadCatalogDatabase(t *testing.T) config.DBConfig {
 	if err != nil {
 		t.Fatalf("load test database settings: %v", err)
 	}
-	if err := dbtest.ValidateDatabaseName(dbConfig.Name); err != nil {
-		t.Fatal(err)
-	}
 	return dbConfig
 }

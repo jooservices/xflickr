@@ -15,7 +15,7 @@ import (
 	flickr "github.com/jooservices/xflickr/pkg/flickr"
 )
 
-const testPrefix = "xflickr_wt106:"
+const testPrefix = "wt_jooxf106:"
 
 func setupGovernor(t *testing.T, budget domain.Budget) (Governor, *miniredis.Miniredis, *redisv9.Client) {
 	t.Helper()

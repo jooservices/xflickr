@@ -7,8 +7,8 @@ their own PostgreSQL and Redis and never reach production.
 
 | Service | Production | Worktrees and tests |
 |---|---|---|
-| PostgreSQL | 192.168.10.12, database `xflickr`, role `xflickr_app` | VM-local cluster, databases `xflickr_wt*` |
-| Redis | 192.168.10.14, database 2, ACL user `xflickr`, prefix `xflickr:` | VM-local Redis, test indexes |
+| PostgreSQL | 192.168.10.12, database `xflickr`, role `xflickr_app` | Dev Workspaces VM tree databases `wt_<ticket-id>` with scoped roles |
+| Redis | 192.168.10.14, database 2, ACL user `xflickr`, prefix `xflickr:` | Dev Workspaces VM Redis with per-tree ACL users and prefixes |
 | Sentry | 192.168.10.17, organization `jooservices`, project `xflickr` | disabled (`SENTRY_DSN` empty) |
 
 The old local database (`xflickr` on the VM) stays untouched as staging.

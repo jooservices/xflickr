@@ -109,6 +109,6 @@ DROP TABLE river_leader;
 DROP TABLE river_notification;
 DROP TABLE river_queue;
 DROP INDEX river_job_unique_idx;
-DROP FUNCTION river_job_state_in_bitmask;
+DROP FUNCTION river_job_state_in_bitmask(BIT(8), river_job_state);
 DROP TABLE river_job;
 DROP TYPE river_job_state;

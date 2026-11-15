@@ -70,13 +70,13 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 		"REDIS_HOST":                  "redis.internal",
 		"REDIS_PORT":                  "16383",
 		"REDIS_DB":                    "9",
-		"REDIS_USERNAME":              "xflickr",
+		"REDIS_USERNAME":              "wt_jooxf68",
 		"REDIS_PASSWORD":              "redis-pass",
-		"REDIS_PREFIX":                "xflickr_wt68:",
+		"REDIS_PREFIX":                "wt_jooxf68:",
 		"SEARCH_URL":                  "http://search.internal:9200",
 		"SEARCH_USERNAME":             "search-user",
 		"SEARCH_PASSWORD":             "search-pass",
-		"OPENSEARCH_INDEX_PREFIX":     "xflickr_wt68_",
+		"OPENSEARCH_INDEX_PREFIX":     "wt_jooxf68-",
 		"BLOB_DRIVER":                 "s3",
 		"BLOB_LOCAL_DIR":              "/tmp/blobs",
 		"BLOB_MAX_BYTES":              "1234567",
@@ -121,10 +121,10 @@ func TestLoadFromEnvReadsFieldsAndTicketPrefixes(t *testing.T) {
 	if cfg.DB.MaxConns != 35 || cfg.DB.MinConns != 4 || cfg.DB.MaxConnLifetime != 45*time.Minute || cfg.DB.MaxConnIdleTime != 12*time.Minute || cfg.DB.HealthCheckPeriod != 30*time.Second {
 		t.Errorf("DB pool values not loaded: %#v", cfg.DB)
 	}
-	if cfg.Redis.Host != "redis.internal" || cfg.Redis.Port != 16383 || cfg.Redis.DB != 9 || cfg.Redis.Username != "xflickr" || cfg.Redis.Password != "redis-pass" || cfg.Redis.Prefix != "xflickr_wt68:" {
+	if cfg.Redis.Host != "redis.internal" || cfg.Redis.Port != 16383 || cfg.Redis.DB != 9 || cfg.Redis.Username != "wt_jooxf68" || cfg.Redis.Password != "redis-pass" || cfg.Redis.Prefix != "wt_jooxf68:" {
 		t.Errorf("Redis values not loaded: %#v", cfg.Redis)
 	}
-	if cfg.Search.URL != "http://search.internal:9200" || cfg.Search.Username != "search-user" || cfg.Search.Password != "search-pass" || cfg.Search.IndexPrefix != "xflickr_wt68_" {
+	if cfg.Search.URL != "http://search.internal:9200" || cfg.Search.Username != "search-user" || cfg.Search.Password != "search-pass" || cfg.Search.IndexPrefix != "wt_jooxf68-" {
 		t.Errorf("Search values not loaded: %#v", cfg.Search)
 	}
 	if cfg.Blob.Driver != "s3" || cfg.Blob.LocalDir != "/tmp/blobs" || cfg.Blob.MaxBytes != 1234567 || cfg.Blob.S3Endpoint != "https://objects.internal" || cfg.Blob.S3Region != "ap-southeast-1" || cfg.Blob.S3Bucket != "xflickr-worktree" || cfg.Blob.S3AccessKey != "s3-access" || cfg.Blob.S3SecretKey != "s3-secret" || !cfg.Blob.S3UsePathStyle {
@@ -304,18 +304,54 @@ func TestLoadDatabaseFromEnvSupportsGeneratedWorktreeNames(t *testing.T) {
 	cfg, err := LoadDatabaseFromEnv(map[string]string{
 		"DB_HOST":     "127.0.0.1",
 		"DB_PORT":     "15435",
-		"DB_DATABASE": "xflickr_wtk80",
+		"DB_DATABASE": "wt_jooxf80",
 		"DB_USERNAME": "shared-user",
 		"DB_PASSWORD": "shared-password",
 	})
 	if err != nil {
 		t.Fatalf("LoadDatabaseFromEnv() error = %v", err)
 	}
-	if cfg.Name != "xflickr_wtk80" || cfg.User != "shared-user" || cfg.Port != 15435 || cfg.SSLMode != "disable" {
+	if cfg.Name != "wt_jooxf80" || cfg.User != "shared-user" || cfg.Port != 15435 || cfg.SSLMode != "disable" {
 		t.Errorf("database settings = %#v", cfg)
 	}
 	if cfg.MaxConns != 20 || cfg.MinConns != 2 || cfg.MaxConnLifetime != time.Hour || cfg.MaxConnIdleTime != 30*time.Minute || cfg.HealthCheckPeriod != time.Minute {
 		t.Errorf("database pool defaults = %#v", cfg)
+	}
+}
+
+func TestLoadDatabaseFromEnvReportsRequiredParseAndValidationErrors(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		values map[string]string
+		want   string
+	}{
+		{name: "required values", values: map[string]string{}, want: "DB_HOST, DB_NAME, DB_USER"},
+		{name: "parse value", values: map[string]string{"DB_HOST": "127.0.0.1", "DB_NAME": "wt_jooxf80", "DB_USER": "tree", "DB_PORT": "invalid"}, want: "parse environment"},
+		{name: "invalid pool", values: map[string]string{"DB_HOST": "127.0.0.1", "DB_NAME": "wt_jooxf80", "DB_USER": "tree", "DB_MAX_CONNS": "0"}, want: "DB_MAX_CONNS"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := LoadDatabaseFromEnv(test.values)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("LoadDatabaseFromEnv() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadDatabaseReadsDotEnv(t *testing.T) {
+	clearConfigEnvironment(t)
+	directory := t.TempDir()
+	t.Chdir(directory)
+	if err := os.WriteFile(filepath.Join(directory, ".env"), []byte("DB_HOST=dotenv-db\nDB_DATABASE=wt_jooxf80\nDB_USERNAME=tree-user\n"), 0o600); err != nil {
+		t.Fatalf("write dotenv file: %v", err)
+	}
+
+	cfg, err := LoadDatabase()
+	if err != nil {
+		t.Fatalf("LoadDatabase() error = %v", err)
+	}
+	if cfg.Host != "dotenv-db" || cfg.Name != "wt_jooxf80" || cfg.User != "tree-user" {
+		t.Errorf("database settings = %#v", cfg)
 	}
 }
 
@@ -340,6 +376,16 @@ func TestLoadDatabaseWithDotEnvAppliesProcessOverrides(t *testing.T) {
 	}
 	if cfg.Host != "process-db" || cfg.Name != "process-database" || cfg.User != "dotenv-user" || cfg.MaxConns != 12 {
 		t.Errorf("database dotenv/process values = %#v", cfg)
+	}
+}
+
+func TestLoadDatabaseWithDotEnvReportsMalformedFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte("not a valid dotenv assignment\n"), 0o600); err != nil {
+		t.Fatalf("write malformed dotenv file: %v", err)
+	}
+	if _, err := LoadDatabaseWithDotEnv(path); err == nil || !strings.Contains(err.Error(), "read dotenv file") {
+		t.Fatalf("LoadDatabaseWithDotEnv() error = %v, want dotenv read error", err)
 	}
 }
 
