@@ -82,6 +82,62 @@ test('AC6 a scenario may pass an aliased page to a suite but not use it directly
   assert.ok(destructured.some((line) => line.includes('may not use the page directly')));
 });
 
+function scenarioWith(body, params = '{ page }') {
+  return {
+    ...GOOD,
+    'scenarios/a.spec.ts': `import { test } from '@playwright/test';\ntest('a', async (${params}) => { ${body} });\n`,
+  };
+}
+
+const STANDARD = 'a scenario may not use the page directly; call a step';
+
+test('AC1 a scenario may not use the page through an assignment alias', () => {
+  const problems = problemsOf(scenarioWith("const p = page; await p.goto('/x');"));
+  assert.equal(problems.filter((line) => line.includes(STANDARD)).length, 1);
+  const suite = problemsOf({
+    ...GOOD,
+    'suites/a.ts': 'export async function showA(page) { const v = page; await v.reload(); }\n',
+  });
+  assert.ok(suite.some((line) => line.includes('a suite may not use the page directly')));
+});
+
+test('AC2 a scenario may not read the page from a fixture object', () => {
+  const problems = problemsOf(scenarioWith("await fx.page.goto('/x');", 'fx'));
+  assert.equal(problems.filter((line) => line.includes(STANDARD)).length, 1);
+  const stored = problemsOf(scenarioWith("const p = fx.page; await p.goto('/x');", 'fx'));
+  assert.equal(stored.filter((line) => line.includes(STANDARD)).length, 1);
+  const passedOn = problemsOf(scenarioWith('await showA(fx.page);', 'fx'));
+  assert.deepEqual(passedOn, []);
+});
+
+test('AC3 a scenario may not open a page from the fixture context', () => {
+  const plain = problemsOf(
+    scenarioWith("const q = await context.newPage(); await q.goto('/x');", '{ context }'),
+  );
+  assert.equal(plain.filter((line) => line.includes(STANDARD)).length, 1);
+  const aliased = problemsOf(
+    scenarioWith("const q = (await ctx.newPage()); await q.goto('/x');", '{ context: ctx }'),
+  );
+  assert.equal(aliased.filter((line) => line.includes(STANDARD)).length, 1);
+  const viaFixture = problemsOf(
+    scenarioWith("const q = await fx.context.newPage(); await q.goto('/x');", 'fx'),
+  );
+  assert.equal(viaFixture.filter((line) => line.includes(STANDARD)).length, 1);
+});
+
+test('AC4 passing the page to a step, or using neither page nor context, is allowed', () => {
+  assert.deepEqual(problemsOf(scenarioWith('await showA(page);')), []);
+  assert.deepEqual(
+    problemsOf(scenarioWith('const n = 1; const o = other(); await run(n, o);', '')),
+    [],
+  );
+  assert.deepEqual(
+    problemsOf(scenarioWith('const q = await context.cookies(); await showA(q);', '{ context }')),
+    [],
+  );
+  assert.deepEqual(problemsOf(scenarioWith('const q = await make(); await showA(q);')), []);
+});
+
 test('a suite may not skip to the page, import a scenario or hold a test', () => {
   const problems = problemsOf({
     ...GOOD,
