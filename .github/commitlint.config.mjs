@@ -13,9 +13,10 @@ const allowedTypes = [
 ];
 
 // Keep the same format for commit headers and PR titles.
-// The subject must start uppercase, must not end with a period, and must carry a Jira key.
-const headerPattern = new RegExp(
-  `^(${allowedTypes.join('|')})\\(([^()\\r\\n]+)\\): ([A-Z](?:.*[^.])?) \\(([A-Z][A-Z0-9]*-\\d+)\\)$`,
+// The subject must start uppercase, must not end with a period, and must carry a Jira key. GitHub appends
+// " (#<pull request number>)" to a squash commit, so the header may end with it.
+export const headerPattern = new RegExp(
+  `^(${allowedTypes.join('|')})\\(([^()\\r\\n]+)\\): ([A-Z](?:.*[^.])?) \\(([A-Z][A-Z0-9]*-\\d+)\\)(?: \\(#\\d+\\))?$`,
   'u',
 );
 
