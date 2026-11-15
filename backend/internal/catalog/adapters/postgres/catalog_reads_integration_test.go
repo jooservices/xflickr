@@ -598,9 +598,14 @@ func TestContactsKeysetPageUsesReverseIndexAndBoundedPlan(t *testing.T) {
 			t.Errorf("rollback contacts plan fixture: %v", err)
 		}
 	}()
-	// Contacts left by other tests change the planner statistics: the plan is asserted on this fixture alone,
-	// and the delete is rolled back with the transaction.
-	if _, err := tx.Exec(ctx, `DELETE FROM contacts`); err != nil {
+	// Contacts other tests left (rows, or the pages of rows they deleted) change the planner statistics and costs: the
+	// plan is asserted on this fixture alone. TRUNCATE is transactional, so it is rolled back with the transaction.
+	if _, err := tx.Exec(ctx, `TRUNCATE contacts`); err != nil {
+		t.Fatal(err)
+	}
+	// The migration drops and creates this index without a schema, so a migration test that ran in an isolated schema
+	// can drop the one of the shared schema: make the test independent of that (same definition as the migration).
+	if _, err := tx.Exec(ctx, `CREATE INDEX IF NOT EXISTS contacts_contact_nsid_person_nsid_idx ON contacts (contact_nsid, person_nsid)`); err != nil {
 		t.Fatal(err)
 	}
 	suffix := fmt.Sprintf("contacts-plan-%d", time.Now().UnixNano())

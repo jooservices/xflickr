@@ -27,7 +27,7 @@ export default {
     },
   },
   rules: {
-    'header-max-length': [2, 'always', 120],
+    'header-max-length': [2, 'always', 100],
     'type-enum': [2, 'always', allowedTypes],
     'type-empty': [2, 'never'],
     'type-case': [2, 'always', 'lower-case'],

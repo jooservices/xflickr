@@ -38,7 +38,7 @@ export -f q
 tables="$(q "$SRC" "select quote_ident(schemaname) || '.' || quote_ident(relname) from pg_stat_user_tables order by 1")"
 [[ -n "$tables" ]] || { printf 'compare-db: no tables found in the source\n' >&2; exit 2; }
 
-# shellcheck disable=SC2317 # invoked indirectly through xargs and bash -c
+# shellcheck disable=SC2317,SC2329 # invoked indirectly through xargs and bash -c
 count_one() { # file table -> count or ERR
 	local c; c="$(q "$1" "select count(*) from $2" 2>/dev/null)" && printf '%s' "$c" || printf 'ERR'
 }

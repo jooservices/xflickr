@@ -1,0 +1,10 @@
+name: Cancel workflow on job failure
+description: Cancel this workflow run when a required job fails.
+runs:
+  using: composite
+  steps:
+    - name: Cancel the run
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY"
