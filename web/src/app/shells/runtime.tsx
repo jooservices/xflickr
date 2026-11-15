@@ -43,6 +43,7 @@ export function ShellRuntimeProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [announcement, setAnnouncement] = useState('');
   const nextId = useRef(1);
+  const timers = useRef(new Set<number>());
 
   const toast = useCallback((text: string, action?: { label: string; run: () => void }) => {
     const id = nextId.current;
@@ -51,12 +52,22 @@ export function ShellRuntimeProvider({ children }: { children: ReactNode }) {
       ...current,
       { id, text, actionLabel: action?.label, onAction: action?.run },
     ]);
-    window.setTimeout(
+    const timer = window.setTimeout(
       () => {
+        timers.current.delete(timer);
         setToasts((current) => current.filter((item) => item.id !== id));
       },
       action === undefined ? TOAST_MS : UNDO_TOAST_MS,
     );
+    timers.current.add(timer);
+  }, []);
+
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      pending.forEach((timer) => window.clearTimeout(timer));
+      pending.clear();
+    };
   }, []);
 
   const toggleLive = useCallback(() => {

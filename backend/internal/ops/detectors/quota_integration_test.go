@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"runtime"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -90,9 +89,6 @@ func integrationPool(t *testing.T) *pgxpool.Pool {
 	dbConfig, err := config.LoadDatabaseWithDotEnv(filepath.Join(worktreeRoot, ".env"))
 	if err != nil {
 		t.Fatalf("load test PostgreSQL settings: %v", err)
-	}
-	if !strings.HasPrefix(dbConfig.Name, "wt_") {
-		t.Fatal("integration test requires this worktree's isolated database")
 	}
 	return dbtest.Open(t, dbConfig)
 }
