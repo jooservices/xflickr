@@ -92,6 +92,7 @@ WITH large_tables AS (
 ),
 fks AS (
     SELECT
+        lt.relid,
         lt.relname AS table_name,
         con.conname AS constraint_name,
         (SELECT a.attname FROM pg_attribute a
@@ -106,7 +107,7 @@ WHERE NOT EXISTS (
     FROM pg_index x
     JOIN pg_attribute a ON a.attrelid = x.indrelid AND a.attnum = x.indkey[0]
     JOIN pg_class c ON c.oid = x.indrelid
-    WHERE c.relname = f.table_name
+    WHERE x.indrelid = f.relid
       AND a.attname = f.fk_column
       AND x.indisvalid
 )

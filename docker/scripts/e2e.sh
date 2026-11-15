@@ -37,6 +37,9 @@ free_port() {
 api_port="$(free_port)"
 fake_port="$(free_port)"
 probe_port="$(free_port)"
+# free_port releases its listener, so the OS may hand out the same port twice: the three ports must differ.
+while [[ "$fake_port" == "$api_port" ]]; do fake_port="$(free_port)"; done
+while [[ "$probe_port" == "$api_port" || "$probe_port" == "$fake_port" ]]; do probe_port="$(free_port)"; done
 run_id="e2e$(date +%s)"
 admin_password="$(openssl rand -hex 12)"
 

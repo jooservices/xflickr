@@ -100,6 +100,7 @@ func TestNewPoolConfigOmitsEmptySearchPath(t *testing.T) {
 func TestNewPoolUsesPoolFactoryAndVerifiesConnection(t *testing.T) {
 	wantErr := errors.New("unavailable")
 	cfg := validDatabaseConfig()
+	cfg.MinConns = 0 // the injected factory must not start background connections
 	var pool *pgxpool.Pool
 	createPool := func(ctx context.Context, config *pgxpool.Config) (*pgxpool.Pool, error) {
 		var err error

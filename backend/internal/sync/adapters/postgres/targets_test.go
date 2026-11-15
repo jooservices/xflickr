@@ -644,29 +644,15 @@ func rollbackTargetMigrations(t *testing.T, ctx context.Context, cfg config.DBCo
 		t.Fatalf("open isolated migration rollback database: %v", err)
 	}
 	defer isolatedPool.Close()
-	var currentDatabase string
-	if err := isolatedPool.QueryRow(ctx, "SELECT current_database()").Scan(&currentDatabase); err != nil {
-		t.Fatalf("read isolated migration rollback database: %v", err)
-	}
-	if currentDatabase != isolatedCfg.Name {
-		t.Fatalf("migration rollback connected to %q, want isolated database %q", currentDatabase, isolatedCfg.Name)
-	}
+	assertConnectedTo(t, ctx, isolatedPool, isolatedCfg.Name)
 	if _, err := isolatedPool.Exec(ctx, `CREATE TABLE users (id BIGINT PRIMARY KEY)`); err != nil {
 		t.Fatalf("prepare isolated migration rollback user table: %v", err)
 	}
 	const targetMigration = "20261111131000_sync_targets.sql"
-	targetSQL, err := fs.ReadFile(migrations.Files, targetMigration)
-	if err != nil {
-		t.Fatalf("read sync target table migration: %v", err)
-	}
 	const indexMigration = "20261112100100_sync_targets_owner_cursor_index.sql"
-	indexSQL, err := fs.ReadFile(migrations.Files, indexMigration)
-	if err != nil {
-		t.Fatalf("read sync target index migration: %v", err)
-	}
 	files := fstest.MapFS{
-		targetMigration: &fstest.MapFile{Data: targetSQL},
-		indexMigration:  &fstest.MapFile{Data: indexSQL},
+		targetMigration: &fstest.MapFile{Data: readMigrationFile(t, targetMigration)},
+		indexMigration:  &fstest.MapFile{Data: readMigrationFile(t, indexMigration)},
 	}
 	if err := db.MigrateFiles(ctx, isolatedCfg, db.MigrateUp, nil, files); err != nil {
 		t.Fatalf("apply sync target migrations to isolated database: %v", err)
@@ -674,22 +660,41 @@ func rollbackTargetMigrations(t *testing.T, ctx context.Context, cfg config.DBCo
 	if err := db.MigrateFiles(ctx, isolatedCfg, db.MigrateDown, nil, files); err != nil {
 		t.Fatalf("roll back sync target index migration: %v", err)
 	}
-	var index *string
-	if err := isolatedPool.QueryRow(ctx, `SELECT to_regclass(format('%I.%I', current_schema(), 'sync_targets_user_id_id_idx'))::text`).Scan(&index); err != nil {
-		t.Fatalf("read rolled back target index: %v", err)
-	}
-	if index != nil {
-		t.Fatalf("sync_targets_user_id_id_idx still exists after rollback: %s", *index)
-	}
+	assertRelationAbsent(t, ctx, isolatedPool, "sync_targets_user_id_id_idx")
 	if err := db.MigrateFiles(ctx, isolatedCfg, db.MigrateDown, nil, files); err != nil {
 		t.Fatalf("roll back sync target table migration: %v", err)
 	}
-	var table *string
-	if err := isolatedPool.QueryRow(ctx, `SELECT to_regclass(format('%I.%I', current_schema(), 'sync_targets'))::text`).Scan(&table); err != nil {
-		t.Fatalf("read rolled back table: %v", err)
+	assertRelationAbsent(t, ctx, isolatedPool, "sync_targets")
+}
+
+func readMigrationFile(t *testing.T, name string) []byte {
+	t.Helper()
+	data, err := fs.ReadFile(migrations.Files, name)
+	if err != nil {
+		t.Fatalf("read migration %s: %v", name, err)
 	}
-	if table != nil {
-		t.Fatalf("sync_targets still exists after rollback: %s", *table)
+	return data
+}
+
+func assertConnectedTo(t *testing.T, ctx context.Context, pool *pgxpool.Pool, want string) {
+	t.Helper()
+	var current string
+	if err := pool.QueryRow(ctx, "SELECT current_database()").Scan(&current); err != nil {
+		t.Fatalf("read isolated migration rollback database: %v", err)
+	}
+	if current != want {
+		t.Fatalf("migration rollback connected to %q, want isolated database %q", current, want)
+	}
+}
+
+func assertRelationAbsent(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) {
+	t.Helper()
+	var found *string
+	if err := pool.QueryRow(ctx, `SELECT to_regclass(format('%I.%I', current_schema(), $1::text))::text`, name).Scan(&found); err != nil {
+		t.Fatalf("read rolled back relation %s: %v", name, err)
+	}
+	if found != nil {
+		t.Fatalf("%s still exists after rollback: %s", name, *found)
 	}
 }
 
