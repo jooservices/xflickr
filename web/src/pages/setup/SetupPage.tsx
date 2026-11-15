@@ -239,6 +239,7 @@ export function SetupPage() {
         { key_id: activeKey.id },
         { signal: controller.signal },
       );
+      if (controller.signal.aborted) return;
       if (response.status === 200) window.location.assign(response.data.authorize_url);
       else {
         setConnectError('start');
