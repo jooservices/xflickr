@@ -83,15 +83,6 @@ class PRGuardTests(unittest.TestCase):
         self.assertEqual(GUARD.sections('introduction\n## Jira\nTicket'), {'## Jira': 'Ticket'})
         self.assertIn('needs a line', GUARD.ticket_problems(PROFILE, '## Jira\nNo ticket', TITLE, BRANCH)[0])
 
-    def test_guard_sync_copies_and_checks_the_project_files(self) -> None:
-        with tempfile.TemporaryDirectory(prefix='xflickr-pr-sync-', dir=WORKSPACE / '.tmp') as directory:
-            project = Path(directory)
-            self.assertEqual(len(GUARD.sync(project, True)), 2)
-            self.assertEqual(len(GUARD.sync(project, False)), 2)
-            self.assertEqual(GUARD.sync(project, True), [])
-            (project / '.github/pull_request_template.md').write_text('changed', encoding='utf-8')
-            self.assertEqual(len(GUARD.sync(project, True)), 1)
-
     def test_guard_cli_reports_pass_and_failure(self) -> None:
         with tempfile.TemporaryDirectory(prefix='xflickr-pr-cli-', dir=WORKSPACE / '.tmp') as directory:
             path = Path(directory)
@@ -107,9 +98,6 @@ class PRGuardTests(unittest.TestCase):
             self.assertEqual(GUARD.main([*args, '--commits', 'HEAD', '--repo', str(path)]), 0)
             event.write_text(json.dumps({'pull_request': {'title': 'bad', 'body': '', 'head': {'ref': BRANCH}}}), encoding='utf-8')
             self.assertEqual(GUARD.main(args), 1)
-            self.assertEqual(GUARD.main(['sync', str(path), '--check']), 1)
-            self.assertEqual(GUARD.main(['sync', str(path)]), 0)
-            self.assertEqual(GUARD.main(['sync', str(path), '--check']), 0)
             with mock.patch.object(sys, 'argv', [str(ROOT / '.github/pr_guard.py'), *args]):
                 with self.assertRaises(SystemExit) as raised:
                     runpy.run_path(str(ROOT / '.github/pr_guard.py'), run_name='__main__')

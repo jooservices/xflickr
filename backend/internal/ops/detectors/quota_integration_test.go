@@ -94,8 +94,5 @@ func integrationPool(t *testing.T) *pgxpool.Pool {
 	if !strings.HasPrefix(dbConfig.Name, "wt_") {
 		t.Fatal("integration test requires this worktree's isolated database")
 	}
-	if err := dbtest.ValidateDatabaseName(dbConfig.Name); err != nil {
-		t.Fatal(err)
-	}
 	return dbtest.Open(t, dbConfig)
 }

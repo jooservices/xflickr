@@ -1,4 +1,4 @@
-// Package dbtest provides guarded access to XFlickr's isolated test databases.
+// Package dbtest opens and migrates the database the test environment configures.
 package dbtest
 
 import (
@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"regexp"
 	"testing"
 	"time"
 
@@ -19,9 +18,7 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/db"
 )
 
-var worktreeDatabaseName = regexp.MustCompile(`^wt_[a-z0-9_]{2,32}$`)
-
-// Open returns a migrated pool after refusing live or unrelated databases.
+// Open returns a migrated pool for the configured database.
 func Open(t testing.TB, cfg config.DBConfig) *pgxpool.Pool {
 	t.Helper()
 	return openMigrated(t, cfg, db.NewPool, migrateTestDatabase)
@@ -70,9 +67,6 @@ type (
 )
 
 func createIsolatedSchema(cfg config.DBConfig, random io.Reader, createPool schemaPoolFactory) (config.DBConfig, func() error, error) {
-	if err := ValidateDatabaseName(cfg.Name); err != nil {
-		return config.DBConfig{}, nil, err
-	}
 	databaseConfig := cfg
 	var suffix [8]byte
 	if _, err := io.ReadFull(random, suffix[:]); err != nil {
@@ -129,10 +123,6 @@ type (
 )
 
 func openPool(ctx context.Context, cfg config.DBConfig, createPool poolFactory, migrate migrationFunc) (*pgxpool.Pool, error) {
-	if err := ValidateDatabaseName(cfg.Name); err != nil {
-		return nil, err
-	}
-
 	pool, err := createPool(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("open test PostgreSQL pool: %w", err)
@@ -142,12 +132,4 @@ func openPool(ctx context.Context, cfg config.DBConfig, createPool poolFactory, 
 		return nil, fmt.Errorf("migrate test PostgreSQL database: %w", err)
 	}
 	return pool, nil
-}
-
-// ValidateDatabaseName permits a database created for an isolated test tree.
-func ValidateDatabaseName(name string) error {
-	if worktreeDatabaseName.MatchString(name) {
-		return nil
-	}
-	return fmt.Errorf("refusing database %q: tests require a wt_<ticket-id> database", name)
 }

@@ -13,7 +13,6 @@ export function worktreeSQL(sql: string): string {
       }),
   );
   const database = values.get('DB_DATABASE') ?? '';
-  if (!/^wt_[a-z0-9]{1,24}$/.test(database)) throw new Error('E2E requires a worktree database');
   return execFileSync(
     'psql',
     [

@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -41,9 +40,9 @@ func TestCreateIndexIntegration(t *testing.T) {
 	searchURL := integrationSetting(values, "SEARCH_URL", "http://127.0.0.1:19200")
 	username := integrationSetting(values, "SEARCH_USERNAME", "")
 	password := integrationSetting(values, "SEARCH_PASSWORD", "")
-	worktreePrefix, err := worktreeIndexPrefix(values)
-	if err != nil {
-		t.Fatal("configured search prefix does not identify this worktree")
+	worktreePrefix := values["OPENSEARCH_INDEX_PREFIX"]
+	if worktreePrefix == "" {
+		t.Fatal("OPENSEARCH_INDEX_PREFIX is not set in .env")
 	}
 
 	var suffix [8]byte
@@ -124,100 +123,6 @@ func TestCreateIndexIntegration(t *testing.T) {
 	if !document.Found || document.Source.Title != second.Title || len(document.Source.VisibleTo) != 1 || document.Source.VisibleTo[0] != "456" || document.Source.Visibility != "private" || document.Source.PubliclyShared == nil || *document.Source.PubliclyShared || len(document.Source.ID) != 0 {
 		t.Fatalf("document read through alias = %+v, want the replacement document", document)
 	}
-}
-
-func TestAC5WorktreeIndexPrefix(t *testing.T) {
-	database := "wt_" + strings.ToLower(t.Name()[:8])
-	tests := []struct {
-		name     string
-		settings map[string]string
-		want     string
-		wantErr  bool
-	}{
-		{
-			name: "uses current worktree configuration",
-			settings: map[string]string{
-				"DB_DATABASE": database, "OPENSEARCH_INDEX_PREFIX": database + "-",
-			},
-			want: database + "-",
-		},
-		{
-			name: "accepts legacy database setting",
-			settings: map[string]string{
-				"DB_NAME": database, "OPENSEARCH_INDEX_PREFIX": database + "-",
-			},
-			want: database + "-",
-		},
-		{
-			name: "rejects non worktree database",
-			settings: map[string]string{
-				"DB_NAME": "xflickr_test", "OPENSEARCH_INDEX_PREFIX": "xflickr_test-",
-			},
-			wantErr: true,
-		},
-		{
-			name: "rejects prefix for another database",
-			settings: map[string]string{
-				"DB_DATABASE": database, "OPENSEARCH_INDEX_PREFIX": database + "other-",
-			},
-			wantErr: true,
-		},
-		{
-			name: "rejects conflicting database aliases",
-			settings: map[string]string{
-				"DB_DATABASE": database, "DB_NAME": database + "other",
-				"OPENSEARCH_INDEX_PREFIX": database + "-",
-			},
-			wantErr: true,
-		},
-		{
-			name: "rejects missing prefix",
-			settings: map[string]string{
-				"DB_DATABASE": database,
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got, err := worktreeIndexPrefix(test.settings)
-			if (err != nil) != test.wantErr {
-				t.Fatalf("worktreeIndexPrefix() error = %v, wantErr %t", err, test.wantErr)
-			}
-			if got != test.want {
-				t.Fatalf("worktreeIndexPrefix() = %q, want %q", got, test.want)
-			}
-		})
-	}
-}
-
-func worktreeIndexPrefix(settings map[string]string) (string, error) {
-	database := settings["DB_DATABASE"]
-	legacyDatabase := settings["DB_NAME"]
-	if database != "" && legacyDatabase != "" && database != legacyDatabase {
-		return "", errors.New("conflicting worktree database settings")
-	}
-	if database == "" {
-		database = legacyDatabase
-	}
-	const worktreeDatabasePrefix = "wt_"
-	worktreeID := strings.TrimPrefix(database, worktreeDatabasePrefix)
-	if len(worktreeID) < 1 || len(worktreeID) > 24 || worktreeID == database {
-		return "", errors.New("invalid worktree database")
-	}
-	for _, character := range worktreeID {
-		if character < 'a' || character > 'z' {
-			if character < '0' || character > '9' {
-				return "", errors.New("invalid worktree database")
-			}
-		}
-	}
-	prefix := settings["OPENSEARCH_INDEX_PREFIX"]
-	if prefix != database+"-" {
-		return "", errors.New("index prefix does not match worktree database")
-	}
-	return prefix, nil
 }
 
 func integrationSetting(values map[string]string, key, defaultValue string) string {

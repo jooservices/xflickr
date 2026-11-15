@@ -26,13 +26,6 @@ func TestStartPlanUsesPrimaryKey(t *testing.T) {
 	pool := openEngineTestPool(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 	defer cancel()
-	var databaseName string
-	if err := pool.QueryRow(ctx, `SELECT current_database()`).Scan(&databaseName); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(databaseName, "wt_") {
-		t.Fatalf("plan fixture requires this worktree database, got %q", databaseName)
-	}
 	userID := insertInterestTestUser(t, ctx, pool)
 
 	tx, err := pool.Begin(ctx)

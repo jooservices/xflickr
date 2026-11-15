@@ -421,9 +421,6 @@ func TestConfiguredAPIRoleStartsAgainstTheWorktreeServices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load worktree runtime configuration: %v", err)
 	}
-	if !strings.HasPrefix(cfg.DB.Name, "wt_") {
-		t.Fatal("configured API role requires a worktree database")
-	}
 	t.Setenv("REDIS_HOST", cfg.Redis.Host)
 	t.Setenv("REDIS_PORT", strconv.Itoa(cfg.Redis.Port))
 	t.Setenv("REDIS_DB", strconv.Itoa(cfg.Redis.DB))

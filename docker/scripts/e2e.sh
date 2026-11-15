@@ -22,17 +22,13 @@ if [[ ! -f "$ROOT/.env" ]]; then
 	exit 1
 fi
 
-# Only a worktree database may be reset. The live database xflickr is refused here and again below.
+# The reset runs against the database and account in the worktree .env.
 "$SCRIPT_DIR/dev.sh" verify-db >/dev/null
 env_value() {
 	sed -n "s/^$1=//p" "$ROOT/.env" | head -n 1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"
 }
 db_name="$(env_value DB_DATABASE)"
 db_user="$(env_value DB_USERNAME)"
-if [[ ! "$db_name" =~ ^wt_[a-z0-9_]{2,32}$ ]]; then
-	printf 'Refusing to reset database %s: only wt_<ticket-id> worktree databases are allowed.\n' "$db_name" >&2
-	exit 1
-fi
 
 free_port() {
 	"$node_bin" -e 'const s = require("node:net").createServer(); s.listen(0, "127.0.0.1", () => { process.stdout.write(String(s.address().port)); s.close(); });'

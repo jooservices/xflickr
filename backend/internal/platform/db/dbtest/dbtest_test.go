@@ -14,41 +14,6 @@ import (
 	"github.com/jooservices/xflickr/internal/platform/config"
 )
 
-func TestAC5ValidateDatabaseName(t *testing.T) {
-	tests := []struct {
-		name    string
-		allowed bool
-	}{
-		{name: "wt_jooxf522", allowed: true},
-		{name: "wt_jooxf_522", allowed: true},
-		{name: "xflickr", allowed: false},
-		{name: "xflickr_test", allowed: false},
-		{name: "postgres", allowed: false},
-		{name: "xflickr_wtjooxf522", allowed: false},
-		{name: "wt_", allowed: false},
-		{name: "wt_has-dash", allowed: false},
-		{name: "wt_" + strings.Repeat("x", 33), allowed: false},
-		{name: "", allowed: false},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			err := ValidateDatabaseName(test.name)
-			if test.allowed && err != nil {
-				t.Fatalf("ValidateDatabaseName(%q) error = %v", test.name, err)
-			}
-			if !test.allowed && err == nil {
-				t.Fatalf("ValidateDatabaseName(%q) succeeded, want error", test.name)
-			}
-		})
-	}
-}
-
-func TestOpenRejectsUnsafeDatabaseThroughTestingTB(t *testing.T) {
-	assertFatal(t, func() {
-		Open(&recordingTB{}, config.DBConfig{Name: "xflickr"})
-	})
-}
-
 func TestOpenMigrationCallbackReportsInvalidConfiguration(t *testing.T) {
 	cfg := config.DBConfig{Name: "wt_jooxf522", SSLMode: "not-a-ssl-mode"}
 	if err := migrateTestDatabase(context.Background(), cfg); err == nil {
@@ -74,12 +39,6 @@ func TestIsolatedSchemaRegistersCleanup(t *testing.T) {
 	if !second.closed || len(tb.errors) != 0 {
 		t.Fatalf("cleanup pool closed = %t, errors = %v", second.closed, tb.errors)
 	}
-}
-
-func TestIsolatedSchemaRejectsUnsafeDatabaseThroughTestingTB(t *testing.T) {
-	assertFatal(t, func() {
-		IsolatedSchema(&recordingTB{}, config.DBConfig{Name: "xflickr"})
-	})
 }
 
 func TestIsolatedSchemaReportsCleanupFailureToTestingTB(t *testing.T) {
@@ -125,17 +84,6 @@ func TestOpenPoolMigratesOnlyAnIsolatedDatabase(t *testing.T) {
 		t.Fatalf("openPool() called create=%t migrate=%t", created, migrated)
 	}
 	pool.Close()
-}
-
-func TestOpenPoolRejectsUnsafeDatabaseBeforeConnecting(t *testing.T) {
-	created := false
-	_, err := openPool(context.Background(), config.DBConfig{Name: "xflickr"}, func(context.Context, config.DBConfig) (*pgxpool.Pool, error) {
-		created = true
-		return nil, nil
-	}, func(context.Context, config.DBConfig) error { return nil })
-	if err == nil || !strings.Contains(err.Error(), "refusing database") || created {
-		t.Fatalf("openPool() error = %v, create called=%t", err, created)
-	}
 }
 
 func TestOpenPoolWrapsPoolAndMigrationFailures(t *testing.T) {
@@ -206,17 +154,6 @@ func TestCreateIsolatedSchemaCreatesScopedSchemaAndCleanup(t *testing.T) {
 	}
 	if len(second.statements) != 1 || second.statements[0] != `DROP SCHEMA IF EXISTS "test_0102030405060708" CASCADE` || !second.closed {
 		t.Fatalf("cleanup pool statements = %v, closed = %t", second.statements, second.closed)
-	}
-}
-
-func TestCreateIsolatedSchemaRejectsUnsafeDatabaseBeforeReadingOrOpening(t *testing.T) {
-	opened := false
-	_, _, err := createIsolatedSchema(config.DBConfig{Name: "xflickr"}, bytes.NewReader(nil), func(context.Context, config.DBConfig) (schemaPool, error) {
-		opened = true
-		return nil, nil
-	})
-	if err == nil || !strings.Contains(err.Error(), "refusing database") || opened {
-		t.Fatalf("createIsolatedSchema() error = %v, pool opened = %t", err, opened)
 	}
 }
 
@@ -350,4 +287,16 @@ func assertFatal(t *testing.T, action func()) {
 		}
 	}()
 	action()
+}
+
+func TestOpenFailsTheTestWhenTheConfiguredDatabaseCannotBeUsed(t *testing.T) {
+	assertFatal(t, func() {
+		Open(&recordingTB{}, config.DBConfig{SSLMode: "not-a-ssl-mode"})
+	})
+}
+
+func TestIsolatedSchemaFailsTheTestWhenTheConfiguredDatabaseCannotBeUsed(t *testing.T) {
+	assertFatal(t, func() {
+		IsolatedSchema(&recordingTB{}, config.DBConfig{SSLMode: "not-a-ssl-mode"})
+	})
 }

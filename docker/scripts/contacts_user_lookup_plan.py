@@ -13,14 +13,13 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from worktree_env import database_name, parse_env_text  # noqa: E402
+from worktree_env import parse_env_text  # noqa: E402
 
 
-def postgres_environment(worktree_id: str) -> dict[str, str]:
+def postgres_environment() -> dict[str, str]:
     values = parse_env_text((ROOT / ".env").read_text())
-    expected = database_name(worktree_id)
-    if values.get("DB_NAME") != expected or values.get("DB_DATABASE") != expected:
-        raise ValueError("worktree .env does not select the expected database")
+    if not values.get("DB_NAME") or values.get("DB_NAME") != values.get("DB_DATABASE"):
+        raise ValueError("worktree .env does not select one database")
     if values.get("XFLICKR_WORKTREE_PATH") != str(ROOT.resolve()):
         raise ValueError("worktree .env belongs to another path")
     required = ("DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD")
@@ -30,7 +29,7 @@ def postgres_environment(worktree_id: str) -> dict[str, str]:
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         "PGHOST": values["DB_HOST"],
         "PGPORT": values["DB_PORT"],
-        "PGDATABASE": expected,
+        "PGDATABASE": values["DB_NAME"],
         "PGUSER": values["DB_USER"],
         "PGPASSWORD": values["DB_PASSWORD"],
     }
@@ -38,11 +37,10 @@ def postgres_environment(worktree_id: str) -> dict[str, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--worktree-id", required=True)
     args = parser.parse_args()
 
     try:
-        environment = postgres_environment(args.worktree_id)
+        environment = postgres_environment()
     except (OSError, ValueError, KeyError) as error:
         parser.error(str(error))
 

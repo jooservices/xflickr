@@ -135,9 +135,6 @@ func openEngineTestPool(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatalf("load worktree database configuration: %v", err)
 	}
-	if err := dbtest.ValidateDatabaseName(dbConfig.Name); err != nil {
-		t.Fatal(err)
-	}
 	return dbtest.Open(t, dbConfig)
 }
 

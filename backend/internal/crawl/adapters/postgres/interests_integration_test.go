@@ -29,9 +29,6 @@ func TestAddIsIdempotentAndKeepsLowestDepthPerUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load worktree database configuration: %v", err)
 	}
-	if err := dbtest.ValidateDatabaseName(dbConfig.Name); err != nil {
-		t.Fatal(err)
-	}
 	pool := dbtest.Open(t, dbConfig)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()

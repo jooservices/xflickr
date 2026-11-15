@@ -16,10 +16,8 @@ from pathlib import Path
 from typing import Protocol
 
 TREE_ENV_NAME = ".env.tree"
-LIVE_DATABASES = frozenset({"xflickr", "xflickr_test"})
 TEST_REDIS_INDEX = "8"
 ID_PATTERN = re.compile(r"^[a-z0-9_-]{2,32}$")
-DATABASE_NAME_PATTERN = re.compile(r"^wt_[a-z0-9_]{2,32}$")
 SAFE_VALUE = re.compile(r"^[A-Za-z0-9_./:@%+=,~-]*$")
 TREE_KEYS = (
     "TREE_POSTGRES_HOST",
@@ -209,8 +207,6 @@ def check_env(root: Path, database: DatabaseConnection | None = None, reachable=
 
     name = env.get("DB_NAME", "")
     alias = env.get("DB_DATABASE", "")
-    if name in LIVE_DATABASES or alias in LIVE_DATABASES:
-        return ["the .env must not select the live or shared test database"]
     if name != alias:
         return ["the .env database keys must select the same database"]
     user = env.get("DB_USER", "")

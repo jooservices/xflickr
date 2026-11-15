@@ -31,9 +31,6 @@ func TestDepthAgainstTheWorktreeDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load test PostgreSQL settings: %v", err)
 	}
-	if err := dbtest.ValidateDatabaseName(dbConfig.Name); err != nil {
-		t.Fatal(err)
-	}
 	pool := dbtest.Open(t, dbConfig)
 	clean := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

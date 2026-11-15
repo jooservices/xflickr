@@ -248,9 +248,6 @@ func integrationPool(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if err := dbtest.ValidateDatabaseName(cfg.Name); err != nil {
-		t.Fatal(err)
-	}
 	return dbtest.Open(t, cfg)
 }
 

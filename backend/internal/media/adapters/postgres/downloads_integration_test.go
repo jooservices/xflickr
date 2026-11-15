@@ -412,8 +412,5 @@ func downloadIntegrationDatabase(t *testing.T) config.DBConfig {
 	if err != nil {
 		t.Fatalf("load test database settings: %v", err)
 	}
-	if err := dbtest.ValidateDatabaseName(cfg.Name); err != nil {
-		t.Fatal(err)
-	}
 	return cfg
 }

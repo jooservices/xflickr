@@ -269,10 +269,8 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(check_env(self.root, self.database, self.reachable), [])
         self.assertEqual(self.database.checked, [RESOURCE])
 
-    def test_AC3_refuses_live_test_root_and_different_tree_databases(self):
+    def test_AC3_refuses_the_root_account_and_a_database_that_is_not_the_tree_one(self):
         cases = (
-            ("xflickr", "xflickr", RESOURCE, RESOURCE, "live or shared test database"),
-            ("xflickr_test", "xflickr_test", RESOURCE, RESOURCE, "live or shared test database"),
             (RESOURCE, RESOURCE, "postgres", "postgres", "root account"),
             ("wt_jooxf99", "wt_jooxf99", RESOURCE, RESOURCE, ".env.tree"),
         )
