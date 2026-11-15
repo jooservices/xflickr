@@ -44,29 +44,102 @@ function importsOf(source) {
   );
 }
 
+function unwrap(expression) {
+  let node = expression;
+  while (node && (ts.isAwaitExpression(node) || ts.isParenthesizedExpression(node))) {
+    node = node.expression;
+  }
+  return node;
+}
+
+function isFixtureContext(node, contexts) {
+  return (
+    (ts.isIdentifier(node) && contexts.has(node.text)) ||
+    (ts.isPropertyAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.name.text === 'context')
+  );
+}
+
+function isAccess(node) {
+  return ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node);
+}
+
+function isFixturePage(node) {
+  return (
+    ts.isPropertyAccessExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.name.text === 'page'
+  );
+}
+
+function isNewPage(node, contexts) {
+  return (
+    ts.isCallExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.name.text === 'newPage' &&
+    isFixtureContext(node.expression.expression, contexts)
+  );
+}
+
+function holdsPage(initializer, state) {
+  const value = unwrap(initializer);
+  if (!value) return false;
+  if (ts.isIdentifier(value)) return state.names.has(value.text);
+  return isFixturePage(value) || isNewPage(value, state.contexts);
+}
+
+function recordBinding(node, tree, state) {
+  const property = node.propertyName?.getText(tree);
+  if (!ts.isIdentifier(node.name)) {
+    state.destructuredPage ||= property === 'page';
+  } else if (property === 'page') {
+    state.names.add(node.name.text);
+  } else if (property === 'context') {
+    state.contexts.add(node.name.text);
+  }
+}
+
+function collect(node, tree, state) {
+  if (ts.isBindingElement(node)) recordBinding(node, tree, state);
+  if (
+    ts.isVariableDeclaration(node) &&
+    ts.isIdentifier(node.name) &&
+    holdsPage(node.initializer, state)
+  ) {
+    state.names.add(node.name.text);
+  }
+  ts.forEachChild(node, (child) => collect(child, tree, state));
+}
+
+function touchesPage(node, names) {
+  if (!isAccess(node)) return false;
+  const target = node.expression;
+  return (ts.isIdentifier(target) && names.has(target.text)) || isFixturePage(target);
+}
+
+function direct(node, names) {
+  return (
+    touchesPage(node, names) || (ts.forEachChild(node, (child) => direct(child, names)) ?? false)
+  );
+}
+
+/**
+ * True when the code touches the page itself: the `page` fixture, a destructured alias, an assignment alias
+ * (`const p = page` or `const p = fx.page`), the fixture object's property used further (`fx.page.goto`; `fx.page`
+ * only passed on is allowed) or a page opened from the fixture context (`await context.newPage()`). Passing the
+ * page to a step is allowed. Known limit: aliases created through function calls, arrays or objects are not
+ * followed; steps carry the page, which keeps scenarios readable.
+ */
 function usesPageDirectly(source, file) {
   const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
-  const names = new Set(['page']);
-  let destructuredPage = false;
-  function collect(node) {
-    if (ts.isBindingElement(node) && node.propertyName?.getText(tree) === 'page') {
-      if (ts.isIdentifier(node.name)) names.add(node.name.text);
-      else destructuredPage = true;
-    }
-    ts.forEachChild(node, collect);
-  }
-  collect(tree);
-  function direct(node) {
-    if (
-      (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
-      ts.isIdentifier(node.expression) &&
-      names.has(node.expression.text)
-    ) {
-      return true;
-    }
-    return ts.forEachChild(node, direct) ?? false;
-  }
-  return destructuredPage || direct(tree);
+  const state = {
+    names: new Set(['page']),
+    contexts: new Set(['context']),
+    destructuredPage: false,
+  };
+  collect(tree, tree, state);
+  return state.destructuredPage || direct(tree, state.names);
 }
 
 /** The layer rules broken under `root` (the e2e directory), as readable lines. */
